@@ -111,6 +111,20 @@ impl MolToInchiToolkit for MethaneToolkit {
 }
 
 impl InchiToMolToolkit for MethaneToolkit {
+    fn valence_list(&self, atomic_number: u8) -> Result<&[i32], InchiToolkitError> {
+        match atomic_number {
+            6 => Ok(&[4]),
+            _ => Err(unsupported("valence_list")),
+        }
+    }
+
+    fn default_valence(&self, atomic_number: u8) -> Result<i32, InchiToolkitError> {
+        match atomic_number {
+            6 => Ok(4),
+            _ => Err(unsupported("default_valence")),
+        }
+    }
+
     fn atomic_number(&mut self, element: &[u8]) -> Result<i32, InchiToolkitError> {
         match element {
             b"C" => Ok(6),

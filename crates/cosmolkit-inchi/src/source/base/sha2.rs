@@ -41,6 +41,10 @@ pub(crate) fn sha2_starts(ctx: &mut Sha2Context) {
 }
 
 pub(crate) fn sha2_process(ctx: &mut Sha2Context, data: &[u8; 64]) {
+    sha2_process_state(&mut ctx.state, data);
+}
+
+fn sha2_process_state(state: &mut [u64; 8], data: &[u8; 64]) {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/sha2.c:72 sha2_process
     // INCHI✔️✔️: static void sha2_process(sha2_context *ctx, unsigned char data[64])
     // INCHI✔️✔️: {
@@ -237,14 +241,14 @@ pub(crate) fn sha2_process(ctx: &mut Sha2Context, data: &[u8; 64]) {
             | u64::from(bytes[3]);
     }
 
-    let mut a = ctx.state[0];
-    let mut b = ctx.state[1];
-    let mut c = ctx.state[2];
-    let mut d = ctx.state[3];
-    let mut e = ctx.state[4];
-    let mut f = ctx.state[5];
-    let mut g = ctx.state[6];
-    let mut h = ctx.state[7];
+    let mut a = state[0];
+    let mut b = state[1];
+    let mut c = state[2];
+    let mut d = state[3];
+    let mut e = state[4];
+    let mut f = state[5];
+    let mut g = state[6];
+    let mut h = state[7];
 
     macro_rules! round {
         ($a:ident, $b:ident, $c:ident, $d:ident, $e:ident, $f:ident, $g:ident, $h:ident, $word:expr, $constant:expr) => {{
@@ -334,63 +338,63 @@ pub(crate) fn sha2_process(ctx: &mut Sha2Context, data: &[u8; 64]) {
     round!(c, d, e, f, g, h, a, b, schedule!(62), 0xbef9_a3f7);
     round!(b, c, d, e, f, g, h, a, schedule!(63), 0xc671_78f2);
 
-    ctx.state[0] = ctx.state[0].wrapping_add(a);
-    ctx.state[1] = ctx.state[1].wrapping_add(b);
-    ctx.state[2] = ctx.state[2].wrapping_add(c);
-    ctx.state[3] = ctx.state[3].wrapping_add(d);
-    ctx.state[4] = ctx.state[4].wrapping_add(e);
-    ctx.state[5] = ctx.state[5].wrapping_add(f);
-    ctx.state[6] = ctx.state[6].wrapping_add(g);
-    ctx.state[7] = ctx.state[7].wrapping_add(h);
+    state[0] = state[0].wrapping_add(a);
+    state[1] = state[1].wrapping_add(b);
+    state[2] = state[2].wrapping_add(c);
+    state[3] = state[3].wrapping_add(d);
+    state[4] = state[4].wrapping_add(e);
+    state[5] = state[5].wrapping_add(f);
+    state[6] = state[6].wrapping_add(g);
+    state[7] = state[7].wrapping_add(h);
 }
 
 pub(crate) fn sha2_update(ctx: &mut Sha2Context, input: &[u8], ilen: i32) {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/sha2.c:206 sha2_update
-    // INCHI✔️❌: void sha2_update(sha2_context *ctx, unsigned char *input, int ilen)
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     int fill;
-    // INCHI✔️❌:     unsigned long left;
-    // INCHI✔️❌:
-    // INCHI✔️❌:     if (ilen <= 0)
-    // INCHI✔️❌:         return;
-    // INCHI✔️❌:
-    // INCHI✔️❌:     left = ctx->total[0] & 0x3F;
-    // INCHI✔️❌:     fill = 64 - left;
-    // INCHI✔️❌:
-    // INCHI✔️❌:     ctx->total[0] += ilen;
-    // INCHI✔️❌:     ctx->total[0] &= 0xFFFFFFFF;
-    // INCHI✔️❌:
-    // INCHI✔️❌:     if (ctx->total[0] < (unsigned long)ilen)
-    // INCHI✔️❌:         ctx->total[1]++;
-    // INCHI✔️❌:
-    // INCHI✔️❌:     if (left && ilen >= fill)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         memcpy((void *)(ctx->buffer + left),
-    // INCHI✔️❌:                (void *)input, fill);
-    // INCHI✔️❌:         sha2_process(ctx, ctx->buffer);
-    // INCHI✔️❌:         input += fill;
-    // INCHI✔️❌:         ilen -= fill;
-    // INCHI✔️❌:         left = 0;
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     while (ilen >= 64)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         sha2_process(ctx, input); /* djb-rwth: ignoring LLVM warning as ilen >= 64 just in test case */
-    // INCHI✔️❌:         input += 64;
-    // INCHI✔️❌:         ilen -= 64;
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     if (ilen > 0)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         memcpy((void *)(ctx->buffer + left),
-    // INCHI✔️❌:                (void *)input, ilen);
-    // INCHI✔️❌:     }
-    // INCHI✔️❌: }
+    // INCHI✔️❗: void sha2_update(sha2_context *ctx, unsigned char *input, int ilen)
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     int fill;
+    // INCHI✔️❗:     unsigned long left;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (ilen <= 0)
+    // INCHI✔️❗:         return;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     left = ctx->total[0] & 0x3F;
+    // INCHI✔️❗:     fill = 64 - left;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     ctx->total[0] += ilen;
+    // INCHI✔️❗:     ctx->total[0] &= 0xFFFFFFFF;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (ctx->total[0] < (unsigned long)ilen)
+    // INCHI✔️❗:         ctx->total[1]++;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (left && ilen >= fill)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         memcpy((void *)(ctx->buffer + left),
+    // INCHI✔️❗:                (void *)input, fill);
+    // INCHI✔️❗:         sha2_process(ctx, ctx->buffer);
+    // INCHI✔️❗:         input += fill;
+    // INCHI✔️❗:         ilen -= fill;
+    // INCHI✔️❗:         left = 0;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     while (ilen >= 64)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         sha2_process(ctx, input); /* djb-rwth: ignoring LLVM warning as ilen >= 64 just in test case */
+    // INCHI✔️❗:         input += 64;
+    // INCHI✔️❗:         ilen -= 64;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (ilen > 0)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         memcpy((void *)(ctx->buffer + left),
+    // INCHI✔️❗:                (void *)input, ilen);
+    // INCHI✔️❗:     }
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: sha2_update
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: sha2_update
-    // INCHI✔️❌: #include <string.h>
-    // INCHI✔️❌: unsigned long is 64-bit and int is 32-bit under the selected GCC/Linux LP64 target.
-    // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; libc memcpy is active.
+    // INCHI✔️❗: #include <string.h>
+    // INCHI✔️❗: unsigned long is 64-bit and int is 32-bit under the selected GCC/Linux LP64 target.
+    // INCHI✔️❗: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; libc memcpy is active.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: sha2_update
 
     if ilen <= 0 {
@@ -411,10 +415,9 @@ pub(crate) fn sha2_update(ctx: &mut Sha2Context, input: &[u8], ilen: i32) {
 
     if left != 0 && remaining >= fill {
         ctx.buffer[left..left + fill].copy_from_slice(&input[..fill]);
-        // The source reads ctx->buffer in place. Safe Rust copies this fixed block
-        // to avoid aliasing the mutable context, adding known hot-path work.
-        let block = ctx.buffer;
-        sha2_process(ctx, &block);
+        // State and input buffer are disjoint fields; borrow them directly.
+        // INCHI✔️❗: No fixed-block snapshot/allocation; whole-call costs deferred.
+        sha2_process_state(&mut ctx.state, &ctx.buffer);
         input_offset += fill;
         remaining -= fill;
         left = 0;
@@ -1259,5 +1262,138 @@ mod tests {
             }
             assert_ne!(output, [0xa5; 32], "initial_total={initial_total:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod sha2_process_regressions {
+    use super::{Sha2Context, sha2_process};
+
+    fn bytes64(text: &str) -> [u8; 64] {
+        assert_eq!(text.len(), 128);
+        std::array::from_fn(|i| u8::from_str_radix(&text[2 * i..2 * i + 2], 16).unwrap())
+    }
+
+    fn state8(text: &str) -> [u64; 8] {
+        assert_eq!(text.len(), 128);
+        std::array::from_fn(|i| u64::from_str_radix(&text[16 * i..16 * i + 16], 16).unwrap())
+    }
+
+    #[test]
+    fn complete_fixed_lp64_block_state_and_preservation() {
+        let manifest: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../testdata/inchi/expected/official/sha2_process/manifest.json"
+        ))
+        .unwrap();
+        assert_eq!(manifest["schema"], "inchi-sha2-process-lp64-v1");
+        assert_eq!(manifest["version"], "1.07.5");
+        assert_eq!(manifest["unique_cases"], 40011);
+        assert_eq!(manifest["repeats"], 2);
+        assert_eq!(manifest["calls_per_consumer"], 91814);
+        let inputs: Vec<_> =
+            include_str!("../../../../../testdata/inchi/expected/official/sha2_process/inputs.txt")
+                .lines()
+                .collect();
+        let expected: Vec<_> = include_str!(
+            "../../../../../testdata/inchi/expected/official/sha2_process/expected.txt"
+        )
+        .lines()
+        .collect();
+        assert_eq!(inputs.len(), 40011);
+        assert_eq!(expected.len(), inputs.len());
+        let (mut calls, mut ok, mut audit46, mut audit331, mut audit159) = (0, 0, 0, 0, 0);
+        let (mut unexpected, mut differences, mut changed) = (0, 0, 0);
+        for (ident, (input, wanted)) in inputs.iter().zip(&expected).enumerate() {
+            let fields: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(fields.len(), 14);
+            assert_eq!(fields[0].parse::<usize>().unwrap(), ident);
+            let chain: usize = fields[1].parse().unwrap();
+            assert!((1..=3).contains(&chain));
+            let original = Sha2Context {
+                total: std::array::from_fn(|i| u64::from_str_radix(fields[2 + i], 16).unwrap()),
+                state: std::array::from_fn(|i| u64::from_str_radix(fields[4 + i], 16).unwrap()),
+                buffer: bytes64(fields[12]),
+            };
+            let mut storage = [0x5a_u8; 68];
+            storage[..64].copy_from_slice(&bytes64(fields[13]));
+            let before_storage = storage;
+            let data: &[u8; 64] = storage[..64].try_into().unwrap();
+            let states: Vec<_> = wanted.split_whitespace().map(state8).collect();
+            assert_eq!(states.len(), chain);
+            for repeat in 0..2 {
+                let mut ctx = original.clone();
+                for (step, state) in states.iter().enumerate() {
+                    let before_ctx = ctx.clone();
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        sha2_process(&mut ctx, data);
+                    }));
+                    calls += 1;
+                    match result {
+                        Ok(()) => {
+                            ok += 1;
+                            if &ctx.state != state {
+                                differences += 1;
+                                if differences <= 8 {
+                                    eprintln!(
+                                        "SHA2 DIFFERENCE id={ident} repeat={repeat} step={step} actual={:016x?} expected={state:016x?}",
+                                        ctx.state
+                                    );
+                                }
+                            }
+                        }
+                        Err(payload) => {
+                            let text = payload
+                                .downcast_ref::<&str>()
+                                .copied()
+                                .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                            match text {
+                                Some(
+                                    "INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md",
+                                ) => audit46 += 1,
+                                Some(
+                                    "INCHI-AUDIT-0331: suspected source divergence; see dev/audits/inchi/findings.md",
+                                ) => audit331 += 1,
+                                Some(
+                                    "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                                ) => audit159 += 1,
+                                _ => {
+                                    unexpected += 1;
+                                    if unexpected <= 8 {
+                                        eprintln!(
+                                            "SHA2 UNEXPECTED id={ident} repeat={repeat} step={step} panic={text:?}"
+                                        );
+                                    }
+                                }
+                            }
+                            if ctx != before_ctx {
+                                changed += 1;
+                            }
+                        }
+                    }
+                    if ctx.total != original.total
+                        || ctx.buffer != original.buffer
+                        || storage != before_storage
+                    {
+                        changed += 1;
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "SHA2 COUNTS calls={calls} ok={ok} audit46={audit46} audit331={audit331} audit159={audit159} unexpected={unexpected} differences={differences} changed={changed}"
+        );
+        assert_eq!(
+            (
+                calls,
+                ok,
+                audit46,
+                audit331,
+                audit159,
+                unexpected,
+                differences,
+                changed
+            ),
+            (91814, 91814, 0, 0, 0, 0, 0, 0)
+        );
     }
 }

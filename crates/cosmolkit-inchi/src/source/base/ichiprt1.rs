@@ -1,3 +1,7 @@
+use crate::source::base::ichi_io::SourceFormat;
+use crate::source::base::runichi::SourceCanonicalGlobals;
+use crate::source::base::util::SourceInputArray;
+
 #[allow(non_snake_case)]
 pub(crate) fn EquString(equivalence_value: i32) -> &'static str {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:564 EquString
@@ -604,24 +608,488 @@ pub(crate) fn szGetTag(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: szGetTag
 
-    fn c_bytes(
-        heap: &SourceHeap,
-        pointer: SourceConstPointer<i8>,
-    ) -> Result<Vec<i8>, SourceHeapError> {
-        let bytes = heap.slice(pointer)?;
-        let length = bytes
-            .iter()
-            .position(|byte| *byte == 0)
-            .ok_or(SourceHeapError::MissingNulTerminator)?;
-        Ok(bytes[..length].to_vec())
+    // INCHI✔️❗: Existing heap-tag interface enters the sole canonical emitter.
+    source_tag_string(
+        heap,
+        TagLabels::Heap(tags),
+        n_tag,
+        tag_bits,
+        output,
+        always,
+        tag_flag,
+    )
+}
+
+// Private projection of the one native immutable table, not a second tag API.
+type StaticIdentTag = (&'static str, &'static str, &'static str, i32);
+
+#[derive(Clone, Copy)]
+enum TagLabels<'a> {
+    Heap(&'a [INCHI_TAG]),
+    Static(&'a [StaticIdentTag]),
+}
+
+enum TagField {
+    Plain,
+    Comment,
+    Xml,
+}
+
+impl TagLabels<'_> {
+    fn label(
+        self,
+        index: usize,
+        field: TagField,
+    ) -> Result<crate::source::base::ichi_io::SourceFormat<'static>, SourceHeapError> {
+        use crate::source::base::ichi_io::SourceFormat;
+        match self {
+            Self::Heap(tags) => {
+                let tag = tags.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                Ok(SourceFormat::Pointer(match field {
+                    TagField::Plain => tag.szPlainLabel,
+                    TagField::Comment => tag.szPlainComment,
+                    TagField::Xml => tag.szXmlLabel,
+                }))
+            }
+            Self::Static(tags) => {
+                let tag = tags.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                Ok(SourceFormat::Text(match field {
+                    TagField::Plain => tag.0,
+                    TagField::Comment => tag.1,
+                    TagField::Xml => tag.2,
+                }))
+            }
+        }
     }
 
-    fn write_c_bytes(
+    fn always(self, index: usize) -> Result<i32, SourceHeapError> {
+        match self {
+            Self::Heap(tags) => Ok(tags
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .bAlwaysOutput),
+            Self::Static(tags) => Ok(tags
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .3),
+        }
+    }
+}
+
+fn source_ident_labels() -> &'static [StaticIdentTag] {
+    // BEGIN INCHI C GLOBAL: ichiprt1.c277..316 IdentLbl and INCHI_TAG
+    // INCHI✔️❗: typedef struct tagInchiTag
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     const char *szPlainLabel;
+    // INCHI✔️❗:     const char *szPlainComment;
+    // INCHI✔️❗:     const char *szXmlLabel;
+    // INCHI✔️❗:     int  bAlwaysOutput;
+    // INCHI✔️❗: } INCHI_TAG;
+    // INCHI✔️❗:
+    // INCHI✔️❗:
+    // INCHI✔️❗: /*
+    // INCHI✔️❗:     Identifier
+    // INCHI✔️❗: */
+    // INCHI✔️❗: const INCHI_TAG IdentLbl[] =
+    // INCHI✔️❗: {
+    // INCHI✔️❗:                                                                   /* prefixes: may be combined in this order */
+    // INCHI✔️❗:     /* IL_FIXH_ORD, */    { "/",   "fixed_H",        "fixed-H",        0 }, /* fixed H */
+    // INCHI✔️❗:     /* IL_ISOT_ORD, */    { "/",   "isotopic",       "isotopic",       0 }, /* isotopic */
+    // INCHI✔️❗:     /* IL_STER_ORD, */    { "/",   "stereo",         "stereo",         0 }, /* stereo */
+    // INCHI✔️❗:                                                                        /* items */
+    // INCHI✔️❗:                                                                        /* IL_VERS_ORD, */    { "" ,   "version",        "version",        1 },
+    // INCHI✔️❗:                                                                        /* IL_FML__ORD, */    { "/",   "formula",        "formula",        1 }, /* basic part formula */
+    // INCHI✔️❗:                                                                        /* IL_CONN_ORD, */    { "/c",  "connections",    "connections",    1 },
+    // INCHI✔️❗:                                                                        /* IL_ALLH_ORD, */    { "/h",  "H_atoms",        "H",              1 },
+    // INCHI✔️❗:                                                                        /* IL_CHRG_ORD, */    { "/q",  "charge",         "charge",         1 },
+    // INCHI✔️❗:                                                                        /* IL_PROT_ORD, */    { "/p",  "protons",        "protons",        0 },
+    // INCHI✔️❗:                                                                                                                                            /* stereo */
+    // INCHI✔️❗:                                                                                                                                            /* IL_DBND_ORD, */    { "/b",  "dbond",          "dbond",          0 },
+    // INCHI✔️❗:                                                                                                                                            /* IL_SP3S_ORD, */    { "/t",  "sp3",            "sp3",            0 },
+    // INCHI✔️❗:                                                                                                                                            /* IL_INVS_ORD, */    { "/m",  "sp3:inverted",   "abs.inverted",   0 }, /* mirrored */
+    // INCHI✔️❗:                                                                                                                                            /* IL_TYPS_ORD, */    { "/s",  "type (1=abs, 2=rel, 3=rac)", "type",           0 }, /* stereo type */
+    // INCHI✔️❗:                                                                                                                                                                                                                /* isotopic */
+    // INCHI✔️❗:                                                                                                                                                                                                                /* IL_ATMS_ORD, */    { "/i",  "atoms",          "atoms",          1 },
+    // INCHI✔️❗:                                                                                                                                                                                                                                                                                    /* isotopic mobile H only */
+    // INCHI✔️❗:                                                                                                                                                                                                                                                                                    /* IL_XCGA_ORD, */    { "/h",  "exchangeable_H", "H-isotopic",     1 },
+    // INCHI✔️❗:                                                                                                                                                                                                                                                                                                                                                        /* fixed H only */
+    // INCHI✔️❗:                                                                                                                                                                                                                                                                                                                                                        /* IL_FMLF_ORD, */    { "/f",  "formula",        "formula",        1 }, /* fixed H formula */
+    // INCHI✔️❗:                                                                                                                                                                                                                                                                                                                                                        /* IL_HFIX_ORD, */    { "/h",  "H_fixed" ,       "H-fixed" ,       1 }, /* fixed-H */
+    // INCHI✔️❗:                                                                                                                                                                                                                                                                                                                                                        /* IL_TRNS_ORD, */    { "/o",  "transposition",  "transposition",  0 }, /* order */
+    // INCHI✔️❗:                                                                                                                                                                                                                                                                                                                                                        /* IL_REC__ORD, */    { "/r",  "reconnected bond(s) to metal(s) formula",  "formula",  0 }
+    // INCHI✔️❗: };
+    // END INCHI C GLOBAL: IdentLbl and INCHI_TAG
+    // INCHI✔️❗: One full read-only global projection; no per-call table,
+    // literal ownership, null default rows or allocation failure path.
+    // Fat-string descriptor layout and dispatch whole-call costs stay OPEN.
+    static IDENT_LABELS: [StaticIdentTag; 19] = [
+        ("/", "fixed_H", "fixed-H", 0),
+        ("/", "isotopic", "isotopic", 0),
+        ("/", "stereo", "stereo", 0),
+        ("", "version", "version", 1),
+        ("/", "formula", "formula", 1),
+        ("/c", "connections", "connections", 1),
+        ("/h", "H_atoms", "H", 1),
+        ("/q", "charge", "charge", 1),
+        ("/p", "protons", "protons", 0),
+        ("/b", "dbond", "dbond", 0),
+        ("/t", "sp3", "sp3", 0),
+        ("/m", "sp3:inverted", "abs.inverted", 0),
+        ("/s", "type (1=abs, 2=rel, 3=rac)", "type", 0),
+        ("/i", "atoms", "atoms", 1),
+        ("/h", "exchangeable_H", "H-isotopic", 1),
+        ("/f", "formula", "formula", 1),
+        ("/h", "H_fixed", "H-fixed", 1),
+        ("/o", "transposition", "transposition", 0),
+        (
+            "/r",
+            "reconnected bond(s) to metal(s) formula",
+            "formula",
+            0,
+        ),
+    ];
+    &IDENT_LABELS
+}
+
+fn source_aux_labels() -> &'static [StaticIdentTag] {
+    // BEGIN INCHI C GLOBAL: ichiprt1.c408..436 AuxLbl
+    // INCHI✔️❗: const INCHI_TAG AuxLbl[] =
+    // INCHI✔️❗: {
+    // INCHI✔️❗: /* prefixes may be combined in this order */
+    // INCHI✔️❗:     /* AL_FIXH_ORD, */    { "/",     "fixed_H",                "fixed-H",             0 }, /* fixed-H */
+    // INCHI✔️❗:     /* AL_ISOT_ORD, */    { "/",     "isotopic",               "isotopic",            0 }, /* isotopic */
+    // INCHI✔️❗:     /* AL_STER_ORD, */    { "/",     "abs_stereo_inverted",    "stereo.abs.inverted", 0 }, /* inv abs sp3 stereo */
+    // INCHI✔️❗:     /* AL_REVR_ORD, */    { "/",     "reversibility",          "reversibility",       0 }, /* reversibility */
+    // INCHI✔️❗:     /* items */
+    // INCHI✔️❗:     /* AL_VERS_ORD, */    { "",      "version",                "version",             1 },
+    // INCHI✔️❗:     /* AL_NORM_ORD, */    { "/",     "normalization_type",     "norm-type",           1 },
+    // INCHI✔️❗:     /* AL_ANBR_ORD, */    { "/N:",   "original_atom_numbers",  "atom.orig-nbr",       1 },
+    // INCHI✔️❗:     /* AL_AEQU_ORD, */    { "/E:",   "atom_equivalence",       "atom.equivalence",    0 },
+    // INCHI✔️❗:     /* AL_GEQU_ORD, */    { "/gE:",  "group_equivalence",      "group.equivalence",   0 },
+    // INCHI✔️❗:     /* inv abs sp3 stereo */
+    // INCHI✔️❗:     /* AL_SP3I_ORD, */    { "/it:",  "sp3",                    "sp3",                 0 },
+    // INCHI✔️❗:     /* AL_SP3N_ORD, */    { "/iN:",  "original_atom_numbers",  "atom.orig-nbr",       0 },
+    // INCHI✔️❗:
+    // INCHI✔️❗:     /* AL_CRV__ORD, */    { "/CRV:", "charge_radical_valence", "charges-rad-val",     0 },
+    // INCHI✔️❗:     /* reversibility */
+    // INCHI✔️❗:     /* AL_ATMR_ORD, */    { "/rA:",  "atoms",                  "atoms",               0 },
+    // INCHI✔️❗:     /* AL_BNDR_ORD, */    { "/rB:",  "bonds",                  "bonds",               0 },
+    // INCHI✔️❗:     /* AL_XYZR_ORD, */    { "/rC:",  "xyz",                    "xyz",                 0 },
+    // INCHI✔️❗:     /* fixed-H only */
+    // INCHI✔️❗:     /* AL_FIXN_ORD, */    { "/F:",   "original_atom_numbers",  "atom.orig-nbr",       1 },
+    // INCHI✔️❗:     /* isotopic only */
+    // INCHI✔️❗:     /* AL_ISON_ORD, */    { "/I:",   "original_atom_numbers",  "atom.orig-nbr",       1 },
+    // INCHI✔️❗:
+    // INCHI✔️❗:     /* AL_REC__ORD, */    { "/R:",  "reconnected bond(s) to metal(s) part",  "",      1 }
+    // INCHI✔️❗: };
+    // END INCHI C GLOBAL: AuxLbl
+    // INCHI✔️❗: One complete immutable projection, borrowed by all seven
+    // consumers. No per-call table, literal allocation or partial default rows.
+    // Static descriptor layout and checked-emitter whole-call costs stay OPEN.
+    static AUX_LABELS: [StaticIdentTag; 18] = [
+        ("/", "fixed_H", "fixed-H", 0),
+        ("/", "isotopic", "isotopic", 0),
+        ("/", "abs_stereo_inverted", "stereo.abs.inverted", 0),
+        ("/", "reversibility", "reversibility", 0),
+        ("", "version", "version", 1),
+        ("/", "normalization_type", "norm-type", 1),
+        ("/N:", "original_atom_numbers", "atom.orig-nbr", 1),
+        ("/E:", "atom_equivalence", "atom.equivalence", 0),
+        ("/gE:", "group_equivalence", "group.equivalence", 0),
+        ("/it:", "sp3", "sp3", 0),
+        ("/iN:", "original_atom_numbers", "atom.orig-nbr", 0),
+        ("/CRV:", "charge_radical_valence", "charges-rad-val", 0),
+        ("/rA:", "atoms", "atoms", 0),
+        ("/rB:", "bonds", "bonds", 0),
+        ("/rC:", "xyz", "xyz", 0),
+        ("/F:", "original_atom_numbers", "atom.orig-nbr", 1),
+        ("/I:", "original_atom_numbers", "atom.orig-nbr", 1),
+        ("/R:", "reconnected bond(s) to metal(s) part", "", 1),
+    ];
+    &AUX_LABELS
+}
+
+fn source_tag_string(
+    heap: &mut SourceHeap,
+    tags: TagLabels<'_>,
+    n_tag: i32,
+    tag_bits: i32,
+    output: SourceMutPointer<i8>,
+    always: &mut i32,
+    tag_flag: i16,
+) -> Result<SourceMutPointer<i8>, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:2087 szGetTag
+    // INCHI✔️❌: char *szGetTag( const INCHI_TAG *Tag,
+    // INCHI✔️❌:                 int             nTag,
+    // INCHI✔️❌:                 int             bTag,
+    // INCHI✔️❌:                 char            *szTag,
+    // INCHI✔️❌:                 int             *bAlways,
+    // INCHI✔️❌:                 short           tag_flag)
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int i, j, bit, num, len;
+    // INCHI✔️❌:     const int MAX_TAG_NUM = tag_flag ? (int)IL_MAX_ORD : (int)AL_MAX_ORD; /* djb-rwth: fixing GHI #160 */
+    // INCHI✔️❌:     if (0 < nTag && nTag < 3)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* no plain text comments: pick up the last tag */
+    // INCHI✔️❌:         for (i = 0, j = -1, bit = 1; i < MAX_TAG_NUM; i++, bit <<= 1)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (bTag & bit)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 j = i;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (j >= 0)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌: #if USE_BCF
+    // INCHI✔️❌:             int stl1, stl2, dstsz;
+    // INCHI✔️❌:             stl1 = strlen(Tag[j].szXmlLabel) + 1;
+    // INCHI✔️❌:             stl2 = strlen(Tag[j].szPlainLabel) + 1;
+    // INCHI✔️❌:             dstsz = max_3(stl1, stl2, 5);
+    // INCHI✔️❌:             strcpy_s( szTag, dstsz, nTag == 1 ? Tag[j].szXmlLabel : nTag == 2 ? Tag[j].szPlainLabel : "???" ); /* djb-rwth: function replaced with its safe C11 variant */
+    // INCHI✔️❌: #else
+    // INCHI✔️❌:             strcpy(szTag, nTag == 1 ? Tag[j].szXmlLabel : nTag == 2 ? Tag[j].szPlainLabel : "???"); /* djb-rwth: addressing coverity ID #499488 -- when nTag == 2, the "???" is avoided, which is correct */
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:             if (nTag != 2)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 *bAlways = Tag[j].bAlwaysOutput;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             return szTag;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     else
+    // INCHI✔️❌:         if (nTag == 3)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* plain text with comments */
+    // INCHI✔️❌:             szTag[0] = '{';
+    // INCHI✔️❌:             szTag[1] = '\0';
+    // INCHI✔️❌:             for (i = 0, j = -1, bit = 1, num = 0; i < MAX_TAG_NUM; i++, bit <<= 1)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 if (bTag & bit)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     j = i;
+    // INCHI✔️❌:                     if (num++)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         strcat(szTag, ":");
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                     strcat(szTag, Tag[i].szPlainComment);
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             if (num)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 strcat(szTag, "}");
+    // INCHI✔️❌:                 num = (int) strlen( Tag[j].szPlainLabel );
+    // INCHI✔️❌:                 len = (int) strlen( szTag );
+    // INCHI✔️❌:                 if (len)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     memmove(szTag + num, szTag, (long long)len + 1); /* djb-rwth: cast operator added */
+    // INCHI✔️❌:                     memcpy(szTag, Tag[j].szPlainLabel, num);
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 else
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     strcpy(szTag, Tag[j].szPlainLabel);
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 *bAlways = Tag[j].bAlwaysOutput;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             else
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 strcpy(szTag, "???");
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             return szTag;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     strcpy(szTag, "???");
+    // INCHI✔️❌:     return szTag;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: szGetTag
+
+    // INCHI✔️❗: Retain the existing pointer projection and one algorithm.
+    source_tag_into(
+        heap,
+        tags,
+        n_tag,
+        tag_bits,
+        &mut TagOutput::Pointer(output),
+        always,
+        tag_flag,
+    )?;
+    Ok(output)
+}
+
+// Private caller-owned storage projection; borrowed bytes cannot alias heap
+// allocations. Pointer cases retain canonical live/overlap/error operations.
+enum TagOutput<'a> {
+    Pointer(SourceMutPointer<i8>),
+    Bytes(&'a mut [i8]),
+}
+
+impl TagOutput<'_> {
+    fn slice_mut<'a>(
+        &'a mut self,
+        heap: &'a mut SourceHeap,
+    ) -> Result<&'a mut [i8], SourceHeapError> {
+        match self {
+            Self::Pointer(pointer) => heap.slice_mut(*pointer),
+            Self::Bytes(bytes) => Ok(bytes),
+        }
+    }
+
+    fn length(&self, heap: &SourceHeap) -> Result<usize, SourceHeapError> {
+        let bytes = match self {
+            Self::Pointer(pointer) => heap.slice(pointer.as_const())?,
+            Self::Bytes(bytes) => bytes,
+        };
+        bytes
+            .iter()
+            .position(|byte| *byte == 0)
+            .ok_or(SourceHeapError::MissingNulTerminator)
+    }
+
+    fn move_prefix(
+        &mut self,
         heap: &mut SourceHeap,
-        output: SourceMutPointer<i8>,
+        offset: usize,
+        count: usize,
+    ) -> Result<(), SourceHeapError> {
+        match self {
+            Self::Pointer(pointer) => heap.copy_prefix_within_allocation(
+                pointer.offset(offset as i64)?,
+                pointer.as_const(),
+                count,
+            ),
+            Self::Bytes(bytes) => {
+                let end = offset
+                    .checked_add(count)
+                    .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+                if count > bytes.len() || end > bytes.len() {
+                    return Err(SourceHeapError::PointerOutOfBounds);
+                }
+                bytes.copy_within(..count, offset);
+                Ok(())
+            }
+        }
+    }
+}
+
+fn source_tag_into(
+    heap: &mut SourceHeap,
+    tags: TagLabels<'_>,
+    n_tag: i32,
+    tag_bits: i32,
+    output: &mut TagOutput<'_>,
+    always: &mut i32,
+    tag_flag: i16,
+) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:2087 szGetTag
+    // INCHI✔️❌: char *szGetTag( const INCHI_TAG *Tag,
+    // INCHI✔️❌:                 int             nTag,
+    // INCHI✔️❌:                 int             bTag,
+    // INCHI✔️❌:                 char            *szTag,
+    // INCHI✔️❌:                 int             *bAlways,
+    // INCHI✔️❌:                 short           tag_flag)
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int i, j, bit, num, len;
+    // INCHI✔️❌:     const int MAX_TAG_NUM = tag_flag ? (int)IL_MAX_ORD : (int)AL_MAX_ORD; /* djb-rwth: fixing GHI #160 */
+    // INCHI✔️❌:     if (0 < nTag && nTag < 3)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* no plain text comments: pick up the last tag */
+    // INCHI✔️❌:         for (i = 0, j = -1, bit = 1; i < MAX_TAG_NUM; i++, bit <<= 1)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (bTag & bit)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 j = i;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (j >= 0)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌: #if USE_BCF
+    // INCHI✔️❌:             int stl1, stl2, dstsz;
+    // INCHI✔️❌:             stl1 = strlen(Tag[j].szXmlLabel) + 1;
+    // INCHI✔️❌:             stl2 = strlen(Tag[j].szPlainLabel) + 1;
+    // INCHI✔️❌:             dstsz = max_3(stl1, stl2, 5);
+    // INCHI✔️❌:             strcpy_s( szTag, dstsz, nTag == 1 ? Tag[j].szXmlLabel : nTag == 2 ? Tag[j].szPlainLabel : "???" ); /* djb-rwth: function replaced with its safe C11 variant */
+    // INCHI✔️❌: #else
+    // INCHI✔️❌:             strcpy(szTag, nTag == 1 ? Tag[j].szXmlLabel : nTag == 2 ? Tag[j].szPlainLabel : "???"); /* djb-rwth: addressing coverity ID #499488 -- when nTag == 2, the "???" is avoided, which is correct */
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:             if (nTag != 2)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 *bAlways = Tag[j].bAlwaysOutput;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             return szTag;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     else
+    // INCHI✔️❌:         if (nTag == 3)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* plain text with comments */
+    // INCHI✔️❌:             szTag[0] = '{';
+    // INCHI✔️❌:             szTag[1] = '\0';
+    // INCHI✔️❌:             for (i = 0, j = -1, bit = 1, num = 0; i < MAX_TAG_NUM; i++, bit <<= 1)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 if (bTag & bit)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     j = i;
+    // INCHI✔️❌:                     if (num++)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         strcat(szTag, ":");
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                     strcat(szTag, Tag[i].szPlainComment);
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             if (num)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 strcat(szTag, "}");
+    // INCHI✔️❌:                 num = (int) strlen( Tag[j].szPlainLabel );
+    // INCHI✔️❌:                 len = (int) strlen( szTag );
+    // INCHI✔️❌:                 if (len)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     memmove(szTag + num, szTag, (long long)len + 1); /* djb-rwth: cast operator added */
+    // INCHI✔️❌:                     memcpy(szTag, Tag[j].szPlainLabel, num);
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 else
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     strcpy(szTag, Tag[j].szPlainLabel);
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 *bAlways = Tag[j].bAlwaysOutput;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             else
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 strcpy(szTag, "???");
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             return szTag;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     strcpy(szTag, "???");
+    // INCHI✔️❌:     return szTag;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: szGetTag
+
+    // INCHI✔️❗: Same reached tag selection, concatenation and memmove order
+    // for native caller-owned storage. O(source scans/copies), O(1) carrier,
+    // no staging allocation/clone; projection/checked-copy costs stay OPEN.
+    use crate::source::base::ichi_io::SourceFormat;
+
+    // INCHI✔️❗: Borrow the reached strings and write the caller's buffer in
+    // native order. No temporary Vec, comment buffer or early table proof.
+    // Safe arena/checked-copy and configured libc whole-call costs stay OPEN.
+    fn c_length(heap: &SourceHeap, pointer: SourceFormat<'_>) -> Result<usize, SourceHeapError> {
+        let (bytes, implicit_nul) = match pointer {
+            SourceFormat::Pointer(pointer) => (heap.slice(pointer)?, false),
+            SourceFormat::Bytes(bytes) => (bytes, false),
+            SourceFormat::Text(text) => (bytemuck::cast_slice(text.as_bytes()), true),
+        };
+        match bytes.iter().position(|byte| *byte == 0) {
+            Some(length) => Ok(length),
+            None if implicit_nul => Ok(bytes.len()),
+            None => Err(SourceHeapError::MissingNulTerminator),
+        }
+    }
+
+    fn write_literal(
+        heap: &mut SourceHeap,
+        output: &mut TagOutput<'_>,
         bytes: &[i8],
     ) -> Result<(), SourceHeapError> {
-        let target = heap.slice_mut(output)?;
+        let target = output.slice_mut(heap)?;
         let required = bytes
             .len()
             .checked_add(1)
@@ -634,14 +1102,85 @@ pub(crate) fn szGetTag(
         Ok(())
     }
 
+    fn copy_prefix(
+        heap: &mut SourceHeap,
+        output: &mut TagOutput<'_>,
+        input: SourceFormat<'_>,
+        count: usize,
+    ) -> Result<(), SourceHeapError> {
+        // Retain valid disjoint ranges in one allocation and the prior safe
+        // modeled overlap extension without a snapshot. Native memcpy/strcpy
+        // overlap is outside the defined source domain.
+        if let (TagOutput::Pointer(output), SourceFormat::Pointer(input)) = (&*output, input) {
+            return if output.allocation_identity() == input.as_mut().allocation_identity() {
+                heap.copy_prefix_within_allocation(*output, input, count)
+            } else {
+                heap.copy_nonoverlapping_prefix(*output, input, count, false)
+            };
+        }
+        let (bytes, implicit_nul) = match input {
+            SourceFormat::Bytes(bytes) => (bytes, false),
+            SourceFormat::Text(text) => (bytemuck::cast_slice(text.as_bytes()), true),
+            SourceFormat::Pointer(input) => {
+                // A Rust-borrowed destination is disjoint from heap storage.
+                let bytes = heap.slice(input)?;
+                let source = bytes
+                    .get(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let TagOutput::Bytes(target) = output else {
+                    unreachable!("pointer pair handled above");
+                };
+                target
+                    .get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .copy_from_slice(source);
+                return Ok(());
+            }
+        };
+        if count > bytes.len() && !(implicit_nul && count == bytes.len() + 1) {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        let target = output
+            .slice_mut(heap)?
+            .get_mut(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let copied = count.min(bytes.len());
+        target[..copied].copy_from_slice(&bytes[..copied]);
+        if copied < count {
+            target[copied] = 0;
+        }
+        Ok(())
+    }
+
+    fn copy_string(
+        heap: &mut SourceHeap,
+        output: &mut TagOutput<'_>,
+        input: SourceFormat<'_>,
+    ) -> Result<(), SourceHeapError> {
+        let length = c_length(heap, input)?;
+        copy_prefix(heap, output, input, length + 1)
+    }
+
+    fn append_literal(
+        heap: &mut SourceHeap,
+        output: &mut TagOutput<'_>,
+        byte: i8,
+    ) -> Result<(), SourceHeapError> {
+        let length = output.length(heap)?;
+        let target = output.slice_mut(heap)?;
+        let suffix = target
+            .get_mut(length..length + 2)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        suffix[0] = byte;
+        suffix[1] = 0;
+        Ok(())
+    }
+
     let max_tag_num = if tag_flag != 0 {
         crate::source_types::local_ichiprt1::tagIdentLblOrd_IL_MAX_ORD as usize
     } else {
         crate::source_types::local_ichiprt1::tagAuxLblOrd_AL_MAX_ORD as usize
     };
-    if tags.len() < max_tag_num {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
     if 0 < n_tag && n_tag < 3 {
         let mut selected = None;
         let mut bit = 1_i32;
@@ -652,47 +1191,69 @@ pub(crate) fn szGetTag(
             bit = bit.wrapping_shl(1);
         }
         if let Some(index) = selected {
-            let source = if n_tag == 1 {
-                tags[index].szXmlLabel
-            } else {
-                tags[index].szPlainLabel
-            };
-            let bytes = c_bytes(heap, source)?;
-            write_c_bytes(heap, output, &bytes)?;
+            let source = tags.label(
+                index,
+                if n_tag == 1 {
+                    TagField::Xml
+                } else {
+                    TagField::Plain
+                },
+            )?;
+            copy_string(heap, output, source)?;
             if n_tag != 2 {
-                *always = tags[index].bAlwaysOutput;
+                *always = tags.always(index)?;
             }
-            return Ok(output);
+            return Ok(());
         }
     } else if n_tag == 3 {
-        let mut bytes = vec![b'{' as i8];
+        write_literal(heap, output, &[b'{' as i8])?;
         let mut selected = None;
         let mut bit = 1_i32;
-        for (index, tag) in tags.iter().enumerate().take(max_tag_num) {
+        for index in 0..max_tag_num {
             if tag_bits & bit != 0 {
                 if selected.is_some() {
-                    bytes.push(b':' as i8);
+                    append_literal(heap, output, b':' as i8)?;
                 }
-                bytes.extend(c_bytes(heap, tag.szPlainComment)?);
+                let comment = tags.label(index, TagField::Comment)?;
+                let end = output.length(heap)?;
+                match output {
+                    TagOutput::Pointer(pointer) => {
+                        let mut suffix = TagOutput::Pointer(pointer.offset(end as i64)?);
+                        copy_string(heap, &mut suffix, comment)?;
+                    }
+                    TagOutput::Bytes(bytes) => {
+                        let suffix = bytes
+                            .get_mut(end..)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        copy_string(heap, &mut TagOutput::Bytes(suffix), comment)?;
+                    }
+                }
                 selected = Some(index);
             }
             bit = bit.wrapping_shl(1);
         }
         if let Some(index) = selected {
-            bytes.push(b'}' as i8);
-            let label = c_bytes(heap, tags[index].szPlainLabel)?;
-            let mut complete = label;
-            complete.extend(bytes);
-            write_c_bytes(heap, output, &complete)?;
-            *always = tags[index].bAlwaysOutput;
+            append_literal(heap, output, b'}' as i8)?;
+            let label = tags.label(index, TagField::Plain)?;
+            let prefix_length = c_length(heap, label)?;
+            let length = output.length(heap)?;
+            if length != 0 {
+                output.move_prefix(heap, prefix_length, length + 1)?;
+                // Read the live label AFTER memmove, as native memcpy does;
+                // a disjoint label can still share this output allocation.
+                copy_prefix(heap, output, label, prefix_length)?;
+            } else {
+                copy_string(heap, output, label)?;
+            }
+            *always = tags.always(index)?;
         } else {
-            write_c_bytes(heap, output, &[b'?' as i8, b'?' as i8, b'?' as i8])?;
+            write_literal(heap, output, &[b'?' as i8, b'?' as i8, b'?' as i8])?;
         }
-        return Ok(output);
+        return Ok(());
     }
 
-    write_c_bytes(heap, output, &[b'?' as i8, b'?' as i8, b'?' as i8])?;
-    Ok(output)
+    write_literal(heap, output, &[b'?' as i8, b'?' as i8, b'?' as i8])?;
+    Ok(())
 }
 
 #[allow(non_snake_case)]
@@ -749,6 +1310,73 @@ pub(crate) fn str_LineEnd(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: str_LineEnd
 
+    source_line_end(
+        heap,
+        crate::source::base::ichi_io::SourceFormat::Pointer(tag),
+        overflow,
+        buffer,
+        ind,
+        plain_text_tags,
+    )
+}
+
+fn source_line_end(
+    heap: &mut SourceHeap,
+    tag: crate::source::base::ichi_io::SourceFormat<'_>,
+    overflow: &mut i32,
+    buffer: &mut INCHI_IOS_STRING,
+    ind: i32,
+    plain_text_tags: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:2183 str_LineEnd
+    // INCHI✔️❌: int str_LineEnd( const char       *tag,
+    // INCHI✔️❌:                  int              *bOverflow,
+    // INCHI✔️❌:                  INCHI_IOS_STRING *buf,
+    // INCHI✔️❌:                  int               ind,
+    // INCHI✔️❌:                  int               bPlainTextTags )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     /* djb-rwth: removing redundant variables */
+    // INCHI✔️❌:     int tag_len;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* check buffer overflow */
+    // INCHI✔️❌:     if (*bOverflow)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return 1;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (ind < 0)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* Plain text */
+    // INCHI✔️❌:         /* insert plain text tag if:
+    // INCHI✔️❌:            (a) pStr has non-zero length, or
+    // INCHI✔️❌:            (b) ind < -1
+    // INCHI✔️❌:         */
+    // INCHI✔️❌:         if (buf->pStr[0] || ind < -1)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             tag_len = bPlainTextTags ? (int) strlen( tag ) : 0;
+    // INCHI✔️❌:             if (tag_len > 0)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 int n_added = tag_len + 2 + 2;
+    // INCHI✔️❌:                 inchi_strbuf_update( buf, n_added );
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 memmove(buf->pStr + tag_len, buf->pStr, (long long)buf->nUsedLength + 1); /* djb-rwth: cast operator added */
+    // INCHI✔️❌:                 /* NB: trailing 0 is also memmoved */
+    // INCHI✔️❌:                 memcpy(buf->pStr, tag, tag_len);
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 /* to be sure...  */
+    // INCHI✔️❌:                 buf->nUsedLength = strlen( buf->pStr );
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return 0;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: str_LineEnd
+
+    use crate::source::base::ichi_io::SourceFormat;
+    // INCHI✔️❗: One unchanged overflow/growth/memmove/publication algorithm.
+    // Borrowed native tags need no arena staging. Pointer tags are read live
+    // after memmove, retaining overlap/errors; checked-copy costs remain OPEN.
     if *overflow != 0 {
         return Ok(1);
     }
@@ -758,39 +1386,62 @@ pub(crate) fn str_LineEnd(
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if first != 0 || ind < -1 {
-            let tag_bytes = heap.slice(tag)?;
             let tag_length = if plain_text_tags != 0 {
-                tag_bytes
-                    .iter()
-                    .position(|byte| *byte == 0)
-                    .ok_or(SourceHeapError::MissingNulTerminator)?
+                let (bytes, implicit_nul) = match tag {
+                    SourceFormat::Pointer(pointer) => (heap.slice(pointer)?, false),
+                    SourceFormat::Bytes(bytes) => (bytes, false),
+                    SourceFormat::Text(text) => (bytemuck::cast_slice(text.as_bytes()), true),
+                };
+                match bytes.iter().position(|byte| *byte == 0) {
+                    Some(length) => length,
+                    None if implicit_nul => bytes.len(),
+                    None => return Err(SourceHeapError::MissingNulTerminator),
+                }
             } else {
                 0
             };
-            let tag_bytes = tag_bytes[..tag_length].to_vec();
             if tag_length > 0 {
                 let addition = i32::try_from(tag_length)
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
                     .wrapping_add(4);
-                if inchi_strbuf_update(heap, Some(buffer), addition)? < 0 {
-                    return Err(SourceHeapError::AllocationFailed);
-                }
+                // INCHI✔️❗: Native ignores the growth return. Continue with the
+                // actual backing allocation; checked copies retain bounds errors.
+                let _ = inchi_strbuf_update(heap, Some(buffer), addition)?;
                 let used = usize::try_from(buffer.nUsedLength)
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let source = heap
-                    .slice(buffer.pStr.as_const())?
-                    .get(..=used)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                let target = heap.slice_mut(buffer.pStr)?;
-                let end = tag_length
-                    .checked_add(source.len())
+                let count = used
+                    .checked_add(1)
                     .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-                target
-                    .get_mut(tag_length..end)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .copy_from_slice(&source);
-                target[..tag_length].copy_from_slice(&tag_bytes);
+                // INCHI✔️❗: Native memmove includes NUL, then memcpy reads the
+                // live tag after that move. No tag or output snapshot/allocation.
+                // Source-valid disjoint ranges can share the output allocation.
+                heap.copy_prefix_within_allocation(
+                    buffer.pStr.offset(tag_length as i64)?,
+                    buffer.pStr.as_const(),
+                    count,
+                )?;
+                match tag {
+                    SourceFormat::Pointer(tag) => {
+                        if buffer.pStr.allocation_identity() == tag.as_mut().allocation_identity() {
+                            heap.copy_prefix_within_allocation(buffer.pStr, tag, tag_length)?;
+                        } else {
+                            heap.copy_nonoverlapping_prefix(buffer.pStr, tag, tag_length, false)?;
+                        }
+                    }
+                    SourceFormat::Bytes(bytes) => {
+                        heap.slice_mut(buffer.pStr)?
+                            .get_mut(..tag_length)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            .copy_from_slice(&bytes[..tag_length]);
+                    }
+                    SourceFormat::Text(text) => {
+                        heap.slice_mut(buffer.pStr)?
+                            .get_mut(..tag_length)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            .copy_from_slice(bytemuck::cast_slice(&text.as_bytes()[..tag_length]));
+                    }
+                }
+                let target = heap.slice(buffer.pStr.as_const())?;
                 buffer.nUsedLength = i32::try_from(
                     target
                         .iter()
@@ -840,14 +1491,14 @@ pub(crate) fn MergeZzInStrHillFormulaComponent(
     // END INCHI C FUNCTION: MergeZzInStrHillFormulaComponent
 
     let bytes = heap.slice(string.as_const())?;
-    let nul = bytes
-        .iter()
-        .position(|byte| *byte == 0)
+    // INCHI✔️❌: Preserve typed whole-string NUL admission, including trailing
+    // storage/error behavior. Its O(L) early-search cost exceeds native when
+    // a match occurs early; INCHI-PERF-FORMULA-SEARCH retains this deferral.
+    // Both searches borrow bytes; numeric conversion uses the existing O(token)
+    // parser with no suffix preflight. O(L) whole call/O(1) scratch, no allocation.
+    let nul = memchr::memchr(0, bytemuck::cast_slice(bytes))
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let Some(first_z) = bytes[..nul]
-        .windows(2)
-        .position(|window| window == [b'Z' as i8, b'z' as i8])
-    else {
+    let Some(first_z) = memchr::memmem::find(bytemuck::cast_slice(&bytes[..nul]), b"Zz") else {
         return Ok(());
     };
     let digit_position = first_z + 2;
@@ -863,9 +1514,8 @@ pub(crate) fn MergeZzInStrHillFormulaComponent(
             .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?;
     }
     let bytes = heap.slice(string.as_const())?;
-    let Some(relative_second) = bytes[next_search..nul]
-        .windows(2)
-        .position(|window| window == [b'Z' as i8, b'z' as i8])
+    let Some(relative_second) =
+        memchr::memmem::find(bytemuck::cast_slice(&bytes[next_search..nul]), b"Zz")
     else {
         return Ok(());
     };
@@ -879,7 +1529,11 @@ pub(crate) fn MergeZzInStrHillFormulaComponent(
         second_count = inchi_strtol(heap, start.as_const(), None, 10)? as i32;
     }
     count = count.wrapping_add(second_count);
-    let rendered = count.to_string();
+    // INCHI✔️❗: source sprintf integer bytes, reusing the fixed writer.
+    // Bounded O(digits)/O(1), no owned decimal allocation; cost remains OPEN.
+    let mut decimal = [0_u8; 21];
+    let rendered =
+        crate::source::base::ichi_io::source_decimal_i64(i64::from(count), None, &mut decimal);
     let target = heap.slice_mut(string)?;
     let end = digit_position
         .checked_add(rendered.len())
@@ -888,7 +1542,7 @@ pub(crate) fn MergeZzInStrHillFormulaComponent(
     let destination = target
         .get_mut(digit_position..end)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for (target, source) in destination.iter_mut().zip(rendered.bytes()) {
+    for (target, source) in destination.iter_mut().zip(rendered.iter().copied()) {
         *target = source as i8;
     }
     destination[rendered.len()] = 0;
@@ -974,12 +1628,27 @@ pub(crate) fn MergeZzInHillFormula(
         Err(SourceHeapError::AllocationFailed) => return Ok(-1),
         Err(error) => return Err(error),
     };
-    let original = heap
-        .slice(string_buffer.pStr.as_const())?
-        .get(..allocated)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    heap.slice_mut(copy)?[..allocated].copy_from_slice(&original);
+    {
+        // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+        // reached bounds/errors and modeled overlap without a payload Vec.
+        // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+        let copy_source = string_buffer.pStr.as_const();
+        let copy_count = (heap
+            .slice(copy_source)?
+            .get(..allocated)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?)
+        .len();
+        let copy_destination = copy;
+        {
+            let copy_target = &mut (heap.slice_mut(copy_destination)?[..allocated]);
+            assert_eq!(copy_target.len(), copy_count);
+        }
+        if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+            heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+        } else {
+            heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+        }
+    }
     let temporary = match inchi_calloc::<i8>(heap, temporary_length, 1) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => {
@@ -994,7 +1663,7 @@ pub(crate) fn MergeZzInHillFormula(
 
     inchi_strbuf_reset(heap, Some(string_buffer))?;
     let format =
-        heap.allocate_model_storage(b"%-s%-c\0".iter().map(|byte| *byte as i8).collect())?;
+        crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%-s%-c\0"));
     let mut position = 0_usize;
     loop {
         let copy_bytes = heap.slice(copy.as_const())?;
@@ -1004,21 +1673,31 @@ pub(crate) fn MergeZzInHillFormula(
             .map(|relative| position + relative)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
         let delimiter = copy_bytes[end];
-        let component = copy_bytes[position..end].to_vec();
-        let temporary_bytes = heap.slice_mut(temporary)?;
-        temporary_bytes[..component.len()].copy_from_slice(&component);
-        temporary_bytes[component.len()] = 0;
+        // INCHI✔️❗: ichiprt1.c5470..5471 copies directly into native stmp.
+        // Both buffers are distinct fresh calloc allocations; no component
+        // Vec, allocation or extra copy. O(sublen)/O(1) scratch; checked arena
+        // and whole-call costs remain INCHI-PERF-FORMULA-STAGING OPEN.
+        let component_length = end - position;
+        let component = copy
+            .as_const()
+            .offset(i64::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+        heap.copy_nonoverlapping_prefix(temporary, component, component_length, false)?;
+        *heap
+            .slice_mut(temporary)?
+            .get_mut(component_length)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
         MergeZzInStrHillFormulaComponent(heap, temporary)?;
-        inchi_strbuf_printf(
+        // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+        crate::source::base::ichi_io::inchi_strbuf_printf_format_arguments(
             heap,
             Some(string_buffer),
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[
                     SourceFormatArgument::Bytes(temporary.as_const()),
                     SourceFormatArgument::Byte(delimiter),
                 ],
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         if delimiter == 0 {
@@ -1031,7 +1710,7 @@ pub(crate) fn MergeZzInHillFormula(
     Ok(0)
 }
 
-fn formula_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
+fn formula_ident_labels(_heap: &mut SourceHeap) -> Result<TagLabels<'static>, SourceHeapError> {
     // BEGIN INCHI C GLOBAL ENTRIES: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:297 IdentLbl[IL_FML__ORD]
     // INCHI✔️❌:                                                                        /* IL_FML__ORD, */    { "/",   "formula",        "formula",        1 }, /* basic part formula */
     // END INCHI C GLOBAL ENTRIES: IdentLbl[IL_FML__ORD]
@@ -1039,95 +1718,39 @@ fn formula_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceH
     // INCHI✔️❌:                                                                                                                                                                                                                                                                                                                                                        /* IL_REC__ORD, */    { "/r",  "reconnected bond(s) to metal(s) formula",  "formula",  0 }
     // END INCHI C GLOBAL ENTRIES: IdentLbl[IL_REC__ORD]
 
-    let allocate = |heap: &mut SourceHeap, text: &[u8]| {
-        heap.allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())
-            .map(SourceMutPointer::as_const)
-    };
-    let mut tags = vec![INCHI_TAG::default(); 19];
-    tags[4] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/\0")?,
-        szPlainComment: allocate(heap, b"formula\0")?,
-        szXmlLabel: allocate(heap, b"formula\0")?,
-        bAlwaysOutput: 1,
-    };
-    tags[18] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/r\0")?,
-        szPlainComment: allocate(heap, b"reconnected bond(s) to metal(s) formula\0")?,
-        szXmlLabel: allocate(heap, b"formula\0")?,
-        bAlwaysOutput: 0,
-    };
-    Ok(tags)
+    // INCHI✔️❗: Every native caller borrows the SAME complete19-row table.
+    Ok(TagLabels::Static(source_ident_labels()))
 }
 
-fn connections_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
+fn connections_ident_labels(_heap: &mut SourceHeap) -> Result<TagLabels<'static>, SourceHeapError> {
     // BEGIN INCHI C GLOBAL ENTRY: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:298 IdentLbl[IL_CONN_ORD]
     // INCHI✔️❌:                                                                        /* IL_CONN_ORD, */    { "/c",  "connections",    "connections",    1 },
     // END INCHI C GLOBAL ENTRY: IdentLbl[IL_CONN_ORD]
-    let allocate = |heap: &mut SourceHeap, text: &[u8]| {
-        heap.allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())
-            .map(SourceMutPointer::as_const)
-    };
-    let mut tags = vec![INCHI_TAG::default(); 19];
-    tags[5] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/c\0")?,
-        szPlainComment: allocate(heap, b"connections\0")?,
-        szXmlLabel: allocate(heap, b"connections\0")?,
-        bAlwaysOutput: 1,
-    };
-    Ok(tags)
+    // INCHI✔️❗: Every native caller borrows the SAME complete19-row table.
+    Ok(TagLabels::Static(source_ident_labels()))
 }
 
-fn hydrogens_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
+fn hydrogens_ident_labels(_heap: &mut SourceHeap) -> Result<TagLabels<'static>, SourceHeapError> {
     // BEGIN INCHI C GLOBAL ENTRY: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:299 IdentLbl[IL_ALLH_ORD]
     // INCHI✔️❌:                                                                        /* IL_ALLH_ORD, */    { "/h",  "H_atoms",        "H",              1 },
     // END INCHI C GLOBAL ENTRY: IdentLbl[IL_ALLH_ORD]
-    let allocate = |heap: &mut SourceHeap, text: &[u8]| {
-        heap.allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())
-            .map(SourceMutPointer::as_const)
-    };
-    let mut tags = vec![INCHI_TAG::default(); 19];
-    tags[6] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/h\0")?,
-        szPlainComment: allocate(heap, b"H_atoms\0")?,
-        szXmlLabel: allocate(heap, b"H\0")?,
-        bAlwaysOutput: 1,
-    };
-    Ok(tags)
+    // INCHI✔️❗: Every native caller borrows the SAME complete19-row table.
+    Ok(TagLabels::Static(source_ident_labels()))
 }
 
-fn charge_proton_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
+fn charge_proton_ident_labels(
+    _heap: &mut SourceHeap,
+) -> Result<TagLabels<'static>, SourceHeapError> {
     // BEGIN INCHI C GLOBAL ENTRIES: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:290 IdentLbl
     // INCHI✔️❌:     /* IL_FIXH_ORD, */    { "/",   "fixed_H",        "fixed-H",        0 }, /* fixed H */
     // INCHI✔️❌:                                                                        /* IL_CHRG_ORD, */    { "/q",  "charge",         "charge",         1 },
     // INCHI✔️❌:                                                                        /* IL_PROT_ORD, */    { "/p",  "protons",        "protons",        0 },
     // END INCHI C GLOBAL ENTRIES: IdentLbl
-    let allocate = |heap: &mut SourceHeap, text: &[u8]| {
-        heap.allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())
-            .map(SourceMutPointer::as_const)
-    };
-    let mut tags = vec![INCHI_TAG::default(); 19];
-    tags[0] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/\0")?,
-        szPlainComment: allocate(heap, b"fixed_H\0")?,
-        szXmlLabel: allocate(heap, b"fixed-H\0")?,
-        bAlwaysOutput: 0,
-    };
-    tags[7] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/q\0")?,
-        szPlainComment: allocate(heap, b"charge\0")?,
-        szXmlLabel: allocate(heap, b"charge\0")?,
-        bAlwaysOutput: 1,
-    };
-    tags[8] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/p\0")?,
-        szPlainComment: allocate(heap, b"protons\0")?,
-        szXmlLabel: allocate(heap, b"protons\0")?,
-        bAlwaysOutput: 0,
-    };
-    Ok(tags)
+    // INCHI✔️❗: Every native caller borrows the SAME complete19-row table.
+    Ok(TagLabels::Static(source_ident_labels()))
 }
 
-fn stereo_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
+fn stereo_ident_labels(_heap: &mut SourceHeap) -> Result<TagLabels<'static>, SourceHeapError> {
     // BEGIN INCHI C GLOBAL ENTRIES: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:289 IdentLbl
     // INCHI✔️❌:     /* IL_FIXH_ORD, */    { "/",   "fixed_H",        "fixed-H",        0 }, /* fixed H */
     // INCHI✔️❌:     /* IL_STER_ORD, */    { "/",   "stereo",         "stereo",         0 }, /* stereo */
@@ -1136,51 +1759,11 @@ fn stereo_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHe
     // INCHI✔️❌:     /* IL_INVS_ORD, */    { "/m",  "sp3:inverted",   "abs.inverted",   0 }, /* mirrored */
     // INCHI✔️❌:     /* IL_TYPS_ORD, */    { "/s",  "type (1=abs, 2=rel, 3=rac)", "type",           0 }, /* stereo type */
     // END INCHI C GLOBAL ENTRIES: IdentLbl
-    let allocate = |heap: &mut SourceHeap, text: &[u8]| {
-        heap.allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())
-            .map(SourceMutPointer::as_const)
-    };
-    let mut tags = vec![INCHI_TAG::default(); 19];
-    tags[0] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/\0")?,
-        szPlainComment: allocate(heap, b"fixed_H\0")?,
-        szXmlLabel: allocate(heap, b"fixed-H\0")?,
-        bAlwaysOutput: 0,
-    };
-    tags[2] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/\0")?,
-        szPlainComment: allocate(heap, b"stereo\0")?,
-        szXmlLabel: allocate(heap, b"stereo\0")?,
-        bAlwaysOutput: 0,
-    };
-    tags[9] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/b\0")?,
-        szPlainComment: allocate(heap, b"dbond\0")?,
-        szXmlLabel: allocate(heap, b"dbond\0")?,
-        bAlwaysOutput: 0,
-    };
-    tags[10] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/t\0")?,
-        szPlainComment: allocate(heap, b"sp3\0")?,
-        szXmlLabel: allocate(heap, b"sp3\0")?,
-        bAlwaysOutput: 0,
-    };
-    tags[11] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/m\0")?,
-        szPlainComment: allocate(heap, b"sp3:inverted\0")?,
-        szXmlLabel: allocate(heap, b"abs.inverted\0")?,
-        bAlwaysOutput: 0,
-    };
-    tags[12] = INCHI_TAG {
-        szPlainLabel: allocate(heap, b"/s\0")?,
-        szPlainComment: allocate(heap, b"type (1=abs, 2=rel, 3=rac)\0")?,
-        szXmlLabel: allocate(heap, b"type\0")?,
-        bAlwaysOutput: 0,
-    };
-    Ok(tags)
+    // INCHI✔️❗: Every native caller borrows the SAME complete19-row table.
+    Ok(TagLabels::Static(source_ident_labels()))
 }
 
-fn isotopic_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
+fn isotopic_ident_labels(_heap: &mut SourceHeap) -> Result<TagLabels<'static>, SourceHeapError> {
     // BEGIN INCHI C GLOBAL ENTRIES: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:289 IdentLbl
     // INCHI✔️❌:     /* IL_FIXH_ORD, */    { "/",   "fixed_H",        "fixed-H",        0 }, /* fixed H */
     // INCHI✔️❌:     /* IL_ISOT_ORD, */    { "/",   "isotopic",       "isotopic",       0 }, /* isotopic */
@@ -1195,112 +1778,125 @@ fn isotopic_ident_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, Source
     // INCHI✔️❌:     /* IL_HFIX_ORD, */    { "/h",  "H_fixed" ,       "H-fixed" ,       1 }, /* fixed-H */
     // INCHI✔️❌:     /* IL_TRNS_ORD, */    { "/o",  "transposition",  "transposition",  0 }, /* order */
     // END INCHI C GLOBAL ENTRIES: IdentLbl
-    let allocate = |heap: &mut SourceHeap, text: &[u8]| {
-        heap.allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())
-            .map(SourceMutPointer::as_const)
-    };
-    let mut tags = vec![INCHI_TAG::default(); 19];
-    for (index, plain, comment, xml, always) in [
-        (
-            0,
-            b"/\0".as_slice(),
-            b"fixed_H\0".as_slice(),
-            b"fixed-H\0".as_slice(),
-            0,
-        ),
-        (
-            1,
-            b"/\0".as_slice(),
-            b"isotopic\0".as_slice(),
-            b"isotopic\0".as_slice(),
-            0,
-        ),
-        (
-            2,
-            b"/\0".as_slice(),
-            b"stereo\0".as_slice(),
-            b"stereo\0".as_slice(),
-            0,
-        ),
-        (
-            9,
-            b"/b\0".as_slice(),
-            b"dbond\0".as_slice(),
-            b"dbond\0".as_slice(),
-            0,
-        ),
-        (
-            10,
-            b"/t\0".as_slice(),
-            b"sp3\0".as_slice(),
-            b"sp3\0".as_slice(),
-            0,
-        ),
-        (
-            11,
-            b"/m\0".as_slice(),
-            b"sp3:inverted\0".as_slice(),
-            b"abs.inverted\0".as_slice(),
-            0,
-        ),
-        (
-            12,
-            b"/s\0".as_slice(),
-            b"type (1=abs, 2=rel, 3=rac)\0".as_slice(),
-            b"type\0".as_slice(),
-            0,
-        ),
-        (
-            13,
-            b"/i\0".as_slice(),
-            b"atoms\0".as_slice(),
-            b"atoms\0".as_slice(),
-            1,
-        ),
-        (
-            14,
-            b"/h\0".as_slice(),
-            b"exchangeable_H\0".as_slice(),
-            b"H-isotopic\0".as_slice(),
-            1,
-        ),
-        (
-            15,
-            b"/f\0".as_slice(),
-            b"formula\0".as_slice(),
-            b"formula\0".as_slice(),
-            1,
-        ),
-        (
-            16,
-            b"/h\0".as_slice(),
-            b"H_fixed\0".as_slice(),
-            b"H-fixed\0".as_slice(),
-            1,
-        ),
-        (
-            17,
-            b"/o\0".as_slice(),
-            b"transposition\0".as_slice(),
-            b"transposition\0".as_slice(),
-            0,
-        ),
-    ] {
-        tags[index] = INCHI_TAG {
-            szPlainLabel: allocate(heap, plain)?,
-            szPlainComment: allocate(heap, comment)?,
-            szXmlLabel: allocate(heap, xml)?,
-            bAlwaysOutput: always,
-        };
+    // INCHI✔️❗: Every native caller borrows the SAME complete19-row table.
+    Ok(TagLabels::Static(source_ident_labels()))
+}
+
+// A synchronous source-local scalar or an actual legacy heap pointer.
+// No ID is fabricated and no borrow is retained by the output control record.
+pub(crate) enum SourceSortFlags<'a> {
+    Pointer(SourceMutPointer<i32>),
+    Borrowed(&'a mut i32),
+}
+
+impl SourceSortFlags<'_> {
+    fn read(&self, heap: &SourceHeap) -> Result<i32, SourceHeapError> {
+        // Native ichiprt1.c1931..1932:
+        //             ( *pSortPrintINChIFlags & ( ( INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_NFIX_H_BAS :
+        //                 FLAG_SORT_PRINT_NO_NFIX_H_REC ) ) &&
+        // INCHI✔️❗: Reached scalar read only, O(1), no snapshot/allocation;
+        // legacy admission unchanged; C526 whole-call constants OPEN.
+        match self {
+            Self::Pointer(pointer) => heap
+                .slice(pointer.as_const())?
+                .first()
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+            Self::Borrowed(value) => Ok(**value),
+        }
     }
-    Ok(tags)
+
+    fn value_mut<'a>(
+        &'a mut self,
+        heap: &'a mut SourceHeap,
+    ) -> Result<&'a mut i32, SourceHeapError> {
+        // Native ichiprt1.c3769..3774:
+        //         ( *io->pSortPrintINChIFlags ) |=
+        //             ( *INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_NFIX_H_BAS :
+        //             FLAG_SORT_PRINT_NO_NFIX_H_REC;
+        //         ( *io->pSortPrintINChIFlags ) |=
+        //             ( *INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_IFIX_H_BAS :
+        //             FLAG_SORT_PRINT_NO_IFIX_H_REC;
+        // INCHI✔️❗: Actual target, same partial writes and one admission for
+        // consecutive ORs. O(1), no copyback/allocation; C526 cost OPEN.
+        match self {
+            Self::Pointer(pointer) => heap
+                .slice_mut(*pointer)?
+                .first_mut()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+            Self::Borrowed(value) => Ok(&mut **value),
+        }
+    }
+}
+
+// runichi4.c123: INCHI_SORT *pINChISort[INCHI_NUM][TAUT_NUM];
+// INCHI✔️❗: A source 2-by-2 stack table or actual typed heap table. No
+// fabricated pointer, model registration, buffer clone or new allocation.
+#[derive(Clone, Copy)]
+pub(super) enum OutputSortTable<'a> {
+    Pointer(SourceMutPointer<SourceMutPointer<crate::source_types::INCHI_SORT>>),
+    Borrowed(&'a [SourceMutPointer<crate::source_types::INCHI_SORT>; 4]),
+}
+
+#[derive(Clone, Copy)]
+enum OutputSortRow<'a> {
+    Pointer(SourceMutPointer<SourceMutPointer<crate::source_types::INCHI_SORT>>),
+    Borrowed(&'a [SourceMutPointer<crate::source_types::INCHI_SORT>]),
+}
+
+impl<'a> OutputSortTable<'a> {
+    fn row(self, offset: i64) -> Result<OutputSortRow<'a>, SourceHeapError> {
+        // INCHI source ichiprt1.c1128:
+        //     io.pINChISortTautAndNonTaut = pINChISortTautAndNonTaut2[INCHI_basic_or_INCHI_reconnected];
+        // INCHI✔️❗: Select the row only when reached, without allocation.
+        match self {
+            Self::Pointer(pointer) => Ok(OutputSortRow::Pointer(pointer.offset(offset)?)),
+            Self::Borrowed(values) => {
+                let offset =
+                    usize::try_from(offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                Ok(OutputSortRow::Borrowed(
+                    values
+                        .get(offset..)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ))
+            }
+        }
+    }
+}
+
+impl OutputSortRow<'_> {
+    fn values<'h>(
+        &'h self,
+        heap: &'h SourceHeap,
+    ) -> Result<&'h [SourceMutPointer<crate::source_types::INCHI_SORT>], SourceHeapError> {
+        match self {
+            Self::Pointer(pointer) => heap.slice(pointer.as_const()),
+            Self::Borrowed(values) => Ok(values),
+        }
+    }
+
+    fn get(
+        self,
+        heap: &SourceHeap,
+        index: usize,
+    ) -> Result<SourceMutPointer<crate::source_types::INCHI_SORT>, SourceHeapError> {
+        // INCHI source ichiprt1.c3793/3854:
+        //         io->pINChISort = io->pINChISortTautAndNonTaut[TAUT_NON];
+        //             io->pINChISort = io->pINChISortTautAndNonTaut[TAUT_YES];
+        // Re-read only at the reached Fixed-H switch.
+        // O(1) projection, no preflight/clone/scan; whole costs remain OPEN.
+        self.values(heap)?
+            .get(index)
+            .copied()
+            .ok_or(SourceHeapError::PointerOutOfBounds)
+    }
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub(crate) fn OutputINChI2(
     heap: &mut SourceHeap,
     canonical_globals: SourceMutPointer<CANON_GLOBALS>,
-    mut string_buffer: Option<&mut INCHI_IOS_STRING>,
+    string_buffer: Option<&mut INCHI_IOS_STRING>,
     sort_rows: SourceMutPointer<SourceMutPointer<crate::source_types::INCHI_SORT>>,
     basic_or_reconnected: i32,
     original_atom_data: SourceConstPointer<ORIG_ATOM_DATA>,
@@ -1389,6 +1985,123 @@ pub(crate) fn OutputINChI2(
     // INCHI✔️❌:     return ret;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINChI2
+    output_inchi2_sort_table(
+        heap,
+        string_buffer,
+        OutputSortTable::Pointer(sort_rows),
+        basic_or_reconnected,
+        &SourceInputArray::Pointer(original_atom_data.as_mut()),
+        OriginalStructure::Pointer(original_structure),
+        input_parameters,
+        disconnected_coordinates,
+        output_type,
+        output_options,
+        component_counts,
+        non_tautomeric_counts,
+        tautomeric_counts,
+        output,
+        log,
+        input_structure_number,
+        &mut SourceSortFlags::Pointer(sort_print_flags),
+        save_option_bits,
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn output_inchi2_sort_table(
+    heap: &mut SourceHeap,
+    mut string_buffer: Option<&mut INCHI_IOS_STRING>,
+    sort_rows: OutputSortTable<'_>,
+    basic_or_reconnected: i32,
+    original_atom_data: &SourceInputArray<'_, ORIG_ATOM_DATA>,
+    original_structure: OriginalStructure<'_>,
+    input_parameters: &crate::source_types::INPUT_PARMS,
+    disconnected_coordinates: i32,
+    output_type: i32,
+    output_options: i32,
+    component_counts: &[i32; 2],
+    non_tautomeric_counts: &[i32; 2],
+    tautomeric_counts: &[i32; 2],
+    output: &mut INCHI_IOSTREAM,
+    log: &mut INCHI_IOSTREAM,
+    input_structure_number: i32,
+    sort_print_flags: &mut SourceSortFlags<'_>,
+    save_option_bits: u8,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:966 OutputINChI2
+    // INCHI✔️❌: int OutputINChI2( CANON_GLOBALS     *pCG,
+    // INCHI✔️❌:                   INCHI_IOS_STRING  *strbuf,
+    // INCHI✔️❌:                   INCHI_SORT        *pINChISortTautAndNonTaut2[][TAUT_NUM],
+    // INCHI✔️❌:                   int               INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                   ORIG_ATOM_DATA    *orig_inp_data,
+    // INCHI✔️❌:                   ORIG_STRUCT       *pOrigStruct,
+    // INCHI✔️❌:                   INPUT_PARMS       *ip,
+    // INCHI✔️❌:                   int               bDisconnectedCoord,
+    // INCHI✔️❌:                   int               bOutputType,
+    // INCHI✔️❌:                   int               bINChIOutputOptions,
+    // INCHI✔️❌:                   int               num_components2[],
+    // INCHI✔️❌:                   int               num_non_taut2[],
+    // INCHI✔️❌:                   int               num_taut2[],
+    // INCHI✔️❌:                   INCHI_IOSTREAM    *output_file,
+    // INCHI✔️❌:                   INCHI_IOSTREAM    *log_file,
+    // INCHI✔️❌:                   int               num_input_struct,
+    // INCHI✔️❌:                   int               *pSortPrintINChIFlags,
+    // INCHI✔️❌:                   unsigned char     save_opt_bits )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int bINChIOutputOptions0 = bINChIOutputOptions & ~( INCHI_OUT_PLAIN_TEXT | INCHI_OUT_PLAIN_TEXT_COMMENTS );
+    // INCHI✔️❌:     int bINChIOutputOptionsCur;
+    // INCHI✔️❌:     int bCurOption, ret, i;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     ret = 0;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (i = 0; i < 3; i++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         switch (i)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             case 1:
+    // INCHI✔️❌:                 bCurOption = INCHI_OUT_PLAIN_TEXT;
+    // INCHI✔️❌:                 break;
+    // INCHI✔️❌:             case 2:
+    // INCHI✔️❌:                 bCurOption = INCHI_OUT_PLAIN_TEXT_COMMENTS;
+    // INCHI✔️❌:                 break;
+    // INCHI✔️❌:             default:
+    // INCHI✔️❌:                 continue;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (bINChIOutputOptions & bCurOption)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             bINChIOutputOptionsCur = bINChIOutputOptions0 | bCurOption;
+    // INCHI✔️❌:             if (i != 1)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 bINChIOutputOptionsCur &= ~INCHI_OUT_TABBED_OUTPUT;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             ret |= OutputINChI1( pCG,
+    // INCHI✔️❌:                                  strbuf,
+    // INCHI✔️❌:                                  pINChISortTautAndNonTaut2,
+    // INCHI✔️❌:                                  INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                  orig_inp_data,
+    // INCHI✔️❌:                                  pOrigStruct,
+    // INCHI✔️❌:                                  ip,
+    // INCHI✔️❌:                                  bDisconnectedCoord,
+    // INCHI✔️❌:                                  bOutputType,
+    // INCHI✔️❌:                                  bINChIOutputOptionsCur,
+    // INCHI✔️❌:                                  num_components2,
+    // INCHI✔️❌:                                  num_non_taut2,
+    // INCHI✔️❌:                                  num_taut2,
+    // INCHI✔️❌:                                  output_file,
+    // INCHI✔️❌:                                  log_file,
+    // INCHI✔️❌:                                  num_input_struct,
+    // INCHI✔️❌:                                  pSortPrintINChIFlags,
+    // INCHI✔️❌:                                  save_opt_bits );
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: OutputINChI2
+    // INCHI✔️❗: One output algorithm; real heap or borrowed stack table.
+    // No table allocation/copy/extra scan; checked whole-call costs OPEN.
 
     let base_options = output_options
         & !((crate::source_types::INCHI_OUT_PLAIN_TEXT
@@ -1408,9 +2121,8 @@ pub(crate) fn OutputINChI2(
         if index != 0 {
             current_options &= !(crate::source_types::INCHI_OUT_TABBED_OUTPUT as i32);
         }
-        result |= OutputINChI1(
+        result |= output_inchi1_sort_table(
             heap,
-            canonical_globals,
             string_buffer.as_deref_mut(),
             sort_rows,
             basic_or_reconnected,
@@ -1440,7 +2152,7 @@ pub(crate) fn OutputINChI1(
     canonical_globals: SourceMutPointer<CANON_GLOBALS>,
     string_buffer: Option<&mut INCHI_IOS_STRING>,
     sort_rows: SourceMutPointer<SourceMutPointer<crate::source_types::INCHI_SORT>>,
-    mut basic_or_reconnected: i32,
+    basic_or_reconnected: i32,
     original_atom_data: SourceConstPointer<ORIG_ATOM_DATA>,
     original_structure: SourceConstPointer<ORIG_STRUCT>,
     input_parameters: &crate::source_types::INPUT_PARMS,
@@ -2586,6 +3298,1182 @@ pub(crate) fn OutputINChI1(
     // INCHI✔️❌:     return szTag;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINChI1
+    output_inchi1_sort_table(
+        heap,
+        string_buffer,
+        OutputSortTable::Pointer(sort_rows),
+        basic_or_reconnected,
+        &SourceInputArray::Pointer(original_atom_data.as_mut()),
+        OriginalStructure::Pointer(original_structure),
+        input_parameters,
+        disconnected_coordinates,
+        output_type,
+        output_options,
+        component_counts,
+        non_tautomeric_counts,
+        tautomeric_counts,
+        output,
+        log,
+        input_structure_number,
+        &mut SourceSortFlags::Pointer(sort_print_flags),
+        save_option_bits,
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn output_inchi1_sort_table(
+    heap: &mut SourceHeap,
+    string_buffer: Option<&mut INCHI_IOS_STRING>,
+    sort_rows: OutputSortTable<'_>,
+    mut basic_or_reconnected: i32,
+    original_atom_data: &SourceInputArray<'_, ORIG_ATOM_DATA>,
+    original_structure: OriginalStructure<'_>,
+    input_parameters: &crate::source_types::INPUT_PARMS,
+    disconnected_coordinates: i32,
+    output_type: i32,
+    output_options: i32,
+    component_counts: &[i32; 2],
+    non_tautomeric_counts: &[i32; 2],
+    tautomeric_counts: &[i32; 2],
+    output: &mut INCHI_IOSTREAM,
+    log: &mut INCHI_IOSTREAM,
+    input_structure_number: i32,
+    sort_print_flags: &mut SourceSortFlags<'_>,
+    save_option_bits: u8,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:1043 OutputINChI1
+    // INCHI✔️❌: complete configured source frame follows verbatim; the second axis remains
+    // INCHI✔️❌: open because SourceHeap lookup and temporary clones add material overhead.
+    // INCHI✔️❌: int OutputINChI1( CANON_GLOBALS *pCG,
+    // INCHI✔️❌:                   INCHI_IOS_STRING *strbuf,
+    // INCHI✔️❌:                   INCHI_SORT *pINChISortTautAndNonTaut2[][TAUT_NUM],
+    // INCHI✔️❌:                   int INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                   ORIG_ATOM_DATA *orig_inp_data,
+    // INCHI✔️❌:                   ORIG_STRUCT *pOrigStruct,
+    // INCHI✔️❌:                   INPUT_PARMS *ip,
+    // INCHI✔️❌:                   int bDisconnectedCoord,
+    // INCHI✔️❌:                   int bOutputType,
+    // INCHI✔️❌:                   int bINChIOutputOptions,
+    // INCHI✔️❌:                   int num_components2[],
+    // INCHI✔️❌:                   int num_non_taut2[],
+    // INCHI✔️❌:                   int num_taut2[],
+    // INCHI✔️❌:                   INCHI_IOSTREAM *out_file,
+    // INCHI✔️❌:                   INCHI_IOSTREAM *log_file,
+    // INCHI✔️❌:                   int num_input_struct,
+    // INCHI✔️❌:                   int *pSortPrintINChIFlags,
+    // INCHI✔️❌:                   unsigned char save_opt_bits )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     INCHI_OUT_CTL io;
+    // INCHI✔️❌:     /*
+    // INCHI✔️❌:         bINChIOutputOptions bits:
+    // INCHI✔️❌:           INCHI_OUT_NO_AUX_INFO           0x0001    do not output Aux Info
+    // INCHI✔️❌:           INCHI_OUT_SHORT_AUX_INFO        0x0002    output short version of Aux Info
+    // INCHI✔️❌:           INCHI_OUT_ONLY_AUX_INFO         0x0004    output only Aux Info
+    // INCHI✔️❌:           INCHI_OUT_EMBED_REC             0x0008    embed reconnected INChI into disconnected INChI
+    // INCHI✔️❌:
+    // INCHI✔️❌:         bOutputType =
+    // INCHI✔️❌:          TAUT_YES  => tautomeric only (if no tautomeric components then no output;
+    // INCHI✔️❌:          TAUT_NON  => only non-tautomeric output (if no non-taut present then no output;
+    // INCHI✔️❌:          TAUT_BOTH => tautomeric and non-tautomeric
+    // INCHI✔️❌:     */
+    // INCHI✔️❌:     int  i, j, ii, jj, /*ii2, jj2,*/ bEmbeddedOutputCalled = 0;
+    // INCHI✔️❌:     int  bTautIsoHNum, bTautIsoAt, bHasIsotopicAtoms[TAUT_NUM];
+    // INCHI✔️❌:     int  bStereoSp2[TAUT_NUM], bStereoSp3[TAUT_NUM];
+    // INCHI✔️❌:     int  bIsotopicStereoSp2[TAUT_NUM], bIsotopicStereoSp3[TAUT_NUM];
+    // INCHI✔️❌:     int  bStereoAbsInverted[TAUT_NUM], bIsotopicStereoAbsInverted[TAUT_NUM];
+    // INCHI✔️❌:     int  bStereoAbs[TAUT_NUM], bIsotopicStereoAbs[TAUT_NUM];
+    // INCHI✔️❌:     int  bTautomericAcid, bHardAddRemProton;
+    // INCHI✔️❌:     int  bRequestedRacemicStereo = 0, bRequestedRelativeStereo = 0;
+    // INCHI✔️❌:     int  npass = 0; /* djb-rwth: removing redundant variables */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     INCHI_SORT   *is, *is2;
+    // INCHI✔️❌:     INChI        *pINChI /*, *pINChI2*/;
+    // INCHI✔️❌:     INChI_Aux    *pINChI_Aux = NULL;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     int  ret = 0;        /*  0 failed, 1 success */
+    // INCHI✔️❌:     int  intermediate_result = 0;
+    // INCHI✔️❌:     int then_goto_repeat = 0;
+    // INCHI✔️❌:     /* djb-rwth: removing redundant variables */
+    // INCHI✔️❌:     int  bHasIsoH;
+    // INCHI✔️❌:     /* djb-rwth: removing redundant variables */
+    // INCHI✔️❌:     int  bTautAndNonTaut, bTautIsNonTaut;
+    // INCHI✔️❌:     int nAtomsAllComp1, nAtomsAllComp2;    /* v. 1.05 Total atoms in all components */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     int  bPlainText = 0 != ( bINChIOutputOptions & ( INCHI_OUT_PLAIN_TEXT | INCHI_OUT_PLAIN_TEXT_COMMENTS ) );
+    // INCHI✔️❌:     int  bPlainTextCommnts = 0 != ( bINChIOutputOptions & INCHI_OUT_PLAIN_TEXT_COMMENTS );
+    // INCHI✔️❌:
+    // INCHI✔️❌:     char *pLF, *pTAB;
+    // INCHI✔️❌: #ifdef TARGET_LIB_FOR_WINCHI
+    // INCHI✔️❌:     int silent = 1;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:     int bFixTranspChargeBug = 0;
+    // INCHI✔️❌: #if ( FIX_TRANSPOSITION_CHARGE_BUG == 1 ) /* 2008-01-02 */
+    // INCHI✔️❌:     if (INCHI_OUT_FIX_TRANSPOSITION_CHARGE_BUG & bINChIOutputOptions)
+    // INCHI✔️❌:         bFixTranspChargeBug = 1;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.bAbcNumbers = ip->bAbcNumbers;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.ATOM_MODE = ( ( io.bAbcNumbers ? CT_MODE_ABC_NUMBERS : 0 )
+    // INCHI✔️❌:                     | CT_MODE_ATOM_COUNTS
+    // INCHI✔️❌:                     | CT_MODE_NO_ORPHANS
+    // INCHI✔️❌: #if ( EQL_H_NUM_TOGETHER == 1 )
+    // INCHI✔️❌:                     | CT_MODE_EQL_H_TOGETHER
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌: #if ( ABC_CT_NUM_CLOSURES == 1 )
+    // INCHI✔️❌:                     | ( io.bAbcNumbers && ip->bCtPredecessors ? CT_MODE_ABC_NUM_CLOSURES : 0 )
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:                     | ( ip->bCtPredecessors ? CT_MODE_PREDECESSORS : 0 ) );
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.TAUT_MODE = ( io.bAbcNumbers ? CT_MODE_ABC_NUMBERS : 0 );
+    // INCHI✔️❌:     io.pSortPrintINChIFlags = pSortPrintINChIFlags;
+    // INCHI✔️❌:     io.num_components = num_components2[INCHI_basic_or_INCHI_reconnected];
+    // INCHI✔️❌:     io.pINChISortTautAndNonTaut = pINChISortTautAndNonTaut2[INCHI_basic_or_INCHI_reconnected];
+    // INCHI✔️❌:     io.pINChISort = io.pINChISortTautAndNonTaut[TAUT_YES];
+    // INCHI✔️❌:     io.pINChISort2 = io.pINChISortTautAndNonTaut[TAUT_YES];
+    // INCHI✔️❌:     io.bAlways = 0;
+    // INCHI✔️❌:     io.bUseMulipliers = 1;
+    // INCHI✔️❌:     io.bOmitRepetitions = 1;
+    // INCHI✔️❌:     io.bPlainTextTags = 2;  /* 0 => no plain tags, 1=> plain text tags, 2=>plaintext tags without consecutive // */
+    // INCHI✔️❌:     io.bOutputType = bOutputType; /* remains constant */
+    // INCHI✔️❌:     io.bOutType = bOutputType;    /* will change! */
+    // INCHI✔️❌:     io.bOverflow = 0;
+    // INCHI✔️❌:     io.bSecondNonTautPass = 0;
+    // INCHI✔️❌:     io.bNonTautIsoIdentifierNotEmpty = 0;
+    // INCHI✔️❌:     io.bNonTautNonIsoIdentifierNotEmpty = 0;
+    // INCHI✔️❌:     io.bNonTautIsIdenticalToTaut = 1;
+    // INCHI✔️❌:     io.bFhTag = 0;
+    // INCHI✔️❌:     io.nTag = bPlainTextCommnts ? 3 : bPlainText ? 2 : 0; /* tag type */
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (NULL==orig_inp_data)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /*intermediate_result = 1;
+    // INCHI✔️❌:         goto exit_function;*/
+    // INCHI✔️❌:         io.n_zy     = 0;
+    // INCHI✔️❌:         io.n_pzz    = 0;
+    // INCHI✔️❌:         io.n_pzz    = 0;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     else
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         io.n_zy = orig_inp_data->n_zy;
+    // INCHI✔️❌:         io.n_pzz = 0;
+    // INCHI✔️❌:         if (orig_inp_data->polymer)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             io.n_pzz = orig_inp_data->polymer->n_pzz;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.bPolymers = ip->bPolymers;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:
+    // INCHI✔️❌: #ifdef TARGET_LIB_FOR_WINCHI
+    // INCHI✔️❌:     /* @@@ From now on we will go with silent output; it ends on @@@ below */
+    // INCHI✔️❌:     silent = 1;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Analyze layers, make adjustments and fixes, etc. */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     set_line_separators( bINChIOutputOptions, &pLF, &pTAB );
+    // INCHI✔️❌:     memset( io.sDifSegs, DIFV_BOTH_EMPTY, sizeof( io.sDifSegs ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️❌:     if (!strbuf || !( strbuf->pStr ) || strbuf->nAllocatedLength <= 0)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         inchi_ios_eprint( log_file, "Cannot allocate output buffer. No output for structure #%d.%s%s%s%s\n",
+    // INCHI✔️❌:                          num_input_struct, SDF_LBL_VAL( ip->pSdfLabel, ip->pSdfValue ) );
+    // INCHI✔️❌:         return ret;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /*    -- commented out to allow empty InChI --
+    // INCHI✔️❌:     if (!io.num_components ) return 0;
+    // INCHI✔️❌:     */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (i = 0; i < TAUT_NUM; i++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         bHasIsotopicAtoms[i] =
+    // INCHI✔️❌:             io.num_comp[i] =
+    // INCHI✔️❌:             bStereoSp2[i] =
+    // INCHI✔️❌:             bStereoSp3[i] =
+    // INCHI✔️❌:             bIsotopicStereoSp2[i] =
+    // INCHI✔️❌:             bIsotopicStereoSp3[i] =
+    // INCHI✔️❌:             io.bIsotopicOrigNumb[i] =
+    // INCHI✔️❌:             bStereoAbs[i] =
+    // INCHI✔️❌:             bIsotopicStereoAbs[i] =
+    // INCHI✔️❌:             bStereoAbsInverted[i] =
+    // INCHI✔️❌:             bIsotopicStereoAbsInverted[i] =
+    // INCHI✔️❌:             io.bRacemicStereo[i] =
+    // INCHI✔️❌:             io.bRelativeStereo[i] =
+    // INCHI✔️❌:             io.bIsotopicRacemicStereo[i] =
+    // INCHI✔️❌:             io.bIsotopicRelativeStereo[i] =
+    // INCHI✔️❌:             io.bAtomEqu[i] =
+    // INCHI✔️❌:             io.bTautEqu[i] =
+    // INCHI✔️❌:             io.bIsotopicAtomEqu[i] =
+    // INCHI✔️❌:             io.bIsotopicTautEqu[i] =
+    // INCHI✔️❌:             io.bInvStereo[i] =
+    // INCHI✔️❌:             io.bInvIsotopicStereo[i] =
+    // INCHI✔️❌:             io.bInvStereoOrigNumb[i] =
+    // INCHI✔️❌:             io.bInvIsotopicStereoOrigNumb[i] =
+    // INCHI✔️❌:             io.bIgn_UU_Sp3[i] =
+    // INCHI✔️❌:             io.bIgn_UU_Sp2[i] =
+    // INCHI✔️❌:             io.bIgn_UU_Sp3_Iso[i] =
+    // INCHI✔️❌:             io.bIgn_UU_Sp2_Iso[i] =
+    // INCHI✔️❌:             io.bChargesRadVal[i] =
+    // INCHI✔️❌:             io.bOrigCoord[i] = 0;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /*    Find if it is isotopic */
+    // INCHI✔️❌:         io.bIsotopic =
+    // INCHI✔️❌:         io.bTautomeric =
+    // INCHI✔️❌:         io.bNonTautomeric =
+    // INCHI✔️❌:         bTautomericAcid =
+    // INCHI✔️❌:         bHardAddRemProton =
+    // INCHI✔️❌:         bTautIsoHNum =
+    // INCHI✔️❌:         bTautIsoAt =
+    // INCHI✔️❌:         bTautAndNonTaut =
+    // INCHI✔️❌:         bTautIsNonTaut = 0;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /*
+    // INCHI✔️❌:              x = bStereo, bStereoSp2, bStereoSp3, bStereoAbsInverted,
+    // INCHI✔️❌:                  bIsotopicStereo, bIsotopicStereoSp2, bIsotopicStereoSp3, bIsotopicStereoAbsInverted
+    // INCHI✔️❌:
+    // INCHI✔️❌:              OUT_N1: x[TAUT_NON] refers to non-tautomeric only
+    // INCHI✔️❌:              OUT_T1: x[TAUT_YES] refers to tautomeric if exists otherwise non-tautomeric
+    // INCHI✔️❌:              OUT_NT: x[TAUT_NON] refers to non-taut representations of tautomeric
+    // INCHI✔️❌:              OUT_TN: x[TAUT_YES] refers to tautomeric if exists otherwise non-tautomeric
+    // INCHI✔️❌:                      x[TAUT_NON] refers to non-taut representations of tautomeric
+    // INCHI✔️❌:          */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     memset( io.num_iso_H, 0, sizeof( io.num_iso_H ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️❌:     io.nNumRemovedProtons = 0;
+    // INCHI✔️❌:     /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:     bHasIsoH = 0;
+    // INCHI✔️❌:     io.bTautomericOutputAllowed = ( io.bOutType == OUT_T1 || io.bOutType == OUT_TN );
+    // INCHI✔️❌:     io.pINChISort = io.pINChISortTautAndNonTaut[io.bTautomericOutputAllowed ? TAUT_YES : TAUT_NON];
+    // INCHI✔️❌:     is = io.pINChISort;
+    // INCHI✔️❌:     /* djb-rwth: removing redundant variables/code */
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (i = 0, is2 = io.pINChISortTautAndNonTaut[TAUT_NON]; i < io.num_components; i++, is++, is2 ? is2++ : NULL)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:
+    // INCHI✔️❌:         CompINChILayers( is, is2, io.sDifSegs, bFixTranspChargeBug );
+    // INCHI✔️❌:
+    // INCHI✔️❌:         io.bNonTautIsIdenticalToTaut = io.bNonTautIsIdenticalToTaut && !CompINChITautVsNonTaut( is, is2, 1 );
+    // INCHI✔️❌:
+    // INCHI✔️❌:         if (is && ( pINChI_Aux = is->pINChI_Aux[TAUT_YES] ))
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             for (j = 0; j < NUM_H_ISOTOPES; j++)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 bHasIsoH += abs( pINChI_Aux->nNumRemovedIsotopicH[j] );
+    // INCHI✔️❌:                 io.num_iso_H[j] += pINChI_Aux->nNumRemovedIsotopicH[j];
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             io.nNumRemovedProtons += pINChI_Aux->nNumRemovedProtons;
+    // INCHI✔️❌:             /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         if (io.bTautomericOutputAllowed && is) /* djb-rwth: fixing a NULL pointer dereference */
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* Check for removed isotopic H */
+    // INCHI✔️❌:             for (j = TAUT_YES; j < TAUT_NUM; j++)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 switch (io.bOutType)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     case OUT_N1: /* x[TAUT_NON]: non-tautomeric only -- never happens */
+    // INCHI✔️❌:                         jj = GET_II( io.bOutType, is );
+    // INCHI✔️❌:                         if (jj != j)
+    // INCHI✔️❌:                             continue;
+    // INCHI✔️❌:                         /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:                         break;
+    // INCHI✔️❌:                     case OUT_T1: /* x[TAUT_YES]: tautomeric if present otherwise non-tautomeric */
+    // INCHI✔️❌:                         jj = GET_II( io.bOutType, is );
+    // INCHI✔️❌:                         if (jj != j)
+    // INCHI✔️❌:                             continue;
+    // INCHI✔️❌:                         /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:                         break;
+    // INCHI✔️❌:                     case OUT_NT: /* x[TAUT_NON]: only non-taut representations of tautomeric -- never happens */
+    // INCHI✔️❌:                         jj = GET_II( io.bOutType, is );
+    // INCHI✔️❌:                         if (jj != j)
+    // INCHI✔️❌:                             continue;
+    // INCHI✔️❌:                         /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:                         break;
+    // INCHI✔️❌:                     /* main path of control flow */
+    // INCHI✔️❌:                     case OUT_TN: /* x[TAUT_YES]: tautomeric if present otherwise non-tautomeric;
+    // INCHI✔️❌:                                   * x[TAUT_NON]: non-taut only if tautomeric is present */
+    // INCHI✔️❌:                         jj = ( j == TAUT_YES ) ? GET_II( OUT_T1, is ) : ( j == TAUT_NON ) ? GET_II( OUT_NT, is ) : -1;
+    // INCHI✔️❌:                         if (jj == TAUT_YES)
+    // INCHI✔️❌:                         {
+    // INCHI✔️❌:                             /* Fix12 */
+    // INCHI✔️❌:                             if (is->pINChI[jj]->lenTautomer > 0)
+    // INCHI✔️❌:                             {
+    // INCHI✔️❌:                                 bTautAndNonTaut += ( !is->pINChI[jj]->bDeleted && HAS_N( is ) );
+    // INCHI✔️❌:                             }
+    // INCHI✔️❌:                             else
+    // INCHI✔️❌:                             {
+    // INCHI✔️❌:                                 bTautIsNonTaut++;
+    // INCHI✔️❌:                             }
+    // INCHI✔️❌:                         }
+    // INCHI✔️❌:                         if (jj < 0)
+    // INCHI✔️❌:                             continue;
+    // INCHI✔️❌:                         /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:                         break;
+    // INCHI✔️❌:                     default:
+    // INCHI✔️❌:                         continue;
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 if (jj != j)
+    // INCHI✔️❌:                     continue;
+    // INCHI✔️❌:                 if (( pINChI = is->pINChI[jj] ) && pINChI->nNumberOfAtoms > 0 && ( pINChI_Aux = is->pINChI_Aux[jj] ))
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     bTautIsoHNum += ( pINChI_Aux->nNumRemovedIsotopicH[0] +
+    // INCHI✔️❌:                                      pINChI_Aux->nNumRemovedIsotopicH[1] +
+    // INCHI✔️❌:                                      pINChI_Aux->nNumRemovedIsotopicH[2] );
+    // INCHI✔️❌:                     bTautIsoAt += ( pINChI->nNumberOfIsotopicAtoms > 0 || pINChI->nNumberOfIsotopicTGroups > 0 );
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.sDifSegs[DIFL_M][DIFS_p_PROTONS] = io.nNumRemovedProtons ? DIFV_NEQ2PRECED : DIFV_BOTH_EMPTY;
+    // INCHI✔️❌:     io.sDifSegs[DIFL_MI][DIFS_h_H_ATOMS] = bHasIsoH ? DIFV_NEQ2PRECED : DIFV_BOTH_EMPTY;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     MarkUnusedAndEmptyLayers( io.sDifSegs );
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.bNonTautIsIdenticalToTaut = io.bNonTautIsIdenticalToTaut && !bTautIsoHNum;
+    // INCHI✔️❌:     nAtomsAllComp1 = nAtomsAllComp2 = 0;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (i = 0, is = io.pINChISort; i < io.num_components; i++, is++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         int bCurIso, bCurHasIsoStereo /* Fix14 */, bCurTaut /*, bCurTaut2*/; /* djb-rwth: removing redundant variables */
+    // INCHI✔️❌:         int bCompExists, bCurIsoHPos, bCurIsoHStereo;
+    // INCHI✔️❌:         int bCurStereoSp2, bCurIsoStereoSp2, bCurStereoSp3, bCurIsoStereoSp3, bCurIsoStereoSp3Inv;
+    // INCHI✔️❌:         int bCurRacemic, bCurRelative, bCurIsoRacemic, bCurIsoRelative;
+    // INCHI✔️❌:         bCompExists = 0;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         for (j = TAUT_NON; j < TAUT_NUM; j++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             switch (io.bOutType)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 case OUT_N1:
+    // INCHI✔️❌:                     /* x[TAUT_NON]: non-tautomeric only */
+    // INCHI✔️❌:                     jj = GET_II( io.bOutType, is );
+    // INCHI✔️❌:                     if (jj != j)
+    // INCHI✔️❌:                         continue;
+    // INCHI✔️❌:                     ii = TAUT_NON;
+    // INCHI✔️❌:                     break;
+    // INCHI✔️❌:                 case OUT_T1:
+    // INCHI✔️❌:                     /* x[TAUT_YES]: tautomeric if present otherwise non-tautomeric */
+    // INCHI✔️❌:                     jj = GET_II( io.bOutType, is );
+    // INCHI✔️❌:                     if (jj != j)
+    // INCHI✔️❌:                         continue;
+    // INCHI✔️❌:                     ii = TAUT_YES;
+    // INCHI✔️❌:                     break;
+    // INCHI✔️❌:                 case OUT_NT:
+    // INCHI✔️❌:                     /* x[TAUT_NON]: only non-taut representations of tautomeric */
+    // INCHI✔️❌:                     jj = GET_II( io.bOutType, is );
+    // INCHI✔️❌:                     if (jj != j)
+    // INCHI✔️❌:                         continue;
+    // INCHI✔️❌:                     ii = TAUT_NON;
+    // INCHI✔️❌:                     break;
+    // INCHI✔️❌:                 /* main control flow comes here: requested both mobile and fixed H results */
+    // INCHI✔️❌:                 case OUT_TN:
+    // INCHI✔️❌:                     /* x[TAUT_YES]: tautomeric if present otherwise non-tautomeric; */
+    // INCHI✔️❌:                     /* x[TAUT_NON]: non-taut only if tautomeric is present          */
+    // INCHI✔️❌:                     jj = ( j == TAUT_YES ) ? GET_II( OUT_T1, is ) : ( j == TAUT_NON ) ? GET_II( OUT_NT, is ) : -1;
+    // INCHI✔️❌:                     if (jj < 0)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         /* Fix12 */
+    // INCHI✔️❌:                         if (bTautAndNonTaut && bTautIsNonTaut &&
+    // INCHI✔️❌:                              j == TAUT_NON && 0 <= ( jj = GET_II( OUT_T1, is ) ) &&
+    // INCHI✔️❌:                              !is->pINChI[jj]->bDeleted && !is->pINChI[jj]->lenTautomer)
+    // INCHI✔️❌:                         {
+    // INCHI✔️❌:                             ; /* the requested non-tautomeric component is in tautomeric position   */
+    // INCHI✔️❌:                               /*   (is->pINChI[TAUT_YES]);                                          */
+    // INCHI✔️❌:                               /*   process it also as non-tautomeric if Fixed-H layer was requested */
+    // INCHI✔️❌:                         }
+    // INCHI✔️❌:                         else
+    // INCHI✔️❌:                         {
+    // INCHI✔️❌:                             continue;
+    // INCHI✔️❌:                         }
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:                     ii = j; /* ii is what we wanted; jj is what we found (0 = TAUT_NON: fixed_H, 1 = TAUT_YES: mobile_H) */
+    // INCHI✔️❌:
+    // INCHI✔️❌:                     /* -- not used 2004-09-16 ---
+    // INCHI✔️❌:                     if ( is2 ) {
+    // INCHI✔️❌:                         jj2 = ( j == TAUT_YES )? GET_II(OUT_T1,is2) : ( j == TAUT_NON )? GET_II(OUT_NT,is2) : -1;
+    // INCHI✔️❌:                         if ( jj2 >= 0 ) {
+    // INCHI✔️❌:                             ii2 = j;
+    // INCHI✔️❌:                         } else {
+    // INCHI✔️❌:                             ii2 = -1;
+    // INCHI✔️❌:                         }
+    // INCHI✔️❌:                     } else {
+    // INCHI✔️❌:                         jj2 = ii2 = -1;
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                     -----------------------------*/
+    // INCHI✔️❌:                     break;
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 default:
+    // INCHI✔️❌:                     continue;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:
+    // INCHI✔️❌:             if (( pINChI = is->pINChI[jj] ) && pINChI->nNumberOfAtoms > 0)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /*pINChI_Aux = is->pINChI_Aux[jj];*/
+    // INCHI✔️❌:                 bCompExists++;
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 if (j == TAUT_NON)
+    // INCHI✔️❌:                     nAtomsAllComp1 += pINChI->nNumberOfAtoms;
+    // INCHI✔️❌:                 else if (j == TAUT_YES)
+    // INCHI✔️❌:                     nAtomsAllComp2 += pINChI->nNumberOfAtoms;
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 bCurTaut = ( pINChI->lenTautomer > 0 );
+    // INCHI✔️❌:                 bCurIso = ( pINChI->nNumberOfIsotopicAtoms > 0 || pINChI->nNumberOfIsotopicTGroups > 0 );
+    // INCHI✔️❌:                 bCurIsoHPos = ( (pINChI->nPossibleLocationsOfIsotopicH && pINChI->nPossibleLocationsOfIsotopicH[0] > 1) || pINChI->lenTautomer > 1 ); /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❌:                 /* present isotopic H + their possible positions AND/OR isotopic atoms */
+    // INCHI✔️❌:                 bCurIsoHStereo = (bCurIsoHPos && ( bTautIsoHNum || bTautIsoAt )) || bCurIso; /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❌:                 if (jj == j && pINChI->bDeleted)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     io.num_comp[j] --;
+    // INCHI✔️❌:                     if (bCurTaut)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         io.bTautomeric |= 1; /* tautomeric representation is present */
+    // INCHI✔️❌:                         io.bNonTautomeric |= HAS_N( is );
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                     io.bIsotopic |= bCurIso;
+    // INCHI✔️❌:                     continue; /* deleted H(+) in tautomeric representation */
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 bCurStereoSp2 = pINChI->Stereo && ( pINChI->Stereo->nNumberOfStereoBonds > 0 );
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 bCurHasIsoStereo =
+    // INCHI✔️❌:                     bCurStereoSp3 = pINChI->Stereo && ( pINChI->Stereo->nNumberOfStereoCenters > 0 );
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 bCurIsoStereoSp2 = bCurIsoHStereo && pINChI->StereoIsotopic && ( pINChI->StereoIsotopic->nNumberOfStereoBonds > 0 );
+    // INCHI✔️❌:                 bCurIsoStereoSp3 = bCurIsoHStereo && pINChI->StereoIsotopic && ( pINChI->StereoIsotopic->nNumberOfStereoCenters > 0 );
+    // INCHI✔️❌:                 bCurIsoStereoSp3Inv = bCurIsoStereoSp3 && pINChI->StereoIsotopic->nCompInv2Abs; /* inversion changes sp3 stereo */
+    // INCHI✔️❌:                 bRequestedRacemicStereo |= ( 0 != ( pINChI->nFlags & INCHI_FLAG_RAC_STEREO ) );
+    // INCHI✔️❌:                 bRequestedRelativeStereo |= ( 0 != ( pINChI->nFlags & INCHI_FLAG_REL_STEREO ) );
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 /* Check whether isotopic stereo is same as non-isotopic; if same than do not output isotopic stereo */
+    // INCHI✔️❌:                 if (bCurStereoSp2 && bCurIsoStereoSp2)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     bCurIsoStereoSp2 = !Eql_INChI_Stereo( pINChI->Stereo, EQL_SP2, pINChI->StereoIsotopic, EQL_SP2, 0 );
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 if (bCurStereoSp3 && bCurIsoStereoSp3)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     /* bCurIsoStereoSp3=0 means (iso stereo sp3) = (non-iso stereo sp3) or (iso stereo sp3) = Inv(non-iso stereo sp3) */
+    // INCHI✔️❌:                     bCurIsoStereoSp3 = !Eql_INChI_Stereo( pINChI->Stereo, EQL_SP3, pINChI->StereoIsotopic, EQL_SP3,
+    // INCHI✔️❌:                         ( pINChI->nFlags & INCHI_FLAG_RAC_STEREO ) || ( pINChI->nFlags & INCHI_FLAG_REL_STEREO ) );
+    // INCHI✔️❌:                     if (!bCurIsoStereoSp3)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         /* Inversion changes iso sp3 differently from non-iso sp3 Fix11 */
+    // INCHI✔️❌:                         bCurIsoStereoSp3Inv &= ( pINChI->StereoIsotopic->nCompInv2Abs != pINChI->Stereo->nCompInv2Abs );
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 bCurRelative = bRequestedRelativeStereo && bCurStereoSp3;
+    // INCHI✔️❌: #if ( REL_RAC_STEREO_IGN_1_SC == 1 )
+    // INCHI✔️❌:                 bCurRelative = bCurRelative &&
+    // INCHI✔️❌:                     ( pINChI->Stereo->nNumberOfStereoCenters > 1 ) &&
+    // INCHI✔️❌:                     ( pINChI->Stereo->nCompInv2Abs != 0 ) &&
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:                     bCurIsoRelative = bRequestedRelativeStereo && ( bCurIsoStereoSp3 || bCurIsoStereoSp3Inv );
+    // INCHI✔️❌: #if ( REL_RAC_STEREO_IGN_1_SC == 1 )
+    // INCHI✔️❌:                 bCurIsoRelative = bCurIsoRelative &&
+    // INCHI✔️❌:                     ( pINChI->StereoIsotopic->nNumberOfStereoCenters > 1 ) &&
+    // INCHI✔️❌:                     ( pINChI->StereoIsotopic->nCompInv2Abs != 0 ) &&
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:                     bCurRacemic = bRequestedRacemicStereo && bCurStereoSp3;
+    // INCHI✔️❌: #if ( REL_RAC_STEREO_IGN_1_SC == 1 )
+    // INCHI✔️❌:                 bCurRacemic = bCurRacemic &&
+    // INCHI✔️❌:                     ( pINChI->Stereo->nCompInv2Abs != 0 ) &&
+    // INCHI✔️❌:                     ( pINChI->Stereo->nNumberOfStereoCenters > 0 ) ?
+    // INCHI✔️❌:                     pINChI->Stereo->nNumberOfStereoCenters : 0;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 bCurIsoRacemic = bRequestedRacemicStereo && ( bCurIsoStereoSp3 || bCurIsoStereoSp3Inv );
+    // INCHI✔️❌: #if ( REL_RAC_STEREO_IGN_1_SC == 1 )
+    // INCHI✔️❌:                 bCurIsoRacemic = bCurIsoRacemic &
+    // INCHI✔️❌:                     ( pINChI->StereoIsotopic->nCompInv2Abs != 0 ) &&
+    // INCHI✔️❌:                     ( pINChI->StereoIsotopic->nNumberOfStereoCenters > 0 ) ?
+    // INCHI✔️❌:                     pINChI->StereoIsotopic->nNumberOfStereoCenters : 0;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:                 if (bRequestedRelativeStereo)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     bCurStereoSp3 = bCurRelative || (bCurStereoSp3 && ( pINChI->Stereo->nNumberOfStereoCenters > 1 )); /* Fix11 */ /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❌:                     bCurIsoStereoSp3 = bCurIsoRelative ? bCurIsoStereoSp3 : 0;
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 else
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     if (bRequestedRacemicStereo)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         bCurStereoSp3 = bCurRacemic > 1 || (bCurStereoSp3 && ( pINChI->Stereo->nNumberOfStereoCenters > 1 )); /* Fix11 */ /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❌:                         bCurIsoStereoSp3 = bCurIsoRacemic > 1 ? bCurIsoStereoSp3 : 0;
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 io.bIsotopic |= bCurIso;
+    // INCHI✔️❌:                 bHasIsotopicAtoms[ii] |= bCurIso;
+    // INCHI✔️❌:                 bStereoSp2[ii] |= bCurStereoSp2;
+    // INCHI✔️❌:                 bStereoSp3[ii] |= bCurStereoSp3;
+    // INCHI✔️❌:                 io.bIgn_UU_Sp3[ii] |= !bCurStereoSp3 && ( pINChI->nFlags & INCHI_FLAG_SC_IGN_ALL_UU );
+    // INCHI✔️❌:                 io.bIgn_UU_Sp2[ii] |= !bCurStereoSp2 && ( pINChI->nFlags & INCHI_FLAG_SB_IGN_ALL_UU );
+    // INCHI✔️❌:                 bIsotopicStereoSp2[ii] |= bCurIsoStereoSp2;
+    // INCHI✔️❌:                 bIsotopicStereoSp3[ii] |= bCurIsoStereoSp3;
+    // INCHI✔️❌:                 io.bIgn_UU_Sp3_Iso[ii] |= !bCurIsoStereoSp3 && ( pINChI->nFlags & INCHI_FLAG_SC_IGN_ALL_ISO_UU );
+    // INCHI✔️❌:                 io.bIgn_UU_Sp2_Iso[ii] |= !bCurIsoStereoSp2 && ( pINChI->nFlags & INCHI_FLAG_SB_IGN_ALL_ISO_UU );
+    // INCHI✔️❌:                 bStereoAbs[ii] |= bCurStereoSp3 && ( pINChI->Stereo->nCompInv2Abs != 0 );
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 bStereoAbsInverted[ii] |= bCurStereoSp3 && ( pINChI->Stereo->nCompInv2Abs < 0 );
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 /* Fix08: missing isotopic inverted flag if isotopic = inverted non-isotopic */
+    // INCHI✔️❌:                 bIsotopicStereoAbsInverted[ii] |= (bCurIsoStereoSp3 && ( pINChI->StereoIsotopic->nCompInv2Abs < 0 )) ||
+    // INCHI✔️❌:                     (!bCurIsoStereoSp3  && pINChI->StereoIsotopic  && pINChI->Stereo &&
+    // INCHI✔️❌:                     pINChI->StereoIsotopic->nCompInv2Abs &&
+    // INCHI✔️❌:                     pINChI->StereoIsotopic->nCompInv2Abs != pINChI->Stereo->nCompInv2Abs); /* djb-rwth: addressing LLVM warnings */
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 /* Fix 11: missing /s1 if only isotopic stereo is inverted */
+    // INCHI✔️❌:                 bIsotopicStereoAbs[ii] |= (bCurIsoStereoSp3 && ( pINChI->StereoIsotopic->nCompInv2Abs != 0 )) ||
+    // INCHI✔️❌:                     (!bCurIsoStereoSp3  && pINChI->StereoIsotopic  && pINChI->Stereo &&
+    // INCHI✔️❌:                     pINChI->StereoIsotopic->nCompInv2Abs &&
+    // INCHI✔️❌:                     pINChI->StereoIsotopic->nCompInv2Abs != pINChI->Stereo->nCompInv2Abs); /* djb-rwth: addressing LLVM warnings */
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 io.bRelativeStereo[ii] |= bCurRelative;
+    // INCHI✔️❌:                 io.bIsotopicRelativeStereo[ii] |= bCurIsoRelative;
+    // INCHI✔️❌:                 io.bRacemicStereo[ii] |= bCurRacemic;
+    // INCHI✔️❌:                 io.bIsotopicRacemicStereo[ii] |= bCurIsoRacemic;
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 bTautomericAcid |= ( 0 != ( pINChI->nFlags & INCHI_FLAG_ACID_TAUT ) );
+    // INCHI✔️❌:                 bHardAddRemProton |= ( 0 != ( pINChI->nFlags & INCHI_FLAG_HARD_ADD_REM_PROTON ) );
+    // INCHI✔️❌:                 if (bCurTaut)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     io.bTautomeric |= 1; /* tautomeric representation is present */
+    // INCHI✔️❌:                     /* does tautomeric structure have also a non-tautomeric repesentation? */
+    // INCHI✔️❌:                     io.bNonTautomeric |= HAS_N( is );
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 /* Auxiliary info */
+    // INCHI✔️❌:                 if (!( bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO ) && ( pINChI_Aux = is->pINChI_Aux[jj] ))
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     /* detect presence of constitutional equivalence onfo */
+    // INCHI✔️❌:                     int bCurEqu, bCurTautEqu = 0, bCurIsoEqu = 0, bCurIsoTautEqu = 0; /* Fix15-disabled */
+    // INCHI✔️❌:                     io.bAtomEqu[ii] |= ( bCurEqu = bHasEquString( pINChI_Aux->nConstitEquNumbers,
+    // INCHI✔️❌:                         pINChI_Aux->nNumberOfAtoms ) ); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    // INCHI✔️❌:                     if (bCurTaut)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         io.bTautEqu[ii] |= ( bCurTautEqu = bHasEquString( pINChI_Aux->nConstitEquTGroupNumbers,
+    // INCHI✔️❌:                             pINChI_Aux->nNumberOfTGroups ) ); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                     if (bCurIso)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         io.bIsotopicAtomEqu[ii] |= ( bCurIsoEqu = bHasEquString( pINChI_Aux->nConstitEquIsotopicNumbers,
+    // INCHI✔️❌:                             pINChI_Aux->nNumberOfAtoms ) ) /*|| bCurEqu*/; /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    // INCHI✔️❌:                         if (bCurTaut)
+    // INCHI✔️❌:                         {
+    // INCHI✔️❌:                             io.bIsotopicTautEqu[ii] |= ( bCurIsoTautEqu = bHasEquString( pINChI_Aux->nConstitEquIsotopicTGroupNumbers,
+    // INCHI✔️❌:                                 pINChI_Aux->nNumberOfTGroups ) ) /*|| bCurTautEqu*/; /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    // INCHI✔️❌:                         }
+    // INCHI✔️❌:                         /* non-zero if isotopic numbering for inverted isotopic stereo is different */
+    // INCHI✔️❌:                         io.bIsotopicOrigNumb[ii] |= bCurHasIsoStereo && /* Fix14 */
+    // INCHI✔️❌:                             pINChI_Aux->nOrigAtNosInCanonOrdInv &&
+    // INCHI✔️❌:                             pINChI_Aux->nIsotopicOrigAtNosInCanonOrd &&
+    // INCHI✔️❌:                             ( 0 != memcmp( pINChI_Aux->nOrigAtNosInCanonOrdInv,
+    // INCHI✔️❌:                                 pINChI_Aux->nIsotopicOrigAtNosInCanonOrd,
+    // INCHI✔️❌:                                 sizeof( pINChI_Aux->nOrigAtNosInCanonOrdInv[0] ) * pINChI_Aux->nNumberOfAtoms ) );
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                     /* Inverted stereo */
+    // INCHI✔️❌:                     if (bCurStereoSp3 && pINChI->Stereo->nCompInv2Abs)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         io.bInvStereo[ii] |= 1;
+    // INCHI✔️❌:                         io.bInvStereoOrigNumb[ii] |= pINChI_Aux->nOrigAtNosInCanonOrd &&
+    // INCHI✔️❌:                             pINChI_Aux->nOrigAtNosInCanonOrdInv &&
+    // INCHI✔️❌:                             ( 0 != memcmp( pINChI_Aux->nOrigAtNosInCanonOrd,
+    // INCHI✔️❌:                                 pINChI_Aux->nOrigAtNosInCanonOrdInv,
+    // INCHI✔️❌:                                 sizeof( pINChI_Aux->nOrigAtNosInCanonOrd[0] ) * pINChI_Aux->nNumberOfAtoms ) );
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:                     /* Inverted isotopic stereo */
+    // INCHI✔️❌:                     if (bCurIsoStereoSp3 && pINChI->StereoIsotopic->nCompInv2Abs)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         io.bInvIsotopicStereo[ii] |= 1;
+    // INCHI✔️❌:
+    // INCHI✔️❌:                         io.bInvIsotopicStereoOrigNumb[ii]
+    // INCHI✔️❌:                             |= pINChI_Aux->nIsotopicOrigAtNosInCanonOrd &&
+    // INCHI✔️❌:                             pINChI_Aux->nIsotopicOrigAtNosInCanonOrdInv &&
+    // INCHI✔️❌:                             ( 0 != memcmp( pINChI_Aux->nIsotopicOrigAtNosInCanonOrd,
+    // INCHI✔️❌:                                 pINChI_Aux->nIsotopicOrigAtNosInCanonOrdInv,
+    // INCHI✔️❌:                                 sizeof( pINChI_Aux->nIsotopicOrigAtNosInCanonOrd[0] ) * pINChI_Aux->nNumberOfAtoms ) );
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:                     if (pINChI_Aux->OrigInfo && bHasOrigInfo( pINChI_Aux->OrigInfo, pINChI_Aux->nNumberOfAtoms ))
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         io.bChargesRadVal[ii] |= 1;
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (bCompExists)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             for (j = TAUT_NON; j < TAUT_NUM; j++)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 io.num_comp[j] ++;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     if (io.bTautomeric /*&& bTautomericAcid*/) /* "&& bTautomericAcid" commented out 2004-06-02 */
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         io.bTautomeric += bTautomericAcid; /* long-range tautomerism */
+    // INCHI✔️❌:         io.bTautomeric += ( bHardAddRemProton ? 4 : 0 );
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     if (bRequestedRacemicStereo || bRequestedRelativeStereo)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* do not output inverted stereo info */
+    // INCHI✔️❌:         for (i = 0; i < TAUT_NUM; i++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* Fix11 */
+    // INCHI✔️❌:             bStereoAbsInverted[i] =
+    // INCHI✔️❌:                 bStereoAbs[i] =
+    // INCHI✔️❌:                 io.bInvStereo[i] =
+    // INCHI✔️❌:                 io.bInvStereoOrigNumb[i] = 0;
+    // INCHI✔️❌:                 /* io.bIsotopicRelativeStereo[i]=0 may happen because iso stereo is same or inverted non-iso stereo */
+    // INCHI✔️❌:             bIsotopicStereoAbsInverted[i] =
+    // INCHI✔️❌:                 bIsotopicStereoAbs[i] =
+    // INCHI✔️❌:                 io.bInvIsotopicStereo[i] =
+    // INCHI✔️❌:                 io.bInvIsotopicStereoOrigNumb[i] = 0;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.iCurTautMode = io.bOutType == OUT_N1 ? TAUT_NON :  /*  only non-taut */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         io.bOutType == OUT_T1 ? TAUT_YES :      /*  tautomeric if present, otherwise non-tautomeric     */
+    // INCHI✔️❌:         io.bOutType == OUT_NT ? TAUT_NON :      /*  only non-taut representations of tautomeric         */
+    // INCHI✔️❌:         io.bOutType == OUT_TN ? TAUT_YES :       /*  tautomeric if present otherwise non-tautomeric;     */
+    // INCHI✔️❌:         -1; /*  separately output non-taut representations of tautomeric if present */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (io.iCurTautMode < 0)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return 0;  /* error */
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Now print out */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.bOverflow = 0;
+    // INCHI✔️❌:     io.num_components = io.num_comp[io.iCurTautMode];
+    // INCHI✔️❌:     /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (bINChIOutputOptions & INCHI_OUT_ONLY_AUX_INFO)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         goto output_aux_info;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.nCurINChISegment = DIFL_M;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: version and kind */
+    // INCHI✔️❌:     if (INCHI_basic_or_INCHI_reconnected == INCHI_BAS || !( bINChIOutputOptions & INCHI_OUT_EMBED_REC ))
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         int is_beta = 0;
+    // INCHI✔️❌:         int nAtomsAllComp = inchi_max( nAtomsAllComp1, nAtomsAllComp2 );
+    // INCHI✔️❌:
+    // INCHI✔️❌:         if (nAtomsAllComp > NORMALLY_ALLOWED_INP_MAX_ATOMS)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* v. 1.05 for LargeMolecules */
+    // INCHI✔️❌:             is_beta = 1;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (pOrigStruct && pOrigStruct->polymer)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* v. 1.05 for Polymers */
+    // INCHI✔️❌:             is_beta = 1;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         /* specifically put 'B' for empty structure InChI    */
+    // INCHI✔️❌:         /* if "Polymers" or "LargeMolecules" requested        */
+    // INCHI✔️❌:         else if (!pOrigStruct && ( ip->bLargeMolecules || ip->bPolymers ))
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             is_beta = 1;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         else if (pOrigStruct && pOrigStruct->n_zy)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             is_beta = 1;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         OutputINCHI_VersionAndKind( out_file, strbuf, bINChIOutputOptions, is_beta, pLF, pTAB );
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: atoms */
+    // INCHI✔️❌:     intermediate_result = OutputINCHI_MainLayerFormula( pCG, out_file, strbuf,
+    // INCHI✔️❌:                                                         num_components2,
+    // INCHI✔️❌:                                                         &INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                                         &io, pLF, pTAB );
+    // INCHI✔️❌:     if (intermediate_result != 0)
+    // INCHI✔️❌:         goto exit_function;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: connection table */
+    // INCHI✔️❌:     intermediate_result = OutputINCHI_MainLayerConnections( pCG, out_file, strbuf, num_components2,
+    // INCHI✔️❌:                                                                 &INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                                                 &io, pLF, pTAB );
+    // INCHI✔️❌:     if (intermediate_result != 0)
+    // INCHI✔️❌:         goto exit_function;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: hydrogens (with tautomeric info) */
+    // INCHI✔️❌:     intermediate_result = OutputINCHI_MainLayerHydrogens( pCG, out_file, strbuf, num_components2,
+    // INCHI✔️❌:                                                               &INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                                               &io, pLF, pTAB );
+    // INCHI✔️❌:     if (intermediate_result != 0)
+    // INCHI✔️❌:         goto exit_function;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.bFhTag = 0;
+    // INCHI✔️❌:     npass = 0;
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌: repeat_INChI_output:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: charge and  removed protons */
+    // INCHI✔️❌:     intermediate_result = OutputINCHI_ChargeAndRemovedAddedProtonsLayers( pCG, out_file, strbuf,
+    // INCHI✔️❌:                                                                               &io, pLF, pTAB );
+    // INCHI✔️❌:     if (intermediate_result != 0)
+    // INCHI✔️❌:         goto exit_function;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: polymer layer */
+    // INCHI✔️❌:     if (npass == 0)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         intermediate_result = OutputINCHI_PolymerLayer( pCG, out_file, strbuf,
+    // INCHI✔️❌:                                                         &INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                                         orig_inp_data, pOrigStruct,
+    // INCHI✔️❌:                                                         &io, pLF, pTAB );
+    // INCHI✔️❌:         if (intermediate_result != 0)
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: stereo (non-isotopic) */
+    // INCHI✔️❌:     intermediate_result = OutputINCHI_StereoLayer( pCG, out_file, strbuf, &io, pLF, pTAB );
+    // INCHI✔️❌:     if (intermediate_result != 0)
+    // INCHI✔️❌:         goto exit_function;
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Switch from M to MI or from F to FI */
+    // INCHI✔️❌:     io.nCurINChISegment++;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: isotopic */
+    // INCHI✔️❌:     intermediate_result = OutputINCHI_IsotopicLayer( pCG, out_file, strbuf,
+    // INCHI✔️❌:                                                          &INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                                          &io, pLF, pTAB );
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (intermediate_result != 0)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         goto exit_function;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /*
+    // INCHI✔️❌:         At this point the INChI part of the output has been done.
+    // INCHI✔️❌:         If this INChI is tautomeric and non-tautomeric results exist,
+    // INCHI✔️❌:         then we need to output non-tautomeric data:
+    // INCHI✔️❌:             fixed H
+    // INCHI✔️❌:             stereo
+    // INCHI✔️❌:             isotopic
+    // INCHI✔️❌:             isotopic stereo
+    // INCHI✔️❌:     */
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: FixedH and sublayers */
+    // INCHI✔️❌:     intermediate_result = OutputINCHI_FixedHLayerWithSublayers( pCG, out_file, strbuf,
+    // INCHI✔️❌:                                                                 &INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                                                 &io, pLF, pTAB,
+    // INCHI✔️❌:                                                                 &then_goto_repeat );
+    // INCHI✔️❌:     if (intermediate_result != 0)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         goto exit_function;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     if (then_goto_repeat)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         npass++;
+    // INCHI✔️❌:         goto repeat_INChI_output;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /*
+    // INCHI✔️❌:         InChI output:  reconnected structure
+    // INCHI✔️❌:     */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     bEmbeddedOutputCalled = 0;
+    // INCHI✔️❌:     if (bDisconnectedCoord && INCHI_basic_or_INCHI_reconnected == INCHI_BAS &&
+    // INCHI✔️❌:         ( bINChIOutputOptions & INCHI_OUT_EMBED_REC ) && num_components2[INCHI_REC])
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         int nRet;
+    // INCHI✔️❌:         bEmbeddedOutputCalled = 1;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* output blank line before /R: in case of bPlainTextCommnts=1 */
+    // INCHI✔️❌:         inchi_ios_print_nodisplay( out_file, "%s", pLF );
+    // INCHI✔️❌:         /* end of disconnected INChI output */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         nRet = OutputINChI1( pCG,
+    // INCHI✔️❌:                              strbuf,
+    // INCHI✔️❌:                              pINChISortTautAndNonTaut2,
+    // INCHI✔️❌:                              INCHI_REC,
+    // INCHI✔️❌:                              orig_inp_data,
+    // INCHI✔️❌:                              pOrigStruct,
+    // INCHI✔️❌:                              ip,
+    // INCHI✔️❌:                              0 /*bDisconnectedCoord*/,
+    // INCHI✔️❌:                              bOutputType,
+    // INCHI✔️❌:                              bINChIOutputOptions | INCHI_OUT_NO_AUX_INFO,
+    // INCHI✔️❌:                              num_components2,
+    // INCHI✔️❌:                              num_non_taut2,
+    // INCHI✔️❌:                              num_taut2,
+    // INCHI✔️❌:                              out_file,
+    // INCHI✔️❌:                              log_file,
+    // INCHI✔️❌:                              num_input_struct,
+    // INCHI✔️❌:                              pSortPrintINChIFlags,
+    // INCHI✔️❌:                              save_opt_bits );
+    // INCHI✔️❌:
+    // INCHI✔️❌:         if (!nRet)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             goto exit_function; /* error */
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* InChI output: save InChI creation options if requested */
+    // INCHI✔️❌:     if (!bEmbeddedOutputCalled &&
+    // INCHI✔️❌:         ( bINChIOutputOptions & INCHI_OUT_SAVEOPT ) &&
+    // INCHI✔️❌:         ( 0 == ( bINChIOutputOptions & INCHI_OUT_STDINCHI ) )    /* not std-InChI output */
+    // INCHI✔️❌:         )
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         char let1, let2;
+    // INCHI✔️❌:         GetSaveOptLetters( save_opt_bits, &let1, &let2 );
+    // INCHI✔️❌:         inchi_ios_print_nodisplay( out_file, "\\%c%c", let1, let2 );
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     if (!bEmbeddedOutputCalled && !bPlainTextCommnts)
+    // INCHI✔️❌:     { /* plain text comment earlier ended with LF */
+    // INCHI✔️❌:         inchi_ios_print_nodisplay( out_file, "%s%s",
+    // INCHI✔️❌:             ( !num_components2[0] && !num_components2[1] ) ? "//" : "", /* empty InChI=// */
+    // INCHI✔️❌:             ( bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO ) ? "\n" : pTAB );
+    // INCHI✔️❌: /* end of INChI= output */
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     inchi_strbuf_reset( strbuf );
+    // INCHI✔️❌:
+    // INCHI✔️❌: #ifdef TARGET_LIB_FOR_WINCHI
+    // INCHI✔️❌:     /* @@@ Here we end up with silent output: display previously hidden output */
+    // INCHI✔️❌:     if (inchi_ios_flush_not_displayed( out_file ) != -1)
+    // INCHI✔️❌:         silent = 0;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌: output_aux_info:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /*  Output Aux Info */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     io.bFhTag = 0;
+    // INCHI✔️❌:     if (( bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO ) == 0)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:
+    // INCHI✔️❌:         io.num_components = io.num_comp[io.iCurTautMode];
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* AuxInfo: header and normalization type */
+    // INCHI✔️❌:         intermediate_result = OutputAUXINFO_HeaderAndNormalization_type( pCG, out_file, strbuf,
+    // INCHI✔️❌:                                                                          bINChIOutputOptions,
+    // INCHI✔️❌:                                                                          &INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                                                          num_components2,
+    // INCHI✔️❌:                                                                          &io, pLF, pTAB );
+    // INCHI✔️❌:         if (intermediate_result != 0)
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     repeat_INChI_Aux_output:
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* AuxInfo: original atom numbers and symmetry numbers (constit. equivalence /E: )    */
+    // INCHI✔️❌:         intermediate_result = OutputAUXINFO_OriginalNumbersAndEquivalenceClasses( pCG, out_file, strbuf,
+    // INCHI✔️❌:                                                                                   num_components2,
+    // INCHI✔️❌:                                                                                   &io, pLF, pTAB );
+    // INCHI✔️❌:         if (intermediate_result != 0)
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* AuxInfo: tautomeric groups equivalence */
+    // INCHI✔️❌:         intermediate_result = OutputAUXINFO_TautomericGroupsEquivalence( pCG, out_file, strbuf, &io );
+    // INCHI✔️❌:         if (intermediate_result != 0)
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* AuxInfo: stereo data */
+    // INCHI✔️❌:         intermediate_result = OutputAUXINFO_Stereo( pCG, out_file, strbuf, &io, pLF, pTAB );
+    // INCHI✔️❌:         if (intermediate_result != 0)
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     repeat_INChI_Aux_Iso_output:
+    // INCHI✔️❌:             /* AuxInfo: isotopic info */
+    // INCHI✔️❌:         intermediate_result = OutputAUXINFO_IsotopicInfo( pCG, out_file, strbuf,
+    // INCHI✔️❌:                                                           &INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                                           &io, pLF, pTAB );
+    // INCHI✔️❌:         if (intermediate_result != 0)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /*
+    // INCHI✔️❌:           At this point the INChI_Aux part of the output has been completed.
+    // INCHI✔️❌:           If this INChI is tautomeric and non-tautomeric results exist,
+    // INCHI✔️❌:           then we need to output non-tautomeric auxilialy data
+    // INCHI✔️❌:           (same as above excluding tautomeric information).
+    // INCHI✔️❌:           Currently, this is enabled for xml output only
+    // INCHI✔️❌:         */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         if (io.bOutType == OUT_TN && io.bTautomeric && io.bNonTautomeric &&
+    // INCHI✔️❌:             /* Check whether the Fixed-H layer is empty */
+    // INCHI✔️❌:             ( *pSortPrintINChIFlags & ( ( INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_NFIX_H_BAS :
+    // INCHI✔️❌:                 FLAG_SORT_PRINT_NO_NFIX_H_REC ) ) &&
+    // INCHI✔️❌:                 ( *pSortPrintINChIFlags & ( ( INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_IFIX_H_BAS :
+    // INCHI✔️❌:                     FLAG_SORT_PRINT_NO_IFIX_H_REC ) )
+    // INCHI✔️❌:               )
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             io.bNonTautomeric = 0; /* bNonTautIdentifierNotEmpty == 0 => no fixed H info 02-10-2995 */
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         if (io.bOutType == OUT_TN && io.bTautomeric && io.bNonTautomeric)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* add the second (non-tautomeric) output */
+    // INCHI✔️❌:             io.bOutType = OUT_NONTAUT;
+    // INCHI✔️❌:             io.iCurTautMode = TAUT_NON;
+    // INCHI✔️❌:             io.pINChISort = io.pINChISortTautAndNonTaut[TAUT_NON];
+    // INCHI✔️❌:             io.bSecondNonTautPass = 1;
+    // INCHI✔️❌:             io.num_components = io.num_comp[io.iCurTautMode];
+    // INCHI✔️❌:             io.bFhTag = AL_FIXH;
+    // INCHI✔️❌:             inchi_strbuf_reset( strbuf ); /*pStr[io.tot_len=0] = '\0';*/
+    // INCHI✔️❌:
+    // INCHI✔️❌:             /* if InChI Fixed-H isotopic is empty then do not output corresponding AuxInfo */
+    // INCHI✔️❌:             if (!( *pSortPrintINChIFlags &
+    // INCHI✔️❌:                 ( ( INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_NFIX_H_BAS :
+    // INCHI✔️❌:                     FLAG_SORT_PRINT_NO_NFIX_H_REC ) )
+    // INCHI✔️❌:                )
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 npass++;
+    // INCHI✔️❌:                 goto repeat_INChI_Aux_output;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             else
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 npass++;
+    // INCHI✔️❌:                 goto repeat_INChI_Aux_Iso_output;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         else
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (io.bOutType == OUT_NONTAUT && io.bOutputType == OUT_TN && io.bTautomeric && io.bNonTautomeric)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /* the second (non-taut) output has been done; restore variables */
+    // INCHI✔️❌:                 io.bOutType = OUT_TN;
+    // INCHI✔️❌:                 io.iCurTautMode = TAUT_YES;
+    // INCHI✔️❌:                 io.pINChISort = io.pINChISortTautAndNonTaut[TAUT_YES];
+    // INCHI✔️❌:                 io.bSecondNonTautPass = 0;
+    // INCHI✔️❌:                 /* set correct num components for the reversibility info 02-10-2005 */
+    // INCHI✔️❌:                 io.num_components = io.num_comp[io.iCurTautMode];
+    // INCHI✔️❌:                 io.bFhTag = 0;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /*    Charges, radicals, unusual valences */
+    // INCHI✔️❌:         intermediate_result = OutputAUXINFO_ChargesRadicalsAndUnusualValences( pCG, out_file, strbuf, &io, pLF, pTAB );
+    // INCHI✔️❌:         if (intermediate_result != 0)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Output the original input structure -- quick fix */
+    // INCHI✔️❌:         intermediate_result = OutputAUXINFO_ReversibilityInfo( pCG, out_file, strbuf, pOrigStruct, &io, pLF, pTAB );
+    // INCHI✔️❌:         if (intermediate_result != 0)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Output polymeric Aux Info */
+    // INCHI✔️❌:         intermediate_result = OutputAUXINFO_PolymerInfo( pCG, out_file, strbuf, pOrigStruct, &io, pLF, pTAB );
+    // INCHI✔️❌:         if (intermediate_result != 0)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /*
+    // INCHI✔️❌:             Output INChI_Aux of the reconnected structure
+    // INCHI✔️❌:         */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         bEmbeddedOutputCalled = 0;
+    // INCHI✔️❌:         if (bDisconnectedCoord && INCHI_basic_or_INCHI_reconnected == INCHI_BAS && ( bINChIOutputOptions & INCHI_OUT_EMBED_REC ) &&
+    // INCHI✔️❌:              num_components2[INCHI_REC] && !( bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO ))
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             int nRet;
+    // INCHI✔️❌:             bEmbeddedOutputCalled = 1;
+    // INCHI✔️❌:             inchi_ios_print( out_file, "%s", pLF );
+    // INCHI✔️❌:
+    // INCHI✔️❌:             nRet = OutputINChI1( pCG,
+    // INCHI✔️❌:                                  strbuf,
+    // INCHI✔️❌:                                  pINChISortTautAndNonTaut2,
+    // INCHI✔️❌:                                  INCHI_REC,
+    // INCHI✔️❌:                                  NULL,
+    // INCHI✔️❌:                                  NULL,
+    // INCHI✔️❌:                                  ip,
+    // INCHI✔️❌:                                  0 /*bDisconnectedCoord*/,
+    // INCHI✔️❌:                                  bOutputType,
+    // INCHI✔️❌:                                  INCHI_OUT_ONLY_AUX_INFO | bINChIOutputOptions,
+    // INCHI✔️❌:                                  num_components2,
+    // INCHI✔️❌:                                  num_non_taut2,
+    // INCHI✔️❌:                                  num_taut2,
+    // INCHI✔️❌:                                  out_file,
+    // INCHI✔️❌:                                  log_file,
+    // INCHI✔️❌:                                  num_input_struct,
+    // INCHI✔️❌:                                  pSortPrintINChIFlags,
+    // INCHI✔️❌:                                  save_opt_bits );
+    // INCHI✔️❌:
+    // INCHI✔️❌:             if (!nRet)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 goto exit_function; /* error */
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Close INChI_Aux */
+    // INCHI✔️❌:         if (!bEmbeddedOutputCalled && !bPlainTextCommnts)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             inchi_ios_print( out_file, "%s\n", ( !num_components2[0] && !num_components2[1] ) ? "//" : "" );
+    // INCHI✔️❌:             /* plain text comment earlier ended with LF */
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* in wINChI window, separate AuxInfo: from InChIKey: with blank line */
+    // INCHI✔️❌:         inchi_ios_print( out_file, "%s",
+    // INCHI✔️❌:             ( bINChIOutputOptions & INCHI_OUT_WINCHI_WINDOW ) ? "\n" : "" );
+    // INCHI✔️❌:     } /* end of output AuxInfo */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     ret = 1;
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌: exit_function:
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌: #ifdef TARGET_LIB_FOR_WINCHI
+    // INCHI✔️❌:     /* @@@ If for any error we get here silent, display previously hidden output */
+    // INCHI✔️❌:     if (silent)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:      /*
+    // INCHI✔️❌:         if ( !inchi_ios_flush_not_displayed( out_file ) != -1  )
+    // INCHI✔️❌:             silent = 0;
+    // INCHI✔️❌:     */
+    // INCHI✔️❌:         silent = 0;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (io.bOverflow)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         inchi_ios_print( out_file, "\nFATAL ERROR: Output buffer overflow\n" );
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (intermediate_result)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         ret = 0;
+    // INCHI✔️❌:         inchi_ios_eprint( log_file, "InChI serialization error for structure #%d.%s%s%s%s\n",
+    // INCHI✔️❌:                                     num_input_struct, SDF_LBL_VAL( ip->pSdfLabel, ip->pSdfValue ) );
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: } /* OutputINChI1 */
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌: /****************************************************************************/
+    // INCHI✔️❌: char *szGetTag( const INCHI_TAG *Tag,
+    // INCHI✔️❌:                 int             nTag,
+    // INCHI✔️❌:                 int             bTag,
+    // INCHI✔️❌:                 char            *szTag,
+    // INCHI✔️❌:                 int             *bAlways,
+    // INCHI✔️❌:                 short           tag_flag)
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int i, j, bit, num, len;
+    // INCHI✔️❌:     const int MAX_TAG_NUM = tag_flag ? (int)IL_MAX_ORD : (int)AL_MAX_ORD; /* djb-rwth: fixing GHI #160 */
+    // INCHI✔️❌:     if (0 < nTag && nTag < 3)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* no plain text comments: pick up the last tag */
+    // INCHI✔️❌:         for (i = 0, j = -1, bit = 1; i < MAX_TAG_NUM; i++, bit <<= 1)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (bTag & bit)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 j = i;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (j >= 0)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌: #if USE_BCF
+    // INCHI✔️❌:             int stl1, stl2, dstsz;
+    // INCHI✔️❌:             stl1 = strlen(Tag[j].szXmlLabel) + 1;
+    // INCHI✔️❌:             stl2 = strlen(Tag[j].szPlainLabel) + 1;
+    // INCHI✔️❌:             dstsz = max_3(stl1, stl2, 5);
+    // INCHI✔️❌:             strcpy_s( szTag, dstsz, nTag == 1 ? Tag[j].szXmlLabel : nTag == 2 ? Tag[j].szPlainLabel : "???" ); /* djb-rwth: function replaced with its safe C11 variant */
+    // INCHI✔️❌: #else
+    // INCHI✔️❌:             strcpy(szTag, nTag == 1 ? Tag[j].szXmlLabel : nTag == 2 ? Tag[j].szPlainLabel : "???"); /* djb-rwth: addressing coverity ID #499488 -- when nTag == 2, the "???" is avoided, which is correct */
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:             if (nTag != 2)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 *bAlways = Tag[j].bAlwaysOutput;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             return szTag;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     else
+    // INCHI✔️❌:         if (nTag == 3)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* plain text with comments */
+    // INCHI✔️❌:             szTag[0] = '{';
+    // INCHI✔️❌:             szTag[1] = '\0';
+    // INCHI✔️❌:             for (i = 0, j = -1, bit = 1, num = 0; i < MAX_TAG_NUM; i++, bit <<= 1)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 if (bTag & bit)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     j = i;
+    // INCHI✔️❌:                     if (num++)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         strcat(szTag, ":");
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                     strcat(szTag, Tag[i].szPlainComment);
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             if (num)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 strcat(szTag, "}");
+    // INCHI✔️❌:                 num = (int) strlen( Tag[j].szPlainLabel );
+    // INCHI✔️❌:                 len = (int) strlen( szTag );
+    // INCHI✔️❌:                 if (len)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     memmove(szTag + num, szTag, (long long)len + 1); /* djb-rwth: cast operator added */
+    // INCHI✔️❌:                     memcpy(szTag, Tag[j].szPlainLabel, num);
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 else
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     strcpy(szTag, Tag[j].szPlainLabel);
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 *bAlways = Tag[j].bAlwaysOutput;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             else
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 strcpy(szTag, "???");
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             return szTag;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     strcpy(szTag, "???");
+    // INCHI✔️❌:     return szTag;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: OutputINChI1
+    // INCHI✔️❗: One output algorithm; real heap or borrowed stack table.
+    // No table allocation/copy/extra scan; checked whole-call costs OPEN.
 
     fn inchi(
         heap: &SourceHeap,
@@ -2618,15 +4506,17 @@ pub(crate) fn OutputINChI1(
     fn stereo(
         heap: &SourceHeap,
         pointer: SourceMutPointer<crate::source_types::INChI_Stereo>,
-    ) -> Result<Option<crate::source_types::INChI_Stereo>, SourceHeapError> {
+    ) -> Result<Option<&crate::source_types::INChI_Stereo>, SourceHeapError> {
+        // INCHI✔️❗: C463 reached nullable descriptor, native1441..1612.
+        // Borrowed readonly metadata; no clone or held mutable alias.
+        // O(1) scratch, safe arena/whole-output costs remain OPEN.
         if pointer.is_null() {
             return Ok(None);
         }
         Ok(Some(
             heap.slice(pointer.as_const())?
                 .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone(),
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
         ))
     }
     fn selected_representation(
@@ -2634,56 +4524,87 @@ pub(crate) fn OutputINChI1(
         sort: &crate::source_types::INCHI_SORT,
         mode: i32,
     ) -> Result<i32, SourceHeapError> {
-        let mobile = inchi(heap, sort.pINChI[crate::source_types::TAUT_YES as usize])?;
-        let fixed = inchi(heap, sort.pINChI[crate::source_types::TAUT_NON as usize])?;
-        let mobile_exists = mobile
-            .as_ref()
-            .is_some_and(|value| value.nNumberOfAtoms != 0);
-        let fixed_exists = fixed
-            .as_ref()
-            .is_some_and(|value| value.nNumberOfAtoms != 0);
-        let mobile_non_taut =
-            mobile_exists && mobile.as_ref().is_some_and(|value| value.lenTautomer == 0);
-        let fixed_non_taut =
-            fixed_exists && fixed.as_ref().is_some_and(|value| value.lenTautomer == 0);
+        // VERBATIM SOURCE FRAGMENT: ichimake.h70..83 GET_II and HAS predicates
+        // #define HAS_T(S)  (S->pINChI[TAUT_YES] && S->pINChI[TAUT_YES]->nNumberOfAtoms)
+        // /* S->pINChI[TAUT_NON] has info: */
+        // #define HAS_N(S)  (S->pINChI[TAUT_NON] && S->pINChI[TAUT_NON]->nNumberOfAtoms)
+        //
+        // /* S->pINChI[TAUT_YES] has tautomeric info: */
+        // #define HAS_TT(S) (S->pINChI[TAUT_YES] && S->pINChI[TAUT_YES]->nNumberOfAtoms && S->pINChI[TAUT_YES]->lenTautomer>0)
+        // /* S->pINChI[TAUT_YES] has non-taitomeric info: */
+        // #define HAS_TN(S) (S->pINChI[TAUT_YES] && S->pINChI[TAUT_YES]->nNumberOfAtoms && !S->pINChI[TAUT_YES]->lenTautomer)
+        // /* S->pINChI[TAUT_NON] has non-tautomeric info: */
+        // #define HAS_NN(S) (S->pINChI[TAUT_NON] && S->pINChI[TAUT_NON]->nNumberOfAtoms && !S->pINChI[TAUT_NON]->lenTautomer)
+        // #define GET_II(M,S) ((M==OUT_N1)?              (HAS_TN(S)? TAUT_YES : HAS_NN(S)? TAUT_NON : -1): \
+        //                      (M==OUT_T1 || M==OUT_TN)? (HAS_T(S) ? TAUT_YES : HAS_N(S) ? TAUT_NON : -1): \
+        //                      (M==OUT_NN)?              (HAS_NN(S)? TAUT_NON : HAS_TN(S)? TAUT_YES : -1): \
+        //                      (M==OUT_NT)?              ((HAS_TT(S) && HAS_NN(S))       ? TAUT_NON : -1) : -1)
+        // INCHI✔️❗: C462 mode first, then source ternary/AND short circuits.
+        // Borrow each reached fixed record without cloning; no mutation/callback.
+        // O(1) time/scratch, checked arena/whole-owner costs remain OPEN.
+        #[inline(always)]
+        fn has<F: FnOnce(&crate::source_types::INChI) -> bool>(
+            heap: &SourceHeap,
+            pointer: SourceMutPointer<crate::source_types::INChI>,
+            predicate: F,
+        ) -> Result<bool, SourceHeapError> {
+            if pointer.is_null() {
+                return Ok(false);
+            }
+            Ok(predicate(
+                heap.slice(pointer.as_const())?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            ))
+        }
+        use crate::source_types::{OUT_N1, OUT_NN, OUT_NT, OUT_T1, OUT_TN, TAUT_NON, TAUT_YES};
         Ok(match mode {
-            value if value == crate::source_types::OUT_N1 as i32 => {
-                if mobile_non_taut {
-                    crate::source_types::TAUT_YES as i32
-                } else if fixed_non_taut {
-                    crate::source_types::TAUT_NON as i32
+            value if value == OUT_N1 as i32 => {
+                if has(heap, sort.pINChI[TAUT_YES as usize], |record| {
+                    record.nNumberOfAtoms != 0 && record.lenTautomer == 0
+                })? {
+                    TAUT_YES as i32
+                } else if has(heap, sort.pINChI[TAUT_NON as usize], |record| {
+                    record.nNumberOfAtoms != 0 && record.lenTautomer == 0
+                })? {
+                    TAUT_NON as i32
                 } else {
                     -1
                 }
             }
-            value
-                if value == crate::source_types::OUT_T1 as i32
-                    || value == crate::source_types::OUT_TN as i32 =>
-            {
-                if mobile_exists {
-                    crate::source_types::TAUT_YES as i32
-                } else if fixed_exists {
-                    crate::source_types::TAUT_NON as i32
+            value if value == OUT_T1 as i32 || value == OUT_TN as i32 => {
+                if has(heap, sort.pINChI[TAUT_YES as usize], |record| {
+                    record.nNumberOfAtoms != 0
+                })? {
+                    TAUT_YES as i32
+                } else if has(heap, sort.pINChI[TAUT_NON as usize], |record| {
+                    record.nNumberOfAtoms != 0
+                })? {
+                    TAUT_NON as i32
                 } else {
                     -1
                 }
             }
-            value if value == crate::source_types::OUT_NN as i32 => {
-                if fixed_non_taut {
-                    crate::source_types::TAUT_NON as i32
-                } else if mobile_non_taut {
-                    crate::source_types::TAUT_YES as i32
+            value if value == OUT_NN as i32 => {
+                if has(heap, sort.pINChI[TAUT_NON as usize], |record| {
+                    record.nNumberOfAtoms != 0 && record.lenTautomer == 0
+                })? {
+                    TAUT_NON as i32
+                } else if has(heap, sort.pINChI[TAUT_YES as usize], |record| {
+                    record.nNumberOfAtoms != 0 && record.lenTautomer == 0
+                })? {
+                    TAUT_YES as i32
                 } else {
                     -1
                 }
             }
-            value if value == crate::source_types::OUT_NT as i32 => {
-                if mobile
-                    .as_ref()
-                    .is_some_and(|value| value.nNumberOfAtoms != 0 && value.lenTautomer > 0)
-                    && fixed_non_taut
-                {
-                    crate::source_types::TAUT_NON as i32
+            value if value == OUT_NT as i32 => {
+                if has(heap, sort.pINChI[TAUT_YES as usize], |record| {
+                    record.nNumberOfAtoms != 0 && record.lenTautomer > 0
+                })? && has(heap, sort.pINChI[TAUT_NON as usize], |record| {
+                    record.nNumberOfAtoms != 0 && record.lenTautomer == 0
+                })? {
+                    TAUT_NON as i32
                 } else {
                     -1
                 }
@@ -2710,6 +4631,16 @@ pub(crate) fn OutputINChI1(
             return Ok(0);
         }
         let count = usize::try_from(count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        // VERBATIM SOURCE FRAGMENT: ichiprt1.c1585..1587 zero-byte memcmp
+        //                             ( 0 != memcmp( pINChI_Aux->nOrigAtNosInCanonOrdInv,
+        //                                 pINChI_Aux->nIsotopicOrigAtNosInCanonOrd,
+        //                                 sizeof( pINChI_Aux->nOrigAtNosInCanonOrdInv[0] ) * pINChI_Aux->nNumberOfAtoms ) );
+        // INCHI✔️❗: zero bytes do not admit either typed data root. Preserve
+        // null return/count conversion and every positive-prefix error below.
+        // O(1) skipped path, no allocation; whole-call cost remains OPEN.
+        if count == 0 {
+            return Ok(0);
+        }
         let first = heap
             .slice(first.as_const())?
             .get(..count)
@@ -2726,18 +4657,33 @@ pub(crate) fn OutputINChI1(
         stdout: SourceMutPointer<FILE>,
         display: bool,
         format: &[u8],
-        arguments: Vec<SourceFormatArgument>,
+        arguments: &[SourceFormatArgument],
     ) -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: Borrowed variadic argument storage preserves argument order and
+        // fresh position zero; no list allocation/clone. Format bytes are borrowed;
+        // formatter/backend costs remain independently quarantined/open.
         let format =
-            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect::<Vec<_>>())?;
-        let arguments = SourceVaList {
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(format));
+        let arguments = crate::source::base::ichi_io::SourcePrintArguments {
             arguments,
-            ..SourceVaList::default()
+            position: 0,
         };
         if display {
-            inchi_ios_print(heap, Some(output), stdout, format.as_const(), &arguments)?;
+            crate::source::base::ichi_io::inchi_ios_print_format_arguments(
+                heap,
+                Some(output),
+                stdout,
+                format,
+                &arguments,
+            )?;
         } else {
-            inchi_ios_print_nodisplay(heap, Some(output), stdout, format.as_const(), &arguments)?;
+            crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_arguments(
+                heap,
+                Some(output),
+                stdout,
+                format,
+                &arguments,
+            )?;
         }
         Ok(())
     }
@@ -2748,6 +4694,13 @@ pub(crate) fn OutputINChI1(
         if pointer.is_null() {
             return Ok(false);
         }
+        // VERBATIM SOURCE FRAGMENT: strutil.h757..758 SDF_LBL_VAL
+        // #define SDF_LBL_VAL(L, V) ((L) && (L)[0]) ? gsSpace : gsEmpty, ((L) && (L)[0]) ? L : gsEmpty, ((L) && (L)[0]) ? (((V) && (V)[0]) ? gsEqual : gsSpace) : gsEmpty, ((V) && (V)[0]) ? V : ((L) && (L)[0]) ? gsMissing \
+        //                                                                                                                                                                                                        : gsEmpty
+        // INCHI✔️❗: NULL/first-character semantics for represented i8/u8
+        // already pass through canonical typed admission. Unmodeled aliases
+        // still hit shared0170, not a fabricated byte view or global clearance.
+        // O(1), no scan/allocation/clone; C566 checked whole costs remain OPEN.
         Ok(*heap
             .slice(pointer.as_const())?
             .first()
@@ -2761,20 +4714,35 @@ pub(crate) fn OutputINChI1(
         input_structure_number: i32,
         allocation_message: bool,
     ) -> Result<(), SourceHeapError> {
-        let empty = heap.allocate_model_storage(vec![0_i8])?;
-        let space = heap.allocate_model_storage(vec![b' ' as i8, 0])?;
-        let equal = heap.allocate_model_storage(vec![b'=' as i8, 0])?;
-        let missing = heap.allocate_model_storage(
-            b"Missing SDfile data value\0"
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect(),
-        )?;
+        // BEGIN INCHI SOURCE FRAGMENT: ichiprt1.c1180..1181/2078..2079
+        // INCHI✔️✔️:         inchi_ios_eprint( log_file, "Cannot allocate output buffer. No output for structure #%d.%s%s%s%s\n",
+        // INCHI✔️✔️:                          num_input_struct, SDF_LBL_VAL( ip->pSdfLabel, ip->pSdfValue ) );
+        // INCHI✔️✔️:         inchi_ios_eprint( log_file, "InChI serialization error for structure #%d.%s%s%s%s\n",
+        // INCHI✔️✔️:                                     num_input_struct, SDF_LBL_VAL( ip->pSdfLabel, ip->pSdfValue ) );
+        // END INCHI SOURCE FRAGMENT: serialization diagnostics
+        // BEGIN INCHI SOURCE FRAGMENT: runichi.c207..210
+        // INCHI✔️✔️: const char gsMissing[] = "is missing";
+        // INCHI✔️✔️: const char gsEmpty[] = "";
+        // INCHI✔️✔️: const char gsSpace[] = " ";
+        // INCHI✔️✔️: const char gsEqual[] = "=";
+        // END INCHI SOURCE FRAGMENT: serialization literals
+        // BEGIN INCHI SOURCE FRAGMENT: strutil.h757..758 SDF_LBL_VAL
+        // INCHI✔️✔️: #define SDF_LBL_VAL(L, V) ((L) && (L)[0]) ? gsSpace : gsEmpty, ((L) && (L)[0]) ? L : gsEmpty, ((L) && (L)[0]) ? (((V) && (V)[0]) ? gsEqual : gsSpace) : gsEmpty, ((V) && (V)[0]) ? V : ((L) && (L)[0]) ? gsMissing \
+        // INCHI✔️✔️:                                                                                                                                                                                                        : gsEmpty
+        // END INCHI SOURCE FRAGMENT: SDF_LBL_VAL
+        use crate::source::base::ichi_io::{SourceFormat, SourcePrintArguments};
+        // INCHI✔️❗: Borrow source literals/field pointers directly, without
+        // four arena allocations, owned buffers, copying or lifetime leaks.
+        // Indexed cursor/backend constants remain OPEN, not a cost pass.
+        let empty = SourceFormat::Text("");
+        let space = SourceFormat::Text(" ");
+        let equal = SourceFormat::Text("=");
+        let missing = SourceFormat::Text("is missing");
         let has_label = c_nonempty(heap, input_parameters.pSdfLabel)?;
         let has_value = c_nonempty(heap, input_parameters.pSdfValue)?;
         let first = if has_label { space } else { empty };
         let label = if has_label {
-            input_parameters.pSdfLabel
+            SourceFormat::Pointer(input_parameters.pSdfLabel.as_const())
         } else {
             empty
         };
@@ -2784,7 +4752,7 @@ pub(crate) fn OutputINChI1(
             empty
         };
         let value = if has_value {
-            input_parameters.pSdfValue
+            SourceFormat::Pointer(input_parameters.pSdfValue.as_const())
         } else if has_label {
             missing
         } else {
@@ -2796,21 +4764,19 @@ pub(crate) fn OutputINChI1(
             b"InChI serialization error for structure #%d.%s%s%s%s\n\0".as_slice()
         };
         let format =
-            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect::<Vec<_>>())?;
-        crate::source::base::ichi_io::inchi_ios_eprint(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(format));
+        // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+        crate::source::base::ichi_io::inchi_ios_eprint_format_strings(
             heap,
             Some(log),
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
-                    SourceFormatArgument::Signed(i64::from(input_structure_number)),
-                    SourceFormatArgument::Bytes(first.as_const()),
-                    SourceFormatArgument::Bytes(label.as_const()),
-                    SourceFormatArgument::Bytes(separator.as_const()),
-                    SourceFormatArgument::Bytes(value.as_const()),
-                ],
-                ..SourceVaList::default()
+            format,
+            &SourcePrintArguments {
+                arguments: &[SourceFormatArgument::Signed(i64::from(
+                    input_structure_number,
+                ))],
+                position: 0,
             },
+            &[None, Some(first), Some(label), Some(separator), Some(value)],
         )?;
         Ok(())
     }
@@ -2832,8 +4798,8 @@ pub(crate) fn OutputINChI1(
     let row_offset = i64::from(basic_or_reconnected)
         .checked_mul(i64::from(crate::source_types::TAUT_NUM))
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let selected_row = sort_rows.offset(row_offset)?;
-    let selected_sorts = heap.slice(selected_row.as_const())?;
+    let selected_row = sort_rows.row(row_offset)?;
+    let selected_sorts = selected_row.values(heap)?;
     let mobile_sorts = *selected_sorts
         .get(crate::source_types::TAUT_YES as usize)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2873,9 +4839,7 @@ pub(crate) fn OutputINChI1(
         } else {
             0
         },
-        pSortPrintINChIFlags: sort_print_flags,
         num_components: number_of_components,
-        pINChISortTautAndNonTaut: selected_row,
         pINChISort: mobile_sorts,
         pINChISort2: mobile_sorts,
         bUseMulipliers: 1,
@@ -2894,14 +4858,30 @@ pub(crate) fn OutputINChI1(
         bPolymers: input_parameters.bPolymers,
         ..INCHI_OUT_CTL::default()
     };
+    // Native ichiprt1.c1126:
+    //     io.pSortPrintINChIFlags = pSortPrintINChIFlags;
+    // INCHI✔️❗: Preserve real pointer identity in legacy mode. Borrowed
+    // flags reach EVERY reader/writer explicitly; the unused physical field
+    // is never interpreted as semantic NULL. This local io never escapes.
+    // O(1), no root/copy/allocation; C526 whole-call cost OPEN.
+    if let SourceSortFlags::Pointer(pointer) = sort_print_flags {
+        io.pSortPrintINChIFlags = *pointer;
+    }
+    // Native io.pINChISortTautAndNonTaut is a private row carrier.
+    // Borrowed rows travel explicitly to its only reading child. The unused
+    // physical pointer field is never interpreted as a fabricated NULL.
+    // Preserve the actual field identity for the original pointer entry.
+    if let OutputSortRow::Pointer(pointer) = selected_row {
+        io.pINChISortTautAndNonTaut = pointer;
+    }
     if original_atom_data.is_null() {
         io.n_zy = 0;
         io.n_pzz = 0;
     } else {
-        let data = heap
-            .slice(original_atom_data)?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❗: Native1146..1161 admits the original metadata here.
+        // Real pointer or actual inline record, without root snapshot/model.
+        // O(1), no allocation; C546 checked dispatch/whole cost remains OPEN.
+        let data = original_atom_data.at_index(heap, 0)?;
         io.n_zy = data.n_zy;
         if !data.polymer.is_null() {
             io.n_pzz = heap
@@ -2915,8 +4895,13 @@ pub(crate) fn OutputINChI1(
     let mut line_feed: &'static [i8] = &[0];
     let mut tab: &'static [i8] = &[b'\n' as i8, 0];
     set_line_separators(output_options, &mut line_feed, &mut tab);
-    let line_feed = heap.allocate_model_storage(line_feed.to_vec())?;
-    let tab = heap.allocate_model_storage(tab.to_vec())?;
+    // Native ichiprt1.c1176:
+    //     set_line_separators( bINChIOutputOptions, &pLF, &pTAB );
+    // INCHI✔️❗: Borrow complete static literal objects; no model roots,
+    // allocation/failure/retention/free or extra scan. Source consumers
+    // remain reached; checked dispatch and whole-renderer costs OPEN.
+    let line_feed = SourceFormat::Bytes(line_feed);
+    let tab = SourceFormat::Bytes(tab);
     io.sDifSegs = [[crate::source_types::tagMarkDiff_DIFV_BOTH_EMPTY as i8; 11]; 4];
 
     let mut has_isotopic_atoms = [0_i32; 2];
@@ -2956,36 +4941,49 @@ pub(crate) fn OutputINChI1(
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .clone();
-        let fixed_sort = heap
-            .slice(fixed_sorts.offset(i64::from(component))?.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone();
-        crate::source::base::ichimake::CompINChILayers(
+        // Verbatim native ichiprt1.c1254..1257:
+        //     for (i = 0, is2 = io.pINChISortTautAndNonTaut[TAUT_NON]; i < io.num_components; i++, is++, is2 ? is2++ : NULL)
+        //     {
+        //
+        //         CompINChILayers( is, is2, io.sDifSegs, bFixTranspChargeBug );
+        // INCHI✔️❗: Forward the actual fixed-sort pointer without snapshot
+        // or eager admission. Both canonical kernels preserve ALL reached
+        // fields/gates; no new allocation/clone/scan, whole cost OPEN.
+        let fixed_sort = fixed_sorts.offset(i64::from(component))?;
+        crate::source::base::ichimake::comp_layers_from_fixed_sort(
             heap,
             &mobile_sort,
-            &fixed_sort,
+            fixed_sort,
             &mut io.sDifSegs,
             fix_transposed_charge,
         )?;
-        io.bNonTautIsIdenticalToTaut &= i32::from(
-            crate::source::base::ichimake::CompINChITautVsNonTaut(
-                heap,
-                &mobile_sort,
-                &fixed_sort,
-                1,
-            )? == 0,
-        );
+        // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:1259..1259 C402 source identity short circuit
+        //         io.bNonTautIsIdenticalToTaut = io.bNonTautIsIdenticalToTaut && !CompINChITautVsNonTaut( is, is2, 1 );
+        // END VERBATIM SOURCE FRAGMENT: C402 source identity short circuit
+        // INCHI✔️❗: Source && skips all comparator reads/cost/errors once
+        // a prior component made identity false; no additional traversal.
+        if io.bNonTautIsIdenticalToTaut != 0 {
+            io.bNonTautIsIdenticalToTaut = i32::from(
+                crate::source::base::ichimake::comp_taut_vs_non_taut_from_fixed_sort(
+                    heap,
+                    &mobile_sort,
+                    fixed_sort,
+                    1,
+                )? == 0,
+            );
+        }
         if let Some(value) = aux(
             heap,
             mobile_sort.pINChI_Aux[crate::source_types::TAUT_YES as usize],
         )? {
             for isotope in 0..3 {
-                has_iso_h = has_iso_h.wrapping_add(i32::from(
-                    value.nNumRemovedIsotopicH[isotope]
-                        .checked_abs()
-                        .ok_or(SourceHeapError::SourceIntegerOverflow)?,
-                ));
+                // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:1265..1265 C402 promoted isotope absolute value
+                //                 bHasIsoH += abs( pINChI_Aux->nNumRemovedIsotopicH[j] );
+                // END VERBATIM SOURCE FRAGMENT: C402 promoted isotope absolute value
+                // INCHI✔️❗: NUM_H promotes from signed16 to int before abs;
+                // -32768 therefore yields32768, with no new fallible branch.
+                has_iso_h =
+                    has_iso_h.wrapping_add(i32::from(value.nNumRemovedIsotopicH[isotope]).abs());
                 io.num_iso_H[isotope] = io.num_iso_H[isotope]
                     .wrapping_add(i32::from(value.nNumRemovedIsotopicH[isotope]));
             }
@@ -3139,7 +5137,6 @@ pub(crate) fn OutputINChI1(
                 continue;
             }
             let normal_stereo = stereo(heap, value.Stereo)?;
-            let iso_stereo = stereo(heap, value.StereoIsotopic)?;
             let current_sp2 = i32::from(
                 normal_stereo
                     .as_ref()
@@ -3153,20 +5150,17 @@ pub(crate) fn OutputINChI1(
             let mut current_sp3 = current_has_iso_stereo;
             let mut current_iso_sp2 = i32::from(
                 iso_h_stereo != 0
-                    && iso_stereo
-                        .as_ref()
+                    && (stereo(heap, value.StereoIsotopic)?)
                         .is_some_and(|stereo| stereo.nNumberOfStereoBonds > 0),
             );
             let mut current_iso_sp3 = i32::from(
                 iso_h_stereo != 0
-                    && iso_stereo
-                        .as_ref()
+                    && (stereo(heap, value.StereoIsotopic)?)
                         .is_some_and(|stereo| stereo.nNumberOfStereoCenters > 0),
             );
             let mut current_iso_sp3_inverted = i32::from(
                 current_iso_sp3 != 0
-                    && iso_stereo
-                        .as_ref()
+                    && (stereo(heap, value.StereoIsotopic)?)
                         .is_some_and(|stereo| stereo.nCompInv2Abs != 0),
             );
             requested_racemic |= i32::from(
@@ -3179,9 +5173,9 @@ pub(crate) fn OutputINChI1(
                 current_iso_sp2 = i32::from(
                     crate::source::base::ichiprt2::Eql_INChI_Stereo(
                         heap,
-                        normal_stereo.as_ref(),
+                        normal_stereo,
                         crate::source_types::EQL_SP2 as i32,
-                        iso_stereo.as_ref(),
+                        (stereo(heap, value.StereoIsotopic)?),
                         crate::source_types::EQL_SP2 as i32,
                         0,
                     )? == 0,
@@ -3191,9 +5185,9 @@ pub(crate) fn OutputINChI1(
                 current_iso_sp3 = i32::from(
                     crate::source::base::ichiprt2::Eql_INChI_Stereo(
                         heap,
-                        normal_stereo.as_ref(),
+                        normal_stereo,
                         crate::source_types::EQL_SP3 as i32,
-                        iso_stereo.as_ref(),
+                        (stereo(heap, value.StereoIsotopic)?),
                         crate::source_types::EQL_SP3 as i32,
                         i32::from(
                             value.nFlags
@@ -3207,7 +5201,7 @@ pub(crate) fn OutputINChI1(
                 );
                 if current_iso_sp3 == 0 {
                     current_iso_sp3_inverted &= i32::from(
-                        iso_stereo.as_ref().map(|value| value.nCompInv2Abs)
+                        (stereo(heap, value.StereoIsotopic)?).map(|value| value.nCompInv2Abs)
                             != normal_stereo.as_ref().map(|value| value.nCompInv2Abs),
                     );
                 }
@@ -3285,24 +5279,32 @@ pub(crate) fn OutputINChI1(
                         .as_ref()
                         .is_some_and(|value| value.nCompInv2Abs < 0),
             );
-            let inversion_differs =
-                iso_stereo
-                    .as_ref()
-                    .zip(normal_stereo.as_ref())
-                    .is_some_and(|(iso, normal)| {
-                        iso.nCompInv2Abs != 0 && iso.nCompInv2Abs != normal.nCompInv2Abs
-                    });
+            // INCHI✔️❗: native1535..1545 checks both pointer values before
+            // the isotopic field; fallback is skipped when iso centers exist.
+            let inversion_differs = if current_iso_sp3 == 0
+                && !value.StereoIsotopic.is_null()
+                && !value.Stereo.is_null()
+            {
+                let iso_inv = stereo(heap, value.StereoIsotopic)?
+                    .ok_or(SourceHeapError::NullPointer)?
+                    .nCompInv2Abs;
+                iso_inv != 0
+                    && iso_inv
+                        != normal_stereo
+                            .ok_or(SourceHeapError::NullPointer)?
+                            .nCompInv2Abs
+            } else {
+                false
+            };
             isotopic_stereo_abs_inverted[target] |= i32::from(
                 (current_iso_sp3 != 0
-                    && iso_stereo
-                        .as_ref()
+                    && (stereo(heap, value.StereoIsotopic)?)
                         .is_some_and(|value| value.nCompInv2Abs < 0))
                     || (current_iso_sp3 == 0 && inversion_differs),
             );
             isotopic_stereo_abs[target] |= i32::from(
                 (current_iso_sp3 != 0
-                    && iso_stereo
-                        .as_ref()
+                    && (stereo(heap, value.StereoIsotopic)?)
                         .is_some_and(|value| value.nCompInv2Abs != 0))
                     || (current_iso_sp3 == 0 && inversion_differs),
             );
@@ -3348,13 +5350,23 @@ pub(crate) fn OutputINChI1(
                                     value_aux.nNumberOfTGroups,
                                 )?;
                         }
-                        io.bIsotopicOrigNumb[target] |= current_has_iso_stereo
-                            & pointers_differ(
+                        // VERBATIM SOURCE FRAGMENT: ichiprt1.c1582..1587
+                        //                         io.bIsotopicOrigNumb[ii] |= bCurHasIsoStereo && /* Fix14 */
+                        //                             pINChI_Aux->nOrigAtNosInCanonOrdInv &&
+                        //                             pINChI_Aux->nIsotopicOrigAtNosInCanonOrd &&
+                        //                             ( 0 != memcmp( pINChI_Aux->nOrigAtNosInCanonOrdInv,
+                        //                                 pINChI_Aux->nIsotopicOrigAtNosInCanonOrd,
+                        //                                 sizeof( pINChI_Aux->nOrigAtNosInCanonOrdInv[0] ) * pINChI_Aux->nNumberOfAtoms ) );
+                        // INCHI✔️❗: source && skips numbering data/errors/cost
+                        // when normal centers are absent; no replacement scan.
+                        if current_has_iso_stereo != 0 {
+                            io.bIsotopicOrigNumb[target] |= pointers_differ(
                                 heap,
                                 value_aux.nOrigAtNosInCanonOrdInv,
                                 value_aux.nIsotopicOrigAtNosInCanonOrd,
                                 value_aux.nNumberOfAtoms,
                             )?;
+                        }
                     }
                     if current_sp3 != 0
                         && normal_stereo
@@ -3370,8 +5382,7 @@ pub(crate) fn OutputINChI1(
                         )?;
                     }
                     if current_iso_sp3 != 0
-                        && iso_stereo
-                            .as_ref()
+                        && (stereo(heap, value.StereoIsotopic)?)
                             .is_some_and(|value| value.nCompInv2Abs != 0)
                     {
                         io.bInvIsotopicStereo[target] |= 1;
@@ -3427,25 +5438,26 @@ pub(crate) fn OutputINChI1(
         return Ok(0);
     }
     io.num_components = io.num_comp[io.iCurTautMode as usize];
-    let component_counts_pointer = heap.allocate_model_storage(component_counts.to_vec())?;
+    // Native forwards the existing two counts; neither synchronous auxiliary
+    // consumer saves this borrow. No source-absent retained model root.
+    // INCHI✔️❗: O(1), no allocation/copy/free; whole checked cost OPEN.
 
     let mut intermediate_result = 0_i32;
     let mut embedded_output_called = false;
+    // Native child-zero goto preserves intermediate_result0 and skips normal
+    // reset/aux/ending output. Track that exit reason separately for final
+    // overflow handling/ret0, never manufacture a parent serialization error.
+    // INCHI✔️❗: O(1) local flag/no allocation; checked branch/cost OPEN.
+    let mut embedded_failed = false;
     if output_options & crate::source_types::INCHI_OUT_ONLY_AUX_INFO as i32 == 0 {
         io.nCurINChISegment = crate::source_types::tagDiffINChILayers_DIFL_M as i32;
         if basic_or_reconnected == crate::source_types::INCHI_BAS as i32
             || output_options & crate::source_types::INCHI_OUT_EMBED_REC as i32 == 0
         {
-            let structure = if original_structure.is_null() {
-                None
-            } else {
-                Some(
-                    heap.slice(original_structure)?
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .clone(),
-                )
-            };
+            // Native version predicate reads only this reached metadata;
+            // no capture is needed before the later mutable output call.
+            // INCHI✔️❗: O(1) actual borrow, no clone/root (C527 OPEN).
+            let structure = original_structure.record(heap)?;
             let is_beta = i32::from(
                 all_fixed_atoms.max(all_mobile_atoms) > 1024
                     || structure
@@ -3455,129 +5467,124 @@ pub(crate) fn OutputINChI1(
                         && (input_parameters.bLargeMolecules != 0
                             || input_parameters.bPolymers != 0)),
             );
-            OutputINCHI_VersionAndKind(
+            outputinchi_versionandkind_separator(
                 heap,
                 output,
                 string_buffer,
                 output_options,
                 is_beta,
-                line_feed.as_const(),
-                tab.as_const(),
+                line_feed,
+                tab,
                 stdout,
             )?;
         }
-        intermediate_result = OutputINCHI_MainLayerFormula(
+        intermediate_result = outputinchi_mainlayerformula_separator(
             heap,
-            canonical_globals,
             output,
             string_buffer,
             component_counts,
             &basic_or_reconnected,
             &mut io,
-            line_feed.as_const(),
-            tab.as_const(),
+            line_feed,
+            tab,
             stdout,
         )?;
         if intermediate_result == 0 {
-            intermediate_result = OutputINCHI_MainLayerConnections(
+            intermediate_result = outputinchi_mainlayerconnections_separator(
                 heap,
-                canonical_globals,
                 output,
                 string_buffer,
                 component_counts,
                 &basic_or_reconnected,
                 &mut io,
-                line_feed.as_const(),
-                tab.as_const(),
+                line_feed,
+                tab,
                 stdout,
             )?;
         }
         if intermediate_result == 0 {
-            intermediate_result = OutputINCHI_MainLayerHydrogens(
+            intermediate_result = outputinchi_mainlayerhydrogens_separator(
                 heap,
-                canonical_globals,
                 output,
                 string_buffer,
                 component_counts,
                 &basic_or_reconnected,
                 &mut io,
-                line_feed.as_const(),
-                tab.as_const(),
+                line_feed,
+                tab,
                 stdout,
             )?;
         }
         io.bFhTag = 0;
         let mut pass = 0_i32;
         while intermediate_result == 0 {
-            intermediate_result = OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
+            intermediate_result = outputinchi_chargeandremovedaddedprotonslayers_separator(
                 heap,
-                canonical_globals,
                 output,
                 string_buffer,
                 &mut io,
-                line_feed.as_const(),
-                tab.as_const(),
+                line_feed,
+                tab,
                 stdout,
             )?;
             if intermediate_result != 0 {
                 break;
             }
             if pass == 0 {
-                intermediate_result = OutputINCHI_PolymerLayer(
+                intermediate_result = outputinchi_polymerlayer_separator(
                     heap,
-                    canonical_globals,
                     Some(&mut *output),
                     string_buffer,
                     &mut basic_or_reconnected,
                     original_atom_data,
                     original_structure,
                     &mut io,
-                    line_feed.as_const(),
-                    tab.as_const(),
+                    line_feed,
+                    tab,
                     stdout,
                 )?;
                 if intermediate_result != 0 {
                     break;
                 }
             }
-            intermediate_result = OutputINCHI_StereoLayer(
+            intermediate_result = outputinchi_stereolayer_separator(
                 heap,
-                canonical_globals,
                 output,
                 string_buffer,
                 &mut io,
-                line_feed.as_const(),
-                tab.as_const(),
+                line_feed,
+                tab,
                 stdout,
             )?;
             if intermediate_result != 0 {
                 break;
             }
             io.nCurINChISegment = io.nCurINChISegment.wrapping_add(1);
-            intermediate_result = OutputINCHI_IsotopicLayer(
+            intermediate_result = outputinchi_isotopiclayer_separator(
                 heap,
-                canonical_globals,
                 output,
                 string_buffer,
                 &basic_or_reconnected,
+                sort_print_flags,
                 &mut io,
-                line_feed.as_const(),
-                tab.as_const(),
+                line_feed,
+                tab,
                 stdout,
             )?;
             if intermediate_result != 0 {
                 break;
             }
             let mut repeat = 0_i32;
-            intermediate_result = OutputINCHI_FixedHLayerWithSublayers(
+            intermediate_result = outputinchi_fixedhlayerwithsublayers_separator(
                 heap,
-                canonical_globals,
                 output,
                 string_buffer,
                 &basic_or_reconnected,
+                selected_row,
+                sort_print_flags,
                 &mut io,
-                line_feed.as_const(),
-                tab.as_const(),
+                line_feed,
+                tab,
                 &mut repeat,
                 stdout,
             )?;
@@ -3593,17 +5600,19 @@ pub(crate) fn OutputINChI1(
             && component_counts[crate::source_types::INCHI_REC as usize] != 0
         {
             embedded_output_called = true;
-            print_values(
+            let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
                 heap,
-                output,
+                Some(&mut *output),
                 stdout,
-                false,
-                b"%s\0",
-                vec![SourceFormatArgument::Bytes(line_feed.as_const())],
+                SourceFormat::Bytes(bytemuck::cast_slice(b"%s\0")),
+                &crate::source::base::ichi_io::SourcePrintArguments {
+                    arguments: &[],
+                    position: 0,
+                },
+                &[Some(line_feed)],
             )?;
-            let nested = OutputINChI1(
+            let nested = output_inchi1_sort_table(
                 heap,
-                canonical_globals,
                 Some(&mut *string_buffer),
                 sort_rows,
                 crate::source_types::INCHI_REC as i32,
@@ -3623,9 +5632,13 @@ pub(crate) fn OutputINChI1(
                 save_option_bits,
                 stdout,
             )?;
-            if nested == 0 {
-                intermediate_result = 1;
-            }
+            // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:1837..1840 C402 embedded InChI failure exit
+            //         if (!nRet)
+            //         {
+            //             goto exit_function; /* error */
+            //         }
+            // END VERBATIM SOURCE FRAGMENT: C402 embedded InChI failure exit
+            embedded_failed = nested == 0;
         }
         if intermediate_result == 0
             && !embedded_output_called
@@ -3641,79 +5654,97 @@ pub(crate) fn OutputINChI1(
                 stdout,
                 false,
                 b"\\%c%c\0",
-                vec![
+                &[
                     SourceFormatArgument::Signed(i64::from(first)),
                     SourceFormatArgument::Signed(i64::from(second)),
                 ],
             )?;
         }
         if intermediate_result == 0 && !embedded_output_called && plain_comments == 0 {
-            let empty = heap.allocate_model_storage(
+            // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:1853..1859 C401 plain output literals
+            //     if (!bEmbeddedOutputCalled && !bPlainTextCommnts)
+            //     { /* plain text comment earlier ended with LF */
+            //         inchi_ios_print_nodisplay( out_file, "%s%s",
+            //             ( !num_components2[0] && !num_components2[1] ) ? "//" : "", /* empty InChI=// */
+            //             ( bINChIOutputOptions & INCHI_OUT_NO_AUX_INFO ) ? "\n" : pTAB );
+            // /* end of INChI= output */
+            //     }
+            // END VERBATIM SOURCE FRAGMENT: C401 plain output literals
+            // INCHI✔️❗: Source literals are borrowed, with the original tab
+            // pointer used only by the source fallback. No arena buffer/free,
+            // extra failure or leak; canonical nodisplay/growth/cursor unchanged.
+            // INCHI✔️❌: Existing printer rendered Vec/checked whole-call cost
+            // remains deferred in performance_pending.md, not equivalent.
+            let empty = crate::source::base::ichi_io::SourceFormat::Text(
                 if component_counts[0] == 0 && component_counts[1] == 0 {
-                    vec![b'/' as i8, b'/' as i8, 0]
+                    "//"
                 } else {
-                    vec![0_i8]
+                    ""
                 },
-            )?;
+            );
             let ending = if output_options & crate::source_types::INCHI_OUT_NO_AUX_INFO as i32 != 0
             {
-                heap.allocate_model_storage(vec![b'\n' as i8, 0])?
+                crate::source::base::ichi_io::SourceFormat::Text("\n")
             } else {
                 tab
             };
-            print_values(
+            let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
                 heap,
-                output,
+                Some(&mut *output),
                 stdout,
-                false,
-                b"%s%s\0",
-                vec![
-                    SourceFormatArgument::Bytes(empty.as_const()),
-                    SourceFormatArgument::Bytes(ending.as_const()),
-                ],
+                crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+                &crate::source::base::ichi_io::SourcePrintArguments {
+                    arguments: &[],
+                    position: 0,
+                },
+                &[Some(empty), Some(ending)],
             )?;
         }
-        inchi_strbuf_reset(heap, Some(&mut *string_buffer))?;
+        // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:1861..1861 C402 successful main reset only
+        //     inchi_strbuf_reset( strbuf );
+        // END VERBATIM SOURCE FRAGMENT: C402 successful main reset only
+        // Source main-layer/embedded failure jumps past this reset. Retain
+        // bytes/nUsedLength/nPtr and propagate the original status/diagnostic.
+        if intermediate_result == 0 && !embedded_failed {
+            inchi_strbuf_reset(heap, Some(&mut *string_buffer))?;
+        }
     }
 
-    if intermediate_result == 0 {
+    if intermediate_result == 0 && !embedded_failed {
         io.bFhTag = 0;
         if output_options & crate::source_types::INCHI_OUT_NO_AUX_INFO as i32 == 0 {
             io.num_components = io.num_comp[io.iCurTautMode as usize];
-            intermediate_result = OutputAUXINFO_HeaderAndNormalization_type(
+            intermediate_result = output_aux_header_borrowed_counts(
                 heap,
-                canonical_globals,
                 Some(&mut *output),
                 string_buffer,
                 output_options,
                 &mut basic_or_reconnected,
-                component_counts_pointer.as_const(),
+                component_counts,
                 &mut io,
-                line_feed.as_const(),
-                tab.as_const(),
+                line_feed,
+                tab,
                 stdout,
             )?;
             let mut aux_pass = 0_i32;
             let mut iso_only = false;
             while intermediate_result == 0 {
                 if !iso_only {
-                    intermediate_result = OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
+                    intermediate_result = output_aux_numbers_borrowed_counts(
                         heap,
-                        canonical_globals,
                         Some(&mut *output),
                         string_buffer,
-                        component_counts_pointer.as_const(),
+                        component_counts,
                         &mut io,
-                        line_feed.as_const(),
-                        tab.as_const(),
+                        line_feed,
+                        tab,
                         stdout,
                     )?;
                     if intermediate_result != 0 {
                         break;
                     }
-                    intermediate_result = OutputAUXINFO_TautomericGroupsEquivalence(
+                    intermediate_result = output_aux_tgroup_equivalence(
                         heap,
-                        canonical_globals,
                         Some(&mut *output),
                         string_buffer,
                         &mut io,
@@ -3722,38 +5753,33 @@ pub(crate) fn OutputINChI1(
                     if intermediate_result != 0 {
                         break;
                     }
-                    intermediate_result = OutputAUXINFO_Stereo(
+                    intermediate_result = outputauxinfo_stereo_separator(
                         heap,
-                        canonical_globals,
                         Some(&mut *output),
                         string_buffer,
                         &mut io,
-                        line_feed.as_const(),
-                        tab.as_const(),
+                        line_feed,
+                        tab,
                         stdout,
                     )?;
                     if intermediate_result != 0 {
                         break;
                     }
                 }
-                intermediate_result = OutputAUXINFO_IsotopicInfo(
+                intermediate_result = outputauxinfo_isotopicinfo_separator(
                     heap,
-                    canonical_globals,
                     Some(&mut *output),
                     string_buffer,
                     &mut basic_or_reconnected,
+                    sort_print_flags,
                     &mut io,
-                    line_feed.as_const(),
-                    tab.as_const(),
+                    line_feed,
+                    tab,
                     stdout,
                 )?;
                 if intermediate_result != 0 {
                     break;
                 }
-                let flags = *heap
-                    .slice(sort_print_flags.as_const())?
-                    .first()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let no_non_iso = if basic_or_reconnected == crate::source_types::INCHI_BAS as i32 {
                     crate::source_types::FLAG_SORT_PRINT_NO_NFIX_H_BAS as i32
                 } else {
@@ -3764,11 +5790,24 @@ pub(crate) fn OutputINChI1(
                 } else {
                     crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_REC as i32
                 };
+                // Verbatim native ichiprt1.c1929..1937:
+                //         if (io.bOutType == OUT_TN && io.bTautomeric && io.bNonTautomeric &&
+                //             /* Check whether the Fixed-H layer is empty */
+                //             ( *pSortPrintINChIFlags & ( ( INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_NFIX_H_BAS :
+                //                 FLAG_SORT_PRINT_NO_NFIX_H_REC ) ) &&
+                //                 ( *pSortPrintINChIFlags & ( ( INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_IFIX_H_BAS :
+                //                     FLAG_SORT_PRINT_NO_IFIX_H_REC ) )
+                //               )
+                //         {
+                //             io.bNonTautomeric = 0; /* bNonTautIdentifierNotEmpty == 0 => no fixed H info 02-10-2995 */
+                // INCHI✔️❗: Each flag access is behind the same source &&
+                // gates. No eager admission or cached read across mutations;
+                // O(1), no allocation/clone/scan, whole checked cost OPEN.
                 if io.bOutType == crate::source_types::OUT_TN as i32
                     && io.bTautomeric != 0
                     && io.bNonTautomeric != 0
-                    && flags & no_non_iso != 0
-                    && flags & no_iso != 0
+                    && sort_print_flags.read(heap)? & no_non_iso != 0
+                    && sort_print_flags.read(heap)? & no_iso != 0
                 {
                     io.bNonTautomeric = 0;
                 }
@@ -3783,6 +5822,14 @@ pub(crate) fn OutputINChI1(
                     io.num_components = io.num_comp[crate::source_types::TAUT_NON as usize];
                     io.bFhTag = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_FIXH as i32;
                     inchi_strbuf_reset(heap, Some(&mut *string_buffer))?;
+                    // Verbatim native ichiprt1.c1952..1955:
+                    //             if (!( *pSortPrintINChIFlags &
+                    //                 ( ( INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_NFIX_H_BAS :
+                    //                     FLAG_SORT_PRINT_NO_NFIX_H_REC ) )
+                    //                )
+                    // INCHI✔️❗: Re-read current flags AFTER the reset, before
+                    // the source pass increment; no saved pre-reset scalar.
+                    let flags = sort_print_flags.read(heap)?;
                     aux_pass = aux_pass.wrapping_add(1);
                     iso_only = flags & no_non_iso != 0;
                     continue;
@@ -3803,50 +5850,41 @@ pub(crate) fn OutputINChI1(
                 break;
             }
             if intermediate_result == 0 {
-                intermediate_result = OutputAUXINFO_ChargesRadicalsAndUnusualValences(
+                intermediate_result = outputauxinfo_chargesradicalsandunusualvalences_separator(
                     heap,
-                    canonical_globals,
                     Some(&mut *output),
                     string_buffer,
                     &mut io,
-                    line_feed.as_const(),
-                    tab.as_const(),
+                    line_feed,
+                    tab,
                     stdout,
                 )?;
             }
-            let structure = if original_structure.is_null() {
-                None
-            } else {
-                Some(
-                    heap.slice(original_structure)?
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .clone(),
-                )
-            };
+            // Source original metadata is passed only at the successful
+            // auxiliary call; each canonical kernel keeps its own source gates.
+            // INCHI✔️❗: No eager record admission/clone, no added scan or root;
+            // actual pointer and typed errors are retained; whole cost OPEN.
             if intermediate_result == 0 {
-                intermediate_result = OutputAUXINFO_ReversibilityInfo(
+                intermediate_result = output_aux_reversibility_structure(
                     heap,
-                    canonical_globals,
                     Some(&mut *output),
                     string_buffer,
-                    structure.as_ref(),
+                    original_structure,
                     &mut io,
-                    line_feed.as_const(),
-                    tab.as_const(),
+                    line_feed,
+                    tab,
                     stdout,
                 )?;
             }
             if intermediate_result == 0 {
-                intermediate_result = OutputAUXINFO_PolymerInfo(
+                intermediate_result = output_aux_polymer_structure(
                     heap,
-                    canonical_globals,
                     Some(&mut *output),
                     string_buffer,
-                    structure.as_ref(),
+                    original_structure,
                     &mut io,
-                    line_feed.as_const(),
-                    tab.as_const(),
+                    line_feed,
+                    tab,
                     stdout,
                 )?;
             }
@@ -3857,22 +5895,24 @@ pub(crate) fn OutputINChI1(
                 && component_counts[crate::source_types::INCHI_REC as usize] != 0
             {
                 embedded_output_called = true;
-                print_values(
+                let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
                     heap,
-                    output,
+                    Some(&mut *output),
                     stdout,
-                    true,
-                    b"%s\0",
-                    vec![SourceFormatArgument::Bytes(line_feed.as_const())],
+                    SourceFormat::Bytes(bytemuck::cast_slice(b"%s\0")),
+                    &crate::source::base::ichi_io::SourcePrintArguments {
+                        arguments: &[],
+                        position: 0,
+                    },
+                    &[Some(line_feed)],
                 )?;
-                let nested = OutputINChI1(
+                let nested = output_inchi1_sort_table(
                     heap,
-                    canonical_globals,
                     Some(&mut *string_buffer),
                     sort_rows,
                     crate::source_types::INCHI_REC as i32,
-                    SourceConstPointer::null(),
-                    SourceConstPointer::null(),
+                    &SourceInputArray::Pointer(SourceMutPointer::null()),
+                    OriginalStructure::Pointer(SourceConstPointer::null()),
                     input_parameters,
                     0,
                     output_type,
@@ -3887,48 +5927,80 @@ pub(crate) fn OutputINChI1(
                     save_option_bits,
                     stdout,
                 )?;
-                if nested == 0 {
-                    intermediate_result = 1;
-                }
+                // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:2034..2037 C402 embedded AuxInfo failure exit
+                //             if (!nRet)
+                //             {
+                //                 goto exit_function; /* error */
+                //             }
+                // END VERBATIM SOURCE FRAGMENT: C402 embedded AuxInfo failure exit
+                embedded_failed = nested == 0;
             }
             if intermediate_result == 0 && !embedded_output_called && plain_comments == 0 {
-                let empty = heap.allocate_model_storage(
+                // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:2041..2045 C401 AuxInfo closing literal
+                //         if (!bEmbeddedOutputCalled && !bPlainTextCommnts)
+                //         {
+                //             inchi_ios_print( out_file, "%s\n", ( !num_components2[0] && !num_components2[1] ) ? "//" : "" );
+                //             /* plain text comment earlier ended with LF */
+                //         }
+                // END VERBATIM SOURCE FRAGMENT: C401 AuxInfo closing literal
+                // INCHI✔️❗: Native static empty-identifier string, no arena
+                // allocation/free/failure; source display/cursor/error unchanged.
+                // Canonical renderer/whole-call costs remain independently OPEN.
+                let empty = crate::source::base::ichi_io::SourceFormat::Text(
                     if component_counts[0] == 0 && component_counts[1] == 0 {
-                        vec![b'/' as i8, b'/' as i8, 0]
+                        "//"
                     } else {
-                        vec![0_i8]
+                        ""
                     },
-                )?;
-                print_values(
+                );
+                let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
                     heap,
-                    output,
+                    Some(&mut *output),
                     stdout,
-                    true,
-                    b"%s\n\0",
-                    vec![SourceFormatArgument::Bytes(empty.as_const())],
+                    crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(
+                        b"%s\n\0",
+                    )),
+                    &crate::source::base::ichi_io::SourcePrintArguments {
+                        arguments: &[],
+                        position: 0,
+                    },
+                    &[Some(empty)],
                 )?;
             }
-            if intermediate_result == 0 {
-                let ending = heap.allocate_model_storage(
+            if intermediate_result == 0 && !embedded_failed {
+                // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:2047..2049 C401 window separator literal
+                //         /* in wINChI window, separate AuxInfo: from InChIKey: with blank line */
+                //         inchi_ios_print( out_file, "%s",
+                //             ( bINChIOutputOptions & INCHI_OUT_WINCHI_WINDOW ) ? "\n" : "" );
+                // END VERBATIM SOURCE FRAGMENT: C401 window separator literal
+                // INCHI✔️❗: Native static newline/empty selection; no arena
+                // allocation/free/failure. Same canonical display printer.
+                // Canonical renderer/whole-call costs remain independently OPEN.
+                let ending = crate::source::base::ichi_io::SourceFormat::Text(
                     if output_options & crate::source_types::INCHI_OUT_WINCHI_WINDOW as i32 != 0 {
-                        vec![b'\n' as i8, 0]
+                        "\n"
                     } else {
-                        vec![0_i8]
+                        ""
                     },
-                )?;
-                print_values(
+                );
+                let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
                     heap,
-                    output,
+                    Some(&mut *output),
                     stdout,
-                    true,
-                    b"%s\0",
-                    vec![SourceFormatArgument::Bytes(ending.as_const())],
+                    crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(
+                        b"%s\0",
+                    )),
+                    &crate::source::base::ichi_io::SourcePrintArguments {
+                        arguments: &[],
+                        position: 0,
+                    },
+                    &[Some(ending)],
                 )?;
             }
         }
     }
 
-    let mut result = i32::from(intermediate_result == 0);
+    let mut result = i32::from(intermediate_result == 0 && !embedded_failed);
     if io.bOverflow != 0 {
         print_values(
             heap,
@@ -3936,7 +6008,7 @@ pub(crate) fn OutputINChI1(
             stdout,
             true,
             b"\nFATAL ERROR: Output buffer overflow\n\0",
-            Vec::new(),
+            &[],
         )?;
     }
     if intermediate_result != 0 {
@@ -4001,6 +6073,81 @@ pub(crate) fn OutputINCHI_MainLayerFormula(
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_MainLayerFormula
+    // INCHI✔️❗: Write the native existing inline tag directly; no arena
+    // allocation, full-tag copy or copyback. Partial writes/bAlways publish
+    // in source order. Canonical borrowed line-end preserves NUL/overflow/
+    // growth behavior. O(tag work), O(1) scratch; checked costs remain OPEN.
+
+    outputinchi_mainlayerformula_separator(
+        heap,
+        output,
+        string_buffer,
+        number_of_components,
+        basic_or_reconnected,
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputinchi_mainlayerformula_separator(
+    heap: &mut SourceHeap,
+    output: &mut INCHI_IOSTREAM,
+    string_buffer: &mut INCHI_IOS_STRING,
+    number_of_components: &[i32; 2],
+    basic_or_reconnected: &i32,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3170 OutputINCHI_MainLayerFormula
+    // INCHI❗❗: int OutputINCHI_MainLayerFormula( CANON_GLOBALS    *pCG,
+    // INCHI❗❗:                                   INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                                   INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                   int              num_components2[],
+    // INCHI❗❗:                                   int              *INCHI_basic_or_INCHI_reconnected,
+    // INCHI❗❗:                                   INCHI_OUT_CTL    *io,
+    // INCHI❗❗:                                   char             *pLF,
+    // INCHI❗❗:                                   char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:
+    // INCHI❗❗:     /* constitution ( dot-disconnected Hill formulas: <formula> ) */
+    // INCHI❗❗:
+    // INCHI❗❗:     if (num_components2[0] || num_components2[1])
+    // INCHI❗❗:     {
+    // INCHI❗❗:         szGetTag( IdentLbl, io->nTag, io->bTag1 = *INCHI_basic_or_INCHI_reconnected == INCHI_REC ? IL_REC_ : IL_FML_, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:         inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:         io->tot_len = str_HillFormula( io->pINChISort, strbuf, &io->bOverflow, io->bOutType,
+    // INCHI❗❗:                                    io->num_components, io->bUseMulipliers );
+    // INCHI❗❗:
+    // INCHI❗❗:         if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -1, 1 ))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             return 1;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (io->n_pzz > 0 && io->n_zy > 0)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             int retm = MergeZzInHillFormula(strbuf);
+    // INCHI❗❗:             if (0 != retm)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return -1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     LOG_NO_ARGS("\n#################### (L3318:ichiprt1.c) ##########################\n");
+    // INCHI❗❗:     LOG_MULT_ARGS("This is the Chemical formula : %s\n", strbuf->pStr);
+    // INCHI❗❗:     LOG_NO_ARGS("####################################################################\n");
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputINCHI_MainLayerFormula
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
 
     if number_of_components[0] != 0 || number_of_components[1] != 0 {
         io.bTag1 = if *basic_or_reconnected == INCHI_REC as i32 {
@@ -4009,13 +6156,15 @@ pub(crate) fn OutputINCHI_MainLayerFormula(
             1 << 4
         };
         let tags = formula_ident_labels(heap)?;
-        let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
-        szGetTag(heap, &tags, io.nTag, io.bTag1, tag, &mut io.bAlways, 1)?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            tags,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            1,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = str_HillFormula(
             heap,
@@ -4026,9 +6175,9 @@ pub(crate) fn OutputINCHI_MainLayerFormula(
             io.num_components,
             io.bUseMulipliers,
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
             &mut io.bOverflow,
             string_buffer,
             -1,
@@ -4041,19 +6190,21 @@ pub(crate) fn OutputINCHI_MainLayerFormula(
             return Ok(-1);
         }
         let format =
-            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0"));
+        // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+        let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
             heap,
             Some(output),
             stdout,
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
-                    SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                    SourceFormatArgument::Bytes(line_feed),
-                ],
-                ..SourceVaList::default()
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
             },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
+            ],
         )?;
     }
     Ok(0)
@@ -4109,16 +6260,88 @@ pub(crate) fn OutputINCHI_MainLayerConnections(
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_MainLayerConnections
+    // INCHI✔️❗: Write the native existing inline tag directly; no arena
+    // allocation, full-tag copy or copyback. Partial writes/bAlways publish
+    // in source order. Canonical borrowed line-end preserves NUL/overflow/
+    // growth behavior. O(tag work), O(1) scratch; checked costs remain OPEN.
+
+    outputinchi_mainlayerconnections_separator(
+        heap,
+        output,
+        string_buffer,
+        _number_of_components,
+        _basic_or_reconnected,
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputinchi_mainlayerconnections_separator(
+    heap: &mut SourceHeap,
+    output: &mut INCHI_IOSTREAM,
+    string_buffer: &mut INCHI_IOS_STRING,
+    _number_of_components: &[i32; 2],
+    _basic_or_reconnected: &i32,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3213 OutputINCHI_MainLayerConnections
+    // INCHI❗❗: int OutputINCHI_MainLayerConnections( CANON_GLOBALS    *pCG,
+    // INCHI❗❗:                                       INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                                       INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                       int              num_components2[],
+    // INCHI❗❗:                                       int              *INCHI_basic_or_INCHI_reconnected,
+    // INCHI❗❗:                                       INCHI_OUT_CTL    *io,
+    // INCHI❗❗:                                       char             *pLF,
+    // INCHI❗❗:                                       char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:     /* connections ( semicolon/dot-disconnected connection tables ) */
+    // INCHI❗❗:
+    // INCHI❗❗:     szGetTag( IdentLbl, io->nTag, io->bTag1 = IL_CONN, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:     inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:     io->tot_len = 0;
+    // INCHI❗❗:     io->tot_len2 = str_Connections( pCG, io->pINChISort, strbuf, &io->bOverflow, io->bOutType,
+    // INCHI❗❗:                                     io->ATOM_MODE, io->num_components, io->bUseMulipliers );
+    // INCHI❗❗:
+    // INCHI❗❗:     /* current version does not output empty (";;;;") connectivity */
+    // INCHI❗❗:
+    // INCHI❗❗:     if (io->tot_len != io->tot_len2)
+    // INCHI❗❗:     { /* 2004-06-30: never output empty connection table */
+    // INCHI❗❗:         io->tot_len = io->tot_len2;
+    // INCHI❗❗:         if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -2, io->bPlainTextTags ))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             return 1; /* pStr overfow */
+    // INCHI❗❗:         }
+    // INCHI❗❗:         inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     LOG_NO_ARGS("\n##################### (L3357:ichiprt1.c) #########################\n");
+    // INCHI❗❗:     LOG_MULT_ARGS("This is the Connection Layer : %s\n", strbuf->pStr);
+    // INCHI❗❗:     LOG_NO_ARGS("####################################################################\n");
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputINCHI_MainLayerConnections
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
 
     io.bTag1 = 1 << 5;
     let tags = connections_ident_labels(heap)?;
-    let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
-    szGetTag(heap, &tags, io.nTag, io.bTag1, tag, &mut io.bAlways, 1)?;
-    io.szTag1.copy_from_slice(
-        heap.slice(tag.as_const())?
-            .get(..64)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    );
+    source_tag_into(
+        heap,
+        tags,
+        io.nTag,
+        io.bTag1,
+        &mut TagOutput::Bytes(&mut io.szTag1),
+        &mut io.bAlways,
+        1,
+    )?;
     inchi_strbuf_reset(heap, Some(string_buffer))?;
     io.tot_len = 0;
     io.tot_len2 = crate::source::base::ichiprt3::str_Connections(
@@ -4133,9 +6356,9 @@ pub(crate) fn OutputINCHI_MainLayerConnections(
     )?;
     if io.tot_len != io.tot_len2 {
         io.tot_len = io.tot_len2;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
             &mut io.bOverflow,
             string_buffer,
             -2,
@@ -4145,22 +6368,23 @@ pub(crate) fn OutputINCHI_MainLayerConnections(
             return Ok(1);
         }
         let format =
-            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0"));
+        // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+        let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
             heap,
             Some(output),
             stdout,
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
-                    SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                    SourceFormatArgument::Bytes(line_feed),
-                ],
-                ..SourceVaList::default()
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
             },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
+            ],
         )?;
     }
-    let _ = canon_globals;
     Ok(0)
 }
 
@@ -4216,6 +6440,78 @@ pub(crate) fn OutputINCHI_MainLayerHydrogens(
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_MainLayerHydrogens
+    // INCHI✔️❗: Write the native existing inline tag directly; no arena
+    // allocation, full-tag copy or copyback. Partial writes/bAlways publish
+    // in source order. Canonical borrowed line-end preserves NUL/overflow/
+    // growth behavior. O(tag work), O(1) scratch; checked costs remain OPEN.
+
+    outputinchi_mainlayerhydrogens_separator(
+        heap,
+        output,
+        string_buffer,
+        _number_of_components,
+        _basic_or_reconnected,
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputinchi_mainlayerhydrogens_separator(
+    heap: &mut SourceHeap,
+    output: &mut INCHI_IOSTREAM,
+    string_buffer: &mut INCHI_IOS_STRING,
+    _number_of_components: &[i32; 2],
+    _basic_or_reconnected: &i32,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3251 OutputINCHI_MainLayerHydrogens
+    // INCHI❗❗: int OutputINCHI_MainLayerHydrogens( CANON_GLOBALS    *pCG,
+    // INCHI❗❗:                                     INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                                     INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                     int              num_components2[],
+    // INCHI❗❗:                                     int              *INCHI_basic_or_INCHI_reconnected,
+    // INCHI❗❗:                                     INCHI_OUT_CTL    *io,
+    // INCHI❗❗:                                     char             *pLF,
+    // INCHI❗❗:                                     char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:
+    // INCHI❗❗:     /* hydrogen atoms (do not output empty) */
+    // INCHI❗❗:
+    // INCHI❗❗:     if (INCHI_SEGM_FILL == INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_h_H_ATOMS] ))
+    // INCHI❗❗:     {
+    // INCHI❗❗:         szGetTag( IdentLbl, io->nTag, io->bTag1 = IL_ALLH, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:         inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:         io->tot_len = 0;
+    // INCHI❗❗:         io->tot_len2 = str_H_atoms( io->pINChISort, strbuf, &io->bOverflow, io->bOutType,
+    // INCHI❗❗:                                 io->ATOM_MODE, io->TAUT_MODE,
+    // INCHI❗❗:                                 io->num_components, io->bUseMulipliers );
+    // INCHI❗❗:         if (io->tot_len != io->tot_len2)
+    // INCHI❗❗:         { /* 2004-06-21: never output empty */
+    // INCHI❗❗:             io->tot_len = io->tot_len2;
+    // INCHI❗❗:             if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -2, 1 ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     LOG_NO_ARGS("\n###################### (L3396:ichiprt1.c) ########################\n");
+    // INCHI❗❗:     LOG_MULT_ARGS("This is the Hydrogen Layer : %s\n", strbuf->pStr);
+    // INCHI❗❗:     LOG_NO_ARGS("####################################################################\n");
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputINCHI_MainLayerHydrogens
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
 
     let layer =
         usize::try_from(io.nCurINChISegment).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -4230,13 +6526,15 @@ pub(crate) fn OutputINCHI_MainLayerHydrogens(
     {
         io.bTag1 = crate::source_types::local_ichiprt1::tagIdentLblBit_IL_ALLH as i32;
         let tags = hydrogens_ident_labels(heap)?;
-        let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
-        szGetTag(heap, &tags, io.nTag, io.bTag1, tag, &mut io.bAlways, 1)?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            tags,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            1,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
         io.tot_len2 = crate::source::base::ichiprt3::str_H_atoms(
@@ -4252,9 +6550,9 @@ pub(crate) fn OutputINCHI_MainLayerHydrogens(
         )?;
         if io.tot_len != io.tot_len2 {
             io.tot_len = io.tot_len2;
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
                 &mut io.bOverflow,
                 string_buffer,
                 -2,
@@ -4264,19 +6562,21 @@ pub(crate) fn OutputINCHI_MainLayerHydrogens(
                 return Ok(1);
             }
             let format =
-                heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
-            inchi_ios_print_nodisplay(
+                crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0"));
+            // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+            let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
                 heap,
                 Some(output),
                 stdout,
-                format.as_const(),
-                &SourceVaList {
-                    arguments: vec![
-                        SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                        SourceFormatArgument::Bytes(line_feed),
-                    ],
-                    ..SourceVaList::default()
+                format,
+                &crate::source::base::ichi_io::SourcePrintArguments {
+                    arguments: &[],
+                    position: 0,
                 },
+                &[
+                    Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                    Some(line_feed),
+                ],
             )?;
         }
     }
@@ -4352,6 +6652,92 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_ChargeAndRemovedAddedProtonsLayers
+    // INCHI✔️❗: Direct caller-owned tag writes preserve source partial state.
+    // O(reached tag/output bytes), O(1) scratch; no staging allocations/copies.
+    // Safe projection/formatter/libc whole-call costs remain OPEN C284.
+
+    outputinchi_chargeandremovedaddedprotonslayers_separator(
+        heap,
+        output,
+        string_buffer,
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputinchi_chargeandremovedaddedprotonslayers_separator(
+    heap: &mut SourceHeap,
+    output: &mut INCHI_IOSTREAM,
+    string_buffer: &mut INCHI_IOS_STRING,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3293 OutputINCHI_ChargeAndRemovedAddedProtonsLayers
+    // INCHI❗❗: int OutputINCHI_ChargeAndRemovedAddedProtonsLayers( CANON_GLOBALS    *pCG,
+    // INCHI❗❗:                                                     INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                                                     INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                                     INCHI_OUT_CTL    *io,
+    // INCHI❗❗:                                                     char             *pLF,
+    // INCHI❗❗:                                                     char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:
+    // INCHI❗❗:     /* charge  */
+    // INCHI❗❗:
+    // INCHI❗❗:     io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_q_CHARGE] );
+    // INCHI❗❗:     if (io->nSegmAction)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         szGetTag( IdentLbl, io->nTag, io->bTag1 = IL_CHRG | io->bFhTag, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:         inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:         io->tot_len = 0;
+    // INCHI❗❗:         if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             io->tot_len = str_Charge2( io->pINChISort, io->pINChISort2,
+    // INCHI❗❗:                                    strbuf, &io->bOverflow, io->bOutType, io->num_components,
+    // INCHI❗❗:                                    io->bSecondNonTautPass, io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:             io->bNonTautNonIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             return 1;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     /* removed protons */
+    // INCHI❗❗:
+    // INCHI❗❗:     if (io->iCurTautMode == TAUT_YES && !io->bSecondNonTautPass)
+    // INCHI❗❗:     {
+    // INCHI❗❗:
+    // INCHI❗❗:         io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_p_PROTONS] );
+    // INCHI❗❗:         if (io->nSegmAction)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag1 = IL_PROT | io->bFhTag, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:             io->tot_len = 0;
+    // INCHI❗❗:             inchi_strbuf_printf( strbuf, "%+d", io->nNumRemovedProtons );
+    // INCHI❗❗:             if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (io->bPlainTextTags == 1) inchi_ios_print_nodisplay( out_file, "/" );
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputINCHI_ChargeAndRemovedAddedProtonsLayers
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
 
     fn selected_difference(io: &INCHI_OUT_CTL, segment: usize) -> Result<i8, SourceHeapError> {
         let layer = usize::try_from(io.nCurINChISegment)
@@ -4366,41 +6752,46 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
     fn set_tag(
         heap: &mut SourceHeap,
         io: &mut INCHI_OUT_CTL,
-        tags: &[INCHI_TAG],
+        tags: TagLabels<'_>,
         tag_bit: i32,
-    ) -> Result<SourceMutPointer<i8>, SourceHeapError> {
+    ) -> Result<(), SourceHeapError> {
         io.bTag1 = tag_bit | io.bFhTag;
-        let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
-        szGetTag(heap, tags, io.nTag, io.bTag1, tag, &mut io.bAlways, 1)?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
-        Ok(tag)
+        // INCHI✔️❗: Write the actual source tag buffer with partial writes
+        // and bAlways updates visible; no arena payload/full-buffer copy.
+        source_tag_into(
+            heap,
+            tags,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            1,
+        )
     }
 
     fn print_buffer(
         heap: &mut SourceHeap,
         output: &mut INCHI_IOSTREAM,
         string_buffer: &INCHI_IOS_STRING,
-        line_feed: SourceConstPointer<i8>,
+        line_feed: SourceFormat<'_>,
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
         let format =
-            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0"));
+        // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+        let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
             heap,
             Some(output),
             stdout,
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
-                    SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                    SourceFormatArgument::Bytes(line_feed),
-                ],
-                ..SourceVaList::default()
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
             },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
+            ],
         )?;
         Ok(())
     }
@@ -4411,10 +6802,10 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
         crate::source_types::tagDiffINChISegments_DIFS_q_CHARGE as usize,
     )?);
     if io.nSegmAction != 0 {
-        let tag = set_tag(
+        set_tag(
             heap,
             io,
-            &tags,
+            tags,
             crate::source_types::local_ichiprt1::tagIdentLblBit_IL_CHRG as i32,
         )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
@@ -4436,9 +6827,9 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
                 .bNonTautNonIsoIdentifierNotEmpty
                 .wrapping_add(io.bSecondNonTautPass);
         }
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
             &mut io.bOverflow,
             string_buffer,
             io.nSegmAction.wrapping_neg(),
@@ -4456,33 +6847,34 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
             crate::source_types::tagDiffINChISegments_DIFS_p_PROTONS as usize,
         )?);
         if io.nSegmAction != 0 {
-            let tag = set_tag(
+            set_tag(
                 heap,
                 io,
-                &tags,
+                tags,
                 crate::source_types::local_ichiprt1::tagIdentLblBit_IL_PROT as i32,
             )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
             let format =
-                heap.allocate_model_storage(b"%+d\0".iter().map(|byte| *byte as i8).collect())?;
-            match inchi_strbuf_printf(
+                crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%+d\0"));
+            // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+            match crate::source::base::ichi_io::inchi_strbuf_printf_format_arguments(
                 heap,
                 Some(string_buffer),
-                format.as_const(),
-                &SourceVaList {
-                    arguments: vec![SourceFormatArgument::Signed(i64::from(
+                format,
+                &crate::source::base::ichi_io::SourcePrintArguments {
+                    arguments: &[SourceFormatArgument::Signed(i64::from(
                         io.nNumRemovedProtons,
                     ))],
-                    ..SourceVaList::default()
+                    position: 0,
                 },
             ) {
                 Ok(_) | Err(SourceHeapError::AllocationFailed) => {}
                 Err(error) => return Err(error),
             }
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
                 &mut io.bOverflow,
                 string_buffer,
                 io.nSegmAction.wrapping_neg(),
@@ -4493,12 +6885,12 @@ pub(crate) fn OutputINCHI_ChargeAndRemovedAddedProtonsLayers(
             }
             print_buffer(heap, output, string_buffer, line_feed, stdout)?;
         } else if io.bPlainTextTags == 1 {
-            let slash = heap.allocate_model_storage(vec![b'/' as i8, 0])?;
-            inchi_ios_print_nodisplay(
+            let slash = crate::source::base::ichi_io::SourceFormat::Bytes(&[b'/' as i8, 0]);
+            crate::source::base::ichi_io::inchi_ios_print_nodisplay_format(
                 heap,
                 Some(output),
                 stdout,
-                slash.as_const(),
+                slash,
                 &SourceVaList::default(),
             )?;
         }
@@ -4663,6 +7055,180 @@ pub(crate) fn OutputINCHI_StereoLayer(
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_StereoLayer
+    // INCHI✔️❗: Direct caller-owned tag writes preserve source partial state.
+    // O(reached tag/output bytes), O(1) scratch; no staging allocations/copies.
+    // Safe projection/formatter/libc whole-call costs remain OPEN C284.
+    outputinchi_stereolayer_separator(
+        heap,
+        output,
+        string_buffer,
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputinchi_stereolayer_separator(
+    heap: &mut SourceHeap,
+    output: &mut INCHI_IOSTREAM,
+    string_buffer: &mut INCHI_IOS_STRING,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3354 OutputINCHI_StereoLayer
+    // INCHI❗❗: int OutputINCHI_StereoLayer( CANON_GLOBALS    *pCG,
+    // INCHI❗❗:                              INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                              INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                              INCHI_OUT_CTL    *io,
+    // INCHI❗❗:                              char             *pLF,
+    // INCHI❗❗:                              char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:
+    // INCHI❗❗:     {
+    // INCHI❗❗:         int i;
+    // INCHI❗❗:         i = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_t_SATOMS] ); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    // INCHI❗❗:         /* djb-rwth: removing redundant code */
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     if (INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_b_SBONDS] ) ||
+    // INCHI❗❗:          INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_t_SATOMS] ) ||
+    // INCHI❗❗:          INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_m_SP3INV] ) ||
+    // INCHI❗❗:          INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_s_STYPE] ))
+    // INCHI❗❗:     {
+    // INCHI❗❗:
+    // INCHI❗❗:         /*  stereo */
+    // INCHI❗❗:
+    // INCHI❗❗:         szGetTag( IdentLbl, io->nTag, io->bTag1 = IL_STER | io->bFhTag, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:
+    // INCHI❗❗:         /*  sp2 */
+    // INCHI❗❗:
+    // INCHI❗❗:         /*if ( bStereoSp2[io->iCurTautMode]  )*/
+    // INCHI❗❗:         if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_b_SBONDS] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:         {
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag2 = io->bTag1 | IL_DBND, io->szTag2, &io->bAlways, 1 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:             io->tot_len = 0;
+    // INCHI❗❗:             if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 io->tot_len = str_Sp2( io->pINChISort, io->pINChISort2, strbuf, &io->bOverflow,
+    // INCHI❗❗:                                         io->bOutType, io->TAUT_MODE, io->num_components,
+    // INCHI❗❗:                                         io->bSecondNonTautPass, io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:
+    // INCHI❗❗:                 io->bNonTautNonIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:             }
+    // INCHI❗❗:
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (io->bPlainTextTags == 1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_ios_print_nodisplay( out_file, "/" ); /* sp2 */
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /*  sp3 */
+    // INCHI❗❗:
+    // INCHI❗❗:         /*if ( bStereoSp3[io->iCurTautMode]  )*/
+    // INCHI❗❗:         if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_t_SATOMS] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:         {
+    // INCHI❗❗:             io->bRelRac = io->bRelativeStereo[io->iCurTautMode] || io->bRacemicStereo[io->iCurTautMode];
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag2 = io->bTag1 | IL_SP3S, io->szTag2, &io->bAlways, 1 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:             io->tot_len = 0;
+    // INCHI❗❗:             if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 io->tot_len = str_Sp3( io->pINChISort, io->pINChISort2, strbuf, &io->bOverflow,
+    // INCHI❗❗:                                        io->bOutType, io->TAUT_MODE, io->num_components, io->bRelRac,
+    // INCHI❗❗:                                    io->bSecondNonTautPass, io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:
+    // INCHI❗❗:                 io->bNonTautNonIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:             }
+    // INCHI❗❗:
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 2;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (io->bPlainTextTags == 1) inchi_ios_print_nodisplay( out_file, "/" ); /* sp3 */
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /* bStereoAbsInverted[io->iCurTautMode]  */
+    // INCHI❗❗:
+    // INCHI❗❗:         /* if ( bStereoAbs[io->iCurTautMode]  ) */
+    // INCHI❗❗:         if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_m_SP3INV] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:         {
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag2 = io->bTag1 | IL_INVS, io->szTag2, &io->bAlways, 1 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    // INCHI❗❗:             if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 io->tot_len = str_StereoAbsInv( io->pINChISort, strbuf,
+    // INCHI❗❗:                                             &io->bOverflow, io->bOutType, io->num_components );
+    // INCHI❗❗:                 io->bNonTautNonIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:             }
+    // INCHI❗❗:
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 3;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (io->bPlainTextTags == 1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_ios_print_nodisplay( out_file, "/" ); /* stereo-abs-inv */
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /* stereo type */
+    // INCHI❗❗:
+    // INCHI❗❗:         /*if ( io->bRacemicStereo[io->iCurTautMode] || io->bRelativeStereo[io->iCurTautMode] || bStereoAbs[io->iCurTautMode] )*/
+    // INCHI❗❗:         if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_s_STYPE] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:         {
+    // INCHI❗❗:             const char *p_stereo = io->bRelativeStereo[io->iCurTautMode] ? x_rel :
+    // INCHI❗❗:                 io->bRacemicStereo[io->iCurTautMode] ? x_rac : x_abs;
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag2 = io->bTag1 | IL_TYPS, io->szTag2, &io->bAlways, 1 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    // INCHI❗❗:             if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 ( io->tot_len ) += MakeDelim( p_stereo, strbuf, &io->bOverflow );
+    // INCHI❗❗:                 io->bNonTautNonIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (io->bPlainTextTags == 1)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "/" );  /* no abs, inv or racemic stereo */
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         if (io->bPlainTextTags == 1) inchi_ios_print_nodisplay( out_file, "////" ); /* sp3, sp2, abs-inv, stereo.type */
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputINCHI_StereoLayer
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
+
     fn selected_difference(io: &INCHI_OUT_CTL, segment: usize) -> Result<i8, SourceHeapError> {
         let layer = usize::try_from(io.nCurINChISegment)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -4673,46 +7239,29 @@ pub(crate) fn OutputINCHI_StereoLayer(
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
-    fn make_tag(
-        heap: &mut SourceHeap,
-        tags: &[INCHI_TAG],
-        n_tag: i32,
-        bits: i32,
-        source: &[i8; 64],
-        always: &mut i32,
-    ) -> Result<(SourceMutPointer<i8>, [i8; 64]), SourceHeapError> {
-        let tag = heap.allocate_model_storage(source.to_vec())?;
-        szGetTag(heap, tags, n_tag, bits, tag, always, 1)?;
-        let mut value = [0_i8; 64];
-        value.copy_from_slice(
-            heap.slice(tag.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
-        Ok((tag, value))
-    }
-
     fn print_buffer(
         heap: &mut SourceHeap,
         output: &mut INCHI_IOSTREAM,
         string_buffer: &INCHI_IOS_STRING,
-        line_feed: SourceConstPointer<i8>,
+        line_feed: SourceFormat<'_>,
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
         let format =
-            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0"));
+        // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+        let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
             heap,
             Some(output),
             stdout,
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
-                    SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                    SourceFormatArgument::Bytes(line_feed),
-                ],
-                ..SourceVaList::default()
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
             },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
+            ],
         )?;
         Ok(())
     }
@@ -4724,13 +7273,17 @@ pub(crate) fn OutputINCHI_StereoLayer(
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
         let format =
-            heap.allocate_model_storage(literal.iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(literal));
+        // INCHI✔️❗: Borrow the fixed literal and empty argument slice; no allocation.
+        crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_arguments(
             heap,
             Some(output),
             stdout,
-            format.as_const(),
-            &SourceVaList::default(),
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
         )?;
         Ok(())
     }
@@ -4743,24 +7296,37 @@ pub(crate) fn OutputINCHI_StereoLayer(
     let segment_action = |value| crate::source::base::ichimake::INChI_SegmentAction(value);
 
     let _ = segment_action(selected_difference(io, center_segment)?);
-    let bond_action = segment_action(selected_difference(io, bond_segment)?);
-    let center_action = segment_action(selected_difference(io, center_segment)?);
-    let inversion_action = segment_action(selected_difference(io, inversion_segment)?);
-    let type_action = segment_action(selected_difference(io, type_segment)?);
-
-    if bond_action != 0 || center_action != 0 || inversion_action != 0 || type_action != 0 {
+    // INCHI✔️❗: Native OR short-circuits; reread reached sublayers later.
+    if segment_action(selected_difference(io, bond_segment)?) != 0
+        || segment_action(selected_difference(io, center_segment)?) != 0
+        || segment_action(selected_difference(io, inversion_segment)?) != 0
+        || segment_action(selected_difference(io, type_segment)?) != 0
+    {
         let tags = stereo_ident_labels(heap)?;
         io.bTag1 = crate::source_types::local_ichiprt1::tagIdentLblBit_IL_STER as i32 | io.bFhTag;
-        let (_, tag1) = make_tag(heap, &tags, io.nTag, io.bTag1, &io.szTag1, &mut io.bAlways)?;
-        io.szTag1 = tag1;
+        source_tag_into(
+            heap,
+            tags,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            1,
+        )?;
 
-        io.nSegmAction = bond_action;
+        io.nSegmAction = segment_action(selected_difference(io, bond_segment)?);
         if io.nSegmAction != 0 {
             io.bTag2 =
                 io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_DBND as i32;
-            let (tag, value) =
-                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
-            io.szTag2 = value;
+            source_tag_into(
+                heap,
+                tags,
+                io.nTag,
+                io.bTag2,
+                &mut TagOutput::Bytes(&mut io.szTag2),
+                &mut io.bAlways,
+                1,
+            )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
             if io.nSegmAction == fill {
@@ -4781,9 +7347,9 @@ pub(crate) fn OutputINCHI_StereoLayer(
                     .bNonTautNonIsoIdentifierNotEmpty
                     .wrapping_add(io.bSecondNonTautPass);
             }
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
                 &mut io.bOverflow,
                 string_buffer,
                 io.nSegmAction.wrapping_neg(),
@@ -4797,7 +7363,7 @@ pub(crate) fn OutputINCHI_StereoLayer(
             print_literal(heap, output, b"/\0", stdout)?;
         }
 
-        io.nSegmAction = center_action;
+        io.nSegmAction = segment_action(selected_difference(io, center_segment)?);
         if io.nSegmAction != 0 {
             let taut_index = usize::try_from(io.iCurTautMode)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -4814,9 +7380,15 @@ pub(crate) fn OutputINCHI_StereoLayer(
             );
             io.bTag2 =
                 io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_SP3S as i32;
-            let (tag, value) =
-                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
-            io.szTag2 = value;
+            source_tag_into(
+                heap,
+                tags,
+                io.nTag,
+                io.bTag2,
+                &mut TagOutput::Bytes(&mut io.szTag2),
+                &mut io.bAlways,
+                1,
+            )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
             if io.nSegmAction == fill {
@@ -4838,9 +7410,9 @@ pub(crate) fn OutputINCHI_StereoLayer(
                     .bNonTautNonIsoIdentifierNotEmpty
                     .wrapping_add(io.bSecondNonTautPass);
             }
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
                 &mut io.bOverflow,
                 string_buffer,
                 io.nSegmAction.wrapping_neg(),
@@ -4854,13 +7426,19 @@ pub(crate) fn OutputINCHI_StereoLayer(
             print_literal(heap, output, b"/\0", stdout)?;
         }
 
-        io.nSegmAction = inversion_action;
+        io.nSegmAction = segment_action(selected_difference(io, inversion_segment)?);
         if io.nSegmAction != 0 {
             io.bTag2 =
                 io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_INVS as i32;
-            let (tag, value) =
-                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
-            io.szTag2 = value;
+            source_tag_into(
+                heap,
+                tags,
+                io.nTag,
+                io.bTag2,
+                &mut TagOutput::Bytes(&mut io.szTag2),
+                &mut io.bAlways,
+                1,
+            )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
             if io.nSegmAction == fill {
@@ -4876,9 +7454,9 @@ pub(crate) fn OutputINCHI_StereoLayer(
                     .bNonTautNonIsoIdentifierNotEmpty
                     .wrapping_add(io.bSecondNonTautPass);
             }
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
                 &mut io.bOverflow,
                 string_buffer,
                 io.nSegmAction.wrapping_neg(),
@@ -4892,50 +7470,59 @@ pub(crate) fn OutputINCHI_StereoLayer(
             print_literal(heap, output, b"/\0", stdout)?;
         }
 
-        io.nSegmAction = type_action;
+        io.nSegmAction = segment_action(selected_difference(io, type_segment)?);
         if io.nSegmAction != 0 {
             let taut_index = usize::try_from(io.iCurTautMode)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let relative = *io
+            let stereo_text = if *io
                 .bRelativeStereo
                 .get(taut_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
-                != 0;
-            let racemic = *io
+                != 0
+            {
+                b"2\0".as_slice()
+            } else if *io
                 .bRacemicStereo
                 .get(taut_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
-                != 0;
+                != 0
+            {
+                b"3\0".as_slice()
+            } else {
+                b"1\0".as_slice()
+            };
             io.bTag2 =
                 io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_TYPS as i32;
-            let (tag, value) =
-                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
-            io.szTag2 = value;
+            source_tag_into(
+                heap,
+                tags,
+                io.nTag,
+                io.bTag2,
+                &mut TagOutput::Bytes(&mut io.szTag2),
+                &mut io.bAlways,
+                1,
+            )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
             if io.nSegmAction == fill {
-                let stereo_text = if relative {
-                    b"2\0".as_slice()
-                } else if racemic {
-                    b"3\0".as_slice()
-                } else {
-                    b"1\0".as_slice()
-                };
-                let stereo = heap
-                    .allocate_model_storage(stereo_text.iter().map(|byte| *byte as i8).collect())?;
-                io.tot_len = io.tot_len.wrapping_add(MakeDelim(
-                    heap,
-                    stereo.as_const(),
-                    string_buffer,
-                    &mut io.bOverflow,
-                )?);
+                let stereo = crate::source::base::ichi_io::SourceFormat::Bytes(
+                    bytemuck::cast_slice(stereo_text),
+                );
+                io.tot_len =
+                    io.tot_len
+                        .wrapping_add(crate::source::base::ichiprt2::MakeDelim_format(
+                            heap,
+                            stereo,
+                            string_buffer,
+                            &mut io.bOverflow,
+                        )?);
                 io.bNonTautNonIsoIdentifierNotEmpty = io
                     .bNonTautNonIsoIdentifierNotEmpty
                     .wrapping_add(io.bSecondNonTautPass);
             }
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
                 &mut io.bOverflow,
                 string_buffer,
                 io.nSegmAction.wrapping_neg(),
@@ -5213,6 +7800,283 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_IsotopicLayer
+    // INCHI✔️❗: Direct caller-owned tag writes preserve source partial state.
+    // O(reached tag/output bytes), O(1) scratch; no staging allocations/copies.
+    // Safe projection/formatter/libc whole-call costs remain OPEN C284.
+
+    outputinchi_isotopiclayer_separator(
+        heap,
+        output,
+        string_buffer,
+        basic_or_reconnected,
+        &mut SourceSortFlags::Pointer(io.pSortPrintINChIFlags),
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputinchi_isotopiclayer_separator(
+    heap: &mut SourceHeap,
+    output: &mut INCHI_IOSTREAM,
+    string_buffer: &mut INCHI_IOS_STRING,
+    basic_or_reconnected: &i32,
+    sort_print_flags: &mut SourceSortFlags<'_>,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3502 OutputINCHI_IsotopicLayer
+    // INCHI❗❗: int OutputINCHI_IsotopicLayer( CANON_GLOBALS    *pCG,
+    // INCHI❗❗:                                INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                                INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                int              *INCHI_basic_or_INCHI_reconnected,
+    // INCHI❗❗:                                INCHI_OUT_CTL    *io,
+    // INCHI❗❗:                                char             *pLF,
+    // INCHI❗❗:                                char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:
+    // INCHI❗❗:     if (INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_i_IATOMS] ))
+    // INCHI❗❗:     {
+    // INCHI❗❗:         /*  isotopic #1:  composition -- atoms -- do not output in xml if empty */
+    // INCHI❗❗:         szGetTag( IdentLbl, io->nTag, io->bTag1 = IL_ISOT | io->bFhTag, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:         /* isotopic atoms without mobile H.
+    // INCHI❗❗:          * Fixed 2004-06-15: always output if not bXml. Note:
+    // INCHI❗❗:          * Previous condition if( bHasIsotopicAtoms[io->iCurTautMode] || bIsotopic && !bXml)
+    // INCHI❗❗:          * did not optput /i in case of only mobile isotopic H
+    // INCHI❗❗:          */
+    // INCHI❗❗:         if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_i_IATOMS] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:         {
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag2 = io->bTag1 | IL_ATMS, io->szTag2, &io->bAlways, 1 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:             io->tot_len = 0;
+    // INCHI❗❗:             /*if ( bHasIsotopicAtoms[io->iCurTautMode] )*/
+    // INCHI❗❗:             if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 io->tot_len2 = str_IsoAtoms( io->pINChISort, io->pINChISort2, strbuf, &io->bOverflow,
+    // INCHI❗❗:                                              io->bOutType, io->TAUT_MODE, io->num_components, io->bAbcNumbers,
+    // INCHI❗❗:                                              io->bSecondNonTautPass, io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:                 io->bNonTautIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             else
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 io->tot_len2 = io->tot_len;
+    // INCHI❗❗:             }
+    // INCHI❗❗:
+    // INCHI❗❗:             io->tot_len = io->tot_len2;
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /*  isotopic #1a:  composition -- exchangeable isotopic H (mobile H only) */
+    // INCHI❗❗:         /*if ( !io->bSecondNonTautPass && bHasIsoH )*/
+    // INCHI❗❗:         if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_h_H_ATOMS] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:         {
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag2 = io->bTag1 | IL_XCGA, io->szTag2, &io->bAlways, 1 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:             io->tot_len = 0;
+    // INCHI❗❗:             ( io->tot_len ) += MakeIsoHString( io->num_iso_H, strbuf, io->TAUT_MODE, &io->bOverflow );
+    // INCHI❗❗:             io->bNonTautIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 2;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /***************************************************
+    // INCHI❗❗:          *
+    // INCHI❗❗:          *       Isotopic stereo
+    // INCHI❗❗:          *
+    // INCHI❗❗:          ***************************************************/
+    // INCHI❗❗:
+    // INCHI❗❗:         /*if ( bIsotopicStereo[io->iCurTautMode] )*/
+    // INCHI❗❗:         if (INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_b_SBONDS] ) ||
+    // INCHI❗❗:              INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_t_SATOMS] ) ||
+    // INCHI❗❗:              INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_m_SP3INV] ) ||
+    // INCHI❗❗:              INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_s_STYPE] ))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             /*  stereo */
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag2 = io->bTag1 | IL_STER, io->szTag2, &io->bAlways, 1 );
+    // INCHI❗❗:
+    // INCHI❗❗:             /************************
+    // INCHI❗❗:               isotopic #2:  sp2
+    // INCHI❗❗:              ************************/
+    // INCHI❗❗:             /*if ( bIsotopicStereoSp2[io->iCurTautMode]  )*/
+    // INCHI❗❗:             if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_b_SBONDS] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 szGetTag( IdentLbl, io->nTag, io->bTag3 = io->bTag2 | IL_DBND, io->szTag3, &io->bAlways, 1 );
+    // INCHI❗❗:                 inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:                 io->tot_len = 0;
+    // INCHI❗❗:                 if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     io->tot_len = str_IsoSp2( io->pINChISort, io->pINChISort2, strbuf, &io->bOverflow,
+    // INCHI❗❗:                                               io->bOutType, io->TAUT_MODE, io->num_components,
+    // INCHI❗❗:                                           io->bSecondNonTautPass, io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:                     io->bNonTautIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 if (str_LineEnd( io->szTag3, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     return 3;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:             }
+    // INCHI❗❗:             else
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 if (io->bPlainTextTags == 1) inchi_ios_print_nodisplay( out_file, "/" ); /* iso sp2 */
+    // INCHI❗❗:             }
+    // INCHI❗❗:
+    // INCHI❗❗:             /************************
+    // INCHI❗❗:               isotopic #3:  sp3
+    // INCHI❗❗:              ************************/
+    // INCHI❗❗:             /*if ( bIsotopicStereoSp3[io->iCurTautMode]  )*/
+    // INCHI❗❗:             if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_t_SATOMS] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 io->bRelRac = io->bIsotopicRelativeStereo[io->iCurTautMode] || io->bIsotopicRacemicStereo[io->iCurTautMode];
+    // INCHI❗❗:
+    // INCHI❗❗:                 szGetTag( IdentLbl, io->nTag, io->bTag3 = io->bTag2 | IL_SP3S, io->szTag3, &io->bAlways, 1 );
+    // INCHI❗❗:                 inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:                 io->tot_len = 0;
+    // INCHI❗❗:                 if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     io->tot_len = str_IsoSp3( io->pINChISort, io->pINChISort2, strbuf, &io->bOverflow,
+    // INCHI❗❗:                                               io->bOutType, io->TAUT_MODE, io->num_components, io->bRelRac,
+    // INCHI❗❗:                                               io->bSecondNonTautPass, io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:                     io->bNonTautIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 if (str_LineEnd( io->szTag3, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     return 5;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:             }
+    // INCHI❗❗:             else
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 if (io->bPlainTextTags == 1)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     inchi_ios_print_nodisplay( out_file, "/" ); /* iso-sp3 */
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:
+    // INCHI❗❗:             /* isotopic #4: abs inverted */
+    // INCHI❗❗:             if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_m_SP3INV] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 szGetTag( IdentLbl, io->nTag, io->bTag3 = io->bTag2 | IL_INVS, io->szTag3, &io->bAlways, 1 );
+    // INCHI❗❗:                 inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:                 io->tot_len = 0;
+    // INCHI❗❗:                 if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     io->tot_len = str_IsoStereoAbsInv( io->pINChISort, strbuf,
+    // INCHI❗❗:                                                    &io->bOverflow, io->bOutType, io->num_components );
+    // INCHI❗❗:                     io->bNonTautIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 if (str_LineEnd( io->szTag3, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     return 5;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:             }
+    // INCHI❗❗:             else
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 if (io->bPlainTextTags == 1)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     inchi_ios_print_nodisplay( out_file, "/" );
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:
+    // INCHI❗❗:             /* isotopic #5: stereo type. Do not output if it has already been output in non-iso */
+    // INCHI❗❗:             if ((io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_s_STYPE] ))) /* djb-rwth: addressing LLVM warning */
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 const char *p_stereo = io->bIsotopicRelativeStereo[io->iCurTautMode] ? x_rel :
+    // INCHI❗❗:                     io->bIsotopicRacemicStereo[io->iCurTautMode] ? x_rac : x_abs;
+    // INCHI❗❗:                 szGetTag( IdentLbl, io->nTag, io->bTag3 = io->bTag2 | IL_TYPS, io->szTag3, &io->bAlways, 1 );
+    // INCHI❗❗:                 inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:                 io->tot_len = 0;
+    // INCHI❗❗:                 if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     io->tot_len += MakeDelim( p_stereo, strbuf, &io->bOverflow );
+    // INCHI❗❗:                     io->bNonTautIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 if (str_LineEnd( io->szTag3, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     return 6;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:             }
+    // INCHI❗❗:             if (io->bPlainTextTags == 1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_ios_print_nodisplay( out_file, "/" );  /* no abs, inv or racemic stereo */
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             /* no isotopic stereo */
+    // INCHI❗❗:             if (io->bPlainTextTags == 1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_ios_print_nodisplay( out_file, "////" ); /* sp3, sp2, abs-inv, stereo.type */
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         if (io->bPlainTextTags == 1)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "///" ); /* isotopic composition, sp2, sp3 */
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (io->bPlainTextTags == 1)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "//" );   /* inv or racemic stereo */
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗: #if ( CANON_FIXH_TRANS == 1 )
+    // INCHI❗❗:     if (io->bOutType == OUT_NONTAUT && io->bOutputType == OUT_TN && io->bSecondNonTautPass &&
+    // INCHI❗❗:          INCHI_SEGM_FILL == INChI_SegmentAction( io->sDifSegs[DIFL_F][DIFS_o_TRANSP] ))
+    // INCHI❗❗:     {
+    // INCHI❗❗:         /* find and print non-tautomeric components transposition, if non-trivial */
+    // INCHI❗❗:         AT_NUMB *nTrans_n, *nTrans_s;
+    // INCHI❗❗:
+    // INCHI❗❗:         if (0 < bin_AuxTautTrans( io->pINChISort, io->pINChISort2, &nTrans_n, &nTrans_s, io->bOutType, io->num_components ))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             /* a non-trivial transposition does exist; output start tag */
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag1 = IL_TRNS | io->bFhTag, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:             io->tot_len = 0;
+    // INCHI❗❗:             /* print the transposition, cycle after cycle */
+    // INCHI❗❗:             io->tot_len = str_AuxTautTrans( pCG, nTrans_n, nTrans_s, strbuf,
+    // INCHI❗❗:                                             &io->bOverflow, io->TAUT_MODE, io->num_components );
+    // INCHI❗❗:             io->bNonTautIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:             if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 7;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:              /* detected transposition */
+    // INCHI❗❗:             ( *io->pSortPrintINChIFlags ) |=
+    // INCHI❗❗:                 ( *INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_TRANSPOS_BAS : FLAG_SORT_PRINT_TRANSPOS_REC;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (io->bPlainTextTags == 1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_ios_print_nodisplay( out_file, "/" );
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗: #endif
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputINCHI_IsotopicLayer
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
 
     fn selected_difference(
         io: &INCHI_OUT_CTL,
@@ -5225,45 +8089,29 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
             .copied()
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
-    fn make_tag(
-        heap: &mut SourceHeap,
-        tags: &[INCHI_TAG],
-        n_tag: i32,
-        bits: i32,
-        source: &[i8; 64],
-        always: &mut i32,
-    ) -> Result<(SourceMutPointer<i8>, [i8; 64]), SourceHeapError> {
-        let tag = heap.allocate_model_storage(source.to_vec())?;
-        szGetTag(heap, tags, n_tag, bits, tag, always, 1)?;
-        let mut value = [0_i8; 64];
-        value.copy_from_slice(
-            heap.slice(tag.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
-        Ok((tag, value))
-    }
     fn print_buffer(
         heap: &mut SourceHeap,
         output: &mut INCHI_IOSTREAM,
         buffer: &INCHI_IOS_STRING,
-        line_feed: SourceConstPointer<i8>,
+        line_feed: SourceFormat<'_>,
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
         let format =
-            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0"));
+        // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+        let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
             heap,
             Some(output),
             stdout,
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
-                    SourceFormatArgument::Bytes(buffer.pStr.as_const()),
-                    SourceFormatArgument::Bytes(line_feed),
-                ],
-                ..SourceVaList::default()
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
             },
+            &[
+                Some(SourceFormat::Pointer(buffer.pStr.as_const())),
+                Some(line_feed),
+            ],
         )?;
         Ok(())
     }
@@ -5274,13 +8122,17 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
         let format =
-            heap.allocate_model_storage(literal.iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(literal));
+        // INCHI✔️❗: Borrow the fixed literal and empty argument slice; no allocation.
+        crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_arguments(
             heap,
             Some(output),
             stdout,
-            format.as_const(),
-            &SourceVaList::default(),
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
         )?;
         Ok(())
     }
@@ -5300,13 +8152,27 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
 
     if atom_action != 0 {
         io.bTag1 = crate::source_types::local_ichiprt1::tagIdentLblBit_IL_ISOT as i32 | io.bFhTag;
-        let (_, value) = make_tag(heap, &tags, io.nTag, io.bTag1, &io.szTag1, &mut io.bAlways)?;
-        io.szTag1 = value;
+        source_tag_into(
+            heap,
+            tags,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            1,
+        )?;
 
         io.nSegmAction = atom_action;
         io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_ATMS as i32;
-        let (tag, value) = make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
-        io.szTag2 = value;
+        source_tag_into(
+            heap,
+            tags,
+            io.nTag,
+            io.bTag2,
+            &mut TagOutput::Bytes(&mut io.szTag2),
+            &mut io.bAlways,
+            1,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
         if io.nSegmAction == fill {
@@ -5331,9 +8197,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
             io.tot_len2 = io.tot_len;
         }
         io.tot_len = io.tot_len2;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
             &mut io.bOverflow,
             string_buffer,
             io.nSegmAction.wrapping_neg(),
@@ -5348,9 +8214,15 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
         if io.nSegmAction != 0 {
             io.bTag2 =
                 io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_XCGA as i32;
-            let (tag, value) =
-                make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
-            io.szTag2 = value;
+            source_tag_into(
+                heap,
+                tags,
+                io.nTag,
+                io.bTag2,
+                &mut TagOutput::Bytes(&mut io.szTag2),
+                &mut io.bAlways,
+                1,
+            )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
             io.tot_len = io.tot_len.wrapping_add(MakeIsoHString(
@@ -5363,9 +8235,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
             io.bNonTautIsoIdentifierNotEmpty = io
                 .bNonTautIsoIdentifierNotEmpty
                 .wrapping_add(io.bSecondNonTautPass);
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
                 &mut io.bOverflow,
                 string_buffer,
                 io.nSegmAction.wrapping_neg(),
@@ -5377,23 +8249,37 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
             print_buffer(heap, output, string_buffer, line_feed, stdout)?;
         }
 
-        let bond_action = action(selected_difference(io, current_layer, bond_segment)?);
-        let center_action = action(selected_difference(io, current_layer, center_segment)?);
-        let inversion_action = action(selected_difference(io, current_layer, inversion_segment)?);
-        let type_action = action(selected_difference(io, current_layer, type_segment)?);
-        if bond_action != 0 || center_action != 0 || inversion_action != 0 || type_action != 0 {
+        // INCHI✔️❗: Native OR short-circuits; reread reached sublayers later.
+        if action(selected_difference(io, current_layer, bond_segment)?) != 0
+            || action(selected_difference(io, current_layer, center_segment)?) != 0
+            || action(selected_difference(io, current_layer, inversion_segment)?) != 0
+            || action(selected_difference(io, current_layer, type_segment)?) != 0
+        {
             io.bTag2 =
                 io.bTag1 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_STER as i32;
-            let (_, value) = make_tag(heap, &tags, io.nTag, io.bTag2, &io.szTag2, &mut io.bAlways)?;
-            io.szTag2 = value;
+            source_tag_into(
+                heap,
+                tags,
+                io.nTag,
+                io.bTag2,
+                &mut TagOutput::Bytes(&mut io.szTag2),
+                &mut io.bAlways,
+                1,
+            )?;
 
-            io.nSegmAction = bond_action;
+            io.nSegmAction = action(selected_difference(io, current_layer, bond_segment)?);
             if io.nSegmAction != 0 {
                 io.bTag3 =
                     io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_DBND as i32;
-                let (tag, value) =
-                    make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
-                io.szTag3 = value;
+                source_tag_into(
+                    heap,
+                    tags,
+                    io.nTag,
+                    io.bTag3,
+                    &mut TagOutput::Bytes(&mut io.szTag3),
+                    &mut io.bAlways,
+                    1,
+                )?;
                 inchi_strbuf_reset(heap, Some(string_buffer))?;
                 io.tot_len = 0;
                 if io.nSegmAction == fill {
@@ -5414,9 +8300,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                         .bNonTautIsoIdentifierNotEmpty
                         .wrapping_add(io.bSecondNonTautPass);
                 }
-                if str_LineEnd(
+                if source_line_end(
                     heap,
-                    tag.as_const(),
+                    crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag3),
                     &mut io.bOverflow,
                     string_buffer,
                     io.nSegmAction.wrapping_neg(),
@@ -5430,7 +8316,7 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 print_literal(heap, output, b"/\0", stdout)?;
             }
 
-            io.nSegmAction = center_action;
+            io.nSegmAction = action(selected_difference(io, current_layer, center_segment)?);
             if io.nSegmAction != 0 {
                 let taut = usize::try_from(io.iCurTautMode)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -5447,9 +8333,15 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 );
                 io.bTag3 =
                     io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_SP3S as i32;
-                let (tag, value) =
-                    make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
-                io.szTag3 = value;
+                source_tag_into(
+                    heap,
+                    tags,
+                    io.nTag,
+                    io.bTag3,
+                    &mut TagOutput::Bytes(&mut io.szTag3),
+                    &mut io.bAlways,
+                    1,
+                )?;
                 inchi_strbuf_reset(heap, Some(string_buffer))?;
                 io.tot_len = 0;
                 if io.nSegmAction == fill {
@@ -5471,9 +8363,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                         .bNonTautIsoIdentifierNotEmpty
                         .wrapping_add(io.bSecondNonTautPass);
                 }
-                if str_LineEnd(
+                if source_line_end(
                     heap,
-                    tag.as_const(),
+                    crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag3),
                     &mut io.bOverflow,
                     string_buffer,
                     io.nSegmAction.wrapping_neg(),
@@ -5487,13 +8379,19 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 print_literal(heap, output, b"/\0", stdout)?;
             }
 
-            io.nSegmAction = inversion_action;
+            io.nSegmAction = action(selected_difference(io, current_layer, inversion_segment)?);
             if io.nSegmAction != 0 {
                 io.bTag3 =
                     io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_INVS as i32;
-                let (tag, value) =
-                    make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
-                io.szTag3 = value;
+                source_tag_into(
+                    heap,
+                    tags,
+                    io.nTag,
+                    io.bTag3,
+                    &mut TagOutput::Bytes(&mut io.szTag3),
+                    &mut io.bAlways,
+                    1,
+                )?;
                 inchi_strbuf_reset(heap, Some(string_buffer))?;
                 io.tot_len = 0;
                 if io.nSegmAction == fill {
@@ -5509,9 +8407,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                         .bNonTautIsoIdentifierNotEmpty
                         .wrapping_add(io.bSecondNonTautPass);
                 }
-                if str_LineEnd(
+                if source_line_end(
                     heap,
-                    tag.as_const(),
+                    crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag3),
                     &mut io.bOverflow,
                     string_buffer,
                     io.nSegmAction.wrapping_neg(),
@@ -5525,7 +8423,7 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 print_literal(heap, output, b"/\0", stdout)?;
             }
 
-            io.nSegmAction = type_action;
+            io.nSegmAction = action(selected_difference(io, current_layer, type_segment)?);
             if io.nSegmAction != 0 {
                 let taut = usize::try_from(io.iCurTautMode)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -5548,28 +8446,36 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 };
                 io.bTag3 =
                     io.bTag2 | crate::source_types::local_ichiprt1::tagIdentLblBit_IL_TYPS as i32;
-                let (tag, value) =
-                    make_tag(heap, &tags, io.nTag, io.bTag3, &io.szTag3, &mut io.bAlways)?;
-                io.szTag3 = value;
+                source_tag_into(
+                    heap,
+                    tags,
+                    io.nTag,
+                    io.bTag3,
+                    &mut TagOutput::Bytes(&mut io.szTag3),
+                    &mut io.bAlways,
+                    1,
+                )?;
                 inchi_strbuf_reset(heap, Some(string_buffer))?;
                 io.tot_len = 0;
                 if io.nSegmAction == fill {
-                    let stereo = heap.allocate_model_storage(
-                        stereo_text.iter().map(|byte| *byte as i8).collect(),
-                    )?;
-                    io.tot_len = io.tot_len.wrapping_add(MakeDelim(
-                        heap,
-                        stereo.as_const(),
-                        string_buffer,
-                        &mut io.bOverflow,
-                    )?);
+                    let stereo = crate::source::base::ichi_io::SourceFormat::Bytes(
+                        bytemuck::cast_slice(stereo_text),
+                    );
+                    io.tot_len =
+                        io.tot_len
+                            .wrapping_add(crate::source::base::ichiprt2::MakeDelim_format(
+                                heap,
+                                stereo,
+                                string_buffer,
+                                &mut io.bOverflow,
+                            )?);
                     io.bNonTautIsoIdentifierNotEmpty = io
                         .bNonTautIsoIdentifierNotEmpty
                         .wrapping_add(io.bSecondNonTautPass);
                 }
-                if str_LineEnd(
+                if source_line_end(
                     heap,
-                    tag.as_const(),
+                    crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag3),
                     &mut io.bOverflow,
                     string_buffer,
                     io.nSegmAction.wrapping_neg(),
@@ -5616,9 +8522,15 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
         {
             io.bTag1 =
                 crate::source_types::local_ichiprt1::tagIdentLblBit_IL_TRNS as i32 | io.bFhTag;
-            let (tag, value) =
-                make_tag(heap, &tags, io.nTag, io.bTag1, &io.szTag1, &mut io.bAlways)?;
-            io.szTag1 = value;
+            source_tag_into(
+                heap,
+                tags,
+                io.nTag,
+                io.bTag1,
+                &mut TagOutput::Bytes(&mut io.szTag1),
+                &mut io.bAlways,
+                1,
+            )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
             io.tot_len = str_AuxTautTrans(
@@ -5633,9 +8545,9 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
             io.bNonTautIsoIdentifierNotEmpty = io
                 .bNonTautIsoIdentifierNotEmpty
                 .wrapping_add(io.bSecondNonTautPass);
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
                 &mut io.bOverflow,
                 string_buffer,
                 -1,
@@ -5645,10 +8557,7 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
                 return Ok(7);
             }
             print_buffer(heap, output, string_buffer, line_feed, stdout)?;
-            let flags = heap
-                .slice_mut(io.pSortPrintINChIFlags)?
-                .first_mut()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let flags = sort_print_flags.value_mut(heap)?;
             *flags |= if *basic_or_reconnected == crate::source_types::INCHI_BAS as i32 {
                 crate::source_types::FLAG_SORT_PRINT_TRANSPOS_BAS as i32
             } else {
@@ -5658,7 +8567,6 @@ pub(crate) fn OutputINCHI_IsotopicLayer(
             print_literal(heap, output, b"/\0", stdout)?;
         }
     }
-    let _ = canon_globals;
     Ok(0)
 }
 
@@ -5803,56 +8711,211 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_FixedHLayerWithSublayers
 
-    fn selected_sort(
-        heap: &SourceHeap,
-        io: &INCHI_OUT_CTL,
-        taut_mode: usize,
-    ) -> Result<SourceMutPointer<crate::source_types::INCHI_SORT>, SourceHeapError> {
-        heap.slice(io.pINChISortTautAndNonTaut.as_const())?
-            .get(taut_mode)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)
-    }
+    outputinchi_fixedhlayerwithsublayers_separator(
+        heap,
+        output,
+        string_buffer,
+        basic_or_reconnected,
+        OutputSortRow::Pointer(io.pINChISortTautAndNonTaut),
+        &mut SourceSortFlags::Pointer(io.pSortPrintINChIFlags),
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        then_goto_repeat,
+        stdout,
+    )
+}
 
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputinchi_fixedhlayerwithsublayers_separator(
+    heap: &mut SourceHeap,
+    output: &mut INCHI_IOSTREAM,
+    string_buffer: &mut INCHI_IOS_STRING,
+    basic_or_reconnected: &i32,
+    selected_row: OutputSortRow<'_>,
+    sort_print_flags: &mut SourceSortFlags<'_>,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    then_goto_repeat: &mut i32,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3750 OutputINCHI_FixedHLayerWithSublayers
+    // INCHI❗❗: int OutputINCHI_FixedHLayerWithSublayers( CANON_GLOBALS    *pCG,
+    // INCHI❗❗:                                           INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                                           INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                           int              *INCHI_basic_or_INCHI_reconnected,
+    // INCHI❗❗:                                           INCHI_OUT_CTL    *io,
+    // INCHI❗❗:                                           char             *pLF,
+    // INCHI❗❗:                                           char             *pTAB,
+    // INCHI❗❗:                                           int              *then_goto_repeat )
+    // INCHI❗❗: {
+    // INCHI❗❗:
+    // INCHI❗❗:     *then_goto_repeat = 0;
+    // INCHI❗❗:
+    // INCHI❗❗:     if (io->bOutType == OUT_TN &&
+    // INCHI❗❗:          !( io->bSecondNonTautPass ) &&
+    // INCHI❗❗:          io->bNonTautIsIdenticalToTaut &&
+    // INCHI❗❗:          io->bTautomeric &&
+    // INCHI❗❗:          io->bNonTautomeric)
+    // INCHI❗❗:     {
+    // INCHI❗❗:             /* Fixed-H layer is empty in the Identifier */
+    // INCHI❗❗:         ( *io->pSortPrintINChIFlags ) |=
+    // INCHI❗❗:             ( *INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_NFIX_H_BAS :
+    // INCHI❗❗:             FLAG_SORT_PRINT_NO_NFIX_H_REC;
+    // INCHI❗❗:         ( *io->pSortPrintINChIFlags ) |=
+    // INCHI❗❗:             ( *INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_IFIX_H_BAS :
+    // INCHI❗❗:             FLAG_SORT_PRINT_NO_IFIX_H_REC;
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     if (io->bOutType == OUT_TN &&
+    // INCHI❗❗:          !io->bNonTautIsIdenticalToTaut && /* added 2004-10-04 Fix16 */
+    // INCHI❗❗: #ifdef OLD_ITEM_DISCOVERY
+    // INCHI❗❗:          io->bTautomeric &&
+    // INCHI❗❗:          io->bNonTautomeric &&
+    // INCHI❗❗: #endif
+    // INCHI❗❗:          INChI_SegmentAction( io->sDifSegs[DIFL_F][DIFS_f_FORMULA] )
+    // INCHI❗❗:                                     /* special case: removed isolated H(+): */
+    // INCHI❗❗:                                     /* || io->iCurTautMode == TAUT_YES && num_comp[TAUT_YES] < num_comp[TAUT_NON] &&
+    // INCHI❗❗:                                         0 < num_comp[TAUT_NON]*/
+    // INCHI❗❗:        )
+    // INCHI❗❗:
+    // INCHI❗❗:     {
+    // INCHI❗❗:         /* add the second (non-tautomeric) output */
+    // INCHI❗❗:         io->bOutType = OUT_NONTAUT;    /* pick up only non-tautomeric representation of tautomeric */
+    // INCHI❗❗:         io->iCurTautMode = TAUT_NON;
+    // INCHI❗❗:         io->pINChISort = io->pINChISortTautAndNonTaut[TAUT_NON];
+    // INCHI❗❗:         io->bSecondNonTautPass = 1;
+    // INCHI❗❗:         io->nCurINChISegment = DIFL_F;
+    // INCHI❗❗:         io->num_components = io->num_comp[io->iCurTautMode]; /* number of components could change due to removal of isolated H(+) from tautomeric */
+    // INCHI❗❗:         io->bFhTag = IL_FIXH;
+    // INCHI❗❗:         szGetTag( IdentLbl, io->nTag, io->bTag1 = io->bFhTag, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:         /***** constitution non-taut: dot-disconnected Hill formulas: <formula> -- only if different */
+    // INCHI❗❗:         szGetTag( IdentLbl, io->nTag, io->bTag1 = IL_FMLF | io->bFhTag, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:         inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    // INCHI❗❗:         io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_f_FORMULA] );
+    // INCHI❗❗:         if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             io->tot_len2 = str_HillFormula2( io->pINChISort, io->pINChISort2,
+    // INCHI❗❗:                                              strbuf, &io->bOverflow, io->bOutType,
+    // INCHI❗❗:                                              io->num_components, io->bUseMulipliers );
+    // INCHI❗❗:             if (io->n_pzz > 0 && io->n_zy > 0)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 MergeZzInHillFormula(strbuf);
+    // INCHI❗❗:             }
+    // INCHI❗❗:             io->bNonTautNonIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             io->tot_len2 = io->tot_len;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         io->tot_len = io->tot_len2;
+    // INCHI❗❗:         if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             return 1;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:
+    // INCHI❗❗:         io->nSegmAction = INChI_SegmentAction( io->sDifSegs[io->nCurINChISegment][DIFS_h_H_ATOMS] );
+    // INCHI❗❗:
+    // INCHI❗❗:         if (INCHI_SEGM_FILL == io->nSegmAction)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             szGetTag( IdentLbl, io->nTag, io->bTag1 = IL_HFIX | io->bFhTag, io->szTag1, &io->bAlways, 1 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf ); io->tot_len = 0; /* open H-fixed */
+    // INCHI❗❗:             /* output the second non-tautomeric item: fixed H -- do not output in xml if empty */
+    // INCHI❗❗:             io->tot_len2 = str_FixedH_atoms( io->pINChISort, strbuf,
+    // INCHI❗❗:                                              &io->bOverflow, io->bOutType, io->ATOM_MODE,
+    // INCHI❗❗:                                              io->num_components, io->bUseMulipliers );
+    // INCHI❗❗:             io->tot_len = io->tot_len2;
+    // INCHI❗❗:             if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -io->nSegmAction, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 2;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:             io->bNonTautNonIsoIdentifierNotEmpty += io->bSecondNonTautPass;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         *then_goto_repeat = 1;
+    // INCHI❗❗:         return 0;
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         if (io->bOutType == OUT_NONTAUT && io->bOutputType == OUT_TN && io->bSecondNonTautPass /* && io->bTautomeric && io->bNonTautomeric*/)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             /* the second (non-taut) output has been done; restore variables */
+    // INCHI❗❗:             io->bOutType = OUT_TN;
+    // INCHI❗❗:             io->iCurTautMode = TAUT_YES;
+    // INCHI❗❗:             io->pINChISort = io->pINChISortTautAndNonTaut[TAUT_YES];
+    // INCHI❗❗:             io->bSecondNonTautPass = 0;
+    // INCHI❗❗:             io->num_components = io->num_comp[io->iCurTautMode];
+    // INCHI❗❗:             if (!io->bNonTautNonIsoIdentifierNotEmpty)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 /* Fixed-H layer is empty in the Identifier */
+    // INCHI❗❗:                 ( *io->pSortPrintINChIFlags ) |= ( *INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_NFIX_H_BAS :
+    // INCHI❗❗:                     FLAG_SORT_PRINT_NO_NFIX_H_REC;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             if (!io->bNonTautIsoIdentifierNotEmpty)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 /* Fixed-H layer is empty in the Identifier */
+    // INCHI❗❗:                 ( *io->pSortPrintINChIFlags ) |= ( *INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_IFIX_H_BAS :
+    // INCHI❗❗:                     FLAG_SORT_PRINT_NO_IFIX_H_REC;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             io->bFhTag = 0;
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputINCHI_FixedHLayerWithSublayers
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
+
+    // INCHI✔️❗: Native szGetTag writes caller storage directly, including
+    // partial state on errors. O(reached tag/output bytes), O(1) scratch;
+    // no tag allocation, clone or full-buffer copyback. Checked projection
+    // and formatter/libc whole-call costs remain OPEN in performance_pending.
     fn update_tag(
         heap: &mut SourceHeap,
-        tags: &[INCHI_TAG],
+        tags: TagLabels<'_>,
         io: &mut INCHI_OUT_CTL,
         tag_bits: i32,
-    ) -> Result<SourceMutPointer<i8>, SourceHeapError> {
+    ) -> Result<(), SourceHeapError> {
         io.bTag1 = tag_bits;
-        let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
-        szGetTag(heap, tags, io.nTag, io.bTag1, tag, &mut io.bAlways, 1)?;
-        let tag_length = io.szTag1.len();
-        io.szTag1.copy_from_slice(
-            heap.slice(tag.as_const())?
-                .get(..tag_length)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
-        Ok(tag)
+        source_tag_into(
+            heap,
+            tags,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            1,
+        )
     }
 
     fn print_buffer(
         heap: &mut SourceHeap,
         output: &mut INCHI_IOSTREAM,
         string_buffer: &INCHI_IOS_STRING,
-        line_feed: SourceConstPointer<i8>,
+        line_feed: SourceFormat<'_>,
         stdout: SourceMutPointer<FILE>,
     ) -> Result<(), SourceHeapError> {
         let format =
-            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0"));
+        // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+        let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
             heap,
             Some(output),
             stdout,
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
-                    SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                    SourceFormatArgument::Bytes(line_feed),
-                ],
-                ..SourceVaList::default()
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
             },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
+            ],
         )?;
         Ok(())
     }
@@ -5870,10 +8933,7 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
         && io.bTautomeric != 0
         && io.bNonTautomeric != 0
     {
-        let flags = heap
-            .slice_mut(io.pSortPrintINChIFlags)?
-            .first_mut()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let flags = sort_print_flags.value_mut(heap)?;
         *flags |= if basic {
             crate::source_types::FLAG_SORT_PRINT_NO_NFIX_H_BAS as i32
         } else {
@@ -5889,24 +8949,25 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
     let fixed_layer = crate::source_types::tagDiffINChILayers_DIFL_F as usize;
     let formula_segment = crate::source_types::tagDiffINChISegments_DIFS_f_FORMULA as usize;
     let fixed_h_segment = crate::source_types::tagDiffINChISegments_DIFS_h_H_ATOMS as usize;
-    let formula_difference = io.sDifSegs[fixed_layer][formula_segment];
     if io.bOutType == out_tn
         && io.bNonTautIsIdenticalToTaut == 0
-        && crate::source::base::ichimake::INChI_SegmentAction(formula_difference) != 0
+        && crate::source::base::ichimake::INChI_SegmentAction(
+            io.sDifSegs[fixed_layer][formula_segment],
+        ) != 0
     {
         io.bOutType = out_non_taut;
         io.iCurTautMode = crate::source_types::TAUT_NON as i32;
-        io.pINChISort = selected_sort(heap, io, taut_non)?;
+        io.pINChISort = selected_row.get(heap, taut_non)?;
         io.bSecondNonTautPass = 1;
         io.nCurINChISegment = crate::source_types::tagDiffINChILayers_DIFL_F as i32;
         io.num_components = io.num_comp[taut_non];
         io.bFhTag = crate::source_types::local_ichiprt1::tagIdentLblBit_IL_FIXH as i32;
 
         let tags = isotopic_ident_labels(heap)?;
-        update_tag(heap, &tags, io, io.bFhTag)?;
-        let formula_tag = update_tag(
+        update_tag(heap, tags, io, io.bFhTag)?;
+        update_tag(
             heap,
-            &tags,
+            tags,
             io,
             crate::source_types::local_ichiprt1::tagIdentLblBit_IL_FMLF as i32 | io.bFhTag,
         )?;
@@ -5936,9 +8997,9 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
             io.tot_len2 = io.tot_len;
         }
         io.tot_len = io.tot_len2;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            formula_tag.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
             &mut io.bOverflow,
             string_buffer,
             io.nSegmAction.wrapping_neg(),
@@ -5953,9 +9014,9 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
             io.sDifSegs[fixed_layer][fixed_h_segment],
         );
         if io.nSegmAction == crate::source_types::tagINChISegmAction_INCHI_SEGM_FILL as i32 {
-            let fixed_h_tag = update_tag(
+            update_tag(
                 heap,
-                &tags,
+                tags,
                 io,
                 crate::source_types::local_ichiprt1::tagIdentLblBit_IL_HFIX as i32 | io.bFhTag,
             )?;
@@ -5972,9 +9033,9 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
                 io.bUseMulipliers,
             )?;
             io.tot_len = io.tot_len2;
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                fixed_h_tag.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
                 &mut io.bOverflow,
                 string_buffer,
                 io.nSegmAction.wrapping_neg(),
@@ -5994,14 +9055,11 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
     {
         io.bOutType = out_tn;
         io.iCurTautMode = crate::source_types::TAUT_YES as i32;
-        io.pINChISort = selected_sort(heap, io, taut_yes)?;
+        io.pINChISort = selected_row.get(heap, taut_yes)?;
         io.bSecondNonTautPass = 0;
         io.num_components = io.num_comp[taut_yes];
-        let flags = heap
-            .slice_mut(io.pSortPrintINChIFlags)?
-            .first_mut()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if io.bNonTautNonIsoIdentifierNotEmpty == 0 {
+            let flags = sort_print_flags.value_mut(heap)?;
             *flags |= if basic {
                 crate::source_types::FLAG_SORT_PRINT_NO_NFIX_H_BAS as i32
             } else {
@@ -6009,6 +9067,7 @@ pub(crate) fn OutputINCHI_FixedHLayerWithSublayers(
             };
         }
         if io.bNonTautIsoIdentifierNotEmpty == 0 {
+            let flags = sort_print_flags.value_mut(heap)?;
             *flags |= if basic {
                 crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_BAS as i32
             } else {
@@ -6263,24 +9322,293 @@ pub(crate) fn OutputINCHI_PolymerLayer(
         */
     // END INCHI C FUNCTION: OutputINCHI_PolymerLayer
 
+    outputinchi_polymerlayer_separator(
+        heap,
+        output,
+        string_buffer,
+        _inchi_basic_or_reconnected,
+        &SourceInputArray::Pointer(original_atom_data.as_mut()),
+        OriginalStructure::Pointer(original_structure),
+        output_control,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputinchi_polymerlayer_separator(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    _inchi_basic_or_reconnected: &mut i32,
+    original_atom_data: &SourceInputArray<'_, ORIG_ATOM_DATA>,
+    original_structure: OriginalStructure<'_>,
+    output_control: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3880 OutputINCHI_PolymerLayer
+    // INCHI❗❗: static int OutputINCHI_PolymerLayer( CANON_GLOBALS *pCG,
+    // INCHI❗❗:                                      INCHI_IOSTREAM *out_file,
+    // INCHI❗❗:                                      INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                      int *INCHI_basic_or_INCHI_reconnected,
+    // INCHI❗❗:                                      ORIG_ATOM_DATA *orig_inp_data,
+    // INCHI❗❗:                                      ORIG_STRUCT *pOrigStruct,
+    // INCHI❗❗:                                      INCHI_OUT_CTL *io,
+    // INCHI❗❗:                                      char *pLF,
+    // INCHI❗❗:                                      char *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:     int i, err = 0;
+    // INCHI❗❗:     int nunits2 = 0;
+    // INCHI❗❗:     int n_used_stars = 0;
+    // INCHI❗❗:     int *cano_nums = NULL, *compnt_nums = NULL, *unum = NULL, *old_stars = NULL;
+    // INCHI❗❗:     OAD_PolymerUnit *u = NULL;
+    // INCHI❗❗:     OAD_PolymerUnit **units2 = NULL;
+    // INCHI❗❗:     OAD_Polymer *p = NULL;
+    // INCHI❗❗:     OAD_AtProps *aprops = NULL;
+    // INCHI❗❗:     int nat,num_inp_bonds;
+    // INCHI❗❗:     inp_ATOM    *at = NULL;
+    // INCHI❗❗:     int is_inchi2inchi = 0;
+    // INCHI❗❗:
+    // INCHI❗❗:     if (!orig_inp_data)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         goto exit_function;
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     at = orig_inp_data->at;
+    // INCHI❗❗:     nat = orig_inp_data->num_inp_atoms;
+    // INCHI❗❗:     num_inp_bonds = orig_inp_data->num_inp_bonds;
+    // INCHI❗❗:
+    // INCHI❗❗:
+    // INCHI❗❗:     if (pOrigStruct && !pOrigStruct->polymer)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         return 0;
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     if (pOrigStruct)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         p = pOrigStruct->polymer;
+    // INCHI❗❗:         is_inchi2inchi = !pOrigStruct->szAtoms && !pOrigStruct->szBonds && !pOrigStruct->szCoord;
+    // INCHI❗❗:
+    // INCHI❗❗:         if (is_inchi2inchi)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             err = NOT_YET_I2I_FOR_POLYMERS;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /*OAD_Polymer_DebugTrace( p );*/
+    // INCHI❗❗:
+    // INCHI❗❗:         /* Get canonical numbers and numbers-of-components for each original atom */
+    // INCHI❗❗:         cano_nums = (int*)inchi_calloc((long long)pOrigStruct->num_atoms + 1, sizeof(int)); /* djb-rwth: cast operator added */
+    // INCHI❗❗:         if (!cano_nums)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             err = 1;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         compnt_nums = (int*)inchi_calloc((long long)pOrigStruct->num_atoms + 1, sizeof(int)); /* djb-rwth: cast operator added */
+    // INCHI❗❗:         if (!compnt_nums)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             err = 2;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         err = InternallyGetCanoNumsAndComponentNums(pCG,
+    // INCHI❗❗:             strbuf,
+    // INCHI❗❗:             io,
+    // INCHI❗❗:             pOrigStruct->num_atoms,
+    // INCHI❗❗:             cano_nums,
+    // INCHI❗❗:             compnt_nums);
+    // INCHI❗❗:         if (err != 0)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             err = 3;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:
+    // INCHI❗❗:         /* Set atom properties for sorting */
+    // INCHI❗❗:         aprops = (OAD_AtProps*)inchi_calloc((long long)nat + 1, sizeof(OAD_AtProps)); /* djb-rwth: cast operator added */
+    // INCHI❗❗:         /* nat + 1: add extra element for possibe 1-based indexing */
+    // INCHI❗❗:         if (!aprops)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             /* djb-rwth: avoiding memory leak */
+    // INCHI❗❗:             if (cano_nums)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_free(cano_nums);
+    // INCHI❗❗:             }
+    // INCHI❗❗:             if (compnt_nums)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_free(compnt_nums);
+    // INCHI❗❗:             }
+    // INCHI❗❗:             if (aprops)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_free(aprops);
+    // INCHI❗❗:             }
+    // INCHI❗❗:             return 0;
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /* Note that aprops[] is in orig_atoms domain (0-based) and      */
+    // INCHI❗❗:         /* u (from units) are in cano_nums domain (1-based)              */
+    // INCHI❗❗:         /* Supply non-NULL cano_nums to adjust the domains (base will be adjusted at place) */
+    // INCHI❗❗:         OAD_Polymer_SetAtProps(p, at, nat, &num_inp_bonds, aprops, cano_nums);
+    // INCHI❗❗:
+    // INCHI❗❗:
+    // INCHI❗❗:         /* Make a working copy of polymer units data: units2 is a copy        */
+    // INCHI❗❗:         /* of original polymer units (p->units) with atomic numbers changed    */
+    // INCHI❗❗:         /* to curr canonical ones; atoms in alists sorted; atoms in blists    */
+    // INCHI❗❗:         /* and blists themselves sorted                                     */
+    // INCHI❗❗:         units2 = (OAD_PolymerUnit**)inchi_calloc(p->n, sizeof(OAD_PolymerUnit*));
+    // INCHI❗❗:
+    // INCHI❗❗:         if (NULL == units2)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             err = 3;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         memset(units2, 0, sizeof(*units2)); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI❗❗:
+    // INCHI❗❗:         old_stars = (int*)inchi_calloc(pOrigStruct->polymer->n_pzz, sizeof(int));
+    // INCHI❗❗:         if (NULL == old_stars)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             err = 3;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         for (i = 0; i < pOrigStruct->polymer->n_pzz; i++)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             old_stars[i] = pOrigStruct->polymer->pzz[i];
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:
+    // INCHI❗❗:         for (i = 0; i < p->n; i++)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             units2[i] = OAD_PolymerUnit_CreateCopy(p->units[i]);
+    // INCHI❗❗:             if (NULL == units2[i]) /* djb-rwth: unresolved issue -- revision required? -- units2 properly allocated, and loop index well defined */
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 err = 4;
+    // INCHI❗❗:                 goto exit_function;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             nunits2 = i + 1;
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /* unum contains numbers of units (0..p->n) as they go  */
+    // INCHI❗❗:         /* when sorted by alist's in lexicographic order        */
+    // INCHI❗❗:         unum = (int*)inchi_calloc(p->n, sizeof(int));
+    // INCHI❗❗:         if (NULL == unum)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             err = 4;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:
+    // INCHI❗❗:         err = OAD_Polymer_PrepareWorkingSet(p, cano_nums, compnt_nums, units2, unum);
+    // INCHI❗❗:
+    // INCHI❗❗:         if (err != 0)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             err = 5;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /* Prepare polymer substring */
+    // INCHI❗❗:
+    // INCHI❗❗:         /* Mark layer beginning */
+    // INCHI❗❗:         inchi_strbuf_printf(strbuf, "%s", "/z");
+    // INCHI❗❗:
+    // INCHI❗❗:         /* Print polymer units data */
+    // INCHI❗❗:         n_used_stars = 0;
+    // INCHI❗❗:         for (i = 0; i < p->n; i++)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             /* For each unit u ... */
+    // INCHI❗❗:             u = units2[unum[i]];
+    // INCHI❗❗:             /* djb-rwth: addressing coverity ID #499574 -- all NULL checks already done above */
+    // INCHI❗❗:             err = OutputINCHI_PolymerLayer_SingleUnit(u,
+    // INCHI❗❗:                 io->bPolymers,
+    // INCHI❗❗:                 pOrigStruct->polymer->n_pzz,
+    // INCHI❗❗:                 &n_used_stars, aprops,
+    // INCHI❗❗:                 cano_nums,
+    // INCHI❗❗:                 orig_inp_data,
+    // INCHI❗❗:                 pOrigStruct, strbuf);
+    // INCHI❗❗:             if (err)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 goto exit_function;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             if (i < p->n - 1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_strbuf_printf(strbuf, ";");
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         inchi_ios_print_nodisplay(out_file, "%s%s", strbuf->pStr, pLF);
+    // INCHI❗❗:
+    // INCHI❗❗:         LOG_NO_ARGS("\n******************* (L4184:ichiprt1.c) ********************\n");
+    // INCHI❗❗:         LOG_MULT_ARGS("Polymer Layer start: %s\n", strbuf->pStr);
+    // INCHI❗❗:         LOG_NO_ARGS("\n***********************************************************\n");
+    // INCHI❗❗:
+    // INCHI❗❗:     exit_function:
+    // INCHI❗❗:         if (cano_nums)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             inchi_free(cano_nums);
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (compnt_nums)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             inchi_free(compnt_nums);
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (aprops)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             inchi_free(aprops);
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (unum)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             inchi_free(unum);
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (units2)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             for (i = 0; i < nunits2; i++)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 OAD_PolymerUnit_Free(units2[i]);
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_free(units2);
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (old_stars)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             for (i = 0; i < pOrigStruct->polymer->n_pzz; i++)
+    // INCHI❗❗:                 pOrigStruct->polymer->pzz[i] = old_stars[i];
+    // INCHI❗❗:             inchi_free(old_stars);
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:     }
+    // INCHI❗❗:     return err;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputINCHI_PolymerLayer
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
+
     if original_atom_data.is_null() {
         return Ok(0);
     }
-    let original_data = heap
-        .slice(original_atom_data)?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
+    // INCHI source ichiprt1.c3907..3909:
+    //     at = orig_inp_data->at;
+    //     nat = orig_inp_data->num_inp_atoms;
+    //     num_inp_bonds = orig_inp_data->num_inp_bonds;
+    // INCHI✔️❗: Actual borrowed metadata stays live through the single-unit
+    // consumer. Legacy pointer mode retains its existing entry capture/error
+    // extension; no borrowed-root copy, allocation, scan or invented identity.
+    // INCHI-PERF-OUTPUT-ORIGINAL-METADATA records both costs independently.
+    let captured_original;
+    let original_data = match original_atom_data {
+        SourceInputArray::Pointer(_) => {
+            captured_original = original_atom_data.at_index(heap, 0)?.clone();
+            &captured_original
+        }
+        SourceInputArray::Borrowed(rows) => {
+            rows.first().ok_or(SourceHeapError::PointerOutOfBounds)?
+        }
+    };
     let mut number_of_input_bonds = original_data.num_inp_bonds;
 
-    if original_structure.is_null() {
+    // Source metadata is admitted only after the original atom-data read.
+    // Preserve the legacy pointer capture while borrowing actual local data.
+    let Some(structure) = original_structure.capture(heap)? else {
         return Ok(0);
-    }
-    let structure = heap
-        .slice(original_structure)?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
+    };
     if structure.polymer.is_null() {
         return Ok(0);
     }
@@ -6322,9 +9650,8 @@ pub(crate) fn OutputINCHI_PolymerLayer(
             }
             Err(other) => return Err(other),
         };
-        if InternallyGetCanoNumsAndComponentNums(
+        if internally_get_cano_nums_output(
             heap,
-            canonical_globals,
             string_buffer,
             output_control,
             structure.num_atoms,
@@ -6431,75 +9758,84 @@ pub(crate) fn OutputINCHI_PolymerLayer(
             return Ok(());
         }
 
-        let layer =
-            heap.allocate_model_storage(b"%s\0".iter().map(|byte| *byte as i8).collect())?;
-        let layer_value =
-            heap.allocate_model_storage(b"/z\0".iter().map(|byte| *byte as i8).collect())?;
-        inchi_strbuf_printf(
+        // INCHI source ichiprt1.c4040:
+        //         inchi_strbuf_printf(strbuf, "%s", "/z");
+        // INCHI✔️❗: Reuse canonical two-pass %s formatter with static borrowed
+        // bytes, no model allocation/payload copy or alternate renderer.
+        // Source growth/error/output order remains; checked whole-call cost OPEN.
+        crate::source::base::ichi_io::inchi_strbuf_printf_string(
             heap,
             Some(string_buffer),
-            layer.as_const(),
-            &SourceVaList {
-                arguments: vec![SourceFormatArgument::Bytes(layer_value.as_const())],
-                ..SourceVaList::default()
-            },
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"/z\0")),
         )?;
-        let semicolon = heap.allocate_model_storage(vec![b';' as i8, 0])?;
+        let semicolon = crate::source::base::ichi_io::SourceFormat::Bytes(&[b';' as i8, 0]);
         let mut used_stars = 0_i32;
-        let properties = heap.slice(atom_properties.as_const())?.to_vec();
-        let canonical = heap.slice(canonical_numbers.as_const())?.to_vec();
-        for index in 0..polymer.n {
-            let order = *heap
-                .slice(unit_numbers.as_const().offset(i64::from(index))?)?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let unit_pointer = *heap
-                .slice(units2.as_const().offset(i64::from(order))?)?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mut unit = heap
-                .slice(unit_pointer.as_const())?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
-            error = OutputINCHI_PolymerLayer_SingleUnit(
-                heap,
-                &mut unit,
-                output_control.bPolymers,
-                polymer.n_pzz,
-                &mut used_stars,
-                &properties,
-                &canonical,
-                &original_data,
-                &structure,
-                string_buffer,
-            )?;
-            if error != 0 {
-                return Ok(());
-            }
-            if index < polymer.n.wrapping_sub(1) {
-                inchi_strbuf_printf(
+        // INCHI✔️❗: Fresh local property allocation reaches descendants only
+        // through this explicit readonly slice; their other heap types differ.
+        // O(1) transport instead of two whole-array Vec snapshots. The active
+        // child never reads cano_nums; retain its slice signature with &[],
+        // leaving canonical source allocation/working-set use/free unchanged.
+        // Borrow restoration covers Result errors, not panic unwinding.
+        let completed = heap.with_slice_mut_and_heap_mut(atom_properties, |properties, heap| {
+            for index in 0..polymer.n {
+                let order = *heap
+                    .slice(unit_numbers.as_const().offset(i64::from(index))?)?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let unit_pointer = *heap
+                    .slice(units2.as_const().offset(i64::from(order))?)?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let mut unit = heap
+                    .slice(unit_pointer.as_const())?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .clone();
+                error = OutputINCHI_PolymerLayer_SingleUnit(
                     heap,
-                    Some(string_buffer),
-                    semicolon.as_const(),
-                    &SourceVaList::default(),
+                    &mut unit,
+                    output_control.bPolymers,
+                    polymer.n_pzz,
+                    &mut used_stars,
+                    properties,
+                    &[],
+                    original_data,
+                    &structure,
+                    string_buffer,
                 )?;
+                if error != 0 {
+                    return Ok(false);
+                }
+                if index < polymer.n.wrapping_sub(1) {
+                    crate::source::base::ichi_io::inchi_strbuf_printf_format(
+                        heap,
+                        Some(string_buffer),
+                        semicolon,
+                        &SourceVaList::default(),
+                    )?;
+                }
             }
+            Ok(true)
+        })?;
+        if !completed {
+            return Ok(());
         }
         let format =
-            heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
-        let _ = inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0"));
+        // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+        let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
             heap,
             output.as_deref_mut(),
             stdout,
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
-                    SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                    SourceFormatArgument::Bytes(line_feed),
-                ],
-                ..SourceVaList::default()
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
             },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
+            ],
         )?;
         Ok(())
     })();
@@ -6538,6 +9874,28 @@ pub(crate) fn OutputINCHI_PolymerLayer(
     }
     body_result?;
     Ok(error)
+}
+
+// Actual borrowed or pointer counts; no model registration/retained copy.
+enum AuxiliaryCounts<'a> {
+    Pointer(SourceConstPointer<i32>),
+    Borrowed(&'a [i32; 2]),
+}
+impl AuxiliaryCounts<'_> {
+    #[inline(always)]
+    fn read(&self, heap: &SourceHeap, index: usize) -> Result<i32, SourceHeapError> {
+        match self {
+            Self::Pointer(pointer) => heap
+                .slice(pointer.offset(index as i64)?)?
+                .first()
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+            Self::Borrowed(counts) => counts
+                .get(index)
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+        }
+    }
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -6606,29 +9964,136 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputAUXINFO_HeaderAndNormalization_type
 
-    fn aux_allocate(
-        heap: &mut SourceHeap,
-        text: &[u8],
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        Ok(heap
-            .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
-            .as_const())
-    }
+    output_aux_header_counts(
+        heap,
+        output,
+        string_buffer,
+        output_options,
+        basic_or_reconnected,
+        AuxiliaryCounts::Pointer(component_counts),
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn output_aux_header_borrowed_counts(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    output_options: i32,
+    basic_or_reconnected: &mut i32,
+    component_counts: &[i32; 2],
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // Borrow the source counts through the same canonical algorithm.
+    output_aux_header_counts(
+        heap,
+        output,
+        string_buffer,
+        output_options,
+        basic_or_reconnected,
+        AuxiliaryCounts::Borrowed(component_counts),
+        io,
+        line_feed,
+        _tab,
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn output_aux_header_counts(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    output_options: i32,
+    basic_or_reconnected: &mut i32,
+    component_counts: AuxiliaryCounts<'_>,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: output_aux_header_counts (ichiprt1.c:4339)
+    // int OutputAUXINFO_HeaderAndNormalization_type( CANON_GLOBALS    *pCG,
+    //                                                INCHI_IOSTREAM   *out_file,
+    //                                                INCHI_IOS_STRING *strbuf,
+    //                                                int              bINChIOutputOptions,
+    //                                                int              *INCHI_basic_or_INCHI_reconnected,
+    //                                                int              num_components2[],
+    //                                                INCHI_OUT_CTL    *io,
+    //                                                char             *pLF,
+    //                                                char             *pTAB )
+    // {
+    //     /* AuxInfo header  */
+    //     if (*INCHI_basic_or_INCHI_reconnected == INCHI_BAS)
+    //     {
+    //         inchi_strbuf_printf( strbuf, "AuxInfo=" ); /* in wINChI window, separate INChI: from AuxInfo: with blank line */
+    //         inchi_ios_print( out_file, "%s%s%s",
+    //                                   /* blank line before AuxInfo in winchi window unless it is an annotation */
+    //             ( bINChIOutputOptions & INCHI_OUT_WINCHI_WINDOW ) ? "\n" : "",
+    //                                   strbuf->pStr, pLF );
+    //         szGetTag( AuxLbl, io->nTag, io->bTag1 = AL_VERS, io->szTag1, &io->bAlways, 0 );
+    //         inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    //         inchi_strbuf_printf( strbuf, "%s", x_curr_ver );
+    //         /* avoid leading slash in plain output */
+    //         if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    //         {
+    //             return 1;
+    //         }
+    //         inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    //     }
+    //     else
+    //     {
+    //         if (*INCHI_basic_or_INCHI_reconnected == INCHI_REC)
+    //         {
+    //             szGetTag( AuxLbl, io->nTag, io->bTag1 = AL_REC_, io->szTag1, &io->bAlways, 0 );
+    //             inchi_ios_print( out_file, "%s%s", io->szTag1, pLF );
+    //         }
+    //     }
+    //
+    //     /* AuxInfo normalization type */
+    //     if (num_components2[0] || num_components2[1])
+    //     {
+    //         szGetTag( AuxLbl, io->nTag, io->bTag1 = AL_NORM, io->szTag1, &io->bAlways, 0 );
+    //         inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    //         inchi_strbuf_printf( strbuf, "%d", ( io->bTautomeric && io->bTautomericOutputAllowed ) ? io->bTautomeric : 0 );
+    //         if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    //         {
+    //             return 1;
+    //         }
+    //         inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    //     }
+    //
+    //     return 0;
+    // }
+    // END INCHI C FUNCTION: output_aux_header_counts
+    // INCHI✔️❗: One canonical algorithm with reached count0 || count1;
+    // borrow actual counts without allocation/clone/scan/model ID.
+    // O(1) projection; safe access/whole-call constants remain OPEN.
     fn aux_append(
         heap: &mut SourceHeap,
         buffer: &mut INCHI_IOS_STRING,
         format: &[u8],
-        arguments: Vec<SourceFormatArgument>,
+        arguments: &[SourceFormatArgument],
     ) -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: Borrowed variadic argument storage preserves argument order and
+        // fresh position zero; no list allocation/clone. Format bytes are borrowed;
+        // formatter/backend costs remain independently quarantined/open.
         let format =
-            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
-        inchi_strbuf_printf(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(format));
+        crate::source::base::ichi_io::inchi_strbuf_printf_format_arguments(
             heap,
             Some(buffer),
-            format.as_const(),
-            &SourceVaList {
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
                 arguments,
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         Ok(())
@@ -6638,118 +10103,78 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
         output: &mut Option<&mut INCHI_IOSTREAM>,
         stdout: SourceMutPointer<FILE>,
         format: &[u8],
-        arguments: Vec<SourceFormatArgument>,
+        arguments: &[SourceFormatArgument],
     ) -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: Borrowed variadic argument storage preserves argument order and
+        // fresh position zero; no list allocation/clone. Format bytes are borrowed;
+        // formatter/backend costs remain independently quarantined/open.
         let format =
-            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
-        let _ = inchi_ios_print_nodisplay(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(format));
+        let _ = crate::source::base::ichi_io::inchi_ios_print_format_arguments(
             heap,
             output.as_deref_mut(),
             stdout,
-            format.as_const(),
-            &SourceVaList {
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
                 arguments,
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         Ok(())
     }
 
-    let mut aux_labels = vec![INCHI_TAG::default(); 18];
-    for (index, plain, xml, always) in [
-        (0, b"fixed_H\0".as_slice(), b"fixed-H\0".as_slice(), 0),
-        (1, b"isotopic\0".as_slice(), b"isotopic\0".as_slice(), 0),
-        (
-            2,
-            b"abs_stereo_inverted\0".as_slice(),
-            b"stereo.abs.inverted\0".as_slice(),
-            0,
-        ),
-        (
-            3,
-            b"reversibility\0".as_slice(),
-            b"reversibility\0".as_slice(),
-            0,
-        ),
-        (4, b"version\0".as_slice(), b"version\0".as_slice(), 1),
-        (
-            5,
-            b"normalization_type\0".as_slice(),
-            b"norm-type\0".as_slice(),
-            1,
-        ),
-        (
-            17,
-            b"reconnected bond(s) to metal(s) part\0".as_slice(),
-            b"\0".as_slice(),
-            1,
-        ),
-    ] {
-        let plain_label = match index {
-            4 => b"\0".as_slice(),
-            5 => b"/\0".as_slice(),
-            17 => b"/R:\0".as_slice(),
-            _ => b"/\0".as_slice(),
-        };
-        aux_labels[index] = INCHI_TAG {
-            szPlainLabel: aux_allocate(heap, plain_label)?,
-            szPlainComment: aux_allocate(heap, plain)?,
-            szXmlLabel: aux_allocate(heap, xml)?,
-            bAlwaysOutput: always,
-        };
-    }
-    let tag_pointer = heap.allocate_model_storage(io.szTag1.to_vec())?;
-    let line_feed_empty = aux_allocate(heap, b"\0")?;
+    // INCHI✔️❗: Native tags use io.szTag1 directly, static strings stay
+    // borrowed, and component row1 is read only if row0 is zero. Preserve
+    // partial tag/bAlways writes, formatter growth and output/error order.
+    // Cost: O(source tag/output scans/copies), O(1) carrier scratch; no
+    // staging allocation/clone/copyback. Checked-dispatch cost remains OPEN.
+    let aux_labels = TagLabels::Static(source_aux_labels());
     if *basic_or_reconnected == crate::source_types::INCHI_BAS as i32 {
-        aux_append(heap, string_buffer, b"AuxInfo=\0", Vec::new())?;
+        aux_append(heap, string_buffer, b"AuxInfo=\0", &[])?;
         let blank = if output_options & crate::source_types::INCHI_OUT_WINCHI_WINDOW as i32 != 0 {
-            aux_allocate(heap, b"\n\0")?
+            "\n"
         } else {
-            line_feed_empty
+            ""
         };
-        aux_print(
+        crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(blank),
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            crate::source::base::ichi_io::SourceFormat::Text("%s%s%s"),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(crate::source::base::ichi_io::SourceFormat::Text(blank)),
+                Some(crate::source::base::ichi_io::SourceFormat::Pointer(
+                    string_buffer.pStr.as_const(),
+                )),
+                Some(line_feed),
             ],
         )?;
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_VERS as i32;
-        szGetTag(
+        source_tag_into(
             heap,
-            &aux_labels,
+            aux_labels,
             io.nTag,
             io.bTag1,
-            tag_pointer,
+            &mut TagOutput::Bytes(&mut io.szTag1),
             &mut io.bAlways,
             0,
         )?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag_pointer.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
-        let version = heap.allocate_model_storage(
-            crate::source_types::local_ichiprt1::x_curr_ver
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect(),
-        )?;
-        aux_append(
+        crate::source::base::ichi_io::inchi_strbuf_printf_string(
             heap,
-            string_buffer,
-            b"%s\0",
-            vec![SourceFormatArgument::Bytes(version.as_const())],
+            Some(string_buffer),
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(
+                crate::source_types::local_ichiprt1::x_curr_ver,
+            )),
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag_pointer.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
             &mut io.bOverflow,
             string_buffer,
             -1,
@@ -6758,67 +10183,60 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
         {
             return Ok(1);
         }
-        aux_print(
+        let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
             ],
         )?;
     } else if *basic_or_reconnected == crate::source_types::INCHI_REC as i32 {
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_REC_ as i32;
-        szGetTag(
+        source_tag_into(
             heap,
-            &aux_labels,
+            aux_labels,
             io.nTag,
             io.bTag1,
-            tag_pointer,
+            &mut TagOutput::Bytes(&mut io.szTag1),
             &mut io.bAlways,
             0,
         )?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag_pointer.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
-        aux_print(
+        crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(tag_pointer.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            crate::source::base::ichi_io::SourceFormat::Text("%s%s"),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(crate::source::base::ichi_io::SourceFormat::Bytes(
+                    &io.szTag1,
+                )),
+                Some(line_feed),
             ],
         )?;
     }
-    let first_count = *heap
-        .slice(component_counts)?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let second_count = *heap
-        .slice(component_counts.offset(1)?)?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if first_count != 0 || second_count != 0 {
+    let first_count = component_counts.read(heap, 0)?;
+    if first_count != 0 || component_counts.read(heap, 1)? != 0 {
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_NORM as i32;
-        szGetTag(
+        source_tag_into(
             heap,
-            &aux_labels,
+            aux_labels,
             io.nTag,
             io.bTag1,
-            tag_pointer,
+            &mut TagOutput::Bytes(&mut io.szTag1),
             &mut io.bAlways,
             0,
         )?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag_pointer.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
         let normalization = if io.bTautomeric != 0 && io.bTautomericOutputAllowed != 0 {
@@ -6830,11 +10248,11 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
             heap,
             string_buffer,
             b"%d\0",
-            vec![SourceFormatArgument::Signed(i64::from(normalization))],
+            &[SourceFormatArgument::Signed(i64::from(normalization))],
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag_pointer.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
             &mut io.bOverflow,
             string_buffer,
             -1,
@@ -6843,14 +10261,18 @@ pub(crate) fn OutputAUXINFO_HeaderAndNormalization_type(
         {
             return Ok(1);
         }
-        aux_print(
+        let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
             ],
         )?;
     }
@@ -6932,112 +10354,169 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputAUXINFO_OriginalNumbersAndEquivalenceClasses
 
-    fn allocate_text(
-        heap: &mut SourceHeap,
-        text: &[u8],
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        Ok(heap
-            .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
-            .as_const())
-    }
-    fn aux_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
-        let rows: [(&[u8], &[u8], &[u8], i32); 18] = [
-            (b"/\0", b"fixed_H\0", b"fixed-H\0", 0),
-            (b"/\0", b"isotopic\0", b"isotopic\0", 0),
-            (
-                b"/\0",
-                b"abs_stereo_inverted\0",
-                b"stereo.abs.inverted\0",
-                0,
-            ),
-            (b"/\0", b"reversibility\0", b"reversibility\0", 0),
-            (b"\0", b"version\0", b"version\0", 1),
-            (b"/\0", b"normalization_type\0", b"norm-type\0", 1),
-            (b"/N:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/E:\0", b"atom_equivalence\0", b"atom.equivalence\0", 0),
-            (b"/gE:\0", b"group_equivalence\0", b"group.equivalence\0", 0),
-            (b"/it:\0", b"sp3\0", b"sp3\0", 0),
-            (b"/iN:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 0),
-            (
-                b"/CRV:\0",
-                b"charge_radical_valence\0",
-                b"charges-rad-val\0",
-                0,
-            ),
-            (b"/rA:\0", b"atoms\0", b"atoms\0", 0),
-            (b"/rB:\0", b"bonds\0", b"bonds\0", 0),
-            (b"/rC:\0", b"xyz\0", b"xyz\0", 0),
-            (b"/F:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/I:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (
-                b"/R:\0",
-                b"reconnected bond(s) to metal(s) part\0",
-                b"\0",
-                1,
-            ),
-        ];
-        rows.into_iter()
-            .map(|(plain, comment, xml, always)| {
-                Ok(INCHI_TAG {
-                    szPlainLabel: allocate_text(heap, plain)?,
-                    szPlainComment: allocate_text(heap, comment)?,
-                    szXmlLabel: allocate_text(heap, xml)?,
-                    bAlwaysOutput: always,
-                })
-            })
-            .collect()
-    }
+    output_aux_numbers_counts(
+        heap,
+        output,
+        string_buffer,
+        AuxiliaryCounts::Pointer(component_counts),
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn output_aux_numbers_borrowed_counts(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    component_counts: &[i32; 2],
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // Borrow the source counts through the same canonical algorithm.
+    output_aux_numbers_counts(
+        heap,
+        output,
+        string_buffer,
+        AuxiliaryCounts::Borrowed(component_counts),
+        io,
+        line_feed,
+        _tab,
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn output_aux_numbers_counts(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    component_counts: AuxiliaryCounts<'_>,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: output_aux_numbers_counts (ichiprt1.c:4396)
+    // int OutputAUXINFO_OriginalNumbersAndEquivalenceClasses( CANON_GLOBALS    *pCG,
+    //                                                         INCHI_IOSTREAM   *out_file,
+    //                                                         INCHI_IOS_STRING *strbuf,
+    //                                                         int              num_components2[],
+    //                                                         INCHI_OUT_CTL   *io,
+    //                                                         char            *pLF,
+    //                                                         char            *pTAB )
+    // {
+    //     /* Original atom numbers in order of canonical numbers */
+    //     if (num_components2[0] || num_components2[1])
+    //     {
+    //         szGetTag( AuxLbl, io->nTag,
+    //                  io->bTag1 = ( io->bSecondNonTautPass ? AL_FIXN : AL_ANBR ) | io->bFhTag, io->szTag1, &io->bAlways, 0 );
+    //         inchi_strbuf_reset( strbuf );
+    //         io->tot_len = 0;
+    //         /* Original numbering output */
+    //         io->tot_len = str_AuxNumb( pCG, io->pINChISort, io->pINChISort2,
+    //                                    strbuf, &io->bOverflow,
+    //                                    io->bOutType, io->TAUT_MODE, io->num_components,
+    //                                    io->bSecondNonTautPass, io->bOmitRepetitions );
+    //
+    //         if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    //         {
+    //             return 1;
+    //         }
+    //         inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    //     }
+    //
+    //     /*
+    //         Symmetry numbers (constit. equivalence)    /E:
+    //     */
+    //     if (io->bAtomEqu[io->iCurTautMode])
+    //     {
+    //         /*  aux equ atoms */
+    //         /* 1. Compare to tautomeric equivalence (in case of second, non-taut, pass only) */
+    //         /* 2. Compare to the previous component if (1) failed to find equivalence */
+    //         szGetTag( AuxLbl, io->nTag, io->bTag1 = AL_AEQU | io->bFhTag, io->szTag1, &io->bAlways, 0 );
+    //         inchi_strbuf_reset( strbuf );
+    //         io->tot_len = 0;
+    //         io->tot_len = str_AuxEqu( io->pINChISort, io->pINChISort2,
+    //                               strbuf, &io->bOverflow, io->bOutType, io->TAUT_MODE,
+    //                               io->num_components, io->bSecondNonTautPass,
+    //                               io->bOmitRepetitions, io->bUseMulipliers );
+    //
+    //         if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    //         {
+    //             return 1;
+    //         }
+    //         inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    //     }
+    //     else
+    //     {
+    //         if (io->bPlainTextTags == 1)
+    //         {
+    //             inchi_ios_print( out_file, "/" );
+    //         }
+    //     }
+    //
+    //     return 0;
+    // }
+    // END INCHI C FUNCTION: output_aux_numbers_counts
+    // INCHI✔️❗: One canonical algorithm with reached count0 || count1;
+    // borrow actual counts without allocation/clone/scan/model ID.
+    // O(1) projection; safe access/whole-call constants remain OPEN.
     fn print_values(
         heap: &mut SourceHeap,
         output: &mut Option<&mut INCHI_IOSTREAM>,
         stdout: SourceMutPointer<FILE>,
         format: &[u8],
-        arguments: Vec<SourceFormatArgument>,
+        arguments: &[SourceFormatArgument],
     ) -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: Borrowed variadic argument storage preserves argument order and
+        // fresh position zero; no list allocation/clone. Format bytes are borrowed;
+        // formatter/backend costs remain independently quarantined/open.
         let format =
-            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(format));
+        crate::source::base::ichi_io::inchi_ios_print_format_arguments(
             heap,
             output.as_deref_mut(),
             stdout,
-            format.as_const(),
-            &SourceVaList {
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
                 arguments,
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         Ok(())
     }
 
-    let labels = aux_labels(heap)?;
-    let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
-    let count0 = heap
-        .slice(component_counts)?
-        .first()
-        .copied()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let count1 = heap
-        .slice(component_counts.offset(1)?)?
-        .first()
-        .copied()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if count0 != 0 || count1 != 0 {
+    // INCHI✔️❗: Native tags use io.szTag1 directly, static strings stay
+    // borrowed, and component row1 is read only if row0 is zero. Preserve
+    // partial tag/bAlways writes, formatter growth and output/error order.
+    // Cost: O(source tag/output scans/copies), O(1) carrier scratch; no
+    // staging allocation/clone/copyback. Checked-dispatch cost remains OPEN.
+    let labels = TagLabels::Static(source_aux_labels());
+    let count0 = component_counts.read(heap, 0)?;
+    if count0 != 0 || component_counts.read(heap, 1)? != 0 {
         io.bTag1 = if io.bSecondNonTautPass != 0 {
             crate::source_types::local_ichiprt1::tagAuxLblBit_AL_FIXN as i32
         } else {
             crate::source_types::local_ichiprt1::tagAuxLblBit_AL_ANBR as i32
         } | io.bFhTag;
-        szGetTag(heap, &labels, io.nTag, io.bTag1, tag, &mut io.bAlways, 0)?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            0,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
-        io.tot_len = crate::source::base::ichiprt3::str_AuxNumb(
+        io.tot_len = crate::source::base::ichiprt3::str_aux_numbers(
             heap,
-            canonical_globals,
             io.pINChISort,
             io.pINChISort2,
             string_buffer,
@@ -7048,9 +10527,9 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
             io.bSecondNonTautPass,
             io.bOmitRepetitions,
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
             &mut io.bOverflow,
             string_buffer,
             -1,
@@ -7059,14 +10538,18 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
         {
             return Ok(1);
         }
-        print_values(
+        let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
             ],
         )?;
     }
@@ -7078,12 +10561,15 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom_equivalence != 0 {
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_AEQU as i32 | io.bFhTag;
-        szGetTag(heap, &labels, io.nTag, io.bTag1, tag, &mut io.bAlways, 0)?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            0,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
         io.tot_len = crate::source::base::ichiprt3::str_AuxEqu(
@@ -7099,9 +10585,9 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
             io.bOmitRepetitions,
             io.bUseMulipliers,
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
             &mut io.bOverflow,
             string_buffer,
             -1,
@@ -7110,18 +10596,22 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
         {
             return Ok(1);
         }
-        print_values(
+        let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
             ],
         )?;
     } else if io.bPlainTextTags == 1 {
-        print_values(heap, &mut output, stdout, b"/\0", Vec::new())?;
+        print_values(heap, &mut output, stdout, b"/\0", &[])?;
     }
     Ok(0)
 }
@@ -7130,6 +10620,19 @@ pub(crate) fn OutputAUXINFO_OriginalNumbersAndEquivalenceClasses(
 pub(crate) fn OutputAUXINFO_TautomericGroupsEquivalence(
     heap: &mut SourceHeap,
     _canonical_globals: SourceMutPointer<CANON_GLOBALS>,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    io: &mut INCHI_OUT_CTL,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // INCHI source: the complete original frame is inside the shared body below.
+    // C547: unused global argument is unobserved; O(1), call costs OPEN.
+    output_aux_tgroup_equivalence(heap, output, string_buffer, io, stdout)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn output_aux_tgroup_equivalence(
+    heap: &mut SourceHeap,
     mut output: Option<&mut INCHI_IOSTREAM>,
     string_buffer: &mut INCHI_IOS_STRING,
     io: &mut INCHI_OUT_CTL,
@@ -7171,106 +10674,60 @@ pub(crate) fn OutputAUXINFO_TautomericGroupsEquivalence(
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputAUXINFO_TautomericGroupsEquivalence
-
-    fn allocate_text(
-        heap: &mut SourceHeap,
-        text: &[u8],
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        Ok(heap
-            .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
-            .as_const())
-    }
-
-    fn aux_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
-        let rows: [(&[u8], &[u8], &[u8], i32); 18] = [
-            (b"/\0", b"fixed_H\0", b"fixed-H\0", 0),
-            (b"/\0", b"isotopic\0", b"isotopic\0", 0),
-            (
-                b"/\0",
-                b"abs_stereo_inverted\0",
-                b"stereo.abs.inverted\0",
-                0,
-            ),
-            (b"/\0", b"reversibility\0", b"reversibility\0", 0),
-            (b"\0", b"version\0", b"version\0", 1),
-            (b"/\0", b"normalization_type\0", b"norm-type\0", 1),
-            (b"/N:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/E:\0", b"atom_equivalence\0", b"atom.equivalence\0", 0),
-            (b"/gE:\0", b"group_equivalence\0", b"group.equivalence\0", 0),
-            (b"/it:\0", b"sp3\0", b"sp3\0", 0),
-            (b"/iN:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 0),
-            (
-                b"/CRV:\0",
-                b"charge_radical_valence\0",
-                b"charges-rad-val\0",
-                0,
-            ),
-            (b"/rA:\0", b"atoms\0", b"atoms\0", 0),
-            (b"/rB:\0", b"bonds\0", b"bonds\0", 0),
-            (b"/rC:\0", b"xyz\0", b"xyz\0", 0),
-            (b"/F:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/I:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (
-                b"/R:\0",
-                b"reconnected bond(s) to metal(s) part\0",
-                b"\0",
-                1,
-            ),
-        ];
-        rows.into_iter()
-            .map(|(plain, comment, xml, always)| {
-                Ok(INCHI_TAG {
-                    szPlainLabel: allocate_text(heap, plain)?,
-                    szPlainComment: allocate_text(heap, comment)?,
-                    szXmlLabel: allocate_text(heap, xml)?,
-                    bAlwaysOutput: always,
-                })
-            })
-            .collect()
-    }
+    // INCHI✔️❗: Source predicates admit flag cells only when reached.
+    // Existing inline tags are written directly through the one canonical
+    // writer/line-end; no arena staging or full-tag copyback. Source partial
+    // writes and bAlways publication retained. O(source flag/tag work), O(1)
+    // carrier, no new scans/allocations/clones; checked costs remain OPEN.
 
     fn print_values(
         heap: &mut SourceHeap,
         output: &mut Option<&mut INCHI_IOSTREAM>,
         stdout: SourceMutPointer<FILE>,
         format: &[u8],
-        arguments: Vec<SourceFormatArgument>,
+        arguments: &[SourceFormatArgument],
     ) -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: Borrowed variadic argument storage preserves argument order and
+        // fresh position zero; no list allocation/clone. Format bytes are borrowed;
+        // formatter/backend costs remain independently quarantined/open.
         let format =
-            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(format));
+        crate::source::base::ichi_io::inchi_ios_print_format_arguments(
             heap,
             output.as_deref_mut(),
             stdout,
-            format.as_const(),
-            &SourceVaList {
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
                 arguments,
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         Ok(())
     }
 
-    let taut_index =
-        usize::try_from(io.iCurTautMode).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let taut_equivalence = *io
-        .bTautEqu
-        .get(taut_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if io.bTautomericOutputAllowed != 0
         && io.bTautomeric != 0
-        && taut_equivalence != 0
+        && {
+            let taut_index = usize::try_from(io.iCurTautMode)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            *io.bTautEqu
+                .get(taut_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                != 0
+        }
         && io.bSecondNonTautPass == 0
     {
-        let labels = aux_labels(heap)?;
-        let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
+        let labels = TagLabels::Static(source_aux_labels());
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_GEQU as i32 | io.bFhTag;
-        szGetTag(heap, &labels, io.nTag, io.bTag1, tag, &mut io.bAlways, 0)?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            0,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
         io.tot_len = crate::source::base::ichiprt3::str_AuxTgroupEqu(
@@ -7283,9 +10740,9 @@ pub(crate) fn OutputAUXINFO_TautomericGroupsEquivalence(
             io.num_components,
             io.bUseMulipliers,
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
             &mut io.bOverflow,
             string_buffer,
             -1,
@@ -7299,10 +10756,10 @@ pub(crate) fn OutputAUXINFO_TautomericGroupsEquivalence(
             &mut output,
             stdout,
             b"%s\0",
-            vec![SourceFormatArgument::Bytes(string_buffer.pStr.as_const())],
+            &[SourceFormatArgument::Bytes(string_buffer.pStr.as_const())],
         )?;
     } else if io.bTautomericOutputAllowed != 0 && io.bTautomeric != 0 && io.bPlainTextTags == 1 {
-        print_values(heap, &mut output, stdout, b"/\0", Vec::new())?;
+        print_values(heap, &mut output, stdout, b"/\0", &[])?;
     }
 
     Ok(0)
@@ -7376,79 +10833,114 @@ pub(crate) fn OutputAUXINFO_Stereo(
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputAUXINFO_Stereo
+    // INCHI✔️❗: Source predicates admit flag cells only when reached.
+    // Existing inline tags are written directly through the one canonical
+    // writer/line-end; no arena staging or full-tag copyback. Source partial
+    // writes and bAlways publication retained. O(source flag/tag work), O(1)
+    // carrier, no new scans/allocations/clones; checked costs remain OPEN.
 
-    fn allocate_text(
-        heap: &mut SourceHeap,
-        text: &[u8],
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        Ok(heap
-            .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
-            .as_const())
-    }
-    fn aux_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
-        let rows: [(&[u8], &[u8], &[u8], i32); 18] = [
-            (b"/\0", b"fixed_H\0", b"fixed-H\0", 0),
-            (b"/\0", b"isotopic\0", b"isotopic\0", 0),
-            (
-                b"/\0",
-                b"abs_stereo_inverted\0",
-                b"stereo.abs.inverted\0",
-                0,
-            ),
-            (b"/\0", b"reversibility\0", b"reversibility\0", 0),
-            (b"\0", b"version\0", b"version\0", 1),
-            (b"/\0", b"normalization_type\0", b"norm-type\0", 1),
-            (b"/N:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/E:\0", b"atom_equivalence\0", b"atom.equivalence\0", 0),
-            (b"/gE:\0", b"group_equivalence\0", b"group.equivalence\0", 0),
-            (b"/it:\0", b"sp3\0", b"sp3\0", 0),
-            (b"/iN:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 0),
-            (
-                b"/CRV:\0",
-                b"charge_radical_valence\0",
-                b"charges-rad-val\0",
-                0,
-            ),
-            (b"/rA:\0", b"atoms\0", b"atoms\0", 0),
-            (b"/rB:\0", b"bonds\0", b"bonds\0", 0),
-            (b"/rC:\0", b"xyz\0", b"xyz\0", 0),
-            (b"/F:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/I:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (
-                b"/R:\0",
-                b"reconnected bond(s) to metal(s) part\0",
-                b"\0",
-                1,
-            ),
-        ];
-        rows.into_iter()
-            .map(|(plain, comment, xml, always)| {
-                Ok(INCHI_TAG {
-                    szPlainLabel: allocate_text(heap, plain)?,
-                    szPlainComment: allocate_text(heap, comment)?,
-                    szXmlLabel: allocate_text(heap, xml)?,
-                    bAlwaysOutput: always,
-                })
-            })
-            .collect()
-    }
+    outputauxinfo_stereo_separator(
+        heap,
+        output,
+        string_buffer,
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputauxinfo_stereo_separator(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:4500 OutputAUXINFO_Stereo
+    // INCHI❗❗: int OutputAUXINFO_Stereo( CANON_GLOBALS     *pCG,
+    // INCHI❗❗:                            INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                            INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                            INCHI_OUT_CTL   *io,
+    // INCHI❗❗:                            char             *pLF,
+    // INCHI❗❗:                            char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:     /*--    Inverted stereo -- sp3 only + canonical numbering
+    // INCHI❗❗:     */
+    // INCHI❗❗:     if (io->bInvStereo[io->iCurTautMode])
+    // INCHI❗❗:     {
+    // INCHI❗❗:         szGetTag( AuxLbl, io->nTag, io->bTag1 = AL_STER | io->bFhTag, io->szTag1, &io->bAlways, 0 );
+    // INCHI❗❗:         /*-- inverted sp3 start tag */
+    // INCHI❗❗:         szGetTag( AuxLbl, io->nTag, io->bTag2 = io->bTag1 | AL_SP3I, io->szTag2, &io->bAlways, 0 );
+    // INCHI❗❗:         inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    // INCHI❗❗:         io->tot_len = str_AuxInvSp3( io->pINChISort, io->pINChISort2, strbuf,
+    // INCHI❗❗:                                  &io->bOverflow, io->bOutType, io->TAUT_MODE, io->num_components,
+    // INCHI❗❗:                                  io->bSecondNonTautPass, io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:         if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    // INCHI❗❗:             return 1;
+    // INCHI❗❗:         inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:
+    // INCHI❗❗:         /*-- inverted sp3  canonical numbering */
+    // INCHI❗❗:         if (io->bInvStereoOrigNumb[io->iCurTautMode])
+    // INCHI❗❗:         {
+    // INCHI❗❗:             szGetTag( AuxLbl, io->nTag, io->bTag2 = io->bTag1 | AL_SP3N, io->szTag2, &io->bAlways, 0 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    // INCHI❗❗:
+    // INCHI❗❗:             io->tot_len = str_AuxInvSp3Numb( pCG, io->pINChISort, io->pINChISort2,
+    // INCHI❗❗:                                          strbuf, &io->bOverflow, io->bOutType,
+    // INCHI❗❗:                                          io->TAUT_MODE, io->num_components,
+    // INCHI❗❗:                                          io->bSecondNonTautPass, io->bOmitRepetitions );
+    // INCHI❗❗:
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (io->bPlainTextTags == 1) inchi_ios_print( out_file, "/" );
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         if (io->bPlainTextTags == 1)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             inchi_ios_print( out_file, "//" );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         /* Inverted stereo -- sp3 only + canonical numbering */
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputAUXINFO_Stereo
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
+
     fn print_values(
         heap: &mut SourceHeap,
         output: &mut Option<&mut INCHI_IOSTREAM>,
         stdout: SourceMutPointer<FILE>,
         format: &[u8],
-        arguments: Vec<SourceFormatArgument>,
+        arguments: &[SourceFormatArgument],
     ) -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: Borrowed variadic argument storage preserves argument order and
+        // fresh position zero; no list allocation/clone. Format bytes are borrowed;
+        // formatter/backend costs remain independently quarantined/open.
         let format =
-            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(format));
+        crate::source::base::ichi_io::inchi_ios_print_format_arguments(
             heap,
             output.as_deref_mut(),
             stdout,
-            format.as_const(),
-            &SourceVaList {
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
                 arguments,
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         Ok(())
@@ -7461,23 +10953,27 @@ pub(crate) fn OutputAUXINFO_Stereo(
         .get(taut_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if inverted != 0 {
-        let labels = aux_labels(heap)?;
-        let tag1 = heap.allocate_model_storage(io.szTag1.to_vec())?;
-        let tag2 = heap.allocate_model_storage(io.szTag2.to_vec())?;
+        let labels = TagLabels::Static(source_aux_labels());
         io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_STER as i32 | io.bFhTag;
-        szGetTag(heap, &labels, io.nTag, io.bTag1, tag1, &mut io.bAlways, 0)?;
-        io.szTag1.copy_from_slice(
-            heap.slice(tag1.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag1,
+            &mut TagOutput::Bytes(&mut io.szTag1),
+            &mut io.bAlways,
+            0,
+        )?;
         io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagAuxLblBit_AL_SP3I as i32;
-        szGetTag(heap, &labels, io.nTag, io.bTag2, tag2, &mut io.bAlways, 0)?;
-        io.szTag2.copy_from_slice(
-            heap.slice(tag2.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag2,
+            &mut TagOutput::Bytes(&mut io.szTag2),
+            &mut io.bAlways,
+            0,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
         io.tot_len = crate::source::base::ichiprt3::str_AuxInvSp3(
@@ -7493,9 +10989,9 @@ pub(crate) fn OutputAUXINFO_Stereo(
             io.bOmitRepetitions,
             io.bUseMulipliers,
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag2.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
             &mut io.bOverflow,
             string_buffer,
             -1,
@@ -7504,14 +11000,18 @@ pub(crate) fn OutputAUXINFO_Stereo(
         {
             return Ok(1);
         }
-        print_values(
+        let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
             ],
         )?;
 
@@ -7521,17 +11021,19 @@ pub(crate) fn OutputAUXINFO_Stereo(
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if inverted_numbers != 0 {
             io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagAuxLblBit_AL_SP3N as i32;
-            szGetTag(heap, &labels, io.nTag, io.bTag2, tag2, &mut io.bAlways, 0)?;
-            io.szTag2.copy_from_slice(
-                heap.slice(tag2.as_const())?
-                    .get(..64)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
+            source_tag_into(
+                heap,
+                labels,
+                io.nTag,
+                io.bTag2,
+                &mut TagOutput::Bytes(&mut io.szTag2),
+                &mut io.bAlways,
+                0,
+            )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
-            io.tot_len = crate::source::base::ichiprt3::str_AuxInvSp3Numb(
+            io.tot_len = crate::source::base::ichiprt3::str_aux_inv_sp3_numbers(
                 heap,
-                canonical_globals,
                 io.pINChISort,
                 io.pINChISort2,
                 string_buffer,
@@ -7542,9 +11044,9 @@ pub(crate) fn OutputAUXINFO_Stereo(
                 io.bSecondNonTautPass,
                 io.bOmitRepetitions,
             )?;
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag2.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
                 &mut io.bOverflow,
                 string_buffer,
                 -1,
@@ -7553,21 +11055,25 @@ pub(crate) fn OutputAUXINFO_Stereo(
             {
                 return Ok(1);
             }
-            print_values(
+            let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
                 heap,
-                &mut output,
+                output.as_deref_mut(),
                 stdout,
-                b"%s%s\0",
-                vec![
-                    SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                    SourceFormatArgument::Bytes(line_feed),
+                SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+                &crate::source::base::ichi_io::SourcePrintArguments {
+                    arguments: &[],
+                    position: 0,
+                },
+                &[
+                    Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                    Some(line_feed),
                 ],
             )?;
         } else if io.bPlainTextTags == 1 {
-            print_values(heap, &mut output, stdout, b"/\0", Vec::new())?;
+            print_values(heap, &mut output, stdout, b"/\0", &[])?;
         }
     } else if io.bPlainTextTags == 1 {
-        print_values(heap, &mut output, stdout, b"//\0", Vec::new())?;
+        print_values(heap, &mut output, stdout, b"//\0", &[])?;
     }
     Ok(0)
 }
@@ -7741,89 +11247,222 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
     }
     */
     // END INCHI C FUNCTION: OutputAUXINFO_IsotopicInfo
+    // INCHI✔️❗: Source predicates admit flag cells only when reached.
+    // Existing inline tags are written directly through the one canonical
+    // writer/line-end; no arena staging or full-tag copyback. Source partial
+    // writes and bAlways publication retained. O(source flag/tag work), O(1)
+    // carrier, no new scans/allocations/clones; checked costs remain OPEN.
 
-    fn allocate_text(
-        heap: &mut SourceHeap,
-        text: &[u8],
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        Ok(heap
-            .allocate_model_storage(text.iter().map(|byte| *byte as i8).collect())?
-            .as_const())
-    }
-    fn aux_labels(heap: &mut SourceHeap) -> Result<Vec<INCHI_TAG>, SourceHeapError> {
-        let rows: [(&[u8], &[u8], &[u8], i32); 18] = [
-            (b"/\0", b"fixed_H\0", b"fixed-H\0", 0),
-            (b"/\0", b"isotopic\0", b"isotopic\0", 0),
-            (
-                b"/\0",
-                b"abs_stereo_inverted\0",
-                b"stereo.abs.inverted\0",
-                0,
-            ),
-            (b"/\0", b"reversibility\0", b"reversibility\0", 0),
-            (b"\0", b"version\0", b"version\0", 1),
-            (b"/\0", b"normalization_type\0", b"norm-type\0", 1),
-            (b"/N:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/E:\0", b"atom_equivalence\0", b"atom.equivalence\0", 0),
-            (b"/gE:\0", b"group_equivalence\0", b"group.equivalence\0", 0),
-            (b"/it:\0", b"sp3\0", b"sp3\0", 0),
-            (b"/iN:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 0),
-            (
-                b"/CRV:\0",
-                b"charge_radical_valence\0",
-                b"charges-rad-val\0",
-                0,
-            ),
-            (b"/rA:\0", b"atoms\0", b"atoms\0", 0),
-            (b"/rB:\0", b"bonds\0", b"bonds\0", 0),
-            (b"/rC:\0", b"xyz\0", b"xyz\0", 0),
-            (b"/F:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (b"/I:\0", b"original_atom_numbers\0", b"atom.orig-nbr\0", 1),
-            (
-                b"/R:\0",
-                b"reconnected bond(s) to metal(s) part\0",
-                b"\0",
-                1,
-            ),
-        ];
-        rows.into_iter()
-            .map(|(plain, comment, xml, always)| {
-                Ok(INCHI_TAG {
-                    szPlainLabel: allocate_text(heap, plain)?,
-                    szPlainComment: allocate_text(heap, comment)?,
-                    szXmlLabel: allocate_text(heap, xml)?,
-                    bAlwaysOutput: always,
-                })
-            })
-            .collect()
-    }
+    outputauxinfo_isotopicinfo_separator(
+        heap,
+        output,
+        string_buffer,
+        basic_or_reconnected,
+        &mut SourceSortFlags::Pointer(io.pSortPrintINChIFlags),
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputauxinfo_isotopicinfo_separator(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    basic_or_reconnected: &mut i32,
+    sort_print_flags: &mut SourceSortFlags<'_>,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:4560 OutputAUXINFO_IsotopicInfo
+    // INCHI❗❗: int OutputAUXINFO_IsotopicInfo( CANON_GLOBALS    *pCG,
+    // INCHI❗❗:                                 INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                                 INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                 int              *INCHI_basic_or_INCHI_reconnected,
+    // INCHI❗❗:                                 INCHI_OUT_CTL    *io,
+    // INCHI❗❗:                                 char             *pLF,
+    // INCHI❗❗:                                 char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:     int i;
+    // INCHI❗❗:
+    // INCHI❗❗:     /* if InChI Fixed-H isotopic is empty, then do not output corresponding AuxInfo */
+    // INCHI❗❗:
+    // INCHI❗❗:     i = io->bSecondNonTautPass &&
+    // INCHI❗❗:         ( *io->pSortPrintINChIFlags & ( ( *INCHI_basic_or_INCHI_reconnected == INCHI_BAS ) ? FLAG_SORT_PRINT_NO_IFIX_H_BAS :
+    // INCHI❗❗:             FLAG_SORT_PRINT_NO_IFIX_H_REC ) );
+    // INCHI❗❗:
+    // INCHI❗❗:     if (io->bIsotopic && !i &&
+    // INCHI❗❗:         ( io->bIsotopicOrigNumb[io->iCurTautMode] ||
+    // INCHI❗❗:             io->bIsotopicAtomEqu[io->iCurTautMode] ||
+    // INCHI❗❗:             (io->bTautomericOutputAllowed && io->bTautomeric && io->bIsotopicTautEqu[io->iCurTautMode]) ||
+    // INCHI❗❗:             (io->bInvIsotopicStereo[io->iCurTautMode]
+    // INCHI❗❗:             && ( io->bIgn_UU_Sp3_Iso[io->iCurTautMode])) || io->bIgn_UU_Sp2_Iso[io->iCurTautMode] ) ) /* djb-rwth: addressing LLVM warnings */
+    // INCHI❗❗:     {
+    // INCHI❗❗:         /*-- isotopic aux info header */
+    // INCHI❗❗:         szGetTag( AuxLbl, io->nTag, io->bTag1 = AL_ISOT | io->bFhTag, io->szTag1, &io->bAlways, 0 );
+    // INCHI❗❗:         inchi_strbuf_reset( strbuf ); /* pStr[io->tot_len = 0] = '\0'; */
+    // INCHI❗❗:         /*-- Original atom numbers in order of isotopic canonical numbers */
+    // INCHI❗❗:         szGetTag( AuxLbl, io->nTag, io->bTag2 = io->bTag1 | AL_ISON, io->szTag2, &io->bAlways, 0 );
+    // INCHI❗❗:         if (io->bIsotopicOrigNumb[io->iCurTautMode])
+    // INCHI❗❗:         {
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:             io->tot_len = 0;
+    // INCHI❗❗:             io->tot_len = str_AuxIsoNumb( pCG, io->pINChISort, io->pINChISort2,
+    // INCHI❗❗:                                       strbuf, &io->bOverflow, io->bOutType,
+    // INCHI❗❗:                                       io->TAUT_MODE, io->num_components,
+    // INCHI❗❗:                                       io->bSecondNonTautPass, io->bOmitRepetitions );
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             /*if ( io->bPlainTextTags == 1 ) inchi_ios_print( out_file, "/" );*/
+    // INCHI❗❗:             inchi_ios_print( out_file, "%s%s", io->szTag2, pLF ); /* mark isotopic output */
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /*-- Isotopic symmetry */
+    // INCHI❗❗:         if (io->bIsotopicAtomEqu[io->iCurTautMode])
+    // INCHI❗❗:         {
+    // INCHI❗❗:             /*-- atoms */
+    // INCHI❗❗:             szGetTag( AuxLbl, io->nTag, io->bTag2 = io->bTag1 | AL_AEQU, io->szTag2, &io->bAlways, 0 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    // INCHI❗❗:             io->tot_len = str_AuxIsoEqu( io->pINChISort, io->pINChISort2,
+    // INCHI❗❗:                                      strbuf,
+    // INCHI❗❗:                                      &io->bOverflow, io->bOutType, io->TAUT_MODE, io->num_components,
+    // INCHI❗❗:                                      io->bSecondNonTautPass, io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -2/*was -1: Fix15*/, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (io->bPlainTextTags == 1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_ios_print( out_file, "/" );
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         /*-- Tautomeric groups, isotopic */
+    // INCHI❗❗:         if (io->bTautomericOutputAllowed && io->bTautomeric && io->bIsotopicTautEqu[io->iCurTautMode])
+    // INCHI❗❗:         {
+    // INCHI❗❗:             /*-- Isotopic tautomeric groups equivalence */
+    // INCHI❗❗:             szGetTag( AuxLbl, io->nTag, io->bTag2 = io->bTag1 | AL_GEQU, io->szTag2, &io->bAlways, 0 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    // INCHI❗❗:             io->tot_len = str_AuxIsoTgroupEqu( io->pINChISort,
+    // INCHI❗❗:                                            strbuf, &io->bOverflow,
+    // INCHI❗❗:                                            io->bOutType, io->TAUT_MODE, io->num_components,
+    // INCHI❗❗:                                            io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:             if (str_LineEnd( io->szTag2, &io->bOverflow, strbuf, -2/*was -1: Fix15*/, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (io->bTautomericOutputAllowed && io->bTautomeric)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 if (io->bPlainTextTags == 1)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     inchi_ios_print( out_file, "/" );
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         /*-- Isotopic inverted stereo */
+    // INCHI❗❗:         if (io->bInvIsotopicStereo[io->iCurTautMode])
+    // INCHI❗❗:         {
+    // INCHI❗❗:             szGetTag( AuxLbl, io->nTag, io->bTag2 = io->bTag1 | AL_STER, io->szTag2, &io->bAlways, 0 );
+    // INCHI❗❗:             /*-- inverted isotopic sp3 start tag */
+    // INCHI❗❗:             szGetTag( AuxLbl, io->nTag, io->bTag3 = io->bTag2 | AL_SP3I, io->szTag3, &io->bAlways, 0 );
+    // INCHI❗❗:             inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    // INCHI❗❗:             io->tot_len = str_AuxInvIsoSp3( io->pINChISort, io->pINChISort2,
+    // INCHI❗❗:                                         strbuf, &io->bOverflow,
+    // INCHI❗❗:                                         io->bOutType, io->TAUT_MODE, io->num_components,
+    // INCHI❗❗:                                         io->bSecondNonTautPass, io->bOmitRepetitions, io->bUseMulipliers );
+    // INCHI❗❗:             if (str_LineEnd( io->szTag3, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 return 1;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             inchi_ios_print( out_file, "%s", strbuf->pStr );
+    // INCHI❗❗:             /*-- inverted isotopic sp3  canonical numbering */
+    // INCHI❗❗:             if (io->bInvIsotopicStereoOrigNumb[io->iCurTautMode])
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 szGetTag( AuxLbl, io->nTag, io->bTag3 = io->bTag2 | AL_SP3N, io->szTag3, &io->bAlways, 0 );
+    // INCHI❗❗:                 inchi_strbuf_reset( strbuf ); io->tot_len = 0;
+    // INCHI❗❗:                 io->tot_len = str_AuxInvIsoSp3Numb( pCG, io->pINChISort, io->pINChISort2,
+    // INCHI❗❗:                                                 strbuf, &io->bOverflow,
+    // INCHI❗❗:                                                 io->bOutType, io->TAUT_MODE,
+    // INCHI❗❗:                                                 io->num_components,
+    // INCHI❗❗:                                                 io->bSecondNonTautPass,
+    // INCHI❗❗:                                                 io->bOmitRepetitions );
+    // INCHI❗❗:
+    // INCHI❗❗:                 if (str_LineEnd( io->szTag3, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     return 1;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:             }
+    // INCHI❗❗:             else
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 if (io->bPlainTextTags == 1)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     inchi_ios_print( out_file, "/" );
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (io->bPlainTextTags == 1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_ios_print( out_file, "//" );
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         /*-- totally omitted undefined/unknown isotopic stereo */
+    // INCHI❗❗:     } /* Aux info isotopic */
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputAUXINFO_IsotopicInfo
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
+
     fn print_values(
         heap: &mut SourceHeap,
         output: &mut Option<&mut INCHI_IOSTREAM>,
         stdout: SourceMutPointer<FILE>,
         format: &[u8],
-        arguments: Vec<SourceFormatArgument>,
+        arguments: &[SourceFormatArgument],
     ) -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: Borrowed variadic argument storage preserves argument order and
+        // fresh position zero; no list allocation/clone. Format bytes are borrowed;
+        // formatter/backend costs remain independently quarantined/open.
         let format =
-            heap.allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?;
-        inchi_ios_print(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(format));
+        crate::source::base::ichi_io::inchi_ios_print_format_arguments(
             heap,
             output.as_deref_mut(),
             stdout,
-            format.as_const(),
-            &SourceVaList {
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
                 arguments,
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         Ok(())
     }
 
     let fixed_h_isotopic_empty = if io.bSecondNonTautPass != 0 {
-        let flags = *heap
-            .slice(io.pSortPrintINChIFlags.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let flags = sort_print_flags.read(heap)?;
         let mask = if *basic_or_reconnected == crate::source_types::INCHI_BAS as i32 {
             crate::source_types::FLAG_SORT_PRINT_NO_IFIX_H_BAS as i32
         } else {
@@ -7842,61 +11481,66 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
         .bIsotopicOrigNumb
         .get(taut_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let isotopic_equivalence = *io
-        .bIsotopicAtomEqu
-        .get(taut_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let isotopic_taut_equivalence = *io
-        .bIsotopicTautEqu
-        .get(taut_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let inverted_isotopic_stereo = *io
-        .bInvIsotopicStereo
-        .get(taut_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let ignore_undefined_sp3 = *io
-        .bIgn_UU_Sp3_Iso
-        .get(taut_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let ignore_undefined_sp2 = *io
-        .bIgn_UU_Sp2_Iso
-        .get(taut_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let taut_output = io.bTautomericOutputAllowed != 0 && io.bTautomeric != 0;
-    if isotopic_numbers == 0
-        && isotopic_equivalence == 0
-        && !(taut_output && isotopic_taut_equivalence != 0)
-        && !(inverted_isotopic_stereo != 0 && ignore_undefined_sp3 != 0)
-        && ignore_undefined_sp2 == 0
+    // Native OR/AND short circuits admit each array only when reached.
+    if !(isotopic_numbers != 0
+        || *io
+            .bIsotopicAtomEqu
+            .get(taut_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            != 0
+        || (io.bTautomericOutputAllowed != 0
+            && io.bTautomeric != 0
+            && *io
+                .bIsotopicTautEqu
+                .get(taut_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                != 0)
+        || (*io
+            .bInvIsotopicStereo
+            .get(taut_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            != 0
+            && *io
+                .bIgn_UU_Sp3_Iso
+                .get(taut_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                != 0)
+        || *io
+            .bIgn_UU_Sp2_Iso
+            .get(taut_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            != 0)
     {
         return Ok(0);
     }
 
-    let labels = aux_labels(heap)?;
-    let tag1 = heap.allocate_model_storage(io.szTag1.to_vec())?;
-    let tag2 = heap.allocate_model_storage(io.szTag2.to_vec())?;
-    let tag3 = heap.allocate_model_storage(io.szTag3.to_vec())?;
+    let labels = TagLabels::Static(source_aux_labels());
     io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_ISOT as i32 | io.bFhTag;
-    szGetTag(heap, &labels, io.nTag, io.bTag1, tag1, &mut io.bAlways, 0)?;
-    io.szTag1.copy_from_slice(
-        heap.slice(tag1.as_const())?
-            .get(..64)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    );
+    source_tag_into(
+        heap,
+        labels,
+        io.nTag,
+        io.bTag1,
+        &mut TagOutput::Bytes(&mut io.szTag1),
+        &mut io.bAlways,
+        0,
+    )?;
     inchi_strbuf_reset(heap, Some(string_buffer))?;
     io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagAuxLblBit_AL_ISON as i32;
-    szGetTag(heap, &labels, io.nTag, io.bTag2, tag2, &mut io.bAlways, 0)?;
-    io.szTag2.copy_from_slice(
-        heap.slice(tag2.as_const())?
-            .get(..64)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    );
+    source_tag_into(
+        heap,
+        labels,
+        io.nTag,
+        io.bTag2,
+        &mut TagOutput::Bytes(&mut io.szTag2),
+        &mut io.bAlways,
+        0,
+    )?;
     if isotopic_numbers != 0 {
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
-        io.tot_len = crate::source::base::ichiprt3::str_AuxIsoNumb(
+        io.tot_len = crate::source::base::ichiprt3::str_aux_iso_numbers(
             heap,
-            canonical_globals,
             io.pINChISort,
             io.pINChISort2,
             string_buffer,
@@ -7907,9 +11551,9 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
             io.bSecondNonTautPass,
             io.bOmitRepetitions,
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag2.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
             &mut io.bOverflow,
             string_buffer,
             -1,
@@ -7918,37 +11562,55 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
         {
             return Ok(1);
         }
-        print_values(
+        let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
             ],
         )?;
     } else {
-        print_values(
+        crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(tag2.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(crate::source::base::ichi_io::SourceFormat::Bytes(
+                    &io.szTag2,
+                )),
+                Some(line_feed),
             ],
         )?;
     }
 
-    if isotopic_equivalence != 0 {
+    if *io
+        .bIsotopicAtomEqu
+        .get(taut_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        != 0
+    {
         io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagAuxLblBit_AL_AEQU as i32;
-        szGetTag(heap, &labels, io.nTag, io.bTag2, tag2, &mut io.bAlways, 0)?;
-        io.szTag2.copy_from_slice(
-            heap.slice(tag2.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag2,
+            &mut TagOutput::Bytes(&mut io.szTag2),
+            &mut io.bAlways,
+            0,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
         io.tot_len = crate::source::base::ichiprt3::str_AuxIsoEqu(
@@ -7964,9 +11626,9 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
             io.bOmitRepetitions,
             io.bUseMulipliers,
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag2.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
             &mut io.bOverflow,
             string_buffer,
             -2,
@@ -7975,28 +11637,42 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
         {
             return Ok(1);
         }
-        print_values(
+        let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
             ],
         )?;
     } else if io.bPlainTextTags == 1 {
-        print_values(heap, &mut output, stdout, b"/\0", Vec::new())?;
+        print_values(heap, &mut output, stdout, b"/\0", &[])?;
     }
 
-    if taut_output && isotopic_taut_equivalence != 0 {
+    if io.bTautomericOutputAllowed != 0
+        && io.bTautomeric != 0
+        && *io
+            .bIsotopicTautEqu
+            .get(taut_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            != 0
+    {
         io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagAuxLblBit_AL_GEQU as i32;
-        szGetTag(heap, &labels, io.nTag, io.bTag2, tag2, &mut io.bAlways, 0)?;
-        io.szTag2.copy_from_slice(
-            heap.slice(tag2.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag2,
+            &mut TagOutput::Bytes(&mut io.szTag2),
+            &mut io.bAlways,
+            0,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
         io.tot_len = crate::source::base::ichiprt3::str_AuxIsoTgroupEqu(
@@ -8010,9 +11686,9 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
             io.bOmitRepetitions,
             io.bUseMulipliers,
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag2.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag2),
             &mut io.bOverflow,
             string_buffer,
             -2,
@@ -8021,35 +11697,50 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
         {
             return Ok(1);
         }
-        print_values(
+        let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            &mut output,
+            output.as_deref_mut(),
             stdout,
-            b"%s%s\0",
-            vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
+            SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+            &crate::source::base::ichi_io::SourcePrintArguments {
+                arguments: &[],
+                position: 0,
+            },
+            &[
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                Some(line_feed),
             ],
         )?;
-    } else if taut_output && io.bPlainTextTags == 1 {
-        print_values(heap, &mut output, stdout, b"/\0", Vec::new())?;
+    } else if io.bTautomericOutputAllowed != 0 && io.bTautomeric != 0 && io.bPlainTextTags == 1 {
+        print_values(heap, &mut output, stdout, b"/\0", &[])?;
     }
 
-    if inverted_isotopic_stereo != 0 {
+    if *io
+        .bInvIsotopicStereo
+        .get(taut_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        != 0
+    {
         io.bTag2 = io.bTag1 | crate::source_types::local_ichiprt1::tagAuxLblBit_AL_STER as i32;
-        szGetTag(heap, &labels, io.nTag, io.bTag2, tag2, &mut io.bAlways, 0)?;
-        io.szTag2.copy_from_slice(
-            heap.slice(tag2.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag2,
+            &mut TagOutput::Bytes(&mut io.szTag2),
+            &mut io.bAlways,
+            0,
+        )?;
         io.bTag3 = io.bTag2 | crate::source_types::local_ichiprt1::tagAuxLblBit_AL_SP3I as i32;
-        szGetTag(heap, &labels, io.nTag, io.bTag3, tag3, &mut io.bAlways, 0)?;
-        io.szTag3.copy_from_slice(
-            heap.slice(tag3.as_const())?
-                .get(..64)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag3,
+            &mut TagOutput::Bytes(&mut io.szTag3),
+            &mut io.bAlways,
+            0,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
         io.tot_len = 0;
         io.tot_len = crate::source::base::ichiprt3::str_AuxInvIsoSp3(
@@ -8065,9 +11756,9 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
             io.bOmitRepetitions,
             io.bUseMulipliers,
         )?;
-        if str_LineEnd(
+        if source_line_end(
             heap,
-            tag3.as_const(),
+            crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag3),
             &mut io.bOverflow,
             string_buffer,
             -1,
@@ -8081,7 +11772,7 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
             &mut output,
             stdout,
             b"%s\0",
-            vec![SourceFormatArgument::Bytes(string_buffer.pStr.as_const())],
+            &[SourceFormatArgument::Bytes(string_buffer.pStr.as_const())],
         )?;
         let inverted_numbers = *io
             .bInvIsotopicStereoOrigNumb
@@ -8089,17 +11780,19 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if inverted_numbers != 0 {
             io.bTag3 = io.bTag2 | crate::source_types::local_ichiprt1::tagAuxLblBit_AL_SP3N as i32;
-            szGetTag(heap, &labels, io.nTag, io.bTag3, tag3, &mut io.bAlways, 0)?;
-            io.szTag3.copy_from_slice(
-                heap.slice(tag3.as_const())?
-                    .get(..64)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
+            source_tag_into(
+                heap,
+                labels,
+                io.nTag,
+                io.bTag3,
+                &mut TagOutput::Bytes(&mut io.szTag3),
+                &mut io.bAlways,
+                0,
+            )?;
             inchi_strbuf_reset(heap, Some(string_buffer))?;
             io.tot_len = 0;
-            io.tot_len = crate::source::base::ichiprt3::str_AuxInvIsoSp3Numb(
+            io.tot_len = crate::source::base::ichiprt3::str_aux_inv_iso_sp3_numbers(
                 heap,
-                canonical_globals,
                 io.pINChISort,
                 io.pINChISort2,
                 string_buffer,
@@ -8110,9 +11803,9 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
                 io.bSecondNonTautPass,
                 io.bOmitRepetitions,
             )?;
-            if str_LineEnd(
+            if source_line_end(
                 heap,
-                tag3.as_const(),
+                crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag3),
                 &mut io.bOverflow,
                 string_buffer,
                 -1,
@@ -8121,21 +11814,25 @@ pub(crate) fn OutputAUXINFO_IsotopicInfo(
             {
                 return Ok(1);
             }
-            print_values(
+            let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
                 heap,
-                &mut output,
+                output.as_deref_mut(),
                 stdout,
-                b"%s%s\0",
-                vec![
-                    SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                    SourceFormatArgument::Bytes(line_feed),
+                SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+                &crate::source::base::ichi_io::SourcePrintArguments {
+                    arguments: &[],
+                    position: 0,
+                },
+                &[
+                    Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                    Some(line_feed),
                 ],
             )?;
         } else if io.bPlainTextTags == 1 {
-            print_values(heap, &mut output, stdout, b"/\0", Vec::new())?;
+            print_values(heap, &mut output, stdout, b"/\0", &[])?;
         }
     } else if io.bPlainTextTags == 1 {
-        print_values(heap, &mut output, stdout, b"//\0", Vec::new())?;
+        print_values(heap, &mut output, stdout, b"//\0", &[])?;
     }
     Ok(0)
 }
@@ -8187,6 +11884,68 @@ pub(crate) fn OutputAUXINFO_ChargesRadicalsAndUnusualValences(
     }
     */
     // END INCHI C FUNCTION: OutputAUXINFO_ChargesRadicalsAndUnusualValences
+    // INCHI✔️❗: Write the native existing inline tag directly; no arena
+    // allocation, full-tag copy or copyback. Partial writes/bAlways publish
+    // in source order. Canonical borrowed line-end preserves NUL/overflow/
+    // growth behavior. O(tag work), O(1) scratch; checked costs remain OPEN.
+
+    outputauxinfo_chargesradicalsandunusualvalences_separator(
+        heap,
+        output,
+        string_buffer,
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputauxinfo_chargesradicalsandunusualvalences_separator(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:4717 OutputAUXINFO_ChargesRadicalsAndUnusualValences
+    // INCHI❗❗: int OutputAUXINFO_ChargesRadicalsAndUnusualValences( CANON_GLOBALS    *pCG,
+    // INCHI❗❗:                                                      INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                                                      INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                                      INCHI_OUT_CTL    *io,
+    // INCHI❗❗:                                                      char             *pLF,
+    // INCHI❗❗:                                                      char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:     if (!io->bSecondNonTautPass && io->bChargesRadVal[io->iCurTautMode])
+    // INCHI❗❗:     {
+    // INCHI❗❗:         /*  aux equ atoms */
+    // INCHI❗❗:         /* 1. Compare to tautomeric equivalence (in case of second, non-taut, pass only) */
+    // INCHI❗❗:         /* 2. Compare to the previous component if (1) failed to find equivalence */
+    // INCHI❗❗:         szGetTag( AuxLbl, io->nTag, io->bTag1 = AL_CRV_ | io->bFhTag, io->szTag1, &io->bAlways, 0 );
+    // INCHI❗❗:
+    // INCHI❗❗:         inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:         io->tot_len = 0;
+    // INCHI❗❗:
+    // INCHI❗❗:         io->tot_len = str_AuxChargeRadVal( io->pINChISort, strbuf,
+    // INCHI❗❗:                                            &io->bOverflow, io->bOutType, io->TAUT_MODE,
+    // INCHI❗❗:                                            io->num_components, io->bUseMulipliers );
+    // INCHI❗❗:
+    // INCHI❗❗:         if (str_LineEnd( io->szTag1, &io->bOverflow, strbuf, -1, io->bPlainTextTags ))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             return 1;
+    // INCHI❗❗:         }
+    // INCHI❗❗:
+    // INCHI❗❗:         inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputAUXINFO_ChargesRadicalsAndUnusualValences
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
 
     if io.bSecondNonTautPass != 0 {
         return Ok(0);
@@ -8201,33 +11960,17 @@ pub(crate) fn OutputAUXINFO_ChargesRadicalsAndUnusualValences(
     {
         return Ok(0);
     }
-    let allocate_text = |heap: &mut SourceHeap, bytes: &[u8]| {
-        Ok::<_, SourceHeapError>(
-            heap.allocate_model_storage(bytes.iter().map(|byte| *byte as i8).collect())?
-                .as_const(),
-        )
-    };
-    let mut labels = vec![
-        INCHI_TAG::default();
-        crate::source_types::local_ichiprt1::tagAuxLblOrd_AL_MAX_ORD as usize
-    ];
-    labels[0] = INCHI_TAG {
-        szPlainLabel: allocate_text(heap, b"/\0")?,
-        szPlainComment: allocate_text(heap, b"fixed_H\0")?,
-        szXmlLabel: allocate_text(heap, b"fixed-H\0")?,
-        bAlwaysOutput: 0,
-    };
-    labels[11] = INCHI_TAG {
-        szPlainLabel: allocate_text(heap, b"/CRV:\0")?,
-        szPlainComment: allocate_text(heap, b"charge_radical_valence\0")?,
-        szXmlLabel: allocate_text(heap, b"charges-rad-val\0")?,
-        bAlwaysOutput: 0,
-    };
-    let tag = heap.allocate_model_storage(io.szTag1.to_vec())?;
+    let labels = TagLabels::Static(source_aux_labels());
     io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_CRV_ as i32 | io.bFhTag;
-    szGetTag(heap, &labels, io.nTag, io.bTag1, tag, &mut io.bAlways, 0)?;
-    io.szTag1
-        .copy_from_slice(&heap.slice(tag.as_const())?[..64]);
+    source_tag_into(
+        heap,
+        labels,
+        io.nTag,
+        io.bTag1,
+        &mut TagOutput::Bytes(&mut io.szTag1),
+        &mut io.bAlways,
+        0,
+    )?;
     inchi_strbuf_reset(heap, Some(string_buffer))?;
     io.tot_len = 0;
     io.tot_len = crate::source::base::ichiprt3::str_AuxChargeRadVal(
@@ -8240,9 +11983,9 @@ pub(crate) fn OutputAUXINFO_ChargesRadicalsAndUnusualValences(
         io.num_components,
         io.bUseMulipliers,
     )?;
-    if str_LineEnd(
+    if source_line_end(
         heap,
-        tag.as_const(),
+        crate::source::base::ichi_io::SourceFormat::Bytes(&io.szTag1),
         &mut io.bOverflow,
         string_buffer,
         -1,
@@ -8251,22 +11994,71 @@ pub(crate) fn OutputAUXINFO_ChargesRadicalsAndUnusualValences(
     {
         return Ok(1);
     }
-    let format =
-        heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, b'%' as i8, b's' as i8, 0])?;
-    inchi_ios_print(
+    let format = crate::source::base::ichi_io::SourceFormat::Bytes(&[
+        b'%' as i8, b's' as i8, b'%' as i8, b's' as i8, 0,
+    ]);
+    // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+    let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
         heap,
         output.as_deref_mut(),
         stdout,
-        format.as_const(),
-        &SourceVaList {
-            arguments: vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
-            ],
-            ..SourceVaList::default()
+        format,
+        &crate::source::base::ichi_io::SourcePrintArguments {
+            arguments: &[],
+            position: 0,
         },
+        &[
+            Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+            Some(line_feed),
+        ],
     )?;
     Ok(0)
+}
+
+// Only transient source metadata access; actual NULL retains source absence.
+#[derive(Clone, Copy)]
+pub(crate) enum OriginalStructure<'a> {
+    Borrowed(Option<&'a ORIG_STRUCT>),
+    Pointer(SourceConstPointer<ORIG_STRUCT>),
+}
+
+impl<'s> OriginalStructure<'s> {
+    fn capture(
+        self,
+        heap: &SourceHeap,
+    ) -> Result<Option<std::borrow::Cow<'s, ORIG_STRUCT>>, SourceHeapError> {
+        // Native ichiprt1.c, OutputINCHI_PolymerLayer:
+        //         p = pOrigStruct->polymer;
+        // INCHI✔️❌: Only reached legacy pointer metadata needs its existing
+        // fixed-record capture across mutable heap work. Actual caller
+        // metadata remains borrowed, no clone/root/scan. C527 cost OPEN.
+        match self {
+            Self::Borrowed(record) => Ok(record.map(std::borrow::Cow::Borrowed)),
+            Self::Pointer(pointer) if pointer.is_null() => Ok(None),
+            Self::Pointer(pointer) => Ok(Some(std::borrow::Cow::Owned(
+                heap.slice(pointer)?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .clone(),
+            ))),
+        }
+    }
+
+    #[inline(always)]
+    fn record<'a>(
+        &'a self,
+        heap: &'a SourceHeap,
+    ) -> Result<Option<&'a ORIG_STRUCT>, SourceHeapError> {
+        match self {
+            Self::Borrowed(record) => Ok(*record),
+            Self::Pointer(pointer) if pointer.is_null() => Ok(None),
+            Self::Pointer(pointer) => Ok(Some(
+                heap.slice(*pointer)?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            )),
+        }
+    }
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -8454,129 +12246,359 @@ pub(crate) fn OutputAUXINFO_ReversibilityInfo(
     */
     // END INCHI C FUNCTION: OutputAUXINFO_ReversibilityInfo
 
-    let Some(structure) = original_structure else {
+    output_aux_reversibility_structure(
+        heap,
+        output,
+        string_buffer,
+        OriginalStructure::Borrowed(original_structure),
+        io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn output_aux_reversibility_from_structure(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    original_structure: SourceConstPointer<ORIG_STRUCT>,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // Forward the actual source pointer; the same auxiliary kernel controls
+    // all nullable and second-pass admissions and live field reads.
+    output_aux_reversibility_structure(
+        heap,
+        output,
+        string_buffer,
+        OriginalStructure::Pointer(original_structure),
+        io,
+        line_feed,
+        _tab,
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn output_aux_reversibility_structure(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    original_structure: OriginalStructure<'_>,
+    io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: output_aux_reversibility_structure (ichiprt1.c:4753)
+    // int OutputAUXINFO_ReversibilityInfo( CANON_GLOBALS    *pCG,
+    //                                      INCHI_IOSTREAM   *out_file,
+    //                                      INCHI_IOS_STRING *strbuf,
+    //                                      ORIG_STRUCT      *pOrigStruct,
+    //                                      INCHI_OUT_CTL    *io,
+    //                                      char             *pLF,
+    //                                      char             *pTAB )
+    // {
+    //     if (!io->bSecondNonTautPass &&
+    //          pOrigStruct && pOrigStruct->num_atoms &&
+    //          pOrigStruct->szAtoms
+    //          && pOrigStruct->szBonds
+    //          && pOrigStruct->szCoord)
+    //     {
+    //         int length, cur_pos, line_len, last_pos, nMaxLineLen;
+    //         char *p;
+    //         nMaxLineLen = inchi_min( 80, strbuf->nAllocatedLength ); /* restrict line length to 80 characters */
+    //
+    //         szGetTag( AuxLbl, io->nTag, io->bTag1 = AL_REVR | io->bFhTag, io->szTag1, &io->bAlways, 0 );
+    //
+    //         /* Atoms /A: */
+    //         szGetTag( AuxLbl, io->nTag, io->bTag2 = io->bTag1 | AL_ATMR, io->szTag2, &io->bAlways, 0 );
+    //         inchi_strbuf_reset( strbuf );
+    //         inchi_ios_print( out_file, "%s%s", io->szTag2, strbuf->pStr );
+    //         p = pOrigStruct->szAtoms;
+    //         length = (int) strlen( p );
+    //         io->tot_len = strbuf->nUsedLength;
+    //         line_len = nMaxLineLen - io->tot_len;
+    //         for (cur_pos = 0; cur_pos < length; cur_pos = last_pos)
+    //         {
+    //             if (length - cur_pos >= line_len)
+    //             {
+    //                 last_pos = cur_pos + line_len;
+    //                 /* search backward for the nearest first atom letter (always uppercase) */
+    //                 while (cur_pos < last_pos && !isupper( UCINT p[last_pos] ))
+    //                 {
+    //                     last_pos--;
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 last_pos = length;
+    //             }
+    //             if (last_pos > cur_pos)
+    //             {
+    //                 memcpy(strbuf->pStr + strbuf->nUsedLength, p + cur_pos, (long long)last_pos - (long long)cur_pos); /* djb-rwth: cast operators added */
+    //                 strbuf->pStr[strbuf->nUsedLength + last_pos - cur_pos] = '\0';
+    //                 /*strbuf->nUsedLength = strbuf->nUsedLength + last_pos - cur_pos;*/
+    //
+    //                 if (1) /* always show "Zy" as "Zz" */
+    //                 {
+    //                     char *pzy, *pstart=strbuf->pStr + strbuf->nUsedLength;
+    //                     while ((pzy = strstr( pstart, "Zy" ))) /* djb-rwth: addressing LLVM warning */
+    //                     {
+    //                         *(++pzy) = 'z';
+    //                         pstart = pzy;
+    //                     }
+    //                 }
+    //
+    //                 inchi_ios_print( out_file, "%s%s", strbuf->pStr, io->bPlainTextTags ? "" : "\n" );
+    //             }
+    //             else
+    //             {
+    //                 break;
+    //             }
+    //         }
+    //         if (pLF[0])
+    //         {
+    //             inchi_ios_print( out_file, "%s", pLF );
+    //         }
+    //
+    //         inchi_strbuf_reset( strbuf );
+    //
+    //         /* Bonds /B: */
+    //         szGetTag( AuxLbl, io->nTag, io->bTag2 = io->bTag1 | AL_BNDR, io->szTag2, &io->bAlways, 0 );
+    //         inchi_strbuf_reset( strbuf );
+    //         inchi_ios_print( out_file, "%s%s", io->szTag2, strbuf->pStr );
+    //
+    //         p = pOrigStruct->szBonds;
+    //         length = (int) strlen( p );
+    //         line_len = nMaxLineLen - io->tot_len;
+    //         for (cur_pos = 0; cur_pos < length; cur_pos = last_pos)
+    //         {
+    //             if (length - cur_pos >= line_len)
+    //             {
+    //                 last_pos = cur_pos + line_len - 1;
+    //                 /* search backward for the nearest first bond delimiter ";" */
+    //                 while (cur_pos < last_pos && p[last_pos] != ';')
+    //                 {
+    //                     last_pos--;
+    //                 }
+    //                 if (cur_pos < last_pos)
+    //                 {
+    //                     last_pos++; /* include ';' at the end of the line */
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 last_pos = length;
+    //             }
+    //             if (last_pos > cur_pos)
+    //             {
+    //                 memcpy(strbuf->pStr, p + cur_pos, (long long)last_pos - (long long)cur_pos); /* djb-rwth: cast operators added */
+    //                 strbuf->pStr[last_pos - cur_pos] = '\0';
+    //                 strbuf->nUsedLength = last_pos - cur_pos;
+    //                 inchi_ios_print( out_file, "%s%s", strbuf->pStr, io->bPlainTextTags ? "" : "\n" );
+    //                 inchi_strbuf_reset( strbuf );
+    //             }
+    //             else
+    //             {
+    //                 break;
+    //             }
+    //         }
+    //         if (pLF[0])
+    //         {
+    //             inchi_ios_print( out_file, "%s", pLF );
+    //         }
+    //
+    //         /* Coordinates /C:    */
+    //         szGetTag( AuxLbl, io->nTag, io->bTag2 = io->bTag1 | AL_XYZR, io->szTag2, &io->bAlways, 0 );
+    //         inchi_strbuf_reset( strbuf );
+    //         inchi_ios_print( out_file, "%s%s", io->szTag2, strbuf->pStr );
+    //
+    //         p = pOrigStruct->szCoord;
+    //         length = (int) strlen( p );
+    //         line_len = nMaxLineLen - io->tot_len;
+    //         for (cur_pos = 0; cur_pos < length; cur_pos = last_pos)
+    //         {
+    //             if (length - cur_pos >= line_len)
+    //             {
+    //                 last_pos = cur_pos + line_len - 1;
+    //                 /* search backward for the nearest first coord. delimiter ";" */
+    //                 while (cur_pos < last_pos && p[last_pos] != ';')
+    //                 {
+    //                     last_pos--;
+    //                 }
+    //                 if (cur_pos < last_pos)
+    //                 {
+    //                     last_pos++; /* include ';' at the end of the line */
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 last_pos = length;
+    //             }
+    //             if (last_pos > cur_pos)
+    //             {
+    //                 memcpy(strbuf->pStr, p + cur_pos, (long long)last_pos - (long long)cur_pos); /* djb-rwth: cast operator added */
+    //                 strbuf->pStr[last_pos - cur_pos] = '\0';
+    //                 strbuf->nUsedLength = last_pos - cur_pos;
+    //                 inchi_ios_print( out_file, "%s%s", strbuf->pStr, io->bPlainTextTags ? "" : "\n" );
+    //                 inchi_strbuf_reset( strbuf );
+    //             }
+    //             else
+    //             {
+    //                 break;
+    //             }
+    //         }
+    //
+    //         if (pLF[0])
+    //         {
+    //             inchi_ios_print( out_file, "%s", pLF );
+    //         }
+    //     }
+    //
+    //     return 0;
+    // }
+    // END INCHI C FUNCTION: output_aux_reversibility_structure
+    // INCHI✔️❗: One canonical auxiliary algorithm over actual borrowed
+    // or source-pointer metadata, admitted only at reached source fields.
+    // No whole-record clone/allocation/scan; source live storage retained.
+    // Safe projection and whole-call constants remain independently OPEN.
+    use crate::source::base::ichi_io::{SourceFormat, SourcePrintArguments};
+    if io.bSecondNonTautPass != 0 {
+        return Ok(0);
+    }
+    let Some(structure) = original_structure.record(heap)? else {
         return Ok(0);
     };
-    if io.bSecondNonTautPass != 0
-        || structure.num_atoms == 0
+    if structure.num_atoms == 0
         || structure.szAtoms.is_null()
         || structure.szBonds.is_null()
         || structure.szCoord.is_null()
     {
         return Ok(0);
     }
-    let max_line = 80_i32.min(string_buffer.nAllocatedLength);
-    let text =
-        |heap: &SourceHeap, ptr: SourceConstPointer<i8>| -> Result<Vec<i8>, SourceHeapError> {
-            let bytes = heap.slice(ptr)?;
-            let n = bytes
-                .iter()
-                .position(|b| *b == 0)
-                .ok_or(SourceHeapError::MissingNulTerminator)?;
-            Ok(bytes[..n].to_vec())
-        };
-    let alloc = |heap: &mut SourceHeap, bytes: &[u8]| {
-        Ok::<_, SourceHeapError>(
-            heap.allocate_model_storage(bytes.iter().map(|b| *b as i8).collect())?
-                .as_const(),
-        )
-    };
-    let mut labels = vec![
-        INCHI_TAG::default();
-        crate::source_types::local_ichiprt1::tagAuxLblOrd_AL_MAX_ORD as usize
-    ];
-    for (i, plain, comment, xml) in [
-        (
-            0,
-            b"/\0".as_slice(),
-            b"fixed_H\0".as_slice(),
-            b"fixed-H\0".as_slice(),
-        ),
-        (3, b"/\0", b"reversibility\0", b"reversibility\0"),
-        (12, b"/rA:\0", b"atoms\0", b"atoms\0"),
-        (13, b"/rB:\0", b"bonds\0", b"bonds\0"),
-        (14, b"/rC:\0", b"xyz\0", b"xyz\0"),
-    ] {
-        labels[i] = INCHI_TAG {
-            szPlainLabel: alloc(heap, plain)?,
-            szPlainComment: alloc(heap, comment)?,
-            szXmlLabel: alloc(heap, xml)?,
-            bAlwaysOutput: 0,
-        };
-    }
-    let tags = heap.allocate_model_storage(vec![0_i8; 128])?;
-    io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_REVR as i32 | io.bFhTag;
-    szGetTag(heap, &labels, io.nTag, io.bTag1, tags, &mut io.bAlways, 0)?;
-    io.szTag1
-        .copy_from_slice(&heap.slice(tags.as_const())?[..64]);
-    let lf = text(heap, line_feed)?;
+    // INCHI✔️❗: Source tag writes target the two inline arrays directly.
+    // Each field is scanned only after its tag/reset/print, then read live
+    // at source chunk boundaries. Copy into the actual strbuf before Zy
+    // conversion and one original %s%s call; no snapshots or arena staging.
+    // Atom nUsedLength intentionally stays unchanged, tot_len is set only
+    // for atoms, and only the native reset locations are retained.
+    // Cost: O(field lengths + emitted bytes), O(1) scratch, no allocations
+    // beyond the unchanged canonical printer. Arena/strstr/backend cost OPEN.
     fn emit(
         heap: &mut SourceHeap,
-        out: &mut Option<&mut INCHI_IOSTREAM>,
+        output: &mut Option<&mut INCHI_IOSTREAM>,
         stdout: SourceMutPointer<FILE>,
-        bytes: &[i8],
+        format: SourceFormat<'_>,
+        strings: &[Option<SourceFormat<'_>>],
     ) -> Result<(), SourceHeapError> {
-        let s =
-            heap.allocate_model_storage(bytes.iter().copied().chain(std::iter::once(0)).collect())?;
-        let f = heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, 0])?;
-        inchi_ios_print(
+        crate::source::base::ichi_io::inchi_ios_print_format_strings(
             heap,
-            out.as_deref_mut(),
+            output.as_deref_mut(),
             stdout,
-            f.as_const(),
-            &SourceVaList {
-                arguments: vec![SourceFormatArgument::Bytes(s.as_const())],
-                ..SourceVaList::default()
+            format,
+            &SourcePrintArguments {
+                arguments: &[],
+                position: 0,
             },
+            strings,
         )?;
         Ok(())
     }
-    for (field, bit, atom_mode) in [
+    let max_line = 80_i32.min(string_buffer.nAllocatedLength);
+    let labels = TagLabels::Static(source_aux_labels());
+    io.bTag1 = crate::source_types::local_ichiprt1::tagAuxLblBit_AL_REVR as i32 | io.bFhTag;
+    source_tag_into(
+        heap,
+        labels,
+        io.nTag,
+        io.bTag1,
+        &mut TagOutput::Bytes(&mut io.szTag1),
+        &mut io.bAlways,
+        0,
+    )?;
+    for (field_index, bit, atom_mode) in [
         (
-            structure.szAtoms.as_const(),
+            0_u8,
             crate::source_types::local_ichiprt1::tagAuxLblBit_AL_ATMR as i32,
             true,
         ),
         (
-            structure.szBonds.as_const(),
+            1_u8,
             crate::source_types::local_ichiprt1::tagAuxLblBit_AL_BNDR as i32,
             false,
         ),
         (
-            structure.szCoord.as_const(),
+            2_u8,
             crate::source_types::local_ichiprt1::tagAuxLblBit_AL_XYZR as i32,
             false,
         ),
     ] {
         io.bTag2 = io.bTag1 | bit;
-        let tag2 = tags.offset(64)?;
-        szGetTag(heap, &labels, io.nTag, io.bTag2, tag2, &mut io.bAlways, 0)?;
-        io.szTag2
-            .copy_from_slice(&heap.slice(tag2.as_const())?[..64]);
+        source_tag_into(
+            heap,
+            labels,
+            io.nTag,
+            io.bTag2,
+            &mut TagOutput::Bytes(&mut io.szTag2),
+            &mut io.bAlways,
+            0,
+        )?;
         inchi_strbuf_reset(heap, Some(string_buffer))?;
-        emit(heap, &mut output, stdout, &text(heap, tag2.as_const())?)?;
-        let source = text(heap, field)?;
-        io.tot_len = string_buffer.nUsedLength;
+        emit(
+            heap,
+            &mut output,
+            stdout,
+            SourceFormat::Text("%s%s"),
+            &[
+                Some(SourceFormat::Bytes(&io.szTag2)),
+                Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+            ],
+        )?;
+        // The source loads this field after the current tag/reset/print prefix.
+        let record = original_structure
+            .record(heap)?
+            .ok_or(SourceHeapError::NullPointer)?;
+        let field = match field_index {
+            0 => record.szAtoms.as_const(),
+            1 => record.szBonds.as_const(),
+            _ => record.szCoord.as_const(),
+        };
+        let length = heap
+            .slice(field)?
+            .iter()
+            .position(|byte| *byte == 0)
+            .ok_or(SourceHeapError::MissingNulTerminator)?;
+        if atom_mode {
+            io.tot_len = string_buffer.nUsedLength;
+        }
         let line_len = max_line.wrapping_sub(io.tot_len);
         let mut cur = 0usize;
-        while cur < source.len() {
-            let mut last = source.len();
-            if (source.len() - cur) as i32 >= line_len {
+        while cur < length {
+            let mut last = length;
+            if (length - cur) as i32 >= line_len {
                 last = cur
                     + usize::try_from(line_len)
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 if !atom_mode {
                     last = last.saturating_sub(1);
                 }
-                while cur < last
-                    && if atom_mode {
-                        !source
-                            .get(last)
-                            .is_some_and(|byte| (*byte as u8).is_ascii_uppercase())
+                let source = heap.slice(field)?;
+                while cur < last {
+                    let byte = *source
+                        .get(last)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if if atom_mode {
+                        (byte as u8).is_ascii_uppercase()
                     } else {
-                        source[last] != b';' as i8
+                        byte == b';' as i8
+                    } {
+                        break;
                     }
-                {
                     last -= 1;
                 }
                 if !atom_mode && cur < last {
@@ -8586,35 +12608,83 @@ pub(crate) fn OutputAUXINFO_ReversibilityInfo(
             if last <= cur {
                 break;
             }
-            let mut chunk = source[cur..last].to_vec();
+            let count = last - cur;
+            let used = if atom_mode {
+                usize::try_from(string_buffer.nUsedLength)
+                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
+            } else {
+                0
+            };
+            let destination = string_buffer.pStr.offset(used as i64)?;
+            let source = field.offset(cur as i64)?;
+            // Source memcpy requires disjoint ranges. Retain the existing
+            // safe modeled overlap extension while allowing disjoint ranges
+            // within one allocation; no detached clone of the live field.
+            if destination.allocation_identity() == source.as_mut().allocation_identity() {
+                heap.copy_prefix_within_allocation(destination, source, count)?;
+            } else {
+                heap.copy_nonoverlapping_prefix(destination, source, count, false)?;
+            }
+            *heap
+                .slice_mut(destination)?
+                .get_mut(count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
             if atom_mode {
-                for i in 0..chunk.len().saturating_sub(1) {
-                    if chunk[i] == b'Z' as i8 && chunk[i + 1] == b'y' as i8 {
-                        chunk[i + 1] = b'z' as i8;
+                let chunk = heap.slice_mut(destination)?;
+                // strstr(pstart, "Zy") resumes at the replaced second byte.
+                // This fixed two-byte pattern cannot overlap another match.
+                for index in 0..count.saturating_sub(1) {
+                    if chunk[index] == b'Z' as i8 && chunk[index + 1] == b'y' as i8 {
+                        chunk[index + 1] = b'z' as i8;
                     }
                 }
-            }
-            let n = chunk.len();
-            let dst = heap.slice_mut(string_buffer.pStr)?;
-            dst[..n].copy_from_slice(&chunk);
-            dst[n] = 0;
-            if !atom_mode {
+            } else {
                 string_buffer.nUsedLength =
-                    i32::try_from(n).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                    i32::try_from(count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             }
-            emit(heap, &mut output, stdout, &chunk)?;
-            if io.bPlainTextTags == 0 {
-                emit(heap, &mut output, stdout, &[b'\n' as i8])?;
-            }
+            emit(
+                heap,
+                &mut output,
+                stdout,
+                SourceFormat::Text("%s%s"),
+                &[
+                    Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+                    Some(SourceFormat::Text(if io.bPlainTextTags != 0 {
+                        ""
+                    } else {
+                        "\n"
+                    })),
+                ],
+            )?;
             if !atom_mode {
                 inchi_strbuf_reset(heap, Some(string_buffer))?;
             }
             cur = last;
         }
-        if !lf.is_empty() {
-            emit(heap, &mut output, stdout, &lf)?;
+        if match line_feed {
+            // Native ichiprt1.c4819/4866/4912: if (pLF[0])
+            // INCHI✔️❗: same reached first byte; no NUL preflight/copy.
+            SourceFormat::Pointer(pointer) => *heap
+                .slice(pointer)?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            SourceFormat::Bytes(bytes) => {
+                *bytes.first().ok_or(SourceHeapError::PointerOutOfBounds)?
+            }
+            SourceFormat::Text(text) => text.as_bytes().first().copied().unwrap_or(0) as i8,
+        } != 0
+        {
+            emit(
+                heap,
+                &mut output,
+                stdout,
+                SourceFormat::Text("%s"),
+                &[Some(line_feed)],
+            )?;
         }
-        inchi_strbuf_reset(heap, Some(string_buffer))?;
+        if atom_mode {
+            inchi_strbuf_reset(heap, Some(string_buffer))?;
+        }
     }
     Ok(0)
 }
@@ -8718,7 +12788,143 @@ pub(crate) fn OutputAUXINFO_PolymerInfo(
     */
     // END INCHI C FUNCTION: OutputAUXINFO_PolymerInfo
 
-    let Some(original_structure) = original_structure else {
+    output_aux_polymer_structure(
+        heap,
+        output,
+        string_buffer,
+        OriginalStructure::Borrowed(original_structure),
+        _io,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn output_aux_polymer_from_structure(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    original_structure: SourceConstPointer<ORIG_STRUCT>,
+    _io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // Forward the actual source pointer; the same auxiliary kernel controls
+    // all nullable and second-pass admissions and live field reads.
+    output_aux_polymer_structure(
+        heap,
+        output,
+        string_buffer,
+        OriginalStructure::Pointer(original_structure),
+        _io,
+        line_feed,
+        _tab,
+        stdout,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn output_aux_polymer_structure(
+    heap: &mut SourceHeap,
+    mut output: Option<&mut INCHI_IOSTREAM>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    original_structure: OriginalStructure<'_>,
+    _io: &mut INCHI_OUT_CTL,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: output_aux_polymer_structure (ichiprt1.c:4923)
+    // int OutputAUXINFO_PolymerInfo( CANON_GLOBALS    *pCG,
+    //                                INCHI_IOSTREAM   *out_file,
+    //                                INCHI_IOS_STRING *strbuf,
+    //                                ORIG_STRUCT      *pOrigStruct,
+    //                                INCHI_OUT_CTL    *io,
+    //                                char             *pLF,
+    //                                char             *pTAB )
+    // {
+    //     int k, i, q;
+    //     OAD_Polymer *p;
+    //     OAD_PolymerUnit *u;
+    //
+    //
+    //     if (!pOrigStruct)
+    //     {
+    //         return 0;
+    //     }
+    //     p = pOrigStruct->polymer;
+    //     if (!p)
+    //     {
+    //         return 0;
+    //     }
+    //
+    //     inchi_strbuf_reset( strbuf );
+    //
+    //     inchi_ios_print( out_file, "/Z:" );
+    //
+    //
+    //     /* Print polymer units data */
+    //     for (i = 0; i < p->n; i++)
+    //     {
+    //         /* For each unit u ... */
+    //         u = p->units[i];
+    //
+    //         /* print kinds of unit */
+    //         inchi_strbuf_printf( strbuf, "%-d%-d%-d-", u->type, u->subtype, u->conn );
+    //         inchi_strbuf_printf( strbuf, "%-s-", u->smt[0] ? u->smt : "n" );
+    //
+    //         /* Print unit atoms */
+    //         print_sequence_of_nums_compressing_ranges( u->na, u->alist, strbuf );
+    //
+    //         /* Print bonds from unit to otside */
+    //         if (u->nb > 0)
+    //         {
+    //             inchi_strbuf_printf( strbuf, "(" );
+    //             for (k = 0; k < 2 * u->nb - 1; k++)
+    //             {
+    //                 inchi_strbuf_printf( strbuf, "%-d,", u->blist[k] );
+    //             }
+    //             inchi_strbuf_printf( strbuf, "%-d)", u->blist[2 * u->nb - 1] );
+    //         }
+    //
+    //         if (fabs( -fabs( u->xbr1[0] ) + 777777.777 ) > 1.e-7)
+    //         {
+    //             inchi_strbuf_printf( strbuf, "[" );
+    //             for (q = 0; q < 3; q++)
+    //             {
+    //                 inchi_strbuf_printf( strbuf, "%-f,", u->xbr1[q] );
+    //             }
+    //             inchi_strbuf_printf( strbuf, "%-f]", u->xbr1[3] );
+    //         }
+    //         if (fabs( -fabs( u->xbr2[0] ) + 777777.777 ) > 1.e-7)
+    //         {
+    //             inchi_strbuf_printf( strbuf, "[" );
+    //             for (q = 0; q < 3; q++)
+    //             {
+    //                 inchi_strbuf_printf( strbuf, "%-f,", u->xbr2[q] );
+    //             }
+    //             inchi_strbuf_printf( strbuf, "%-f]", u->xbr2[3] );
+    //         }
+    //
+    //         if (i < p->n - 1)
+    //         {
+    //             inchi_strbuf_printf( strbuf, ";" );
+    //         }
+    //     }
+    //
+    //     inchi_ios_print( out_file, "%s%s", strbuf->pStr, pLF );
+    //
+    //     return 0;
+    // }
+    // END INCHI C FUNCTION: output_aux_polymer_structure
+    // INCHI✔️❗: One canonical auxiliary algorithm over actual borrowed
+    // or source-pointer metadata, admitted only at reached source fields.
+    // No whole-record clone/allocation/scan; source live storage retained.
+    // Safe projection and whole-call constants remain independently OPEN.
+    use crate::source::base::ichi_io::SourceFormat;
+    let Some(original_structure) = original_structure.record(heap)? else {
         return Ok(0);
     };
     if original_structure.polymer.is_null() {
@@ -8727,33 +12933,37 @@ pub(crate) fn OutputAUXINFO_PolymerInfo(
     let polymer = heap
         .slice(original_structure.polymer.as_const())?
         .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
-
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let (units, unit_count) = (polymer.units, polymer.n);
     inchi_strbuf_reset(heap, Some(string_buffer))?;
 
-    fn format_pointer(
-        heap: &mut SourceHeap,
-        format: &[u8],
-    ) -> Result<SourceConstPointer<i8>, SourceHeapError> {
-        Ok(heap
-            .allocate_model_storage(format.iter().map(|byte| *byte as i8).collect())?
-            .as_const())
+    // INCHI✔️❗: Borrow static formats, preserve each source printf call,
+    // and read only reached unit fields/atom/bond rows. The canonical signed
+    // range projection preserves num[na-1], including defined interior reads
+    // at zero/negative na. No whole-unit/polymer/atom/coordinate snapshots.
+    // Cost: O(units + reached atoms/bonds/output), O(1) scratch; checked
+    // admission/formatter/backend costs remain OPEN.
+    fn unit(
+        heap: &SourceHeap,
+        pointer: SourceMutPointer<crate::source_types::OAD_PolymerUnit>,
+    ) -> Result<&crate::source_types::OAD_PolymerUnit, SourceHeapError> {
+        heap.slice(pointer.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)
     }
     fn append(
         heap: &mut SourceHeap,
         buffer: &mut INCHI_IOS_STRING,
         format: &[u8],
-        arguments: Vec<SourceFormatArgument>,
+        arguments: &[SourceFormatArgument],
     ) -> Result<(), SourceHeapError> {
-        let format = format_pointer(heap, format)?;
-        inchi_strbuf_printf(
+        crate::source::base::ichi_io::inchi_strbuf_printf_format_arguments(
             heap,
             Some(buffer),
-            format,
-            &SourceVaList {
+            SourceFormat::Bytes(bytemuck::cast_slice(format)),
+            &crate::source::base::ichi_io::SourcePrintArguments {
                 arguments,
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         Ok(())
@@ -8763,150 +12973,135 @@ pub(crate) fn OutputAUXINFO_PolymerInfo(
         output: &mut Option<&mut INCHI_IOSTREAM>,
         stdout: SourceMutPointer<FILE>,
         format: &[u8],
-        arguments: Vec<SourceFormatArgument>,
+        arguments: &[SourceFormatArgument],
     ) -> Result<(), SourceHeapError> {
-        let format = format_pointer(heap, format)?;
-        inchi_ios_print(
+        crate::source::base::ichi_io::inchi_ios_print_format_arguments(
             heap,
             output.as_deref_mut(),
             stdout,
-            format,
-            &SourceVaList {
+            SourceFormat::Bytes(bytemuck::cast_slice(format)),
+            &crate::source::base::ichi_io::SourcePrintArguments {
                 arguments,
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         Ok(())
     }
-
-    print(heap, &mut output, stdout, b"/Z:\0", Vec::new())?;
-
-    for index in 0..polymer.n {
-        let index = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    print(heap, &mut output, stdout, b"/Z:\0", &[])?;
+    for index in 0..unit_count {
         let unit_pointer = *heap
-            .slice(polymer.units.as_const())?
-            .get(index)
+            .slice(units.as_const())?
+            .get(index as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let unit = heap
-            .slice(unit_pointer.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone();
-
+        let value = unit(heap, unit_pointer)?;
+        let (type_, subtype, conn) = (value.type_, value.subtype, value.conn);
         append(
             heap,
             string_buffer,
             b"%-d%-d%-d-\0",
-            vec![
-                SourceFormatArgument::Signed(i64::from(unit.type_)),
-                SourceFormatArgument::Signed(i64::from(unit.subtype)),
-                SourceFormatArgument::Signed(i64::from(unit.conn)),
+            &[
+                SourceFormatArgument::Signed(i64::from(type_)),
+                SourceFormatArgument::Signed(i64::from(subtype)),
+                SourceFormatArgument::Signed(i64::from(conn)),
             ],
         )?;
-        let smt = if unit.smt[0] != 0 {
-            let end = unit
-                .smt
-                .iter()
-                .position(|byte| *byte == 0)
-                .ok_or(SourceHeapError::MissingNulTerminator)?;
-            heap.allocate_model_storage(unit.smt[..=end].to_vec())?
+        // INCHI✔️❌: Safe borrowing across the mutable canonical formatter
+        // needs only this fixed80-byte inline label copy, not a unit clone or
+        // heap payload. This native-absent constant copy is explicitly deferred.
+        let smt = if unit(heap, unit_pointer)?.smt[0] != 0 {
+            Some(unit(heap, unit_pointer)?.smt)
         } else {
-            heap.allocate_model_storage(vec![b'n' as i8, 0])?
+            None
         };
-        append(
+        let label = smt
+            .as_ref()
+            .map_or(SourceFormat::Text("n"), |smt| SourceFormat::Bytes(smt));
+        crate::source::base::ichi_io::inchi_strbuf_printf_polymer_label(
             heap,
-            string_buffer,
-            b"%-s-\0",
-            vec![SourceFormatArgument::Bytes(smt.as_const())],
+            Some(string_buffer),
+            label,
         )?;
-
-        let atom_count =
-            usize::try_from(unit.na).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if atom_count == 0 {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        let atoms = heap
-            .slice(unit.alist.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        crate::source::base::ichiprt2::print_sequence_of_nums_compressing_ranges(
+        let value = unit(heap, unit_pointer)?;
+        let (atom_count, atoms) = (value.na, value.alist);
+        crate::source::base::ichiprt2::print_sequence_of_nums_compressing_ranges_pointer(
             heap,
-            &atoms,
+            atom_count,
+            atoms.as_const(),
             string_buffer,
         )?;
-
-        if unit.nb > 0 {
-            append(heap, string_buffer, b"(\0", Vec::new())?;
-            let bond_value_count = unit
-                .nb
+        let bond_count = unit(heap, unit_pointer)?.nb;
+        if bond_count > 0 {
+            append(heap, string_buffer, b"(\0", &[])?;
+            let bond_value_count = bond_count
                 .checked_mul(2)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             let last = bond_value_count
                 .checked_sub(1)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
             for bond_index in 0..last {
-                let value = *heap
-                    .slice(unit.blist.as_const())?
-                    .get(
-                        usize::try_from(bond_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let bonds = unit(heap, unit_pointer)?.blist;
+                let value = *heap.element_signed(bonds.as_const(), bond_index)?;
                 append(
                     heap,
                     string_buffer,
                     b"%-d,\0",
-                    vec![SourceFormatArgument::Signed(i64::from(value))],
+                    &[SourceFormatArgument::Signed(i64::from(value))],
                 )?;
             }
-            let value = *heap
-                .slice(unit.blist.as_const())?
-                .get(usize::try_from(last).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let bonds = unit(heap, unit_pointer)?.blist;
+            let value = *heap.element_signed(bonds.as_const(), last)?;
             append(
                 heap,
                 string_buffer,
                 b"%-d)\0",
-                vec![SourceFormatArgument::Signed(i64::from(value))],
+                &[SourceFormatArgument::Signed(i64::from(value))],
             )?;
         }
-
-        for coordinates in [unit.xbr1, unit.xbr2] {
-            if (-coordinates[0].abs() + 777_777.777).abs() > 1.0e-7 {
-                append(heap, string_buffer, b"[\0", Vec::new())?;
-                for value in coordinates.iter().take(3) {
+        for second in [false, true] {
+            let value = unit(heap, unit_pointer)?;
+            let first = if second { value.xbr2[0] } else { value.xbr1[0] };
+            if (-first.abs() + 777_777.777).abs() > 1.0e-7 {
+                append(heap, string_buffer, b"[\0", &[])?;
+                for coordinate in 0..3 {
+                    let value = unit(heap, unit_pointer)?;
+                    let value = if second {
+                        value.xbr2[coordinate]
+                    } else {
+                        value.xbr1[coordinate]
+                    };
                     append(
                         heap,
                         string_buffer,
                         b"%-f,\0",
-                        vec![SourceFormatArgument::Float(*value)],
+                        &[SourceFormatArgument::Float(value)],
                     )?;
                 }
+                let value = unit(heap, unit_pointer)?;
+                let value = if second { value.xbr2[3] } else { value.xbr1[3] };
                 append(
                     heap,
                     string_buffer,
                     b"%-f]\0",
-                    vec![SourceFormatArgument::Float(coordinates[3])],
+                    &[SourceFormatArgument::Float(value)],
                 )?;
             }
         }
-
-        if index + 1
-            < usize::try_from(polymer.n).map_err(|_| SourceHeapError::PointerOutOfBounds)?
-        {
-            append(heap, string_buffer, b";\0", Vec::new())?;
+        if index < unit_count - 1 {
+            append(heap, string_buffer, b";\0", &[])?;
         }
     }
-
-    print(
+    let _ = crate::source::base::ichi_io::inchi_ios_print_format_strings(
         heap,
-        &mut output,
+        output.as_deref_mut(),
         stdout,
-        b"%s%s\0",
-        vec![
-            SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-            SourceFormatArgument::Bytes(line_feed),
+        SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0")),
+        &crate::source::base::ichi_io::SourcePrintArguments {
+            arguments: &[],
+            position: 0,
+        },
+        &[
+            Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+            Some(line_feed),
         ],
     )?;
     Ok(0)
@@ -9155,44 +13350,39 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
     let write = |heap: &mut SourceHeap,
                  buffer: &mut INCHI_IOS_STRING,
                  format: &[u8],
-                 arguments: Vec<SourceFormatArgument>|
+                 arguments: &[SourceFormatArgument]|
      -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: Borrowed variadic argument storage preserves argument order and
+        // fresh position zero; no list allocation/clone. Format bytes are borrowed;
+        // formatter/backend costs remain independently quarantined/open.
         let format =
-            heap.allocate_model_storage(format.iter().copied().map(|byte| byte as i8).collect())?;
-        inchi_strbuf_printf(
+            crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(format));
+        crate::source::base::ichi_io::inchi_strbuf_printf_format_arguments(
             heap,
             Some(buffer),
-            format.as_const(),
-            &SourceVaList {
+            format,
+            &crate::source::base::ichi_io::SourcePrintArguments {
                 arguments,
-                ..SourceVaList::default()
+                position: 0,
             },
         )?;
         Ok(())
     };
     let signed = |value: i32| SourceFormatArgument::Signed(i64::from(value));
 
-    let polymer = heap
-        .slice(original_atom_data.polymer.as_const())?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
+    // INCHI✔️❗: Native polymer/atom assignments copy handles only. Admit each
+    // header/atom at its reached use after preceding output/state mutations.
+    // Live range/membership avoids the former O(na) snapshot/allocation.
     write(
         heap,
         string_buffer,
         b"%-d%-d%-d-\0",
-        vec![signed(unit.type_), signed(unit.subtype), signed(unit.conn)],
+        &[signed(unit.type_), signed(unit.subtype), signed(unit.conn)],
     )?;
-    let atom_count =
-        usize::try_from(unit.na).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let unit_atoms = heap
-        .slice(unit.alist.as_const())?
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    crate::source::base::ichiprt2::print_sequence_of_nums_compressing_ranges(
+    crate::source::base::ichiprt2::print_sequence_of_nums_compressing_ranges_pointer(
         heap,
-        &unit_atoms,
+        unit.na,
+        unit.alist.as_const(),
         string_buffer,
     )?;
 
@@ -9210,12 +13400,15 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
         let mut atom4 = *crossing.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut atom5 = *crossing.get(2).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mut atom6 = *crossing.get(3).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if crate::source::base::util::is_in_the_ilist(Some(&unit_atoms), atom3, unit.na)?.is_some()
-        {
+        let unit_atoms = if unit.na == 0 {
+            None
+        } else {
+            Some(heap.slice(unit.alist.as_const())?)
+        };
+        if crate::source::base::util::is_in_the_ilist(unit_atoms, atom3, unit.na)?.is_some() {
             std::mem::swap(&mut atom3, &mut atom4);
         }
-        if crate::source::base::util::is_in_the_ilist(Some(&unit_atoms), atom5, unit.na)?.is_some()
-        {
+        if crate::source::base::util::is_in_the_ilist(unit_atoms, atom5, unit.na)?.is_some() {
             std::mem::swap(&mut atom5, &mut atom6);
         }
         let swap = if polymers_mode == crate::source_types::POLYMERS_LEGACY as i32 {
@@ -9236,22 +13429,25 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
             heap,
             string_buffer,
             b"(%-d-%-d,%-d-%-d)\0",
-            values.into_iter().map(signed).collect(),
+            &values.map(signed),
         )?;
     } else if unit.nb <= 2 && (unit.cyclizable != 0 || unit.nbkbonds > 0) {
         if unit.cap1 > 0 || unit.cap2 > 0 {
             let atom_text = heap.slice(original_structure.szAtoms.as_const())?;
-            let terminator = atom_text
-                .iter()
-                .position(|byte| *byte == 0)
-                .ok_or(SourceHeapError::MissingNulTerminator)?;
             let mut explicit_hydrogens = 0_i32;
             let mut position = 0_usize;
-            while position < terminator {
-                if atom_text[position] == b'H' as i8 {
+            // INCHI✔️❗: One source-ordered byte walk, no full-NUL preflight.
+            loop {
+                let current = *atom_text
+                    .get(position)
+                    .ok_or(SourceHeapError::MissingNulTerminator)?;
+                if current == 0 {
+                    break;
+                }
+                if current == b'H' as i8 {
                     let next = *atom_text
                         .get(position + 1)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .ok_or(SourceHeapError::MissingNulTerminator)?
                         as u8;
                     if next.is_ascii_uppercase() || next == 0 {
                         explicit_hydrogens = explicit_hydrogens
@@ -9296,11 +13492,11 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
             heap,
             string_buffer,
             b"(%-d,%-d-\0",
-            vec![signed(atom1), signed(atom2)],
+            &[signed(atom1), signed(atom2)],
         )?;
 
         if unit.cyclizable == crate::source_types::CLOSING_SRU_DIRADICAL as i32 {
-            write(heap, string_buffer, b"%-d)\0", vec![signed(unit.end_atom1)])?;
+            write(heap, string_buffer, b"%-d)\0", &[signed(unit.end_atom1)])?;
         } else if unit.cyclizable == crate::source_types::CLOSING_SRU_HIGHER_ORDER_BOND as i32 {
             let (mut atom3, mut atom4) = (unit.end_atom1, unit.end_atom2);
             inchi_sort_int_pair_ascending(&mut atom3, &mut atom4);
@@ -9308,7 +13504,7 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                 heap,
                 string_buffer,
                 b"%-d.%-d)\0",
-                vec![signed(atom3), signed(atom4)],
+                &[signed(atom3), signed(atom4)],
             )?;
         } else if unit.cyclizable == crate::source_types::CLOSING_SRU_RING as i32 {
             if unit.nbkbonds == 0 {
@@ -9318,7 +13514,7 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                     heap,
                     string_buffer,
                     b"%-d,%-d)\0",
-                    vec![signed(atom3), signed(atom4)],
+                    &[signed(atom3), signed(atom4)],
                 )?;
             } else {
                 for bond in 1..unit.nbkbonds {
@@ -9351,6 +13547,10 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                     heap.slice_mut(unit.bkbonds)?[destination] = temporary;
                 }
 
+                let polymer = heap
+                    .slice(original_atom_data.polymer.as_const())?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if polymer.treat == crate::source_types::POLYMERS_MODERN as i32
                     || polymer.treat == crate::source_types::POLYMERS_LEGACY_PLUS as i32
                 {
@@ -9360,9 +13560,10 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                         && unit.cap1 >= 1
                         && unit.cap2 >= 1
                     {
-                        let atoms = heap.slice(original_atom_data.at.as_const())?;
-                        if crate::source::base::runichi3::OAD_PolymerUnit_SetReopeningDetails(
-                            heap, unit, atoms,
+                        if crate::source::base::runichi3::polymer_reopening_details_pointer(
+                            heap,
+                            unit,
+                            original_atom_data.at,
                         )? != 0
                         {
                             let mut senior_bond = 0_i32;
@@ -9382,14 +13583,40 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                                     let row = heap.slice(first_pointer.as_const())?;
                                     [row[0], row[1]]
                                 };
-                                let senior = {
-                                    let row = heap.slice(senior_pointer.as_const())?;
-                                    [row[0], row[1]]
-                                };
-                                heap.slice_mut(first_pointer)?[..2].copy_from_slice(&senior);
-                                unit.end_atom1 = senior[0];
-                                unit.end_atom2 = senior[1];
-                                heap.slice_mut(senior_pointer)?[..2].copy_from_slice(&first);
+                                // INCHI✔️❗: Separate source column reads/writes preserve
+                                // overlapping interior rows; no whole-row snapshot.
+                                let value = *heap
+                                    .slice(senior_pointer.as_const())?
+                                    .first()
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                *heap
+                                    .slice_mut(first_pointer)?
+                                    .first_mut()
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+                                let value = *heap
+                                    .slice(senior_pointer.as_const())?
+                                    .get(1)
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                *heap
+                                    .slice_mut(first_pointer)?
+                                    .get_mut(1)
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+                                unit.end_atom1 = *heap
+                                    .slice(first_pointer.as_const())?
+                                    .first()
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                unit.end_atom2 = *heap
+                                    .slice(first_pointer.as_const())?
+                                    .get(1)
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                *heap
+                                    .slice_mut(senior_pointer)?
+                                    .first_mut()
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)? = first[0];
+                                *heap
+                                    .slice_mut(senior_pointer)?
+                                    .get_mut(1)
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)? = first[1];
                             }
                         }
                     }
@@ -9413,7 +13640,7 @@ pub(crate) fn OutputINCHI_PolymerLayer_SingleUnit(
                         heap,
                         string_buffer,
                         b"%-d,%-d%-c\0",
-                        vec![
+                        &[
                             signed(row[0]),
                             signed(row[1]),
                             SourceFormatArgument::Byte(delimiter as i8),
@@ -9735,6 +13962,15 @@ void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
     // INCHI✔️❌: source allocation, in-place newline mutation, output reset, print, and cleanup ordering.
     // END INCHI ACTIVE MACRO CONFIGURATION: EditINCHI_HidePolymerZz
 
+    // INCHI✔️❗: Borrow source bytes until reached reads; write the one native
+    // calloc buffer directly. Native newline/reset/print/free order retained.
+    // O(search + source/output bytes), native O(used) buffer/O(1) extra scratch;
+    // no input/output snapshots or ending allocation. Checked arena/search/
+    // formatter/libc whole-call costs remain OPEN in performance_pending.
+    fn read_source(heap: &SourceHeap, source: SourceConstPointer<i8>, index: usize) -> Result<i8, SourceHeapError> {
+        heap.slice(source)?.get(index).copied().ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+
     if number_of_placeholder_zy > 0 {
         if number_of_polymer_zz == 0 {
             return Ok(());
@@ -9747,21 +13983,11 @@ void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
     if output.s.pStr.is_null() {
         return Err(SourceHeapError::NullPointer);
     }
-    let source = heap.slice(output.s.pStr.as_const())?.to_vec();
-    let nul = source
-        .iter()
-        .position(|byte| *byte == 0)
-        .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let visible = &source[..nul];
-    let find = |needle: &[u8]| {
-        visible
-            .windows(needle.len())
-            .position(|window| window.iter().map(|byte| *byte as u8).eq(needle.iter().copied()))
-    };
-    if find(b"/z").is_none() {
+    let source = output.s.pStr.as_const();
+    if crate::source::base::ichierr::find_c_substring(heap.slice(source)?, b"/z")?.is_none() {
         return Ok(());
     }
-    let Some(start) = find(b"InChI=1B/") else {
+    let Some(start) = crate::source::base::ichierr::find_c_substring(heap.slice(source)?, b"InChI=1B/")? else {
         return Ok(());
     };
 
@@ -9775,23 +14001,20 @@ void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
     };
 
     let operation = (|| -> Result<(), SourceHeapError> {
-        let mut input = source;
+        let input = source;
         let mut used = usize::try_from(output.s.nUsedLength)
             .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-        if used == 0 || used > input.len() {
+        if used == 0 || used > heap.slice(input)?.len() {
             return Err(SourceHeapError::UnsupportedSourceBehavior);
         }
         let mut consumed_eol = false;
-        if input[used - 1] as u8 == b'\n' {
-            input[used - 1] = 0;
+        if read_source(heap, input, used - 1)? as u8 == b'\n' {
             heap.slice_mut(output.s.pStr)?[used - 1] = 0;
             output.s.nUsedLength = output.s.nUsedLength.wrapping_sub(1);
             used -= 1;
             consumed_eol = true;
         }
 
-        let mut copied = vec![0_i8; usize::try_from(allocation_count)
-            .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?];
         let mut copied_count = 0_i32;
         let mut slash_count = 0_i32;
         let mut skip = false;
@@ -9802,15 +14025,13 @@ void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
         let mut index = start;
         while index < used {
             let pre_eol = index == used - 1;
-            let character = *input
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+            let character = read_source(heap, input, index)? as u8;
             let nonprinting = matches!(character, b'\n' | b'\r' | b'\t');
 
             if !skip {
                 let target = usize::try_from(copied_count)
                     .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-                *copied
+                *heap.slice_mut(buffer)?
                     .get_mut(target)
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = character as i8;
                 copied_count = copied_count.wrapping_add(1);
@@ -9859,14 +14080,14 @@ void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
                         if boundary < 2 {
                             return Err(SourceHeapError::UnsupportedSourceBehavior);
                         }
-                        if input[boundary - 1] as u8 == b'z'
-                            && input[boundary - 2] as u8 == b'Z'
+                        if read_source(heap, input, boundary - 1)? as u8 == b'z'
+                            && read_source(heap, input, boundary - 2)? as u8 == b'Z'
                         {
                             copied_count = copied_count.wrapping_sub(2);
                             let mut scan = i64::try_from(boundary)
                                 .map_err(|_| SourceHeapError::PointerOffsetOverflow)? - 3;
                             while scan >= 0 {
-                                if input[scan as usize] as u8 == b'.' {
+                                if read_source(heap, input, scan as usize)? as u8 == b'.' {
                                     break;
                                 }
                                 copied_count = copied_count.wrapping_sub(1);
@@ -9880,7 +14101,7 @@ void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
                             };
                             let target = usize::try_from(target)
                                 .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-                            copied[target] = if pre_eol { 0 } else { b'/' as i8 };
+                            *heap.slice_mut(buffer)?.get_mut(target).ok_or(SourceHeapError::PointerOutOfBounds)? = if pre_eol { 0 } else { b'/' as i8 };
                         }
                     }
                 } else if slash_count > 2 || pre_eol || character == b'\n' {
@@ -9893,7 +14114,7 @@ void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
                             .map_err(|_| SourceHeapError::PointerOffsetOverflow)? - 1;
                         let mut eaten = 0_i32;
                         while scan >= 0
-                            && input[scan as usize] as u8 == eatable
+                            && read_source(heap, input, scan as usize)? as u8 == eatable
                             && eaten < polymer_zz
                         {
                             copied_count = copied_count.wrapping_sub(1);
@@ -9903,22 +14124,20 @@ void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
                         if !pre_eol {
                             let target = usize::try_from(copied_count.wrapping_sub(1))
                                 .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-                            copied[target] = if character == b'\n' { b'\n' as i8 } else { b'/' as i8 };
+                            *heap.slice_mut(buffer)?.get_mut(target).ok_or(SourceHeapError::PointerOutOfBounds)? = if character == b'\n' { b'\n' as i8 } else { b'/' as i8 };
                         } else {
                             let target = usize::try_from(copied_count)
                                 .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-                            copied[target] = 0;
+                            *heap.slice_mut(buffer)?.get_mut(target).ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
                             break;
                         }
                     }
                 }
 
-                let next = *input
-                    .get(index + 1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
+                let next = read_source(heap, input, index + 1)? as u8;
                 previous_layer_symbol = next;
                 if next == b'r' {
-                    if !(index + 3 < used && input[index + 3] as u8 == b':') {
+                    if !(index + 3 < used && read_source(heap, input, index + 3)? as u8 == b':') {
                         slash_count = 1;
                     }
                 } else if next == b'z' {
@@ -9928,35 +14147,20 @@ void EditINCHI_HidePolymerZz(INCHI_IOSTREAM *out, int n_pzz, int n_zy)
             index += 1;
         }
 
-        heap.slice_mut(buffer)?.copy_from_slice(&copied);
         output.s.nUsedLength = 0;
-        let format = heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, b'%' as i8, b's' as i8, 0])?;
-        let ending = heap.allocate_model_storage(if consumed_eol {
-            vec![b'\n' as i8, 0]
-        } else {
-            vec![0]
-        })?;
-        let print_result = inchi_ios_print_nodisplay(
+        use crate::source::base::ichi_io::{SourceFormat, SourcePrintArguments};
+        crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
             heap,
             Some(output),
             SourceMutPointer::null(),
-            format.as_const(),
-            &SourceVaList {
-                arguments: vec![
-                    SourceFormatArgument::Bytes(buffer.as_const()),
-                    SourceFormatArgument::Bytes(ending.as_const()),
-                ],
-                ..SourceVaList::default()
-            },
-        );
-        let ending_cleanup = heap.free(ending);
-        let format_cleanup = heap.free(format);
-        match (print_result, ending_cleanup, format_cleanup) {
-            (Err(error), _, _)
-            | (Ok(_), Err(error), _)
-            | (Ok(_), Ok(()), Err(error)) => Err(error),
-            (Ok(_), Ok(()), Ok(())) => Ok(()),
-        }
+            SourceFormat::Text("%s%s"),
+            &SourcePrintArguments { arguments: &[], position: 0 },
+            &[
+                Some(SourceFormat::Pointer(buffer.as_const())),
+                Some(SourceFormat::Text(if consumed_eol { "\n" } else { "" })),
+            ],
+        )?;
+        Ok(())
     })();
     let cleanup = inchi_free(heap, buffer);
     match (operation, cleanup) {
@@ -10033,7 +14237,9 @@ pub(crate) fn set_line_separators(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: set_line_separators
 
-    const EMPTY: &[i8] = &[0];
+    // INCHI✔️✔️: The explicit NUL and implicit string terminator are both
+    // part of the native literal object; O(1) static storage, no allocation.
+    const EMPTY: &[i8] = &[0, 0];
     const NEWLINE: &[i8] = &[b'\n' as i8, 0];
     *line_feed = if output_options & INCHI_OUT_PLAIN_TEXT_COMMENTS as i32 != 0 {
         NEWLINE
@@ -10084,77 +14290,126 @@ pub(crate) fn OutputINCHI_VersionAndKind(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OutputINCHI_VersionAndKind
 
-    let format_header =
-        heap.allocate_model_storage(b"%s%s=%s\0".iter().map(|byte| *byte as i8).collect())?;
-    let format_pair =
-        heap.allocate_model_storage(b"%s%s\0".iter().map(|byte| *byte as i8).collect())?;
-    let format_string = heap.allocate_model_storage(vec![b'%' as i8, b's' as i8, 0])?;
-    let beta = heap.allocate_model_storage(vec![b'B' as i8, 0])?;
-    let standard = heap.allocate_model_storage(vec![b'S' as i8, 0])?;
-    let name = heap.allocate_model_storage(
-        crate::source_types::INCHI_NAME
-            .iter()
-            .map(|byte| *byte as i8)
-            .collect(),
-    )?;
-    let version = heap.allocate_model_storage(
-        crate::source_types::local_ichiprt1::x_curr_ver
-            .iter()
-            .map(|byte| *byte as i8)
-            .collect(),
-    )?;
+    outputinchi_versionandkind_separator(
+        heap,
+        output,
+        string_buffer,
+        output_options,
+        is_beta,
+        SourceFormat::Pointer(line_feed),
+        SourceFormat::Pointer(_tab),
+        stdout,
+    )
+}
 
-    inchi_ios_print_nodisplay(
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn outputinchi_versionandkind_separator(
+    heap: &mut SourceHeap,
+    output: &mut INCHI_IOSTREAM,
+    string_buffer: &mut INCHI_IOS_STRING,
+    output_options: i32,
+    is_beta: i32,
+    line_feed: SourceFormat<'_>,
+    _tab: SourceFormat<'_>,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiprt1.c:3137 OutputINCHI_VersionAndKind
+    // INCHI❗❗: int OutputINCHI_VersionAndKind( INCHI_IOSTREAM   *out_file,
+    // INCHI❗❗:                                 INCHI_IOS_STRING *strbuf,
+    // INCHI❗❗:                                 int              bINChIOutputOptions,
+    // INCHI❗❗:                                 int              is_beta,
+    // INCHI❗❗:                                 char             *pLF,
+    // INCHI❗❗:                                 char             *pTAB )
+    // INCHI❗❗: {
+    // INCHI❗❗:     inchi_ios_print_nodisplay( out_file, "%s%s=%s", pLF, INCHI_NAME, pLF );
+    // INCHI❗❗:
+    // INCHI❗❗:     inchi_strbuf_reset( strbuf );
+    // INCHI❗❗:     inchi_strbuf_printf( strbuf, "%s", x_curr_ver );
+    // INCHI❗❗:
+    // INCHI❗❗:     /* - add 'Beta' flag if applicable */
+    // INCHI❗❗:     if (is_beta)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         inchi_strbuf_printf( strbuf, "B" );
+    // INCHI❗❗:     }
+    // INCHI❗❗:     /* - add 'Standard' flag if applicable */
+    // INCHI❗❗:     else if (bINChIOutputOptions & INCHI_OUT_STDINCHI)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         inchi_strbuf_printf( strbuf, "S" );
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     inchi_ios_print_nodisplay( out_file, "%s%s", strbuf->pStr, pLF );
+    // INCHI❗❗:
+    // INCHI❗❗:     return 0;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: OutputINCHI_VersionAndKind
+    // INCHI✔️❗: Private separator views, one original algorithm; reached
+    // pointer/string errors and source stream prefixes unchanged. No root
+    // allocation/retention; dispatch and whole-renderer costs remain OPEN.
+
+    let format_header =
+        crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s=%s\0"));
+    let format_pair =
+        crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"%s%s\0"));
+    let beta = crate::source::base::ichi_io::SourceFormat::Bytes(&[b'B' as i8, 0]);
+    let standard = crate::source::base::ichi_io::SourceFormat::Bytes(&[b'S' as i8, 0]);
+    // INCHI✔️❗: ichiprt1.c3144/3147 pass static literals directly. Borrow
+    // them into the canonical printers without Vec/arena allocation, copies
+    // or artificial allocation failures. Original state and two-pass formatting
+    // remain; whole formatter cost is INCHI-PERF-STATIC-LITERALS OPEN.
+    let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
         heap,
         Some(output),
         stdout,
-        format_header.as_const(),
-        &SourceVaList {
-            arguments: vec![
-                SourceFormatArgument::Bytes(line_feed),
-                SourceFormatArgument::Bytes(name.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
-            ],
-            ..SourceVaList::default()
+        format_header,
+        &crate::source::base::ichi_io::SourcePrintArguments {
+            arguments: &[],
+            position: 0,
         },
+        &[
+            Some(line_feed),
+            Some(SourceFormat::Bytes(bytemuck::cast_slice(
+                crate::source_types::INCHI_NAME,
+            ))),
+            Some(line_feed),
+        ],
     )?;
     inchi_strbuf_reset(heap, Some(string_buffer))?;
-    inchi_strbuf_printf(
+    crate::source::base::ichi_io::inchi_strbuf_printf_string(
         heap,
         Some(string_buffer),
-        format_string.as_const(),
-        &SourceVaList {
-            arguments: vec![SourceFormatArgument::Bytes(version.as_const())],
-            ..SourceVaList::default()
-        },
+        crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(
+            crate::source_types::local_ichiprt1::x_curr_ver,
+        )),
     )?;
     if is_beta != 0 {
-        inchi_strbuf_printf(
+        crate::source::base::ichi_io::inchi_strbuf_printf_format(
             heap,
             Some(string_buffer),
-            beta.as_const(),
+            beta,
             &SourceVaList::default(),
         )?;
     } else if output_options & INCHI_OUT_STDINCHI as i32 != 0 {
-        inchi_strbuf_printf(
+        crate::source::base::ichi_io::inchi_strbuf_printf_format(
             heap,
             Some(string_buffer),
-            standard.as_const(),
+            standard,
             &SourceVaList::default(),
         )?;
     }
-    inchi_ios_print_nodisplay(
+    // INCHI✔️❗: Fixed argument array borrows the existing printer core; no Vec.
+    let _ = crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
         heap,
         Some(output),
         stdout,
-        format_pair.as_const(),
-        &SourceVaList {
-            arguments: vec![
-                SourceFormatArgument::Bytes(string_buffer.pStr.as_const()),
-                SourceFormatArgument::Bytes(line_feed),
-            ],
-            ..SourceVaList::default()
+        format_pair,
+        &crate::source::base::ichi_io::SourcePrintArguments {
+            arguments: &[],
+            position: 0,
         },
+        &[
+            Some(SourceFormat::Pointer(string_buffer.pStr.as_const())),
+            Some(line_feed),
+        ],
     )?;
     Ok(0)
 }
@@ -10163,6 +14418,27 @@ pub(crate) fn OutputINCHI_VersionAndKind(
 pub(crate) fn InternallyGetCanoNumsAndComponentNums(
     heap: &mut SourceHeap,
     canonical_globals: SourceMutPointer<CANON_GLOBALS>,
+    string_buffer: &mut INCHI_IOS_STRING,
+    output_control: &mut INCHI_OUT_CTL,
+    number_of_atoms: i32,
+    canonical_numbers: SourceMutPointer<i32>,
+    component_numbers: SourceMutPointer<i32>,
+) -> Result<i32, SourceHeapError> {
+    // INCHI source: the complete original frame is inside the shared body below.
+    // C547: unused global argument is unobserved; O(1), call costs OPEN.
+    internally_get_cano_nums_output(
+        heap,
+        string_buffer,
+        output_control,
+        number_of_atoms,
+        canonical_numbers,
+        component_numbers,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn internally_get_cano_nums_output(
+    heap: &mut SourceHeap,
     string_buffer: &mut INCHI_IOS_STRING,
     output_control: &mut INCHI_OUT_CTL,
     number_of_atoms: i32,
@@ -10254,9 +14530,8 @@ pub(crate) fn InternallyGetCanoNumsAndComponentNums(
     let number_of_components = output_control.num_components;
     let second_non_taut_pass = output_control.bSecondNonTautPass;
     let omit_repetitions = output_control.bOmitRepetitions;
-    output_control.tot_len = crate::source::base::ichiprt3::str_AuxNumb(
+    output_control.tot_len = crate::source::base::ichiprt3::str_aux_numbers(
         heap,
-        canonical_globals,
         sorted_inchi,
         sorted_inchi2,
         string_buffer,
@@ -10468,48 +14743,18 @@ pub(crate) fn CleanOrigCoord(
     let mut zero_count = 0_i32;
 
     for offset in (0..(NUM_COORD * LEN_COORD) as usize).step_by(LEN_COORD as usize) {
-        let mut field = coordinates[offset..offset + LEN_COORD as usize].to_vec();
-        field.push(0);
-        let field_pointer = heap.allocate_model_storage(field)?;
-        let parsed =
-            (|| -> Result<(Vec<i8>, usize, f64, usize, Option<(usize, i32)>), SourceHeapError> {
-                let mut trimmed_length = 0_i32;
-                let _ = lrtrim(heap, field_pointer, Some(&mut trimmed_length))?;
-                let (coordinate, end) = source_strtod_with_end(heap, field_pointer.as_const())?;
-                let value = heap.slice(field_pointer.as_const())?.to_vec();
-                let exponent = [b'e', b'E', b'd', b'D']
-                    .into_iter()
-                    .find_map(|target| value.iter().position(|byte| *byte as u8 == target));
-                let exponent = match exponent {
-                    Some(position) => Some((
-                        position,
-                        inchi_strtol(
-                            heap,
-                            field_pointer.as_const().offset(
-                                i64::try_from(position + 1)
-                                    .map_err(|_| SourceHeapError::PointerOffsetOverflow)?,
-                            )?,
-                            None,
-                            10,
-                        )? as i32,
-                    )),
-                    None => None,
-                };
-                Ok((
-                    value,
-                    usize::try_from(trimmed_length)
-                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
-                    coordinate,
-                    end,
-                    exponent,
-                ))
-            })();
-        let cleanup = heap.free(field_pointer);
-        let (mut value, mut length, coordinate, parsed_end, exponent) = match (parsed, cleanup) {
-            (Ok(value), Ok(())) => value,
-            (Err(error), Ok(())) | (Ok(_), Err(error)) => return Err(error),
-            (Err(error), Err(_)) => return Err(error),
-        };
+        // INCHI✔️❗: Native eleven-byte field scratch; no arena allocation,
+        // snapshot or cleanup. Canonical parsers retain their independent guards.
+        // Fixed O(LEN_COORD) storage/search; checked-kernel/zero-init constants
+        // remain OPEN in INCHI-PERF-COORDINATE-FIXED-SCRATCH.
+        let mut value = [0_i8; LEN_COORD as usize + 1];
+        value[..LEN_COORD as usize]
+            .copy_from_slice(&coordinates[offset..offset + LEN_COORD as usize]);
+        let mut length = crate::source::base::util::lrtrim_bytes(&mut value)? as usize;
+        let mut source_errno = heap.source_errno();
+        let (coordinate, parsed_end) =
+            crate::source::base::ichiparm::source_strtod_bytes_with_end(&value, &mut source_errno)?;
+        heap.set_source_errno(source_errno);
 
         if coordinate.abs() < MIN_BOND_LENGTH {
             value[0] = b'0' as i8;
@@ -10518,10 +14763,39 @@ pub(crate) fn CleanOrigCoord(
             zero_count = zero_count.wrapping_add(1);
         } else {
             length = parsed_end;
+            // Native short-circuit strchr priority is e/E/d/D, with every
+            // search stopping at NUL, and only after the nonzero branch.
+            let exponent = [b'e', b'E', b'd', b'D'].into_iter().find_map(|target| {
+                value
+                    .iter()
+                    .position(|byte| *byte == 0 || *byte as u8 == target)
+                    .filter(|position| value[*position] as u8 == target)
+            });
+            let exponent = match exponent {
+                Some(position) => {
+                    let (exponent_value, _, overflowed) =
+                        crate::source::base::ichiprt2::inchi_strtol_bytes(
+                            &value[position + 1..],
+                            10,
+                        )?;
+                    if overflowed {
+                        heap.set_source_errno(34);
+                    }
+                    Some((position, exponent_value as i32))
+                }
+                None => None,
+            };
             let mut mantissa_end = if let Some((exponent, exponent_value)) = exponent {
                 if exponent_value != 0 {
-                    let digits = exponent_value.to_string();
-                    for (index, byte) in digits.bytes().enumerate() {
+                    // INCHI✔️❗: no owned decimal exponent staging.
+                    // Bounded O(digits)/O(1), shared writer cost remains OPEN.
+                    let mut decimal = [0_u8; 21];
+                    let digits = crate::source::base::ichi_io::source_decimal_i64(
+                        i64::from(exponent_value),
+                        None,
+                        &mut decimal,
+                    );
+                    for (index, byte) in digits.iter().copied().enumerate() {
                         value[exponent + 1 + index] = byte as i8;
                     }
                     length = exponent + 1 + digits.len();
@@ -10535,13 +14809,10 @@ pub(crate) fn CleanOrigCoord(
             };
 
             let first = usize::from(value[0] as u8 != b'.' && !(value[0] as u8).is_ascii_digit());
-            let value_end = value
+            let decimal_point = value
                 .iter()
-                .position(|byte| *byte == 0)
-                .unwrap_or(value.len());
-            let decimal_point = value[..value_end]
-                .iter()
-                .position(|byte| *byte as u8 == b'.')
+                .position(|byte| *byte == 0 || *byte as u8 == b'.')
+                .filter(|position| value[*position] as u8 == b'.')
                 .unwrap_or(mantissa_end);
             if mantissa_end != 0 {
                 mantissa_end -= 1;
@@ -10657,25 +14928,90 @@ pub(crate) fn WriteOrigCoord(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: WriteOrigCoord
 
+    write_orig_coord(
+        heap,
+        num_inp_atoms,
+        molecular_coordinates,
+        index,
+        TagOutput::Pointer(buffer),
+        buffer_length,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_orig_coord(
+    heap: &mut SourceHeap,
+    num_inp_atoms: i32,
+    molecular_coordinates: SourceConstPointer<MOL_COORD>,
+    index: &mut i32,
+    mut buffer: TagOutput<'_>,
+    buffer_length: i32,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichiprt1.c2340..2389 WriteOrigCoord
+    // int WriteOrigCoord( int       num_inp_atoms,
+    //                     MOL_COORD *szMolCoord,
+    //                     int       *i,
+    //                     char      *szBuf,
+    //                     int       buf_len )
+    // {
+    //
+    //     int j, num_zer, len, cur_len;
+    //     char *p;
+    //     MOL_COORD szCurCoord;
+    //     cur_len = 0;
+    //     for (j = *i; j < num_inp_atoms; )
+    //     {
+    //         memcpy(szCurCoord, szMolCoord[j], sizeof(szCurCoord));
+    //         num_zer = CleanOrigCoord( szCurCoord, ',' );
+    //         if (NUM_COORD == num_zer)
+    //         {
+    //             len = 0;
+    //         }
+    //         else
+    //         {
+    //             if ((p = (char *) memchr( szCurCoord, '\0', sizeof( szCurCoord ) ))) /* djb-rwth: addressing LLVM warning */
+    //             {
+    //                 len = (int) ( p - szCurCoord );
+    //             }
+    //             else
+    //             {
+    //                 len = sizeof( szCurCoord );
+    //             }
+    //         }
+    //         if (len + cur_len + 1 < buf_len)
+    //         {
+    //             if (len)
+    //             {
+    //                 memcpy(szBuf + cur_len, szCurCoord, len * sizeof(szBuf[0]));
+    //             }
+    //             szBuf[cur_len += len] = ';';
+    //             cur_len++;
+    //             j++;
+    //         }
+    //         else
+    //         {
+    //             break;
+    //         }
+    //     }
+    //     szBuf[cur_len] = '\0';
+    //     *i = j; /* next item */
+    //
+    //     return cur_len;
+    // }
+    // INCHI✔️❗: One original writer body for pointer and caller-owned
+    // output. Only reached stores project their byte slice; pointer alias,
+    // partial errors, indices, formatting and independent guards stay exact.
+    // No staging/clone/allocation; dispatch/checked/whole-call cost OPEN.
+
     let mut current_index = *index;
-    if current_index < 0 {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    let coordinates = if current_index < num_inp_atoms {
-        let count =
-            usize::try_from(num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        heap.slice(molecular_coordinates)?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    } else {
-        Vec::new()
-    };
     let mut current_length = 0_i32;
     while current_index < num_inp_atoms {
-        let mut coordinate = *coordinates
-            .get(usize::try_from(current_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❗: Copy only the reached source record into native-sized
+        // stack scratch, including defined negative interior-pointer indices.
+        // No whole-array snapshot or unread-prefix admission. O(32) per reached
+        // record/O(1) scratch; checked arena constants remain independently
+        // OPEN in INCHI-PERF-COORDINATE-REACHED-RECORD.
+        let mut coordinate = *heap.element_signed(molecular_coordinates, current_index)?;
         let zero_count = CleanOrigCoord(heap, &mut coordinate, b',' as i32)?;
         let length = if zero_count == NUM_COORD as i32 {
             0_i32
@@ -10694,14 +15030,15 @@ pub(crate) fn WriteOrigCoord(
             let current_usize =
                 usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             if length_usize != 0 {
-                heap.slice_mut(buffer)?
+                buffer
+                    .slice_mut(heap)?
                     .get_mut(current_usize..current_usize + length_usize)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .copy_from_slice(&coordinate[..length_usize]);
             }
             current_length = current_length.wrapping_add(length);
-            *heap
-                .slice_mut(buffer)?
+            *buffer
+                .slice_mut(heap)?
                 .get_mut(
                     usize::try_from(current_length)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
@@ -10713,8 +15050,8 @@ pub(crate) fn WriteOrigCoord(
             break;
         }
     }
-    *heap
-        .slice_mut(buffer)?
+    *buffer
+        .slice_mut(heap)?
         .get_mut(usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
     *index = current_index;
@@ -10907,22 +15244,231 @@ pub(crate) fn WriteOrigAtoms(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: WriteOrigAtoms
 
-    if *index < 0 {
-        return Err(SourceHeapError::PointerOutOfBounds);
+    write_orig_atoms(
+        heap,
+        num_inp_atoms,
+        atoms,
+        index,
+        TagOutput::Pointer(buffer),
+        buffer_length,
+        structure_data,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_orig_atoms(
+    heap: &mut SourceHeap,
+    num_inp_atoms: i32,
+    atoms: SourceConstPointer<inp_ATOM>,
+    index: &mut i32,
+    mut buffer: TagOutput<'_>,
+    buffer_length: i32,
+    structure_data: &STRUCT_DATA,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichiprt1.c2410..2572 WriteOrigAtoms
+    // int WriteOrigAtoms( CANON_GLOBALS *pCG,
+    //                     int           num_inp_atoms,
+    //                     inp_ATOM      *at,
+    //                     int           *i,
+    //                     char          *szBuf,
+    //                     int           buf_len,
+    //                     STRUCT_DATA   *sd )
+    // {
+    //     int j, k, n, len, len0, cur_len, val, bonds_val, mw, parity, num_trans, is_ok, b_self;
+    //     static const char szIsoH[] = "hdt";
+    //     char szCurAtom[32];
+    //     AT_NUMB nNeighOrder[MAXVAL], neigh;
+    //
+    //     cur_len = 0;
+    //     if (0 == *i)
+    //     {
+    //         cur_len = sprintf(szBuf, "%d%s", num_inp_atoms,
+    //             (sd->bChiralFlag & FLAG_INP_AT_CHIRAL) ? "c" :
+    //             (sd->bChiralFlag & FLAG_INP_AT_NONCHIRAL) ? "n" : "");
+    //     }
+    //     for (j = *i; j < num_inp_atoms; )
+    //     {
+    //         /* tetrahedral parity treatment */
+    //         parity = 0;
+    //         num_trans = 0;
+    //         if (at[j].p_parity)
+    //         {
+    //             /* verify neighbors */
+    //             is_ok = 1;
+    //             b_self = 0;
+    //             for (n = 0, k = 0; n < MAX_NUM_STEREO_ATOM_NEIGH; n++)
+    //             {
+    //                 neigh = at[j].p_orig_at_num[n] - 1;
+    //                 if (is_in_the_list( at[j].neighbor, neigh, at[j].valence ) &&
+    //                      at[neigh].orig_at_number == at[j].p_orig_at_num[n])
+    //                 {
+    //                     /* real neighbor */
+    //                     nNeighOrder[k++] = at[j].p_orig_at_num[n];
+    //                 }
+    //                 else
+    //                 {
+    //                     if ((int) neigh == j && at[neigh].orig_at_number == at[j].p_orig_at_num[n])
+    //                     {
+    //                         /* central atom is a neighbor */
+    //                         num_trans = n; /* move this neighbor to 0 position permutation parity */
+    //                         b_self++;
+    //                     }
+    //                     else
+    //                     {
+    //                         is_ok = 0;
+    //                         break;
+    //                     }
+    //                 }
+    //             }
+    //             if (is_ok && b_self <= 1 && b_self + k == MAX_NUM_STEREO_ATOM_NEIGH)
+    //             {
+    //                 num_trans += insertions_sort( pCG, nNeighOrder, k, sizeof( nNeighOrder[0] ), comp_AT_RANK );
+    //                 if (ATOM_PARITY_WELL_DEF( at[j].p_parity ))
+    //                 {
+    //                     parity = 2 - ( num_trans + at[j].p_parity ) % 2;
+    //                 }
+    //                 else
+    //                 {
+    //                     if (ATOM_PARITY_ILL_DEF( at[j].p_parity ))
+    //                     {
+    //                         parity = at[j].p_parity;
+    //                     }
+    //                     else
+    //                     {
+    //                         ; /* invalid atom parity */
+    //                     }
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 ;/* add error message here */
+    //             }
+    //         }
+    //
+    //         len = len0 = (int) strlen( at[j].elname );
+    //
+    //         memcpy(szCurAtom, at[j].elname, len);
+    //         bonds_val = nBondsValenceInpAt( at + j, NULL, NULL );
+    //
+    //         if (( val = needed_unusual_el_valence( at[j].el_number, at[j].charge, at[j].radical,
+    //             at[j].chem_bonds_valence, bonds_val, at[j].num_H, at[j].valence ) ) ||
+    //              at[j].charge || at[j].radical || at[j].iso_atw_diff || NUM_ISO_H( at, j ) || parity)
+    //         {
+    //             /* valence */
+    //             if (val)
+    //             {
+    //                 len += sprintf(szCurAtom + len, "%d", val > 0 ? val : 0);
+    //             }
+    //             /* charge */
+    //             if ((val = at[j].charge)) /* djb-rwth: addressing LLVM warning */
+    //             {
+    //                 szCurAtom[len++] = val > 0 ? '+' : '-';
+    //                 if (( val = abs( val ) ) > 1)
+    //                 {
+    //                     len += sprintf(szCurAtom + len, "%d", val);
+    //                 }
+    //             }
+    //             /* radical */
+    //             if ((val = at[j].radical)) /* djb-rwth: addressing LLVM warning */
+    //             {
+    //                 len += sprintf(szCurAtom + len, ".%d", val);
+    //             }
+    //             /* isotopic shift */
+    //             if ((val = at[j].iso_atw_diff)) /* djb-rwth: addressing LLVM warning */
+    //             {
+    //                 mw = get_atomic_mass_from_elnum( at[j].el_number );
+    //                 if (val == 1)
+    //                     val = mw;
+    //                 else
+    //                     if (val > 0)
+    //                         val = mw + val - 1;
+    //                     else
+    //                         val = mw + val;
+    //
+    //                 len += sprintf(szCurAtom + len, "%si%d", len == len0 ? "." : "", val);
+    //             }
+    //             /* parity */
+    //             if (parity)
+    //             {
+    //                 len += sprintf(szCurAtom + len, "%s%s", len == len0 ? "." : "",
+    //                     parity == AB_PARITY_ODD ? "o" :
+    //                     parity == AB_PARITY_EVEN ? "e" :
+    //                     parity == AB_PARITY_UNKN ? "u" :
+    //                     parity == AB_PARITY_UNDF ? "?" : "");
+    //             }
+    //             /* implicit isotopic H */
+    //             if (NUM_ISO_H( at, j ))
+    //             {
+    //                 for (k = 0; k < NUM_H_ISOTOPES; k++)
+    //                 {
+    //                     if ((val = at[j].num_iso_H[k])) /* djb-rwth: addressing LLVM warning */
+    //                     {
+    //                         len += sprintf(szCurAtom + len, "%s%c", len == len0 ? "." : "", szIsoH[k]);
+    //                         if (val > 1)
+    //                         {
+    //                             len += sprintf(szCurAtom + len, "%d", val);
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //
+    //         if (len + cur_len < buf_len)
+    //         {
+    //             memcpy(szBuf + cur_len, szCurAtom, len);
+    //             cur_len += len;
+    //             j++;
+    //         }
+    //         else
+    //         {
+    //             break;
+    //         }
+    //         szBuf[cur_len] = '\0';
+    //         *i = j;
+    //     }
+    //
+    //     return cur_len;
+    // }
+    // INCHI✔️❗: One original writer body for pointer and caller-owned
+    // output. Only reached stores project their byte slice; pointer alias,
+    // partial errors, indices, formatting and independent guards stay exact.
+    // No staging/clone/allocation; dispatch/checked/whole-call cost OPEN.
+
+    // INCHI✔️❗: Native signed j controls whether at[j] is reached; no
+    // full atom prefix admission or unsafe stable view. Neighbor headers are
+    // read only after membership/self predicates. Native 32-byte atom scratch
+    // is reused, with no Vec or output staging.
+    // INCHI✔️❌: Safe initialization adds32 bytes versus native uninitialized
+    // scratch; this known unfavorable local cost stays OPEN.
+    // O(source atoms/neighbor sorting/emitted bytes), O(1) scratch;
+    // checked arena/decimal/whole-call costs remain OPEN in performance_pending.
+    struct AtomText {
+        bytes: [u8; 32],
+        length: usize,
     }
-    let atom_count =
-        usize::try_from(num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms_view: Option<StableSourceConstSlice<inp_ATOM>> = if atom_count == 0 {
-        None
-    } else {
-        // SAFETY: WriteOrigAtoms reads `at` and writes only the separate
-        // output buffer, exactly as the source pointer contract specifies.
-        Some(unsafe { heap.stable_slice(atoms)? })
-    };
-    let atoms = match &atoms_view {
-        Some(view) => view.prefix(atom_count)?,
-        None => &[],
-    };
+    impl AtomText {
+        fn len(&self) -> usize {
+            self.length
+        }
+        fn push(&mut self, byte: u8) -> Result<(), SourceHeapError> {
+            *self
+                .bytes
+                .get_mut(self.length)
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = byte;
+            self.length += 1;
+            Ok(())
+        }
+        fn extend(&mut self, bytes: impl IntoIterator<Item = u8>) -> Result<(), SourceHeapError> {
+            for byte in bytes {
+                self.push(byte)?;
+            }
+            Ok(())
+        }
+    }
+    // INCHI✔️❗: reuse one bounded decimal scratch across header/atom fields.
+    // O(emitted digits)/O(1), no decimal String; parent buffers stay protected.
+    // Shared-writer/check/whole-call cost remains OPEN.
+    let mut decimal = [0_u8; 21];
     let mut current_length = 0_i32;
     if *index == 0 {
         let suffix = if structure_data.bChiralFlag & FLAG_INP_AT_CHIRAL as i32 != 0 {
@@ -10932,23 +15478,33 @@ pub(crate) fn WriteOrigAtoms(
         } else {
             ""
         };
-        let header = format!("{num_inp_atoms}{suffix}");
-        let destination = heap
-            .slice_mut(buffer)?
-            .get_mut(..=header.len())
+        let digits = crate::source::base::ichi_io::source_decimal_i64(
+            i64::from(num_inp_atoms),
+            None,
+            &mut decimal,
+        );
+        let header_length = digits.len() + suffix.len();
+        let destination = buffer
+            .slice_mut(heap)?
+            .get_mut(..=header_length)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        for (target, source) in destination.iter_mut().zip(header.bytes().chain([0])) {
+        for (target, source) in destination
+            .iter_mut()
+            .zip(digits.iter().copied().chain(suffix.bytes()).chain([0]))
+        {
             *target = source as i8;
         }
         current_length =
-            i32::try_from(header.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            i32::try_from(header_length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     }
 
+    let mut current_atom = AtomText {
+        bytes: [0; 32],
+        length: 0,
+    };
     let mut current_index = *index;
     while current_index < num_inp_atoms {
-        let atom = atoms
-            .get(usize::try_from(current_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = heap.element_signed(atoms, current_index)?;
         let mut parity = 0_i32;
         let mut num_trans = 0_i32;
         if atom.p_parity != 0 {
@@ -10958,17 +15514,20 @@ pub(crate) fn WriteOrigAtoms(
             let mut neighbor_count = 0_usize;
             for n in 0..MAX_NUM_STEREO_ATOM_NEIGH as usize {
                 let neighbor = atom.p_orig_at_num[n].wrapping_sub(1);
-                let neighbor_atom = atoms
-                    .get(usize::from(neighbor))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if is_in_the_list(Some(&atom.neighbor), neighbor, i32::from(atom.valence))?
                     .is_some()
-                    && neighbor_atom.orig_at_number == atom.p_orig_at_num[n]
+                    && heap
+                        .element_signed(atoms, i32::from(neighbor))?
+                        .orig_at_number
+                        == atom.p_orig_at_num[n]
                 {
                     neighbor_order[neighbor_count] = atom.p_orig_at_num[n];
                     neighbor_count += 1;
                 } else if i32::from(neighbor) == current_index
-                    && neighbor_atom.orig_at_number == atom.p_orig_at_num[n]
+                    && heap
+                        .element_signed(atoms, i32::from(neighbor))?
+                        .orig_at_number
+                        == atom.p_orig_at_num[n]
                 {
                     num_trans = n as i32;
                     self_count = self_count.wrapping_add(1);
@@ -11003,10 +15562,8 @@ pub(crate) fn WriteOrigAtoms(
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
-        let mut current_atom = atom.elname[..element_length]
-            .iter()
-            .map(|byte| *byte as u8)
-            .collect::<Vec<_>>();
+        current_atom.length = 0;
+        current_atom.extend(atom.elname[..element_length].iter().map(|byte| *byte as u8))?;
         let bonds_valence = nBondsValenceInpAt(atom, None, None);
         let unusual_valence = needed_unusual_el_valence(
             i32::from(atom.el_number),
@@ -11031,26 +15588,42 @@ pub(crate) fn WriteOrigAtoms(
         {
             if unusual_valence != 0 {
                 current_atom.extend(
-                    (if unusual_valence > 0 {
-                        unusual_valence
-                    } else {
-                        0
-                    })
-                    .to_string()
-                    .bytes(),
-                );
+                    crate::source::base::ichi_io::source_decimal_i64(
+                        i64::from(unusual_valence.max(0)),
+                        None,
+                        &mut decimal,
+                    )
+                    .iter()
+                    .copied(),
+                )?;
             }
             let charge = i32::from(atom.charge);
             if charge != 0 {
-                current_atom.push(if charge > 0 { b'+' } else { b'-' });
+                current_atom.push(if charge > 0 { b'+' } else { b'-' })?;
                 if charge.abs() > 1 {
-                    current_atom.extend(charge.abs().to_string().bytes());
+                    current_atom.extend(
+                        crate::source::base::ichi_io::source_decimal_i64(
+                            i64::from(charge.abs()),
+                            None,
+                            &mut decimal,
+                        )
+                        .iter()
+                        .copied(),
+                    )?;
                 }
             }
             let radical = i32::from(atom.radical);
             if radical != 0 {
-                current_atom.push(b'.');
-                current_atom.extend(radical.to_string().bytes());
+                current_atom.push(b'.')?;
+                current_atom.extend(
+                    crate::source::base::ichi_io::source_decimal_i64(
+                        i64::from(radical),
+                        None,
+                        &mut decimal,
+                    )
+                    .iter()
+                    .copied(),
+                )?;
             }
             let isotope_difference = i32::from(atom.iso_atw_diff);
             if isotope_difference != 0 {
@@ -11063,14 +15636,22 @@ pub(crate) fn WriteOrigAtoms(
                     mass.wrapping_add(isotope_difference)
                 };
                 if current_atom.len() == element_length {
-                    current_atom.push(b'.');
+                    current_atom.push(b'.')?;
                 }
-                current_atom.push(b'i');
-                current_atom.extend(isotope_mass.to_string().bytes());
+                current_atom.push(b'i')?;
+                current_atom.extend(
+                    crate::source::base::ichi_io::source_decimal_i64(
+                        i64::from(isotope_mass),
+                        None,
+                        &mut decimal,
+                    )
+                    .iter()
+                    .copied(),
+                )?;
             }
             if parity != 0 {
                 if current_atom.len() == element_length {
-                    current_atom.push(b'.');
+                    current_atom.push(b'.')?;
                 }
                 if let Some(symbol) = match parity {
                     value if value == AB_PARITY_ODD as i32 => Some(b'o'),
@@ -11079,18 +15660,28 @@ pub(crate) fn WriteOrigAtoms(
                     value if value == AB_PARITY_UNDF as i32 => Some(b'?'),
                     _ => None,
                 } {
-                    current_atom.push(symbol);
+                    current_atom.push(symbol)?;
                 }
             }
-            for (isotope, symbol) in atom.num_iso_H.iter().zip(*b"hdt") {
-                let count = i32::from(*isotope);
-                if count != 0 {
-                    if current_atom.len() == element_length {
-                        current_atom.push(b'.');
-                    }
-                    current_atom.push(symbol);
-                    if count > 1 {
-                        current_atom.extend(count.to_string().bytes());
+            if isotope_hydrogens != 0 {
+                for (isotope, symbol) in atom.num_iso_H.iter().zip(*b"hdt") {
+                    let count = i32::from(*isotope);
+                    if count != 0 {
+                        if current_atom.len() == element_length {
+                            current_atom.push(b'.')?;
+                        }
+                        current_atom.push(symbol)?;
+                        if count > 1 {
+                            current_atom.extend(
+                                crate::source::base::ichi_io::source_decimal_i64(
+                                    i64::from(count),
+                                    None,
+                                    &mut decimal,
+                                )
+                                .iter()
+                                .copied(),
+                            )?;
+                        }
                     }
                 }
             }
@@ -11103,22 +15694,20 @@ pub(crate) fn WriteOrigAtoms(
         if atom_length.wrapping_add(current_length) < buffer_length {
             let start =
                 usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            heap.slice_mut(buffer)?
+            buffer
+                .slice_mut(heap)?
                 .get_mut(start..start + current_atom.len())
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .copy_from_slice(
-                    &current_atom
-                        .iter()
-                        .map(|byte| *byte as i8)
-                        .collect::<Vec<_>>(),
-                );
+                .copy_from_slice(bytemuck::cast_slice(
+                    &current_atom.bytes[..current_atom.len()],
+                ));
             current_length = current_length.wrapping_add(atom_length);
             current_index = current_index.wrapping_add(1);
         } else {
             break;
         }
-        *heap
-            .slice_mut(buffer)?
+        *buffer
+            .slice_mut(heap)?
             .get_mut(
                 usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
             )
@@ -11472,22 +16061,344 @@ pub(crate) fn WriteOrigBonds(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: WriteOrigBonds
 
-    if *index < 0 {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    let atom_count =
-        usize::try_from(num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms_view: Option<StableSourceConstSlice<inp_ATOM>> = if atom_count == 0 {
-        None
-    } else {
-        // SAFETY: WriteOrigBonds reads `at`; heap mutations below allocate
-        // comparator storage or update the distinct output buffer.
-        Some(unsafe { heap.stable_slice(atoms.as_const())? })
-    };
-    let atoms = match &atoms_view {
-        Some(view) => view.prefix(atom_count)?,
-        None => &[],
-    };
+    write_orig_bonds(heap, &mut SourceCanonicalGlobals::Borrowed(canon_globals), num_inp_atoms, atoms, index, TagOutput::Pointer(buffer), buffer_length, structure_data)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_orig_bonds(
+    heap: &mut SourceHeap,
+    canon_globals: &mut SourceCanonicalGlobals<'_>,
+    num_inp_atoms: i32,
+    atoms: SourceMutPointer<inp_ATOM>,
+    index: &mut i32,
+    mut buffer: TagOutput<'_>,
+    buffer_length: i32,
+    structure_data: &mut STRUCT_DATA,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichiprt1.c2610..2925 WriteOrigBonds
+    // int WriteOrigBonds( CANON_GLOBALS *pCG,
+    //                     int           num_inp_atoms,
+    //                     inp_ATOM      *at,
+    //                     int           *i,
+    //                     char          *szBuf,
+    //                     int           buf_len,
+    //                     STRUCT_DATA   *sd )
+    // {
+    //     int j, k, k2, kk, len, cur_len, j2 = 0, bond_stereo, bond_char, bond_parity, bond_parityNM, num_trans; /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    //     char szCurBonds[7 * MAXVAL + 2]; /* num_neigh*(1 byte bond type + 2 bytes for bond parity up to 4 digits per neighbor number) + at the end one ';' */
+    //     AT_RANK nNeighOrder[MAXVAL];
+    //     int  chain_len, pnxt_atom, pinxt2cur, pinxt_sb_parity_ord;
+    //     int  chain_len2, pnxt_atom2, pinxt2cur2, pinxt_sb_parity_ord2, m1, m2;
+    //     int  pcur_atom, picur2nxt, picur_sb_parity_ord;
+    //
+    //     cur_len = 0;
+    //     for (j = *i; j < num_inp_atoms; )
+    //     {
+    //         len = 0;
+    //         if (at[j].valence >= 1) /* djb-rwth: changing condition to avoid garbage values */
+    //         {
+    //             for (k = 0; k < at[j].valence; k++)
+    //             {
+    //                 nNeighOrder[k] = k;
+    //             }
+    //             pCG->m_pn_RankForSort = at[j].neighbor;
+    //             num_trans = insertions_sort( pCG, nNeighOrder, at[j].valence, sizeof( nNeighOrder[0] ), CompRank ); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    //         }
+    //         else
+    //         {
+    //             num_trans = 0; /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    //             nNeighOrder[0] = 0;
+    //         }
+    //         for (kk = 0; kk < at[j].valence; kk++)
+    //         {
+    //             k = nNeighOrder[kk];
+    //             j2 = at[j].neighbor[k];
+    //             bond_parity = 0;
+    //             bond_parityNM = 0;
+    //             if (j2 < j)
+    //             {
+    //                 bond_stereo = at[j].bond_stereo[k];
+    //                 switch (at[j].bond_type[k])
+    //                 {
+    //                     case BOND_TYPE_SINGLE:
+    //                         switch (bond_stereo)
+    //                         {
+    //                             case  STEREO_SNGL_UP:
+    //                                 bond_char = 'p';
+    //                                 break;
+    //                             case -STEREO_SNGL_UP:
+    //                                 bond_char = 'P';
+    //                                 break;
+    //                             case  STEREO_SNGL_DOWN:
+    //                                 bond_char = 'n';
+    //                                 break;
+    //                             case -STEREO_SNGL_DOWN:
+    //                                 bond_char = 'N';
+    //                                 break;
+    // #if ( FIX_EITHER_STEREO_IN_AUX_INFO == 1 )
+    //                             case  STEREO_SNGL_EITHER:
+    //                                 bond_char = 'v';
+    //                                 break;
+    //                             case -STEREO_SNGL_EITHER:
+    //                                 bond_char = 'V';
+    //                                 break;
+    // #else
+    //                             case  STEREO_SNGL_EITHER:
+    //                             case -STEREO_SNGL_EITHER:
+    //                                 bond_char = 'v';
+    //                                 break;
+    // #endif
+    //                             default:
+    //                                 bond_char = 's';
+    //                                 break;
+    //                         }
+    //                         break;
+    //                     case BOND_TYPE_DOUBLE:
+    //                         switch (bond_stereo)
+    //                         {
+    //                             case  STEREO_DBLE_EITHER:
+    //                             case -STEREO_DBLE_EITHER:
+    //                                 bond_char = 'w';
+    //                                 break;
+    //                             default:
+    //                                 bond_char = 'd';
+    //                                 break;
+    //                         }
+    //                         break;
+    //                     case BOND_TYPE_TRIPLE:
+    //                         bond_char = 't';
+    //                         break;
+    //                     case BOND_TYPE_ALTERN:
+    //                         bond_char = 'a';
+    //                         break;
+    //                     default:
+    //                         bond_char = 's';
+    //                         break;
+    //                 }
+    //                 /* check for allene/cumulene */
+    //                 k2 = (int) ( is_in_the_list( at[j2].neighbor, (AT_NUMB) j, at[j2].valence ) - at[j2].neighbor );
+    //                 chain_len = chain_len2 = 0;
+    //                 if (at[j].sb_parity[0])
+    //                 {
+    //                     for (m1 = 0; m1 < MAX_NUM_STEREO_BONDS && at[j].sb_parity[m1]; m1++)
+    //                     {
+    //                         if (k == at[j].sb_ord[m1])
+    //                         {
+    //                             chain_len = get_opposite_sb_atom( at, j, k,
+    //                                           &pnxt_atom, &pinxt2cur, &pinxt_sb_parity_ord );
+    //                             break;
+    //                         }
+    //                     }
+    //                 }
+    //                 if (at[j2].sb_parity[0])
+    //                 {
+    //                     for (m2 = 0; m2 < MAX_NUM_STEREO_BONDS && at[j2].sb_parity[m2]; m2++)
+    //                     {
+    //                         if (k2 == at[j2].sb_ord[m2])
+    //                         {
+    //                             chain_len2 = get_opposite_sb_atom( at, j2, k2,
+    //                                            &pnxt_atom2, &pinxt2cur2, &pinxt_sb_parity_ord2 );
+    //                             break;
+    //                         }
+    //                     }
+    //                 }
+    //                 if ((chain_len == 1 && chain_len2 == 1) ||  /* regular stereobond */
+    //                      (chain_len > 1 && j > pnxt_atom)) /* djb-rwth: addressing LLVM warnings */
+    //                 {
+    //                     /* j  is a cumulene endpoint */
+    //                     int m;
+    //                     pcur_atom = j;  /* pcur_atom > pnxt_atom */
+    //                     picur2nxt = k;
+    //                     picur_sb_parity_ord = -1;
+    //                     for (m = 0; m < MAX_NUM_STEREO_BONDS && at[pcur_atom].sb_parity[m]; m++)
+    //                     {
+    //                         if (at[pcur_atom].sb_ord[m] == k)
+    //                         {
+    //                             picur_sb_parity_ord = m;
+    //                             break;
+    //                         }
+    //                     }
+    //                     /* djb-rwth: removing redundant code */
+    //                 }
+    //                 else
+    //                 {
+    //                     if (chain_len2 > 1 && j2 > pnxt_atom2)
+    //                     { /* j2 is a cumulene endpoint */
+    //                         int m;
+    //                         pcur_atom = j2;
+    //                         picur2nxt = k2;
+    //                         pnxt_atom = pnxt_atom2;
+    //                         pinxt2cur = pinxt2cur2;
+    //                         pinxt_sb_parity_ord = pinxt_sb_parity_ord2;
+    //                         picur_sb_parity_ord = -1;
+    //                         for (m = 0; m < MAX_NUM_STEREO_BONDS && at[pcur_atom].sb_parity[m]; m++)
+    //                         {
+    //                             if (at[pcur_atom].sb_ord[m] == k2)
+    //                                 picur_sb_parity_ord = m;
+    //                         }
+    //                         chain_len = chain_len2;
+    //                         /* djb-rwth: removing redundant code */
+    //                     }
+    //                     else
+    //                     {
+    //                         chain_len = 0; /* djb-rwth: removing redundant code */
+    //                     }
+    //                 }
+    //                 /*len += sprintf( szCurBonds + len, "%c%d", bond_char, val+1);*/
+    //                 if (chain_len)
+    //                 {
+    //                     /* both atoms belong to a stereo bond */
+    //                     int kc;
+    //                     int p1 = 0, p2, p1NM = 0, p2NM, neigh, neigh1, neigh2, bHasMetal, bWellDef; /* djb-rwth: initialising p1 and p1NM */
+    //                     int     bNeighSwitched1, bNeighSwitched2;
+    //
+    //                     /* djb-rwth: avoiding buffer overrun as picur_sb_parity_ord == -1 is possible */
+    //                     if (picur_sb_parity_ord >= 0)
+    //                     {
+    //                         p1 = SB_PARITY_1( at[pcur_atom].sb_parity[picur_sb_parity_ord] );
+    //                         p1NM = SB_PARITY_2( at[pcur_atom].sb_parity[picur_sb_parity_ord] );
+    //                     }
+    //
+    //                     p2 = SB_PARITY_1( at[pnxt_atom].sb_parity[pinxt_sb_parity_ord] );
+    //                     p2NM = SB_PARITY_2( at[pnxt_atom].sb_parity[pinxt_sb_parity_ord] );
+    //
+    //                     bWellDef = ATOM_PARITY_WELL_DEF( p1 ) && ATOM_PARITY_WELL_DEF( p2 );
+    //                     bHasMetal = ATOM_PARITY_WELL_DEF( p1NM ) && ATOM_PARITY_WELL_DEF( p2NM );
+    //
+    //                     bNeighSwitched1 = bNeighSwitched2 = 0;
+    //
+    //                     if (bWellDef || bHasMetal)
+    //                     {
+    //
+    //                         neigh1 = num_inp_atoms;
+    //                         for (kc = 0; kc < at[pcur_atom].valence; kc++)
+    //                         {
+    //                             if (kc == picur2nxt)
+    //                                 continue;
+    //                             neigh = at[pcur_atom].neighbor[kc];
+    //                             if (bHasMetal && is_el_a_metal( at[neigh].el_number ))
+    //                                 continue;
+    //                             if (neigh < neigh1)
+    //                                 neigh1 = neigh;
+    //                         }
+    //                         if (neigh1 < num_inp_atoms)
+    //                         {
+    //                             bNeighSwitched1 = ( neigh1 != at[pcur_atom].neighbor[(int) at[pcur_atom].sn_ord[picur_sb_parity_ord]] );
+    //                         }
+    //                         else
+    //                         {
+    //                             AddErrorMessage( sd->pStrErrStruct, "Cannot find 0D stereobond neighbor" );
+    //                             /*
+    //                             sd->nStructReadError =  99;
+    //                             sd->nErrorType = _IS_ERROR;
+    //                             */
+    //                         }
+    //
+    //                         neigh2 = num_inp_atoms;
+    //                         for (kc = 0; kc < at[pnxt_atom].valence; kc++)
+    //                         {
+    //                             if (kc == pinxt2cur)
+    //                                 continue;
+    //                             neigh = at[pnxt_atom].neighbor[kc];
+    //                             if (bHasMetal && is_el_a_metal( at[neigh].el_number ))
+    //                                 continue;
+    //                             if (neigh < neigh2)
+    //                                 neigh2 = neigh;
+    //                         }
+    //                         if (neigh2 < num_inp_atoms)
+    //                         {
+    //                             bNeighSwitched2 = ( neigh2 != at[pnxt_atom].neighbor[(int) at[pnxt_atom].sn_ord[pinxt_sb_parity_ord]] );
+    //                         }
+    //                         else
+    //                         {
+    //                             AddErrorMessage( sd->pStrErrStruct, "Cannot find 0D stereobond neighbor" );
+    //                             /*
+    //                             sd->nStructReadError =  99;
+    //                             sd->nErrorType = _IS_ERROR;
+    //                             */
+    //                         }
+    //
+    //                         if (neigh1 < num_inp_atoms && neigh2 < num_inp_atoms)
+    //                         {
+    //                             if (ATOM_PARITY_WELL_DEF( p1 ) && ATOM_PARITY_WELL_DEF( p2 ))
+    //                             {
+    //                                 bond_parity = 2 - ( p1 + p2 + bNeighSwitched1 + bNeighSwitched2 ) % 2;
+    //                             }
+    //                             else
+    //                             {
+    //                                 bond_parity = inchi_min( p1, p2 );
+    //                             }
+    //
+    //                             if (bHasMetal)
+    //                             {
+    //                                 bond_parityNM = 2 - ( p1NM + p2NM + bNeighSwitched1 + bNeighSwitched2 ) % 2;
+    //                             }
+    //                             else
+    //                             {
+    //                                 if (p1NM && p2NM)
+    //                                 {
+    //                                     bond_parityNM = inchi_min( p1NM, p2NM );
+    //                                 }
+    //                             }
+    //                         }
+    //                     }
+    //                     else
+    //                     {
+    //                         if (p1 && p2)
+    //                         {
+    //                             bond_parity = inchi_min( p1, p2 );
+    //                         }
+    //                         if (p1NM && p2NM)
+    //                         {
+    //                             bond_parityNM = inchi_min( p1NM, p2NM );
+    //                         }
+    //                         if (bond_parityNM && !bond_parity)
+    //                         {
+    //                             bond_parity = AB_PARITY_UNDF;
+    //                         }
+    //                     }
+    //                 }
+    //
+    //                 len += sprintf(szCurBonds + len, "%c%s%s%d",
+    //                     bond_char,
+    //
+    //                     (bond_parity == AB_PARITY_ODD) ? "-" :
+    //                     (bond_parity == AB_PARITY_EVEN) ? "+" :
+    //                     (bond_parity == AB_PARITY_UNKN) ? "u" :
+    //                     (bond_parity == AB_PARITY_UNDF) ? "?" : "",
+    //
+    //                     (bond_parityNM == AB_PARITY_ODD) ? "-" :
+    //                     (bond_parityNM == AB_PARITY_EVEN) ? "+" :
+    //                     (bond_parityNM == AB_PARITY_UNKN) ? "u" :
+    //                     (bond_parityNM == AB_PARITY_UNDF) ? "?" : "",
+    //
+    //                     j2 + 1);
+    //             }
+    //         }
+    //         if (len + cur_len + 2 < buf_len)
+    //         {
+    //             memcpy(szBuf + cur_len, szCurBonds, len);
+    //             cur_len += len;
+    //             szBuf[cur_len++] = ';';
+    //             j++;
+    //         }
+    //         else
+    //         {
+    //             break;
+    //         }
+    //     }
+    //     szBuf[cur_len] = '\0';
+    //     *i = num_inp_atoms > 0 ? j : 0;
+    //
+    //     return cur_len;
+    // }
+    // INCHI✔️❗: One original writer body for pointer and caller-owned
+    // output. Only reached stores project their byte slice; pointer alias,
+    // partial errors, indices, formatting and independent guards stay exact.
+    // No staging/clone/allocation; dispatch/checked/whole-call cost OPEN.
+
+    // INCHI✔️❗: Admit only reached signed rows; an empty source loop reads no atoms.
+    // INCHI-PERF-BOND-REACHED-READS: safe readonly phases, no prepass/clone/view.
     let parity_part = |value: i8| i32::from(value) & SB_PARITY_MASK as i32;
     let parity_part_non_metal =
         |value: i8| (i32::from(value) >> SB_PARITY_SHFT) & SB_PARITY_MASK as i32;
@@ -11502,14 +16413,28 @@ pub(crate) fn WriteOrigBonds(
         _ => None,
     };
 
+    // INCHI✔️❗: shared fixed decimal scratch, no per-bond owned number.
+    // O(emitted digits)/O(1); remaining buffers/aliases stay quarantined and
+    // shared-writer/check/whole-call cost remains OPEN.
+    let mut decimal = [0_u8; 21];
+    // INCHI✔️❗: Native szCurBonds[7 * MAXVAL + 2] is reused across rows.
+    // INCHI-PERF-BOND-LOCAL-SCRATCH: no Vec staging; checked/zeroing costs OPEN.
+    let mut current_bonds = [0_u8; (7 * MAXVAL + 2) as usize];
+    let append = |buffer: &mut [u8], used: &mut usize, bytes: &[u8]| {
+        // Oversized Rust-only rows keep counting until the original post-row
+        // bounds error. Their suffix is never emitted; later diagnostics/errors
+        // retain their order. MAXVAL20 and u16 neighbor numbers bound used<=160.
+        let start = *used;
+        *used += bytes.len();
+        if start < buffer.len() {
+            let count = bytes.len().min(buffer.len() - start);
+            buffer[start..start + count].copy_from_slice(&bytes[..count]);
+        }
+    };
     let mut current_length = 0_i32;
     let mut current_index = *index;
     while current_index < num_inp_atoms {
-        let atom_index =
-            usize::try_from(current_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atom = atoms
-            .get(atom_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = heap.element_signed(atoms.as_const(), current_index)?;
         let valence = i32::from(atom.valence);
         let valence_count =
             usize::try_from(valence.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -11518,19 +16443,33 @@ pub(crate) fn WriteOrigBonds(
         }
 
         let mut neighbor_order = [0 as AT_RANK; MAXVAL as usize];
-        if valence >= 1 {
+        let atom = if valence >= 1 {
             for (ordinal, target) in neighbor_order[..valence_count].iter_mut().enumerate() {
                 *target = ordinal as AT_RANK;
             }
-            let rank_pointer = heap.allocate_model_storage(atom.neighbor.to_vec())?;
-            canon_globals.m_pn_RankForSort = rank_pointer.as_const();
-
-            let ranks = atom.neighbor;
+            // INCHI✔️❗: Native2635 retains at[j].neighbor itself. Later
+            // owner writes remain visible through Globals comparator reads.
+            // No rank Vec/model/failure/retained allocation; C572 costs OPEN.
+            let rank_pointer = atoms.as_const().neighbor_field(current_index)?;
+            // Native2635 reaches CG only here. Keep the actual heap record live;
+            // borrowed CG retains the original atom view with no extra lookup.
+            // INCHI✔️❗: No snapshot/model/extraction/copyback; typed Pointer
+            // admission and renewed atom view cost stay C582 OPEN.
+            let atom = match canon_globals {
+                SourceCanonicalGlobals::Borrowed(globals) => {
+                    globals.m_pn_RankForSort = rank_pointer;
+                    atom
+                }
+                SourceCanonicalGlobals::Pointer(pointer) => {
+                    heap.slice_mut(*pointer)?
+                        .first_mut()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .m_pn_RankForSort = rank_pointer;
+                    heap.element_signed(atoms.as_const(), current_index)?
+                }
+            };
+            let ranks = heap.slice(rank_pointer)?;
             let width = std::mem::size_of::<AT_RANK>();
-            let mut order_bytes = Vec::with_capacity(valence_count * width);
-            for ordinal in &neighbor_order[..valence_count] {
-                order_bytes.extend_from_slice(&ordinal.to_ne_bytes());
-            }
             let mut compare = |left: &[u8], right: &[u8]| {
                 let left_rank = AT_RANK::from_ne_bytes(
                     left.try_into()
@@ -11549,22 +16488,20 @@ pub(crate) fn WriteOrigBonds(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 Ok(i32::from(left_value) - i32::from(right_value))
             };
-            let _num_trans = insertions_sort(&mut order_bytes, valence_count, width, &mut compare)?;
-            for (target, bytes) in neighbor_order[..valence_count]
-                .iter_mut()
-                .zip(order_bytes.chunks_exact(width))
-            {
-                *target = AT_RANK::from_ne_bytes(
-                    bytes
-                        .try_into()
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                );
-            }
+            let _num_trans = insertions_sort(
+                bytemuck::cast_slice_mut(&mut neighbor_order[..valence_count]),
+                valence_count,
+                width,
+                &mut compare,
+            )?;
+            atom
         } else {
             neighbor_order[0] = 0;
-        }
+            atom
+        };
 
-        let mut current_bonds = Vec::<u8>::new();
+        // The same real row remains borrowed; no model allocation changed it.
+        let mut bond_used = 0_usize;
         for ordinal in &neighbor_order[..valence_count] {
             let bond_ordinal = usize::from(*ordinal);
             let next_atom = i32::from(
@@ -11618,11 +16555,7 @@ pub(crate) fn WriteOrigBonds(
                     _ => b's',
                 };
 
-                let next_index =
-                    usize::try_from(next_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let next = atoms
-                    .get(next_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let next = heap.element_signed(atoms.as_const(), next_atom)?;
                 let reverse_ordinal = is_in_the_list(
                     Some(&next.neighbor),
                     current_index as u16,
@@ -11643,8 +16576,9 @@ pub(crate) fn WriteOrigBonds(
                             == i32::try_from(bond_ordinal)
                                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
                         {
-                            chain_length = get_opposite_sb_atom_slice(
-                                &atoms,
+                            chain_length = get_opposite_sb_atom(
+                                heap,
+                                atoms,
                                 current_index,
                                 i32::try_from(bond_ordinal)
                                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
@@ -11670,8 +16604,9 @@ pub(crate) fn WriteOrigBonds(
                             == i32::try_from(reverse_ordinal)
                                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
                         {
-                            chain_length2 = get_opposite_sb_atom_slice(
-                                &atoms,
+                            chain_length2 = get_opposite_sb_atom(
+                                heap,
+                                atoms,
                                 next_atom,
                                 i32::try_from(reverse_ordinal)
                                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
@@ -11694,12 +16629,7 @@ pub(crate) fn WriteOrigBonds(
                     current_to_next = i32::try_from(bond_ordinal)
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     for parity_ordinal in 0..MAX_NUM_STEREO_BONDS as usize {
-                        let endpoint = atoms
-                            .get(
-                                usize::try_from(current_endpoint)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let endpoint = heap.element_signed(atoms.as_const(), current_endpoint)?;
                         if endpoint.sb_parity[parity_ordinal] == 0 {
                             break;
                         }
@@ -11716,12 +16646,7 @@ pub(crate) fn WriteOrigBonds(
                     next_to_current = next_to_current2;
                     next_parity_ordinal = next_parity_ordinal2;
                     current_parity_ordinal = -1;
-                    let endpoint = atoms
-                        .get(
-                            usize::try_from(current_endpoint)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let endpoint = heap.element_signed(atoms.as_const(), current_endpoint)?;
                     for parity_ordinal in 0..MAX_NUM_STEREO_BONDS as usize {
                         if endpoint.sb_parity[parity_ordinal] == 0 {
                             break;
@@ -11736,16 +16661,10 @@ pub(crate) fn WriteOrigBonds(
                 }
 
                 if chain_length != 0 {
-                    let current_endpoint_index = usize::try_from(current_endpoint)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let next_endpoint_index = usize::try_from(next_endpoint)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let current_endpoint_atom = atoms
-                        .get(current_endpoint_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let next_endpoint_atom = atoms
-                        .get(next_endpoint_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let current_endpoint_atom =
+                        heap.element_signed(atoms.as_const(), current_endpoint)?;
+                    let next_endpoint_atom =
+                        heap.element_signed(atoms.as_const(), next_endpoint)?;
 
                     let mut p1 = 0_i32;
                     let mut p1_non_metal = 0_i32;
@@ -11787,13 +16706,10 @@ pub(crate) fn WriteOrigBonds(
                                     )
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
                             );
-                            let neighbor_atom = atoms
-                                .get(
-                                    usize::try_from(neighbor)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            if has_metal && is_el_a_metal(i32::from(neighbor_atom.el_number))? != 0
+                            if has_metal
+                                && is_el_a_metal(i32::from(
+                                    heap.element_signed(atoms.as_const(), neighbor)?.el_number,
+                                ))? != 0
                             {
                                 continue;
                             }
@@ -11820,13 +16736,9 @@ pub(crate) fn WriteOrigBonds(
                                     ),
                             );
                         } else {
-                            let message = b"Cannot find 0D stereobond neighbor\0"
-                                .iter()
-                                .map(|byte| *byte as i8)
-                                .collect::<Vec<_>>();
-                            AddErrorMessage(
+                            crate::source::base::ichierr::add_error_message_bytes(
                                 Some(&mut structure_data.pStrErrStruct),
-                                Some(&message),
+                                b"Cannot find 0D stereobond neighbor",
                             )?;
                         }
 
@@ -11844,13 +16756,10 @@ pub(crate) fn WriteOrigBonds(
                                     )
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
                             );
-                            let neighbor_atom = atoms
-                                .get(
-                                    usize::try_from(neighbor)
-                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                                )
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            if has_metal && is_el_a_metal(i32::from(neighbor_atom.el_number))? != 0
+                            if has_metal
+                                && is_el_a_metal(i32::from(
+                                    heap.element_signed(atoms.as_const(), neighbor)?.el_number,
+                                ))? != 0
                             {
                                 continue;
                             }
@@ -11878,13 +16787,9 @@ pub(crate) fn WriteOrigBonds(
                                     ),
                             );
                         } else {
-                            let message = b"Cannot find 0D stereobond neighbor\0"
-                                .iter()
-                                .map(|byte| *byte as i8)
-                                .collect::<Vec<_>>();
-                            AddErrorMessage(
+                            crate::source::base::ichierr::add_error_message_bytes(
                                 Some(&mut structure_data.pStrErrStruct),
-                                Some(&message),
+                                b"Cannot find 0D stereobond neighbor",
                             )?;
                         }
 
@@ -11919,35 +16824,38 @@ pub(crate) fn WriteOrigBonds(
                     }
                 }
 
-                current_bonds.push(bond_character);
+                append(&mut current_bonds, &mut bond_used, &[bond_character]);
                 if let Some(symbol) = parity_symbol(bond_parity) {
-                    current_bonds.push(symbol);
+                    append(&mut current_bonds, &mut bond_used, &[symbol]);
                 }
                 if let Some(symbol) = parity_symbol(bond_parity_non_metal) {
-                    current_bonds.push(symbol);
+                    append(&mut current_bonds, &mut bond_used, &[symbol]);
                 }
-                current_bonds.extend(next_atom.wrapping_add(1).to_string().bytes());
+                append(
+                    &mut current_bonds,
+                    &mut bond_used,
+                    crate::source::base::ichi_io::source_decimal_i64(
+                        i64::from(next_atom.wrapping_add(1)),
+                        None,
+                        &mut decimal,
+                    ),
+                );
             }
         }
 
-        if current_bonds.len() > (7 * MAXVAL + 2) as usize {
+        if bond_used > current_bonds.len() {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        let bond_length = i32::try_from(current_bonds.len())
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let bond_length =
+            i32::try_from(bond_used).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if bond_length.wrapping_add(current_length).wrapping_add(2) < buffer_length {
             let start =
                 usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let output = heap.slice_mut(buffer)?;
+            let output = buffer.slice_mut(heap)?;
             output
-                .get_mut(start..start + current_bonds.len())
+                .get_mut(start..start + bond_used)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .copy_from_slice(
-                    &current_bonds
-                        .iter()
-                        .map(|byte| *byte as i8)
-                        .collect::<Vec<_>>(),
-                );
+                .copy_from_slice(bytemuck::cast_slice(&current_bonds[..bond_used]));
             current_length = current_length.wrapping_add(bond_length);
             *output
                 .get_mut(
@@ -11961,8 +16869,8 @@ pub(crate) fn WriteOrigBonds(
             break;
         }
     }
-    *heap
-        .slice_mut(buffer)?
+    *buffer
+        .slice_mut(heap)?
         .get_mut(usize::try_from(current_length).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
     *index = if num_inp_atoms > 0 { current_index } else { 0 };
@@ -11973,6 +16881,22 @@ pub(crate) fn WriteOrigBonds(
 pub(crate) fn OrigStruct_FillOut(
     heap: &mut SourceHeap,
     canon_globals: &mut CANON_GLOBALS,
+    original_atom_data: &mut ORIG_ATOM_DATA,
+    original_structure: &mut ORIG_STRUCT,
+    structure_data: &mut STRUCT_DATA,
+) -> Result<i32, SourceHeapError> {
+    orig_struct_fill_out_target(
+        heap,
+        SourceCanonicalGlobals::Borrowed(canon_globals),
+        original_atom_data,
+        original_structure,
+        structure_data,
+    )
+}
+
+pub(super) fn orig_struct_fill_out_target(
+    heap: &mut SourceHeap,
+    mut canon_globals: SourceCanonicalGlobals<'_>,
     original_atom_data: &mut ORIG_ATOM_DATA,
     original_structure: &mut ORIG_STRUCT,
     structure_data: &mut STRUCT_DATA,
@@ -12103,7 +17027,15 @@ pub(crate) fn OrigStruct_FillOut(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OrigStruct_FillOut
 
-    let scratch = heap.allocate_model_storage(vec![0_i8; ORIG_STR_BUFLEN as usize])?;
+    // INCHI✔️❗: Carry actual CG to reached bond writes. Coordinates and
+    // atom text never admit it; no capture/model/restore, C582 costs OPEN.
+    // VERBATIM SOURCE FRAGMENT: ichiprt1.c2938
+    //     char szBuf[ORIG_STR_BUFLEN];
+    // INCHI✔️❗: Native local scratch feeds the same three writer kernels.
+    // No arena slot/free, no fake pointer; actual output mallocs/state stay.
+    // INCHI✔️❌: Safe142-byte initialization adds bounded native-stack work;
+    // this and whole-writer costs remain OPEN, no no-worse claim.
+    let mut scratch = [0_i8; ORIG_STR_BUFLEN as usize];
     let result = (|| {
         original_structure.polymer = SourceMutPointer::null();
         original_structure.v3000 = SourceMutPointer::null();
@@ -12113,12 +17045,12 @@ pub(crate) fn OrigStruct_FillOut(
         let mut coordinate_length = 0_i32;
         if !original_atom_data.szCoord.is_null() {
             loop {
-                let length = WriteOrigCoord(
+                let length = write_orig_coord(
                     heap,
                     original_atom_data.num_inp_atoms,
                     original_atom_data.szCoord.as_const(),
                     &mut index,
-                    scratch,
+                    TagOutput::Bytes(&mut scratch),
                     ORIG_STR_BUFLEN as i32,
                 )?;
                 if length == 0 {
@@ -12161,13 +17093,12 @@ pub(crate) fn OrigStruct_FillOut(
         index = 0;
         let mut atom_length = 0_i32;
         loop {
-            let length = WriteOrigAtoms(
+            let length = write_orig_atoms(
                 heap,
-                canon_globals,
                 original_atom_data.num_inp_atoms,
                 original_atom_data.at.as_const(),
                 &mut index,
-                scratch,
+                TagOutput::Bytes(&mut scratch),
                 ORIG_STR_BUFLEN as i32,
                 structure_data,
             )?;
@@ -12194,13 +17125,12 @@ pub(crate) fn OrigStruct_FillOut(
         if original_structure.szAtoms.is_null() {
             return Ok(-1);
         }
-        let written = WriteOrigAtoms(
+        let written = write_orig_atoms(
             heap,
-            canon_globals,
             original_atom_data.num_inp_atoms,
             original_atom_data.at.as_const(),
             &mut index,
-            original_structure.szAtoms,
+            TagOutput::Pointer(original_structure.szAtoms),
             atom_length
                 .checked_add(1)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?,
@@ -12213,13 +17143,13 @@ pub(crate) fn OrigStruct_FillOut(
         let mut bond_length = 0_i32;
         index = 1;
         loop {
-            let length = WriteOrigBonds(
+            let length = write_orig_bonds(
                 heap,
-                canon_globals,
+                &mut canon_globals,
                 original_atom_data.num_inp_atoms,
                 original_atom_data.at,
                 &mut index,
-                scratch,
+                TagOutput::Bytes(&mut scratch),
                 ORIG_STR_BUFLEN as i32,
                 structure_data,
             )?;
@@ -12246,13 +17176,13 @@ pub(crate) fn OrigStruct_FillOut(
         if original_structure.szBonds.is_null() {
             return Ok(-1);
         }
-        let written = WriteOrigBonds(
+        let written = write_orig_bonds(
             heap,
-            canon_globals,
+            &mut canon_globals,
             original_atom_data.num_inp_atoms,
             original_atom_data.at,
             &mut index,
-            original_structure.szBonds,
+            TagOutput::Pointer(original_structure.szBonds),
             bond_length
                 .checked_add(2)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?,
@@ -12279,14 +17209,7 @@ pub(crate) fn OrigStruct_FillOut(
         }
         Ok(0)
     })();
-    let free_result = heap.free(scratch);
-    match result {
-        Err(error) => Err(error),
-        Ok(value) => {
-            free_result?;
-            Ok(value)
-        }
-    }
+    result
 }
 
 #[allow(non_snake_case)]
@@ -16854,7 +21777,7 @@ mod tests {
             let expected_line_feed: &[i8] = if options & INCHI_OUT_PLAIN_TEXT_COMMENTS as i32 != 0 {
                 &[b'\n' as i8, 0]
             } else {
-                &[0]
+                &[0, 0]
             };
             assert_eq!(line_feed, expected_line_feed);
             assert_eq!(tab, &[b'\n' as i8, 0]);
@@ -17213,7 +22136,7 @@ use crate::source::base::ichiprt3::{
     str_StereoAbsInv,
 };
 use crate::source::base::ichisort::{insertions_sort, insertions_sort_AT_RANK};
-use crate::source::base::ichister::get_opposite_sb_atom_slice;
+use crate::source::base::ichister::get_opposite_sb_atom;
 use crate::source::base::runichi3::{
     OAD_Polymer_PrepareWorkingSet, OAD_Polymer_SetAtProps, OAD_PolymerUnit_CreateCopy,
     OAD_PolymerUnit_Free,
@@ -17232,7 +22155,117 @@ use crate::source_types::{
     MAX_NUM_STEREO_ATOM_NEIGH, MAX_NUM_STEREO_BONDS, MAXVAL, MOL_COORD, NUM_COORD, ORIG_ATOM_DATA,
     ORIG_STRUCT, RADICAL_DOUBLET, SB_PARITY_MASK, SB_PARITY_SHFT, STEREO_DBLE_EITHER,
     STEREO_SNGL_DOWN, STEREO_SNGL_EITHER, STEREO_SNGL_UP, STRUCT_DATA, SourceConstPointer,
-    SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList,
-    StableSourceConstSlice, inp_ATOM,
+    SourceFormatArgument, SourceHeap, SourceHeapError, SourceMutPointer, SourceVaList, inp_ATOM,
     local_ichiprt1::{INCHI_TAG, ORIG_STR_BUFLEN},
 };
+
+#[cfg(test)]
+mod line_separators_regressions {
+    use super::set_line_separators;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    const INPUTS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/line_separators/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/line_separators/expected.txt"
+    ));
+
+    fn sentinel_pair(id: usize) -> (&'static [i8], &'static [i8]) {
+        match id {
+            0 => (&[], &[99, -7, 0]),
+            1 => (&[99, -7, 0], &[-7, 0]),
+            2 => (&[-7, 0], &[]),
+            _ => panic!("invalid frozen sentinel"),
+        }
+    }
+
+    fn source_value(options: i32) -> u32 {
+        let mut lf: &'static [i8] = &[];
+        let mut tab: &'static [i8] = &[];
+        set_line_separators(options, &mut lf, &mut tab);
+        assert_eq!((lf.len(), tab.len()), (2, 2));
+        u32::from(lf[0] as u8)
+            | (u32::from(lf[1] as u8) << 8)
+            | (u32::from(tab[0] as u8) << 16)
+            | (u32::from(tab[1] as u8) << 24)
+    }
+
+    fn verify(value_consumer: bool) {
+        let inputs: Vec<_> = INPUTS.lines().collect();
+        let expected: Vec<_> = EXPECTED.lines().collect();
+        assert_eq!(inputs.len(), 135338);
+        assert_eq!(expected.len(), inputs.len());
+        let (mut calls, mut ok, mut audit1, mut unexpected, mut differences, mut changed) =
+            (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize);
+        for (index, (line, expected_line)) in inputs.iter().zip(&expected).enumerate() {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(fields.len(), 3);
+            let id: usize = fields[0].parse().unwrap();
+            let options: i32 = fields[1].parse().unwrap();
+            let sentinel: usize = fields[2].parse().unwrap();
+            assert_eq!(id, index);
+            assert!(sentinel < 3);
+            let expected: Vec<u8> = expected_line
+                .split_whitespace()
+                .map(|field| field.parse().unwrap())
+                .collect();
+            assert_eq!(expected.len(), 4);
+            for _repeat in 0..2 {
+                let (mut lf, mut tab) = sentinel_pair(sentinel);
+                let (saved_lf, saved_tab) = (lf, tab);
+                let outcome = catch_unwind(AssertUnwindSafe(|| {
+                    if value_consumer {
+                        source_value(options).to_le_bytes()
+                    } else {
+                        set_line_separators(options, &mut lf, &mut tab);
+                        assert_eq!((lf.len(), tab.len()), (2, 2));
+                        [lf[0] as u8, lf[1] as u8, tab[0] as u8, tab[1] as u8]
+                    }
+                }));
+                match outcome {
+                    Ok(actual) => {
+                        ok += 1;
+                        differences += usize::from(actual.as_slice() != expected);
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0001: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            audit1 += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                        changed += usize::from(
+                            !std::ptr::eq(lf, saved_lf) || !std::ptr::eq(tab, saved_tab),
+                        );
+                    }
+                }
+                calls += 1;
+            }
+        }
+        eprintln!(
+            "SEPARATOR COUNTS value={value_consumer} calls={calls} ok={ok} audit1={audit1} unexpected={unexpected} differences={differences} changed={changed}"
+        );
+        assert_eq!((unexpected, differences, changed), (0, 0, 0));
+        assert_eq!((calls, ok, audit1), (270676, 270676, 0));
+    }
+
+    #[test]
+    fn set_line_separators_complete_literal_extent_and_sentinels() {
+        verify(false);
+    }
+
+    #[test]
+    fn set_line_separators_complete_four_byte_value_consumer() {
+        verify(true);
+    }
+}

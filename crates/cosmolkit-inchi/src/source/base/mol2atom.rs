@@ -1,4 +1,5 @@
 use crate::source::base::ichierr::AddErrorMessage;
+use crate::source::base::ichierr::add_error_message_bytes;
 use crate::source::base::ichinorm::FreeInpAtomData;
 use crate::source::base::mol_fmt2::{MolfileGetXYZDimAndNormFactors, MolfileHasNoChemStruc};
 use crate::source::base::runichi3::OAD_Polymer_Free;
@@ -20,7 +21,7 @@ const SOURCE_SIZEOF_INP_ATOM: u64 = 176;
 const SOURCE_SIZEOF_INT: u64 = 4;
 const SOURCE_SIZEOF_POINTER: u64 = 8;
 const SOURCE_SIZEOF_OAD_POLYMER: u64 = 48;
-const SOURCE_SIZEOF_OAD_POLYMER_UNIT: u64 = 240;
+const SOURCE_SIZEOF_OAD_POLYMER_UNIT: u64 = 248;
 const SOURCE_SIZEOF_OAD_V3000: u64 = 104;
 
 #[allow(non_snake_case)]
@@ -721,12 +722,7 @@ exit_function:
             if err == 0 && $new_err != 0 {
                 err = $new_err;
             }
-            let message = $message
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain([0])
-                .collect::<Vec<_>>();
-            AddErrorMessage(p_str_err.as_deref_mut(), Some(&message))?;
+            add_error_message_bytes(p_str_err.as_deref_mut(), ($message).as_bytes())?;
         }};
     }
 
@@ -768,11 +764,11 @@ exit_function:
 
             for k in 0..nsgroups {
                 let group_pointer = heap.slice(mfdata.ctab.sgroups.group.as_const())?[k as usize];
-                let group = heap
-                    .slice(group_pointer.as_const())?
-                    .first()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone();
+                // INCHI✔️❗: inpdef.h261..292 gives LP64 unit size248:
+                // 36+4+64+80+28+4+16+8+8 bytes, alignment8. Source
+                // logical allocation size corrected; canonical typed model unchanged.
+                // First group dereference follows successful calloc/table publication;
+                // allocation order/error cleanup unchanged, checked costs OPEN.
                 let unit = match inchi_calloc(heap, 1, SOURCE_SIZEOF_OAD_POLYMER_UNIT) {
                     Ok(pointer) => pointer,
                     Err(_) => {
@@ -781,6 +777,11 @@ exit_function:
                     }
                 };
                 heap.slice_mut(units)?[k as usize] = unit;
+                let group = heap
+                    .slice(group_pointer.as_const())?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .clone();
                 {
                     let output = &mut heap.slice_mut(unit)?[0];
                     output.id = group.id;
@@ -842,9 +843,11 @@ exit_function:
                         let atoms = heap.slice(mfdata.ctab.atoms.as_const())?;
                         let first_is_h = atoms[(ia1 - 1) as usize].symbol[0] == b'H' as i8
                             && atoms[(ia1 - 1) as usize].symbol[1] == 0;
-                        let second_is_h = atoms[(ia2 - 1) as usize].symbol[0] == b'H' as i8
-                            && atoms[(ia2 - 1) as usize].symbol[1] == 0;
-                        if first_is_h || second_is_h {
+                        // INCHI✔️❗: Native OR short circuits the second endpoint;
+                        // both bond entries are already published. O(1), no new
+                        // allocation/scan, checked whole-call cost remains OPEN.
+                        if first_is_h || (atoms[(ia2 - 1) as usize].symbol[0] == b'H' as i8
+                            && atoms[(ia2 - 1) as usize].symbol[1] == 0) {
                             treat_err!(9002, "Hydrogen as polymer end group is not supported");
                             break 'conversion;
                         }
@@ -856,11 +859,6 @@ exit_function:
         }
 
         if !mfdata.ctab.v3000.is_null() {
-            let input = heap
-                .slice(mfdata.ctab.v3000.as_const())?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
             *pp_v3000 = match inchi_calloc(heap, 1, SOURCE_SIZEOF_OAD_V3000) {
                 Ok(pointer) => pointer,
                 Err(_) => {
@@ -872,6 +870,14 @@ exit_function:
             if pv.is_null() {
                 break 'conversion;
             }
+            // INCHI✔️❗: Source first reads the input V3000 record after
+            // successful output allocation/publication. No added clone/scan;
+            // existing fixed record snapshot and checked cost remain independent.
+            let input = heap
+                .slice(mfdata.ctab.v3000.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .clone();
             {
                 let output = &mut heap.slice_mut(pv)?[0];
                 output.n_collections = input.n_collections;
@@ -1302,14 +1308,9 @@ exit_function:;
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: MakeInpAtomsFromMolfileData
 
     macro_rules! add_error {
-        ($message:expr) => {{
-            let text = format!("{}", $message);
-            let message = text
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain([0])
-                .collect::<Vec<_>>();
-            AddErrorMessage(p_str_err.as_deref_mut(), Some(&message))?;
+        ($message:literal) => {{
+            // INCHI✔️❗: Source literals borrow exact bytes; no format/String/Vec.
+            add_error_message_bytes(p_str_err.as_deref_mut(), ($message).as_bytes())?;
         }};
     }
 
@@ -1320,28 +1321,6 @@ exit_function:;
     if MolfileHasNoChemStruc(Some(mfdata)) != 0 {
         return Ok(SourceMutPointer::null());
     }
-
-    let atom_count = usize::try_from(*num_atoms)
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let source_atoms = heap
-        .slice(mfdata.ctab.atoms.as_const())?
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let bond_count = if mfdata.ctab.n_bonds > 0 {
-        usize::try_from(mfdata.ctab.n_bonds)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-    } else {
-        0
-    };
-    let source_bonds = if bond_count == 0 {
-        Vec::new()
-    } else {
-        heap.slice(mfdata.ctab.bonds.as_const())?
-            .get(..bond_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
 
     let at = if at_inp.is_null() {
         let allocated = CreateInpAtom(heap, *num_atoms)?;
@@ -1355,223 +1334,267 @@ exit_function:;
         at_inp
     };
 
-    let mut atoms = heap
-        .slice(at.as_const())?
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let mut fatal_atom_error = false;
-
-    for (index, source) in source_atoms.iter().enumerate() {
-        mystrncpy_slice(Some(&mut atoms[index].elname), Some(&source.symbol), 6)?;
-        atoms[index].orig_at_number = index.wrapping_add(1) as u16;
-        atoms[index].iso_atw_diff = source.mass_difference;
-        atoms[index].charge = source.charge;
-        atoms[index].radical = source.radical;
-
-        let isotope_difference = i32::from(source.mass_difference);
-        atoms[index].iso_atw_diff = if isotope_difference == ZERO_ATW_DIFF as i32 {
-            1
-        } else if isotope_difference > 0 {
-            isotope_difference.wrapping_add(1) as i8
-        } else {
-            isotope_difference as i8
-        };
-
-        if atoms[index].radical == RADICAL_SINGLET as i8 {
-            atoms[index].radical = RADICAL_TRIPLET as i8;
+    // INCHI✔️❗: Native output selection/allocation precedes input reads.
+    // Borrow the canonical output directly, with readonly heap for distinct
+    // MOL_FMT_ATOM/BOND records. Descendants receive atoms explicitly and never
+    // resolve its held ID. Result errors retain partial writes; no panic RAII.
+    // Removes three full Vec copies and copyback: O(1) transport scratch,
+    // source loop costs unchanged; checked whole-call constants remain OPEN.
+    heap.with_slice_mut_and_heap(at, |atoms, heap| {
+        // Distinct source record types cannot share the held output allocation;
+        // preserve the canonical typed error for a Rust-only forged cast.
+        if mfdata.ctab.atoms.allocation_identity() == at.allocation_identity() {
+            return Err(SourceHeapError::AllocationTypeMismatch);
         }
+        let source_atoms = heap.slice(mfdata.ctab.atoms.as_const())?;
+        let mut fatal_atom_error = false;
 
-        let mut element_number = get_periodic_table_number(Some(&atoms[index].elname))?;
-        if element_number == ERR_ELEM {
-            let atom = &mut atoms[index];
-            atom.num_H =
-                extract_h_atoms(Some(&mut atom.elname), Some(&mut atom.num_iso_H))? as i8;
-            let isotope_hydrogens = atoms[index]
-                .num_iso_H
-                .iter()
-                .fold(0_i32, |sum, value| sum.wrapping_add(i32::from(*value)));
-            if atoms[index].elname[0] == 0
-                && i32::from(atoms[index].num_H).wrapping_add(isotope_hydrogens) != 0
-            {
-                atoms[index].elname = [b'H' as i8, 0, 0, 0, 0, 0];
-                if isotope_hydrogens != 0 {
-                    for isotope in (0..NUM_H_ISOTOPES as usize).rev() {
-                        if atoms[index].num_iso_H[isotope] != 0 {
-                            atoms[index].num_iso_H[isotope] =
-                                atoms[index].num_iso_H[isotope].wrapping_sub(1);
-                            atoms[index].iso_atw_diff = isotope.wrapping_add(1) as i8;
-                            break;
-                        }
-                    }
-                } else {
-                    atoms[index].num_H = atoms[index].num_H.wrapping_sub(1);
-                }
-            }
-            element_number = get_periodic_table_number(Some(&atoms[index].elname))?;
-            if element_number == ERR_ELEM {
-                element_number = 0;
-            }
-        }
+        for index in 0..*num_atoms as usize {
+            let source = source_atoms.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            atoms.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            mystrncpy_slice(Some(&mut atoms[index].elname), Some(&source.symbol), 6)?;
+            atoms[index].orig_at_number = index.wrapping_add(1) as u16;
+            atoms[index].iso_atw_diff = source.mass_difference;
+            atoms[index].charge = source.charge;
+            atoms[index].radical = source.radical;
 
-        atoms[index].el_number = element_number as u8;
-        if element_number == 0 {
-            *err = -2;
-            add_error!("Unknown element(s):");
-            let element = atoms[index]
-                .elname
-                .iter()
-                .take_while(|byte| **byte != 0)
-                .map(|byte| *byte as u8 as char)
-                .collect::<String>();
-            add_error!(element);
-            fatal_atom_error = true;
-            break;
-        }
-
-        if element_number == 1 && atoms[index].iso_atw_diff == 0 {
-            match atoms[index].elname[0] as u8 {
-                b'D' => {
-                    atoms[index].iso_atw_diff = 2;
-                    mystrncpy_slice(
-                        Some(&mut atoms[index].elname),
-                        Some(&[b'H' as i8, 0]),
-                        6,
-                    )?;
-                }
-                b'T' => {
-                    atoms[index].iso_atw_diff = 3;
-                    mystrncpy_slice(
-                        Some(&mut atoms[index].elname),
-                        Some(&[b'H' as i8, 0]),
-                        6,
-                    )?;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    if !fatal_atom_error {
-        let mut bonds = 0_i32;
-        for source in &source_bonds {
-            let bond_stereo = source.bond_stereo;
-            let mut bond_type = source.bond_type;
-            let a1 = i32::from(source.atnum1).wrapping_sub(1);
-            let a2 = i32::from(source.atnum2).wrapping_sub(1);
-
-            if a1 < 0 || a1 >= *num_atoms || a2 < 0 || a2 >= *num_atoms || a1 == a2 {
-                *err |= 1;
-                add_error!("Bond to nonexistent atom");
-                continue;
-            }
-            let a1 = a1 as usize;
-            let a2 = a2 as usize;
-            let position1 = is_in_the_list(
-                Some(&atoms[a1].neighbor),
-                a2 as u16,
-                i32::from(atoms[a1].valence),
-            )?;
-            let position2 = is_in_the_list(
-                Some(&atoms[a2].neighbor),
-                a1 as u16,
-                i32::from(atoms[a2].valence),
-            )?;
-
-            let (n1, n2) = if (position1.is_some() || position2.is_some())
-                && (position1.is_some() || i32::from(atoms[a1].valence) < MAXVAL as i32)
-                && (position2.is_some() || i32::from(atoms[a2].valence) < MAXVAL as i32)
-            {
-                let n1 = position1.unwrap_or_else(|| {
-                    let value = atoms[a1].valence as usize;
-                    atoms[a1].valence = atoms[a1].valence.wrapping_add(1);
-                    value
-                });
-                let n2 = position2.unwrap_or_else(|| {
-                    let value = atoms[a2].valence as usize;
-                    atoms[a2].valence = atoms[a2].valence.wrapping_add(1);
-                    value
-                });
-                add_error!("Multiple bonds between two atoms");
-                *err |= 2;
-                (n1, n2)
-            } else if position1.is_none()
-                && position2.is_none()
-                && i32::from(atoms[a1].valence) < MAXVAL as i32
-                && i32::from(atoms[a2].valence) < MAXVAL as i32
-            {
-                let n1 = atoms[a1].valence as usize;
-                let n2 = atoms[a2].valence as usize;
-                atoms[a1].valence = atoms[a1].valence.wrapping_add(1);
-                atoms[a2].valence = atoms[a2].valence.wrapping_add(1);
-                bonds = bonds.wrapping_add(1);
-                (n1, n2)
+            let isotope_difference = i32::from(source.mass_difference);
+            atoms[index].iso_atw_diff = if isotope_difference == ZERO_ATW_DIFF as i32 {
+                1
+            } else if isotope_difference > 0 {
+                isotope_difference.wrapping_add(1) as i8
             } else {
-                *err |= 4;
-                let element = if i32::from(atoms[a1].valence) >= MAXVAL as i32 {
-                    &atoms[a1].elname
-                } else {
-                    &atoms[a2].elname
-                };
-                let element = element
-                    .iter()
-                    .take_while(|byte| **byte != 0)
-                    .map(|byte| *byte as u8 as char)
-                    .collect::<String>();
-                add_error!(format!("Atom '{element}' has more than {MAXVAL} bonds"));
-                continue;
+                isotope_difference as i8
             };
 
-            if bond_type < MIN_INPUT_BOND_TYPE as i8 || bond_type > MAX_INPUT_BOND_TYPE as i8 {
-                let original_type = bond_type;
-                bond_type = BOND_TYPE_SINGLE as i8;
-                add_error!("Unrecognized bond type:");
-                add_error!(original_type);
-                *err |= 8;
+            if atoms[index].radical == RADICAL_SINGLET as i8 {
+                atoms[index].radical = RADICAL_TRIPLET as i8;
             }
 
-            if n1 < MAXVAL as usize && n2 < MAXVAL as usize {
-                atoms[a1].bond_type[n1] = bond_type as u8;
-                atoms[a2].bond_type[n2] = bond_type as u8;
-                atoms[a1].neighbor[n1] = a2 as u16;
-                atoms[a2].neighbor[n2] = a1 as u16;
-
-                if bond_stereo == INPUT_STEREO_DBLE_EITHER as i8 {
-                    atoms[a1].bond_stereo[n1] = STEREO_DBLE_EITHER as i8;
-                    atoms[a2].bond_stereo[n2] = STEREO_DBLE_EITHER as i8;
-                } else if bond_stereo == INPUT_STEREO_SNGL_UP as i8
-                    || bond_stereo == INPUT_STEREO_SNGL_EITHER as i8
-                    || bond_stereo == INPUT_STEREO_SNGL_DOWN as i8
+            let mut element_number = get_periodic_table_number(Some(&atoms[index].elname))?;
+            if element_number == ERR_ELEM {
+                let atom = &mut atoms[index];
+                atom.num_H =
+                    extract_h_atoms(Some(&mut atom.elname), Some(&mut atom.num_iso_H))? as i8;
+                let isotope_hydrogens = atoms[index]
+                    .num_iso_H
+                    .iter()
+                    .fold(0_i32, |sum, value| sum.wrapping_add(i32::from(*value)));
+                if atoms[index].elname[0] == 0
+                    && i32::from(atoms[index].num_H).wrapping_add(isotope_hydrogens) != 0
                 {
-                    let stereo = match bond_stereo {
-                        value if value == INPUT_STEREO_SNGL_UP as i8 => STEREO_SNGL_UP as i8,
-                        value if value == INPUT_STEREO_SNGL_EITHER as i8 => {
-                            STEREO_SNGL_EITHER as i8
+                    // INCHI✔️❗: Native strcpy("H") changes only two bytes;
+                    // retain existing suffix, no whole-name zeroing or allocation.
+                    atoms[index].elname[0] = b'H' as i8;
+                    atoms[index].elname[1] = 0;
+                    if isotope_hydrogens != 0 {
+                        for isotope in (0..NUM_H_ISOTOPES as usize).rev() {
+                            if atoms[index].num_iso_H[isotope] != 0 {
+                                atoms[index].num_iso_H[isotope] =
+                                    atoms[index].num_iso_H[isotope].wrapping_sub(1);
+                                atoms[index].iso_atw_diff = isotope.wrapping_add(1) as i8;
+                                break;
+                            }
                         }
-                        _ => STEREO_SNGL_DOWN as i8,
-                    };
-                    atoms[a1].bond_stereo[n1] = stereo;
-                    atoms[a2].bond_stereo[n2] = stereo.wrapping_neg();
-                } else if bond_stereo != 0 {
-                    *err |= 16;
-                    add_error!("Unrecognized bond stereo");
-                    continue;
+                    } else {
+                        atoms[index].num_H = atoms[index].num_H.wrapping_sub(1);
+                    }
+                }
+                element_number = get_periodic_table_number(Some(&atoms[index].elname))?;
+                if element_number == ERR_ELEM {
+                    element_number = 0;
+                }
+            }
+
+            atoms[index].el_number = element_number as u8;
+            if element_number == 0 {
+                *err = -2;
+                add_error!("Unknown element(s):");
+                // INCHI✔️❗: Pass the source C bytes directly, retaining high-bit
+                // bytes, first NUL and all original message gates; no UTF8 widening.
+                AddErrorMessage(p_str_err.as_deref_mut(), Some(&atoms[index].elname))?;
+                fatal_atom_error = true;
+                break;
+            }
+
+            if element_number == 1 && atoms[index].iso_atw_diff == 0 {
+                match atoms[index].elname[0] as u8 {
+                    b'D' => {
+                        atoms[index].iso_atw_diff = 2;
+                        mystrncpy_slice(
+                            Some(&mut atoms[index].elname),
+                            Some(&[b'H' as i8, 0]),
+                            6,
+                        )?;
+                    }
+                    b'T' => {
+                        atoms[index].iso_atw_diff = 3;
+                        mystrncpy_slice(
+                            Some(&mut atoms[index].elname),
+                            Some(&[b'H' as i8, 0]),
+                            6,
+                        )?;
+                    }
+                    _ => {}
                 }
             }
         }
-        *num_bonds = bonds;
-        calculate_valences(
-            heap,
-            Some(mfdata),
-            &mut atoms,
-            *num_atoms,
-            b_do_not_add_h,
-            err,
-            p_str_err.as_deref_mut(),
-        )?;
-    }
 
-    heap.slice_mut(at)?[..atom_count].clone_from_slice(&atoms);
+        if !fatal_atom_error {
+            let mut bonds = 0_i32;
+            let source_bonds = if mfdata.ctab.n_bonds > 0 {
+                if mfdata.ctab.bonds.allocation_identity() == at.allocation_identity() {
+                    return Err(SourceHeapError::AllocationTypeMismatch);
+                }
+                heap.slice(mfdata.ctab.bonds.as_const())?
+            } else {
+                &[]
+            };
+            for index in 0..mfdata.ctab.n_bonds {
+                let source = source_bonds.get(index as usize)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let bond_stereo = source.bond_stereo;
+                let mut bond_type = source.bond_type;
+                let a1 = i32::from(source.atnum1).wrapping_sub(1);
+                let a2 = i32::from(source.atnum2).wrapping_sub(1);
+
+                if a1 < 0 || a1 >= *num_atoms || a2 < 0 || a2 >= *num_atoms || a1 == a2 {
+                    *err |= 1;
+                    add_error!("Bond to nonexistent atom");
+                    continue;
+                }
+                let a1 = a1 as usize;
+                let a2 = a2 as usize;
+                let position1 = is_in_the_list(
+                    Some(&atoms[a1].neighbor),
+                    a2 as u16,
+                    i32::from(atoms[a1].valence),
+                )?;
+                let position2 = is_in_the_list(
+                    Some(&atoms[a2].neighbor),
+                    a1 as u16,
+                    i32::from(atoms[a2].valence),
+                )?;
+
+                let (n1, n2) = if (position1.is_some() || position2.is_some())
+                    && (position1.is_some() || i32::from(atoms[a1].valence) < MAXVAL as i32)
+                    && (position2.is_some() || i32::from(atoms[a2].valence) < MAXVAL as i32)
+                {
+                    let n1 = position1.unwrap_or_else(|| {
+                        let value = atoms[a1].valence as usize;
+                        atoms[a1].valence = atoms[a1].valence.wrapping_add(1);
+                        value
+                    });
+                    let n2 = position2.unwrap_or_else(|| {
+                        let value = atoms[a2].valence as usize;
+                        atoms[a2].valence = atoms[a2].valence.wrapping_add(1);
+                        value
+                    });
+                    add_error!("Multiple bonds between two atoms");
+                    *err |= 2;
+                    (n1, n2)
+                } else if position1.is_none()
+                    && position2.is_none()
+                    && i32::from(atoms[a1].valence) < MAXVAL as i32
+                    && i32::from(atoms[a2].valence) < MAXVAL as i32
+                {
+                    let n1 = atoms[a1].valence as usize;
+                    let n2 = atoms[a2].valence as usize;
+                    atoms[a1].valence = atoms[a1].valence.wrapping_add(1);
+                    atoms[a2].valence = atoms[a2].valence.wrapping_add(1);
+                    bonds = bonds.wrapping_add(1);
+                    (n1, n2)
+                } else {
+                    *err |= 4;
+                    let element = if i32::from(atoms[a1].valence) >= MAXVAL as i32 {
+                        &atoms[a1].elname
+                    } else {
+                        &atoms[a2].elname
+                    };
+                    // INCHI source mol2atom.c727..731:
+                    //             char szMsg[64];
+                    //             *err |= 4; /*  too large number of bonds. Some bonds ignored. */
+                    //             sprintf(szMsg, "Atom '%s' has more than %d bonds",
+                    //                     at[a1].valence >= MAXVAL ? at[a1].elname : at[a2].elname, MAXVAL);
+                    //             TREAT_ERR(*err, 0, szMsg);
+                    // INCHI✔️❗: Exact fixed source format in native64-byte scratch,
+                    // using shared decimal conversion; preserve raw element bytes.
+                    // Element length <=5 and MAXVAL=20 keep payload within64.
+                    // No String/Vec/model allocation, fixed bounded copy; costs OPEN.
+                    let length = element.iter().position(|byte| *byte == 0)
+                        .ok_or(SourceHeapError::MissingNulTerminator)?;
+                    let mut digits = [0_u8; 21];
+                    let number = crate::source::base::ichi_io::source_decimal_i64(
+                        i64::from(MAXVAL), None, &mut digits,
+                    );
+                    let mut message = [0_u8; 64];
+                    let mut used = 0;
+                    for part in [b"Atom '".as_slice(), bytemuck::cast_slice(&element[..length]),
+                                 b"' has more than ".as_slice(), number, b" bonds".as_slice()] {
+                        message[used..used + part.len()].copy_from_slice(part);
+                        used += part.len();
+                    }
+                    add_error_message_bytes(p_str_err.as_deref_mut(), &message[..used])?;
+                    continue;
+                };
+
+                if bond_type < MIN_INPUT_BOND_TYPE as i8 || bond_type > MAX_INPUT_BOND_TYPE as i8 {
+                    let original_type = bond_type;
+                    bond_type = BOND_TYPE_SINGLE as i8;
+                    add_error!("Unrecognized bond type:");
+                    // INCHI✔️❗: Source sprintf("%d", signed bond_type), shared
+                    // bounded decimal scratch; no owned string or extra preflight.
+                    let mut digits = [0_u8; 21];
+                    let message = crate::source::base::ichi_io::source_decimal_i64(
+                        i64::from(original_type), None, &mut digits,
+                    );
+                    add_error_message_bytes(p_str_err.as_deref_mut(), message)?;
+                    *err |= 8;
+                }
+
+                if n1 < MAXVAL as usize && n2 < MAXVAL as usize {
+                    atoms[a1].bond_type[n1] = bond_type as u8;
+                    atoms[a2].bond_type[n2] = bond_type as u8;
+                    atoms[a1].neighbor[n1] = a2 as u16;
+                    atoms[a2].neighbor[n2] = a1 as u16;
+
+                    if bond_stereo == INPUT_STEREO_DBLE_EITHER as i8 {
+                        atoms[a1].bond_stereo[n1] = STEREO_DBLE_EITHER as i8;
+                        atoms[a2].bond_stereo[n2] = STEREO_DBLE_EITHER as i8;
+                    } else if bond_stereo == INPUT_STEREO_SNGL_UP as i8
+                        || bond_stereo == INPUT_STEREO_SNGL_EITHER as i8
+                        || bond_stereo == INPUT_STEREO_SNGL_DOWN as i8
+                    {
+                        let stereo = match bond_stereo {
+                            value if value == INPUT_STEREO_SNGL_UP as i8 => STEREO_SNGL_UP as i8,
+                            value if value == INPUT_STEREO_SNGL_EITHER as i8 => {
+                                STEREO_SNGL_EITHER as i8
+                            }
+                            _ => STEREO_SNGL_DOWN as i8,
+                        };
+                        atoms[a1].bond_stereo[n1] = stereo;
+                        atoms[a2].bond_stereo[n2] = stereo.wrapping_neg();
+                    } else if bond_stereo != 0 {
+                        *err |= 16;
+                        add_error!("Unrecognized bond stereo");
+                        continue;
+                    }
+                }
+            }
+            *num_bonds = bonds;
+            calculate_valences(
+                heap,
+                Some(mfdata),
+                &mut atoms[..*num_atoms as usize],
+                *num_atoms,
+                b_do_not_add_h,
+                err,
+                p_str_err.as_deref_mut(),
+            )?;
+        }
+
+        Ok(())
+    })?;
     Ok(at)
 }
 
@@ -1765,12 +1788,7 @@ void calculate_valences(MOL_FMT_DATA *mfdata,
 
     macro_rules! add_error {
         ($message:literal) => {{
-            let message = $message
-                .bytes()
-                .map(|byte| byte as i8)
-                .chain([0])
-                .collect::<Vec<_>>();
-            AddErrorMessage(p_str_err.as_deref_mut(), Some(&message))?;
+            add_error_message_bytes(p_str_err.as_deref_mut(), ($message).as_bytes())?;
         }};
     }
 
@@ -1943,7 +1961,7 @@ pub(crate) fn SetInpAtomsXYZ(
     p_str_err: Option<&mut [i8]>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/mol2atom.c:975 SetInpAtomsXYZ
-    // INCHI✔️❌: complete source frame follows verbatim; checked heap access and source-coordinate cloning add overhead.
+    // INCHI✔️❗: complete source frame follows verbatim; live checked coordinate copying uses constant scratch and no allocation.
     /*
 int SetInpAtomsXYZ(MOL_FMT_DATA *mfdata,
                    int num_atoms,
@@ -2028,27 +2046,39 @@ exit_function:;
         return Ok(0);
     }
 
-    let count = if num_atoms > 0 {
-        usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-    } else {
-        0
-    };
-    let coordinates = heap
-        .slice(mfdata.ctab.atoms.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .iter()
-        .map(|atom| (atom.fx, atom.fy, atom.fz))
-        .collect::<Vec<_>>();
-    let output = heap
-        .slice_mut(at)?
-        .get_mut(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for (atom, &(x, y, z)) in output.iter_mut().zip(&coordinates) {
-        atom.x = x;
-        atom.y = y;
-        atom.z = z;
+    if num_atoms <= 0 {
+        return Ok(num_dimensions);
     }
+    let count = usize::try_from(num_atoms)
+        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let first = heap
+        .slice(mfdata.ctab.atoms.as_const())?
+        .first()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let first = (first.fx, first.fy, first.fz);
+    // INCHI✔️❗: mol2atom.c:1002..1010 reads xyz before each output write.
+    // Distinct typed allocations allow one safe output extraction and one
+    // live source view. Preserve type-before-offset errors before extraction;
+    // never pre-admit the full requested extent or discard earlier writes.
+    // Copy work O(count), scratch O(1), no Vec/arena allocation or clone.
+    // Whole-call checked-arena constants remain INCHI-PERF-COORDINATE-COPY OPEN.
+    heap.slice_mut(at)?;
+    heap.with_slice_mut_and_heap(at, |output, heap| {
+        let source = heap.slice(mfdata.ctab.atoms.as_const())?;
+        let atom = output.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
+        atom.x = first.0;
+        atom.y = first.1;
+        atom.z = first.2;
+        for index in 1..count {
+            let value = source.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let (x, y, z) = (value.fx, value.fy, value.fz);
+            let atom = output.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+            atom.x = x;
+            atom.y = y;
+            atom.z = z;
+        }
+        Ok(())
+    })?;
     Ok(num_dimensions)
 }
 

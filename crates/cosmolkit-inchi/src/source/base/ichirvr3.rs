@@ -1,8 +1,12 @@
 use crate::source::base::ichiring::is_bond_in_Nmax_memb_ring;
+use crate::source::base::ichirvr1::SourceBfsQueue;
 use crate::source::base::ichirvr1::{
     AddToEdgeList, AllocEdgeList, FindInEdgeList, GetChargeFlowerUpperEdge,
     MakeOneInChIOutOfStrFromINChI2, RemoveForbiddenEdgeMask, RemoveFromEdgeListByValue,
     RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask,
+};
+use crate::source::base::ichirvr1::{
+    SourceRestoreMode, make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode,
 };
 use crate::source::base::ichirvr4::{FillOutCMP2FHINCHI, FillOutExtraFixedHDataRestr};
 use crate::source_types::{
@@ -389,42 +393,347 @@ pub(crate) fn FillTgDiffHChgFH(
     // INCHI✔️❌: The active memset clears exactly max_tdhc bytes, not max_tdhc structures.
     // END INCHI ACTIVE MACRO CONFIGURATION: FillTgDiffHChgFH
 
-    let max_tdhc_usize =
-        usize::try_from(max_tdhc).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    if max_tdhc_usize > tdhc.len() {
-        return Err(SourceHeapError::PointerOutOfBounds);
+    fill_tg_diff_h_chg_fh_inputs(
+        heap,
+        tdhc,
+        max_tdhc,
+        TgDiffInputs::Borrowed {
+            at2,
+            atf,
+            canonical: nCanon2AtnoRevrs,
+        },
+        pVA,
+        ti,
+        pAtomIndList,
+    )
+}
+
+// Narrow private read transport; one chemistry algorithm serves both inputs.
+enum TgDiffInputs<'a> {
+    Borrowed {
+        at2: &'a [inp_ATOM],
+        atf: &'a [inp_ATOM],
+        canonical: &'a [AT_NUMB],
+    },
+    Stored {
+        at2: SourceMutPointer<inp_ATOM>,
+        atf: SourceMutPointer<inp_ATOM>,
+        canonical: SourceMutPointer<AT_NUMB>,
+    },
+}
+
+impl TgDiffInputs<'_> {
+    #[inline]
+    fn canonical(&self, heap: &SourceHeap, index: usize) -> Result<AT_NUMB, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichirvr3.c149
+        //             iat = nCanon2AtnoRevrs[i];
+        // INCHI✔️❗: One reached scalar read, no array snapshot/extraction.
+        // The mapping may share storage with ti endpoints; keep it live.
+        // Typed lookup/dispatch constants remain independently OPEN.
+        let values = match self {
+            Self::Borrowed { canonical, .. } => *canonical,
+            Self::Stored { canonical, .. } => heap.slice(canonical.as_const())?,
+        };
+        values
+            .get(index)
+            .copied()
+            .ok_or(SourceHeapError::PointerOutOfBounds)
     }
+
+    #[inline]
+    fn atom<'b>(
+        &'b self,
+        heap: &'b SourceHeap,
+        index: usize,
+        normalized: bool,
+    ) -> Result<&'b inp_ATOM, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichirvr3.c151..152
+        //             at2i = at2 + iat;
+        //             atfi = atf + iat;
+        // INCHI✔️❗: Admit once per reached atom, reuse fields through pure
+        // classification, release borrow before list mutation. Input arrays
+        // can share allocation/origins; no copied records or removed IDs.
+        // Constant checked-heap cost remains OPEN; no no-worse claim.
+        let values = match self {
+            Self::Borrowed { at2, atf, .. } => {
+                if normalized {
+                    *atf
+                } else {
+                    *at2
+                }
+            }
+            Self::Stored { at2, atf, .. } => heap.slice(if normalized {
+                atf.as_const()
+            } else {
+                at2.as_const()
+            })?,
+        };
+        values.get(index).ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn fill_tg_diff_h_chg_fh_inputs(
+    heap: &mut SourceHeap,
+    tdhc: &mut [TgDiffHChgFH],
+    max_tdhc: i32,
+    inputs: TgDiffInputs<'_>,
+    pVA: &[VAL_AT],
+    ti: &T_GROUP_INFO,
+    pAtomIndList: &mut EDGE_LIST,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichirvr3.c113 FillTgDiffHChgFH
+    // int FillTgDiffHChgFH( TgDiffHChgFH tdhc[],
+    //                       int max_tdhc,
+    //                       inp_ATOM at2[],
+    //                       inp_ATOM atf[],
+    //                       AT_NUMB  *nCanon2AtnoRevrs,
+    //                       VAL_AT *pVA,
+    //                       T_GROUP_INFO *ti,
+    //                       EDGE_LIST *pAtomIndList )
+    // {
+    //
+    //     int i, j, iat, itg, num, itg_out; /* djb-rwth: removing redundant variables */
+    //     EDGE_LIST IndList;   /* type, itg */
+    //     TgDiffHChgFH cur_tdhc;
+    //     AT_NUMB    *pEndp0;
+    //     inp_ATOM *at2i, *atfi;
+    //     int         typeR, typeN, type, ret = 0, nCurIndListLen;
+    //
+    //     AllocEdgeList( &IndList, EDGE_LIST_CLEAR );
+    //     pAtomIndList->num_edges = 0;
+    //     itg_out = 0;
+    //     /* djb-rwth: removing redundant code */
+    //     memset( tdhc, 0, max_tdhc ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //
+    //     for (itg = 0; itg < ti->num_t_groups; itg++)
+    //     {
+    //         memset( &cur_tdhc, 0, sizeof( cur_tdhc ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //
+    //         cur_tdhc.itg = itg;
+    //         cur_tdhc.nNumHInchi = ti->t_group[itg].num[0] - ti->t_group[itg].num[1];
+    //         cur_tdhc.nNumMInchi = ti->t_group[itg].num[1];
+    //
+    //         pEndp0 = ti->nEndpointAtomNumber + ti->t_group[itg].nFirstEndpointAtNoPos;
+    //         nCurIndListLen = IndList.num_edges;
+    //         for (j = 0; j < ti->t_group[itg].nNumEndpoints; j++)
+    //         {
+    //             i = pEndp0[j];
+    //             iat = nCanon2AtnoRevrs[i];
+    //
+    //             at2i = at2 + iat;
+    //             atfi = atf + iat;
+    //
+    //             typeR = typeN = -1;
+    //             if (at2i->charge == 1)
+    //             {
+    //                 if (at2i->num_H)
+    //                 {
+    //                     typeR = fNumRPosChgH;
+    //                 }
+    //                 else
+    //                 {
+    //                     typeR = fNumRPosChgU;
+    //                 }
+    //                 cur_tdhc.nNumPRevrs++;
+    //             }
+    //             else
+    //             {
+    //                 if (at2i->charge == -1)
+    //                 {
+    //                     if (pVA[iat].cNumValenceElectrons == 6)
+    //                     {
+    //                         typeR = fNumRNegChgO;
+    //                     }
+    //                     else
+    //                     {
+    //                         if (pVA[iat].cNumValenceElectrons == 5)
+    //                         {
+    //                             typeR = fNumRNegChgN;
+    //                         }
+    //                     }
+    //                     cur_tdhc.nNumMRevrs++;
+    //                 }
+    //                 else
+    //                 {
+    //                     if (at2i->num_H && at2i->valence == at2i->chem_bonds_valence)
+    //                     {
+    //                         typeR = fNumRNeutrlH;
+    //                     }
+    //                 }
+    //             }
+    //             cur_tdhc.nNumHRevrs += at2i->num_H;
+    //
+    //             if (atfi->charge == 1)
+    //             {
+    //                 if (atfi->num_H)
+    //                 {
+    //                     typeN = fNumNPosChgH;
+    //                 }
+    //                 else
+    //                 {
+    //                     typeN = fNumNPosChgU;
+    //                 }
+    //                 cur_tdhc.nNumPNorml++;
+    //             }
+    //             else
+    //             {
+    //                 if (atfi->charge == -1)
+    //                 {
+    //                     if (pVA[iat].cNumValenceElectrons == 6)
+    //                     {
+    //                         typeN = fNumNNegChgO;
+    //                     }
+    //                     else
+    //                         if (pVA[iat].cNumValenceElectrons == 5)
+    //                         {
+    //                             typeN = fNumNNegChgN;
+    //                         }
+    //                     cur_tdhc.nNumMNorml++;
+    //                 }
+    //                 else
+    //                 {
+    //                     if (atfi->num_H && atfi->valence == atfi->chem_bonds_valence)
+    //                     {
+    //                         typeN = fNumNNeutrlH;
+    //                     }
+    //                 }
+    //             }
+    //             cur_tdhc.nNumHNorml += atfi->num_H;
+    //             if (at2[iat].charge < 0 || 0 < pVA[iat].nCPlusGroupEdge)
+    //             {
+    //                 if (typeR >= 0 && (
+    //                     ( ret = AddToEdgeList( &IndList, typeR, INC_ADD_EDGE ) ) ||
+    //                     ( ret = AddToEdgeList( &IndList, itg, INC_ADD_EDGE ) ) ||
+    //                     ( ret = AddToEdgeList( &IndList, iat, INC_ADD_EDGE ) ) ))
+    //                 {
+    //                     goto exit_function;
+    //                 }
+    //                 if (typeN >= 0 && (
+    //                     ( ret = AddToEdgeList( &IndList, typeN, INC_ADD_EDGE ) ) ||
+    //                     ( ret = AddToEdgeList( &IndList, itg, INC_ADD_EDGE ) ) ||
+    //                     ( ret = AddToEdgeList( &IndList, iat, INC_ADD_EDGE ) ) ))
+    //                 {
+    //                     goto exit_function;
+    //                 }
+    //             }
+    //         }
+    //         if (cur_tdhc.nNumHNorml == cur_tdhc.nNumHInchi &&
+    //              cur_tdhc.nNumMNorml == cur_tdhc.nNumMInchi)
+    //         {
+    //             IndList.num_edges = nCurIndListLen; /* t-group seems to be correct */
+    //             continue;
+    //         }
+    //         if (itg_out < max_tdhc)
+    //         {
+    //             tdhc[itg_out++] = cur_tdhc;
+    //         }
+    //         else
+    //         {
+    //             /* djb-rwth: removing redundant code */
+    //             IndList.num_edges = nCurIndListLen;
+    //             break;
+    //         }
+    //     }
+    //
+    //     /* fill out atom index list */
+    //     if (itg_out)
+    //     {
+    //         itg_out--; /* djb-rwth: fixing undefined index value / buffer overflow */
+    //         /* djb-rwth: removing redundant code */
+    //         for (type = 0; type < fNumAllChgT; type++)
+    //         {
+    //             j = 0;
+    //             for (i = 0; i < itg_out; i++)
+    //             {
+    //                 num = 0;
+    //                 itg = tdhc[i].itg;
+    //                 tdhc[i].i[type] = -999; /* empty */
+    //                 while (IndList.pnEdges[j + 1] == itg)
+    //                 {
+    //                     if (IndList.pnEdges[j] == type)
+    //                     {
+    //                         if (!num++)
+    //                         {
+    //                             tdhc[i].i[type] = pAtomIndList->num_edges;
+    //                         }
+    //                         if ((ret = AddToEdgeList( pAtomIndList, IndList.pnEdges[j + 2], INC_ADD_EDGE ))) /* djb-rwth: addressing LLVM warning */
+    //                         {
+    //                             goto exit_function;
+    //                         }
+    //                     }
+    //                     j += 3;
+    //                 }
+    //                 tdhc[i].n[type] = num;
+    //             }
+    //         }
+    //     }
+    //     ret = itg_out;
+    //
+    // exit_function:
+    //
+    //     AllocEdgeList( &IndList, EDGE_LIST_FREE );
+    //
+    //     return ret;
+    //     /*
+    //     #undef fNumRPosChgH
+    //     #undef fNumRPosChgU
+    //     #undef fNumRNegChgO
+    //     #undef fNumRNegChgN
+    //
+    //     #undef fNumNPosChgH
+    //     #undef fNumNPosChgU
+    //     #undef fNumNNegChgO
+    //     #undef fNumNNegChgN
+    //
+    //     #undef fNumAllChgT
+    //     */
+    // }
+    // INCHI✔️❗: Canonical source body with borrowed/stored live inputs.
+    // Preserve byte clear, classification, list calls/partial errors/cleanup.
+    // No snapshots/clones/new allocations; checked input constants OPEN.
 
     let mut ind_list = EDGE_LIST::default();
     AllocEdgeList(heap, &mut ind_list, EDGE_LIST_CLEAR)?;
     pAtomIndList.num_edges = 0;
 
-    const WORDS_PER_RECORD: usize = 29;
-    const BYTES_PER_WORD: usize = std::mem::size_of::<i16>();
-    for byte_index in 0..max_tdhc_usize {
-        let record_index = byte_index / (WORDS_PER_RECORD * BYTES_PER_WORD);
-        let byte_in_record = byte_index % (WORDS_PER_RECORD * BYTES_PER_WORD);
-        let word_index = byte_in_record / BYTES_PER_WORD;
-        let byte_in_word = byte_in_record % BYTES_PER_WORD;
-        let record = tdhc
+    // INCHI✔️❗: Native memset clears max_tdhc BYTES, not records. The
+    // 29-short/58-byte layout has no padding. Clear full records/words by
+    // stores; only the final odd byte needs a read/modify/write. No staging,
+    // repeated old-word reads or unsafe byte view; checked field cost OPEN.
+    let clear_bytes =
+        usize::try_from(max_tdhc).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    const RECORD_BYTES: usize = 29 * std::mem::size_of::<i16>();
+    let full_records = clear_bytes / RECORD_BYTES;
+    for record_index in 0..full_records {
+        *tdhc
             .get_mut(record_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = TgDiffHChgFH::default();
+    }
+    let tail_bytes = clear_bytes % RECORD_BYTES;
+    if tail_bytes != 0 {
+        let record = tdhc
+            .get_mut(full_records)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let mut bytes = record.word(word_index).to_ne_bytes();
-        bytes[byte_in_word] = 0;
-        record.set_word(word_index, i16::from_ne_bytes(bytes));
+        let full_words = tail_bytes / std::mem::size_of::<i16>();
+        for word_index in 0..full_words {
+            record.set_word(word_index, 0);
+        }
+        if tail_bytes % std::mem::size_of::<i16>() != 0 {
+            let mut bytes = record.word(full_words).to_ne_bytes();
+            bytes[0] = 0;
+            record.set_word(full_words, i16::from_ne_bytes(bytes));
+        }
     }
 
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut itg_out = 0_i32;
-        let group_count =
-            usize::try_from(ti.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-
-        for group_index in 0..group_count {
+        for group_index in 0..ti.num_t_groups {
+            let group_index = group_index as usize;
             let group = heap
                 .slice(ti.t_group.as_const())?
                 .get(group_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut current = TgDiffHChgFH {
                 itg: group_index as i16,
                 nNumHInchi: i32::from(group.num[0]).wrapping_sub(i32::from(group.num[1])) as i16,
@@ -445,20 +754,8 @@ pub(crate) fn FillTgDiffHChgFH(
                         .get(endpoint_position)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 );
-                let atom_index = usize::from(
-                    *nCanon2AtnoRevrs
-                        .get(canonical_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                );
-                let reverse_atom = at2
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let normalized_atom = atf
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let valence_atom = pVA
-                    .get(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let atom_index = usize::from(inputs.canonical(heap, canonical_index)?);
+                let reverse_atom = inputs.atom(heap, atom_index, false)?;
 
                 let mut reverse_type = -1_i32;
                 let mut normalized_type = -1_i32;
@@ -470,6 +767,9 @@ pub(crate) fn FillTgDiffHChgFH(
                     };
                     current.nNumPRevrs = current.nNumPRevrs.wrapping_add(1);
                 } else if reverse_atom.charge == -1 {
+                    let valence_atom = pVA
+                        .get(atom_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if valence_atom.cNumValenceElectrons == 6 {
                         reverse_type = F_NUM_R_NEG_CHG_O as i32;
                     } else if valence_atom.cNumValenceElectrons == 5 {
@@ -485,6 +785,7 @@ pub(crate) fn FillTgDiffHChgFH(
                     .nNumHRevrs
                     .wrapping_add(i16::from(reverse_atom.num_H));
 
+                let normalized_atom = inputs.atom(heap, atom_index, true)?;
                 if normalized_atom.charge == 1 {
                     normalized_type = if normalized_atom.num_H != 0 {
                         F_NUM_N_POS_CHG_H as i32
@@ -493,6 +794,9 @@ pub(crate) fn FillTgDiffHChgFH(
                     };
                     current.nNumPNorml = current.nNumPNorml.wrapping_add(1);
                 } else if normalized_atom.charge == -1 {
+                    let valence_atom = pVA
+                        .get(atom_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if valence_atom.cNumValenceElectrons == 6 {
                         normalized_type = F_NUM_N_NEG_CHG_O as i32;
                     } else if valence_atom.cNumValenceElectrons == 5 {
@@ -508,7 +812,13 @@ pub(crate) fn FillTgDiffHChgFH(
                     .nNumHNorml
                     .wrapping_add(i16::from(normalized_atom.num_H));
 
-                if reverse_atom.charge < 0 || valence_atom.nCPlusGroupEdge > 0 {
+                if reverse_atom.charge < 0
+                    || pVA
+                        .get(atom_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nCPlusGroupEdge
+                        > 0
+                {
                     if reverse_type >= 0 {
                         for value in [reverse_type, group_index as i32, atom_index as i32] {
                             let ret = AddToEdgeList(heap, &mut ind_list, value, INC_ADD_EDGE)?;
@@ -630,7 +940,69 @@ pub(crate) fn FixFixedHRestoredStructure(
     _pnTotalDelta: Option<&mut i32>,
     forbidden_edge_mask: i32,
     forbidden_stereo_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    // One original algorithm/frame below; no eager BFS admission.
+    fix_fixed_h_with_bfs(
+        heap,
+        pCG,
+        ic,
+        ip,
+        sd,
+        pBNS,
+        pBD,
+        pStruct,
+        at,
+        at2,
+        at3,
+        pVA,
+        pTCGroups,
+        ppt_group_info,
+        ppat_norm,
+        ppat_prep,
+        pInChI,
+        _num_inp,
+        _bHasSomeFixedH,
+        _pnNumRunBNS,
+        _pnTotalDelta,
+        forbidden_edge_mask,
+        forbidden_stereo_edge_mask,
+        clock_result,
+        SourceBfsQueue::Legacy,
+        source_restore_mode,
+    )
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn fix_fixed_h_with_bfs(
+    heap: &mut SourceHeap,
+    pCG: &mut CANON_GLOBALS,
+    ic: SourceMutPointer<INCHI_CLOCK>,
+    ip: &INPUT_PARMS,
+    sd: &STRUCT_DATA,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    at3: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    mut ppt_group_info: Option<&mut SourceTGroupInfoPointer>,
+    mut ppat_norm: Option<&mut SourceMutPointer<inp_ATOM>>,
+    mut ppat_prep: Option<&mut SourceMutPointer<inp_ATOM>>,
+    pInChI: [SourceMutPointer<INChI>; 2],
+    _num_inp: i64,
+    _bHasSomeFixedH: i32,
+    _pnNumRunBNS: Option<&mut i32>,
+    _pnTotalDelta: Option<&mut i32>,
+    forbidden_edge_mask: i32,
+    forbidden_stereo_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    bfs_queue: SourceBfsQueue<'_>,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr3.c:333 FixFixedHRestoredStructure
     // INCHI✔️❌: complete active source frame follows verbatim; source-ordered behavior is
@@ -7042,11 +7414,7 @@ pub(crate) fn FixFixedHRestoredStructure(
         }
 
         if forbidden_stereo_edge_mask != 0 {
-            let bfs = heap
-                .slice(pStruct.pbfsq.as_const())?
-                .first()
-                .cloned()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let mut bfs_handles = None;
             atom_number = 0;
             while atom_number < pStruct.num_atoms {
                 let atom_index = usize::try_from(atom_number)
@@ -7078,14 +7446,30 @@ pub(crate) fn FixFixedHRestoredStructure(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .forbidden;
                     if i32::from(forbidden) == forbidden_stereo_edge_mask {
+                        // VERBATIM SOURCE FRAGMENT: ichirvr3.c477..479
+                        //                     int nMinRingSize = is_bond_in_Nmax_memb_ring( at2, i, j, pStruct->pbfsq->q,
+                        //                                                                   pStruct->pbfsq->nAtomLevel,
+                        //                                                                   pStruct->pbfsq->cSource, 99 /* max ring size */ );
+                        // INCHI✔️❗: Only a matched edge reaches the BFS root.
+                        // Project immutable handles once; ring/list callbacks
+                        // mutate their separate payloads, not this BFS_Q root.
+                        // No clone/allocation/scan; fixed cache cost stays OPEN.
+                        let (queue, levels, sources) = match bfs_handles {
+                            Some(handles) => handles,
+                            None => {
+                                let handles = bfs_queue.handles(heap, pStruct.pbfsq)?;
+                                bfs_handles = Some(handles);
+                                handles
+                            }
+                        };
                         let ring_size = is_bond_in_Nmax_memb_ring(
                             heap,
                             at2,
                             atom_number,
                             neighbor_order,
-                            bfs.q,
-                            bfs.nAtomLevel,
-                            bfs.cSource,
+                            queue,
+                            levels,
+                            sources,
                             99,
                         )?;
                         if ring_size > 0 {
@@ -7110,8 +7494,10 @@ pub(crate) fn FixFixedHRestoredStructure(
         if ret != 0 {
             return Ok(());
         }
-        let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-        ret = FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+        // Borrow live atoms as the source passes at2. All 34 refresh sites avoid
+        // full-array allocation/copy; the comparison only reads heap and atoms.
+        let at2_view = heap.slice(at2.as_const())?;
+        ret = FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
         if ret != 0 {
             return Ok(());
         }
@@ -7310,7 +7696,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -7327,6 +7713,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -7348,9 +7735,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -7642,7 +8029,7 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -7659,6 +8046,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -7680,9 +8068,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -7928,7 +8316,7 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -7945,6 +8333,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -7966,9 +8355,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -8217,7 +8606,7 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -8234,6 +8623,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -8255,9 +8645,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -8493,7 +8883,7 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -8510,6 +8900,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -8531,9 +8922,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -8739,7 +9130,7 @@ pub(crate) fn FixFixedHRestoredStructure(
 
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -8756,6 +9147,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -8777,9 +9169,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -9071,7 +9463,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -9088,6 +9480,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -9109,9 +9502,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -9319,7 +9712,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             let _ = AllocEdgeList(heap, &mut current_charge_edges, EDGE_LIST_FREE)?;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -9336,6 +9729,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -9357,9 +9751,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -9544,7 +9938,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -9561,6 +9955,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -9582,9 +9977,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -9836,7 +10231,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             let _ = AllocEdgeList(heap, &mut current_charge_edges, EDGE_LIST_FREE)?;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -9853,6 +10248,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -9874,9 +10270,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -10159,7 +10555,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             let _ = AllocEdgeList(heap, &mut current_charge_edges, EDGE_LIST_FREE)?;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -10176,6 +10572,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -10197,9 +10594,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -10250,16 +10647,17 @@ pub(crate) fn FixFixedHRestoredStructure(
             if fixed_bond_atoms.is_null() {
                 leave_case = true;
             } else {
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-                let fixed_bond_snapshot = heap.slice(fixed_bond_atoms.as_const())?.to_vec();
-                let canonical_snapshot = heap.slice(canonical_to_atom.as_const())?.to_vec();
-                number_wrong_tgroups = FillTgDiffHChgFH(
+                // INCHI✔️❗: Source passes live at2/atf/canonical arrays.
+                // The shared kernel reads only reached endpoint scalars, without
+                // snapshots or removing allocations that may alias ti inputs.
+                // Typed lookup/whole callback costs remain independently OPEN.
+                number_wrong_tgroups = fill_tg_diff_h_chg_fh_inputs(
                     heap,
                     &mut tgroup_differences,
                     MAX_DIFF_FIXH as i32,
-                    &at2_snapshot,
-                    &fixed_bond_snapshot,
-                    &canonical_snapshot,
+                    TgDiffInputs::Stored {
+                        at2, atf: fixed_bond_atoms, canonical: canonical_to_atom,
+                    },
                     pVA,
                     &pStruct.ti,
                     &mut endpoint_list,
@@ -10603,7 +11001,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             let _ = AllocEdgeList(heap, &mut endpoint_list, EDGE_LIST_FREE)?;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -10620,6 +11018,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -10641,9 +11040,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -10914,7 +11313,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -10931,6 +11330,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -10952,9 +11352,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -11244,7 +11644,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -11261,6 +11661,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -11282,9 +11683,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -11533,7 +11934,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -11550,6 +11951,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -11571,9 +11973,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -11880,7 +12282,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -11897,6 +12299,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -11918,9 +12321,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -12297,7 +12700,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -12314,6 +12717,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -12335,9 +12739,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -12647,7 +13051,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -12664,6 +13068,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -12685,9 +13090,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -13057,7 +13462,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 current_edges.num_edges = 0;
                 if current_success != 0 {
                     tot_success = tot_success.wrapping_add(current_success);
-                    ret = MakeOneInChIOutOfStrFromINChI2(
+                    ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                         heap,
                         pCG,
                         ic,
@@ -13074,6 +13479,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         ppat_norm.as_deref_mut(),
                         ppat_prep.as_deref_mut(),
                         clock_result,
+                        source_restore_mode,
                     )?;
                     if ret < 0 {
                         return Ok(());
@@ -13095,11 +13501,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                     if input_fixed.is_null() && reversed_fixed.is_null() {
                         return Ok(());
                     }
-                    let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                    let at2_view = heap.slice(at2.as_const())?;
                     ret = FillOutCMP2FHINCHI(
                         heap,
                         pStruct,
-                        &at2_snapshot,
+                        at2_view,
                         pVA,
                         pInChI,
                         &mut comparison,
@@ -13478,7 +13884,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     current_edges.num_edges = 0;
                     if current_success != 0 {
                         tot_success = tot_success.wrapping_add(current_success);
-                        ret = MakeOneInChIOutOfStrFromINChI2(
+                        ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                             heap,
                             pCG,
                             ic,
@@ -13495,6 +13901,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                             ppat_norm.as_deref_mut(),
                             ppat_prep.as_deref_mut(),
                             clock_result,
+                            source_restore_mode,
                         )?;
                         if ret < 0 {
                             return Ok(());
@@ -13516,11 +13923,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                         if input_fixed.is_null() && reversed_fixed.is_null() {
                             return Ok(());
                         }
-                        let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                        let at2_view = heap.slice(at2.as_const())?;
                         ret = FillOutCMP2FHINCHI(
                             heap,
                             pStruct,
-                            &at2_snapshot,
+                            at2_view,
                             pVA,
                             pInChI,
                             &mut comparison,
@@ -13540,8 +13947,8 @@ pub(crate) fn FixFixedHRestoredStructure(
             && comparison.nNumRemHInChI > comparison.nNumRemHRevrs)
             || comparison.len_c2at != 0;
         let has_nitrogen_five = if case_14_guard {
-            let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
-            bHas_N_V(&at2_snapshot, pStruct.num_atoms)? != 0
+            let at2_view = heap.slice(at2.as_const())?;
+            bHas_N_V(at2_view, pStruct.num_atoms)? != 0
         } else {
             false
         };
@@ -13757,6 +14164,16 @@ pub(crate) fn FixFixedHRestoredStructure(
                 {
                     let nitrogen_five_atom =
                         i32::from(nitrogen_five_atoms[nitrogen_five_index as usize]);
+                    // VERBATIM SOURCE FRAGMENT: ichirvr3.c3806..3807
+                    //                 if (NO_VERTEX == iat_N_V ||
+                    //                     0 >= (e1Plus = pVA[iat_N_V].nCPlusGroupEdge - 1) ||
+                    // INCHI✔️❗: Source rejects the poisoned candidate before
+                    // pVA/flower admission; no ret/state change or new cost.
+                    // Whole checked-callback cost remains independently OPEN.
+                    if nitrogen_five_atom == NO_VERTEX {
+                        nitrogen_five_index = nitrogen_five_index.wrapping_add(1);
+                        continue;
+                    }
                     let nitrogen_five_atom_index = usize::try_from(nitrogen_five_atom)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let nitrogen_five_plus = pVA
@@ -14289,7 +14706,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -14306,6 +14723,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -14327,9 +14745,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -14641,7 +15059,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -14658,6 +15076,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -14679,9 +15098,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -14947,7 +15366,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 current_edges.num_edges = 0;
                 if current_success != 0 {
                     tot_success = tot_success.wrapping_add(current_success);
-                    ret = MakeOneInChIOutOfStrFromINChI2(
+                    ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                         heap,
                         pCG,
                         ic,
@@ -14964,6 +15383,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         ppat_norm.as_deref_mut(),
                         ppat_prep.as_deref_mut(),
                         clock_result,
+                        source_restore_mode,
                     )?;
                     if ret < 0 {
                         return Ok(());
@@ -14985,11 +15405,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                     if input_fixed.is_null() && reversed_fixed.is_null() {
                         return Ok(());
                     }
-                    let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                    let at2_view = heap.slice(at2.as_const())?;
                     ret = FillOutCMP2FHINCHI(
                         heap,
                         pStruct,
-                        &at2_snapshot,
+                        at2_view,
                         pVA,
                         pInChI,
                         &mut comparison,
@@ -15316,7 +15736,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -15333,6 +15753,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -15354,9 +15775,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -15650,7 +16071,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             }
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -15667,6 +16088,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -15688,9 +16110,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -15974,7 +16396,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                 current_edges.num_edges = 0;
                 if current_success != 0 {
                     tot_success = tot_success.wrapping_add(current_success);
-                    ret = MakeOneInChIOutOfStrFromINChI2(
+                    ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                         heap,
                         pCG,
                         ic,
@@ -15991,6 +16413,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                         ppat_norm.as_deref_mut(),
                         ppat_prep.as_deref_mut(),
                         clock_result,
+                        source_restore_mode,
                     )?;
                     if ret < 0 {
                         return Ok(());
@@ -16012,11 +16435,11 @@ pub(crate) fn FixFixedHRestoredStructure(
                     if input_fixed.is_null() && reversed_fixed.is_null() {
                         return Ok(());
                     }
-                    let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                    let at2_view = heap.slice(at2.as_const())?;
                     ret = FillOutCMP2FHINCHI(
                         heap,
                         pStruct,
-                        &at2_snapshot,
+                        at2_view,
                         pVA,
                         pInChI,
                         &mut comparison,
@@ -16273,7 +16696,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -16290,6 +16713,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -16311,9 +16735,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -16656,7 +17080,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -16673,6 +17097,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -16694,9 +17119,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -16770,26 +17195,48 @@ pub(crate) fn FixFixedHRestoredStructure(
                         )
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .flow;
-                    let central_number = i32::from(atom.neighbor[0]);
-                    let central_index = usize::try_from(central_number)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let central_valence = pVA
-                        .get(central_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let central_atom = heap
-                        .slice(at2.as_const())?
-                        .get(central_index)
-                        .cloned()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    if valence.cNumValenceElectrons == 6
+                    // VERBATIM SOURCE FRAGMENT: ichirvr3.c5269..5273
+                    //                 if (pVA[iat].cNumValenceElectrons == 6 && at2[iat].charge == -1 &&
+                    //                      pBNS->edge[e].flow &&
+                    //                      at2[iat].valence == 1 && at2[iat].chem_bonds_valence == 1 &&
+                    //                      pVA[iS = (int) at2[iat].neighbor[0]].cNumValenceElectrons == 6 && pVA[iS].cPeriodicRowNumber > 1 &&
+                    //                      at2[iS].valence >= 4)
+                    // INCHI✔️❗: Cheap source gates precede the central pVA
+                    // view; its element/row gates precede the central atom.
+                    // Rejection still reaches the original else candidate.
+                    // No new allocation/scan; copy only the admitted atom.
+                    // Fixed tuple/checked-access and whole cost remain OPEN.
+                    let sulfur_center = if valence.cNumValenceElectrons == 6
                         && atom.charge == -1
                         && edge_flow != 0
                         && atom.valence == 1
                         && atom.chem_bonds_valence == 1
-                        && central_valence.cNumValenceElectrons == 6
-                        && central_valence.cPeriodicRowNumber > 1
-                        && central_atom.valence >= 4
                     {
+                        let central_number = i32::from(atom.neighbor[0]);
+                        let central_index = usize::try_from(central_number)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let central_valence = pVA
+                            .get(central_index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if central_valence.cNumValenceElectrons == 6
+                            && central_valence.cPeriodicRowNumber > 1
+                        {
+                            let central_atom = heap
+                                .slice(at2.as_const())?
+                                .get(central_index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            if central_atom.valence >= 4 {
+                                Some((central_number, central_index, central_atom.clone()))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some((central_number, central_index, central_atom)) = sulfur_center {
                         if FindInEdgeList(heap, &central_sulfur, central_number)? >= 0 {
                             difference_index = difference_index.wrapping_add(1);
                             continue;
@@ -17098,7 +17545,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             let _ = AllocEdgeList(heap, &mut minus_acceptor, EDGE_LIST_FREE)?;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -17115,6 +17562,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -17136,9 +17584,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -17422,7 +17870,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -17439,6 +17887,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -17460,9 +17909,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -18147,7 +18596,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -18164,6 +18613,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -18185,9 +18635,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -18313,6 +18763,10 @@ pub(crate) fn FixFixedHRestoredStructure(
                 }
                 if let Some(plus_edge) = first_kind {
                     let flower_edge = GetChargeFlowerUpperEdge(heap, pBNS, pVA, plus_edge)?;
+                    // INCHI✔️❗: Native OR always performs its first ret assignment;
+                    // then the first nonzero result skips the remaining appends.
+                    // Preserve order/partial list/error state without inherited-ret
+                    // gating or extra allocations. Whole list/tuple cost stays OPEN.
                     for (list_index, edge_number) in [
                         (CHG_SET_NN, plus_edge),
                         (CHG_SET_NN, flower_edge),
@@ -18321,13 +18775,14 @@ pub(crate) fn FixFixedHRestoredStructure(
                         (CHG_SET_AVOID, plus_edge),
                         (CHG_SET_AVOID, flower_edge),
                     ] {
-                        if ret == 0 {
-                            ret = AddToEdgeList(
-                                heap,
-                                &mut changeable_edges[list_index],
-                                edge_number,
-                                INC_ADD_EDGE,
-                            )?;
+                        ret = AddToEdgeList(
+                            heap,
+                            &mut changeable_edges[list_index],
+                            edge_number,
+                            INC_ADD_EDGE,
+                        )?;
+                        if ret != 0 {
+                            break;
                         }
                     }
                     if ret != 0 {
@@ -18420,19 +18875,24 @@ pub(crate) fn FixFixedHRestoredStructure(
                                 input_minus_edge,
                             )? < 0
                         {
+                            // INCHI✔️❗: Native OR always performs its first ret assignment;
+                            // then the first nonzero result skips the remaining appends.
+                            // Preserve order/partial list/error state without inherited-ret
+                            // gating or extra allocations. Whole list/tuple cost stays OPEN.
                             for (list_index, edge_number) in [
                                 (CHG_SET_NN, input_minus_edge),
                                 (CHG_SET_NN, NO_VERTEX),
                                 (CHG_SET_NN, 1),
                                 (CHG_SET_AVOID, input_minus_edge),
                             ] {
-                                if ret == 0 {
-                                    ret = AddToEdgeList(
-                                        heap,
-                                        &mut changeable_edges[list_index],
-                                        edge_number,
-                                        INC_ADD_EDGE,
-                                    )?;
+                                ret = AddToEdgeList(
+                                    heap,
+                                    &mut changeable_edges[list_index],
+                                    edge_number,
+                                    INC_ADD_EDGE,
+                                )?;
+                                if ret != 0 {
+                                    break;
                                 }
                             }
                             if ret != 0 {
@@ -18673,7 +19133,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -18690,6 +19150,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -18711,9 +19172,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -18966,19 +19427,24 @@ pub(crate) fn FixFixedHRestoredStructure(
                             neighbor_index = neighbor_index.wrapping_add(1);
                         }
                         if !(number_oxygen != 1 && number_others != 1) {
+                            // INCHI✔️❗: Native OR always performs its first ret assignment;
+                            // then the first nonzero result skips the remaining appends.
+                            // Preserve order/partial list/error state without inherited-ret
+                            // gating or extra allocations. Whole list/tuple cost stays OPEN.
                             for (list_index, edge_number) in [
                                 (CHG_SET_NO_IN_NO2M2, nitrogen_plus_edge),
                                 (CHG_SET_NO_IN_NO2M2, oxygen_minus_edge),
                                 (CHG_SET_AVOID, nitrogen_plus_edge),
                                 (CHG_SET_AVOID, oxygen_minus_edge),
                             ] {
-                                if ret == 0 {
-                                    ret = AddToEdgeList(
-                                        heap,
-                                        &mut changeable_edges[list_index],
-                                        edge_number,
-                                        INC_ADD_EDGE,
-                                    )?;
+                                ret = AddToEdgeList(
+                                    heap,
+                                    &mut changeable_edges[list_index],
+                                    edge_number,
+                                    INC_ADD_EDGE,
+                                )?;
+                                if ret != 0 {
+                                    break;
                                 }
                             }
                             if ret != 0 {
@@ -19120,7 +19586,7 @@ pub(crate) fn FixFixedHRestoredStructure(
             current_edges.num_edges = 0;
             if current_success != 0 {
                 tot_success = tot_success.wrapping_add(current_success);
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -19137,6 +19603,7 @@ pub(crate) fn FixFixedHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -19158,9 +19625,9 @@ pub(crate) fn FixFixedHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret =
-                    FillOutCMP2FHINCHI(heap, pStruct, &at2_snapshot, pVA, pInChI, &mut comparison)?;
+                    FillOutCMP2FHINCHI(heap, pStruct, at2_view, pVA, pInChI, &mut comparison)?;
                 if ret != 0 || comparison.bHasDifference == 0 {
                     return Ok(());
                 }
@@ -19670,5 +20137,186 @@ mod tests {
                 &[BNS_EDGE::default()]
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod nitrogen_five_regressions {
+    use super::bHas_N_V;
+    use crate::source_types::{SourceHeapError, inp_ATOM};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    fn dirty_atom(seed: u8, index: usize, typ: u16, flags: u16) -> inp_ATOM {
+        let byte = seed.wrapping_add((index as u8).wrapping_mul(37));
+        let word = u16::from(byte) * 257;
+        inp_ATOM {
+            elname: [byte as i8; 6],
+            el_number: byte,
+            neighbor: [word; 20],
+            orig_at_number: word,
+            orig_compt_at_numb: typ.wrapping_add((index as u16).wrapping_mul(257)),
+            bond_stereo: [byte as i8; 20],
+            bond_type: [byte; 20],
+            valence: byte as i8,
+            chem_bonds_valence: !byte as i8,
+            num_H: byte as i8,
+            num_iso_H: [byte as i8; 3],
+            iso_atw_diff: !byte as i8,
+            charge: byte as i8,
+            radical: !byte as i8,
+            bAmbiguousStereo: byte as i8,
+            cFlags: byte as i8,
+            at_type: word,
+            component: flags.wrapping_add((index as u16).wrapping_mul(37)),
+            endpoint: !word,
+            c_point: word,
+            x: f64::from_bits(0x7ff8000000000000 | u64::from(word)),
+            y: f64::from_bits(0x8000000000000000 | u64::from(word)),
+            z: f64::from_bits(0x7ff0000000000000 | u64::from(word)),
+            bUsed0DParity: byte as i8,
+            p_parity: !byte as i8,
+            p_orig_at_num: [word; 4],
+            sb_ord: [byte as i8; 3],
+            sn_ord: [!byte as i8; 3],
+            sb_parity: [byte as i8; 3],
+            sn_orig_at_num: [word; 3],
+            bCutVertex: byte as i8,
+            nRingSystem: word,
+            nNumAtInRingSystem: !word,
+            nBlockSystem: word,
+        }
+    }
+
+    fn same_bits(mut a: inp_ATOM, mut b: inp_ATOM) -> bool {
+        let floats = a.x.to_bits() == b.x.to_bits()
+            && a.y.to_bits() == b.y.to_bits()
+            && a.z.to_bits() == b.z.to_bits();
+        a.x = 0.0;
+        a.y = 0.0;
+        a.z = 0.0;
+        b.x = 0.0;
+        b.y = 0.0;
+        b.z = 0.0;
+        floats && a == b
+    }
+
+    fn prepared_atoms(
+        mask: u8,
+        truth: u8,
+        field: i32,
+        value: i32,
+        slot: usize,
+        seed: u8,
+    ) -> [inp_ATOM; 10] {
+        std::array::from_fn(|i| {
+            let mut atom = dirty_atom(seed, i, 0xa55a, 0x5aa5);
+            let mut values = [
+                if u16::from(mask) & (1 << i) != 0 {
+                    7
+                } else {
+                    6
+                },
+                0,
+                0,
+                0,
+                5,
+                3,
+            ];
+            if i == slot {
+                let bad = [6, -1, -1, -1, 4, 2];
+                for k in 0..6 {
+                    if truth & (1 << k) != 0 {
+                        values[k] = bad[k];
+                    }
+                }
+                if field >= 0 {
+                    values[field as usize] = value;
+                }
+            }
+            atom.el_number = values[0] as u8;
+            atom.charge = values[1] as i8;
+            atom.num_H = values[2] as i8;
+            atom.radical = values[3] as i8;
+            atom.chem_bonds_valence = values[4] as i8;
+            atom.valence = values[5] as i8;
+            atom
+        })
+    }
+
+    #[test]
+    fn complete_six_predicate_count_prefix_errors_and_preservation() {
+        let inputs = include_str!(
+            "../../../../../testdata/inchi/expected/official/nitrogen_five/inputs.txt"
+        );
+        let expected = include_str!(
+            "../../../../../testdata/inchi/expected/official/nitrogen_five/expected.txt"
+        );
+        assert_eq!(inputs.lines().count(), 144104);
+        assert_eq!(expected.lines().count(), 144104);
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut audit159,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for (ident, (input, output)) in inputs.lines().zip(expected.lines()).enumerate() {
+            let cells: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(cells.len(), 10);
+            assert_eq!(cells[0].parse::<usize>().unwrap(), ident);
+            let n: usize = cells[1].parse().unwrap();
+            let count: i32 = cells[2].parse().unwrap();
+            let mask: u8 = cells[3].parse().unwrap();
+            let truth: u8 = cells[4].parse().unwrap();
+            let field: i32 = cells[5].parse().unwrap();
+            let value: i32 = cells[6].parse().unwrap();
+            let slot: usize = cells[7].parse().unwrap();
+            let seed: u8 = cells[8].parse().unwrap();
+            assert!(n <= 8 && truth <= 63 && (-1..=5).contains(&field) && slot < 8);
+            assert_eq!(cells[9] == "N", count <= 0 || count as usize <= n);
+            let atoms = prepared_atoms(mask, truth, field, value, slot, seed);
+            let before = atoms;
+            for _repeat in 0..2 {
+                calls += 1;
+                match catch_unwind(AssertUnwindSafe(|| bHas_N_V(&atoms[..n], count))) {
+                    Ok(Ok(value)) => {
+                        completed += 1;
+                        differences += usize::from(output.parse::<i32>().ok() != Some(value));
+                    }
+                    Ok(Err(SourceHeapError::PointerOutOfBounds)) => {
+                        bounds += 1;
+                        differences += usize::from(output != "E");
+                    }
+                    Ok(Err(_)) => {
+                        unexpected += 1;
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            audit159 += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                    }
+                }
+                for i in 0..10 {
+                    changes += usize::from(!same_bits(atoms[i], before[i]));
+                }
+            }
+        }
+        eprintln!(
+            "NITROGEN_FIVE COUNTS calls={calls} completed={completed} bounds={bounds} audit159={audit159} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 288208);
+        assert_eq!((audit159, unexpected, differences, changes), (0, 0, 0, 0));
+        assert_eq!(completed + bounds, calls);
     }
 }

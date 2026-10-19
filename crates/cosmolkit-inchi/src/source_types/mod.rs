@@ -6,15 +6,19 @@
     unused_imports
 )]
 
-use std::any::TypeId;
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
 #[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::marker::PhantomData;
+use std::num::NonZeroU64;
 use std::ptr::NonNull;
 
+mod clock;
 mod generated;
 
+pub(crate) use clock::{LiveSourceClock, SourceClock};
 pub(crate) use generated::*;
 
 /// Source-level replacement for C `void` in typed allocation handles.
@@ -27,8 +31,48 @@ pub(crate) struct SourceFile {
     pub(crate) bytes: Vec<u8>,
     pub(crate) position: u64,
     pub(crate) error: bool,
+    /// Sticky stdio F_ERR; `error` retains the existing forced IO failure.
+    pub(crate) error_indicator: bool,
     pub(crate) eof: bool,
     pub(crate) is_standard_stream: bool,
+}
+
+// The extra private flag occupies existing padding, not another allocation.
+const _: () = assert!(std::mem::size_of::<SourceFile>() <= 40);
+
+impl SourceFile {
+    pub(crate) fn read_byte(&mut self) -> Result<i32, SourceHeapError> {
+        // SUPPLEMENTAL SOURCE: musl/src/stdio/__uflow.c9..10
+        // 	if (!__toread(f) && f->read(f, &c, 1)==1) return c;
+        // 	return EOF;
+        // SUPPLEMENTAL SOURCE: musl/src/stdio/__stdio_read.c14..17
+        // 	if (cnt <= 0) {
+        // 		f->flags |= cnt ? F_ERR : F_EOF;
+        // 		return 0;
+        // 	}
+        // SUPPLEMENTAL SOURCE: musl/src/stdio/__toread.c13
+        // 	return (f->flags & F_EOF) ? EOF : 0;
+        // INCHI✔️❗: Existing unbuffered owned-byte backend: a prior sticky
+        // indicator never blocks a read; a new forced IO failure sets it and
+        // consumes no byte. The native caller independently applies ferror.
+        // O(1), no allocation/clone; FILE-ERROR-STATE whole costs stay OPEN.
+        let index =
+            usize::try_from(self.position).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        if self.eof {
+            return Ok(-1);
+        }
+        if self.error {
+            self.error_indicator = true;
+            return Ok(-1);
+        }
+        if let Some(value) = self.bytes.get(index).copied() {
+            self.position = self.position.wrapping_add(1);
+            Ok(i32::from(value))
+        } else {
+            self.eof = true;
+            Ok(-1)
+        }
+    }
 }
 
 /// Explicit argument state replacing C `va_list` in the formatting port.
@@ -45,7 +89,8 @@ pub(crate) enum SourceFormatArgument {
     Float(f64),
     Byte(i8),
     Bytes(SourceConstPointer<i8>),
-    Pointer(SourceConstPointer<SourceVoid>),
+    /// Actual Rust address for diagnostic %p only; never dereferenced.
+    Pointer(*const SourceVoid),
     MutSigned(SourceMutPointer<i32>),
 }
 
@@ -70,8 +115,51 @@ pub(crate) enum SourceTGroupInfoPointer {
     External(u64),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct AllocationId(u64);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct AllocationId {
+    owner: NonZeroU64,
+    field: u64,
+}
+
+impl AllocationId {
+    const fn logical(self) -> u64 {
+        self.owner.get() - 1
+    }
+
+    fn subobject_field(self, row: u64, kind: u64) -> Result<Self, SourceHeapError> {
+        // VERBATIM SOURCE: ichicano.c1147 / ichiprt1.c2635
+        //         pCG->m_pNeighborsForSort = at[i].neighbor;
+        //             pCG->m_pn_RankForSort = at[j].neighbor;
+        // INCHI✔️❗: A subobject descriptor, not an allocation or an address.
+        // Both owner structs exceed four bytes, so every realizable Vec row
+        // fits below 2^62. Preserve a separate relative element offset.
+        // O(1), no allocation/copy; INCHI-PERF-REAL-ATOM-FIELD-VIEWS OPEN.
+        if self.field != 0 || row >= (1_u64 << 62) {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        Ok(Self {
+            field: (kind << 62) | row,
+            ..self
+        })
+    }
+}
+
+impl fmt::Debug for AllocationId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.field == 0 {
+            formatter
+                .debug_tuple("AllocationId")
+                .field(&self.logical())
+                .finish()
+        } else {
+            formatter
+                .debug_struct("AllocationId")
+                .field("owner", &self.logical())
+                .field("field", &self.field)
+                .finish()
+        }
+    }
+}
 
 pub(crate) struct SourceMutPointer<T> {
     allocation: Option<AllocationId>,
@@ -83,6 +171,75 @@ pub(crate) struct SourceConstPointer<T> {
     allocation: Option<AllocationId>,
     element_offset: u64,
     marker: PhantomData<fn() -> T>,
+}
+
+// Field metadata occupies the old Option discriminant space. This is a
+// private footprint invariant, not a new test or a claim about the C ABI.
+const _: () = assert!(
+    std::mem::size_of::<SourceConstPointer<u16>>() <= std::mem::size_of::<(Option<u64>, u64)>()
+);
+
+macro_rules! impl_neighbor_field_pointer {
+    ($owner:ty, $kind:expr) => {
+        impl SourceConstPointer<$owner> {
+            pub(crate) fn neighbor_field(
+                self,
+                index: i32,
+            ) -> Result<SourceConstPointer<AT_NUMB>, SourceHeapError> {
+                let pointer = self.offset(i64::from(index))?;
+                let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
+                Ok(SourceConstPointer {
+                    allocation: Some(id.subobject_field(pointer.element_offset, $kind)?),
+                    element_offset: 0,
+                    marker: PhantomData,
+                })
+            }
+        }
+    };
+}
+
+impl_neighbor_field_pointer!(sp_ATOM, 1);
+impl_neighbor_field_pointer!(inp_ATOM, 2);
+
+impl SourceConstPointer<INCHIGEN_CONTROL> {
+    pub(crate) fn input_parameters_field(
+        self,
+    ) -> Result<SourceMutPointer<INPUT_PARMS>, SourceHeapError> {
+        // SOURCE: inchi_dll_a.c INCHIGEN_Setup
+        //     INPUT_PARMS *ip = &( HGen->InpParms );
+        // INCHI✔️❗: Actual parent field, not a copied/model allocation.
+        // O(1), no extra pointer footprint; REAL-SDF-HEADER-VIEW costs OPEN.
+        let id = self.allocation.ok_or(SourceHeapError::NullPointer)?;
+        Ok(SourceMutPointer {
+            allocation: Some(id.subobject_field(self.element_offset, 3)?),
+            element_offset: 0,
+            marker: PhantomData,
+        })
+    }
+}
+
+impl SourceConstPointer<INPUT_PARMS> {
+    pub(crate) fn sdf_header_field(self) -> Result<SourceMutPointer<i8>, SourceHeapError> {
+        // SOURCE: ichiparm.c1266
+        //                     ip->pSdfLabel = ip->szSdfDataHeader;
+        // INCHI✔️❗: char65 is the first member of the actual parameter
+        // record, including a parameter subobject in generator storage.
+        // O(1), no allocation/copy; REAL-SDF-HEADER-VIEW costs OPEN.
+        let id = self.allocation.ok_or(SourceHeapError::NullPointer)?;
+        let allocation = if id.field >> 62 == 3 {
+            if self.element_offset != 0 {
+                return Err(SourceHeapError::PointerOutOfBounds);
+            }
+            id
+        } else {
+            id.subobject_field(self.element_offset, 3)?
+        };
+        Ok(SourceMutPointer {
+            allocation: Some(allocation),
+            element_offset: 0,
+            marker: PhantomData,
+        })
+    }
 }
 
 macro_rules! impl_source_pointer_value_traits {
@@ -238,7 +395,7 @@ impl<T> SourceMutPointer<T> {
 
     pub(crate) const fn allocation_identity(self) -> Option<u64> {
         match self.allocation {
-            Some(id) => Some(id.0),
+            Some(id) => Some(id.logical()),
             None => None,
         }
     }
@@ -282,7 +439,8 @@ pub(crate) enum SourceHeapError {
 /// pointers, and one-past pointers without exposing native addresses.
 #[derive(Default)]
 struct AllocationArena {
-    slots: Vec<Option<AllocationSlot>>,
+    slots: HashMap<usize, Option<AllocationSlot>>,
+    issued_ids: u64,
     live_count: usize,
 }
 
@@ -329,25 +487,313 @@ impl AllocationSlot {
     }
 
     #[inline(always)]
+    fn corresponding_integer_storage<T: 'static>(&self) -> bool {
+        // VERBATIM SOURCE FRAGMENT: ichisize.h45..49 corresponding short types
+        // typedef unsigned short AT_NUMB;
+        // typedef unsigned short AT_RANK;
+        // #define AT_RANK_MASK   ((AT_RANK)~0)
+        //
+        // typedef signed short NUM_H;
+        // INCHI✔️❗: C468 corresponding signed/unsigned primitive storage.
+        // Same size/alignment/stride, all bits valid; no scalar conversion.
+        // Exact-type callers bypass this O(1) check; whole costs remain OPEN.
+        let requested = TypeId::of::<Vec<T>>();
+        macro_rules! pair {
+            ($signed:ty, $unsigned:ty) => {
+                (self.type_id == TypeId::of::<Vec<$signed>>()
+                    && requested == TypeId::of::<Vec<$unsigned>>())
+                    || (self.type_id == TypeId::of::<Vec<$unsigned>>()
+                        && requested == TypeId::of::<Vec<$signed>>())
+            };
+        }
+        pair!(i8, u8)
+            || pair!(i16, u16)
+            || pair!(i32, u32)
+            || pair!(i64, u64)
+            || pair!(isize, usize)
+    }
+
+    #[inline(always)]
     fn downcast_ref<T: 'static>(&self) -> Option<&[T]> {
-        if self.type_id != TypeId::of::<Vec<T>>() {
+        if self.type_id != TypeId::of::<Vec<T>>() && !self.corresponding_integer_storage::<T>() {
             return None;
         }
-        // SAFETY: `type_id` and the raw parts are recorded from the same Vec,
-        // and the allocation remains owned by this slot.
+        // SAFETY: metadata/raw parts retain the original owned Vec. The view
+        // is either that exact element type or its recognized corresponding
+        // primitive integer: identical size/alignment, every bit pattern valid.
+        // Length/stride stay unchanged; the stored ORIGINAL drop type stays.
         Some(unsafe { std::slice::from_raw_parts(self.pointer.cast::<T>().as_ptr(), self.len) })
     }
 
     #[inline(always)]
     fn downcast_mut<T: 'static>(&mut self) -> Option<&mut [T]> {
-        if self.type_id != TypeId::of::<Vec<T>>() {
+        if self.type_id != TypeId::of::<Vec<T>>() && !self.corresponding_integer_storage::<T>() {
             return None;
         }
         // A mutable view may overwrite source pointers whose construction
         // established allocation relationships recorded below.
         self.provenance = AllocationProvenance::None;
-        // SAFETY: as above; `&mut self` also guarantees unique access.
+        // SAFETY: the exact/corresponding primitive proof above applies;
+        // `&mut self` guarantees unique ordinary access and writable stable
+        // callers retain their existing distinct/live allocation obligations.
         Some(unsafe { std::slice::from_raw_parts_mut(self.pointer.cast::<T>().as_ptr(), self.len) })
+    }
+
+    fn input_parameters_field_ref(&self, row: usize) -> Result<&INPUT_PARMS, SourceHeapError> {
+        // SOURCE: inchi_dll_a.c: INPUT_PARMS *ip = &( HGen->InpParms );
+        // INCHI✔️❗: Resolve the live owner on every reached view; no clone.
+        // O(1), REAL-SDF-HEADER-VIEW dispatch costs OPEN.
+        if self.is::<INPUT_PARMS>() {
+            self.downcast_ref::<INPUT_PARMS>()
+                .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                .get(row)
+                .ok_or(SourceHeapError::PointerOutOfBounds)
+        } else {
+            Ok(&self
+                .downcast_ref::<INCHIGEN_CONTROL>()
+                .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                .get(row)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .InpParms)
+        }
+    }
+
+    fn input_parameters_field_mut(
+        &mut self,
+        row: usize,
+    ) -> Result<&mut INPUT_PARMS, SourceHeapError> {
+        // SOURCE: inchi_dll_a.c: INPUT_PARMS *ip = &( HGen->InpParms );
+        // INCHI✔️❗: Same actual field as input_parameters_field_ref, with exclusive
+        // parent access. No registration/snapshot/unsafe; dispatch costs OPEN.
+        if self.is::<INPUT_PARMS>() {
+            self.downcast_mut::<INPUT_PARMS>()
+                .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                .get_mut(row)
+                .ok_or(SourceHeapError::PointerOutOfBounds)
+        } else {
+            Ok(&mut self
+                .downcast_mut::<INCHIGEN_CONTROL>()
+                .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                .get_mut(row)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .InpParms)
+        }
+    }
+
+    fn copy_disjoint_field_rows<T: Copy + 'static>(
+        &mut self,
+        destination_field: u64,
+        source_field: u64,
+        destination_offset: usize,
+        source_offset: usize,
+        count: usize,
+    ) -> Result<(), SourceHeapError> {
+        // SOURCE: util.c mystrncpy
+        //     if (len)
+        //     {
+        //         memmove(target, source, len);
+        //     }
+        // INCHI✔️❗: Distinct admitted fields of these supported owner types
+        // occupy distinct Vec rows. Split the actual rows once, then copy the
+        // borrowed arrays; same-field overlap keeps copy_within below.
+        // O(count), O(1) scratch, no allocation/clone/per-byte arena lookup.
+        // Typed dispatch/proof constants stay REAL-SDF-HEADER-VIEW OPEN.
+        let kind = destination_field >> 62;
+        if kind == 0 || kind != source_field >> 62 {
+            return Err(SourceHeapError::PointerAllocationMismatch);
+        }
+        let mask = (1_u64 << 62) - 1;
+        let destination_row = usize::try_from(destination_field & mask)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let source_row = usize::try_from(source_field & mask)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        macro_rules! copy_rows {
+            ($parent:ty, $($field:ident).+, $length:literal, $original:ty, $opposite:ty) => {{
+                let rows = self.downcast_mut::<$parent>()
+                    .ok_or(SourceHeapError::AllocationTypeMismatch)?;
+                if destination_row == source_row {
+                    return Err(SourceHeapError::PointerAllocationMismatch);
+                }
+                if destination_row.max(source_row) >= rows.len() {
+                    return Err(SourceHeapError::PointerOutOfBounds);
+                }
+                let (destination, source) = if destination_row < source_row {
+                    let (left, right) = rows.split_at_mut(source_row);
+                    (&mut left[destination_row], &right[0])
+                } else {
+                    let (left, right) = rows.split_at_mut(destination_row);
+                    (&mut right[0], &left[source_row])
+                };
+                let source: &dyn Any = if TypeId::of::<T>() == TypeId::of::<$opposite>() {
+                    let array: &[$opposite; $length] = bytemuck::cast_slice::<$original, $opposite>(
+                        &source.$($field).+,
+                    ).try_into().map_err(|_| SourceHeapError::AllocationTypeMismatch)?;
+                    array
+                } else {
+                    &source.$($field).+
+                };
+                let destination: &mut dyn Any = if TypeId::of::<T>() == TypeId::of::<$opposite>() {
+                    let array: &mut [$opposite; $length] = bytemuck::cast_slice_mut::<$original, $opposite>(
+                        &mut destination.$($field).+,
+                    ).try_into().map_err(|_| SourceHeapError::AllocationTypeMismatch)?;
+                    array
+                } else {
+                    &mut destination.$($field).+
+                };
+                let source = source.downcast_ref::<[T; $length]>()
+                    .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                    .get(source_offset..).and_then(|values| values.get(..count))
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let destination = destination.downcast_mut::<[T; $length]>()
+                    .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                    .get_mut(destination_offset..).and_then(|values| values.get_mut(..count))
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                destination.copy_from_slice(source);
+                Ok(())
+            }};
+        }
+        match kind {
+            1 => copy_rows!(sp_ATOM, neighbor, 20, u16, i16),
+            2 => copy_rows!(inp_ATOM, neighbor, 20, u16, i16),
+            3 if self.is::<INPUT_PARMS>() => copy_rows!(INPUT_PARMS, szSdfDataHeader, 65, i8, u8),
+            3 => copy_rows!(INCHIGEN_CONTROL, InpParms.szSdfDataHeader, 65, i8, u8),
+            _ => Err(SourceHeapError::PointerAllocationMismatch),
+        }
+    }
+
+    fn view_ref<T: 'static>(&self, field: u64) -> Result<&[T], SourceHeapError> {
+        // VERBATIM SOURCE: ichicans.c564/2370, ichiprt1.c2635
+        //             pCG->m_pNeighborsForSort = at[i].neighbor;
+        //         pCG->m_pNeighborsForSort = at[i].neighbor;
+        //             pCG->m_pn_RankForSort = at[j].neighbor;
+        // INCHI✔️❗: Borrow the real field on each reached read, preserving
+        // later owner writes and parent lifetime. No snapshot/registration.
+        // O(1), no allocation; field/type dispatch costs remain C572 OPEN.
+        if field == 0 {
+            return self
+                .downcast_ref::<T>()
+                .ok_or(SourceHeapError::AllocationTypeMismatch);
+        }
+        let row = usize::try_from(field & ((1_u64 << 62) - 1))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        if field >> 62 == 3 {
+            // SOURCE ichiparm.c1266: ip->pSdfLabel = ip->szSdfDataHeader;
+            // INCHI✔️❗: The live record or its actual char65 first field,
+            // selected by typed access; no copied storage (C580 costs OPEN).
+            let parameters = self.input_parameters_field_ref(row)?;
+            if TypeId::of::<T>() == TypeId::of::<INPUT_PARMS>() {
+                return (parameters as &dyn Any)
+                    .downcast_ref::<T>()
+                    .map(std::slice::from_ref)
+                    .ok_or(SourceHeapError::AllocationTypeMismatch);
+            }
+            let header: &dyn Any = if TypeId::of::<T>() == TypeId::of::<u8>() {
+                let bytes: &[u8; 65] = bytemuck::cast_slice::<i8, u8>(&parameters.szSdfDataHeader)
+                    .try_into()
+                    .map_err(|_| SourceHeapError::AllocationTypeMismatch)?;
+                bytes
+            } else {
+                &parameters.szSdfDataHeader
+            };
+            return header
+                .downcast_ref::<[T; 65]>()
+                .map(|array| array.as_slice())
+                .ok_or(SourceHeapError::AllocationTypeMismatch);
+        }
+        let neighbors = match field >> 62 {
+            1 => {
+                &self
+                    .downcast_ref::<sp_ATOM>()
+                    .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                    .get(row)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .neighbor
+            }
+            2 => {
+                &self
+                    .downcast_ref::<inp_ATOM>()
+                    .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                    .get(row)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .neighbor
+            }
+            _ => return Err(SourceHeapError::AllocationTypeMismatch),
+        };
+        let array: &dyn Any = if TypeId::of::<T>() == TypeId::of::<i16>() {
+            bytemuck::cast_ref::<[u16; 20], [i16; 20]>(neighbors)
+        } else {
+            neighbors
+        };
+        array
+            .downcast_ref::<[T; 20]>()
+            .map(|array| array.as_slice())
+            .ok_or(SourceHeapError::AllocationTypeMismatch)
+    }
+
+    fn view_mut<T: 'static>(&mut self, field: u64) -> Result<&mut [T], SourceHeapError> {
+        // Same actual subobject as view_ref, with exclusive parent access.
+        // Existing typed mutation invalidates parent provenance. No unsafe
+        // conversion or independently owned field storage; C572 costs OPEN.
+        if field == 0 {
+            return self
+                .downcast_mut::<T>()
+                .ok_or(SourceHeapError::AllocationTypeMismatch);
+        }
+        let row = usize::try_from(field & ((1_u64 << 62) - 1))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        if field >> 62 == 3 {
+            // SOURCE ichiparm.c1266: ip->pSdfLabel = ip->szSdfDataHeader;
+            // INCHI✔️❗: Same live subobject and exclusive owner borrow;
+            // no copied storage/unsafe conversion (C580 costs OPEN).
+            let parameters = self.input_parameters_field_mut(row)?;
+            if TypeId::of::<T>() == TypeId::of::<INPUT_PARMS>() {
+                return (parameters as &mut dyn Any)
+                    .downcast_mut::<T>()
+                    .map(std::slice::from_mut)
+                    .ok_or(SourceHeapError::AllocationTypeMismatch);
+            }
+            let header: &mut dyn Any = if TypeId::of::<T>() == TypeId::of::<u8>() {
+                let bytes: &mut [u8; 65] =
+                    bytemuck::cast_slice_mut::<i8, u8>(&mut parameters.szSdfDataHeader)
+                        .try_into()
+                        .map_err(|_| SourceHeapError::AllocationTypeMismatch)?;
+                bytes
+            } else {
+                &mut parameters.szSdfDataHeader
+            };
+            return header
+                .downcast_mut::<[T; 65]>()
+                .map(|array| array.as_mut_slice())
+                .ok_or(SourceHeapError::AllocationTypeMismatch);
+        }
+        let neighbors = match field >> 62 {
+            1 => {
+                &mut self
+                    .downcast_mut::<sp_ATOM>()
+                    .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                    .get_mut(row)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .neighbor
+            }
+            2 => {
+                &mut self
+                    .downcast_mut::<inp_ATOM>()
+                    .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                    .get_mut(row)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .neighbor
+            }
+            _ => return Err(SourceHeapError::AllocationTypeMismatch),
+        };
+        let array: &mut dyn Any = if TypeId::of::<T>() == TypeId::of::<i16>() {
+            bytemuck::cast_mut::<[u16; 20], [i16; 20]>(neighbors)
+        } else {
+            neighbors
+        };
+        array
+            .downcast_mut::<[T; 20]>()
+            .map(|array| array.as_mut_slice())
+            .ok_or(SourceHeapError::AllocationTypeMismatch)
     }
 
     fn is<T: 'static>(&self) -> bool {
@@ -507,7 +953,7 @@ impl<T> StableSourceSlice<T> {
 
 impl AllocationArena {
     fn index(id: AllocationId) -> Result<usize, SourceHeapError> {
-        usize::try_from(id.0).map_err(|_| SourceHeapError::MissingAllocation)
+        usize::try_from(id.logical()).map_err(|_| SourceHeapError::MissingAllocation)
     }
 
     fn insert<T: 'static>(
@@ -515,35 +961,48 @@ impl AllocationArena {
         id: AllocationId,
         allocation: Vec<T>,
     ) -> Result<(), SourceHeapError> {
-        let index = usize::try_from(id.0).map_err(|_| SourceHeapError::AllocationIdExhausted)?;
-        if index != self.slots.len() {
+        let index =
+            usize::try_from(id.logical()).map_err(|_| SourceHeapError::AllocationIdExhausted)?;
+        if id.logical() != self.issued_ids || id.field != 0 {
             return Err(SourceHeapError::AllocationIdExhausted);
         }
+        let issued_ids = self
+            .issued_ids
+            .checked_add(1)
+            .ok_or(SourceHeapError::AllocationIdExhausted)?;
+        // INCHI✔️❗: #define inchi_malloc   malloc
+        // INCHI✔️❗: #define inchi_calloc   calloc
+        // Native allocation macros: mode.h:1171..1175. Keep allocation IDs
+        // monotonic, but retain descriptors only for live or detached buffers.
+        // Expected/amortized O(1) registration; hashing/rehash costs remain
+        // INCHI-PERF-ARENA OPEN, not native allocator performance equivalence.
         self.slots
             .try_reserve(1)
             .map_err(|_| SourceHeapError::AllocationFailed)?;
-        self.slots.push(Some(AllocationSlot::new(allocation)));
+        self.slots
+            .insert(index, Some(AllocationSlot::new(allocation)));
+        self.issued_ids = issued_ids;
         self.live_count += 1;
         Ok(())
     }
 
     fn get(&self, id: AllocationId) -> Option<&AllocationSlot> {
-        self.slots.get(Self::index(id).ok()?)?.as_ref()
+        self.slots.get(&Self::index(id).ok()?)?.as_ref()
     }
 
     fn get_mut(&mut self, id: AllocationId) -> Option<&mut AllocationSlot> {
-        self.slots.get_mut(Self::index(id).ok()?)?.as_mut()
+        self.slots.get_mut(&Self::index(id).ok()?)?.as_mut()
     }
 
     fn take(&mut self, id: AllocationId) -> Option<AllocationSlot> {
-        let allocation = self.slots.get_mut(Self::index(id).ok()?)?.take()?;
+        let allocation = self.slots.get_mut(&Self::index(id).ok()?)?.take()?;
         self.live_count -= 1;
         Some(allocation)
     }
 
     fn restore(&mut self, id: AllocationId, allocation: AllocationSlot) {
         let index = Self::index(id).expect("an allocated ID fits usize");
-        let slot = self.slots.get_mut(index).expect("allocated slot exists");
+        let slot = self.slots.get_mut(&index).expect("allocated slot exists");
         debug_assert!(slot.is_none());
         *slot = Some(allocation);
         self.live_count += 1;
@@ -553,13 +1012,40 @@ impl AllocationArena {
         self.take(id)
     }
 
+    fn erase(&mut self, id: AllocationId) -> Option<AllocationSlot> {
+        // INCHI✔️❗: #define inchi_free(X)  do{ if(X) free(X); }while(0)
+        // mode.h:1180..1182: final release must not retain a historical slot.
+        // Temporary remove/restore keeps its key, so restoration never allocates
+        // and compaction cannot invalidate a detached allocation's reservation.
+        let index = Self::index(id).ok()?;
+        self.slots.get(&index)?.as_ref()?;
+        let allocation = self.slots.remove(&index)?.take()?;
+        self.live_count -= 1;
+        let retained = self.slots.len();
+        if retained == 0 {
+            self.slots = HashMap::new();
+        } else if self.slots.capacity() > 32 && retained < self.slots.capacity() / 4 {
+            // Geometric compaction is amortized O(1) per release, O(retained)
+            // on a compaction call. Native free cannot fail: reserve failure
+            // leaves the existing capacity intact, not a chemistry error.
+            // This failure-retained peak and hashing/temporary-table costs
+            // remain explicit limitations in INCHI-PERF-ARENA.
+            let mut compacted = HashMap::new();
+            if compacted.try_reserve(retained).is_ok() {
+                compacted.extend(std::mem::take(&mut self.slots));
+                self.slots = compacted;
+            }
+        }
+        Some(allocation)
+    }
+
     fn len(&self) -> usize {
         self.live_count
     }
 
     #[cfg(test)]
     fn values(&self) -> impl Iterator<Item = &AllocationSlot> {
-        self.slots.iter().filter_map(Option::as_ref)
+        self.slots.values().filter_map(Option::as_ref)
     }
 }
 
@@ -576,6 +1062,25 @@ pub(crate) struct SourceHeap {
     live_source_allocations: BTreeSet<AllocationId>,
     #[cfg(test)]
     live_source_allocation_types: BTreeMap<AllocationId, &'static str>,
+}
+
+// A temporary loan retains its reserved arena key until the actual owner is
+// returned. The reservation survives nested allocations/free compaction.
+struct SourceAllocationLoan<'a> {
+    heap: &'a mut SourceHeap,
+    id: AllocationId,
+    allocation: Option<AllocationSlot>,
+}
+
+impl Drop for SourceAllocationLoan<'_> {
+    fn drop(&mut self) {
+        // INCHI✔️❗: Restore the same actual owner on Result and unwinding.
+        // O(1) expected arena return, no allocation/copy/catch or panic change;
+        // C584 lifetime/check costs remain OPEN.
+        if let Some(allocation) = self.allocation.take() {
+            self.heap.allocations.restore(self.id, allocation);
+        }
+    }
 }
 
 const INP_ATOM_GCC_LP64_SIZE: usize = 176;
@@ -700,18 +1205,27 @@ pub(crate) fn copy_inp_atom_gcc_lp64_byte_prefix(
     source: &[inp_ATOM],
     byte_count: usize,
 ) -> Result<(), SourceHeapError> {
+    // Native ichinorm.c5920 (GCC/Linux LP64 sizeof(at)==8):
+    //             memcpy(at + num_atoms, at_H, num_added_explicit_H * sizeof(at));
+    // INCHI✔️❌: Preserve the source byte count, including partial fields.
+    // Full rows copy their canonical values directly; only one partial final
+    // row needs the existing LP64 field-byte projection. O(byte_count)/O(1),
+    // no allocation; partial-row packing cost stays EXPLICIT-H-BYTE-COPY OPEN.
     let touched_atoms = byte_count.div_ceil(INP_ATOM_GCC_LP64_SIZE);
     if touched_atoms > destination.len() || touched_atoms > source.len() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
-    let mut remaining = byte_count;
-    for index in 0..touched_atoms {
-        let source_bytes = inp_atom_gcc_lp64_bytes(&source[index]);
-        let mut destination_bytes = inp_atom_gcc_lp64_bytes(&destination[index]);
-        let copied = remaining.min(INP_ATOM_GCC_LP64_SIZE);
-        destination_bytes[..copied].copy_from_slice(&source_bytes[..copied]);
-        overwrite_inp_atom_from_gcc_lp64_bytes(&mut destination[index], &destination_bytes);
-        remaining -= copied;
+    let complete_atoms = byte_count / INP_ATOM_GCC_LP64_SIZE;
+    destination[..complete_atoms].copy_from_slice(&source[..complete_atoms]);
+    let partial_bytes = byte_count % INP_ATOM_GCC_LP64_SIZE;
+    if partial_bytes != 0 {
+        let source_bytes = inp_atom_gcc_lp64_bytes(&source[complete_atoms]);
+        let mut destination_bytes = inp_atom_gcc_lp64_bytes(&destination[complete_atoms]);
+        destination_bytes[..partial_bytes].copy_from_slice(&source_bytes[..partial_bytes]);
+        overwrite_inp_atom_from_gcc_lp64_bytes(
+            &mut destination[complete_atoms],
+            &destination_bytes,
+        );
     }
     Ok(())
 }
@@ -813,11 +1327,14 @@ impl SourceHeap {
         &mut self,
         values: Vec<T>,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
-        let id = AllocationId(self.next_id);
         let next_id = self
             .next_id
             .checked_add(1)
             .ok_or(SourceHeapError::AllocationIdExhausted)?;
+        let id = AllocationId {
+            owner: NonZeroU64::new(next_id).ok_or(SourceHeapError::AllocationIdExhausted)?,
+            field: 0,
+        };
         self.allocations.insert(id, values)?;
         self.next_id = next_id;
         Ok(SourceMutPointer {
@@ -843,7 +1360,10 @@ impl SourceHeap {
             .allocation
             .ok_or(SourceHeapError::NullPointer)?;
         let storage_id = storage.allocation.ok_or(SourceHeapError::NullPointer)?;
-        if table_id == storage_id {
+        if table_id.field != 0 || storage_id.field != 0 {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        if table_id.owner == storage_id.owner {
             return Err(SourceHeapError::PointerAllocationMismatch);
         }
         let storage_slot = self
@@ -884,6 +1404,9 @@ impl SourceHeap {
             return None;
         }
         let table_id = pointer_table.allocation?;
+        if table_id.field != 0 {
+            return None;
+        }
         let table_slot = self.allocations.get(table_id)?;
         if !table_slot.is::<P>() || table_slot.len < requested_rows {
             return None;
@@ -919,7 +1442,7 @@ impl SourceHeap {
         prefix_len: usize,
         upper_bound: usize,
     ) -> Result<(), SourceHeapError> {
-        if pointer.element_offset != 0 {
+        if pointer.element_offset != 0 || pointer.allocation.is_some_and(|id| id.field != 0) {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
@@ -946,7 +1469,7 @@ impl SourceHeap {
         requested_prefix_len: usize,
         available_values: usize,
     ) -> bool {
-        if pointer.element_offset != 0 {
+        if pointer.element_offset != 0 || pointer.allocation.is_some_and(|id| id.field != 0) {
             return false;
         }
         let Some(id) = pointer.allocation else {
@@ -973,18 +1496,30 @@ impl SourceHeap {
         &self,
         pointer: SourceConstPointer<T>,
     ) -> Result<&[T], SourceHeapError> {
+        let (values, offset) = self.slice_with_origin(pointer)?;
+        Ok(&values[offset..])
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn slice_with_origin<T: 'static>(
+        &self,
+        pointer: SourceConstPointer<T>,
+    ) -> Result<(&[T], usize), SourceHeapError> {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
         let values = self
             .allocations
             .get(id)
             .ok_or(SourceHeapError::MissingAllocation)?
-            .downcast_ref::<T>()
-            .ok_or(SourceHeapError::AllocationTypeMismatch)?;
+            .view_ref::<T>(id.field)?;
         let offset = usize::try_from(pointer.element_offset)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        values
-            .get(offset..)
-            .ok_or(SourceHeapError::PointerOutOfBounds)
+        // INCHI✔️❗: Retain the actual allocation prefix for signed source
+        // subscripts, e.g. strutil.c2409. No copy/allocation; C537 cost OPEN.
+        if offset > values.len() {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        Ok((values, offset))
     }
 
     #[track_caller]
@@ -993,17 +1528,85 @@ impl SourceHeap {
         &mut self,
         pointer: SourceMutPointer<T>,
     ) -> Result<&mut [T], SourceHeapError> {
+        let (values, offset) = self.slice_mut_with_origin(pointer)?;
+        Ok(&mut values[offset..])
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn slice_mut_with_origin<T: 'static>(
+        &mut self,
+        pointer: SourceMutPointer<T>,
+    ) -> Result<(&mut [T], usize), SourceHeapError> {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
         let values = self
             .allocations
             .get_mut(id)
             .ok_or(SourceHeapError::MissingAllocation)?
-            .downcast_mut::<T>()
-            .ok_or(SourceHeapError::AllocationTypeMismatch)?;
+            .view_mut::<T>(id.field)?;
         let offset = usize::try_from(pointer.element_offset)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        values
-            .get_mut(offset..)
+        // INCHI✔️❗: Retain the actual allocation prefix for signed source
+        // subscripts, e.g. strutil.c2409. No copy/allocation; C537 cost OPEN.
+        if offset > values.len() {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        Ok((values, offset))
+    }
+
+    /// Resolves a source signed subscript, including a negative offset from
+    /// an interior pointer. Invalid negative accesses retain the prior error.
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn element_signed<T: 'static>(
+        &self,
+        pointer: SourceConstPointer<T>,
+        index: i32,
+    ) -> Result<&T, SourceHeapError> {
+        // INCHI✔️❗: representative native signed subscript, ichicans.c:166:
+        //     if (at[cur_atom].parity)
+        // Positive admission matches slice/get; negative interior offsets
+        // resolve within the same allocation. O(1), no allocation or clone;
+        // checked heap/type/offset cost remains independently unresolved.
+        if index >= 0 {
+            return self
+                .slice(pointer)?
+                .get(index as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds);
+        }
+        let pointer = pointer
+            .offset(i64::from(index))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        self.slice(pointer)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    pub(crate) fn element_signed_mut<T: 'static>(
+        &mut self,
+        pointer: SourceMutPointer<T>,
+        index: i32,
+    ) -> Result<&mut T, SourceHeapError> {
+        // INCHI✔️❗: representative native signed lvalue, ichicans.c:171:
+        //     visited[cur_atom] = 1;
+        // Preserve positive mutable admission/provenance and all prior error
+        // categories; invalid negative accesses were PointerOutOfBounds.
+        // O(1), no allocation/clone; whole checked-access cost unresolved.
+        if index >= 0 {
+            return self
+                .slice_mut(pointer)?
+                .get_mut(index as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds);
+        }
+        let pointer = pointer
+            .offset(i64::from(index))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        self.slice_mut(pointer)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+            .first_mut()
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
@@ -1079,6 +1682,147 @@ impl SourceHeap {
         })
     }
 
+    /// Copies source-defined nonoverlapping typed prefixes without hiding a
+    /// disjoint source range in the same modeled allocation.
+    #[track_caller]
+    pub(crate) fn copy_nonoverlapping_prefix<T: Clone + 'static>(
+        &mut self,
+        destination: SourceMutPointer<T>,
+        source: SourceConstPointer<T>,
+        count: usize,
+        destination_bounds_first: bool,
+    ) -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: representative verbatim source copy anchors:
+        // ichicano.c:1343
+        // memcpy(nCurrRank, nTempRank, num_at_tg * sizeof(nCurrRank[0]));
+        // ichisort.c:989..990
+        // memcpy(nNewAtomNumber, nPrevAtomNumber, num_atoms * sizeof(nNewAtomNumber[0]));
+        // memcpy(nNewRank, nPrevRank, num_atoms * sizeof(nNewRank[0]));
+        // O(count) typed copy, O(1) scratch, no allocation. Distinct allocations
+        // retain extraction; same-allocation disjoint ranges use safe splitting.
+        // Checked admission/dispatch cost remains INCHI-PERF-COPY-ALIAS OPEN.
+        if destination.allocation_identity() != source.as_mut().allocation_identity() {
+            return self.with_slice_mut_and_heap(destination, |target, heap| {
+                if destination_bounds_first && count > target.len() {
+                    return Err(SourceHeapError::PointerOutOfBounds);
+                }
+                let values = heap
+                    .slice(source)?
+                    .get(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                target
+                    .get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .clone_from_slice(values);
+                Ok(())
+            });
+        }
+
+        // Admit the destination first, including mutable provenance invalidation,
+        // exactly as extraction does. Callers retain their prefix-check order.
+        let destination_len = self.slice_mut(destination)?.len();
+        if destination_bounds_first && count > destination_len {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        self.slice(source)?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if count > destination_len {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        if count == 0 {
+            return Ok(());
+        }
+        let difference = destination.difference(source.as_mut())?;
+        let separation = usize::try_from(difference.unsigned_abs())
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        if separation < count {
+            // memcpy overlap is outside the native defined domain. Preserve
+            // the previous modeled overlap error; existing self-copy gates stay.
+            return Err(SourceHeapError::MissingAllocation);
+        }
+        if difference > 0 {
+            let values = self.slice_mut(source.as_mut())?;
+            let (source_values, destination_values) = values.split_at_mut(separation);
+            destination_values[..count].clone_from_slice(&source_values[..count]);
+        } else {
+            let values = self.slice_mut(destination)?;
+            let (destination_values, source_values) = values.split_at_mut(separation);
+            destination_values[..count].clone_from_slice(&source_values[..count]);
+        }
+        Ok(())
+    }
+
+    /// Copies the two admitted prefixes of one allocation without a snapshot.
+    #[track_caller]
+    pub(crate) fn copy_prefix_within_allocation<T: Copy + 'static>(
+        &mut self,
+        destination: SourceMutPointer<T>,
+        source: SourceConstPointer<T>,
+        count: usize,
+    ) -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: ichimak2.c:1269:
+        // memcpy(pCanonRank, pCanonRankInv, num_at_tg * sizeof(pCanonRank[0]));
+        // Source-defined disjoint ranges and prior safe modeled overlap both
+        // copy in O(count)/O(1) scratch with no allocation. Source admission
+        // precedes destination admission, exactly as the replaced snapshots.
+        // Whole checked-arena/expanded-handle cost remains independently OPEN.
+        self.slice(source)?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if destination.allocation != source.allocation {
+            let (Some(destination_id), Some(source_id)) =
+                (destination.allocation, source.allocation)
+            else {
+                return Err(SourceHeapError::PointerAllocationMismatch);
+            };
+            if destination_id.owner != source_id.owner
+                || destination_id.field >> 62 != source_id.field >> 62
+                || destination_id.field == 0
+            {
+                return Err(SourceHeapError::PointerAllocationMismatch);
+            }
+            // Different real subobjects of one parent can still be valid
+            // memmove operands. Admit source first, destination before writes.
+            self.slice_mut(destination)?
+                .get(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let source_offset = usize::try_from(source.element_offset)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let destination_offset = usize::try_from(destination.element_offset)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            return self
+                .allocations
+                .get_mut(destination_id)
+                .ok_or(SourceHeapError::MissingAllocation)?
+                .copy_disjoint_field_rows::<T>(
+                    destination_id.field,
+                    source_id.field,
+                    destination_offset,
+                    source_offset,
+                    count,
+                );
+        }
+        let source_offset = usize::try_from(source.element_offset)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let base = SourceMutPointer {
+            element_offset: 0,
+            ..destination
+        };
+        let values = self.slice_mut(base)?;
+        let destination_offset = usize::try_from(destination.element_offset)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        values
+            .get(destination_offset..)
+            .and_then(|values| values.get(..count))
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let source_end = source_offset
+            .checked_add(count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        values.copy_within(source_offset..source_end, destination_offset);
+        Ok(())
+    }
+
     #[track_caller]
     pub(crate) fn with_slice_mut_and_heap<T: 'static, R>(
         &mut self,
@@ -1097,12 +1841,12 @@ impl SourceHeap {
                 return Err(SourceHeapError::PointerOutOfBounds);
             }
         };
-        let result = match allocation.downcast_mut::<T>() {
-            Some(values) => match values.get_mut(offset..) {
+        let result = match allocation.view_mut::<T>(id.field) {
+            Ok(values) => match values.get_mut(offset..) {
                 Some(values) => operation(values, self),
                 None => Err(SourceHeapError::PointerOutOfBounds),
             },
-            None => Err(SourceHeapError::AllocationTypeMismatch),
+            Err(error) => Err(error),
         };
         self.allocations.restore(id, allocation);
         result
@@ -1115,26 +1859,28 @@ impl SourceHeap {
         operation: impl FnOnce(&mut [T], &mut SourceHeap) -> Result<R, SourceHeapError>,
     ) -> Result<R, SourceHeapError> {
         let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
-        let mut allocation = self
+        let allocation = self
             .allocations
             .remove(id)
             .ok_or(SourceHeapError::MissingAllocation)?;
-        let offset = match usize::try_from(pointer.element_offset) {
-            Ok(offset) => offset,
-            Err(_) => {
-                self.allocations.restore(id, allocation);
-                return Err(SourceHeapError::PointerOutOfBounds);
-            }
+        let mut loan = SourceAllocationLoan {
+            heap: self,
+            id,
+            allocation: Some(allocation),
         };
-        let result = match allocation.downcast_mut::<T>() {
-            Some(values) => match values.get_mut(offset..) {
-                Some(values) => operation(values, self),
+        let offset = usize::try_from(pointer.element_offset)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let allocation = loan
+            .allocation
+            .as_mut()
+            .expect("loan owns its detached allocation");
+        match allocation.view_mut::<T>(id.field) {
+            Ok(values) => match values.get_mut(offset..) {
+                Some(values) => operation(values, &mut *loan.heap),
                 None => Err(SourceHeapError::PointerOutOfBounds),
             },
-            None => Err(SourceHeapError::AllocationTypeMismatch),
-        };
-        self.allocations.restore(id, allocation);
-        result
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn with_two_slices_mut_and_optional_third<A: 'static, B: 'static, C: 'static, R>(
@@ -1144,57 +1890,103 @@ impl SourceHeap {
         third: Option<SourceMutPointer<C>>,
         operation: impl FnOnce(&mut [A], &mut [B], Option<&mut [C]>) -> Result<R, SourceHeapError>,
     ) -> Result<R, SourceHeapError> {
+        self.with_slice_mut_and_optional_slices(
+            first,
+            Some(second),
+            third,
+            |first, second, third| {
+                operation(first, second.ok_or(SourceHeapError::NullPointer)?, third)
+            },
+        )
+    }
+
+    pub(crate) fn with_slice_mut_and_optional_slices<A: 'static, B: 'static, C: 'static, R>(
+        &mut self,
+        first: SourceMutPointer<A>,
+        second: Option<SourceMutPointer<B>>,
+        third: Option<SourceMutPointer<C>>,
+        operation: impl FnOnce(
+            &mut [A],
+            Option<&mut [B]>,
+            Option<&mut [C]>,
+        ) -> Result<R, SourceHeapError>,
+    ) -> Result<R, SourceHeapError> {
+        // INCHI✔️❗: Same safe extraction/removal/restoration algorithm as the
+        // original three-slot entry; an actual external fixed-array second
+        // target needs no arena identity. Preserve optional-third NULL, all
+        // presence-before-offset/type errors and pairwise alias checks.
+        // No new backend/model/loan/unsafe/allocation; C542 check costs OPEN.
         let first_id = first.allocation.ok_or(SourceHeapError::NullPointer)?;
-        let second_id = second.allocation.ok_or(SourceHeapError::NullPointer)?;
-        let third_id = third.and_then(|pointer| pointer.allocation);
-        if first_id == second_id || third_id.is_some_and(|id| id == first_id || id == second_id) {
+        let second_id = second
+            .map(|p| p.allocation.ok_or(SourceHeapError::NullPointer))
+            .transpose()?;
+        let third_id = third.and_then(|p| p.allocation);
+        if second_id.is_some_and(|id| id.owner == first_id.owner)
+            || third_id.is_some_and(|id| {
+                id.owner == first_id.owner
+                    || second_id.is_some_and(|second| id.owner == second.owner)
+            })
+        {
             return Err(SourceHeapError::PointerAllocationMismatch);
         }
-
         let mut first_allocation = self
             .allocations
             .remove(first_id)
             .ok_or(SourceHeapError::MissingAllocation)?;
-        let Some(mut second_allocation) = self.allocations.remove(second_id) else {
-            self.allocations.restore(first_id, first_allocation);
-            return Err(SourceHeapError::MissingAllocation);
-        };
-        let mut third_allocation = if let Some(id) = third_id {
+        let mut second_allocation = if let Some(id) = second_id {
             match self.allocations.remove(id) {
                 Some(allocation) => Some((id, allocation)),
                 None => {
                     self.allocations.restore(first_id, first_allocation);
-                    self.allocations.restore(second_id, second_allocation);
                     return Err(SourceHeapError::MissingAllocation);
                 }
             }
         } else {
             None
         };
-
+        let mut third_allocation = if let Some(id) = third_id {
+            match self.allocations.remove(id) {
+                Some(allocation) => Some((id, allocation)),
+                None => {
+                    self.allocations.restore(first_id, first_allocation);
+                    if let Some((id, allocation)) = second_allocation {
+                        self.allocations.restore(id, allocation);
+                    }
+                    return Err(SourceHeapError::MissingAllocation);
+                }
+            }
+        } else {
+            None
+        };
         let result = (|| {
             let first_offset = usize::try_from(first.element_offset)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let second_offset = usize::try_from(second.element_offset)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let second_offset = second
+                .map(|p| {
+                    usize::try_from(p.element_offset)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)
+                })
+                .transpose()?;
             let first_values = first_allocation
-                .downcast_mut::<A>()
-                .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                .view_mut::<A>(first_id.field)?
                 .get_mut(first_offset..)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let second_values = second_allocation
-                .downcast_mut::<B>()
-                .ok_or(SourceHeapError::AllocationTypeMismatch)?
-                .get_mut(second_offset..)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let second_values = match (&mut second_allocation, second_offset) {
+                (Some((id, allocation)), Some(offset)) => Some(
+                    allocation
+                        .view_mut::<B>(id.field)?
+                        .get_mut(offset..)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ),
+                _ => None,
+            };
             let third_values = match (&mut third_allocation, third) {
-                (Some((_, allocation)), Some(pointer)) => {
+                (Some((id, allocation)), Some(pointer)) => {
                     let offset = usize::try_from(pointer.element_offset)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     Some(
                         allocation
-                            .downcast_mut::<C>()
-                            .ok_or(SourceHeapError::AllocationTypeMismatch)?
+                            .view_mut::<C>(id.field)?
                             .get_mut(offset..)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     )
@@ -1203,9 +1995,10 @@ impl SourceHeap {
             };
             operation(first_values, second_values, third_values)
         })();
-
         self.allocations.restore(first_id, first_allocation);
-        self.allocations.restore(second_id, second_allocation);
+        if let Some((id, allocation)) = second_allocation {
+            self.allocations.restore(id, allocation);
+        }
         if let Some((id, allocation)) = third_allocation {
             self.allocations.restore(id, allocation);
         }
@@ -1219,17 +2012,21 @@ impl SourceHeap {
         let Some(id) = pointer.allocation else {
             return Ok(());
         };
-        if pointer.element_offset != 0 {
+        if pointer.element_offset != 0 || id.field != 0 {
             return Err(SourceHeapError::FreeOfInteriorPointer);
         }
-        let allocation = self
-            .allocations
-            .get(id)
+        // VERBATIM SOURCE FRAGMENT: mode.h1179..1182 native untyped base free
+        // #endif
+        // #ifndef inchi_free
+        // #define inchi_free(X)  do{ if(X) free(X); }while(0)
+        // #endif
+        // INCHI✔️❗: C467 access type does not constrain release of the base.
+        // Erase drops via the ORIGINAL stored Vec destructor, never hint T.
+        // Preserve missing/reserved errors without an extra get/type check;
+        // no unsafe change, scan or clone. Arena/whole-call cost stays OPEN.
+        self.allocations
+            .erase(id)
             .ok_or(SourceHeapError::MissingAllocation)?;
-        if !allocation.is::<T>() {
-            return Err(SourceHeapError::AllocationTypeMismatch);
-        }
-        self.allocations.remove(id);
         #[cfg(test)]
         self.live_source_allocations.remove(&id);
         #[cfg(test)]

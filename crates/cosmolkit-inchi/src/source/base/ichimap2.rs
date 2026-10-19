@@ -8,6 +8,7 @@ use crate::source::base::ichisort::{
     CompareNeighListLexUpToMaxRank, CreateNeighList, FreeNeighList, inchi_qsort, insertions_sort,
     insertions_sort_AT_NUMBERS, insertions_sort_NeighList_AT_NUMBERS,
     insertions_sort_NeighList_AT_NUMBERS3, insertions_sort_NeighListBySymmAndCanonRank,
+    sort_rank_order,
 };
 use crate::source::base::util::inchi_free;
 use crate::source_types::local_ichimap2::{
@@ -154,10 +155,6 @@ pub(crate) fn NumberOfTies(
     let nRank2 = *rank_stack2.get(0)?;
     // INCHI✔️✔️:     AT_RANK *nAtomNumber2 = *pRankStack2++;
     let nAtomNumber2 = *rank_stack2.get(1)?;
-    let ranks1 = unsafe { heap.stable_slice(nRank1.as_const())? };
-    let atom_numbers1 = unsafe { heap.stable_slice(nAtomNumber1.as_const())? };
-    let ranks2 = unsafe { heap.stable_slice(nRank2.as_const())? };
-    let atom_numbers2 = unsafe { heap.stable_slice(nAtomNumber2.as_const())? };
 
     // INCHI✔️✔️:     *bAddStack = 0;
     *bAddStack = 0;
@@ -165,12 +162,26 @@ pub(crate) fn NumberOfTies(
     *bMapped1 = 0;
     // INCHI✔️✔️:     *nNewRank = 0;
     *nNewRank = 0;
-    let at_index1 = usize::try_from(at_no1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: signed-relative rank loads preserve the stable positive path.
+    // Two scalar probes, no allocation/scan; negative arena/check cost OPEN.
     // INCHI✔️✔️:     r = nRank1[at_no1];
-    let r = *ranks1.get(at_index1)?;
-    let at_index2 = usize::try_from(at_no2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: zero outputs before rank pointees; order rows remain unread
+    // until their respective tie loop is entered. No new allocation/scan;
+    // unchanged stable loop access, gate/admission cost remains OPEN.
+    let ranks1 = unsafe { heap.stable_slice(nRank1.as_const())? };
+    let r = if at_no1 >= 0 {
+        *ranks1.get(at_no1 as usize)?
+    } else {
+        *heap.element_signed(nRank1.as_const(), at_no1)?
+    };
     // INCHI✔️✔️:     if (r != nRank2[at_no2])
-    if r != *ranks2.get(at_index2)? {
+    let ranks2 = unsafe { heap.stable_slice(nRank2.as_const())? };
+    let rank2 = if at_no2 >= 0 {
+        *ranks2.get(at_no2 as usize)?
+    } else {
+        *heap.element_signed(nRank2.as_const(), at_no2)?
+    };
+    if r != rank2 {
         // INCHI✔️✔️:         return CT_MAPCOUNT_ERR;
         return Ok(CT_MAPCOUNT_ERR);
     }
@@ -178,26 +189,34 @@ pub(crate) fn NumberOfTies(
     let i_max = i32::from(r).wrapping_sub(1);
     // INCHI✔️✔️:     for (i1 = 1; i1 <= iMax && r == nRank1[nAtomNumber1[iMax - i1]]; i1++)
     let mut i1 = 1_i32;
-    while i1 <= i_max {
-        let order_index = usize::try_from(i_max.wrapping_sub(i1))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atom = *atom_numbers1.get(order_index)?;
-        if r != *ranks1.get(usize::from(atom))? {
-            break;
+    if i1 <= i_max {
+        let atom_numbers1 = unsafe { heap.stable_slice(nAtomNumber1.as_const())? };
+        while i1 <= i_max {
+            let order_index = usize::try_from(i_max.wrapping_sub(i1))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom = *atom_numbers1.get(order_index)?;
+            if r != *ranks1.get(usize::from(atom))? {
+                break;
+            }
+            i1 = i1.wrapping_add(1);
         }
-        i1 = i1.wrapping_add(1);
     }
+
     // INCHI✔️✔️:     for (i2 = 1; i2 <= iMax && r == nRank2[nAtomNumber2[iMax - i2]]; i2++)
     let mut i2 = 1_i32;
-    while i2 <= i_max {
-        let order_index = usize::try_from(i_max.wrapping_sub(i2))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atom = *atom_numbers2.get(order_index)?;
-        if r != *ranks2.get(usize::from(atom))? {
-            break;
+    if i2 <= i_max {
+        let atom_numbers2 = unsafe { heap.stable_slice(nAtomNumber2.as_const())? };
+        while i2 <= i_max {
+            let order_index = usize::try_from(i_max.wrapping_sub(i2))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let atom = *atom_numbers2.get(order_index)?;
+            if r != *ranks2.get(usize::from(atom))? {
+                break;
+            }
+            i2 = i2.wrapping_add(1);
         }
-        i2 = i2.wrapping_add(1);
     }
+
     // INCHI✔️✔️:     if (i2 != i1)
     if i2 != i1 {
         // INCHI✔️✔️:         return CT_MAPCOUNT_ERR;
@@ -207,11 +226,18 @@ pub(crate) fn NumberOfTies(
     if i1 > 1 {
         // INCHI✔️✔️:         *nNewRank = r - i1 + 1;
         *nNewRank = i32::from(r).wrapping_sub(i1).wrapping_add(1) as AT_RANK;
-        if length < 0 || length % 2 != 0 {
-            return Err(SourceHeapError::UnsupportedSourceBehavior);
-        }
-        let element_count = usize::try_from(length / 2)
-            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        // INCHI✔️❌: if (!pTempArray && !( pTempArray = (AT_RANK *) inchi_malloc( length ) ))
+        // length is bytes, including odd lengths; malloc converts it to
+        // unsigned size_t only when a missing row needs allocation. Rounded
+        // safe u16 storage covers the last byte without exposing uninitialized
+        // Rust values. Negative sizes fail reservation at the original slot,
+        // after the original mapped-count update, returning CT_OUT_OF_RAM.
+        // Cost: no new buffer/clone/pass; safe zero initialization and at most
+        // one extra storage byte remain INCHI-PERF-TIE-BYTE-COPY OPEN.
+        let byte_count = length as usize;
+        let whole_words = byte_count / std::mem::size_of::<AT_RANK>();
+        let odd_byte = byte_count % std::mem::size_of::<AT_RANK>() != 0;
+        let element_count = whole_words + usize::from(odd_byte);
         for i in 0..4_i32 {
             let (stack, slot) = if i < 2 {
                 (pRankStack1, i.wrapping_add(2))
@@ -247,17 +273,32 @@ pub(crate) fn NumberOfTies(
             if i == 2 || i == 3 {
                 let source = if i == 2 { nRank2 } else { nAtomNumber2 };
                 if temporary != source {
-                    heap.with_slice_mut_and_heap(temporary, |target, heap| {
-                        let source = heap.slice(source.as_const())?;
-                        let source = source
-                            .get(..element_count)
+                    heap.copy_nonoverlapping_prefix(
+                        temporary,
+                        source.as_const(),
+                        whole_words,
+                        false,
+                    )?;
+                    // INCHI✔️❗: memcpy(pTempArray, nRank2, length);
+                    // INCHI✔️❗: memcpy(pTempArray, nAtomNumber2, length);
+                    // Copy only the first memory byte of the final word,
+                    // preserving its other byte in an existing destination.
+                    // Native-endian conversion models memcpy on either endian;
+                    // fixed two-byte scratch, no allocation or extra scan.
+                    if odd_byte {
+                        let byte = heap
+                            .slice(source.as_const())?
+                            .get(whole_words)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            .to_ne_bytes()[0];
+                        let target = heap
+                            .slice_mut(temporary)?
+                            .get_mut(whole_words)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let target = target
-                            .get_mut(..element_count)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        target.copy_from_slice(source);
-                        Ok(())
-                    })?;
+                        let mut bytes = target.to_ne_bytes();
+                        bytes[0] = byte;
+                        *target = AT_RANK::from_ne_bytes(bytes);
+                    }
                 } else if heap.slice(source.as_const())?.len() < element_count {
                     return Err(SourceHeapError::PointerOutOfBounds);
                 }
@@ -568,17 +609,7 @@ fn copy_rank_prefix(
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         return Ok(());
     }
-    heap.with_slice_mut_and_heap(destination, |target, heap| {
-        let source = heap
-            .slice(source.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let target = target
-            .get_mut(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        target.copy_from_slice(source);
-        Ok(())
-    })
+    heap.copy_nonoverlapping_prefix(destination, source.as_const(), count, false)
 }
 
 #[allow(non_snake_case)]
@@ -746,6 +777,23 @@ fn source_get<T: Copy + 'static>(
     pointer: SourceMutPointer<T>,
     index: i32,
 ) -> Result<T, SourceHeapError> {
+    // BEGIN INCHI SOURCE FRAGMENT: ichimap2.c NumberOfTies
+    // INCHI✔️❗: r = nRank1[at_no1];
+    // END INCHI SOURCE FRAGMENT
+    // Signed indexing can reach preceding elements of the same allocation.
+    // Cost: no allocation/scan/clone added; checked lookups remain unresolved.
+    if index < 0 {
+        // Preserve the existing base-allocation validation before index errors.
+        heap.slice(pointer.as_const())?;
+        let selected = pointer
+            .offset(i64::from(index))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        return heap
+            .slice(selected.as_const())?
+            .first()
+            .copied()
+            .ok_or(SourceHeapError::PointerOutOfBounds);
+    }
     heap.slice(pointer.as_const())?
         .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .copied()
@@ -758,6 +806,23 @@ fn source_set<T: Copy + 'static>(
     index: i32,
     value: T,
 ) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI SOURCE FRAGMENT: ichimap2.c ClearPreviousMappings
+    // INCHI✔️❗: pRankStack1[i][0] = 0;
+    // END INCHI SOURCE FRAGMENT
+    // Signed indexing can reach preceding elements of the same allocation.
+    // Cost: no allocation/scan/clone added; checked lookups remain unresolved.
+    if index < 0 {
+        // Preserve base validation and mutable provenance invalidation first.
+        heap.slice_mut(pointer)?;
+        let selected = pointer
+            .offset(i64::from(index))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        *heap
+            .slice_mut(selected)?
+            .first_mut()
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+        return Ok(());
+    }
     heap.slice_mut(pointer)?
         .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)
@@ -811,6 +876,9 @@ impl ContiguousNeighborRankSortWorkspace {
         }
         let atom_numbers_are_bounded =
             heap.has_proven_index_bound(atom_numbers.as_const(), count, count);
+        // INCHI✔️❌: Required complete bound proof for the existing narrowed
+        // direct consumer adds O(count) traffic when provenance is absent.
+        // C231 human cost deferral; INCHI-PERF-RANK-INDEX-PROOF-SCANS OPEN.
         if !atom_numbers_are_bounded
             && atom_values
                 .prefix(count)
@@ -1011,7 +1079,12 @@ impl ContiguousNeighborRankSortWorkspace {
             let atom = self.atom_number(k);
             let rank = self.rank(atom);
             let row_offset = self.row_offset(usize::from(atom));
-            if (rank != (k + 1) as AT_RANK || rank == previous_rank)
+            // BEGIN INCHI SOURCE FRAGMENT: ichimap2.c499 SortNeighLists3
+            // INCHI✔️✔️:         if (( nRank[i] != k + 1 || nRank[i] == nPrevRank ) && NeighList[i][0] > 1)
+            // END INCHI SOURCE FRAGMENT: SortNeighLists3 integer promotion
+            // Promote rank, never truncate the loop position to ushort.
+            // O(1) scalar comparison, no scan/allocation/copy introduced.
+            if (usize::from(rank) != k + 1 || rank == previous_rank)
                 && self.storage_value(row_offset) > 1
             {
                 self.sort_row_by_rank_shifting(row_offset);
@@ -1349,6 +1422,9 @@ impl AlternatingContiguousNeighborRankSortWorkspace {
         // The copied source calls switch_ptrs once before every pass. The first
         // pass therefore reads the rank buffer used to construct `active`;
         // every later pass reads the buffer written by the preceding pass.
+        // INCHI✔️❌: Additional flag/view synchronization beyond source
+        // switch_ptrs is human-deferred; O(1) per pass, no allocation.
+        // INCHI-PERF-RANK-CACHE-METADATA OPEN, not performance equivalence.
         if self.started {
             std::mem::swap(&mut self.active.ranks, &mut self.inactive_ranks);
         } else {
@@ -1370,6 +1446,9 @@ impl NeighListRankWorkspace {
         let rank_values = heap.slice(ranks.as_const()).ok()?;
         let list_pointers = heap.slice(neighbor_lists.as_const()).ok()?;
         let atoms = heap.slice(atom_numbers.as_const()).ok()?;
+        // INCHI✔️❌: Retain the complete checked proof required by the
+        // existing direct consumer; extra scan traffic is human-deferred,
+        // INCHI-PERF-RANK-INDEX-PROOF-SCANS OPEN, not cost equivalence.
         if rank_values.len() < count
             || list_pointers.len() < count
             || atoms.len() < count
@@ -1396,6 +1475,10 @@ impl NeighListRankWorkspace {
         }
 
         let mut lists = Vec::new();
+        // INCHI✔️❌: Positive-count row-view cache adds one allocation and
+        // O(count) metadata versus the existing native pointer table.
+        // Human cost deferral: INCHI-PERF-RANK-CACHE-METADATA OPEN. Preserve
+        // every proof/fallback; no net gain or performance equivalence claim.
         if lists.try_reserve_exact(count).is_err() {
             return None;
         }
@@ -1408,6 +1491,9 @@ impl NeighListRankWorkspace {
             }
             let values = heap.slice(pointer.as_const()).ok()?;
             let length = usize::from(*values.first()?);
+            // INCHI✔️❌: Retain the complete checked proof required by the
+            // existing direct consumer; extra scan traffic is human-deferred,
+            // INCHI-PERF-RANK-INDEX-PROOF-SCANS OPEN, not cost equivalence.
             if values.len() <= length
                 || values[1..=length]
                     .iter()
@@ -1963,28 +2049,12 @@ pub(crate) fn SetNewRanksFromNeighLists(
                 )
             })?;
         } else {
-            let mut atoms = heap
-                .slice(nAtomNumber.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            let sort_result = {
-                let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
-                inchi_qsort(
-                    bytes,
-                    count,
-                    std::mem::size_of::<AT_RANK>(),
-                    &mut |left, right| {
-                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                        comp(heap, left, right, pCG)
-                    },
-                )
-            };
-            for (index, atom) in atoms.into_iter().enumerate() {
-                source_set(heap, nAtomNumber, index as i32, atom)?;
-            }
-            sort_result?;
+            // INCHI✔️❗: Sort original storage; comparator rank aliases see
+            // each preceding source swap. No allocation/copy/writeback.
+            // Checked arena hot-path cost: INCHI-PERF-RANK-LIVE-SORT OPEN.
+            sort_rank_order(heap, nAtomNumber, count, false, &mut |heap, left, right| {
+                comp(heap, left, right, pCG)
+            })?;
         }
     }
 
@@ -1998,6 +2068,9 @@ pub(crate) fn SetNewRanksFromNeighLists(
             .slice(nAtomNumber.as_const())?
             .get(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❌: Retain the complete checked proof required by the
+        // existing direct consumer; extra scan traffic is human-deferred,
+        // INCHI-PERF-RANK-INDEX-PROOF-SCANS OPEN, not cost equivalence.
         if atom_values
             .iter()
             .any(|&atom| usize::from(atom) >= new_rank_len)
@@ -2246,7 +2319,10 @@ pub(crate) fn SortNeighLists3(
         let atom = *atom_numbers
             .get(usize::try_from(position).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         let rank = *ranks.get(usize::from(atom))?;
-        if rank != position.wrapping_add(1) as AT_RANK || rank == previous_rank {
+        // INCHI✔️✔️: Source ushort rank promotes to int before comparison;
+        // position+1 fits i32 because position<num_atoms<=i32::MAX.
+        // O(1) scalar work, no extra storage or traversal.
+        if i32::from(rank) != position.wrapping_add(1) || rank == previous_rank {
             let list = source_get(heap, NeighList, i32::from(atom))?;
             if source_get(heap, list, 0)? > 1 {
                 let _ = insertions_sort_NeighList_AT_NUMBERS3(heap, list, nRank)?;
@@ -2331,6 +2407,9 @@ fn try_insertion_sort_atom_numbers_by_rank(
         return None;
     }
     let indices_are_bounded = heap.has_proven_index_bound(atom_numbers.as_const(), count, count);
+    // INCHI✔️❌: Retain the complete checked proof required by the
+    // existing direct consumer; extra scan traffic is human-deferred,
+    // INCHI-PERF-RANK-INDEX-PROOF-SCANS OPEN, not cost equivalence.
     if !indices_are_bounded
         && atom_values[..count]
             .iter()
@@ -2449,48 +2528,27 @@ pub(crate) fn DifferentiateRanks2(
             }
         })?;
     } else if !used_direct_insertion_sort && count != 0 {
-        let mut atoms = heap
-            .slice(nAtomNumber.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        let sort_result = {
-            let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
-            if bUseAltSort & 1 != 0 {
-                insertions_sort(
-                    bytes,
-                    count,
-                    std::mem::size_of::<AT_RANK>(),
-                    &mut |left, right| {
-                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                        CompRank(heap, left, right, pCG)
-                    },
-                )
-                .map(|_| ())
-            } else {
-                inchi_qsort(
-                    bytes,
-                    count,
-                    std::mem::size_of::<AT_RANK>(),
-                    &mut |left, right| {
-                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                        CompRanksOrd(heap, left, right, pCG)
-                    },
-                )
-            }
-        };
-        for (index, atom) in atoms.into_iter().enumerate() {
-            source_set(heap, nAtomNumber, index as i32, atom)?;
-        }
-        sort_result?;
+        // INCHI✔️❗: Keep the shared allocation visible during every compare
+        // and adjacent swap; source tsort is not temporary/shift insertion.
+        // No staging; checked arena whole-call cost remains OPEN.
+        sort_rank_order(
+            heap,
+            nAtomNumber,
+            count,
+            bUseAltSort & 1 != 0,
+            &mut |heap, left, right| {
+                if bUseAltSort & 1 != 0 {
+                    CompRank(heap, left, right, pCG)
+                } else {
+                    CompRanksOrd(heap, left, right, pCG)
+                }
+            },
+        )?;
     }
-    if count != 0 {
-        // The source sort only permutes the atom-number prefix established by
-        // SetInitialRanks2.
-        heap.record_index_bound(nAtomNumber, count, count)?;
-    }
+    // INCHI✔️❗: Sorting preserves supplied values; it does not prove that
+    // each value is below count when physical source arrays are longer.
+    // Do not publish an inferred bound. Existing checked consumers establish
+    // their own actual prefix proof or select the original checked fallback.
 
     let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
         heap,
@@ -2802,49 +2860,43 @@ pub(crate) fn DifferentiateRanksBasic(
 
     pCG.m_pn_RankForSort = pnCurrRank.as_const();
     let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let mut atoms = if count == 0 {
-        Vec::new()
-    } else {
-        heap.slice(nAtomNumber.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    let sort_result = {
-        let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(&mut atoms);
-        if bUseAltSort & 1 != 0 {
-            insertions_sort(
-                bytes,
-                count,
-                std::mem::size_of::<AT_RANK>(),
-                &mut |left, right| {
+    // INCHI✔️❗: Source sort does not touch empty/singleton storage.
+    // Retain the existing byte-slice fast path for disjoint rank/order
+    // allocations; shared storage uses the same canonical sort sequence.
+    // No Vec/copy/writeback; whole-call checked access cost remains OPEN.
+    if count > 1 {
+        if nAtomNumber.allocation_identity() != pnCurrRank.allocation_identity() {
+            heap.with_slice_mut_and_heap_mut(nAtomNumber, |atoms, heap| {
+                let atoms = atoms
+                    .get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let bytes = bytemuck::cast_slice_mut::<AT_RANK, u8>(atoms);
+                let mut compare = |left: &[u8], right: &[u8]| {
                     let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
                     let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
                     CompRank(heap, left, right, pCG)
-                },
-            )
-            .map(|_| ())
+                };
+                if bUseAltSort & 1 != 0 {
+                    insertions_sort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut compare)
+                        .map(|_| ())
+                } else {
+                    inchi_qsort(bytes, count, std::mem::size_of::<AT_RANK>(), &mut compare)
+                }
+            })?;
         } else {
-            inchi_qsort(
-                bytes,
+            sort_rank_order(
+                heap,
+                nAtomNumber,
                 count,
-                std::mem::size_of::<AT_RANK>(),
-                &mut |left, right| {
-                    let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                    let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                    CompRank(heap, left, right, pCG)
-                },
-            )
+                bUseAltSort & 1 != 0,
+                &mut |heap, left, right| CompRank(heap, left, right, pCG),
+            )?;
         }
-    };
-    for (index, atom) in atoms.into_iter().enumerate() {
-        source_set(heap, nAtomNumber, index as i32, atom)?;
     }
-    sort_result?;
-    if count != 0 {
-        // The copied source qsort/tsort preserves the established index bound.
-        heap.record_index_bound(nAtomNumber, count, count)?;
-    }
+    // INCHI✔️❗: Sorting preserves supplied values; it does not prove that
+    // each value is below count when physical source arrays are longer.
+    // Do not publish an inferred bound. Existing checked consumers establish
+    // their own actual prefix proof or select the original checked fallback.
 
     let mut sort_workspace_cache = ContiguousNeighborRankSortWorkspace::try_new(
         heap,
@@ -3101,10 +3153,15 @@ pub(crate) fn HalfStereoBondParity(
     */
     // END INCHI C FUNCTION: HalfStereoBondParity
 
+    // INCHI✔️❗: signed subscript is relative to the supplied atom pointer.
     let atoms = heap.slice(at.as_const())?;
-    let atom = atoms
-        .get(usize::try_from(at_no1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = if at_no1 < 0 {
+        heap.element_signed(at.as_const(), at_no1)?
+    } else {
+        atoms
+            .get(at_no1 as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+    };
     let at1_parity = i32::from(atom.parity);
     if i32::from(atom.valence) > MAX_NUM_STEREO_BOND_NEIGH as i32 || at1_parity <= 0 {
         return Ok(0);
@@ -3134,7 +3191,9 @@ pub(crate) fn HalfStereoBondParity(
         .neighbor
         .get(usize::try_from(stereo_bond_order).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let ranks = heap.slice(nRank.as_const())?;
+    // INCHI✔️❗: the stereobond neighbor never reads nRank; cache its first
+    // reached read only. No additional traversal, snapshot or allocation.
+    let mut rank_values: Option<&[AT_RANK]> = None;
     let mut r = [0_u16; MAX_NUM_STEREO_BOND_NEIGH as usize];
     let mut i = 0_i32;
     let mut j = 0_i32;
@@ -3149,6 +3208,14 @@ pub(crate) fn HalfStereoBondParity(
         if k == i32::from(at_no2) {
             iNeigh = i;
         } else {
+            let ranks = match rank_values {
+                Some(ranks) => ranks,
+                None => {
+                    let ranks = heap.slice(nRank.as_const())?;
+                    rank_values = Some(ranks);
+                    ranks
+                }
+            };
             let rank = *ranks
                 .get(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3407,30 +3474,22 @@ pub(crate) fn parity_of_mapped_half_bond(
     if let Some(en) = pEN.as_deref_mut() {
         *en = EQ_NEIGH::default();
     }
-    let atoms = heap.slice(at.as_const())?;
-    let from_atom = atoms
-        .get(usize::try_from(from_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let to_atom = atoms
-        .get(usize::try_from(to_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let canon_from = heap.slice(nCanonRankFrom.as_const())?;
-    let rank_from = heap.slice(nRankFrom.as_const())?;
-    let rank_to = heap.slice(nRankTo.as_const())?;
-    let rank_at = |ranks: &[AT_RANK], index: i32| -> Result<AT_RANK, SourceHeapError> {
-        ranks
-            .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)
+    // INCHI✔️❗: Read only source-reached signed rank slots; no whole
+    // rank snapshots, canonical-rank preflight or allocation. Typed errors
+    // retain reached order; arena/fixed-record whole-call costs stay OPEN.
+    let rank_at = |ranks: SourceMutPointer<AT_RANK>, index: i32| {
+        heap.element_signed(ranks.as_const(), index).copied()
     };
 
-    if rank_at(rank_from, from_at)? != rank_at(rank_to, to_at)?
-        || rank_at(rank_from, from_neigh)? != rank_at(rank_to, to_neigh)?
-        || to_atom.valence != from_atom.valence
+    if rank_at(nRankFrom, from_at)? != rank_at(nRankTo, to_at)?
+        || rank_at(nRankFrom, from_neigh)? != rank_at(nRankTo, to_neigh)?
+        || heap.element_signed(at.as_const(), to_at)?.valence
+            != heap.element_signed(at.as_const(), from_at)?.valence
     {
         return Ok(0);
     }
 
+    let to_atom = heap.element_signed(at.as_const(), to_at)?;
     let parity = i32::from(to_atom.parity) & BITS_PARITY as i32;
     let num_neigh = i32::from(to_atom.valence);
     if num_neigh > MAX_NUM_STEREO_BOND_NEIGH as i32 || num_neigh < MIN_NUM_STEREO_BOND_NEIGH as i32
@@ -3480,7 +3539,7 @@ pub(crate) fn parity_of_mapped_half_bond(
         .neighbor
         .get(usize::try_from(to_sb_neigh_ord).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let r_sb_neigh = rank_at(rank_to, i32::from(stereo_atom))?;
+    let r_sb_neigh = rank_at(nRankTo, i32::from(stereo_atom))?;
     let mut r_to = [0_u16; MAX_NUM_STEREO_BOND_NEIGH as usize];
     let mut at_no_to = [0_u16; MAX_NUM_STEREO_BOND_NEIGH as usize];
     let mut j = 0_i32;
@@ -3492,7 +3551,7 @@ pub(crate) fn parity_of_mapped_half_bond(
                 .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             at_no_to[j as usize] = neighbour;
-            r_to[j as usize] = rank_at(rank_to, i32::from(neighbour))?;
+            r_to[j as usize] = rank_at(nRankTo, i32::from(neighbour))?;
             if r_sb_neigh == r_to[j as usize] {
                 return Ok(0);
             }
@@ -3510,6 +3569,7 @@ pub(crate) fn parity_of_mapped_half_bond(
         return Ok(0);
     }
 
+    let from_atom = heap.element_signed(at.as_const(), from_at)?;
     let mut r_canon_from = [0_u16; MAX_NUM_STEREO_BOND_NEIGH as usize];
     if r_to[0] == r_to[1] {
         let mut at_no_from = [0_u16; MAX_NUM_STEREO_BOND_NEIGH as usize];
@@ -3521,11 +3581,11 @@ pub(crate) fn parity_of_mapped_half_bond(
                 .neighbor
                 .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let r = rank_at(rank_from, i32::from(k))?;
+            let r = rank_at(nRankFrom, i32::from(k))?;
             if r == r_sb_neigh {
                 from_sb_neigh_ord = i;
             } else if r == r_to[0] {
-                r_canon_from[j as usize] = rank_at(canon_from, i32::from(k))?;
+                r_canon_from[j as usize] = rank_at(nCanonRankFrom, i32::from(k))?;
                 at_no_from[j as usize] = k;
                 j = j.wrapping_add(1);
             } else {
@@ -3555,13 +3615,13 @@ pub(crate) fn parity_of_mapped_half_bond(
             .neighbor
             .get(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let r = rank_at(rank_from, i32::from(k))?;
+        let r = rank_at(nRankFrom, i32::from(k))?;
         if r == r_sb_neigh {
             from_sb_neigh_ord = i;
         } else if r == r_to[0] {
-            r_canon_from[0] = rank_at(canon_from, i32::from(k))?;
+            r_canon_from[0] = rank_at(nCanonRankFrom, i32::from(k))?;
         } else if r == r_to[1] {
-            r_canon_from[1] = rank_at(canon_from, i32::from(k))?;
+            r_canon_from[1] = rank_at(nCanonRankFrom, i32::from(k))?;
         } else {
             return Ok(0);
         }
@@ -3754,24 +3814,18 @@ pub(crate) fn parity_of_mapped_atom2(
     */
     // END INCHI C FUNCTION: parity_of_mapped_atom2
 
-    let to_atom = heap
-        .slice(at.as_const())?
-        .get(usize::try_from(to_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-        .cloned()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let to_atom = heap.element_signed(at.as_const(), to_at)?.clone();
     let num_neigh = i32::from(to_atom.valence);
     if let Some(en) = pEN.as_deref_mut() {
         *en = EQ_NEIGH::default();
     }
-    let rank_from = heap.slice(nRankFrom.as_const())?.to_vec();
-    let rank_to = heap.slice(nRankTo.as_const())?.to_vec();
-    let rank_at = |ranks: &[AT_RANK], index: i32| -> Result<AT_RANK, SourceHeapError> {
-        ranks
-            .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)
+    // INCHI✔️❗: Read only source-reached signed rank slots; no whole
+    // rank snapshots, canonical-rank preflight or allocation. Typed errors
+    // retain reached order; arena/fixed-record whole-call costs stay OPEN.
+    let rank_at = |ranks: SourceMutPointer<AT_RANK>, index: i32| {
+        heap.element_signed(ranks.as_const(), index).copied()
     };
-    if rank_at(&rank_from, from_at)? != rank_at(&rank_to, to_at)? {
+    if rank_at(nRankFrom, from_at)? != rank_at(nRankTo, to_at)? {
         return Ok(0);
     }
     if num_neigh > MAX_NUM_STEREO_ATOM_NEIGH as i32 || num_neigh < 2 {
@@ -3785,19 +3839,12 @@ pub(crate) fn parity_of_mapped_atom2(
         return Ok(0);
     }
 
-    let from_atom = heap
-        .slice(at.as_const())?
-        .get(usize::try_from(from_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-        .cloned()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let canon_from = heap.slice(nCanonRankFrom.as_const())?.to_vec();
     let count = usize::try_from(num_neigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let mut neigh_rank_from = [0_u16; 4];
     let mut neigh_number_from = [0_u16; 4];
     let mut neigh_rank_to = [0_u16; 4];
     let mut neigh_number_to = [0_u16; 4];
     let mut neigh_rank_from_canon = [0_u16; 4];
-    let mut neigh_rank_to_canon = [0_u16; 4];
     for i in 0..count {
         neigh_number_from[i] = i as AT_RANK;
         neigh_number_to[i] = i as AT_RANK;
@@ -3805,19 +3852,42 @@ pub(crate) fn parity_of_mapped_atom2(
             .neighbor
             .get(i)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let from_neighbour = *from_atom
+        neigh_rank_to[i] = rank_at(nRankTo, i32::from(to_neighbour))?;
+        let from_neighbour = *heap
+            .element_signed(at.as_const(), from_at)?
             .neighbor
             .get(i)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        neigh_rank_to[i] = rank_at(&rank_to, i32::from(to_neighbour))?;
-        neigh_rank_from[i] = rank_at(&rank_from, i32::from(from_neighbour))?;
-        neigh_rank_from_canon[i] = rank_at(&canon_from, i32::from(from_neighbour))?;
+        neigh_rank_from[i] = rank_at(nRankFrom, i32::from(from_neighbour))?;
+        neigh_rank_from_canon[i] = rank_at(nCanonRankFrom, i32::from(from_neighbour))?;
     }
 
+    // INCHI✔️❌: The source frame above uses fixed rank arrays and exposes
+    // their addresses through m_pn_RankForSort. Retain genuine model roots
+    // for that existing pointer representation; compare their stored data,
+    // not independent mirrors. Input errors still precede model admissions.
+    // INCHI-PERF-MAPPED-ATOM-RANK-STORAGE records the extra allocations and
+    // arena costs; this is not native performance equivalence.
     let from_stack = heap.allocate_model_storage(neigh_rank_from.to_vec())?;
-    let to_stack = heap.allocate_model_storage(neigh_rank_to.to_vec())?;
-    let canon_stack = heap.allocate_model_storage(neigh_rank_to_canon.to_vec())?;
+    let to_stack = match heap.allocate_model_storage(neigh_rank_to.to_vec()) {
+        Ok(pointer) => pointer,
+        Err(error) => {
+            heap.free(from_stack)?;
+            return Err(error);
+        }
+    };
+    let canon_stack = match heap.allocate_model_storage(vec![0_u16; 4]) {
+        Ok(pointer) => pointer,
+        Err(error) => {
+            let free_from = heap.free(from_stack);
+            let free_to = heap.free(to_stack);
+            free_from.and(free_to)?;
+            return Err(error);
+        }
+    };
     let result = (|| -> Result<i32, SourceHeapError> {
+        let neigh_rank_from = heap.slice(from_stack.as_const())?;
+        let neigh_rank_to = heap.slice(to_stack.as_const())?;
         pCG.m_pn_RankForSort = from_stack.as_const();
         pCG.m_nNumCompNeighborsRanksCountEql = 0;
         let _num_trans_from = insertions_sort(
@@ -3827,7 +3897,7 @@ pub(crate) fn parity_of_mapped_atom2(
             &mut |left, right| {
                 let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
                 let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                CompNeighborsRanksCountEql(left, right, &neigh_rank_from, pCG)
+                CompNeighborsRanksCountEql(left, right, neigh_rank_from, pCG)
             },
         )?;
 
@@ -3881,7 +3951,8 @@ pub(crate) fn parity_of_mapped_atom2(
                         },
                     )?;
                     en.num_to = j as i32;
-                    en.from_at = from_atom.neighbor[neigh_canon_from_min];
+                    en.from_at =
+                        heap.element_signed(at.as_const(), from_at)?.neighbor[neigh_canon_from_min];
                     en.rank = r1 as AT_RANK;
                     en.canon_rank = r_canon_from_min as AT_RANK;
                 } else {
@@ -3913,21 +3984,30 @@ pub(crate) fn parity_of_mapped_atom2(
             &mut |left, right| {
                 let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
                 let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                CompNeighborsRanksCountEql(left, right, &neigh_rank_to, pCG)
+                CompNeighborsRanksCountEql(left, right, neigh_rank_to, pCG)
             },
         )?;
-        for i in 0..count {
-            let j = usize::from(neigh_number_to[i]);
-            let k = usize::from(neigh_number_from[i]);
-            if neigh_rank_to[j] != neigh_rank_from[k] {
-                return Ok(0);
+        // Only this fresh, not-yet-published canonical buffer is detached.
+        // No callback runs in the projection; from/to roots remain readable.
+        // Sorted neighbor numbers permute 0..count (count <= 4), so every
+        // reached store addresses this buffer, including partial mismatch.
+        let mapped = heap.with_slice_mut_and_heap(canon_stack, |canon, heap| {
+            let from = heap.slice(from_stack.as_const())?;
+            let to = heap.slice(to_stack.as_const())?;
+            for i in 0..count {
+                let j = usize::from(neigh_number_to[i]);
+                let k = usize::from(neigh_number_from[i]);
+                if to[j] != from[k] {
+                    return Ok(false);
+                }
+                canon[j] = neigh_rank_from_canon[k];
             }
-            neigh_rank_to_canon[j] = neigh_rank_from_canon[k];
+            Ok(true)
+        })?;
+        if !mapped {
+            return Ok(0);
         }
-        heap.slice_mut(canon_stack)?
-            .get_mut(..4)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .copy_from_slice(&neigh_rank_to_canon);
+        let neigh_rank_to_canon = heap.slice(canon_stack.as_const())?;
         pCG.m_pn_RankForSort = canon_stack.as_const();
         num_trans_to = num_trans_to.wrapping_add(insertions_sort(
             bytemuck::cast_slice_mut(&mut neigh_number_to),
@@ -3936,7 +4016,7 @@ pub(crate) fn parity_of_mapped_atom2(
             &mut |left, right| {
                 let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
                 let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                CompNeighborsRanksCountEql(left, right, &neigh_rank_to_canon, pCG)
+                CompNeighborsRanksCountEql(left, right, neigh_rank_to_canon, pCG)
             },
         )?);
         Ok(2_i32.wrapping_sub(num_trans_to.wrapping_add(i32::from(to_atom.parity)) % 2))
@@ -4037,11 +4117,16 @@ pub(crate) fn might_change_other_atom_parity(
                     .neighbor
                     .get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                // INCHI✔️❗: Excluded neighbor short-circuits before any
+                // neighbor-atom load. O(1), no allocation; checked cost OPEN.
+                if i32::from(neighbour) == at_no {
+                    j = j.wrapping_add(1);
+                    continue;
+                }
                 let neighbour_atom = atoms
                     .get(usize::from(neighbour))
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if i32::from(neighbour) != at_no
-                    && neighbour_atom.bHasStereoOrEquToStereo != 0
+                if neighbour_atom.bHasStereoOrEquToStereo != 0
                     && (i32::from(neighbour_atom.stereo_atom_parity) & KNOWN_PARITIES_EQL as i32)
                         == 0
                     && neighbour_atom.stereo_bond_neighbor[0] == 0
@@ -4212,17 +4297,54 @@ pub(crate) fn AllocateForNonStereoRemoval(
         nVisited1,
         nVisited2,
     )?;
-    let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let mut allocate_rank = |heap: &mut SourceHeap| match heap.allocate(vec![0_u16; count]) {
-        Ok(pointer) => Ok(pointer),
-        Err(SourceHeapError::AllocationFailed) => Ok(SourceMutPointer::null()),
-        Err(error) => Err(error),
+    // INCHI✔️❌: *nAtomNumberCanon1 = (AT_RANK *) inchi_malloc( num_atoms * sizeof( **nAtomNumberCanon1 ) );
+    // sizeof makes the multiplication unsigned. Preserve its wrapped byte
+    // size at this allocation boundary, rather than rejecting a signed input
+    // before the remaining source allocations. For num_atoms < -1, each
+    // neighbor pointer table's unsigned count times its pointer size also
+    // overflows: native calloc returns NULL before reading any atom.
+    // All four rank allocations return NULL on reservation/arena failure,
+    // leaving the original common cleanup and allocation order intact.
+    // Cost: four allocations, no clone/additional traversal. Safe typed
+    // initialization remains O(count), unlike native uninitialized malloc;
+    // INCHI-PERF-NONSTEREO-RANK-ALLOCATION remains OPEN, not equivalence.
+    let rank_size = std::mem::size_of::<AT_RANK>();
+    let count = (num_atoms as usize).wrapping_mul(rank_size) / rank_size;
+    let allocate_rank = |heap: &mut SourceHeap| {
+        let mut values = Vec::new();
+        if values.try_reserve_exact(count).is_err() {
+            return Ok(SourceMutPointer::null());
+        }
+        values.resize(count, 0_u16);
+        match heap.allocate(values) {
+            Ok(pointer) => Ok(pointer),
+            Err(SourceHeapError::AllocationFailed) => Ok(SourceMutPointer::null()),
+            Err(error) => Err(error),
+        }
     };
+    // INCHI✔️❗: *nl = CreateNeighList( num_atoms, num_atoms, at, 0, NULL );
+    // The shared constructor reports its signed conversion/size overflow
+    // structurally. Only this proven native allocation-failure case maps to
+    // NULL here; positive inputs and all other typed errors are unchanged.
+    let create_neighbors =
+        |heap: &mut SourceHeap| match CreateNeighList(
+            heap,
+            num_atoms,
+            num_atoms,
+            at.as_const(),
+            0,
+            None,
+        ) {
+            Err(
+                SourceHeapError::SourceIntegerOverflow | SourceHeapError::AllocationSizeOverflow,
+            ) if num_atoms < -1 => Ok(SourceMutPointer::null()),
+            result => result,
+        };
     *nAtomNumberCanon1 = allocate_rank(heap)?;
     *nAtomNumberCanon2 = allocate_rank(heap)?;
-    *nl = CreateNeighList(heap, num_atoms, num_atoms, at.as_const(), 0, None)?;
-    *nl1 = CreateNeighList(heap, num_atoms, num_atoms, at.as_const(), 0, None)?;
-    *nl2 = CreateNeighList(heap, num_atoms, num_atoms, at.as_const(), 0, None)?;
+    *nl = create_neighbors(heap)?;
+    *nl1 = create_neighbors(heap)?;
+    *nl2 = create_neighbors(heap)?;
     *nVisited1 = allocate_rank(heap)?;
     *nVisited2 = allocate_rank(heap)?;
 
@@ -4300,6 +4422,30 @@ pub(crate) fn GetMinNewRank(
         nRank2 = 1;
     }
     Ok(nRank2)
+}
+
+#[derive(Clone, Copy)]
+enum StereoRankInput<'a> {
+    Stored(SourceMutPointer<AT_RANK>),
+    Borrowed(&'a [AT_RANK]),
+}
+
+impl StereoRankInput<'_> {
+    fn get(self, heap: &SourceHeap, index: i32) -> Result<AT_RANK, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichimap2.c:1631 C420 reached rank read
+        //     int n1 = (int) neigh_num[in1];
+        // END VERBATIM SOURCE FRAGMENT: C420 reached rank read
+        // INCHI✔️❌: Preserve stored signed-pointer errors/live alias reads;
+        // local immutable arrays cannot alias heap mutation and need no slot.
+        // O(1), no allocation/clone/scan; variant/check constants deferred.
+        match self {
+            Self::Stored(pointer) => source_get(heap, pointer, index),
+            Self::Borrowed(values) => values
+                .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+        }
+    }
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -4781,27 +4927,534 @@ pub(crate) fn BreakNeighborsTie(
     // INCHI✔️❌: #define BREAK_ALSO_NEIGH_TIE        0
     // END INCHI ACTIVE MACRO CONFIGURATION
 
-    let n1 = i32::from(source_get(heap, neigh_num, in1)?);
-    let n2 = i32::from(source_get(heap, neigh_num, in2)?);
-    let (ia_valence, ia_neighbors) = {
-        let atoms = heap.slice(at.as_const())?;
-        let atom = atoms
-            .get(usize::try_from(ia).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        (i32::from(atom.valence), atom.neighbor)
-    };
+    break_neighbors_tie_input(
+        heap,
+        pCG,
+        at,
+        num_atoms,
+        num_at_tg,
+        ib,
+        ia,
+        StereoRankInput::Stored(neigh_num),
+        in1,
+        in2,
+        mode,
+        pRankStack1,
+        pRankStack2,
+        nTempRank,
+        NeighList,
+        nSymmRank,
+        nCanonRank,
+        nl1,
+        nl2,
+        lNumIter,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn break_neighbors_tie_input(
+    heap: &mut SourceHeap,
+    pCG: &mut CANON_GLOBALS,
+    at: SourceMutPointer<sp_ATOM>,
+    num_atoms: i32,
+    num_at_tg: i32,
+    ib: i32,
+    ia: i32,
+    neigh_num: StereoRankInput<'_>,
+    in1: i32,
+    in2: i32,
+    mode: i32,
+    pRankStack1: ppAT_RANK,
+    pRankStack2: ppAT_RANK,
+    nTempRank: SourceMutPointer<AT_RANK>,
+    NeighList: SourceMutPointer<NEIGH_LIST>,
+    nSymmRank: SourceMutPointer<AT_RANK>,
+    nCanonRank: SourceMutPointer<AT_RANK>,
+    nl1: SourceMutPointer<NEIGH_LIST>,
+    nl2: SourceMutPointer<NEIGH_LIST>,
+    lNumIter: &mut i64,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichimap2.c:1609..2056 C420 sole BreakNeighborsTie rank-input kernel
+    // int BreakNeighborsTie( CANON_GLOBALS *pCG,
+    //                        sp_ATOM *at,
+    //                        int num_atoms,
+    //                        int num_at_tg,
+    //                        int ib,
+    //                        int ia,
+    //                        AT_RANK *neigh_num,
+    //                        int in1,
+    //                        int in2,
+    //                        int mode,
+    //                        AT_RANK **pRankStack1,
+    //                        AT_RANK **pRankStack2,
+    //                        AT_RANK *nTempRank,
+    //                        NEIGH_LIST *NeighList,
+    //                        const AT_RANK *nSymmRank,
+    //                        AT_RANK *nCanonRank,
+    //                        NEIGH_LIST *nl1,
+    //                        NEIGH_LIST *nl2,
+    //                        long *lNumIter )
+    // {
+    //     AT_RANK nRank1, nRank2;
+    //     int     nNumDiffRanks, nNumDiffRanks1, nNumDiffRanks2, i;
+    //     int n1 = (int) neigh_num[in1];
+    //     int n2 = (int) neigh_num[in2];
+    //     int other_neigh[2] = {0}, other_neig_ord[2] = {0}, num_other_neigh; /* djb-rwth: initialisations added */
+    //
+    //     /*  asymmetric calculation */
+    //
+    //     if ((mode == MAP_MODE_S4  && in1) || /* for S4 we need only (in1,in2) = (0,1) (0,2) (0,3) pairs of neighbors */
+    //          (mode != MAP_MODE_STD && at[ia].valence != MAX_NUM_STEREO_ATOM_NEIGH) ||
+    //          (mode != MAP_MODE_STD && nSymmRank[n1] != nSymmRank[n2])) /* djb-rwth: addressing LLVM warning */
+    //     {
+    //         return 0;
+    //     }
+    //
+    //     /*  1. Create initial ranks from equivalence information stored in nSymmRank */
+    //     memcpy(pRankStack1[0], nSymmRank, num_at_tg * sizeof(pRankStack1[0][0]));
+    //     pCG->m_pn_RankForSort = pRankStack1[0];
+    //     tsort( pCG, pRankStack1[1], num_at_tg, sizeof( pRankStack1[1][0] ), CompRanksOrd );
+    //     nNumDiffRanks = SortedEquInfoToRanks( pRankStack1[0]/*inp*/, pRankStack1[0]/*out*/, pRankStack1[1], num_at_tg, NULL );
+    //
+    //     /* other neighbors */
+    //     num_other_neigh = 0;
+    //     if (at[ia].valence <= MAX_NUM_STEREO_ATOM_NEIGH && mode)
+    //     {
+    //         for (i = 0; i < at[ia].valence; i++)
+    //         {
+    //             if (i != in1 && i != in2)
+    //             {
+    //                 other_neigh[num_other_neigh] = (int) neigh_num[i];
+    //                 other_neig_ord[num_other_neigh] = i;
+    //                 num_other_neigh++;
+    //             }
+    //         }
+    //     }
+    //     if ((mode != MAP_MODE_STD && nSymmRank[other_neigh[0]] != nSymmRank[other_neigh[1]]) ||
+    //          (mode == MAP_MODE_S4 && nSymmRank[n1] != nSymmRank[other_neigh[1]])) /* djb-rwth: addressing LLVM warning */
+    //     {
+    //         return 0;
+    //     }
+    //
+    //     /*  2. Fix at[ia] */
+    //     if (pRankStack1[0][ia] != nSymmRank[ia])
+    //     {
+    //         /*  at[ia] is constitutionally equivalent to some other atom. Fix at[ia]. */
+    //         pRankStack1[0][ia] = nSymmRank[ia];
+    //         nNumDiffRanks = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                      nNumDiffRanks, pRankStack1[0], nTempRank,
+    //                                      pRankStack1[1], lNumIter, 1 );
+    //     }
+    //     /*  3. In case of a double bond/cumulene only: */
+    //     /*     fix at[ib] -- the opposite double bond/cumulene atom */
+    //     if (ib < num_atoms)
+    //     {
+    //         /*  find the smallest possible rank */
+    //         nRank1 = pRankStack1[0][ib];
+    //         nRank2 = GetMinNewRank( pRankStack1[0], pRankStack1[1], nRank1 );
+    //         /*  if the rank is smaller than pRankStack1[0][ib] then fix at[ib] */
+    //         if (nRank2 != nRank1)
+    //         {
+    //             pRankStack1[0][ib] = nRank2;
+    //             nNumDiffRanks = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                          nNumDiffRanks, pRankStack1[0], nTempRank,
+    //                                          pRankStack1[1], lNumIter, 1 );
+    //         }
+    //     }
+    //
+    //     /**************************************************************************************
+    //      * Note: It may (or may not?) make sense to fix "other neighbors":
+    //      *       in case of a stereo center fix neighbors other than n1, n2
+    //      *       in case of a double bond/cumulene fix the opposite atom neighbors
+    //      *       The ranks assigned to the other neighbors in case of their equivalence
+    //      *       should be in the ascending order of their canonical ranks ????
+    //      *       *** For now we do not fix other neighbors ***
+    //      **************************************************************************************/
+    //
+    //     /*  4. Check whether the neighbors still have equal ranks */
+    //     if (pRankStack1[0][n1] != pRankStack1[0][n2])
+    //     {
+    //         return 0; /*  the two neighbors are not constitutionally equivalent */
+    //     }
+    //     /*  5. Find new smallest possible rank for n1 and n2 */
+    //     nRank1 = pRankStack1[0][n1];
+    //     nRank2 = GetMinNewRank( pRankStack1[0], pRankStack1[1], nRank1 );
+    //
+    //     /*  6. Copy the results to the 2nd eq. rank arrays */
+    //     memcpy(pRankStack2[0], pRankStack1[0], num_at_tg * sizeof(pRankStack2[0][0]));
+    //     memcpy(pRankStack2[1], pRankStack1[1], num_at_tg * sizeof(pRankStack2[0][0]));
+    //     /*  7. Break neighbor tie: map n1(1) <--> n2(2) */
+    //     /*  7. Break neighbor tie: map n1(1) <--> n2(2) */
+    //     pRankStack1[0][n1] = nRank2;
+    //     nNumDiffRanks1 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                  nNumDiffRanks, pRankStack1[0], nTempRank,
+    //                                  pRankStack1[1], lNumIter, 1 );
+    //
+    //     pRankStack2[0][n2] = nRank2;
+    //     nNumDiffRanks2 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                  nNumDiffRanks, pRankStack2[0], nTempRank,
+    //                                  pRankStack2[1], lNumIter, 1 );
+    //
+    //     if (nNumDiffRanks1 != nNumDiffRanks2)
+    //     {
+    //         return -1; /*  <BRKPT> */
+    //     }
+    //
+    //     if (mode == MAP_MODE_C2v || mode == MAP_MODE_C2)
+    //     {
+    //         /* Check for C2v reflection leading to parity inversion (mode=1) or C2 rotation (mode=2) */
+    //         AT_RANK nRank10, nRank20;
+    //         int     nn1, nn2;
+    //         /*
+    //          * C2v & C2: map
+    //          * n1(1) <--> n2(2) -- at this point already done
+    //          * n1(2) <--> n2(1) --> do at i = 0
+    //          *
+    //          * C2v: other neighbors must be unmoved: map
+    //          * other_neigh[0](1) <--> other_neigh[0](2)
+    //          * other_neigh[1](1) <--> other_neigh[1](2)
+    //          *
+    //          * C2:  other neighbors should be mapped on each other
+    //          * other_neigh[0](1) <--> other_neigh[1](2)
+    //          * other_neigh[1](1) <--> other_neigh[0](2)
+    //          */
+    //         for (i = 0; i <= 2; i++)
+    //         {
+    //             if (i == 0)
+    //             {
+    //                 /* C2v & C2. Map n2(1) <--> n1(2) */
+    //                 nn1 = n2;
+    //                 nn2 = n1;
+    //             }
+    //             else
+    //             {
+    //                 if (mode == MAP_MODE_C2v)
+    //                 {   /* was '=', pointed by WDI */
+    //                     /* i = 1 or 2
+    //                      * C2v. Other neighbors must be unmoved: map
+    //                      * i=1: other_neigh[0](1) <--> other_neigh[0](2)
+    //                      * i=2: other_neigh[1](1) <--> other_neigh[1](2)
+    //                      */
+    //                     nn1 = other_neigh[i - 1]; /* 0 or 1 */
+    //                     nn2 = other_neigh[i - 1]; /* 0 or 1 */
+    //                 }
+    //                 else
+    //                 {
+    //                     if (mode == MAP_MODE_C2)
+    //                     {
+    //                         /* was '=', pointed by WDI */
+    //                         /* i = 1 or 2
+    //                          * C2.  Other neighbors should be mapped on each other
+    //                          * i=1: other_neigh[0](1) <--> other_neigh[1](2)
+    //                          * i=2: other_neigh[1](1) <--> other_neigh[0](2)
+    //                          */
+    //                         nn1 = other_neigh[i - 1]; /* 0 or 1 */
+    //                         nn2 = other_neigh[2 - i]; /* 1 or 0 */
+    //                     }
+    //                     else
+    //                     {
+    //                         return -1; /* program error */
+    //                     }
+    //                 }
+    //             }
+    //
+    //             /* map nn1(1) <--> nn2(2) */
+    //             nRank10 = pRankStack1[0][nn1];
+    //             nRank20 = pRankStack2[0][nn2];
+    //             nRank1 = GetMinNewRank( pRankStack1[0], pRankStack1[1], nRank10 );
+    //             nRank2 = GetMinNewRank( pRankStack2[0], pRankStack2[1], nRank20 );
+    //             if (nRank10 == nRank20 && nRank1 == nRank2)
+    //             {
+    //                 if (nRank10 == nRank1)
+    //                 {
+    //                     ; /* atoms are already mapped */
+    //                 }
+    //                 else
+    //                 {
+    //                     /* need additional mapping: ranks are not fixed yet */
+    //                     pRankStack1[0][nn1] = nRank1;
+    //                     nNumDiffRanks1 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                                  nNumDiffRanks, pRankStack1[0], nTempRank,
+    //                                                  pRankStack1[1], lNumIter, 1 );
+    //                     pRankStack2[0][nn2] = nRank2;
+    //                     nNumDiffRanks2 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                                  nNumDiffRanks, pRankStack2[0], nTempRank,
+    //                                                  pRankStack2[1], lNumIter, 1 );
+    //                     if (nNumDiffRanks1 != nNumDiffRanks2)
+    //                     {
+    //                         return -1; /*  <BRKPT> */
+    //                     }
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 return 0;  /* mapping is not possible */
+    //             }
+    //         }
+    //     }
+    //
+    //     if (mode == MAP_MODE_S4)
+    //     {
+    //         /*
+    //          *  Check for S4 reflection/rotation leading to parity inversion (mode=3)
+    //          *
+    //          * At this point n1(1) <--> n2(2) have been mapped and n1 has index in1 = 0
+    //          * Below indexes in neigh_num[] are in brackets; [i] means neigh_num[i].
+    //          * Numbers (#) in parentheses refer to pRankStack#
+    //          *
+    //          * in2=1: [0](1) <--> [1](2)  mapping has been done; add more mappings:
+    //          *        [1](1) <--> [2](2)  [x]=[2]
+    //          *        [2](1) <--> [3](2)  [y]=[3]
+    //          *        [3](1) <--> [0](2)
+    //          *        this will succeed if C2 axis crosses middle of [0]-[2] and [1]-[3] lines
+    //          *
+    //          * in2=2: [0](1) <--> [2](2) mapping has been done; add more mappings:
+    //          *        [2](1) <--> [3](2)  [x]=[3]
+    //          *        [3](1) <--> [1](2)  [y]=[1]
+    //          *        [1](1) <--> [0](2)
+    //          *        this will succeed if C2 axis crosses middle of [0]-[3] and [1]-[2] lines
+    //          *
+    //          * in2=3: [0](1) <--> [3](2) mapping has been done; add more mappings:
+    //          *        [3](1) <--> [1](2)  [x]=[1]
+    //          *        [1](1) <--> [2](2)  [y]=[2]
+    //          *        [2](1) <--> [0](2)
+    //          *        this will succeed if C2 axis crosses middle of [0]-[1] and [2]-[3] lines
+    //          *
+    //          * In general:
+    //          *        [in1](1) <--> [in2](2)
+    //          *        [in2](1) <--> [x]  (2)  i=0
+    //          *        [x]  (1) <--> [y]  (2)  i=1
+    //          *        [y]  (1) <--> [in1](2)  i=2
+    //          *
+    //          *    in1=0    always
+    //          *    ===== how to find x, y from in2 ====
+    //          *    in2=1 => x,y = 2, 3  or [x] = other_neigh[0], [y] = other_neigh[1]
+    //          *    in2=2 => x,y = 3, 1  or [x] = other_neigh[1], [y] = other_neigh[0]
+    //          *    in2=3 => x,y = 1, 2  or [x] = other_neigh[0], [y] = other_neigh[1]
+    //          *    ====================================
+    //          */
+    //         AT_RANK nRank10, nRank20;
+    //         int     nn1, nn2;
+    //         for (i = 0; i <= 2; i++)
+    //         {
+    //             switch (i)
+    //             {
+    //                 case 0:  /* [in2](1) <--> [x](2);  */
+    //                     nn1 = n2;                    /* [in2] */
+    //                     nn2 = other_neigh[1 - in2 % 2];  /* [x]   */
+    //                     break;
+    //                 case 1:  /* [x](1) <--> [y](2) */
+    //                     nn1 = other_neigh[1 - in2 % 2];  /* [x]   */
+    //                     nn2 = other_neigh[in2 % 2];  /* [y]   */
+    //                     break;
+    //                 case 2:
+    //                     nn1 = other_neigh[in2 % 2];  /* [y]   */
+    //                     nn2 = n1;                    /* [in1] */
+    //                     break;
+    //                 default:
+    //                     return -1; /* program error */
+    //             }
+    //             /* map nn1(1) <--> nn2(2) */
+    //             nRank10 = pRankStack1[0][nn1];
+    //             nRank20 = pRankStack2[0][nn2];
+    //             nRank1 = GetMinNewRank( pRankStack1[0], pRankStack1[1], nRank10 );
+    //             nRank2 = GetMinNewRank( pRankStack2[0], pRankStack2[1], nRank20 );
+    //             if (nRank10 == nRank20 && nRank1 == nRank2)
+    //             {
+    //                 if (nRank10 == nRank1)
+    //                 {
+    //                     ;/* atoms are already mapped */
+    //                 }
+    //                 else
+    //                 {
+    //                              /* need additional mapping: ranks are not fixed yet */
+    //                     pRankStack1[0][nn1] = nRank1;
+    //                     nNumDiffRanks1 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                                  nNumDiffRanks, pRankStack1[0], nTempRank,
+    //                                                  pRankStack1[1], lNumIter, 1 );
+    //                     pRankStack2[0][nn2] = nRank2;
+    //                     nNumDiffRanks2 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                                  nNumDiffRanks, pRankStack2[0], nTempRank,
+    //                                                  pRankStack2[1], lNumIter, 1 );
+    //
+    //                     if (nNumDiffRanks1 != nNumDiffRanks2)
+    //                     {
+    //                         return -1; /*  <BRKPT> */
+    //                     }
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 return 0;  /* mapping is not possible */
+    //             }
+    //         }
+    //     }
+    //
+    // #if ( BREAK_ONE_MORE_SC_TIE == 1 ) /* { */
+    //     /* Check for a very highly symmetrical stereo center 12-06-2002 */
+    //     if (ib >= num_atoms && at[ia].valence == MAX_NUM_STEREO_ATOM_NEIGH)
+    //     {
+    //         int num_eq;
+    //         nRank1 = pRankStack1[0][n2];
+    //         for (i = 0, num_eq = 0; i < at[ia].valence; i++)
+    //         {
+    //             num_eq += ( nRank1 == pRankStack1[0][at[ia].neighbor[i]] );
+    //         }
+    //         if (num_eq == MAX_NUM_STEREO_ATOM_NEIGH - 1)
+    //         {
+    //             for (i = (int) nRank1 - 1; 0 <= i && nRank1 == ( nRank2 = pRankStack1[0][(int) pRankStack1[1][i]] ); i--)
+    //             {
+    //                 ;
+    //             }
+    //             if (i >= 0)
+    //             {
+    //                 nRank2++;
+    //             }
+    //             else
+    //             {
+    //                 nRank2 = 1;
+    //             }
+    //
+    //             /*  7a. Break another neighbor tie */
+    //             nNumDiffRanks = nNumDiffRanks1;
+    //
+    //             pRankStack1[0][n2] = nRank2;
+    //             nNumDiffRanks1 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                          nNumDiffRanks, pRankStack1[0], nTempRank,
+    //                                          pRankStack1[1], lNumIter, 1 );
+    //
+    //             pRankStack2[0][n1] = nRank2;
+    //             nNumDiffRanks2 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                          nNumDiffRanks, pRankStack2[0], nTempRank,
+    //                                          pRankStack2[1], lNumIter, 1 );
+    //         }
+    //     }
+    //
+    //     if (nNumDiffRanks1 != nNumDiffRanks2)
+    //     {
+    //         return -1; /*  <BRKPT> */
+    //     }
+    // #endif /* } BREAK_ONE_MORE_SC_TIE */
+    //
+    // #if ( BREAK_ALSO_NEIGH_TIE == 1 )
+    //     /* check whether neighbor's neighbors are tied and untie them */
+    //     if (at[n1].nRingSystem == at[n2].nRingSystem &&  ib >= num_atoms)
+    //     {
+    //         AT_RANK NeighNeighList[MAX_NUM_STEREO_ATOM_NEIGH + 1];
+    //         int m, neigh1 = -1, neigh2 = -1;
+    //         nRank1 = nRank2 = 0;
+    //         /* n1 */
+    //         NeighNeighList[0] = at[n1].valence - 1; /* for insertions_sort_NeighListBySymmAndCanonRank() */
+    //         for (i = 0, m = 1; i < at[n1].valence; i++)
+    //         {
+    //             int neigh = at[n1].neighbor[i];
+    //             if (neigh != ia)
+    //             {
+    //                 NeighNeighList[m++] = neigh;
+    //             }
+    //         }
+    //         insertions_sort_NeighListBySymmAndCanonRank( NeighNeighList, pRankStack1[0], nCanonRank );
+    //         for (m = 2; m < at[n1].valence; m++)
+    //         {
+    //             if (pRankStack1[0][NeighNeighList[m]] == pRankStack1[0][NeighNeighList[m - 1]])
+    //             {
+    //                 neigh1 = NeighNeighList[m - 1];
+    //                 break;
+    //             }
+    //         }
+    //         /* n2 */
+    //         NeighNeighList[0] = at[n2].valence - 1; /* for insertions_sort_NeighListBySymmAndCanonRank() */
+    //         for (i = 0, m = 1; i < at[n2].valence; i++)
+    //         {
+    //             int neigh = at[n2].neighbor[i];
+    //             if (neigh != ia)
+    //             {
+    //                 NeighNeighList[m++] = neigh;
+    //             }
+    //         }
+    //         insertions_sort_NeighListBySymmAndCanonRank( NeighNeighList, pRankStack2[0], nCanonRank );
+    //         for (m = 2; m < at[n2].valence; m++)
+    //         {
+    //             if (pRankStack2[0][NeighNeighList[m]] == pRankStack2[0][NeighNeighList[m - 1]])
+    //             {
+    // #if ( BREAK_ALSO_NEIGH_TIE_ROTATE == 1 )
+    //                 neigh2 = NeighNeighList[m];    /* [m] to obtain same axis orientation  around ia<neigh */
+    // #else
+    //                 neigh2 = NeighNeighList[m - 1];  /* [m-1] to obtain reflection ??? */
+    // #endif
+    //                 break;
+    //             }
+    //         }
+    //         if (neigh1 >= 0 && neigh2 >= 0 && pRankStack1[0][neigh1] == pRankStack2[0][neigh2])
+    //         {
+    //             /* neighbors' neighbors are tied */
+    //             nRank1 = pRankStack1[0][neigh1];
+    //             nRank2 = GetMinNewRank( pRankStack1[0], pRankStack1[1], nRank1 );
+    //
+    //             /*  Break neighbor's neighbor tie */
+    //
+    //             nNumDiffRanks = nNumDiffRanks1;
+    //
+    //             pRankStack1[0][neigh1] = nRank2;
+    //             nNumDiffRanks1 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                          nNumDiffRanks, pRankStack1[0], nTempRank,
+    //                                          pRankStack1[1], lNumIter, 1 );
+    //
+    //             pRankStack2[0][neigh2] = nRank2;
+    //             nNumDiffRanks2 = DifferentiateRanksBasic( pCG, num_at_tg, NeighList,
+    //                                          nNumDiffRanks, pRankStack2[0], nTempRank,
+    //                                          pRankStack2[1], lNumIter, 1 );
+    //         }
+    //     }
+    // #endif
+    //
+    //     /*  for debug only */
+    //     for (i = 0; i < num_at_tg; i++)
+    //     {
+    //         if (pRankStack1[0][(int) pRankStack1[1][i]] != pRankStack2[0][(int) pRankStack2[1][i]])
+    //         {
+    //             return -1;  /*  <BRKPT> */
+    //         }
+    //     }
+    //
+    //     /*  Resort lists of  neighbors */
+    //     SortNeighListsBySymmAndCanonRank( num_atoms, nl1, pRankStack1[0], nCanonRank );
+    //     SortNeighListsBySymmAndCanonRank( num_atoms, nl2, pRankStack2[0], nCanonRank );
+    //
+    //     return nNumDiffRanks1 + 1;
+    // }
+    // END VERBATIM SOURCE FRAGMENT: C420 sole BreakNeighborsTie rank-input kernel
+    // INCHI✔️❌: One original source algorithm over reached stored or local
+    // rank reads. No upfront admission/copy/allocation; checked view costs OPEN.
+
+    let n1 = i32::from(neigh_num.get(heap, in1)?);
+    let n2 = i32::from(neigh_num.get(heap, in2)?);
     let mode_std = MAP_MODE_STD as i32;
     let mode_c2v = MAP_MODE_C2v as i32;
     let mode_c2 = MAP_MODE_C2 as i32;
     let mode_s4 = MAP_MODE_S4 as i32;
 
-    if (mode == mode_s4 && in1 != 0)
-        || (mode != mode_std && ia_valence != MAX_NUM_STEREO_ATOM_NEIGH as i32)
-        || (mode != mode_std
-            && source_get(heap, nSymmRank, n1)? != source_get(heap, nSymmRank, n2)?)
-    {
+    // INCHI✔️❗: if ((mode == MAP_MODE_S4  && in1) || /* for S4 we need only (in1,in2) = (0,1) (0,2) (0,3) pairs of neighbors */
+    // Native first short circuit does not read at or any symmetry/rank row.
+    // STD first reads valence after initial rank copies/sort/conversion below.
+    // O(1) scalar cache; no allocation, scan or neighbor-array snapshot.
+    // Checked/cache constants remain INCHI-PERF-NEIGHBOR-TIE-ADMISSION OPEN.
+    if mode == mode_s4 && in1 != 0 {
         return Ok(0);
     }
+    let early_valence = if mode != mode_std {
+        // INCHI✔️❗: (mode != MAP_MODE_STD && at[ia].valence != MAX_NUM_STEREO_ATOM_NEIGH) ||
+        let valence = i32::from(heap.element_signed(at.as_const(), ia)?.valence);
+        if valence != MAX_NUM_STEREO_ATOM_NEIGH as i32 {
+            return Ok(0);
+        }
+        if source_get(heap, nSymmRank, n1)? != source_get(heap, nSymmRank, n2)? {
+            return Ok(0);
+        }
+        Some(valence)
+    } else {
+        None
+    };
 
     let count = usize::try_from(num_at_tg).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let rank10 = source_get(heap, pRankStack1, 0)?;
@@ -4813,6 +5466,13 @@ pub(crate) fn BreakNeighborsTie(
     })?;
     let mut nNumDiffRanks = SortedEquInfoToRanks(heap, rank10, rank10, order10, num_at_tg, None)?;
 
+    // INCHI✔️❗: if (at[ia].valence <= MAX_NUM_STEREO_ATOM_NEIGH && mode)
+    // Earlier helpers only change typed rank/order rows and globals, never
+    // the distinct typed sp_ATOM allocation, so non-STD valence is unchanged.
+    let ia_valence = match early_valence {
+        Some(valence) => valence,
+        None => i32::from(heap.element_signed(at.as_const(), ia)?.valence),
+    };
     let mut other_neigh = [0_i32; 2];
     let mut other_neig_ord = [0_i32; 2];
     let mut num_other_neigh = 0_i32;
@@ -4825,7 +5485,7 @@ pub(crate) fn BreakNeighborsTie(
                 *other_neigh
                     .get_mut(slot)
                     .ok_or(SourceHeapError::PointerOutOfBounds)? =
-                    i32::from(source_get(heap, neigh_num, i)?);
+                    i32::from(neigh_num.get(heap, i)?);
                 *other_neig_ord
                     .get_mut(slot)
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = i;
@@ -5039,6 +5699,9 @@ pub(crate) fn BreakNeighborsTie(
 
     if ib >= num_atoms && ia_valence == MAX_NUM_STEREO_ATOM_NEIGH as i32 {
         let tied = source_get(heap, rank10, n2)?;
+        // INCHI✔️❗: num_eq += ( nRank1 == pRankStack1[0][at[ia].neighbor[i]] );
+        // Borrow only in the reached source loop; no whole-neighbor copy.
+        let ia_neighbors = &heap.element_signed(at.as_const(), ia)?.neighbor;
         let mut num_eq = 0_i32;
         let mut i = 0_i32;
         while i < ia_valence {
@@ -5252,6 +5915,171 @@ pub(crate) fn CheckNextSymmNeighborsAndBonds(
     // INCHI✔️✔️: #define PROPAGATE_ILL_DEF_STEREO    1
     // END INCHI ACTIVE MACRO CONFIGURATION
 
+    check_next_symm_neighbors_and_bonds_input(
+        heap,
+        at,
+        cur1,
+        cur2,
+        n1,
+        n2,
+        StereoRankInput::Stored(nAvoidCheckAtom),
+        nVisited1,
+        nVisited2,
+        nVisitOrd1,
+        nVisitOrd2,
+        nRank1,
+        nRank2,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn check_next_symm_neighbors_and_bonds_input(
+    heap: &SourceHeap,
+    at: SourceMutPointer<sp_ATOM>,
+    cur1: AT_RANK,
+    cur2: AT_RANK,
+    n1: AT_RANK,
+    n2: AT_RANK,
+    nAvoidCheckAtom: StereoRankInput<'_>,
+    nVisited1: SourceMutPointer<AT_RANK>,
+    nVisited2: SourceMutPointer<AT_RANK>,
+    nVisitOrd1: SourceMutPointer<AT_RANK>,
+    nVisitOrd2: SourceMutPointer<AT_RANK>,
+    nRank1: SourceMutPointer<AT_RANK>,
+    nRank2: SourceMutPointer<AT_RANK>,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichimap2.c:2060..2186 C420 sole CheckNextSymmNeighborsAndBonds rank-input kernel
+    // int CheckNextSymmNeighborsAndBonds( sp_ATOM *at,
+    //                                     AT_RANK cur1,
+    //                                     AT_RANK cur2,
+    //                                     AT_RANK n1,
+    //                                     AT_RANK n2,
+    //                                     AT_RANK *nAvoidCheckAtom,
+    //                                     AT_RANK *nVisited1,
+    //                                     AT_RANK *nVisited2,
+    //                                     AT_RANK *nVisitOrd1,
+    //                                     AT_RANK *nVisitOrd2,
+    //                                     const AT_RANK *nRank1,
+    //                                     const AT_RANK *nRank2 )
+    // {
+    //     AT_RANK s1 = 0, s2 = 0;
+    //     int     i1, i2, k1, k2;
+    //     if (nRank1[n1] != nRank2[n2])
+    //     {
+    //         return -1; /*  parallel traversal in stereo removal failed */ /*   <BRKPT> */
+    //     }
+    //     switch (!nVisited1[n1] + !nVisited2[n2])
+    //     {
+    //         case 0:
+    //             if (nVisited1[n1] != n2 + 1 || nVisited2[n2] != n1 + 1)
+    //             {
+    //                 return -1; /*  0; */ /*  possibly error???: we have come to an alreardy traversed pair and */
+    //                            /*  found that the pair previously has not been traversed synchroneously. */
+    //             }              /*  -- Happens in C60. */
+    //             break;
+    //         case 1:
+    //             return -1; /*  0; */ /*  possibly error: one is zero, another is not a zero. Happens in C60 */
+    //
+    //         /*  case 2: */
+    //             /* both are zero, OK. */
+    //     }
+    //
+    //     if (nVisitOrd1[n1] != nVisitOrd2[n2])
+    //     {
+    //         return -1; /*  0; */ /*  different DFS trees */
+    //     }
+    //     /*  at[n1] and at[n2] are next to at[cur1] and at[cur2] respectively */
+    //     /*  Even though the bond might have already been checked, check whether */
+    //     /*  it is a stereo bond/cumulene. If it is, check the bond/cumulene parity. */
+    //
+    //     /*  Even though the bond or cumulene might have already been checked, check it: this is */
+    //     /*  the only place we can check stereo bonds and cumulenes that are not edges of the DFS tree */
+    //     /*  The code works both for a stereo bond and a stereogenic cumulene. */
+    //
+    //     for (i1 = 0, k1 = 0; i1 < MAX_NUM_STEREO_BONDS &&
+    //         ( s1 = at[cur1].stereo_bond_neighbor[i1] ) &&
+    //                          !( k1 = ( at[cur1].neighbor[(int) at[cur1].stereo_bond_ord[i1]] == n1 ) ); i1++)
+    //     {
+    //         ;
+    //     }
+    //     for (i2 = 0, k2 = 0; i2 < MAX_NUM_STEREO_BONDS &&
+    //         ( s2 = at[cur2].stereo_bond_neighbor[i2] ) &&
+    //                          !( k2 = ( at[cur2].neighbor[(int) at[cur2].stereo_bond_ord[i2]] == n2 ) ); i2++)
+    //     {
+    //         ;
+    //     }
+    //
+    //     /* -- this does not work in case of cumulenes --
+    //     for ( i1 = 0, k1 = 0; i1 < MAX_NUM_STEREO_BONDS && (s1=at[cur1].stereo_bond_neighbor[i1]) && !(k1=(s1-1 == n1)); i1 ++ )
+    //         ;
+    //     for ( i2 = 0, k2 = 0; i2 < MAX_NUM_STEREO_BONDS && (s2=at[cur2].stereo_bond_neighbor[i2]) && !(k2=(s2-1 == n2)); i2 ++ )
+    //         ;
+    //     */
+    //
+    //     if (k1 != k2)
+    //     {
+    //         return 0; /*  not an error: a stereo bond and not a stereo bond */
+    //     }
+    //     if (k1)
+    //     {
+    //         /* here k1 == k2 */
+    //         int bCheckBond1, bCheckBond2;
+    //         s1--;
+    //         s2--;
+    //
+    //         bCheckBond1 = ( cur1 != nAvoidCheckAtom[0] || s1 != nAvoidCheckAtom[1] ) &&
+    //             ( cur1 != nAvoidCheckAtom[1] || s1 != nAvoidCheckAtom[0] );
+    //         bCheckBond2 = ( cur2 != nAvoidCheckAtom[0] || s2 != nAvoidCheckAtom[1] ) &&
+    //             ( cur2 != nAvoidCheckAtom[1] || s2 != nAvoidCheckAtom[0] );
+    //
+    //         if (bCheckBond1 != bCheckBond2)
+    //             return 0;
+    //
+    //         if (!bCheckBond1 && !bCheckBond2)
+    //         {
+    //             return 1; /*  do not go any further in this direction */
+    //         }
+    //
+    //         if (at[cur1].stereo_bond_parity[i1] != at[cur2].stereo_bond_parity[i2])
+    //         {
+    //             /*  different values of  at[].stereo_bond_parity: definitely different bonds */
+    //             /*  known parities */
+    //             if (PARITY_KNOWN( at[cur1].stereo_bond_parity[i1] ) &&
+    //                  PARITY_KNOWN( at[cur2].stereo_bond_parity[i2] ))
+    //             {
+    //                 return 0; /*  different currently known stereo bond parities */
+    //             }
+    // #if ( PROPAGATE_ILL_DEF_STEREO != 1 )
+    //             /*  well defined and to be calculated from the ranks */
+    //             if (!( PARITY_CALCULATE( at[cur1].stereo_bond_parity[i1] ) && PARITY_WELL_DEF( at[cur2].stereo_bond_parity[i2] ) ||
+    //                 PARITY_WELL_DEF( at[cur1].stereo_bond_parity[i1] ) && PARITY_CALCULATE( at[cur2].stereo_bond_parity[i2] ) ||
+    //                 PARITY_CALCULATE( at[cur1].stereo_bond_parity[i1] ) && PARITY_CALCULATE( at[cur2].stereo_bond_parity[i2] ) ))
+    //             {
+    // /*  do not reject if: "well defined" and "calculate" or "calculate" and "calculate" */
+    //                 return 0;
+    //             }
+    // #endif
+    //         }
+    //
+    // #if ( PROPAGATE_ILL_DEF_STEREO != 1 )
+    //         if (( cur1 != cur2 || s1 != s2 ) && ( cur1 != s2 || cur2 != s1 ))
+    //         {
+    // /*  two different stereo bonds */
+    //             if (PARITY_ILL_DEF( at[cur1].stereo_bond_parity[i1] ) ||
+    //                  PARITY_ILL_DEF( at[cur2].stereo_bond_parity[i2] ))
+    //             {
+    //                 return 0;
+    //             }
+    //         }
+    // #endif
+    //     }
+    //
+    //     return 1; /*  stereo bonds to n1 and n2 have same known parities or are not stereo bonds */
+    // }
+    // END VERBATIM SOURCE FRAGMENT: C420 sole CheckNextSymmNeighborsAndBonds rank-input kernel
+    // INCHI✔️❌: One original source algorithm over reached stored or local
+    // rank reads. No upfront admission/copy/allocation; checked view costs OPEN.
+
     if source_get(heap, nRank1, i32::from(n1))? != source_get(heap, nRank2, i32::from(n2))? {
         return Ok(-1);
     }
@@ -5325,8 +6153,8 @@ pub(crate) fn CheckNextSymmNeighborsAndBonds(
     if k1 {
         s1 = s1.wrapping_sub(1);
         s2 = s2.wrapping_sub(1);
-        let avoid0 = source_get(heap, nAvoidCheckAtom, 0)?;
-        let avoid1 = source_get(heap, nAvoidCheckAtom, 1)?;
+        let avoid0 = nAvoidCheckAtom.get(heap, 0)?;
+        let avoid1 = nAvoidCheckAtom.get(heap, 1)?;
         let check1 = (cur1 != avoid0 || s1 != avoid1) && (cur1 != avoid1 || s1 != avoid0);
         let check2 = (cur2 != avoid0 || s2 != avoid1) && (cur2 != avoid1 || s2 != avoid0);
         if check1 != check2 {
@@ -5500,6 +6328,176 @@ pub(crate) fn CreateCheckSymmPaths(
     // INCHI✔️❌: #define PROPAGATE_ILL_DEF_STEREO    1
     // END INCHI ACTIVE MACRO CONFIGURATION
 
+    create_check_symm_paths_input(
+        heap,
+        at,
+        prev1,
+        cur1,
+        prev2,
+        cur2,
+        StereoRankInput::Stored(nAvoidCheckAtom),
+        nVisited1,
+        nVisited2,
+        nVisitOrd1,
+        nVisitOrd2,
+        nl1,
+        nl2,
+        nRank1,
+        nRank2,
+        nCanonRank,
+        nLength,
+        bParitiesInverted,
+        mode,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn create_check_symm_paths_input(
+    heap: &mut SourceHeap,
+    at: SourceMutPointer<sp_ATOM>,
+    prev1: AT_RANK,
+    cur1: AT_RANK,
+    prev2: AT_RANK,
+    cur2: AT_RANK,
+    nAvoidCheckAtom: StereoRankInput<'_>,
+    nVisited1: SourceMutPointer<AT_RANK>,
+    nVisited2: SourceMutPointer<AT_RANK>,
+    nVisitOrd1: SourceMutPointer<AT_RANK>,
+    nVisitOrd2: SourceMutPointer<AT_RANK>,
+    nl1: SourceMutPointer<NEIGH_LIST>,
+    nl2: SourceMutPointer<NEIGH_LIST>,
+    nRank1: SourceMutPointer<AT_RANK>,
+    nRank2: SourceMutPointer<AT_RANK>,
+    nCanonRank: SourceMutPointer<AT_RANK>,
+    nLength: &mut AT_RANK,
+    bParitiesInverted: &mut i32,
+    mode: i32,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichimap2.c:2191..2310 C420 sole CreateCheckSymmPaths rank-input kernel
+    // int CreateCheckSymmPaths( sp_ATOM *at,
+    //                           AT_RANK prev1,
+    //                           AT_RANK cur1,
+    //                           AT_RANK prev2,
+    //                           AT_RANK cur2,
+    //                           AT_RANK *nAvoidCheckAtom,
+    //                           AT_RANK *nVisited1,
+    //                           AT_RANK *nVisited2,
+    //                           AT_RANK *nVisitOrd1,
+    //                           AT_RANK *nVisitOrd2,
+    //                           NEIGH_LIST *nl1,
+    //                           NEIGH_LIST *nl2,
+    //                           const AT_RANK *nRank1,
+    //                           const AT_RANK *nRank2,
+    //                           AT_RANK *nCanonRank,
+    //                           AT_RANK *nLength,
+    //                           int *bParitiesInverted,
+    //                           int mode )
+    // {
+    //     int k, k1, k2, ret = 0, bParitiesInvertedZero = 0, *pbParitiesInverted;
+    //     AT_RANK n1, n2;
+    //
+    //     nVisited1[cur1] = cur2 + 1;  /*  symmetrically exchange atom numbers */
+    //     nVisited2[cur2] = cur1 + 1;
+    //
+    //     ( *nLength )++;
+    //
+    //     nVisitOrd1[cur1] = *nLength; /*  save DFS visit order */
+    //     nVisitOrd2[cur2] = *nLength;
+    //
+    //     /* new version allows all inverted parities */
+    //     if (PARITY_WELL_DEF( at[cur1].stereo_atom_parity ) &&
+    //          PARITY_WELL_DEF( at[cur2].stereo_atom_parity ))
+    //     {
+    //         if (*bParitiesInverted < 0)
+    //         {
+    //             *bParitiesInverted = ( at[cur1].stereo_atom_parity + at[cur2].stereo_atom_parity ) % 2;
+    //         }
+    //         else
+    //         {
+    //             if (*bParitiesInverted != ( at[cur1].stereo_atom_parity + at[cur2].stereo_atom_parity ) % 2)
+    //             {
+    //                 return 0; /*  Different known in advance parities have wrong "inverted" relation */
+    //             }
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (PARITY_KNOWN( at[cur1].stereo_atom_parity ) &&
+    //             PARITY_KNOWN( at[cur2].stereo_atom_parity ) &&
+    //             at[cur1].stereo_atom_parity != at[cur2].stereo_atom_parity)
+    //         {
+    //             return 0;  /*  Different known in advance parities */
+    //         }
+    //     }
+    //
+    //     if (cur1 != cur2 &&
+    //          !at[cur1].stereo_bond_neighbor[0] && !at[cur2].stereo_bond_neighbor[0] &&
+    //          PARITY_KNOWN( at[cur1].parity ) != PARITY_KNOWN( at[cur2].parity ))
+    //     {
+    //         return 0; /*  one atom is stereogenic, another (presumably equivalent) is not. 9-11-2002 */
+    //     }
+    // #if ( PROPAGATE_ILL_DEF_STEREO != 1 )
+    //     if (cur1 != cur2 &&
+    //         ( PARITY_ILL_DEF( at[cur1].stereo_atom_parity ) ||
+    //             PARITY_ILL_DEF( at[cur2].stereo_atom_parity ) )
+    //        )
+    //     {
+    //         return 0;  /*  Cannot detect whether the paths are same or different */
+    //     }
+    // #endif
+    //
+    //     if (at[cur1].valence != at[cur2].valence)
+    //     {
+    //         return CT_REMOVE_STEREO_ERR; /*  program error */ /*   <BRKPT> */
+    //     }
+    //     if (at[cur1].valence == 1)
+    //     {
+    //         return 1; /*  so far success */
+    //     }
+    //
+    //     if (nl1[(int) cur1][0] != nl2[(int) cur2][0] || nl1[(int) cur1][0] != at[cur1].valence)
+    //     {
+    //         return CT_REMOVE_STEREO_ERR; /*  error: different valences */ /*   <BRKPT> */
+    //     }
+    //
+    //
+    //     for (k = 1, k1 = 1, k2 = 1; k < at[cur1].valence; k++, k1++, k2++)
+    //     {
+    //         if (( n1 = nl1[(int) cur1][k1] ) == prev1)
+    //         {
+    //             n1 = nl1[(int) cur1][++k1]; /*  don't go back */
+    //         }
+    //         if (( n2 = nl2[(int) cur2][k2] ) == prev2)
+    //         {
+    //             n2 = nl2[(int) cur2][++k2]; /*  don't go back */
+    //         }
+    //
+    //         if (0 >= ( ret = CheckNextSymmNeighborsAndBonds( at, cur1, cur2, n1, n2, nAvoidCheckAtom,
+    //             nVisited1, nVisited2, nVisitOrd1, nVisitOrd2, nRank1, nRank2 ) ))
+    //         {
+    //             return ret; /*  different neighbors or bonds                       */
+    //         }
+    //
+    //         if (!nVisited1[n1])
+    //         {
+    //             /*  recursion */
+    //             /* allow all inverted parities only inside a single ring system containing the starting point */
+    //             pbParitiesInverted = ( at[cur1].nRingSystem == at[n1].nRingSystem ) ? bParitiesInverted : &bParitiesInvertedZero;
+    //             if (0 >= ( ret = CreateCheckSymmPaths( at, cur1, n1, cur2, n2, nAvoidCheckAtom,
+    //                 nVisited1, nVisited2, nVisitOrd1, nVisitOrd2,
+    //                 nl1, nl2, nRank1, nRank2, nCanonRank, nLength, pbParitiesInverted, mode ) ))
+    //             {
+    //                 return ret;
+    //             }
+    //         }
+    //     }
+    //
+    //     return 1; /*  Success */
+    // }
+    // END VERBATIM SOURCE FRAGMENT: C420 sole CreateCheckSymmPaths rank-input kernel
+    // INCHI✔️❌: One original source algorithm over reached stored or local
+    // rank reads. No upfront admission/copy/allocation; checked view costs OPEN.
+
     source_set(heap, nVisited1, i32::from(cur1), cur2.wrapping_add(1))?;
     source_set(heap, nVisited2, i32::from(cur2), cur1.wrapping_add(1))?;
     *nLength = nLength.wrapping_add(1);
@@ -5593,7 +6591,7 @@ pub(crate) fn CreateCheckSymmPaths(
             k2 = k2.wrapping_add(1);
             n2 = source_get(heap, list2, k2)?;
         }
-        let ret = CheckNextSymmNeighborsAndBonds(
+        let ret = check_next_symm_neighbors_and_bonds_input(
             heap,
             at,
             cur1,
@@ -5629,7 +6627,7 @@ pub(crate) fn CreateCheckSymmPaths(
             } else {
                 &mut bParitiesInvertedZero
             };
-            let ret = CreateCheckSymmPaths(
+            let ret = create_check_symm_paths_input(
                 heap,
                 at,
                 cur1,
@@ -6389,8 +7387,24 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
     // INCHI✔️❌: #define PROPAGATE_ILL_DEF_STEREO 1
     // INCHI✔️❌: #define bRELEASE_VERSION 1
     // END INCHI ACTIVE MACRO CONFIGURATION
+    // INCHI✔️❗: After the source mapping writes, the comparison phase and
+    // all called parity kernels borrow the heap immutably. Reuse all eight
+    // atom/rank views and both stereo-record views without snapshot copies.
+    // Even aliased views see the final source mapping state; no heap mutation,
+    // free or resize occurs while borrowed. O(1) scratch replaces O(N+C+B)
+    // temporary storage and up to ten allocations/copies. Actual allocation
+    // bounds and called parity guards remain; whole-call costs stay OPEN in
+    // INCHI-PERF-STEREOPATH-BORROWED-STORAGE.
 
-    let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    // INCHI✔️❗: Admit comparison arrays only at reached source reads, caching
+    // immutable full storage after all mapping writes. Signed nonpositive
+    // counts skip their loops; logical atom counts do not bound allocation
+    // extents. Native four-word other_neigh permits the third neighbor before
+    // the source hydrogen/count test. No allocation/clone/scan added; lazy
+    // view and checked-access constants remain OPEN in
+    // INCHI-PERF-STEREOPATH-REACHED-ADMISSION.
+
+    let count = num_atoms.max(0) as usize;
     let checking_mode = if i32::from(prev_sb_neigh) < num_atoms {
         CHECKING_STEREOBOND as i32
     } else {
@@ -6466,82 +7480,77 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
         }
     }
 
-    let atoms = heap
-        .slice(at.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let symm = heap
-        .slice(nSymmRank.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let canonical = heap
-        .slice(nCanonRank.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let atom_by_canon = heap
-        .slice(nAtomNumberCanon.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let atom_by_canon1 = heap
-        .slice(nAtomNumberCanon1.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let atom_by_canon2 = heap
-        .slice(nAtomNumberCanon2.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let visited1 = heap
-        .slice(nVisited1.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let visited2 = heap
-        .slice(nVisited2.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let atom_index = |value: AT_RANK| -> Result<usize, SourceHeapError> {
-        let index = usize::from(value);
-        if index < count {
-            Ok(index)
-        } else {
-            Err(SourceHeapError::PointerOutOfBounds)
+    #[inline]
+    fn reached<'a, T: 'static>(
+        heap: &'a SourceHeap,
+        pointer: SourceMutPointer<T>,
+        cached: &mut Option<&'a [T]>,
+        index: i32,
+    ) -> Result<&'a T, SourceHeapError> {
+        // INCHI✔️❗:     i01 = nAtomNumberCanon[r1 - 1]; /*  ord. number of the atom that has canon rank r1 */
+        // A zero rank can read the preceding word of an interior pointer.
+        // Positive views resolve once, exactly at their first reached read.
+        // O(1) access/scratch, no allocation or scan; checked constants OPEN.
+        if index < 0 {
+            return heap.element_signed(pointer.as_const(), index);
         }
-    };
-    let rank_index = |rank: AT_RANK| -> Result<usize, SourceHeapError> {
-        usize::from(rank)
-            .checked_sub(1)
-            .filter(|index| *index < count)
+        let values = match *cached {
+            Some(values) => values,
+            None => {
+                let values = heap.slice(pointer.as_const())?;
+                *cached = Some(values);
+                values
+            }
+        };
+        values
+            .get(index as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)
-    };
+    }
+
+    let mut atoms_storage = None;
+    let mut atoms = |index: usize| reached(heap, at, &mut atoms_storage, index as i32);
+    let mut symm_storage = None;
+    let mut symm = |index: i32| reached(heap, nSymmRank, &mut symm_storage, index).copied();
+    let mut canonical_storage = None;
+    let mut canonical =
+        |index: i32| reached(heap, nCanonRank, &mut canonical_storage, index).copied();
+    let mut atom_by_canon_storage = None;
+    let mut atom_by_canon =
+        |index: i32| reached(heap, nAtomNumberCanon, &mut atom_by_canon_storage, index).copied();
+    let mut atom_by_canon1_storage = None;
+    let mut atom_by_canon1 =
+        |index: i32| reached(heap, nAtomNumberCanon1, &mut atom_by_canon1_storage, index).copied();
+    let mut atom_by_canon2_storage = None;
+    let mut atom_by_canon2 =
+        |index: i32| reached(heap, nAtomNumberCanon2, &mut atom_by_canon2_storage, index).copied();
+    let mut visited1_storage = None;
+    let mut visited1 = |index: i32| reached(heap, nVisited1, &mut visited1_storage, index).copied();
+    let mut visited2_storage = None;
+    let mut visited2 = |index: i32| reached(heap, nVisited2, &mut visited2_storage, index).copied();
     let atom_known =
         |parity: i32| (AB_MIN_KNOWN_PARITY as i32..=AB_MAX_KNOWN_PARITY as i32).contains(&parity);
     let atom_well_defined = |parity: i32| {
         (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32).contains(&parity)
     };
 
-    let cur_index = atom_index(cur)?;
+    let cur_index = usize::from(cur);
     if checking_mode == CHECKING_STEREOBOND as i32 {
-        let opposite = atom_index(prev_sb_neigh)?;
-        if visited1[opposite] != 0 || visited2[opposite] != 0 {
-            if visited1[opposite] != visited2[opposite] || canonical[opposite] != visited2[opposite]
+        let opposite = usize::from(prev_sb_neigh);
+        if visited1(opposite as i32)? != 0 || visited2(opposite as i32)? != 0 {
+            if visited1(opposite as i32)? != visited2(opposite as i32)?
+                || canonical(opposite as i32)? != visited2(opposite as i32)?
             {
                 return Ok(0);
             }
-            if i32::from(atoms[opposite].valence).wrapping_add(i32::from(atoms[opposite].num_H)) > 3
+            if i32::from(atoms(opposite)?.valence).wrapping_add(i32::from(atoms(opposite)?.num_H))
+                > 3
             {
                 return Ok(0);
             }
             let mut slot = 0_usize;
             let mut found = false;
             while slot < MAX_NUM_STEREO_BONDS as usize {
-                let neighbor = atoms[opposite].stereo_bond_neighbor[slot];
+                let neighbor = atoms(opposite)?.stereo_bond_neighbor[slot];
                 if neighbor == 0 {
                     break;
                 }
@@ -6554,28 +7563,27 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             if !found {
                 return Ok(-1);
             }
-            let bond_order = usize::try_from(atoms[opposite].stereo_bond_ord[slot])
+            let bond_order = usize::try_from(atoms(opposite)?.stereo_bond_ord[slot])
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let mut other = [0_u16; 2];
+            let mut other = [0_u16; MAX_NUM_STEREO_ATOM_NEIGH as usize];
             let mut other_count = 0_usize;
             let mut index = 0_i32;
-            while index < i32::from(atoms[opposite].valence) && other_count <= 2 {
+            while index < i32::from(atoms(opposite)?.valence) && other_count <= 2 {
                 if index as usize != bond_order {
-                    if other_count >= other.len() {
-                        return Ok(CT_STEREOCOUNT_ERR);
-                    }
-                    other[other_count] = atoms[opposite].neighbor[index as usize];
+                    other[other_count] = atoms(opposite)?.neighbor[index as usize];
                     other_count += 1;
                 }
                 index = index.wrapping_add(1);
             }
-            if other_count as i32 + i32::from(atoms[opposite].num_H) > 2 {
+            if other_count as i32 + i32::from(atoms(opposite)?.num_H) > 2 {
                 return Ok(CT_STEREOCOUNT_ERR);
             }
             for neighbor in other.into_iter().take(other_count) {
-                let index = atom_index(neighbor)?;
-                if (visited1[index] != 0 && visited1[index] != canonical[index])
-                    || (visited2[index] != 0 && visited2[index] != canonical[index])
+                let index = usize::from(neighbor);
+                if (visited1(index as i32)? != 0
+                    && visited1(index as i32)? != canonical(index as i32)?)
+                    || (visited2(index as i32)? != 0
+                        && visited2(index as i32)? != canonical(index as i32)?)
                 {
                     return Ok(0);
                 }
@@ -6584,25 +7592,22 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
     }
 
     if checking_mode == CHECKING_STEREOCENTER as i32 {
-        let mut other = [0_u16; 2];
+        let mut other = [0_u16; MAX_NUM_STEREO_ATOM_NEIGH as usize];
         let mut other_count = 0_usize;
         let mut index = 0_i32;
-        while index < i32::from(atoms[cur_index].valence) && other_count <= 2 {
-            let neighbor = atoms[cur_index].neighbor[index as usize];
+        while index < i32::from(atoms(cur_index)?.valence) && other_count <= 2 {
+            let neighbor = atoms(cur_index)?.neighbor[index as usize];
             if neighbor != next1 && neighbor != next2 {
-                if other_count >= other.len() {
-                    return Ok(CT_STEREOCOUNT_ERR);
-                }
                 other[other_count] = neighbor;
                 other_count += 1;
             }
             index = index.wrapping_add(1);
         }
-        if other_count as i32 + i32::from(atoms[cur_index].num_H) > 2 {
+        if other_count as i32 + i32::from(atoms(cur_index)?.num_H) > 2 {
             return Ok(CT_STEREOCOUNT_ERR);
         }
         if bParitiesInverted != 0
-            && i32::from(atoms[cur_index].valence) == MAX_NUM_STEREO_ATOM_NEIGH as i32
+            && i32::from(atoms(cur_index)?.valence) == MAX_NUM_STEREO_ATOM_NEIGH as i32
         {
             let atom_pointer = at.offset(i64::from(cur))?;
             let canon_parity = GetPermutationParity(heap, pCG, atom_pointer, sentinel, nCanonRank)?;
@@ -6620,9 +7625,11 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
         }
         if bParitiesInverted == 0 && b_cur_rotated == 0 {
             for neighbor in other.into_iter().take(other_count) {
-                let index = atom_index(neighbor)?;
-                if (visited1[index] != 0 && visited1[index] != canonical[index])
-                    || (visited2[index] != 0 && visited2[index] != canonical[index])
+                let index = usize::from(neighbor);
+                if (visited1(index as i32)? != 0
+                    && visited1(index as i32)? != canonical(index as i32)?)
+                    || (visited2(index as i32)? != 0
+                        && visited2(index as i32)? != canonical(index as i32)?)
                 {
                     return Ok(0);
                 }
@@ -6630,34 +7637,25 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
         }
     }
 
-    let center_count = usize::try_from(pCS.nLenLinearCTStereoCarb)
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let center_count = pCS.nLenLinearCTStereoCarb.max(0) as usize;
     let centers = if center_count == 0 {
-        Vec::new()
+        &[]
     } else {
         heap.slice(pCS.LinearCTStereoCarb.as_const())?
-            .get(..center_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
     };
-    for center in centers {
-        let rank_slot = rank_index(center.at_num)?;
-        let original = usize::from(atom_by_canon[rank_slot]);
-        let mapped1 = usize::from(atom_by_canon1[rank_slot]);
-        let mapped2 = usize::from(atom_by_canon2[rank_slot]);
+    for center_index in 0..center_count {
+        let center = centers
+            .get(center_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let rank_slot = i32::from(center.at_num) - 1;
+        let original = usize::from(atom_by_canon(rank_slot)?);
+        let mapped1 = usize::from(atom_by_canon1(rank_slot)?);
+        let mapped2 = usize::from(atom_by_canon2(rank_slot)?);
         let traversed1 = mapped1 < count;
         let traversed2 = mapped2 < count;
         let parity_inverted_here = bParitiesInverted != 0
-            && atoms[cur_index].nRingSystem
-                == atoms
-                    .get(mapped1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .nRingSystem
-            && atoms[cur_index].nRingSystem
-                == atoms
-                    .get(mapped2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .nRingSystem;
+            && atoms(cur_index)?.nRingSystem == atoms(mapped1)?.nRingSystem
+            && atoms(cur_index)?.nRingSystem == atoms(mapped2)?.nRingSystem;
         let mut compared = false;
         if !traversed1 && !traversed2 {
             continue;
@@ -6676,17 +7674,7 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             if mapped1 != mapped2 && !parity_inverted_here {
                 return Ok(-1);
             }
-            if atoms
-                .get(mapped1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .parity
-                == 0
-                || atoms
-                    .get(mapped2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .parity
-                    == 0
-            {
+            if atoms(mapped1)?.parity == 0 || atoms(mapped2)?.parity == 0 {
                 return Ok(0);
             }
         }
@@ -6694,8 +7682,8 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             if i32::from(traversed1) + i32::from(traversed2) != 1 {
                 return Ok(-1);
             }
-            if (traversed1 && atoms[mapped1].parity == 0)
-                || (traversed2 && atoms[mapped2].parity == 0)
+            if (traversed1 && atoms(mapped1)?.parity == 0)
+                || (traversed2 && atoms(mapped2)?.parity == 0)
             {
                 return Ok(0);
             }
@@ -6742,7 +7730,7 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
                 compared = true;
                 if checking_mode == CHECKING_STEREOCENTER as i32
                     && nNeighMode == NEIGH_MODE_RING as i32
-                    && symm[cur_index] == symm[original]
+                    && symm(cur_index as i32)? == symm(original as i32)?
                 {
                     n_num_eq_stereogenic = n_num_eq_stereogenic.wrapping_add(1);
                 }
@@ -6793,25 +7781,24 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
         return Ok(0);
     }
 
-    let bond_count = usize::try_from(pCS.nLenLinearCTStereoDble)
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let bond_count = pCS.nLenLinearCTStereoDble.max(0) as usize;
     let bonds = if bond_count == 0 {
-        Vec::new()
+        &[]
     } else {
         heap.slice(pCS.LinearCTStereoDble.as_const())?
-            .get(..bond_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
     };
-    for bond in bonds {
-        let rank1_slot = rank_index(bond.at_num1)?;
-        let rank2_slot = rank_index(bond.at_num2)?;
-        let original1 = usize::from(atom_by_canon[rank1_slot]);
-        let original2 = usize::from(atom_by_canon[rank2_slot]);
-        let mapped11 = usize::from(atom_by_canon1[rank1_slot]);
-        let mapped12 = usize::from(atom_by_canon1[rank2_slot]);
-        let mapped21 = usize::from(atom_by_canon2[rank1_slot]);
-        let mapped22 = usize::from(atom_by_canon2[rank2_slot]);
+    for bond_index in 0..bond_count {
+        let bond = bonds
+            .get(bond_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let rank1_slot = i32::from(bond.at_num1) - 1;
+        let rank2_slot = i32::from(bond.at_num2) - 1;
+        let original1 = usize::from(atom_by_canon(rank1_slot)?);
+        let original2 = usize::from(atom_by_canon(rank2_slot)?);
+        let mapped11 = usize::from(atom_by_canon1(rank1_slot)?);
+        let mapped12 = usize::from(atom_by_canon1(rank2_slot)?);
+        let mapped21 = usize::from(atom_by_canon2(rank1_slot)?);
+        let mapped22 = usize::from(atom_by_canon2(rank2_slot)?);
         let traversed1 = mapped11 < count && mapped12 < count;
         let traversed2 = mapped21 < count && mapped22 < count;
         let mut compared = false;
@@ -6888,10 +7875,10 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
                 compared = true;
                 if checking_mode == CHECKING_STEREOBOND as i32
                     && nNeighMode == NEIGH_MODE_RING as i32
-                    && ((symm[cur_index] == symm[original1]
-                        && symm[usize::from(prev_sb_neigh)] == symm[original2])
-                        || (symm[cur_index] == symm[original2]
-                            && symm[usize::from(prev_sb_neigh)] == symm[original1]))
+                    && ((symm(cur_index as i32)? == symm(original1 as i32)?
+                        && symm(i32::from(prev_sb_neigh))? == symm(original2 as i32)?)
+                        || (symm(cur_index as i32)? == symm(original2 as i32)?
+                            && symm(i32::from(prev_sb_neigh))? == symm(original1 as i32)?))
                 {
                     n_num_eq_stereogenic = n_num_eq_stereogenic.wrapping_add(1);
                 }
@@ -6926,26 +7913,26 @@ pub(crate) fn CalculatedPathsParitiesAreIdentical(
             let mut avoid1 = sentinel;
             let mut avoid2 = sentinel;
             for slot in 0..MAX_NUM_STEREO_BOND_NEIGH as usize {
-                let neighbor = atoms[original1].stereo_bond_neighbor[slot];
+                let neighbor = atoms(original1)?.stereo_bond_neighbor[slot];
                 if neighbor == 0 {
                     break;
                 }
                 if usize::from(neighbor.wrapping_sub(1)) == original2 {
-                    let order = usize::try_from(atoms[original1].stereo_bond_ord[slot])
+                    let order = usize::try_from(atoms(original1)?.stereo_bond_ord[slot])
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    avoid1 = atoms[original1].neighbor[order];
+                    avoid1 = atoms(original1)?.neighbor[order];
                     break;
                 }
             }
             for slot in 0..MAX_NUM_STEREO_BOND_NEIGH as usize {
-                let neighbor = atoms[original2].stereo_bond_neighbor[slot];
+                let neighbor = atoms(original2)?.stereo_bond_neighbor[slot];
                 if neighbor == 0 {
                     break;
                 }
                 if usize::from(neighbor.wrapping_sub(1)) == original1 {
-                    let order = usize::try_from(atoms[original2].stereo_bond_ord[slot])
+                    let order = usize::try_from(atoms(original2)?.stereo_bond_ord[slot])
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    avoid2 = atoms[original2].neighbor[order];
+                    avoid2 = atoms(original2)?.neighbor[order];
                     break;
                 }
             }
@@ -7264,7 +8251,12 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
     // INCHI✔️❌: #define bRELEASE_VERSION 1
     // END INCHI ACTIVE MACRO CONFIGURATION
 
-    let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    // INCHI✔️❗: Native signed atom loops skip for num_atoms<=0 and return0
+    // without admitting unused arrays. This count is used only by clears
+    // inside a reached positive-count iteration. No buffer/pass/allocation;
+    // checked bound cost: INCHI-PERF-NONSTEREO-ADMISSION OPEN.
+    let count =
+        usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let returned_error = |value: i32| CT_ERR_MIN <= value && value <= CT_ERR_MAX;
     let parity_value = |value: i8| i32::from(value) & BITS_PARITY as i32;
     let parity_calculate = |value: i8| parity_value(value) == AB_PARITY_CALC as i32;
@@ -7376,8 +8368,10 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
                             stereo_index = stereo_index.wrapping_add(1);
                             continue;
                         }
-                        let neighbor_storage = heap.allocate_model_storage(neighbors.to_vec())?;
-                        let symmetric = BreakNeighborsTie(
+                        // INCHI✔️❗: Native neigh[3] is local storage, read-only
+                        // throughout the tie call. Borrow into the sole kernel;
+                        // no arena registration, buffer copy or retained slot.
+                        let symmetric = break_neighbors_tie_input(
                             heap,
                             pCG,
                             at,
@@ -7385,7 +8379,7 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
                             num_at_tg,
                             i32::from(opposite_atom),
                             atom_number,
-                            neighbor_storage,
+                            StereoRankInput::Borrowed(&neighbors),
                             0,
                             1,
                             0,
@@ -7448,33 +8442,43 @@ pub(crate) fn RemoveCalculatedNonStereoBondParities(
                 )?;
                 source_set(heap, nAtomNumberCanon1, atom_number, length)?;
                 source_set(heap, nAtomNumberCanon2, atom_number, length)?;
-                let avoid =
-                    heap.allocate_model_storage(vec![atom_number as AT_RANK, opposite_atom])?;
-                let opposite_index = usize::from(opposite_atom);
-                let opposite_snapshot = heap
-                    .slice(at.as_const())?
-                    .get(opposite_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone();
-                let mut parities_inverted = i32::from(
-                    neigh_mode == NEIGH_MODE_RING as i32
-                        && is_allene_chain(bond_parity)
-                        && parity_calculate(bond_parity)
-                        && atom_snapshot.nRingSystem == opposite_snapshot.nRingSystem
-                        && i32::from(opposite_snapshot.valence) == MAX_NUM_STEREO_BONDS as i32,
-                );
+                // INCHI✔️❗: Source initializes its two-word local avoid pair
+                // here and only reads it during synchronous recursion. No new
+                // allocation/zero pass/cleanup/escape; original reached order.
+                let avoid = [atom_number as AT_RANK, opposite_atom];
+                // INCHI✔️❗: Native3222..3227 short-circuits mode, chain and
+                // calculation before reading the opposite atom. Borrow only
+                // the reached records; no eager fixed-record clone.
+                let mut parities_inverted = if neigh_mode == NEIGH_MODE_RING as i32
+                    && is_allene_chain(bond_parity)
+                    && parity_calculate(bond_parity)
+                {
+                    let atoms = heap.slice(at.as_const())?;
+                    let current = atoms
+                        .get(atom_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let opposite = atoms
+                        .get(usize::from(opposite_atom))
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    i32::from(
+                        current.nRingSystem == opposite.nRingSystem
+                            && i32::from(opposite.valence) == MAX_NUM_STEREO_BONDS as i32,
+                    )
+                } else {
+                    0
+                };
                 if parities_inverted != 0 {
                     parities_inverted = -1;
                 }
 
-                let ret1 = CreateCheckSymmPaths(
+                let ret1 = create_check_symm_paths_input(
                     heap,
                     at,
                     atom_number as AT_RANK,
                     neighbors[0],
                     atom_number as AT_RANK,
                     neighbors[1],
-                    avoid,
+                    StereoRankInput::Borrowed(&avoid),
                     nVisited1,
                     nVisited2,
                     nAtomNumberCanon1,
@@ -7980,7 +8984,12 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
     // INCHI✔️❌: #define bRELEASE_VERSION 1
     // END INCHI ACTIVE MACRO CONFIGURATION
 
-    let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    // INCHI✔️❗: Native signed atom loops skip for num_atoms<=0 and return0
+    // without admitting unused arrays. This count is used only by clears
+    // inside a reached positive-count iteration. No buffer/pass/allocation;
+    // checked bound cost: INCHI-PERF-NONSTEREO-ADMISSION OPEN.
+    let count =
+        usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let returned_error = |value: i32| CT_ERR_MIN <= value && value <= CT_ERR_MAX;
     let parity_value = |value: i8| i32::from(value) & BITS_PARITY as i32;
     let parity_calculate = |value: i8| parity_value(value) == AB_PARITY_CALC as i32;
@@ -8091,9 +9100,10 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                 mode = mode.wrapping_add(1);
                                 continue;
                             }
-                            let neighbor_storage =
-                                heap.allocate_model_storage(neighbors.to_vec())?;
-                            let symmetric = BreakNeighborsTie(
+                            // INCHI✔️❗: Source fixed neigh[4] remains local and
+                            // read-only during tie breaking. Reuse the C420
+                            // canonical borrowed kernel, no register/copy/free.
+                            let symmetric = break_neighbors_tie_input(
                                 heap,
                                 pCG,
                                 at,
@@ -8102,7 +9112,7 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                 i32::try_from(MAX_ATOMS.wrapping_add(1))
                                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                                 atom_number,
-                                neighbor_storage,
+                                StereoRankInput::Borrowed(&neighbors),
                                 j,
                                 k,
                                 mode,
@@ -8115,12 +9125,7 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                 nl1,
                                 nl2,
                                 &mut pCS.lNumNeighListIter,
-                            );
-                            let cleanup = heap.free(neighbor_storage);
-                            let symmetric = match (symmetric, cleanup) {
-                                (Err(error), _) | (Ok(_), Err(error)) => return Err(error),
-                                (Ok(value), Ok(())) => value,
-                            };
+                            )?;
                             if symmetric <= 0 {
                                 if ret_failed > symmetric {
                                     ret_failed = symmetric;
@@ -8156,17 +9161,22 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                             .fill(0);
 
                         let mut length = 1_u16;
-                        let atom_rank = AT_RANK::try_from(atom_number)
-                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+                        // INCHI✔️❗: Native rank stores/explicit call casts narrow
+                        // modulo65536. Full atom indices stay unchanged elsewhere;
+                        // C-INTEGER-CONVERSIONS whole-call cost remains OPEN.
+                        let atom_rank = atom_number as AT_RANK;
                         source_set(heap, nVisited1, atom_number, atom_rank.wrapping_add(1))?;
                         source_set(heap, nVisited2, atom_number, atom_rank.wrapping_add(1))?;
                         source_set(heap, nAtomNumberCanon1, atom_number, length)?;
                         source_set(heap, nAtomNumberCanon2, atom_number, length)?;
-                        let avoid = heap.allocate_model_storage(vec![
+                        // INCHI✔️❗: Same two source local stores and original
+                        // integer admission; synchronous recursion only reads
+                        // this pair, no modeled allocation/lifetime/escape.
+                        let avoid = [
                             atom_rank,
                             AT_RANK::try_from(MAX_ATOMS.wrapping_add(1))
                                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
-                        ])?;
+                        ];
                         let mut parities_inverted =
                             if mode == MAP_MODE_C2v as i32 || mode == MAP_MODE_S4 as i32 {
                                 -1
@@ -8174,15 +9184,15 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                 0
                             };
 
-                        let checks = (|| -> Result<(i32, i32), SourceHeapError> {
-                            let ret1 = CreateCheckSymmPaths(
+                        let (ret1, ret2) = (|| -> Result<(i32, i32), SourceHeapError> {
+                            let ret1 = create_check_symm_paths_input(
                                 heap,
                                 at,
                                 atom_rank,
                                 first,
                                 atom_rank,
                                 second,
-                                avoid,
+                                StereoRankInput::Borrowed(&avoid),
                                 nVisited1,
                                 nVisited2,
                                 nAtomNumberCanon1,
@@ -8219,12 +9229,7 @@ pub(crate) fn RemoveCalculatedNonStereoCenterParities(
                                 vABParityUnknown,
                             )?;
                             Ok((ret1, ret2))
-                        })();
-                        let cleanup = heap.free(avoid);
-                        let (ret1, ret2) = match (checks, cleanup) {
-                            (Err(error), _) | (Ok(_), Err(error)) => return Err(error),
-                            (Ok(values), Ok(())) => values,
-                        };
+                        })()?;
 
                         if ret1 > 0 {
                             if ret2 > 0 {
@@ -9269,7 +10274,7 @@ mod tests {
                 &mut add_stack,
                 &mut mapped_count
             ),
-            Err(SourceHeapError::UnsupportedSourceBehavior)
+            Ok(2)
         );
     }
 

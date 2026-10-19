@@ -1,10 +1,16 @@
 use crate::source::base::ichi_bns::mark_alt_bonds_and_taut_groups;
+use crate::source::base::ichi_bns::normalize_with_group;
+use crate::source::base::ichi_bns::{SourceNormalizationFlags, mark_alt_bonds_with_flag_storage};
 use crate::source::base::ichican2::{DeAllocBCN, GetBaseCanonRanking};
 use crate::source::base::ichicano::{
     AllocateCS, Canon_INChI, DeAllocateCS, GetCanonLengths, UpdateFullLinearCT,
 };
+use crate::source::base::ichicano::{
+    AllocateCSWithBcnPresence, Canon_INChIWithTargets, CanonGroupRead, UpdateFullLinearCTWithGroup,
+};
 use crate::source::base::ichiisot::set_atom_iso_sort_keys;
 use crate::source::base::ichimak2::FillOutINChI;
+use crate::source::base::ichimak2::{FillOutINChIBehavior, FillOutINChIWithGroup};
 use crate::source::base::ichinorm::MarkRingSystemsInp;
 use crate::source::base::ichiprt2::{Eql_INChI_Stereo, inchi_strtol};
 use crate::source::base::ichisort::{
@@ -15,6 +21,7 @@ use crate::source::base::ichitaut::{
     CountTautomerGroups, make_a_copy_of_t_group_info, set_tautomer_iso_sort_keys,
 };
 use crate::source::base::mol2atom::FreeInpAtom;
+use crate::source::base::runichi::CanonicalTarget;
 use crate::source::base::strutil::{add_DT_to_num_H, remove_terminal_HDT};
 use crate::source::base::util::{
     get_periodic_table_number, inchi_calloc, inchi_free, inchi_malloc,
@@ -73,6 +80,9 @@ fn copy_inp_atom_prefix(
     source: SourceConstPointer<inp_ATOM>,
     count: usize,
 ) -> Result<(), SourceHeapError> {
+    // INCHI✔️❗: ichimake.c:3864:
+    // memcpy(out_at, inp_at, num_inp_at * sizeof(out_at[0]));
+    // O(count)/O(1) scratch/no snapshot. Fixed dispatch/arena cost stays OPEN.
     if destination.as_const() == source {
         heap.slice(source)?
             .get(..count)
@@ -80,31 +90,11 @@ fn copy_inp_atom_prefix(
         return Ok(());
     }
     if destination.allocation_identity() != source.as_mut().allocation_identity() {
-        return heap.with_slice_mut_and_heap(destination, |destination, heap| {
-            let source = heap
-                .slice(source)?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            destination
-                .get_mut(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .copy_from_slice(source);
-            Ok(())
-        });
+        return heap.copy_nonoverlapping_prefix(destination, source, count, false);
     }
 
-    // Keep the established checked behavior for overlapping modeled pointers.
-    // Normal source calls always pass distinct allocations to memcpy.
-    let source = heap
-        .slice(source)?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    heap.slice_mut(destination)?
-        .get_mut(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .copy_from_slice(&source);
-    Ok(())
+    // Preserve prior safe modeled overlap; native memcpy overlap is undefined.
+    heap.copy_prefix_within_allocation(destination, source, count)
 }
 
 #[allow(non_snake_case)]
@@ -184,13 +174,17 @@ pub(crate) fn inp2spATOM(
     let copy_atoms = |input: &[inp_ATOM], output: &mut [sp_ATOM]| {
         output.fill(sp_ATOM::default());
         for (source, destination) in input.iter().zip(output.iter_mut()) {
-            let nul = source
-                .elname
-                .iter()
-                .position(|byte| *byte == 0)
-                .unwrap_or(source.elname.len());
+            // INCHI✔️❗: ichimake.c128..130 bounded strncpy reads at most
+            // five bytes, stopping at NUL; prior full output zeroing supplies
+            // the padding. One bounded pass, no sixth-byte read or allocation.
+            // Whole-call libc/checked representation cost remains
+            // INCHI-PERF-BOUNDED-ELEMENT-NAME OPEN.
             for index in 0..5 {
-                destination.elname[index] = if index < nul { source.elname[index] } else { 0 };
+                let byte = source.elname[index];
+                if byte == 0 {
+                    break;
+                }
+                destination.elname[index] = byte;
             }
             destination.elname[5] = 0;
             destination.el_number = get_periodic_table_number(Some(&destination.elname))? as u8;
@@ -251,7 +245,7 @@ pub(crate) fn inp2spATOM(
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub(crate) fn Create_INChI(
     heap: &mut SourceHeap,
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut impl CanonicalTarget,
     ic: SourceMutPointer<INCHI_CLOCK>,
     ip: &INPUT_PARMS,
     ppINChI: [SourceMutPointer<INChI>; TAUT_NUM as usize],
@@ -266,7 +260,7 @@ pub(crate) fn Create_INChI(
     ulMaxTime: SourceMutPointer<inchiTime>,
     mut ti_out: Option<&mut T_GROUP_INFO>,
     mut pStrErrStruct: Option<&mut [i8]>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:3707 Create_INChI
     // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap access and stack-object modeling add overhead.
@@ -1131,6 +1125,11 @@ pub(crate) fn Create_INChI(
     }
     */
     // END INCHI C FUNCTION: Create_INChI
+
+    // INCHI✔️❗: The complete source lifetime uses actual BCN/TGI targets
+    // through normalization/canonicalization/output/check/cleanup. No arena
+    // models or late metadata copybacks; earlier partial writes remain live.
+    // INCHI-PERF-CANON-ACTUAL-TARGETS: O(1) transport, checked costs OPEN.
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: Create_INChI
     // INCHI✔️❌: GCC/Linux: bRELEASE_VERSION == 1, SPRINTF_FLAG == 2.
     // INCHI✔️❌: #define FIX_ISO_FIXEDH_BUG 1
@@ -1148,8 +1147,6 @@ pub(crate) fn Create_INChI(
     let mut bcn = BCN::default();
     let mut cs = CANON_STAT::default();
     let mut cs_allocations = CANON_STAT::default();
-    let mut bcn_storage = SourceMutPointer::<BCN>::null();
-    let mut tgi_storage = SourceMutPointer::<T_GROUP_INFO>::null();
     let mut ret = 0_i32;
 
     let computation = (|| -> Result<i32, SourceHeapError> {
@@ -1158,11 +1155,6 @@ pub(crate) fn Create_INChI(
         }
         let count = usize::try_from(num_inp_at)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let mut clock = heap
-            .slice(ic.as_const())?
-            .first()
-            .cloned()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let b_pointed_edge_stereo =
             i32::from((*pbTautFlags & u64::from(TG_FLAG_POINTED_EDGE_STEREO)) != 0)
                 * PES_BIT_POINT_EDGE_STEREO as i32
@@ -1269,8 +1261,8 @@ pub(crate) fn Create_INChI(
         let mut num_removed_h_taut = 0_i32;
         let mut num_taut_at = 0_i32;
         if !out_norm_data[TAUT_YES as usize].at.is_null() && !at[TAUT_YES as usize].is_null() {
-            tgi_storage = heap.allocate_model_storage(vec![t_group_info.clone()])?;
-            let normalization_result = mark_alt_bonds_and_taut_groups(
+
+            let normalization_result = normalize_with_group(
                 heap,
                 ic,
                 pCG,
@@ -1278,15 +1270,13 @@ pub(crate) fn Create_INChI(
                 out_norm_data[TAUT_YES as usize].at_fixed_bonds,
                 num_atoms,
                 ulMaxTime,
-                tgi_storage,
-                SourceMutPointer::null(),
-                SourceMutPointer::null(),
+                Some(&mut t_group_info),
+                SourceNormalizationFlags::Pointers { flags: SourceMutPointer::null(), done: SourceMutPointer::null() },
                 0,
                 SourceMutPointer::null(),
                 clock_result,
             );
             ret = normalization_result?;
-            t_group_info = heap.slice(tgi_storage.as_const())?[0].clone();
             if ret < 0 {
                 return Ok(ret);
             }
@@ -1408,9 +1398,9 @@ pub(crate) fn Create_INChI(
         } else if !out_norm_data[TAUT_NON as usize].at.is_null()
             && !at[TAUT_NON as usize].is_null()
         {
-            let external_flags = heap.allocate_model_storage(vec![b_taut_flags])?;
-            let external_flags_done = heap.allocate_model_storage(vec![b_taut_flags_done])?;
-            ret = mark_alt_bonds_and_taut_groups(
+            // Native ichimake.c4096..4097 passes actual local flag targets.
+            // Reached writes survive errors; no delayed copyback (C529 OPEN).
+            ret = mark_alt_bonds_with_flag_storage(
                 heap,
                 ic,
                 pCG,
@@ -1419,16 +1409,11 @@ pub(crate) fn Create_INChI(
                 num_atoms,
                 ulMaxTime,
                 SourceMutPointer::null(),
-                external_flags,
-                external_flags_done,
+                SourceNormalizationFlags::Borrowed { flags: &mut b_taut_flags, done: &mut b_taut_flags_done },
                 0,
                 SourceMutPointer::null(),
                 clock_result,
             )?;
-            b_taut_flags = heap.slice(external_flags.as_const())?[0];
-            b_taut_flags_done = heap.slice(external_flags_done.as_const())?[0];
-            inchi_free(heap, external_flags)?;
-            inchi_free(heap, external_flags_done)?;
             if ret < 0 {
                 return Ok(ret);
             }
@@ -1484,18 +1469,19 @@ pub(crate) fn Create_INChI(
             || sizes[TAUT_NON as usize].bHasIsotopicTautGroups > 0
             || sizes[TAUT_YES as usize].num_isotopic_atoms > 0
             || sizes[TAUT_YES as usize].bHasIsotopicTautGroups > 0;
+        // INCHI✔️✔️: Preserve the source accumulator-first short circuit.
         if b_fix_iso_fixed_h != 0 {
-            b_has_isotopic_atoms |= sizes[TAUT_YES as usize].nLenLinearCTTautomer > 0
-                && t_group_info
-                    .tni
-                    .nNumRemovedProtonsIsotopic
-                    .iter()
-                    .any(|value| *value != 0);
+            b_has_isotopic_atoms = b_has_isotopic_atoms
+                || (sizes[TAUT_YES as usize].nLenLinearCTTautomer > 0
+                    && (t_group_info.tni.nNumRemovedProtonsIsotopic[0] != 0
+                        || t_group_info.tni.nNumRemovedProtonsIsotopic[1] != 0
+                        || t_group_info.tni.nNumRemovedProtonsIsotopic[2] != 0));
         }
-        b_has_isotopic_atoms |= sizes[TAUT_YES as usize].nLenIsotopicEndpoints > 1
-            && t_group_info.bTautFlagsDone
-                & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE)
-                != 0;
+        b_has_isotopic_atoms = b_has_isotopic_atoms
+            || (sizes[TAUT_YES as usize].nLenIsotopicEndpoints > 1
+                && t_group_info.bTautFlagsDone
+                    & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE)
+                    != 0);
 
         if nUserMode & u64::from(REQ_MODE_DEFAULT) == 0 {
             nUserMode |= u64::from(REQ_MODE_DEFAULT);
@@ -1566,26 +1552,35 @@ pub(crate) fn Create_INChI(
             b_has_isotopic_atoms = false;
         }
 
-        ret = GetBaseCanonRanking(
-            heap,
-            &mut clock,
-            num_atoms,
-            num_at_tg,
-            at,
-            Some(&mut t_group_info),
-            &sizes,
-            &mut bcn,
-            ulMaxTime,
-            pCG,
-            b_fix_iso_fixed_h,
-            large_molecules,
-            None,
-            None,
-            clock_result,
-        )?;
+        // INCHI✔️❗: Admit the real clock only at the reached source call.
+        // INCHI-PERF-CREATE-CLOCK-VIEW: checked borrow costs OPEN.
+        ret = heap.with_slice_mut_and_heap_mut(ic, |values, heap| {
+            let clock = values.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
+            GetBaseCanonRanking(
+                heap,
+                clock,
+                num_atoms,
+                num_at_tg,
+                at,
+                Some(&mut t_group_info),
+                &sizes,
+                &mut bcn,
+                ulMaxTime,
+                pCG,
+                b_fix_iso_fixed_h,
+                large_molecules,
+                None,
+                None,
+                clock_result,
+            )
+        })?;
         if ret < 0 {
             return Ok(ret);
         }
+        // Native successful GetBaseCanonRanking has already accessed CG.
+        // INCHI✔️❌: Use the actual object through the unchanged canonical,
+        // output/check phase. Preserve preceding errors/cleanup; C588 OPEN.
+        pCG.reborrow_globals().with_mut(heap, |pCG, heap| {
         if bcn.ftcn[n1 as usize].PartitionCt.Rank.is_null() {
             n1 = 1 - n1;
         }
@@ -1595,7 +1590,7 @@ pub(crate) fn Create_INChI(
         if n1 > n2 {
             return Ok(CT_TAUCOUNT_ERR);
         }
-        bcn_storage = heap.allocate_model_storage(vec![bcn.clone()])?;
+
 
         for index in (n1..=n2).rev() {
             if returned_error(ret) {
@@ -1659,7 +1654,7 @@ pub(crate) fn Create_INChI(
                     0
                 };
             }
-            let allocation_result = AllocateCS(
+            let allocation_result = AllocateCSWithBcnPresence(
                 heap,
                 &mut cs,
                 num_atoms,
@@ -1682,7 +1677,7 @@ pub(crate) fn Create_INChI(
                 },
                 sizes[i].nLenIsotopic,
                 u64::from(n_mode),
-                bcn_storage,
+                true,
             )?;
             cs_allocations = cs.clone();
             if allocation_result != 0 {
@@ -1709,8 +1704,6 @@ pub(crate) fn Create_INChI(
                 cs.bIgnoreIsotopic = 1;
             }
             if index == TAUT_YES {
-                heap.slice_mut(tgi_storage)?[0] = t_group_info.clone();
-                cs.t_group_info = tgi_storage;
                 t_group_info.bIgnoreIsotopic = i32::from(
                     !(sizes[TAUT_YES as usize].bHasIsotopicTautGroups != 0
                         || nUserMode & u64::from(REQ_MODE_NON_ISO) != 0
@@ -1721,28 +1714,30 @@ pub(crate) fn Create_INChI(
                 {
                     t_group_info.bIgnoreIsotopic = 1;
                 }
-                heap.slice_mut(tgi_storage)?[0] = t_group_info.clone();
             }
-            cs.ulTimeOutTime = heap.slice(bcn_storage.as_const())?[0].ulTimeOutTime;
+            cs.ulTimeOutTime = bcn.ulTimeOutTime;
             cs.NeighList = SourceMutPointer::null();
-            cs.pBCN = bcn_storage;
-            ret = Canon_INChI(
-                heap,
-                &mut clock,
-                clock_result,
-                None,
-                None,
-                num_atoms,
-                if index == TAUT_YES { num_at_tg } else { num_atoms },
-                at[i],
-                &mut cs,
-                pCG,
-                n_mode,
-                index as i32,
-            )?;
-            if index == TAUT_YES {
-                t_group_info = heap.slice(tgi_storage.as_const())?[0].clone();
-            }
+            // INCHI✔️❗: Admit the real clock only at the reached source call.
+            // INCHI-PERF-CREATE-CLOCK-VIEW: checked borrow costs OPEN.
+            ret = heap.with_slice_mut_and_heap_mut(ic, |values, heap| {
+                let clock = values.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
+                Canon_INChIWithTargets(
+                    heap,
+                    clock,
+                    clock_result,
+                    None,
+                    None,
+                    num_atoms,
+                    if index == TAUT_YES { num_at_tg } else { num_atoms },
+                    at[i],
+                    &mut cs,
+                    pCG,
+                    n_mode,
+                    index as i32,
+                    &bcn,
+                    if index == TAUT_YES { Some(&mut t_group_info) } else { None },
+                )
+            })?;
 
             let mut inchi = heap.slice(ppINChI[i].as_const())?[0].clone();
             let mut aux = heap.slice(ppINChI_Aux[i].as_const())?[0].clone();
@@ -1758,7 +1753,7 @@ pub(crate) fn Create_INChI(
                 aux.bTautFlags = out_norm_data[i].bTautFlags;
                 aux.bTautFlagsDone = out_norm_data[i].bTautFlagsDone;
                 aux.bNormalizationFlags = out_norm_data[i].bNormalizationFlags;
-                ret = FillOutINChI(
+                ret = FillOutINChIWithGroup(
                     heap,
                     &mut inchi,
                     &mut aux,
@@ -1776,7 +1771,8 @@ pub(crate) fn Create_INChI(
                     index as i32,
                     nUserMode,
                     pStrErrStruct.as_deref_mut(),
-                    ip.bNoWarnings,
+                    FillOutINChIBehavior::Full { no_warnings: ip.bNoWarnings != 0 },
+                    CanonGroupRead::Borrowed(if index == TAUT_YES { Some(&t_group_info) } else { None }),
                 )?;
                 if returned_error(ret) {
                     inchi.nErrorCode = ret;
@@ -1785,7 +1781,7 @@ pub(crate) fn Create_INChI(
                     if sizes[TAUT_YES as usize].nLenLinearCTTautomer != 0 {
                         aux.bIsTautomeric = sizes[TAUT_YES as usize].nLenLinearCTTautomer;
                     }
-                    let ret2 = CheckCanonNumberingCorrectness(
+                    let ret2 = CheckCanonNumberingCorrectnessWithGroup(
                         heap,
                         num_atoms,
                         if index == TAUT_YES { num_at_tg } else { num_atoms },
@@ -1794,6 +1790,7 @@ pub(crate) fn Create_INChI(
                         pCG,
                         index as i32,
                         pStrErrStruct.as_deref_mut(),
+                        CanonGroupRead::Borrowed(if index == TAUT_YES { Some(&t_group_info) } else { None }),
                     )?;
                     if ret2 != 0 {
                         inchi.nErrorCode = ret2;
@@ -1812,16 +1809,15 @@ pub(crate) fn Create_INChI(
             ret = num_atoms;
         }
         Ok(ret)
+        })
     })();
 
-    DeAllocateCS(heap, &mut cs_allocations)?;
-    if !bcn_storage.is_null() {
-        bcn = heap.slice(bcn_storage.as_const())?[0].clone();
+    // INCHI✔️❗: Source-normal exits do not repeat per-iteration CS cleanup.
+    // INCHI-PERF-CREATE-EXIT-GATES: retain cleanup for Rust-only Result errors.
+    if computation.is_err() {
+        DeAllocateCS(heap, &mut cs_allocations)?;
     }
     DeAllocBCN(heap, Some(&mut bcn))?;
-    if !bcn_storage.is_null() {
-        inchi_free(heap, bcn_storage)?;
-    }
     for pointer in at {
         if !pointer.is_null() {
             inchi_free(heap, pointer)?;
@@ -1852,9 +1848,6 @@ pub(crate) fn Create_INChI(
     if !t_group_info_orig.nIsotopicEndpointAtomNumber.is_null() {
         inchi_free(heap, t_group_info_orig.nIsotopicEndpointAtomNumber)?;
     }
-    if !tgi_storage.is_null() {
-        inchi_free(heap, tgi_storage)?;
-    }
     computation
 }
 
@@ -1868,6 +1861,32 @@ pub(crate) fn CheckCanonNumberingCorrectness(
     pCG: &mut CANON_GLOBALS,
     _bTautomeric: i32,
     _pStrErrStruct: Option<&mut [i8]>,
+) -> Result<i32, SourceHeapError> {
+    let group = CanonGroupRead::Stored(pCS.t_group_info);
+    CheckCanonNumberingCorrectnessWithGroup(
+        heap,
+        num_atoms,
+        num_at_tg,
+        at,
+        pCS,
+        pCG,
+        _bTautomeric,
+        _pStrErrStruct,
+        group,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn CheckCanonNumberingCorrectnessWithGroup(
+    heap: &mut SourceHeap,
+    num_atoms: i32,
+    num_at_tg: i32,
+    at: SourceConstPointer<sp_ATOM>,
+    pCS: &mut CANON_STAT,
+    pCG: &mut CANON_GLOBALS,
+    _bTautomeric: i32,
+    _pStrErrStruct: Option<&mut [i8]>,
+    group: CanonGroupRead<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:6230 CheckCanonNumberingCorrectness
     // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap access adds overhead.
@@ -1956,19 +1975,26 @@ pub(crate) fn CheckCanonNumberingCorrectness(
     */
     // END INCHI C FUNCTION: CheckCanonNumberingCorrectness
 
-    let count = i64::from(num_at_tg)
-        .checked_add(1)
-        .and_then(|value| u64::try_from(value).ok())
-        .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+    // INCHI✔️❗: Long-long addition fits; size_t conversion precedes calloc.
+    // No extra scan/clone/allocation; whole checked allocator cost stays OPEN.
+    let count = (i64::from(num_at_tg) + 1) as u64;
     let ranks = match inchi_calloc::<AT_NUMB>(heap, count, 2) {
         Ok(pointer) => pointer,
-        Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+        Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+            SourceMutPointer::null()
+        }
         Err(error) => return Err(error),
     };
+    // Source !pCanonRank reaches exit_function before any traversal or state
+    // mutation, and the NULL cleanup is a no-op.
+    if ranks.is_null() {
+        return Ok(CT_CANON_ERR);
+    }
     let computation = (|| -> Result<i32, SourceHeapError> {
         let mut error_code = 0_i32;
-        let total =
-            usize::try_from(num_at_tg).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        // INCHI✔️❗: Signed source loops skip nonpositive counts. Resolve
+        // only reached cells; preserve allocation, error bits and cleanup.
+        // O(num_at_tg) traversal, no extra storage/scan; heap cost OPEN.
 
         let nonisotopic_order = if pCS.nLenCanonOrdStereo > 0 {
             pCS.nCanonOrdStereo
@@ -1980,11 +2006,11 @@ pub(crate) fn CheckCanonNumberingCorrectness(
         if nonisotopic_order.is_null() || ranks.is_null() {
             error_code |= ERR_NO_CANON_RESULTS as i32;
         } else {
-            for i in 0..total {
-                let order = heap.slice(nonisotopic_order.as_const())?[i];
-                heap.slice_mut(ranks)?[usize::from(order)] = (i as AT_NUMB).wrapping_add(1);
+            for i in 0..num_at_tg {
+                let order = *heap.element_signed(nonisotopic_order.as_const(), i)?;
+                *heap.element_signed_mut(ranks, i32::from(order))? = (i as AT_NUMB).wrapping_add(1);
             }
-            if UpdateFullLinearCT(
+            if UpdateFullLinearCTWithGroup(
                 heap,
                 num_atoms,
                 num_at_tg,
@@ -1994,6 +2020,7 @@ pub(crate) fn CheckCanonNumberingCorrectness(
                 pCS,
                 pCG,
                 0,
+                group,
             )? != 0
             {
                 error_code |= WARN_FAILED_STEREO as i32;
@@ -2007,11 +2034,12 @@ pub(crate) fn CheckCanonNumberingCorrectness(
                 SourceMutPointer::null()
             };
             if !isotopic_order.is_null() {
-                for i in 0..total {
-                    let order = heap.slice(isotopic_order.as_const())?[i];
-                    heap.slice_mut(ranks)?[usize::from(order)] = (i as AT_NUMB).wrapping_add(1);
+                for i in 0..num_at_tg {
+                    let order = *heap.element_signed(isotopic_order.as_const(), i)?;
+                    *heap.element_signed_mut(ranks, i32::from(order))? =
+                        (i as AT_NUMB).wrapping_add(1);
                 }
-                if UpdateFullLinearCT(
+                if UpdateFullLinearCTWithGroup(
                     heap,
                     num_atoms,
                     num_at_tg,
@@ -2021,6 +2049,7 @@ pub(crate) fn CheckCanonNumberingCorrectness(
                     pCS,
                     pCG,
                     0,
+                    group,
                 )? != 0
                 {
                     error_code |= if pCS.nLenCanonOrdIsotopicStereo != 0 {
@@ -2090,31 +2119,38 @@ pub(crate) fn GetElementAndCount(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: GetElementAndCount
 
+    // INCHI✔️❗: Read only the current symbol/count; preserve each source
+    // output write before later peeks, and commit count/cursor last. O(token)
+    // time/O(1) scratch/no suffix scan or allocation; checked access cost OPEN.
     if !formula.is_null() {
         let bytes = heap.slice(*formula)?;
-        let length = bytes
-            .iter()
-            .position(|byte| *byte == 0)
-            .ok_or(SourceHeapError::MissingNulTerminator)?;
-        if length > 0 {
-            let first = bytes[0] as u8;
+        let first = *bytes.first().ok_or(SourceHeapError::MissingNulTerminator)? as u8;
+        if first != 0 {
             if first.is_ascii_uppercase() {
+                *element
+                    .get_mut(0)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = first as i8;
                 let mut consumed = 1_usize;
-                let mut symbol = [0_i8; 3];
-                symbol[0] = bytes[0];
-                if consumed < length && (bytes[consumed] as u8).is_ascii_lowercase() {
-                    symbol[1] = bytes[consumed];
+                let next = *bytes
+                    .get(consumed)
+                    .ok_or(SourceHeapError::MissingNulTerminator)? as u8;
+                if next.is_ascii_lowercase() {
+                    *element
+                        .get_mut(consumed)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? = next as i8;
                     consumed += 1;
                 }
-                if consumed == 1 && symbol[0] as u8 == b'C' {
-                    symbol[0] = b'A' as i8;
+                *element
+                    .get_mut(consumed)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+                if consumed == 1 && first == b'C' {
+                    element[0] = b'A' as i8;
                 }
-                let has_digits = consumed < length && (bytes[consumed] as u8).is_ascii_digit();
-                let symbol_length = consumed + 1;
-                element
-                    .get_mut(..symbol_length)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .copy_from_slice(&symbol[..symbol_length]);
+                let has_digits = (*bytes
+                    .get(consumed)
+                    .ok_or(SourceHeapError::MissingNulTerminator)?
+                    as u8)
+                    .is_ascii_digit();
                 let number = (*formula).offset(
                     i64::try_from(consumed).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
                 )?;
@@ -2131,10 +2167,14 @@ pub(crate) fn GetElementAndCount(
             return Ok(-1);
         }
     }
-    element
-        .get_mut(..4)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .copy_from_slice(&[b'Z' as i8, b'z' as i8, b'z' as i8, 0]);
+    for (index, byte) in [b'Z' as i8, b'z' as i8, b'z' as i8, 0]
+        .into_iter()
+        .enumerate()
+    {
+        *element
+            .get_mut(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = byte;
+    }
     *count = 99999;
     Ok(0)
 }
@@ -2325,12 +2365,34 @@ pub(crate) fn CompareTautNonIsoPartOfINChI(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: CompareTautNonIsoPartOfINChI
 
-    let len1 = if inchi1.lenTautomer > 0 && heap.slice(inchi1.nTautomer.as_const())?[0] != 0 {
+    // INCHI✔️❗: Cache each reached buffer once; compare only visited words.
+    // O(reached words), O(1) space, no allocation; safe-check whole-call cost OPEN.
+    let tautomer1 = if inchi1.lenTautomer > 0 {
+        heap.slice(inchi1.nTautomer.as_const())?
+    } else {
+        &[]
+    };
+    let len1 = if inchi1.lenTautomer > 0
+        && *tautomer1
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            != 0
+    {
         inchi1.lenTautomer
     } else {
         0
     };
-    let len2 = if inchi2.lenTautomer > 0 && heap.slice(inchi2.nTautomer.as_const())?[0] != 0 {
+    let tautomer2 = if inchi2.lenTautomer > 0 {
+        heap.slice(inchi2.nTautomer.as_const())?
+    } else {
+        &[]
+    };
+    let len2 = if inchi2.lenTautomer > 0
+        && *tautomer2
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            != 0
+    {
         inchi2.lenTautomer
     } else {
         0
@@ -2341,22 +2403,47 @@ pub(crate) fn CompareTautNonIsoPartOfINChI(
     }
     if len1 > 0 {
         let count = usize::try_from(len1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let tautomer1 = heap
-            .slice(inchi1.nTautomer.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let tautomer2 = heap
-            .slice(inchi2.nTautomer.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         for index in 0..count {
-            let ret = i32::from(tautomer2[index]) - i32::from(tautomer1[index]);
+            let value2 = *tautomer2
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let value1 = *tautomer1
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let ret = i32::from(value2) - i32::from(value1);
             if ret != 0 {
                 return Ok(ret);
             }
         }
     }
     Ok(0)
+}
+
+// Private transient source record access; no model registration or retained view.
+enum FixedSort<'a> {
+    Borrowed(&'a INCHI_SORT),
+    Pointer(SourceMutPointer<INCHI_SORT>),
+}
+
+impl FixedSort<'_> {
+    #[inline(always)]
+    fn record<'a>(&'a self, heap: &'a SourceHeap) -> Result<&'a INCHI_SORT, SourceHeapError> {
+        match self {
+            Self::Borrowed(record) => Ok(record),
+            Self::Pointer(pointer) => heap
+                .slice(pointer.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+        }
+    }
+
+    #[inline(always)]
+    fn is_null(&self) -> bool {
+        match self {
+            Self::Borrowed(_) => false,
+            Self::Pointer(pointer) => pointer.is_null(),
+        }
+    }
 }
 
 #[allow(non_snake_case)]
@@ -2600,6 +2687,267 @@ pub(crate) fn CompINChITautVsNonTaut(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: CompINChITautVsNonTaut
 
+    // INCHI✔️❗: Reached views/fields only; O(reached records), O(1) space.
+    // Safe checks and cached field branches: whole-call cost OPEN (C094).
+    comp_taut_vs_non_taut_fixed_sort(heap, p1, FixedSort::Borrowed(p2), compare_isotopic)
+}
+
+#[allow(non_snake_case)]
+pub(super) fn comp_taut_vs_non_taut_from_fixed_sort(
+    heap: &mut SourceHeap,
+    p1: &INCHI_SORT,
+    p2: SourceMutPointer<INCHI_SORT>,
+    compare_isotopic: i32,
+) -> Result<i32, SourceHeapError> {
+    // Native fixed-sort pointer is forwarded unchanged; its source fields
+    // are resolved by the same canonical kernel at reached expressions.
+    comp_taut_vs_non_taut_fixed_sort(heap, p1, FixedSort::Pointer(p2), compare_isotopic)
+}
+
+#[allow(non_snake_case)]
+fn comp_taut_vs_non_taut_fixed_sort(
+    heap: &mut SourceHeap,
+    p1: &INCHI_SORT,
+    p2: FixedSort<'_>,
+    compare_isotopic: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: comp_taut_vs_non_taut_fixed_sort (ichimake.c:341)
+    // int CompINChITautVsNonTaut(const INCHI_SORT* p1,
+    //     const INCHI_SORT* p2,
+    //     int bCompareIsotopic)
+    // {
+    //     int ret, num, i, num_H1, num_H2;
+    //
+    //     const INChI* i1 = NULL; /* Mobile-H layers in Mobile-H sorting order */
+    //     const INChI* i2 = NULL; /* Fixed-H  layers in Fixed-H  sorting order */
+    //
+    //     int   n1;               /* TAUT_YES if tautomeric i1 exists, otherwise TAUT_NON */
+    //
+    //     /* INChI_Stereo *Stereo1, *Stereo2; */
+    //
+    //     n1 = (p1->pINChI[TAUT_YES] && p1->pINChI[TAUT_YES]->nNumberOfAtoms) ? TAUT_YES : TAUT_NON;
+    //
+    //     i1 = p1->pINChI[n1];
+    //     i2 = (n1 == TAUT_YES && p2->pINChI[TAUT_NON] &&
+    //         p2->pINChI[TAUT_NON]->nNumberOfAtoms) ? p2->pINChI[TAUT_NON] : (const INChI*)NULL;
+    //
+    //     /* non-deleted-non-empty < deleted < empty */
+    //     if (i1 && !i2)
+    //         return 0;   /* non-empty is the smallest (first) */
+    //     if (!i1 && i2)
+    //         return 0;
+    //     if (!i1 && !i2)
+    //         return 0;
+    //     if (i1->bDeleted)
+    //         return 1;    /* deleted is the largest (last) among non-empty */
+    //     if (i2->bDeleted)
+    //         return -1;
+    //
+    //     if (i1->nNumberOfAtoms > 0 && !i2->nNumberOfAtoms)
+    //         return 0;
+    //
+    //     /* i2 = i2;         djb-rwth: an obviously useless statement */
+    //
+    //     num_H1 = num_H2 = 0;
+    //
+    //     /* do not compare terminal H */
+    //     if ((ret = CompareHillFormulasNoH(i1->szHillFormula, i2->szHillFormula, &num_H1, &num_H2))) /* djb-rwth: addressing LLVM warning */
+    //     {
+    //         return ret;  /* lexicographic order except the shorter one is greater (last): CH2O < CH2; C3XX < C2XX */
+    //     }
+    //
+    //     /*
+    //         compare non-isotopic non-tautomeric part
+    //     */
+    //
+    //     /* compare number of atoms (excluding terminal H) */
+    //     if ((ret = i2->nNumberOfAtoms - i1->nNumberOfAtoms)) /* djb-rwth: addressing LLVM warning */
+    //         return ret; /*  more atoms first */
+    //
+    //     /*  compare elements  (excluding terminal H) */
+    //     num = i1->nNumberOfAtoms;
+    //     for (i = 0; i < num; i++)
+    //     { /* should always be equal if Hill formulas are same */
+    //         if ((ret = (int)i2->nAtom[i] - (int)i1->nAtom[i])) /* djb-rwth: addressing LLVM warning */
+    //             return ret; /* greater periodic number first */
+    //     }
+    //     /*
+    //         compare connection tables
+    //     */
+    //     if ((ret = i2->lenConnTable - i1->lenConnTable)) /* djb-rwth: addressing LLVM warning */
+    //         return ret; /* longer connection table first */
+    //     num = i2->lenConnTable;
+    //     for (i = 0; i < num; i++)
+    //     {
+    //         if ((ret = (int)i2->nConnTable[i] - (int)i1->nConnTable[i])) /* djb-rwth: addressing LLVM warning */
+    //             return ret; /* greater connection table first */
+    //     }
+    //     /*
+    //       compare total number of H (inverse: H3 < H2 )
+    //     */
+    //     if ((ret = num_H2 - num_H1)) /* djb-rwth: addressing LLVM warning */
+    //         return ret;
+    //     /*
+    //       compare non-tautomeric num_H: N < NH3 < NH2 < NH
+    //     */
+    //     num = i1->nNumberOfAtoms;
+    //     for (i = 0; i < num; i++)
+    //     {
+    //         if (i2->nNum_H[i] != i1->nNum_H[i])
+    //         {
+    //             return !i2->nNum_H[i] ? 1 :  /* no H first */
+    //                 !i1->nNum_H[i] ? -1 :
+    //                 (int)i2->nNum_H[i] - (int)i1->nNum_H[i];
+    //         }
+    //     }
+    //     /*
+    //         compare non-isotopic tautomeric part
+    //     */
+    //     if ((ret = CompareTautNonIsoPartOfINChI(i1, i2))) /* djb-rwth: addressing LLVM warning */
+    //     {
+    //         return ret;
+    //     }
+    //     /*
+    //     if ( ret = i2->lenTautomer - i1->lenTautomer )
+    //         return ret;
+    //     num = inchi_min( i2->lenTautomer, i1->lenTautomer );
+    //     for ( i = 0; i < num; i ++ ) {
+    //         if ( ret = (int)i2->nTautomer[i] - (int)i1->nTautomer[i] )
+    //             return ret;
+    //     }
+    //     */
+    //
+    //     /*
+    //         at this point both components are either tautomeric
+    //         or non-tautomeric
+    //      */
+    //
+    //      /*
+    //          non-tautomeric "fixed H" specific
+    //      */
+    //     if ( /*TAUT_NON == bTaut && (i2 &&*/ i2->nNum_H_fixed) /* djb-rwth: fixing coverity ID #499493 */
+    //     {
+    //         /* first, compare non-tautomeric chem. formulas -- they may be different */
+    //         /* secondly, compare fixed-H distribution */
+    //         if (i2->nNum_H_fixed)
+    //         {
+    //             num = i2->nNumberOfAtoms;
+    //             for (i = 0; i < num; i++)
+    //             {
+    //                 if (i2->nNum_H_fixed[i] != 0)
+    //                 {
+    //                     return 1;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     /*
+    //         compare non-isotopic stereo
+    //     */
+    //     ret = CompareInchiStereo(i1->Stereo, i1->nFlags, i2->Stereo, i2->nFlags);
+    //     if (ret)
+    //     {
+    //         return ret;
+    //     }
+    //
+    //     /*
+    //         do not switch back to tautomeric i1, i2
+    //     */
+    //
+    //     /* -- how to switch back --
+    //     if ( i1t ) {
+    //         i1  = i1t;
+    //         i1t = NULL;
+    //     }
+    //     if ( i2t ) {
+    //         i2  = i2t;
+    //         i2t = NULL;
+    //     }
+    //     */
+    //
+    //     /*
+    //          compare isotopic non-tautomeric part
+    //     */
+    //     if (bCompareIsotopic)
+    //     {
+    //         if ((ret = i2->nNumberOfIsotopicAtoms - i1->nNumberOfIsotopicAtoms)) /* djb-rwth: addressing LLVM warning */
+    //             return ret;
+    //         num = i1->nNumberOfIsotopicAtoms;
+    //
+    //         /*  compare isotopic atoms */
+    //         for (i = 0; i < num; i++)
+    //         {
+    //             if ((ret = (int)i2->IsotopicAtom[i].nAtomNumber - (int)i1->IsotopicAtom[i].nAtomNumber)) /* djb-rwth: addressing LLVM warning */
+    //                 return ret;
+    //             if ((ret = (int)i2->IsotopicAtom[i].nIsoDifference - (int)i1->IsotopicAtom[i].nIsoDifference)) /* djb-rwth: addressing LLVM warning */
+    //                 return ret;
+    //         }
+    //
+    //         /* compare isotopic H */
+    //         /* if tautomeric comparison mode then here are compared only non-tautomeric H */
+    //         for (i = 0; i < num; i++)
+    //         {
+    //             if ((ret = (int)i2->IsotopicAtom[i].nNum_T - (int)i1->IsotopicAtom[i].nNum_T)) /* djb-rwth: addressing LLVM warning */
+    //                 return ret;
+    //             if ((ret = (int)i2->IsotopicAtom[i].nNum_D - (int)i1->IsotopicAtom[i].nNum_D)) /* djb-rwth: addressing LLVM warning */
+    //                 return ret;
+    //             if ((ret = (int)i2->IsotopicAtom[i].nNum_H - (int)i1->IsotopicAtom[i].nNum_H)) /* djb-rwth: addressing LLVM warning */
+    //                 return ret;
+    //         }
+    //
+    //         /* compare isotopic tautomeric part */
+    //         if ((ret = i2->nNumberOfIsotopicTGroups || i1->nNumberOfIsotopicTGroups)) /* djb-rwth: addressing LLVM warning */
+    //             return ret;
+    //
+    //         /*
+    //         num = i1->nNumberOfIsotopicTGroups;
+    //         for ( i = 0; i < num; i ++ ) {
+    //             if ( ret = (int)i2->IsotopicTGroup[i].nTGroupNumber - (int)i1->IsotopicTGroup[i].nTGroupNumber )
+    //                 return ret;
+    //             if ( ret = (int)i2->IsotopicTGroup[i].nNum_T - (int)i1->IsotopicTGroup[i].nNum_T )
+    //                 return ret;
+    //             if ( ret = (int)i2->IsotopicTGroup[i].nNum_D - (int)i1->IsotopicTGroup[i].nNum_D )
+    //                 return ret;
+    //             if ( ret = (int)i2->IsotopicTGroup[i].nNum_H - (int)i1->IsotopicTGroup[i].nNum_H )
+    //                 return ret;
+    //         }
+    //         */
+    //
+    //         /* compare isotopic stereo */
+    //         ret = CompareInchiStereo(i1->StereoIsotopic, i1->nFlags,
+    //             i2->StereoIsotopic, i2->nFlags);
+    //         if (ret)
+    //         {
+    //             return ret;
+    //         }
+    //     }
+    //
+    //     /*
+    //         compare charges: non-charged first, then in order of
+    //         ascending charges (negative first)
+    //     */
+    //
+    //     if (i2->nTotalCharge && i1->nTotalCharge)
+    //     {
+    //         /*  both are charged; smaller charges first */
+    //         ret = (int)i1->nTotalCharge - (int)i2->nTotalCharge;
+    //         return ret;
+    //     }
+    //     if ((ret = (i1->nTotalCharge ? 1 : 0) - (i2->nTotalCharge ? 1 : 0))) /* djb-rwth: addressing LLVM warning */
+    //     {
+    //         /*  only one is charged; uncharged first */
+    //         return ret;
+    //     }
+    //     /* stable sort */
+    //     /*ret = p1->ord_number - p2->ord_number;*/
+    //
+    //     return ret;
+    // }
+    // END INCHI C FUNCTION: comp_taut_vs_non_taut_fixed_sort
+    // INCHI✔️❗: One canonical algorithm; fixed-sort fields are admitted
+    // only at their source expressions, including independent charge and
+    // nullable transposition gates. O(1) projection, no extra clone/scan;
+    // safe arena/dispatch and whole-call costs remain independently OPEN.
     let taut_yes = TAUT_YES as usize;
     let taut_non = TAUT_NON as usize;
     let p1_taut = p1.pINChI[taut_yes];
@@ -2609,12 +2957,13 @@ pub(crate) fn CompINChITautVsNonTaut(
         taut_non
     };
     let i1_pointer = p1.pINChI[n1];
-    let p2_non = p2.pINChI[taut_non];
-    let i2_pointer = if n1 == taut_yes
-        && !p2_non.is_null()
-        && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0
-    {
-        p2_non
+    let i2_pointer = if n1 == taut_yes {
+        let p2_non = p2.record(heap)?.pINChI[taut_non];
+        if !p2_non.is_null() && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0 {
+            p2_non
+        } else {
+            crate::source_types::SourceMutPointer::null()
+        }
     } else {
         crate::source_types::SourceMutPointer::null()
     };
@@ -2651,18 +3000,20 @@ pub(crate) fn CompINChITautVsNonTaut(
     }
     let atom_count = usize::try_from(i1.nNumberOfAtoms.max(0))
         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let atoms1 = heap
-        .slice(i1.nAtom.as_const())?
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let atoms2 = heap
-        .slice(i2.nAtom.as_const())?
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for index in 0..atom_count {
-        let ret = i32::from(atoms2[index]) - i32::from(atoms1[index]);
-        if ret != 0 {
-            return Ok(ret);
+    if atom_count > 0 {
+        let atoms1 = heap.slice(i1.nAtom.as_const())?;
+        let atoms2 = heap.slice(i2.nAtom.as_const())?;
+        for index in 0..atom_count {
+            let atoms2_value = atoms2
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atoms1_value = atoms1
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let ret = i32::from(*atoms2_value) - i32::from(*atoms1_value);
+            if ret != 0 {
+                return Ok(ret);
+            }
         }
     }
     let ret = i2.lenConnTable.wrapping_sub(i1.lenConnTable);
@@ -2672,16 +3023,16 @@ pub(crate) fn CompINChITautVsNonTaut(
     let connection_count = usize::try_from(i2.lenConnTable.max(0))
         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if connection_count > 0 {
-        let connections1 = heap
-            .slice(i1.nConnTable.as_const())?
-            .get(..connection_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let connections2 = heap
-            .slice(i2.nConnTable.as_const())?
-            .get(..connection_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let connections1 = heap.slice(i1.nConnTable.as_const())?;
+        let connections2 = heap.slice(i2.nConnTable.as_const())?;
         for index in 0..connection_count {
-            let ret = i32::from(connections2[index]) - i32::from(connections1[index]);
+            let connections2_value = connections2
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let connections1_value = connections1
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let ret = i32::from(*connections2_value) - i32::from(*connections1_value);
             if ret != 0 {
                 return Ok(ret);
             }
@@ -2691,36 +3042,41 @@ pub(crate) fn CompINChITautVsNonTaut(
     if ret != 0 {
         return Ok(ret);
     }
-    let hydrogens1 = heap
-        .slice(i1.nNum_H.as_const())?
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let hydrogens2 = heap
-        .slice(i2.nNum_H.as_const())?
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for index in 0..atom_count {
-        if hydrogens2[index] != hydrogens1[index] {
-            return Ok(if hydrogens2[index] == 0 {
-                1
-            } else if hydrogens1[index] == 0 {
-                -1
-            } else {
-                i32::from(hydrogens2[index]) - i32::from(hydrogens1[index])
-            });
+    if atom_count > 0 {
+        let hydrogens1 = heap.slice(i1.nNum_H.as_const())?;
+        let hydrogens2 = heap.slice(i2.nNum_H.as_const())?;
+        for index in 0..atom_count {
+            let hydrogens2_value = hydrogens2
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let hydrogens1_value = hydrogens1
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if *hydrogens2_value != *hydrogens1_value {
+                return Ok(if *hydrogens2_value == 0 {
+                    1
+                } else if *hydrogens1_value == 0 {
+                    -1
+                } else {
+                    i32::from(*hydrogens2_value) - i32::from(*hydrogens1_value)
+                });
+            }
         }
     }
     let ret = CompareTautNonIsoPartOfINChI(heap, &i1, &i2)?;
     if ret != 0 {
         return Ok(ret);
     }
-    if !i2.nNum_H_fixed.is_null() {
-        let fixed = heap
-            .slice(i2.nNum_H_fixed.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if fixed.iter().any(|value| *value != 0) {
-            return Ok(1);
+    if !i2.nNum_H_fixed.is_null() && atom_count > 0 {
+        let fixed = heap.slice(i2.nNum_H_fixed.as_const())?;
+        for index in 0..atom_count {
+            if *fixed
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                != 0
+            {
+                return Ok(1);
+            }
         }
     }
     let stereo1 = if i1.Stereo.is_null() {
@@ -2754,35 +3110,44 @@ pub(crate) fn CompINChITautVsNonTaut(
         let isotope_count = usize::try_from(i1.nNumberOfIsotopicAtoms.max(0))
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if isotope_count > 0 {
-            let isotopes1 = heap
-                .slice(i1.IsotopicAtom.as_const())?
-                .get(..isotope_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let isotopes2 = heap
-                .slice(i2.IsotopicAtom.as_const())?
-                .get(..isotope_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let isotopes1 = heap.slice(i1.IsotopicAtom.as_const())?;
+            let isotopes2 = heap.slice(i2.IsotopicAtom.as_const())?;
             for index in 0..isotope_count {
-                for ret in [
-                    i32::from(isotopes2[index].nAtomNumber)
-                        - i32::from(isotopes1[index].nAtomNumber),
-                    i32::from(isotopes2[index].nIsoDifference)
-                        - i32::from(isotopes1[index].nIsoDifference),
-                ] {
-                    if ret != 0 {
-                        return Ok(ret);
-                    }
+                let isotopes2_value = isotopes2
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let isotopes1_value = isotopes1
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let ret =
+                    i32::from(isotopes2_value.nAtomNumber) - i32::from(isotopes1_value.nAtomNumber);
+                if ret != 0 {
+                    return Ok(ret);
+                }
+                let ret = i32::from(isotopes2_value.nIsoDifference)
+                    - i32::from(isotopes1_value.nIsoDifference);
+                if ret != 0 {
+                    return Ok(ret);
                 }
             }
             for index in 0..isotope_count {
-                for ret in [
-                    i32::from(isotopes2[index].nNum_T) - i32::from(isotopes1[index].nNum_T),
-                    i32::from(isotopes2[index].nNum_D) - i32::from(isotopes1[index].nNum_D),
-                    i32::from(isotopes2[index].nNum_H) - i32::from(isotopes1[index].nNum_H),
-                ] {
-                    if ret != 0 {
-                        return Ok(ret);
-                    }
+                let isotopes2_value = isotopes2
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let isotopes1_value = isotopes1
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let ret = i32::from(isotopes2_value.nNum_T) - i32::from(isotopes1_value.nNum_T);
+                if ret != 0 {
+                    return Ok(ret);
+                }
+                let ret = i32::from(isotopes2_value.nNum_D) - i32::from(isotopes1_value.nNum_D);
+                if ret != 0 {
+                    return Ok(ret);
+                }
+                let ret = i32::from(isotopes2_value.nNum_H) - i32::from(isotopes1_value.nNum_H);
+                if ret != 0 {
+                    return Ok(ret);
                 }
             }
         }
@@ -3740,6 +4105,886 @@ pub(crate) fn CompINChILayers(
     // INCHI✔️❌:
     // END INCHI C FUNCTION: CompINChILayers
 
+    comp_layers_fixed_sort(
+        heap,
+        p1,
+        FixedSort::Borrowed(p2),
+        difference_segments,
+        fix_transposed_charge_bug,
+    )
+}
+
+#[allow(non_snake_case)]
+pub(super) fn comp_layers_from_fixed_sort(
+    heap: &mut SourceHeap,
+    p1: &INCHI_SORT,
+    p2: SourceMutPointer<INCHI_SORT>,
+    difference_segments: &mut [[i8; 11]; 4],
+    fix_transposed_charge_bug: i32,
+) -> Result<i32, SourceHeapError> {
+    // Native fixed-sort pointer is forwarded unchanged; its source fields
+    // are resolved by the same canonical kernel at reached expressions.
+    comp_layers_fixed_sort(
+        heap,
+        p1,
+        FixedSort::Pointer(p2),
+        difference_segments,
+        fix_transposed_charge_bug,
+    )
+}
+
+#[allow(non_snake_case)]
+fn comp_layers_fixed_sort(
+    heap: &mut SourceHeap,
+    p1: &INCHI_SORT,
+    p2: FixedSort<'_>,
+    difference_segments: &mut [[i8; 11]; 4],
+    fix_transposed_charge_bug: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: comp_layers_fixed_sort (ichimake.c:645)
+    // int CompINChILayers(const INCHI_SORT* p1,
+    //     const INCHI_SORT* p2,
+    //     char sDifSegs[][DIFS_LENGTH],
+    //     int bFixTranspChargeBug)
+    // {
+    //     int ret = 0, num, i, num_H1, num_H2;
+    //
+    //     const INChI* i1 = NULL; /* Mobile-H layers in Mobile-H sorting order */
+    //     const INChI* i2 = NULL; /* Fixed-H  layers in Fixed-H  sorting order */
+    //
+    //     int   n1;               /* TAUT_YES if tautomeric i1 exists, otherwise TAUT_NON */
+    //
+    //     INChI_Stereo* Stereo1, * Stereo2;
+    //     INChI_Stereo* IsoStereo1, * IsoStereo2;
+    //     int bRelRac[DIFL_LENGTH];
+    //     char* psDifSegs;
+    //
+    //     n1 = (p1->pINChI[TAUT_YES] && p1->pINChI[TAUT_YES]->nNumberOfAtoms) ? TAUT_YES : TAUT_NON;
+    //
+    //     i1 = p1->pINChI[n1];
+    //     i2 = (n1 == TAUT_YES && p2->pINChI[TAUT_NON] &&
+    //         p2->pINChI[TAUT_NON]->nNumberOfAtoms) ? p2->pINChI[TAUT_NON] : (const INChI*)NULL;
+    //
+    //     num_H1 = num_H2 = 0;
+    //     memset(bRelRac, DIFV_BOTH_EMPTY, sizeof(bRelRac)); /* djb-rwth: memset_s C11/Annex K variant? */
+    //     /*=====================*/
+    //     /*====     /f    ======*/
+    //     /*=====================*/
+    //     if (i1 && !i1->bDeleted && i1->szHillFormula && i1->szHillFormula[0])
+    //     {
+    //         sDifSegs[DIFL_M][DIFS_f_FORMULA] |= DIFV_NEQ2PRECED;
+    //         if (i2 && !i2->bDeleted && i2->szHillFormula && i2->szHillFormula[0])
+    //         {
+    //             if (!CompareHillFormulasNoH(i1->szHillFormula, i2->szHillFormula, &num_H1, &num_H2) &&
+    //                 num_H1 == num_H2)
+    //             {
+    //                 sDifSegs[DIFL_F][DIFS_f_FORMULA] |= DIFV_EQL2PRECED;
+    //             }
+    //             else
+    //             {
+    //                 sDifSegs[DIFL_F][DIFS_f_FORMULA] |= DIFV_NEQ2PRECED;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             sDifSegs[DIFL_F][DIFS_f_FORMULA] |= i2 ? DIFV_IS_EMPTY : DIFV_EQL2PRECED;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         sDifSegs[DIFL_M][DIFS_f_FORMULA] |= DIFV_BOTH_EMPTY;
+    //         if (i2 && !i2->bDeleted && i2->szHillFormula && i2->szHillFormula[0])
+    //         {
+    //             sDifSegs[DIFL_F][DIFS_f_FORMULA] |= DIFV_NEQ2PRECED;
+    //         }
+    //         else
+    //         {
+    //             sDifSegs[DIFL_F][DIFS_f_FORMULA] |= DIFV_BOTH_EMPTY;
+    //         }
+    //     }
+    //     /*=====================*/
+    //     /*====     /c    ======*/
+    //     /*=====================*/
+    //     if (i1 && !i1->bDeleted && i1->lenConnTable > 1)
+    //     {
+    //         sDifSegs[DIFL_M][DIFS_f_FORMULA] |= DIFV_NEQ2PRECED;
+    //     }
+    //     else
+    //     {
+    //         sDifSegs[DIFL_M][DIFS_f_FORMULA] |= DIFV_BOTH_EMPTY;
+    //     }
+    //     /*=====================*/
+    //     /*====     /h    ======*/
+    //     /*=====================*/
+    //     /* M: H atoms */
+    //     if (i1 && !i1->bDeleted)
+    //     {
+    //         num_H1 = (i1->lenTautomer > 0 && i1->nTautomer && i1->nTautomer[0]) ? 1 : 0; /* number of t-groups */
+    //         if (!num_H1 && i1->nNum_H)
+    //         {
+    //             for (i = 0; i < i1->nNumberOfAtoms; i++)
+    //             { /* immobile H */
+    //                 if (i1->nNum_H[i])
+    //                 {
+    //                     num_H1 = 1;
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //         sDifSegs[DIFL_M][DIFS_h_H_ATOMS] |= num_H1 ? DIFV_NEQ2PRECED : DIFV_BOTH_EMPTY;
+    //     }
+    //     else
+    //     {
+    //         sDifSegs[DIFL_M][DIFS_h_H_ATOMS] |= DIFV_BOTH_EMPTY;
+    //     }
+    //     /* F: fixed mobile H */
+    //     if (i2 && !i2->bDeleted && i2->nNum_H_fixed)
+    //     {
+    //         num_H2 = 0;
+    //         if (i1 && !i1->bDeleted)
+    //         {
+    //             for (i = 0; i < i1->nNumberOfAtoms; i++)
+    //             {
+    //                 if (i2->nNum_H_fixed[i])
+    //                 {
+    //                     num_H2 = 1;
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //         sDifSegs[DIFL_F][DIFS_h_H_ATOMS] |= num_H2 ? DIFV_NEQ2PRECED : DIFV_BOTH_EMPTY;
+    //     }
+    //     else
+    //     {
+    //         sDifSegs[DIFL_F][DIFS_h_H_ATOMS] |= DIFV_BOTH_EMPTY;
+    //     }
+    //     /* MI: exchangable isotopic H: see OutputINChI1(), num_iso_H[] */
+    //
+    //     /*=====================*/
+    //     /*====     /q    ======*/
+    //     /*=====================*/
+    //     psDifSegs = &sDifSegs[DIFL_F][DIFS_q_CHARGE];
+    //     if (i1 && !i1->bDeleted)
+    //     {
+    //         if (i1->nTotalCharge)
+    //         {
+    //             sDifSegs[DIFL_M][DIFS_q_CHARGE] |= DIFV_NEQ2PRECED;
+    //         }
+    //         else
+    //         {
+    //             sDifSegs[DIFL_M][DIFS_q_CHARGE] |= DIFV_BOTH_EMPTY;
+    //         }
+    //         if (i2 && !i2->bDeleted)
+    //         {
+    //             if (i1->nTotalCharge)
+    //             {
+    //                 if (i1->nTotalCharge == i2->nTotalCharge)
+    //                 {
+    //                     *psDifSegs |= DIFV_EQL2PRECED;
+    //                 }
+    //                 else
+    //                 {
+    //                     if (i2->nTotalCharge)
+    //                     {
+    //                         *psDifSegs |= DIFV_NEQ2PRECED;
+    //                     }
+    //                     else
+    //                     {
+    //                         *psDifSegs |= DIFV_IS_EMPTY;
+    //                     }
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 if (i2->nTotalCharge)
+    //                 {
+    //                     *psDifSegs |= DIFV_NEQ2PRECED;
+    //                 }
+    //                 else
+    //                 {
+    //                     *psDifSegs |= DIFV_BOTH_EMPTY;
+    //                 }
+    //             }
+    //         }
+    //         else
+    //         {
+    //             if (!i2)
+    //             {
+    //                 if (bFixTranspChargeBug == 1)
+    //                 {
+    //                     /* bug explanation:
+    //
+    //                     component #1 is tautomeric, component #2 is not
+    //                     Mobile-H(#2) > Mobile-H(#1)
+    //                     Fixed-H(#2) = Mobile-H(#2) < Fixed-H(#1)
+    //
+    //                     Layer       first_charge   second_charge
+    //
+    //                     Mobile-H    0    (comp#1)  -1 (comp#2)
+    //                     Fixed-H     none (comp#2)  -1 (comp#1)
+    //
+    //                     v1.01 charge compared decided that charge layers are same and omitted Fixed-H /q layer
+    //
+    //                     Solution: when component permutation is detected AND fixed-H component does not exist,
+    //                     compare Mobile-H charge [0 (comp#1) in the example] to the charge of Mobile-H [-1 (comp#2)]
+    //                     of the component that has none Fixed-H charge
+    //                     */
+    //
+    //                     /* Fixed-H i2 is empty because Fixed-H struct is same as Mobile-H */
+    //                     if (p1->ord_number != p2->ord_number && /* component order in Fixed-H is different from Mobile-H */
+    //                         n1 == TAUT_YES && p2->pINChI[TAUT_YES] && !p2->pINChI[TAUT_YES]->bDeleted &&
+    //                         p2->pINChI[TAUT_YES]->nNumberOfAtoms)
+    //                     {
+    //                         int i2_nTotalCharge = p2->pINChI[TAUT_YES]->nTotalCharge;
+    //
+    //                         if (i1->nTotalCharge)
+    //                         {
+    //                             if (i1->nTotalCharge == i2_nTotalCharge)
+    //                             {
+    //                                 *psDifSegs |= DIFV_EQL2PRECED;
+    //                             }
+    //                             else
+    //                             {
+    //                                 if (i2_nTotalCharge)
+    //                                 {
+    //                                     *psDifSegs |= DIFV_NEQ2PRECED;
+    //                                 }
+    //                                 else
+    //                                 {
+    //                                     *psDifSegs |= DIFV_IS_EMPTY;
+    //                                 }
+    //                             }
+    //                         }
+    //                         else
+    //                         {
+    //                             if (i2_nTotalCharge)
+    //                             {
+    //                                 *psDifSegs |= DIFV_NEQ2PRECED;
+    //                             }
+    //                             else
+    //                             {
+    //                                 *psDifSegs |= DIFV_BOTH_EMPTY;
+    //                             }
+    //                         }
+    //                     }
+    //                     else
+    //                     {
+    //                         *psDifSegs |= i1->nTotalCharge ? DIFV_EQL2PRECED : DIFV_BOTH_EMPTY;
+    //                     }
+    //                 }
+    //                 else /* if (bFixTranspChargeBug==1) */
+    //                 {
+    //                     *psDifSegs |= i1->nTotalCharge ? DIFV_EQL2PRECED : DIFV_BOTH_EMPTY;
+    //                 }
+    //             }
+    //             else /* if ( !i2 ) { */
+    //             {
+    //                 /* i2 && i2->bDeleted */
+    //                 *psDifSegs |= i1->nTotalCharge ? DIFV_IS_EMPTY : DIFV_BOTH_EMPTY;
+    //             }
+    //         }
+    //     }
+    //     else
+    //     {
+    //         sDifSegs[DIFL_M][DIFS_q_CHARGE] |= DIFV_BOTH_EMPTY;
+    //         if (i2 && !i2->bDeleted)
+    //         {
+    //             if (i2->nTotalCharge)
+    //             {
+    //                 sDifSegs[DIFL_F][DIFS_q_CHARGE] |= DIFV_NEQ2PRECED;
+    //             }
+    //             else
+    //             {
+    //                 sDifSegs[DIFL_F][DIFS_q_CHARGE] |= DIFV_BOTH_EMPTY;
+    //             }
+    //         }
+    //     }
+    //
+    //
+    //     /*************** stereo *****************/
+    //
+    //     if (i1 && !i1->bDeleted)
+    //     {
+    //         Stereo1 = i1->Stereo;
+    //         IsoStereo1 = i1->StereoIsotopic;
+    //     }
+    //     else
+    //     {
+    //         Stereo1 = NULL;
+    //         IsoStereo1 = NULL;
+    //     }
+    //     if (i2 && !i2->bDeleted)
+    //     {
+    //         Stereo2 = i2->Stereo;
+    //         IsoStereo2 = i2->StereoIsotopic;
+    //     }
+    //     else
+    //     {
+    //         Stereo2 = NULL;
+    //         IsoStereo2 = NULL;
+    //     }
+    //
+    //     /*=====================*/
+    //     /*====     /b    ======*/
+    //     /*=====================*/
+    //     /* M double bond stereo */
+    //     psDifSegs = &sDifSegs[DIFL_M][DIFS_b_SBONDS];
+    //     if (Stereo1 && Stereo1->nNumberOfStereoBonds)
+    //     {
+    //         *psDifSegs |= DIFV_NEQ2PRECED;
+    //     }
+    //     else
+    //     {
+    //         *psDifSegs |= DIFV_BOTH_EMPTY;
+    //     }
+    //     /* F double bond stereo */
+    //     psDifSegs = &sDifSegs[DIFL_F][DIFS_b_SBONDS];
+    //     if (Stereo2 && Stereo2->nNumberOfStereoBonds)
+    //     {
+    //         if (Stereo1 && Stereo1->nNumberOfStereoBonds)
+    //         {
+    //             if (Eql_INChI_Stereo(Stereo1, EQL_SP2, Stereo2, EQL_SP2, 0))
+    //             {
+    //                 *psDifSegs |= DIFV_EQL2PRECED;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_NEQ2PRECED;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_NEQ2PRECED;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (Stereo1 && Stereo1->nNumberOfStereoBonds)
+    //         {
+    //             *psDifSegs |= i2 ? DIFV_IS_EMPTY : DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_BOTH_EMPTY;
+    //         }
+    //     }
+    //
+    //     /* MI double bond stereo */
+    //     psDifSegs = &sDifSegs[DIFL_MI][DIFS_b_SBONDS];
+    //     if (IsoStereo1 && IsoStereo1->nNumberOfStereoBonds)
+    //     {
+    //         if (Eql_INChI_Stereo(IsoStereo1, EQL_SP2, Stereo1, EQL_SP2, 0))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_NEQ2PRECED;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (Stereo1 && Stereo1->nNumberOfStereoBonds)
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED; /* isotopic is missing because there is no isotopes */
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_BOTH_EMPTY;
+    //         }
+    //     }
+    //
+    //     /* FI double bond stereo */
+    //     psDifSegs = &sDifSegs[DIFL_FI][DIFS_b_SBONDS];
+    //     if (IsoStereo2 && IsoStereo2->nNumberOfStereoBonds)
+    //     {
+    //         if (Eql_INChI_Stereo(IsoStereo2, EQL_SP2, Stereo2, EQL_SP2, 0))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             if (!(Stereo1 && Stereo1->nNumberOfStereoBonds) &&
+    //                 !(Stereo2 && Stereo2->nNumberOfStereoBonds) &&
+    //                 Eql_INChI_Stereo(IsoStereo2, EQL_SP2, IsoStereo1, EQL_SP2, 0))
+    //             {
+    //                 *psDifSegs |= DIFV_FI_EQ_MI;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_NEQ2PRECED;
+    //             }
+    //         }
+    //     }
+    //     else
+    //     {
+    //         /* the solution table for FI stereo,
+    //            in case of FI stereo is empty
+    //            E = segment is empty, NE = not empty
+    //            +==============================+
+    //            | M   | MI  | F   |  result    |
+    //            +=====+=====+=====+============+
+    //            | E   | E   | E   | both empty |
+    //            +-----+-----+-----+------------+
+    //            | NE  | E   | E   | both empty |
+    //            +-----+-----+-----+------------+
+    //            | E   | NE  | E   | is empty   |
+    //            +-----+-----+-----+------------+
+    //            | NE  | NE  | E   | both empty |
+    //            +-----+-----+-----+------------+
+    //            | E   | E   | NE  | is empty   |
+    //            +-----+-----+-----+------------+
+    //            | NE  | E   | NE  | is empty   |
+    //            +-----+-----+-----+------------+
+    //            | E   | NE  | NE  | is empty   |
+    //            +-----+-----+-----+------------+
+    //            | NE  | NE  | ME  | is empty   |
+    //            +==============================+
+    //         */
+    //         if (Stereo2 && Stereo2->nNumberOfStereoBonds)
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED; /* isotopic is missing because there is no isotopes */
+    //         }
+    //         else
+    //             if (IsoStereo1 && IsoStereo1->nNumberOfStereoBonds &&
+    //                 !(Stereo1 && Stereo1->nNumberOfStereoBonds)
+    //                 )
+    //             {
+    //                 *psDifSegs |= i2 ? DIFV_IS_EMPTY : DIFV_EQL2PRECED;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_BOTH_EMPTY;
+    //             }
+    //     }
+    //
+    //     /*==================================*/
+    //     /*====     /t, /m, /s for M   ======*/
+    //     /*==================================*/
+    //     /* M sp3 stereo */
+    //     bRelRac[DIFL_M] = GetSp3RelRacAbs(i1, Stereo1);       /* Mobile-H */
+    //     bRelRac[DIFL_MI] = GetSp3RelRacAbs(i1, IsoStereo1);
+    //     bRelRac[DIFL_F] = GetSp3RelRacAbs(i2, Stereo2);       /* Fixed-H */
+    //     bRelRac[DIFL_FI] = GetSp3RelRacAbs(i2, IsoStereo2);
+    //     if (SP3_NONE != bRelRac[DIFL_M])
+    //     {
+    //         sDifSegs[DIFL_M][DIFS_t_SATOMS] |= (bRelRac[DIFL_M] & SP3_ANY) ? DIFV_NEQ2PRECED : DIFV_BOTH_EMPTY;
+    //         sDifSegs[DIFL_M][DIFS_m_SP3INV] |= (bRelRac[DIFL_M] & SP3_ABS) ? DIFV_NEQ2PRECED : DIFV_BOTH_EMPTY;
+    //         sDifSegs[DIFL_M][DIFS_s_STYPE] |= (bRelRac[DIFL_M] & SP3_TYPE) ? DIFV_NEQ2PRECED : DIFV_BOTH_EMPTY;
+    //     }
+    //     else
+    //     {
+    //         sDifSegs[DIFL_M][DIFS_t_SATOMS] |= DIFV_BOTH_EMPTY;
+    //         sDifSegs[DIFL_M][DIFS_m_SP3INV] |= DIFV_BOTH_EMPTY;
+    //         sDifSegs[DIFL_M][DIFS_s_STYPE] |= DIFV_BOTH_EMPTY;
+    //     }
+    //
+    //     /*=====================*/
+    //     /*====     /t    ======*/
+    //     /*=====================*/
+    //     /* F sp3 stereo */
+    //     psDifSegs = &sDifSegs[DIFL_F][DIFS_t_SATOMS];
+    //     if (SP3_ANY & bRelRac[DIFL_F])
+    //     {
+    //         if (Eql_INChI_Stereo(Stereo2, EQL_SP3, Stereo1, EQL_SP3, 0))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_NEQ2PRECED;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (SP3_ANY & bRelRac[DIFL_M])
+    //         {
+    //             *psDifSegs |= i2 ? DIFV_IS_EMPTY : DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_BOTH_EMPTY;
+    //         }
+    //     }
+    //
+    //     /* MI sp3 stereo */
+    //     psDifSegs = &sDifSegs[DIFL_MI][DIFS_t_SATOMS];
+    //     if (SP3_ANY & bRelRac[DIFL_MI])
+    //     {
+    //         if (Eql_INChI_Stereo(IsoStereo1, EQL_SP3, Stereo1, EQL_SP3, 0))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_NEQ2PRECED;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (SP3_ANY & bRelRac[DIFL_M])
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED; /* isotopic is missing because there is no isotopes */
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_BOTH_EMPTY;
+    //         }
+    //     }
+    //
+    //     /* FI sp3 stereo */
+    //     psDifSegs = &sDifSegs[DIFL_FI][DIFS_t_SATOMS];
+    //     if (SP3_ANY & bRelRac[DIFL_FI])
+    //     {
+    //         if (Eql_INChI_Stereo(IsoStereo2, EQL_SP3, Stereo2, EQL_SP3, 0))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             if (!(SP3_ANY & bRelRac[DIFL_M]) &&
+    //                 !(SP3_ANY & bRelRac[DIFL_F]) &&
+    //                 Eql_INChI_Stereo(IsoStereo2, EQL_SP3, IsoStereo1, EQL_SP3, 0))
+    //             {
+    //                 *psDifSegs |= DIFV_FI_EQ_MI;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_NEQ2PRECED;
+    //             }
+    //         }
+    //     }
+    //     else /* similar to /b */
+    //         if ((SP3_ANY & bRelRac[DIFL_F]))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED; /* isotopic is missing because there is no isotopes */
+    //         }
+    //         else
+    //         {
+    //             if ((SP3_ANY & bRelRac[DIFL_MI]) && !(SP3_ANY & bRelRac[DIFL_M]))
+    //             {
+    //                 *psDifSegs |= i2 ? DIFV_IS_EMPTY : DIFV_EQL2PRECED;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_BOTH_EMPTY;
+    //             }
+    //         }
+    //
+    //     /*=====================*/
+    //     /*====     /m    ======*/
+    //     /*=====================*/
+    //     /* F sp3 abs stereo inversion */
+    //     psDifSegs = &sDifSegs[DIFL_F][DIFS_m_SP3INV];
+    //     if (bRelRac[DIFL_F] & SP3_ABS)
+    //     {
+    //         /* the order of || operands below is critically important: || is not a commutative operation */
+    //         if (!(bRelRac[DIFL_M] & SP3_ABS) || Stereo2->nCompInv2Abs != Stereo1->nCompInv2Abs)
+    //         {
+    //             *psDifSegs |= DIFV_NEQ2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (bRelRac[DIFL_M] & SP3_ABS)
+    //         {
+    //             *psDifSegs |= i2 ? DIFV_IS_EMPTY : DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_BOTH_EMPTY;
+    //         }
+    //     }
+    //
+    //     /* MI sp3 abs stereo inversion */
+    //     psDifSegs = &sDifSegs[DIFL_MI][DIFS_m_SP3INV];
+    //     if (SP3_ABS & bRelRac[DIFL_MI])
+    //     {
+    //         if ((SP3_ABS & bRelRac[DIFL_M]) && IsoStereo1->nCompInv2Abs == Stereo1->nCompInv2Abs)
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_NEQ2PRECED;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (SP3_ABS & bRelRac[DIFL_M])
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED; /* isotopic is missing because there is no isotopes */
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_BOTH_EMPTY;
+    //         }
+    //     }
+    //
+    //     /* FI sp3 abs stereo inversion */
+    //     psDifSegs = &sDifSegs[DIFL_FI][DIFS_m_SP3INV];
+    //     if (SP3_ABS & bRelRac[DIFL_FI])
+    //     {
+    //         if ((SP3_ABS & bRelRac[DIFL_F]) && IsoStereo2->nCompInv2Abs == Stereo2->nCompInv2Abs)
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             if (!(SP3_ABS & bRelRac[DIFL_M]) &&
+    //                 !(SP3_ABS & bRelRac[DIFL_F]) &&
+    //                 (SP3_ABS & bRelRac[DIFL_MI]) && /* make sure IsoStereo1 != NULL */
+    //                 IsoStereo2->nCompInv2Abs == IsoStereo1->nCompInv2Abs)
+    //             {
+    //                 *psDifSegs |= DIFV_FI_EQ_MI;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_NEQ2PRECED;
+    //             }
+    //         }
+    //     }
+    //
+    //     else
+    //     {
+    //         /* similar to /b */
+    //         /* the order of || operands below is critically important: || is no a commutative operation */
+    //         if ((SP3_ABS & bRelRac[DIFL_F]))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED; /* isotopic is missing because there is no isotopes */
+    //         }
+    //         else
+    //         {
+    //             if ((SP3_ABS & bRelRac[DIFL_MI]) && !(SP3_ABS & bRelRac[DIFL_M]))
+    //             {
+    //                 *psDifSegs |= i2 ? DIFV_IS_EMPTY : DIFV_EQL2PRECED;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_BOTH_EMPTY;
+    //             }
+    //         }
+    //     }
+    //
+    //     /*=====================*/
+    //     /*====     /s    ======*/
+    //     /*=====================*/
+    //     /* F sp3 stereo type */
+    //     psDifSegs = &sDifSegs[DIFL_F][DIFS_s_STYPE];
+    //     if (bRelRac[DIFL_F] & SP3_TYPE)
+    //     {
+    //         if ((bRelRac[DIFL_F] & SP3_TYPE) == (bRelRac[DIFL_M] & SP3_TYPE))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_NEQ2PRECED;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (bRelRac[DIFL_M] & SP3_TYPE)
+    //         {
+    //             *psDifSegs |= i2 ? DIFV_IS_EMPTY : DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_BOTH_EMPTY;
+    //         }
+    //     }
+    //
+    //     /* MI sp3 stereo type */
+    //     psDifSegs = &sDifSegs[DIFL_MI][DIFS_s_STYPE];
+    //     if (SP3_TYPE & bRelRac[DIFL_MI])
+    //     {
+    //         if ((SP3_TYPE & bRelRac[DIFL_MI]) == (SP3_TYPE & bRelRac[DIFL_M]))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_NEQ2PRECED;
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (SP3_TYPE & bRelRac[DIFL_M])
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED; /* isotopic is missing because there is no isotopes */
+    //         }
+    //         else
+    //         {
+    //             *psDifSegs |= DIFV_BOTH_EMPTY;
+    //         }
+    //     }
+    //
+    //     /* FI sp3 stereo type */
+    //     psDifSegs = &sDifSegs[DIFL_FI][DIFS_s_STYPE];
+    //     if (SP3_TYPE & bRelRac[DIFL_FI])
+    //     {
+    //         if ((SP3_TYPE & bRelRac[DIFL_FI]) == (SP3_TYPE & bRelRac[DIFL_F]))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED;
+    //         }
+    //         else
+    //         {
+    //             if (!(SP3_TYPE & bRelRac[DIFL_M]) &&
+    //                 !(SP3_TYPE & bRelRac[DIFL_F]) &&
+    //                 (SP3_TYPE & bRelRac[DIFL_MI]))
+    //             {
+    //                 *psDifSegs |= DIFV_FI_EQ_MI;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_NEQ2PRECED;
+    //             }
+    //         }
+    //     }
+    //     else
+    //     {
+    //         /* similar to /b */
+    //         /* the order of || operands below is critically important: || is not a commutative operation */
+    //         if ((SP3_TYPE & bRelRac[DIFL_F]))
+    //         {
+    //             *psDifSegs |= DIFV_EQL2PRECED; /* isotopic is missing because there is no isotopes */
+    //         }
+    //         else
+    //         {
+    //             if ((SP3_TYPE & bRelRac[DIFL_MI]) && !(SP3_TYPE & bRelRac[DIFL_M]))
+    //             {
+    //                 *psDifSegs |= i2 ? DIFV_IS_EMPTY : DIFV_EQL2PRECED;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_BOTH_EMPTY;
+    //             }
+    //         }
+    //     }
+    //
+    //     /*=====================*/
+    //     /*====     /o    ======*/
+    //     /*=====================*/
+    //     if (p1 && p2 && p1->ord_number != p2->ord_number)
+    //     {
+    //         sDifSegs[DIFL_F][DIFS_o_TRANSP] |= DIFV_NEQ2PRECED;
+    //     }
+    //     /*=====================*/
+    //     /*====     /i    ======*/
+    //     /*=====================*/
+    //
+    //     /* M isotopic atoms */
+    //     psDifSegs = &sDifSegs[DIFL_MI][DIFS_i_IATOMS];
+    //     if (i1 && !i1->bDeleted && (i1->nNumberOfIsotopicAtoms || i1->nNumberOfIsotopicTGroups))
+    //     {
+    //         *psDifSegs |= DIFV_NEQ2PRECED;
+    //     }
+    //     else
+    //     {
+    //         *psDifSegs |= DIFV_BOTH_EMPTY;
+    //     }
+    //     /* F isotopic atoms */
+    //     psDifSegs = &sDifSegs[DIFL_FI][DIFS_i_IATOMS];
+    //     if (i2 && !i2->bDeleted)
+    //     {
+    //         if (i2->nNumberOfIsotopicAtoms || i2->nNumberOfIsotopicTGroups)
+    //         {
+    //             if (!i1 || i1->bDeleted ||
+    //                 i2->nNumberOfIsotopicAtoms != i1->nNumberOfIsotopicAtoms ||
+    //                 i2->nNumberOfIsotopicTGroups != i1->nNumberOfIsotopicTGroups)
+    //             {
+    //                 *psDifSegs |= DIFV_NEQ2PRECED;
+    //             }
+    //             else
+    //             {
+    //                 int diff;
+    //                 num = i1->nNumberOfIsotopicAtoms;
+    //                 diff = 0;
+    //                 for (i = 0; i < num; i++)
+    //                 {
+    //                     /* compare isotopic atoms */
+    //                     if ((diff = (int)i2->IsotopicAtom[i].nAtomNumber - (int)i1->IsotopicAtom[i].nAtomNumber)) /* djb-rwth: addressing LLVM warning */
+    //                     {
+    //                         break;
+    //                     }
+    //                     if ((diff = (int)i2->IsotopicAtom[i].nIsoDifference - (int)i1->IsotopicAtom[i].nIsoDifference)) /* djb-rwth: addressing LLVM warning */
+    //                     {
+    //                         break;
+    //                     }
+    //                     /* compare isotopic H */
+    //                     if ((diff = (int)i2->IsotopicAtom[i].nNum_T - (int)i1->IsotopicAtom[i].nNum_T)) /* djb-rwth: addressing LLVM warning */
+    //                     {
+    //                         break;
+    //                     }
+    //                     if ((diff = (int)i2->IsotopicAtom[i].nNum_D - (int)i1->IsotopicAtom[i].nNum_D)) /* djb-rwth: addressing LLVM warning */
+    //                     {
+    //                         break;
+    //                     }
+    //                     if ((diff = (int)i2->IsotopicAtom[i].nNum_H - (int)i1->IsotopicAtom[i].nNum_H)) /* djb-rwth: addressing LLVM warning */
+    //                     {
+    //                         break;
+    //                     }
+    //                 }
+    //                 if (!diff)
+    //                 {
+    //                     num = i1->nNumberOfIsotopicTGroups;
+    //                     for (i = 0; i < num; i++)
+    //                     {
+    //                         if ((diff = (int)i2->IsotopicTGroup[i].nTGroupNumber - (int)i1->IsotopicTGroup[i].nTGroupNumber)) /* djb-rwth: addressing LLVM warning */
+    //                         {
+    //                             break;
+    //                         }
+    //                         if ((diff = (int)i2->IsotopicTGroup[i].nNum_T - (int)i1->IsotopicTGroup[i].nNum_T)) /* djb-rwth: addressing LLVM warning */
+    //                         {
+    //                             break;
+    //                         }
+    //                         if ((diff = (int)i2->IsotopicTGroup[i].nNum_D - (int)i1->IsotopicTGroup[i].nNum_D)) /* djb-rwth: addressing LLVM warning */
+    //                         {
+    //                             return diff;
+    //                         }
+    //                         if ((diff = (int)i2->IsotopicTGroup[i].nNum_H - (int)i1->IsotopicTGroup[i].nNum_H)) /* djb-rwth: addressing LLVM warning */
+    //                         {
+    //                             break;
+    //                         }
+    //                     }
+    //                 }
+    //                 *psDifSegs |= diff ? DIFV_NEQ2PRECED : DIFV_FI_EQ_MI;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             if (i1 && !i1->bDeleted && (i1->nNumberOfIsotopicAtoms || i1->nNumberOfIsotopicTGroups))
+    //             {
+    //                 *psDifSegs |= DIFV_IS_EMPTY;
+    //             }
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (!i2)
+    //         {
+    //             if (i1 && !i1->bDeleted && (i1->nNumberOfIsotopicAtoms || i1->nNumberOfIsotopicTGroups))
+    //             {
+    //                 *psDifSegs |= DIFV_EQL2PRECED;
+    //             }
+    //             else
+    //             {
+    //                 *psDifSegs |= DIFV_BOTH_EMPTY;
+    //             }
+    //         }
+    //     }
+    //
+    //     return ret;
+    // }
+    // END INCHI C FUNCTION: comp_layers_fixed_sort
+    // INCHI✔️❗: One canonical algorithm; fixed-sort fields are admitted
+    // only at their source expressions, including independent charge and
+    // nullable transposition gates. O(1) projection, no extra clone/scan;
+    // safe arena/dispatch and whole-call costs remain independently OPEN.
     const M: usize = tagDiffINChILayers_DIFL_M as usize;
     const MI: usize = tagDiffINChILayers_DIFL_MI as usize;
     const F: usize = tagDiffINChILayers_DIFL_F as usize;
@@ -3775,12 +5020,13 @@ pub(crate) fn CompINChILayers(
         taut_non
     };
     let i1_pointer = p1.pINChI[n1];
-    let p2_non = p2.pINChI[taut_non];
-    let i2_pointer = if n1 == taut_yes
-        && !p2_non.is_null()
-        && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0
-    {
-        p2_non
+    let i2_pointer = if n1 == taut_yes {
+        let p2_non = p2.record(heap)?.pINChI[taut_non];
+        if !p2_non.is_null() && heap.slice(p2_non.as_const())?[0].nNumberOfAtoms != 0 {
+            p2_non
+        } else {
+            Default::default()
+        }
     } else {
         Default::default()
     };
@@ -3802,16 +5048,23 @@ pub(crate) fn CompINChILayers(
     } else {
         false
     };
-    let formula2_present = if let Some(inchi) = i2_live {
-        !inchi.szHillFormula.is_null() && heap.slice(inchi.szHillFormula.as_const())?[0] != 0
-    } else {
-        false
+    let formula2_present = |heap: &SourceHeap| -> Result<bool, SourceHeapError> {
+        if let Some(inchi) = i2_live {
+            Ok(!inchi.szHillFormula.is_null()
+                && *heap
+                    .slice(inchi.szHillFormula.as_const())?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    != 0)
+        } else {
+            Ok(false)
+        }
     };
     let mut num_h1 = 0;
     let mut num_h2 = 0;
     if formula1_present {
         difference_segments[M][FORMULA] |= NOT_EQUAL;
-        if formula2_present {
+        if formula2_present(heap)? {
             let first = i1_live.ok_or(SourceHeapError::NullPointer)?;
             let second = i2_live.ok_or(SourceHeapError::NullPointer)?;
             if CompareHillFormulasNoH(
@@ -3832,7 +5085,7 @@ pub(crate) fn CompINChILayers(
         }
     } else {
         difference_segments[M][FORMULA] |= BOTH_EMPTY;
-        difference_segments[F][FORMULA] |= if formula2_present {
+        difference_segments[F][FORMULA] |= if formula2_present(heap)? {
             NOT_EQUAL
         } else {
             BOTH_EMPTY
@@ -3845,6 +5098,27 @@ pub(crate) fn CompINChILayers(
         BOTH_EMPTY
     };
 
+    // INCHI✔️❗: Reached scans/field comparisons use no allocation or extra traversal.
+    // O(reached entries), O(1) space; safe-check and whole-call costs remain OPEN.
+    let hydrogen_present = |heap: &SourceHeap,
+                            pointer: SourceConstPointer<i8>,
+                            count: i32|
+     -> Result<bool, SourceHeapError> {
+        if count <= 0 {
+            return Ok(false);
+        }
+        let values = heap.slice(pointer)?;
+        for index in 0..count as usize {
+            if *values
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                != 0
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    };
     let mobile_h_present = if let Some(inchi) = i1_live {
         let tautomeric = inchi.lenTautomer > 0
             && !inchi.nTautomer.is_null()
@@ -3852,13 +5126,7 @@ pub(crate) fn CompINChILayers(
         if tautomeric {
             true
         } else if !inchi.nNum_H.is_null() {
-            let count = usize::try_from(inchi.nNumberOfAtoms.max(0))
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            heap.slice(inchi.nNum_H.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .iter()
-                .any(|value| *value != 0)
+            hydrogen_present(heap, inchi.nNum_H.as_const(), inchi.nNumberOfAtoms)?
         } else {
             false
         }
@@ -3874,13 +5142,7 @@ pub(crate) fn CompINChILayers(
         if second.nNum_H_fixed.is_null() {
             false
         } else {
-            let count = usize::try_from(first.nNumberOfAtoms.max(0))
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            heap.slice(second.nNum_H_fixed.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .iter()
-                .any(|value| *value != 0)
+            hydrogen_present(heap, second.nNum_H_fixed.as_const(), first.nNumberOfAtoms)?
         }
     } else {
         false
@@ -3913,10 +5175,10 @@ pub(crate) fn CompINChILayers(
             };
         } else if i2.is_none() {
             let fixed_mark = if fix_transposed_charge_bug == 1
-                && p1.ord_number != p2.ord_number
+                && p1.ord_number != p2.record(heap)?.ord_number
                 && n1 == taut_yes
             {
-                let p2_taut = p2.pINChI[taut_yes];
+                let p2_taut = p2.record(heap)?.pINChI[taut_yes];
                 if !p2_taut.is_null() {
                     let second_taut = &heap.slice(p2_taut.as_const())?[0];
                     if second_taut.bDeleted == 0 && second_taut.nNumberOfAtoms != 0 {
@@ -4203,7 +5465,7 @@ pub(crate) fn CompINChILayers(
         BOTH_EMPTY
     };
 
-    if p1.ord_number != p2.ord_number {
+    if !p2.is_null() && p1.ord_number != p2.record(heap)?.ord_number {
         difference_segments[F][TRANSP] |= NOT_EQUAL;
     }
 
@@ -4232,41 +5494,50 @@ pub(crate) fn CompINChILayers(
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 let mut different = false;
                 if atom_count > 0 {
-                    let atoms1 = heap
-                        .slice(first.IsotopicAtom.as_const())?
-                        .get(..atom_count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let atoms2 = heap
-                        .slice(second.IsotopicAtom.as_const())?
-                        .get(..atom_count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    different = atoms1 != atoms2;
+                    let atoms1 = heap.slice(first.IsotopicAtom.as_const())?;
+                    let atoms2 = heap.slice(second.IsotopicAtom.as_const())?;
+                    for index in 0..atom_count {
+                        let atom2 = atoms2
+                            .get(index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let atom1 = atoms1
+                            .get(index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if atom2.nAtomNumber != atom1.nAtomNumber
+                            || atom2.nIsoDifference != atom1.nIsoDifference
+                            || atom2.nNum_T != atom1.nNum_T
+                            || atom2.nNum_D != atom1.nNum_D
+                            || atom2.nNum_H != atom1.nNum_H
+                        {
+                            different = true;
+                            break;
+                        }
+                    }
                 }
                 if !different {
                     let group_count = usize::try_from(first.nNumberOfIsotopicTGroups.max(0))
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     if group_count > 0 {
-                        let groups1 = heap
-                            .slice(first.IsotopicTGroup.as_const())?
-                            .get(..group_count)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let groups2 = heap
-                            .slice(second.IsotopicTGroup.as_const())?
-                            .get(..group_count)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let groups1 = heap.slice(first.IsotopicTGroup.as_const())?;
+                        let groups2 = heap.slice(second.IsotopicTGroup.as_const())?;
                         for index in 0..group_count {
-                            if groups2[index].nTGroupNumber != groups1[index].nTGroupNumber
-                                || groups2[index].nNum_T != groups1[index].nNum_T
+                            let group2 = groups2
+                                .get(index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            let group1 = groups1
+                                .get(index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            if group2.nTGroupNumber != group1.nTGroupNumber
+                                || group2.nNum_T != group1.nNum_T
                             {
                                 different = true;
                                 break;
                             }
-                            let d_difference =
-                                i32::from(groups2[index].nNum_D) - i32::from(groups1[index].nNum_D);
+                            let d_difference = i32::from(group2.nNum_D) - i32::from(group1.nNum_D);
                             if d_difference != 0 {
                                 return Ok(d_difference);
                             }
-                            if groups2[index].nNum_H != groups1[index].nNum_H {
+                            if group2.nNum_H != group1.nNum_H {
                                 different = true;
                                 break;
                             }
@@ -4391,6 +5662,8 @@ pub(crate) fn CompareInchiStereo(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: CompareInchiStereo
 
+    // INCHI✔️❗: Reached views/fields only; O(reached records), O(1) space.
+    // Safe checks and cached field branches: whole-call cost OPEN (C094).
     if let (Some(stereo1), Some(stereo2)) = (stereo1, stereo2) {
         let bond_count = stereo1
             .nNumberOfStereoBonds
@@ -4398,40 +5671,66 @@ pub(crate) fn CompareInchiStereo(
         if bond_count > 0 {
             let count =
                 usize::try_from(bond_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let atom11 = heap
-                .slice(stereo1.nBondAtom1.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let atom12 = heap
-                .slice(stereo2.nBondAtom1.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let atom21 = heap
-                .slice(stereo1.nBondAtom2.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let atom22 = heap
-                .slice(stereo2.nBondAtom2.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let parity1 = heap
-                .slice(stereo1.b_parity.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let parity2 = heap
-                .slice(stereo2.b_parity.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom11 = heap.slice(stereo1.nBondAtom1.as_const())?;
+            let atom12 = heap.slice(stereo2.nBondAtom1.as_const())?;
+            let mut atom21_views = None;
+            let mut parity1_views = None;
             for index in 0..count {
-                let ret = i32::from(atom12[index]) - i32::from(atom11[index]);
+                let ret = i32::from(
+                    *atom12
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ) - i32::from(
+                    *atom11
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                );
                 if ret != 0 {
                     return Ok(ret);
                 }
-                let ret = i32::from(atom22[index]) - i32::from(atom21[index]);
+                let (atom21, atom22) = match atom21_views {
+                    Some(views) => views,
+                    None => {
+                        let views = (
+                            heap.slice(stereo1.nBondAtom2.as_const())?,
+                            heap.slice(stereo2.nBondAtom2.as_const())?,
+                        );
+                        atom21_views = Some(views);
+                        views
+                    }
+                };
+                let ret = i32::from(
+                    *atom22
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ) - i32::from(
+                    *atom21
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                );
                 if ret != 0 {
                     return Ok(ret);
                 }
-                let ret = i32::from(parity2[index]) - i32::from(parity1[index]);
+                let (parity1, parity2) = match parity1_views {
+                    Some(views) => views,
+                    None => {
+                        let views = (
+                            heap.slice(stereo1.b_parity.as_const())?,
+                            heap.slice(stereo2.b_parity.as_const())?,
+                        );
+                        parity1_views = Some(views);
+                        views
+                    }
+                };
+                let ret = i32::from(
+                    *parity2
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ) - i32::from(
+                    *parity1
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                );
                 if ret != 0 {
                     return Ok(ret);
                 }
@@ -4447,28 +5746,42 @@ pub(crate) fn CompareInchiStereo(
         if center_count > 0 {
             let count = usize::try_from(center_count)
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let number1 = heap
-                .slice(stereo1.nNumber.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let number2 = heap
-                .slice(stereo2.nNumber.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let parity1 = heap
-                .slice(stereo1.t_parity.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let parity2 = heap
-                .slice(stereo2.t_parity.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let number1 = heap.slice(stereo1.nNumber.as_const())?;
+            let number2 = heap.slice(stereo2.nNumber.as_const())?;
+            let mut parity1_views = None;
             for index in 0..count {
-                let ret = i32::from(number2[index]) - i32::from(number1[index]);
+                let ret = i32::from(
+                    *number2
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ) - i32::from(
+                    *number1
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                );
                 if ret != 0 {
                     return Ok(ret);
                 }
-                let ret = i32::from(parity2[index]) - i32::from(parity1[index]);
+                let (parity1, parity2) = match parity1_views {
+                    Some(views) => views,
+                    None => {
+                        let views = (
+                            heap.slice(stereo1.t_parity.as_const())?,
+                            heap.slice(stereo2.t_parity.as_const())?,
+                        );
+                        parity1_views = Some(views);
+                        views
+                    }
+                };
+                let ret = i32::from(
+                    *parity2
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ) - i32::from(
+                    *parity1
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                );
                 if ret != 0 {
                     return Ok(ret);
                 }
@@ -4838,6 +6151,8 @@ pub(crate) fn CompINChI2(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: CompINChI2
 
+    // INCHI✔️❗: Reached views/fields only; O(reached records), O(1) space.
+    // Safe checks and cached field branches: whole-call cost OPEN (C094).
     let taut_yes = TAUT_YES as usize;
     let taut_non = TAUT_NON as usize;
     let p1_taut = p1.pINChI[taut_yes];
@@ -4914,16 +6229,16 @@ pub(crate) fn CompINChI2(
     let atom_count = usize::try_from(first.nNumberOfAtoms.max(0))
         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if atom_count > 0 {
-        let atoms1 = heap
-            .slice(first.nAtom.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let atoms2 = heap
-            .slice(second.nAtom.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atoms1 = heap.slice(first.nAtom.as_const())?;
+        let atoms2 = heap.slice(second.nAtom.as_const())?;
         for index in 0..atom_count {
-            let ret = i32::from(atoms2[index]) - i32::from(atoms1[index]);
+            let atoms2_value = atoms2
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atoms1_value = atoms1
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let ret = i32::from(*atoms2_value) - i32::from(*atoms1_value);
             if ret != 0 {
                 return Ok(ret);
             }
@@ -4936,16 +6251,16 @@ pub(crate) fn CompINChI2(
     let connection_count = usize::try_from(second.lenConnTable.max(0))
         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     if connection_count > 0 {
-        let connections1 = heap
-            .slice(first.nConnTable.as_const())?
-            .get(..connection_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let connections2 = heap
-            .slice(second.nConnTable.as_const())?
-            .get(..connection_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let connections1 = heap.slice(first.nConnTable.as_const())?;
+        let connections2 = heap.slice(second.nConnTable.as_const())?;
         for index in 0..connection_count {
-            let ret = i32::from(connections2[index]) - i32::from(connections1[index]);
+            let connections2_value = connections2
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let connections1_value = connections1
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let ret = i32::from(*connections2_value) - i32::from(*connections1_value);
             if ret != 0 {
                 return Ok(ret);
             }
@@ -4956,22 +6271,22 @@ pub(crate) fn CompINChI2(
         return Ok(ret);
     }
     if atom_count > 0 {
-        let hydrogens1 = heap
-            .slice(first.nNum_H.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let hydrogens2 = heap
-            .slice(second.nNum_H.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let hydrogens1 = heap.slice(first.nNum_H.as_const())?;
+        let hydrogens2 = heap.slice(second.nNum_H.as_const())?;
         for index in 0..atom_count {
-            if hydrogens2[index] != hydrogens1[index] {
-                return Ok(if hydrogens2[index] == 0 {
+            let hydrogens2_value = hydrogens2
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let hydrogens1_value = hydrogens1
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if *hydrogens2_value != *hydrogens1_value {
+                return Ok(if *hydrogens2_value == 0 {
                     1
-                } else if hydrogens1[index] == 0 {
+                } else if *hydrogens1_value == 0 {
                     -1
                 } else {
-                    i32::from(hydrogens2[index]) - i32::from(hydrogens1[index])
+                    i32::from(*hydrogens2_value) - i32::from(*hydrogens1_value)
                 });
             }
         }
@@ -5003,23 +6318,25 @@ pub(crate) fn CompINChI2(
             (Some(left), Some(right)) => {
                 let count = usize::try_from(left.nNumberOfAtoms.min(right.nNumberOfAtoms).max(0))
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let values1 = heap
-                    .slice(left.nNum_H_fixed.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let values2 = heap
-                    .slice(right.nNum_H_fixed.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                for index in 0..count {
-                    if values2[index] != values1[index] {
-                        return Ok(if values2[index] == 0 {
-                            1
-                        } else if values1[index] == 0 {
-                            -1
-                        } else {
-                            i32::from(values2[index]) - i32::from(values1[index])
-                        });
+                if count > 0 {
+                    let values1 = heap.slice(left.nNum_H_fixed.as_const())?;
+                    let values2 = heap.slice(right.nNum_H_fixed.as_const())?;
+                    for index in 0..count {
+                        let values2_value = values2
+                            .get(index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let values1_value = values1
+                            .get(index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if *values2_value != *values1_value {
+                            return Ok(if *values2_value == 0 {
+                                1
+                            } else if *values1_value == 0 {
+                                -1
+                            } else {
+                                i32::from(*values2_value) - i32::from(*values1_value)
+                            });
+                        }
                     }
                 }
                 let ret = right.nNumberOfAtoms.wrapping_sub(left.nNumberOfAtoms);
@@ -5030,27 +6347,33 @@ pub(crate) fn CompINChI2(
             (Some(left), None) => {
                 let count = usize::try_from(left.nNumberOfAtoms.max(0))
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                if heap
-                    .slice(left.nNum_H_fixed.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .iter()
-                    .any(|value| *value != 0)
-                {
-                    return Ok(-1);
+                if count > 0 {
+                    let values = heap.slice(left.nNum_H_fixed.as_const())?;
+                    for index in 0..count {
+                        if *values
+                            .get(index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            != 0
+                        {
+                            return Ok(-1);
+                        }
+                    }
                 }
             }
             (None, Some(right)) => {
                 let count = usize::try_from(right.nNumberOfAtoms.max(0))
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                if heap
-                    .slice(right.nNum_H_fixed.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .iter()
-                    .any(|value| *value != 0)
-                {
-                    return Ok(1);
+                if count > 0 {
+                    let values = heap.slice(right.nNum_H_fixed.as_const())?;
+                    for index in 0..count {
+                        if *values
+                            .get(index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            != 0
+                        {
+                            return Ok(1);
+                        }
+                    }
                 }
             }
             (None, None) => {}
@@ -5098,35 +6421,44 @@ pub(crate) fn CompINChI2(
         let isotope_count = usize::try_from(first.nNumberOfIsotopicAtoms.max(0))
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if isotope_count > 0 {
-            let isotopes1 = heap
-                .slice(first.IsotopicAtom.as_const())?
-                .get(..isotope_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let isotopes2 = heap
-                .slice(second.IsotopicAtom.as_const())?
-                .get(..isotope_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let isotopes1 = heap.slice(first.IsotopicAtom.as_const())?;
+            let isotopes2 = heap.slice(second.IsotopicAtom.as_const())?;
             for index in 0..isotope_count {
-                for ret in [
-                    i32::from(isotopes2[index].nAtomNumber)
-                        - i32::from(isotopes1[index].nAtomNumber),
-                    i32::from(isotopes2[index].nIsoDifference)
-                        - i32::from(isotopes1[index].nIsoDifference),
-                ] {
-                    if ret != 0 {
-                        return Ok(ret);
-                    }
+                let isotopes2_value = isotopes2
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let isotopes1_value = isotopes1
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let ret =
+                    i32::from(isotopes2_value.nAtomNumber) - i32::from(isotopes1_value.nAtomNumber);
+                if ret != 0 {
+                    return Ok(ret);
+                }
+                let ret = i32::from(isotopes2_value.nIsoDifference)
+                    - i32::from(isotopes1_value.nIsoDifference);
+                if ret != 0 {
+                    return Ok(ret);
                 }
             }
             for index in 0..isotope_count {
-                for ret in [
-                    i32::from(isotopes2[index].nNum_T) - i32::from(isotopes1[index].nNum_T),
-                    i32::from(isotopes2[index].nNum_D) - i32::from(isotopes1[index].nNum_D),
-                    i32::from(isotopes2[index].nNum_H) - i32::from(isotopes1[index].nNum_H),
-                ] {
-                    if ret != 0 {
-                        return Ok(ret);
-                    }
+                let isotopes2_value = isotopes2
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let isotopes1_value = isotopes1
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let ret = i32::from(isotopes2_value.nNum_T) - i32::from(isotopes1_value.nNum_T);
+                if ret != 0 {
+                    return Ok(ret);
+                }
+                let ret = i32::from(isotopes2_value.nNum_D) - i32::from(isotopes1_value.nNum_D);
+                if ret != 0 {
+                    return Ok(ret);
+                }
+                let ret = i32::from(isotopes2_value.nNum_H) - i32::from(isotopes1_value.nNum_H);
+                if ret != 0 {
+                    return Ok(ret);
                 }
             }
         }
@@ -5139,25 +6471,31 @@ pub(crate) fn CompINChI2(
         let group_count = usize::try_from(first.nNumberOfIsotopicTGroups.max(0))
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if group_count > 0 {
-            let groups1 = heap
-                .slice(first.IsotopicTGroup.as_const())?
-                .get(..group_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let groups2 = heap
-                .slice(second.IsotopicTGroup.as_const())?
-                .get(..group_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let groups1 = heap.slice(first.IsotopicTGroup.as_const())?;
+            let groups2 = heap.slice(second.IsotopicTGroup.as_const())?;
             for index in 0..group_count {
-                for ret in [
-                    i32::from(groups2[index].nTGroupNumber)
-                        - i32::from(groups1[index].nTGroupNumber),
-                    i32::from(groups2[index].nNum_T) - i32::from(groups1[index].nNum_T),
-                    i32::from(groups2[index].nNum_D) - i32::from(groups1[index].nNum_D),
-                    i32::from(groups2[index].nNum_H) - i32::from(groups1[index].nNum_H),
-                ] {
-                    if ret != 0 {
-                        return Ok(ret);
-                    }
+                let groups2_value = groups2
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let groups1_value = groups1
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let ret =
+                    i32::from(groups2_value.nTGroupNumber) - i32::from(groups1_value.nTGroupNumber);
+                if ret != 0 {
+                    return Ok(ret);
+                }
+                let ret = i32::from(groups2_value.nNum_T) - i32::from(groups1_value.nNum_T);
+                if ret != 0 {
+                    return Ok(ret);
+                }
+                let ret = i32::from(groups2_value.nNum_D) - i32::from(groups1_value.nNum_D);
+                if ret != 0 {
+                    return Ok(ret);
+                }
+                let ret = i32::from(groups2_value.nNum_H) - i32::from(groups1_value.nNum_H);
+                if ret != 0 {
+                    return Ok(ret);
                 }
             }
         }
@@ -5909,6 +7247,45 @@ pub(crate) fn CompareReversedStereoINChI2(
     // INCHI✔️❌: Checked SourceHeap slice lookup adds overhead versus memcmp/direct pointers.
     // END INCHI ACTIVE MACRO CONFIGURATION: CompareReversedStereoINChI2
 
+    // INCHI✔️❗: unequal signed counts skip memcmp; merge tails read parity only.
+    // Each field view is cached only when reached; undefined ICR counters are
+    // checked only at their actual selected writes, after parity predicates.
+    // Complexity: unchanged linear merge/full memcmp gates, O(1) borrowed caches,
+    // no allocations/clones/per-item arena queries; emitted cost OPEN C097.
+    macro_rules! reached {
+        ($cache:ident, $pointer:expr) => {{
+            match $cache {
+                Some(view) => view,
+                None => {
+                    let view = heap.slice($pointer)?;
+                    $cache = Some(view);
+                    view
+                }
+            }
+        }};
+    }
+    macro_rules! word {
+        ($cache:ident, $pointer:expr, $index:expr) => {
+            *reached!($cache, $pointer)
+                .get($index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        };
+    }
+    macro_rules! equal_prefix {
+        ($left:ident, $left_pointer:expr, $right:ident, $right_pointer:expr, $count:expr) => {{
+            let count =
+                usize::try_from($count).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            reached!($left, $left_pointer)
+                .get(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                == reached!($right, $right_pointer)
+                    .get(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+        }};
+    }
+    // Historical configuration comment above says UNDF=3; pinned extr_ct.h257
+    // and generated506 define AB_PARITY_UNDF=4, used unchanged below.
+
     let add_sb = picr
         .num_sb_undef_in1_only
         .wrapping_add(picr.num_sb_in1_only)
@@ -5927,39 +7304,30 @@ pub(crate) fn CompareReversedStereoINChI2(
 
     if let (Some(s1), Some(s2)) = (s1, s2) {
         if num_sc1 != 0 || num_sc2 != 0 {
-            let count1 =
-                usize::try_from(num_sc1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let count2 =
-                usize::try_from(num_sc2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let numbers1 = if count1 == 0 {
-                &[][..]
-            } else {
-                heap.slice(s1.nNumber.as_const())?
-                    .get(..count1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-            };
-            let numbers2 = if count2 == 0 {
-                &[][..]
-            } else {
-                heap.slice(s2.nNumber.as_const())?
-                    .get(..count2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-            };
-            let parities1 = if count1 == 0 {
-                &[][..]
-            } else {
-                heap.slice(s1.t_parity.as_const())?
-                    .get(..count1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-            };
-            let parities2 = if count2 == 0 {
-                &[][..]
-            } else {
-                heap.slice(s2.t_parity.as_const())?
-                    .get(..count2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-            };
-            if num_sc1 != num_sc2 || numbers1 != numbers2 || parities1 != parities2 {
+            let count1 = usize::try_from(num_sc1.max(0))
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count2 = usize::try_from(num_sc2.max(0))
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let mut numbers1_view: Option<&[AT_NUMB]> = None;
+            let mut numbers2_view: Option<&[AT_NUMB]> = None;
+            let mut parities1_view: Option<&[i8]> = None;
+            let mut parities2_view: Option<&[i8]> = None;
+            if num_sc1 != num_sc2
+                || !equal_prefix!(
+                    numbers1_view,
+                    s1.nNumber.as_const(),
+                    numbers2_view,
+                    s2.nNumber.as_const(),
+                    num_sc1
+                )
+                || !equal_prefix!(
+                    parities1_view,
+                    s1.t_parity.as_const(),
+                    parities2_view,
+                    s2.t_parity.as_const(),
+                    num_sc1
+                )
+            {
                 let mut j1 = 0_usize;
                 let mut j2 = 0_usize;
                 let mut num_dif = 0_i32;
@@ -5968,13 +7336,21 @@ pub(crate) fn CompareReversedStereoINChI2(
                 let mut num_in1_only = 0_i32;
                 let mut num_in2_only = 0_i32;
                 while j1 < count1 && j2 < count2 {
-                    if numbers1[j1] == numbers2[j2] {
-                        num_dif = num_dif.wrapping_add(i32::from(parities1[j1] != parities2[j2]));
+                    if word!(numbers1_view, s1.nNumber.as_const(), j1)
+                        == word!(numbers2_view, s2.nNumber.as_const(), j2)
+                    {
+                        num_dif = num_dif.wrapping_add(i32::from(
+                            word!(parities1_view, s1.t_parity.as_const(), j1)
+                                != word!(parities2_view, s2.t_parity.as_const(), j2),
+                        ));
                         j1 += 1;
                         j2 += 1;
-                    } else if numbers1[j1] < numbers2[j2] {
+                    } else if word!(numbers1_view, s1.nNumber.as_const(), j1)
+                        < word!(numbers2_view, s2.nNumber.as_const(), j2)
+                    {
                         num_in1_only = num_in1_only.wrapping_add(1);
-                        let undefined = parities1[j1] == AB_PARITY_UNDF as i8;
+                        let undefined = word!(parities1_view, s1.t_parity.as_const(), j1)
+                            == AB_PARITY_UNDF as i8;
                         num_extra_undf = num_extra_undf.wrapping_add(i32::from(undefined));
                         if add_sc {
                             if picr.num_sc_in1_only < ICR_MAX_SC_IN1_ONLY as i32 {
@@ -5990,7 +7366,8 @@ pub(crate) fn CompareReversedStereoINChI2(
                         j1 += 1;
                     } else {
                         num_in2_only = num_in2_only.wrapping_add(1);
-                        let undefined = parities2[j2] == AB_PARITY_UNDF as i8;
+                        let undefined = word!(parities2_view, s2.t_parity.as_const(), j2)
+                            == AB_PARITY_UNDF as i8;
                         num_miss_undf = num_miss_undf.wrapping_add(i32::from(undefined));
                         if add_sc {
                             if picr.num_sc_in2_only < ICR_MAX_SC_IN2_ONLY as i32 {
@@ -6007,7 +7384,8 @@ pub(crate) fn CompareReversedStereoINChI2(
                     }
                 }
                 while j1 < count1 {
-                    let undefined = parities1[j1] == AB_PARITY_UNDF as i8;
+                    let undefined =
+                        word!(parities1_view, s1.t_parity.as_const(), j1) == AB_PARITY_UNDF as i8;
                     num_extra_undf = num_extra_undf.wrapping_add(i32::from(undefined));
                     num_in1_only = num_in1_only.wrapping_add(1);
                     if add_sc {
@@ -6024,7 +7402,8 @@ pub(crate) fn CompareReversedStereoINChI2(
                     j1 += 1;
                 }
                 while j2 < count2 {
-                    let undefined = parities2[j2] == AB_PARITY_UNDF as i8;
+                    let undefined =
+                        word!(parities2_view, s2.t_parity.as_const(), j2) == AB_PARITY_UNDF as i8;
                     num_miss_undf = num_miss_undf.wrapping_add(i32::from(undefined));
                     num_in2_only = num_in2_only.wrapping_add(1);
                     if add_sc && picr.num_sc_in2_only < ICR_MAX_SC_IN2_ONLY as i32 {
@@ -6060,55 +7439,51 @@ pub(crate) fn CompareReversedStereoINChI2(
     }
 
     if num_sb1 != 0 || num_sb2 != 0 {
-        let s1 = s1.ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let s2 = s2.ok_or(SourceHeapError::PointerOutOfBounds)?;
         let count1 =
-            usize::try_from(num_sb1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            usize::try_from(num_sb1.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let count2 =
-            usize::try_from(num_sb2).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let atom11 = if count1 == 0 {
-            &[][..]
-        } else {
-            heap.slice(s1.nBondAtom1.as_const())?
-                .get(..count1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-        };
-        let atom12 = if count1 == 0 {
-            &[][..]
-        } else {
-            heap.slice(s1.nBondAtom2.as_const())?
-                .get(..count1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-        };
-        let parity1 = if count1 == 0 {
-            &[][..]
-        } else {
-            heap.slice(s1.b_parity.as_const())?
-                .get(..count1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-        };
-        let atom21 = if count2 == 0 {
-            &[][..]
-        } else {
-            heap.slice(s2.nBondAtom1.as_const())?
-                .get(..count2)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-        };
-        let atom22 = if count2 == 0 {
-            &[][..]
-        } else {
-            heap.slice(s2.nBondAtom2.as_const())?
-                .get(..count2)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-        };
-        let parity2 = if count2 == 0 {
-            &[][..]
-        } else {
-            heap.slice(s2.b_parity.as_const())?
-                .get(..count2)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-        };
-        if num_sb1 != num_sb2 || atom11 != atom21 || atom12 != atom22 || parity1 != parity2 {
+            usize::try_from(num_sb2.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+        let mut atom11_view: Option<&[AT_NUMB]> = None;
+        let mut atom21_view: Option<&[AT_NUMB]> = None;
+        let mut atom12_view: Option<&[AT_NUMB]> = None;
+        let mut atom22_view: Option<&[AT_NUMB]> = None;
+        let mut parity1_view: Option<&[i8]> = None;
+        let mut parity2_view: Option<&[i8]> = None;
+        if num_sb1 != num_sb2
+            || !equal_prefix!(
+                atom11_view,
+                s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .nBondAtom1
+                    .as_const(),
+                atom21_view,
+                s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .nBondAtom1
+                    .as_const(),
+                num_sb1
+            )
+            || !equal_prefix!(
+                atom12_view,
+                s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .nBondAtom2
+                    .as_const(),
+                atom22_view,
+                s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .nBondAtom2
+                    .as_const(),
+                num_sb1
+            )
+            || !equal_prefix!(
+                parity1_view,
+                s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .b_parity
+                    .as_const(),
+                parity2_view,
+                s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .b_parity
+                    .as_const(),
+                num_sb1
+            )
+        {
             let mut j1 = 0_usize;
             let mut j2 = 0_usize;
             let mut num_dif = 0_i32;
@@ -6117,15 +7492,93 @@ pub(crate) fn CompareReversedStereoINChI2(
             let mut num_in1_only = 0_i32;
             let mut num_in2_only = 0_i32;
             while j1 < count1 && j2 < count2 {
-                if atom11[j1] == atom21[j2] && atom12[j1] == atom22[j2] {
-                    num_dif = num_dif.wrapping_add(i32::from(parity1[j1] != parity2[j2]));
+                if word!(
+                    atom11_view,
+                    s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom1
+                        .as_const(),
+                    j1
+                ) == word!(
+                    atom21_view,
+                    s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom1
+                        .as_const(),
+                    j2
+                ) && word!(
+                    atom12_view,
+                    s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom2
+                        .as_const(),
+                    j1
+                ) == word!(
+                    atom22_view,
+                    s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom2
+                        .as_const(),
+                    j2
+                ) {
+                    num_dif = num_dif.wrapping_add(i32::from(
+                        word!(
+                            parity1_view,
+                            s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                                .b_parity
+                                .as_const(),
+                            j1
+                        ) != word!(
+                            parity2_view,
+                            s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                                .b_parity
+                                .as_const(),
+                            j2
+                        ),
+                    ));
                     j1 += 1;
                     j2 += 1;
-                } else if atom11[j1] < atom21[j2]
-                    || (atom11[j1] == atom21[j2] && atom12[j1] < atom22[j2])
-                {
+                } else if word!(
+                    atom11_view,
+                    s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom1
+                        .as_const(),
+                    j1
+                ) < word!(
+                    atom21_view,
+                    s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom1
+                        .as_const(),
+                    j2
+                ) || (word!(
+                    atom11_view,
+                    s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom1
+                        .as_const(),
+                    j1
+                ) == word!(
+                    atom21_view,
+                    s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom1
+                        .as_const(),
+                    j2
+                ) && word!(
+                    atom12_view,
+                    s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom2
+                        .as_const(),
+                    j1
+                ) < word!(
+                    atom22_view,
+                    s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .nBondAtom2
+                        .as_const(),
+                    j2
+                )) {
                     num_in1_only += 1;
-                    let undefined = parity1[j1] == AB_PARITY_UNDF as i8;
+                    let undefined = word!(
+                        parity1_view,
+                        s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                            .b_parity
+                            .as_const(),
+                        j1
+                    ) == AB_PARITY_UNDF as i8;
                     num_extra_undf += i32::from(undefined);
                     if add_sb {
                         if picr.num_sb_in1_only < ICR_MAX_SB_IN1_ONLY as i32 {
@@ -6141,7 +7594,13 @@ pub(crate) fn CompareReversedStereoINChI2(
                     j1 += 1;
                 } else {
                     num_in2_only += 1;
-                    let undefined = parity2[j2] == AB_PARITY_UNDF as i8;
+                    let undefined = word!(
+                        parity2_view,
+                        s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                            .b_parity
+                            .as_const(),
+                        j2
+                    ) == AB_PARITY_UNDF as i8;
                     num_miss_undf += i32::from(undefined);
                     if add_sb {
                         if picr.num_sb_in2_only < ICR_MAX_SB_IN2_ONLY as i32 {
@@ -6159,7 +7618,13 @@ pub(crate) fn CompareReversedStereoINChI2(
             }
             while j1 < count1 {
                 num_in1_only += 1;
-                let undefined = parity1[j1] == AB_PARITY_UNDF as i8;
+                let undefined = word!(
+                    parity1_view,
+                    s1.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .b_parity
+                        .as_const(),
+                    j1
+                ) == AB_PARITY_UNDF as i8;
                 num_extra_undf += i32::from(undefined);
                 if add_sb {
                     if picr.num_sb_in1_only < ICR_MAX_SB_IN1_ONLY as i32 {
@@ -6175,7 +7640,13 @@ pub(crate) fn CompareReversedStereoINChI2(
             }
             while j2 < count2 {
                 num_in2_only += 1;
-                let undefined = parity2[j2] == AB_PARITY_UNDF as i8;
+                let undefined = word!(
+                    parity2_view,
+                    s2.ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .b_parity
+                        .as_const(),
+                    j2
+                ) == AB_PARITY_UNDF as i8;
                 num_miss_undf += i32::from(undefined);
                 if add_sb {
                     if picr.num_sb_in2_only < ICR_MAX_SB_IN2_ONLY as i32 {
@@ -6809,6 +8280,543 @@ pub(crate) fn CompareReversedINChI2(
     // INCHI✔️❌: ICR_MAX_DIFF_FIXED_H=32 and ICR_MAX_ENDP_IN{1,2}_ONLY=32.
     // END INCHI ACTIVE MACRO CONFIGURATION: CompareReversedINChI2
 
+    compare_reversed_metadata(
+        heap,
+        ComparisonInput::Borrowed(i1),
+        ComparisonInput::Borrowed(i2),
+        ComparisonAuxiliary::Borrowed(a1),
+        a2,
+        picr,
+        err,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ComparisonInput<'a> {
+    Borrowed(Option<&'a INChI>),
+    Pointer(SourceConstPointer<INChI>),
+}
+impl ComparisonInput<'_> {
+    #[inline(always)]
+    fn is_none(self) -> bool {
+        match self {
+            Self::Borrowed(record) => record.is_none(),
+            Self::Pointer(pointer) => pointer.is_null(),
+        }
+    }
+    #[inline(always)]
+    fn record<'a>(&'a self, heap: &'a SourceHeap) -> Result<&'a INChI, SourceHeapError> {
+        match self {
+            Self::Borrowed(record) => record.ok_or(SourceHeapError::NullPointer),
+            Self::Pointer(pointer) => heap
+                .slice(*pointer)?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+        }
+    }
+}
+#[derive(Clone, Copy)]
+enum ComparisonAuxiliary<'a> {
+    Borrowed(Option<&'a INChI_Aux>),
+    Pointer(SourceConstPointer<INChI_Aux>),
+}
+impl ComparisonAuxiliary<'_> {
+    #[inline(always)]
+    fn record<'a>(
+        &'a self,
+        heap: &'a SourceHeap,
+    ) -> Result<Option<&'a INChI_Aux>, SourceHeapError> {
+        match self {
+            Self::Borrowed(record) => Ok(*record),
+            Self::Pointer(pointer) if pointer.is_null() => Ok(None),
+            Self::Pointer(pointer) => Ok(Some(
+                heap.slice(*pointer)?
+                    .first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            )),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn compare_reversed_from_storage(
+    heap: &mut SourceHeap,
+    first: SourceConstPointer<INChI>,
+    second: SourceConstPointer<INChI>,
+    auxiliary: SourceConstPointer<INChI_Aux>,
+    picr: &mut ICR,
+    err: &mut i32,
+) -> Result<INCHI_MODE, SourceHeapError> {
+    // Native NormalizeAndCompare forwards existing pointers, including NULL.
+    // INCHI✔️❗: No snapshot/admission before canonical error/NULL gates.
+    compare_reversed_metadata(
+        heap,
+        ComparisonInput::Pointer(first),
+        ComparisonInput::Pointer(second),
+        ComparisonAuxiliary::Pointer(auxiliary),
+        None,
+        picr,
+        err,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compare_reversed_metadata(
+    heap: &mut SourceHeap,
+    first: ComparisonInput<'_>,
+    second: ComparisonInput<'_>,
+    auxiliary: ComparisonAuxiliary<'_>,
+    a2: Option<&INChI_Aux>,
+    picr: &mut ICR,
+    err: &mut i32,
+) -> Result<INCHI_MODE, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichimake.c:3262 CompareReversedINChI2
+    // INCHI❗❗: INCHI_MODE CompareReversedINChI2(INChI* i1 /* InChI from reversed struct */,
+    // INCHI❗❗:     INChI* i2 /* input InChI */,
+    // INCHI❗❗:     INChI_Aux* a1,
+    // INCHI❗❗:     INChI_Aux* a2,
+    // INCHI❗❗:     ICR* picr,
+    // INCHI❗❗:     int* err)
+    // INCHI❗❗: {
+    // INCHI❗❗:     INCHI_MODE ret = 0;
+    // INCHI❗❗:     INChI_Stereo* Stereo1 = NULL, * Stereo2 = NULL;
+    // INCHI❗❗:     int  n1, n2, m, j, j1, j2, ret2, num_H1, num_H2;
+    // INCHI❗❗:
+    // INCHI❗❗:     *err = 0;
+    // INCHI❗❗:
+    // INCHI❗❗:     memset(picr, 0, sizeof(*picr)); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI❗❗:
+    // INCHI❗❗:     if (i1 == NULL && i2 == NULL)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         return 0;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     if ((i1 == NULL) ^ (i2 == NULL))
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_PROBLEM; /* one InChI exists while another doesn't */
+    // INCHI❗❗:         goto exit_function;
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     if (i1->nErrorCode == i2->nErrorCode)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         if (i1->nErrorCode)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ret |= IDIF_PROBLEM; /* both InChI have same error codes */
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_PROBLEM; /* at least one InChI has an error code */
+    // INCHI❗❗:         goto exit_function;
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     if (i1->nNumberOfAtoms != i2->nNumberOfAtoms)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_NUM_AT;
+    // INCHI❗❗:         goto exit_function;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     if (i1->nNumberOfAtoms > 0)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         if (memcmp(i1->nAtom, i2->nAtom, i1->nNumberOfAtoms * sizeof(i1->nAtom[0])))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ret |= IDIF_ATOMS;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         /* IDIF_NON_TAUT_H,  IDIF_MORE_FH, IDIF_LESS_FH */
+    // INCHI❗❗:         if (memcmp(i1->nNum_H, i2->nNum_H, i1->nNumberOfAtoms * sizeof(i1->nNum_H[0])))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ret |= IDIF_POSITION_H;
+    // INCHI❗❗:             for (j1 = 0; j1 < i1->nNumberOfAtoms; j1++)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 if (i1->nNum_H[j1] != i2->nNum_H[j1] && picr->num_diff_pos_H < ICR_MAX_DIFF_FIXED_H)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     picr->diff_pos_H_at[picr->num_diff_pos_H] = j1;
+    // INCHI❗❗:                     picr->diff_pos_H_nH[picr->num_diff_pos_H] = i1->nNum_H[j1] - i2->nNum_H[j1];
+    // INCHI❗❗:                     picr->num_diff_pos_H++;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         /* fixed H */
+    // INCHI❗❗:         if (i1->nNum_H_fixed || i2->nNum_H_fixed)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             int bHasFixedH1 = 0, bHasFixedH2 = 0, i;
+    // INCHI❗❗:             if (i1->nNum_H_fixed)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 for (i = 0; i < i1->nNumberOfAtoms; i++)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     if (i1->nNum_H_fixed[i])
+    // INCHI❗❗:                     {
+    // INCHI❗❗:                         bHasFixedH1++;
+    // INCHI❗❗:                     }
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:             if (i2->nNum_H_fixed)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 for (i = 0; i < i2->nNumberOfAtoms; i++)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     if (i2->nNum_H_fixed[i])
+    // INCHI❗❗:                     {
+    // INCHI❗❗:                         bHasFixedH2++;
+    // INCHI❗❗:                     }
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:             if (bHasFixedH1 && !bHasFixedH2)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 for (i = j = 0; i < i1->nNumberOfAtoms; i++)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     if (i1->nNum_H_fixed[i])
+    // INCHI❗❗:                     {
+    // INCHI❗❗:                         if (j < ICR_MAX_DIFF_FIXED_H)
+    // INCHI❗❗:                         {
+    // INCHI❗❗:                             picr->fixed_H_at1_more[j] = i;
+    // INCHI❗❗:                             picr->fixed_H_nH1_more[j] = i1->nNum_H_fixed[i];
+    // INCHI❗❗:                             j++;
+    // INCHI❗❗:                         }
+    // INCHI❗❗:                     }
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 picr->num_fixed_H1_more = j;
+    // INCHI❗❗:                 ret |= IDIF_MORE_FH; /* Extra Fixed-H */
+    // INCHI❗❗:             }
+    // INCHI❗❗:             else
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 if (!bHasFixedH1 && bHasFixedH2)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     for (i = j = 0; i < i2->nNumberOfAtoms; i++)
+    // INCHI❗❗:                     {
+    // INCHI❗❗:                         if (i2->nNum_H_fixed[i])
+    // INCHI❗❗:                         {
+    // INCHI❗❗:                             if (j < ICR_MAX_DIFF_FIXED_H)
+    // INCHI❗❗:                             {
+    // INCHI❗❗:                                 picr->fixed_H_at2_more[j] = i;
+    // INCHI❗❗:                                 picr->fixed_H_nH2_more[j] = i2->nNum_H_fixed[i];
+    // INCHI❗❗:                                 j++;
+    // INCHI❗❗:                             }
+    // INCHI❗❗:                         }
+    // INCHI❗❗:                     }
+    // INCHI❗❗:                     picr->num_fixed_H2_more = j;
+    // INCHI❗❗:                     ret |= IDIF_LESS_FH; /* Missed Fixed-H */
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 else
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     if (bHasFixedH1 && bHasFixedH2 &&
+    // INCHI❗❗:                         memcmp(i1->nNum_H_fixed, i2->nNum_H_fixed, i1->nNumberOfAtoms * sizeof(i1->nNum_H_fixed[0])))
+    // INCHI❗❗:                     {
+    // INCHI❗❗:                         for (i = j1 = j2 = 0; i < i1->nNumberOfAtoms; i++)
+    // INCHI❗❗:                         {
+    // INCHI❗❗:                             if (i1->nNum_H_fixed[i] > i2->nNum_H_fixed[i])
+    // INCHI❗❗:                             {
+    // INCHI❗❗:                                 if (j1 < ICR_MAX_DIFF_FIXED_H)
+    // INCHI❗❗:                                 {
+    // INCHI❗❗:                                     picr->fixed_H_at1_more[j1] = i;
+    // INCHI❗❗:                                     picr->fixed_H_nH1_more[j1] = i1->nNum_H_fixed[i] - i2->nNum_H_fixed[i];
+    // INCHI❗❗:                                     j1++;
+    // INCHI❗❗:                                 }
+    // INCHI❗❗:                             }
+    // INCHI❗❗:                             else
+    // INCHI❗❗:                             {
+    // INCHI❗❗:                                 if (i1->nNum_H_fixed[i] < i2->nNum_H_fixed[i])
+    // INCHI❗❗:                                 {
+    // INCHI❗❗:                                     if (j2 < ICR_MAX_DIFF_FIXED_H)
+    // INCHI❗❗:                                     {
+    // INCHI❗❗:                                         picr->fixed_H_at2_more[j2] = i;
+    // INCHI❗❗:                                         picr->fixed_H_nH2_more[j2] = i2->nNum_H_fixed[i] - i1->nNum_H_fixed[i];
+    // INCHI❗❗:                                         j2++;
+    // INCHI❗❗:                                     }
+    // INCHI❗❗:                                 }
+    // INCHI❗❗:                             }
+    // INCHI❗❗:                         }
+    // INCHI❗❗:                         ret |= (j1 ? IDIF_MORE_FH : 0) | (j2 ? IDIF_LESS_FH : 0);
+    // INCHI❗❗:                         picr->num_fixed_H1_more = j1;
+    // INCHI❗❗:                         picr->num_fixed_H2_more = j2;
+    // INCHI❗❗:                     }
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     /* compare formulas and H */
+    // INCHI❗❗:     num_H1 = 0;
+    // INCHI❗❗:     num_H2 = 0;
+    // INCHI❗❗:     ret2 = CompareHillFormulasNoH(i1->szHillFormula, i2->szHillFormula, &num_H1, &num_H2);
+    // INCHI❗❗:     picr->tot_num_H1 = num_H1;
+    // INCHI❗❗:     picr->tot_num_H2 = num_H2;
+    // INCHI❗❗:     if (ret2)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_NUM_EL;
+    // INCHI❗❗:         goto exit_function;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     if (num_H1 > num_H2)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_MORE_H;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     if (num_H1 < num_H2)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_LESS_H;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     if (i1->lenConnTable != i2->lenConnTable)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_CON_LEN;
+    // INCHI❗❗:         goto exit_function;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         if (i1->lenConnTable > 0 && memcmp(i1->nConnTable, i2->nConnTable, i1->lenConnTable * sizeof(i1->nConnTable[0])))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ret |= IDIF_CON_TBL;
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     /* output special cases: different number of t-groups, different sizes of t-groups, different endpoints */
+    // INCHI❗❗:     /* in isotopic or deprotonated cases i1->lenTautomer == 1 && i1->nTautomer[0] = 0 */
+    // INCHI❗❗:
+    // INCHI❗❗:     /*
+    // INCHI❗❗:         if ( i1->lenTautomer != i2->lenTautomer && (i1->lenTautomer > 1 || i2->lenTautomer > 1) ) {
+    // INCHI❗❗:             ret |=  IDIF_TAUT_LEN;
+    // INCHI❗❗:         }
+    // INCHI❗❗:     */
+    // INCHI❗❗:
+    // INCHI❗❗:     /* compare number of t-groups */
+    // INCHI❗❗:     n1 = i1->lenTautomer ? i1->nTautomer[0] : 0;
+    // INCHI❗❗:     n2 = i2->lenTautomer ? i2->nTautomer[0] : 0;
+    // INCHI❗❗:     if (!n1 && n2)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_NO_TAUT;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         if (n1 && !n2)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ret |= IDIF_WRONG_TAUT;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (n1 == 1 && n2 > 1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 ret |= IDIF_SINGLE_TG;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             else
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 if (n1 > 1 && n2 == 1)
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     ret |= IDIF_MULTIPLE_TG;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 else
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     if (n1 != n2)
+    // INCHI❗❗:                     {
+    // INCHI❗❗:                         ret |= IDIF_NUM_TG;
+    // INCHI❗❗:                     }
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     if (n1 || n2)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         /* number of endpoints */
+    // INCHI❗❗:         int num1 = 0, num2 = 0, num_M1 = 0, num_M2 = 0;
+    // INCHI❗❗:         int len, num_eq, num_in1_only, num_in2_only;
+    // INCHI❗❗:         AT_NUMB* pe1 = (AT_NUMB*)inchi_malloc(((long long)i1->lenTautomer + 1) * sizeof(pe1[0])); /* djb-rwth: cast operator added */
+    // INCHI❗❗:         AT_NUMB* pe2 = (AT_NUMB*)inchi_malloc(((long long)i2->lenTautomer + 1) * sizeof(pe2[0])); /* djb-rwth: cast operator added */
+    // INCHI❗❗:         num_H1 = num_H2 = 0;
+    // INCHI❗❗:         /* collect endpoints, H, (-) */
+    // INCHI❗❗:         if (!pe1 || !pe2)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (pe1)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_free(pe1);
+    // INCHI❗❗:             }
+    // INCHI❗❗:             if (pe2)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 inchi_free(pe2);
+    // INCHI❗❗:             }
+    // INCHI❗❗:             *err = -1; /* allocation error */
+    // INCHI❗❗:             goto exit_function;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         for (m = 1; m < i1->lenTautomer; m += len)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             len = i1->nTautomer[m++];
+    // INCHI❗❗:             num_H1 += i1->nTautomer[m];
+    // INCHI❗❗:             num_M1 += i1->nTautomer[m + 1];
+    // INCHI❗❗:             for (j = 2; j < len; j++)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 pe1[num1++] = i1->nTautomer[m + j];
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         for (m = 1; m < i2->lenTautomer; m += len)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             len = i2->nTautomer[m++];
+    // INCHI❗❗:             num_H2 += i2->nTautomer[m];
+    // INCHI❗❗:             num_M2 += i2->nTautomer[m + 1];
+    // INCHI❗❗:             for (j = 2; j < len; j++)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 pe2[num2++] = i2->nTautomer[m + j];
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         picr->num_taut_H1 = num_H1;
+    // INCHI❗❗:         picr->num_taut_H2 = num_H2;
+    // INCHI❗❗:         picr->num_taut_M1 = num_M1;
+    // INCHI❗❗:         picr->num_taut_M2 = num_M2;
+    // INCHI❗❗:         /* sort endpoints */
+    // INCHI❗❗:         insertions_sort_AT_RANK(pe1, num1);
+    // INCHI❗❗:         insertions_sort_AT_RANK(pe2, num2);
+    // INCHI❗❗:         /* compare */
+    // INCHI❗❗:         /*
+    // INCHI❗❗:         if ( num1 < num2 ) {
+    // INCHI❗❗:             ret |= IDIF_LESS_TG_ENDP;
+    // INCHI❗❗:         } else
+    // INCHI❗❗:         if ( num1 > num2 ) {
+    // INCHI❗❗:             ret |= IDIF_MORE_TG_ENDP;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         */
+    // INCHI❗❗:         /* compare all */
+    // INCHI❗❗:         num_eq = num_in1_only = num_in2_only = 0;
+    // INCHI❗❗:         for (j1 = j2 = 0; j1 < num1 && j2 < num2; )
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (pe1[j1] == pe2[j2])
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 j1++;
+    // INCHI❗❗:                 j2++;
+    // INCHI❗❗:                 num_eq++;
+    // INCHI❗❗:             }
+    // INCHI❗❗:             else
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 if (pe1[j1] < pe2[j2])
+    // INCHI❗❗:                 { /* BC: fixed, was pe2[j1] 2006-03-27 */
+    // INCHI❗❗:                     if (picr->num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY)
+    // INCHI❗❗:                     {
+    // INCHI❗❗:                         picr->endp_in1_only[picr->num_endp_in1_only++] = pe1[j1];
+    // INCHI❗❗:                     }
+    // INCHI❗❗:                     j1++;
+    // INCHI❗❗:                     num_in1_only++;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:                 else
+    // INCHI❗❗:                 {
+    // INCHI❗❗:                     if (picr->num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY)
+    // INCHI❗❗:                     {
+    // INCHI❗❗:                         picr->endp_in2_only[picr->num_endp_in2_only++] = pe2[j2];
+    // INCHI❗❗:                     }
+    // INCHI❗❗:                     j2++;
+    // INCHI❗❗:                     num_in2_only++;
+    // INCHI❗❗:                 }
+    // INCHI❗❗:             }
+    // INCHI❗❗:         }
+    // INCHI❗❗:         while (j1 < num1)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (picr->num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 picr->endp_in1_only[picr->num_endp_in1_only++] = pe1[j1];
+    // INCHI❗❗:             }
+    // INCHI❗❗:             j1++;
+    // INCHI❗❗:             num_in1_only++;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         while (j2 < num2)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             if (picr->num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY)
+    // INCHI❗❗:             {
+    // INCHI❗❗:                 picr->endp_in2_only[picr->num_endp_in2_only++] = pe2[j2];
+    // INCHI❗❗:             }
+    // INCHI❗❗:             j2++;
+    // INCHI❗❗:             num_in2_only++;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (num_in1_only)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ret |= IDIF_EXTRA_TG_ENDP;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (num_in2_only)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ret |= IDIF_MISS_TG_ENDP;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         if (!num_in1_only && !num_in2_only && num_eq)
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ; /* same t-groups endpoints */
+    // INCHI❗❗:         }
+    // INCHI❗❗:         else
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ret |= IDIF_DIFF_TG_ENDP;
+    // INCHI❗❗:         }
+    // INCHI❗❗:         inchi_free(pe1);
+    // INCHI❗❗:         inchi_free(pe2);
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     if ((i1->lenTautomer > 1 && i2->lenTautomer > 1) &&
+    // INCHI❗❗:         (i1->lenTautomer != i2->lenTautomer ||
+    // INCHI❗❗:             memcmp(i1->nTautomer, i2->nTautomer, i1->lenTautomer * sizeof(i1->nTautomer[0]))))
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_TG;
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     if (i1->nNumberOfIsotopicAtoms != i2->nNumberOfIsotopicAtoms)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_NUM_ISO_AT;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         if (i1->nNumberOfIsotopicAtoms > 0 && memcmp(i1->IsotopicAtom, i2->IsotopicAtom, i1->nNumberOfIsotopicAtoms * sizeof(i1->IsotopicAtom[0])))
+    // INCHI❗❗:         {
+    // INCHI❗❗:             ret |= IDIF_ISO_AT;
+    // INCHI❗❗:         }
+    // INCHI❗❗:     }
+    // INCHI❗❗:     if (i1->nTotalCharge != i2->nTotalCharge)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_CHARGE;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     if (a1 && a1->nNumRemovedProtons && (!a2 || a2->nNumRemovedProtons != a1->nNumRemovedProtons))
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_REM_PROT;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     if (a1 && (!a2 ||
+    // INCHI❗❗:         a2->nNumRemovedIsotopicH[0] != a1->nNumRemovedIsotopicH[0] ||
+    // INCHI❗❗:         a2->nNumRemovedIsotopicH[1] != a1->nNumRemovedIsotopicH[1] ||
+    // INCHI❗❗:         a2->nNumRemovedIsotopicH[2] != a1->nNumRemovedIsotopicH[2]))
+    // INCHI❗❗:     {
+    // INCHI❗❗:         ret |= IDIF_REM_ISO_H;
+    // INCHI❗❗:     }
+    // INCHI❗❗:
+    // INCHI❗❗:     /*
+    // INCHI❗❗:     if ( i1->nPossibleLocationsOfIsotopicH && i2->nPossibleLocationsOfIsotopicH ) {
+    // INCHI❗❗:         if ( i1->nPossibleLocationsOfIsotopicH[0] != i2->nPossibleLocationsOfIsotopicH[0] ||
+    // INCHI❗❗:              memcmp(i1->nPossibleLocationsOfIsotopicH, i2->nPossibleLocationsOfIsotopicH,
+    // INCHI❗❗:                     sizeof(i1->nPossibleLocationsOfIsotopicH[0])*i1->nPossibleLocationsOfIsotopicH[0]) )
+    // INCHI❗❗:             return 18;
+    // INCHI❗❗:     } else
+    // INCHI❗❗:     if ( !i1->nPossibleLocationsOfIsotopicH != !i2->nPossibleLocationsOfIsotopicH ) {
+    // INCHI❗❗:         return 19;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     */
+    // INCHI❗❗:
+    // INCHI❗❗:     if (i1->StereoIsotopic &&
+    // INCHI❗❗:         i1->StereoIsotopic->nNumberOfStereoBonds + i1->StereoIsotopic->nNumberOfStereoCenters)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         Stereo1 = i1->StereoIsotopic;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         Stereo1 = i1->Stereo;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     if (i2->StereoIsotopic &&
+    // INCHI❗❗:         i2->StereoIsotopic->nNumberOfStereoBonds + i2->StereoIsotopic->nNumberOfStereoCenters)
+    // INCHI❗❗:     {
+    // INCHI❗❗:         Stereo2 = i2->StereoIsotopic;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     else
+    // INCHI❗❗:     {
+    // INCHI❗❗:         Stereo2 = i2->Stereo;
+    // INCHI❗❗:     }
+    // INCHI❗❗:     ret |= CompareReversedStereoINChI2(Stereo1, Stereo2, picr);
+    // INCHI❗❗:
+    // INCHI❗❗: exit_function:
+    // INCHI❗❗:
+    // INCHI❗❗:     picr->flags = ret;
+    // INCHI❗❗:
+    // INCHI❗❗:     return ret;
+    // INCHI❗❗: }
+    // END INCHI C FUNCTION: CompareReversedINChI2
+    // INCHI✔️❗: One original algorithm/borrowed entry. Source reached
+    // metadata/NULL/aux errors and allocator trace; no record clones/roots
+    // or unsafe. Bounded checked reborrow/whole-call costs OPEN.
+
     *err = 0;
     *picr = ICR::default();
     let mut ret = 0_u32;
@@ -6820,14 +8828,17 @@ pub(crate) fn CompareReversedINChI2(
         }};
     }
 
-    let (i1, i2) = match (i1, i2) {
-        (None, None) => return Ok(0),
-        (Some(i1), Some(i2)) => (i1, i2),
-        _ => {
-            ret |= tagInchiDiffBits_IDIF_PROBLEM;
-            finish!();
-        }
-    };
+    if first.is_none() && second.is_none() {
+        return Ok(0);
+    }
+    if first.is_none() != second.is_none() {
+        ret |= tagInchiDiffBits_IDIF_PROBLEM;
+        finish!();
+    }
+    // Native NULL gates precede nErrorCode reads; no input snapshot.
+    // INCHI✔️❗: One immutable metadata loan per source phase, O(1).
+    let i1 = first.record(heap)?;
+    let i2 = second.record(heap)?;
 
     if i1.nErrorCode == i2.nErrorCode {
         if i1.nErrorCode != 0 {
@@ -6973,13 +8984,10 @@ pub(crate) fn CompareReversedINChI2(
 
     let mut total_h1 = 0_i32;
     let mut total_h2 = 0_i32;
-    let formula_difference = CompareHillFormulasNoH(
-        heap,
-        i1.szHillFormula.as_const(),
-        i2.szHillFormula.as_const(),
-        &mut total_h1,
-        &mut total_h2,
-    )?;
+    let formula1 = i1.szHillFormula.as_const();
+    let formula2 = i2.szHillFormula.as_const();
+    let formula_difference =
+        CompareHillFormulasNoH(heap, formula1, formula2, &mut total_h1, &mut total_h2)?;
     picr.tot_num_H1 = total_h1;
     picr.tot_num_H2 = total_h2;
     if formula_difference != 0 {
@@ -6993,6 +9001,10 @@ pub(crate) fn CompareReversedINChI2(
         ret |= tagInchiDiffBits_IDIF_LESS_H;
     }
 
+    // End metadata loans before the unchanged mutable formula entrypoint.
+    // That parser changes local cursors/errno, not input record storage.
+    let i1 = first.record(heap)?;
+    let i2 = second.record(heap)?;
     if i1.lenConnTable != i2.lenConnTable {
         ret |= tagInchiDiffBits_IDIF_CON_LEN;
         finish!();
@@ -7043,154 +9055,155 @@ pub(crate) fn CompareReversedINChI2(
     }
 
     if num_groups1 != 0 || num_groups2 != 0 {
-        let byte_count1 = u64::try_from(
-            (i64::from(i1.lenTautomer) + 1)
-                .checked_mul(std::mem::size_of::<AT_NUMB>() as i64)
-                .ok_or(SourceHeapError::AllocationSizeOverflow)?,
-        )
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-        let byte_count2 = u64::try_from(
-            (i64::from(i2.lenTautomer) + 1)
-                .checked_mul(std::mem::size_of::<AT_NUMB>() as i64)
-                .ok_or(SourceHeapError::AllocationSizeOverflow)?,
-        )
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-
-        let endpoint_allocation1 = match inchi_malloc(heap, byte_count1) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => {
-                *err = -1;
-                finish!();
-            }
-            Err(error) => return Err(error),
+        // INCHI✔️❌: Two native malloc calls become two actual typed endpoint
+        // allocations, with the same source failure counter and cleanup. Both
+        // attempts precede the failure branch. Negative byte sizes convert to
+        // the source unsigned size and fail allocation, not structural admission.
+        // No dummy byte buffers or input/endpoint mirrors. The existing safe
+        // malloc model's zero tail and arena constants remain human-deferred
+        // in INCHI-PERF-COMPARISON-ENDPOINTS; no cost equivalence is claimed.
+        let allocate_endpoints = |heap: &mut SourceHeap,
+                                  length: i32|
+         -> Result<SourceMutPointer<AT_NUMB>, SourceHeapError> {
+            let byte_count = ((i64::from(length) + 1) as u64)
+                .wrapping_mul(std::mem::size_of::<AT_NUMB>() as u64);
+            let count = usize::try_from(byte_count / std::mem::size_of::<AT_NUMB>() as u64)
+                .map_err(|_| SourceHeapError::AllocationFailed)?;
+            let mut values = Vec::new();
+            values
+                .try_reserve_exact(count)
+                .map_err(|_| SourceHeapError::AllocationFailed)?;
+            values.resize(count, 0 as AT_NUMB);
+            heap.allocate(values)
         };
-        let endpoint_allocation2 = match inchi_malloc(heap, byte_count2) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => {
-                inchi_free(heap, endpoint_allocation1)?;
-                *err = -1;
-                finish!();
-            }
-            Err(error) => {
-                inchi_free(heap, endpoint_allocation1)?;
-                return Err(error);
+        let length1 = i1.lenTautomer;
+        let allocation1 = allocate_endpoints(heap, length1);
+        // Preserve second source length read AFTER the first allocation.
+        let length2 = second.record(heap)?.lenTautomer;
+        let allocation2 = allocate_endpoints(heap, length2);
+        let (endpoint_allocation1, endpoint_allocation2) = match (allocation1, allocation2) {
+            (Ok(pointer1), Ok(pointer2)) => (pointer1, pointer2),
+            (result1, result2) => {
+                if let Ok(pointer) = result1.as_ref() {
+                    inchi_free(heap, *pointer)?;
+                }
+                if let Ok(pointer) = result2.as_ref() {
+                    inchi_free(heap, *pointer)?;
+                }
+                if matches!(&result1, Err(SourceHeapError::AllocationFailed))
+                    || matches!(&result2, Err(SourceHeapError::AllocationFailed))
+                {
+                    *err = -1;
+                    finish!();
+                }
+                return Err(result1
+                    .err()
+                    .or_else(|| result2.err())
+                    .ok_or(SourceHeapError::AllocationFailed)?);
             }
         };
 
-        let endpoint_result =
-            (|| -> Result<(Vec<AT_NUMB>, Vec<AT_NUMB>, i32, i32, i32, i32), SourceHeapError> {
-                let tautomer_count1 = usize::try_from(i1.lenTautomer)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let tautomer_count2 = usize::try_from(i2.lenTautomer)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let tautomer1 = if tautomer_count1 == 0 {
-                    Vec::new()
+        let endpoint_result = (|| -> Result<(), SourceHeapError> {
+            // Fresh endpoint allocations cannot alias preexisting live inputs.
+            // Extract only the output during each read-only input traversal;
+            // typed errors restore it before the common cleanup. No remaining
+            // quarantine or unchecked indexing occurs inside this extraction.
+            let collect = |heap: &mut SourceHeap,
+                           output: SourceMutPointer<AT_NUMB>,
+                           input: ComparisonInput<'_>|
+             -> Result<(usize, i32, i32), SourceHeapError> {
+                heap.with_slice_mut_and_heap(output, |endpoints, heap| {
+                    // Fresh typed endpoint output cannot alias live INChI.
+                    // Resolve the current input in this readonly phase only.
+                    let input = input.record(heap)?;
+                    let tautomer = if input.lenTautomer > 1 {
+                        heap.slice(input.nTautomer.as_const())?
+                    } else {
+                        &[]
+                    };
+                    let mut count = 0_usize;
+                    let mut hydrogens = 0_i32;
+                    let mut negative_charges = 0_i32;
+                    let mut m = 1_usize;
+                    while (m as i64) < i64::from(input.lenTautomer) {
+                        let length = usize::from(
+                            *tautomer.get(m).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        );
+                        m += 1;
+                        hydrogens = hydrogens.wrapping_add(i32::from(
+                            *tautomer.get(m).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        ));
+                        negative_charges = negative_charges.wrapping_add(i32::from(
+                            *tautomer
+                                .get(m + 1)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        ));
+                        for j in 2..length {
+                            let value = *tautomer
+                                .get(m + j)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            *endpoints
+                                .get_mut(count)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+                            count += 1;
+                        }
+                        m += length;
+                    }
+                    Ok((count, hydrogens, negative_charges))
+                })
+            };
+            let (endpoint_count1, taut_h1, taut_m1) = collect(heap, endpoint_allocation1, first)?;
+            let (endpoint_count2, taut_h2, taut_m2) = collect(heap, endpoint_allocation2, second)?;
+            picr.num_taut_H1 = taut_h1;
+            picr.num_taut_H2 = taut_h2;
+            picr.num_taut_M1 = taut_m1;
+            picr.num_taut_M2 = taut_m2;
+
+            let count1 = i32::try_from(endpoint_count1)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count2 = i32::try_from(endpoint_count2)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            insertions_sort_AT_RANK(heap.slice_mut(endpoint_allocation1)?, count1)?;
+            insertions_sort_AT_RANK(heap.slice_mut(endpoint_allocation2)?, count2)?;
+            // Retain the full allocation for the source comparison's indexed
+            // accesses, while using only collected counts for the merge bounds.
+            let endpoints1 = heap.slice(endpoint_allocation1.as_const())?;
+            let endpoints2 = heap.slice(endpoint_allocation2.as_const())?;
+            let mut index1 = 0_usize;
+            let mut index2 = 0_usize;
+            let mut num_equal = 0_i32;
+            let mut num_in1_only = 0_i32;
+            let mut num_in2_only = 0_i32;
+            while index1 < endpoint_count1 && index2 < endpoint_count2 {
+                if endpoints1[index1] == endpoints2[index2] {
+                    index1 += 1;
+                    index2 += 1;
+                    num_equal = num_equal.wrapping_add(1);
+                } else if endpoints1[index1] < endpoints2[index2] {
+                    if picr.num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY as i32 {
+                        picr.endp_in1_only[picr.num_endp_in1_only as usize] = endpoints1[index1];
+                        picr.num_endp_in1_only = picr.num_endp_in1_only.wrapping_add(1);
+                    }
+                    index1 += 1;
+                    num_in1_only = num_in1_only.wrapping_add(1);
                 } else {
-                    heap.slice(i1.nTautomer.as_const())?
-                        .get(..tautomer_count1)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec()
-                };
-                let tautomer2 = if tautomer_count2 == 0 {
-                    Vec::new()
-                } else {
-                    heap.slice(i2.nTautomer.as_const())?
-                        .get(..tautomer_count2)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec()
-                };
-
-                let mut endpoints1 = Vec::new();
-                let mut endpoints2 = Vec::new();
-                let mut taut_h1 = 0_i32;
-                let mut taut_h2 = 0_i32;
-                let mut taut_m1 = 0_i32;
-                let mut taut_m2 = 0_i32;
-
-                let mut m = 1_usize;
-                while m < tautomer_count1 {
-                    let length = usize::from(tautomer1[m]);
-                    m += 1;
-                    let record = tautomer1
-                        .get(m..m.saturating_add(length))
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    taut_h1 = taut_h1.wrapping_add(i32::from(
-                        *record.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    ));
-                    taut_m1 = taut_m1.wrapping_add(i32::from(
-                        *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    ));
-                    endpoints1.extend_from_slice(
-                        record
-                            .get(2..length)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    );
-                    m = m
-                        .checked_add(length)
-                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                    if picr.num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY as i32 {
+                        picr.endp_in2_only[picr.num_endp_in2_only as usize] = endpoints2[index2];
+                        picr.num_endp_in2_only = picr.num_endp_in2_only.wrapping_add(1);
+                    }
+                    index2 += 1;
+                    num_in2_only = num_in2_only.wrapping_add(1);
                 }
-
-                m = 1;
-                while m < tautomer_count2 {
-                    let length = usize::from(tautomer2[m]);
-                    m += 1;
-                    let record = tautomer2
-                        .get(m..m.saturating_add(length))
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    taut_h2 = taut_h2.wrapping_add(i32::from(
-                        *record.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    ));
-                    taut_m2 = taut_m2.wrapping_add(i32::from(
-                        *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    ));
-                    endpoints2.extend_from_slice(
-                        record
-                            .get(2..length)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    );
-                    m = m
-                        .checked_add(length)
-                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-                }
-
-                let count1 = i32::try_from(endpoints1.len())
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let count2 = i32::try_from(endpoints2.len())
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                insertions_sort_AT_RANK(&mut endpoints1, count1)?;
-                insertions_sort_AT_RANK(&mut endpoints2, count2)?;
-                Ok((endpoints1, endpoints2, taut_h1, taut_h2, taut_m1, taut_m2))
-            })();
-
-        let free1 = inchi_free(heap, endpoint_allocation1);
-        let free2 = inchi_free(heap, endpoint_allocation2);
-        free1?;
-        free2?;
-        let (endpoints1, endpoints2, taut_h1, taut_h2, taut_m1, taut_m2) = endpoint_result?;
-
-        picr.num_taut_H1 = taut_h1;
-        picr.num_taut_H2 = taut_h2;
-        picr.num_taut_M1 = taut_m1;
-        picr.num_taut_M2 = taut_m2;
-
-        let mut index1 = 0_usize;
-        let mut index2 = 0_usize;
-        let mut num_equal = 0_i32;
-        let mut num_in1_only = 0_i32;
-        let mut num_in2_only = 0_i32;
-        while index1 < endpoints1.len() && index2 < endpoints2.len() {
-            if endpoints1[index1] == endpoints2[index2] {
-                index1 += 1;
-                index2 += 1;
-                num_equal = num_equal.wrapping_add(1);
-            } else if endpoints1[index1] < endpoints2[index2] {
+            }
+            while index1 < endpoint_count1 {
                 if picr.num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY as i32 {
                     picr.endp_in1_only[picr.num_endp_in1_only as usize] = endpoints1[index1];
                     picr.num_endp_in1_only = picr.num_endp_in1_only.wrapping_add(1);
                 }
                 index1 += 1;
                 num_in1_only = num_in1_only.wrapping_add(1);
-            } else {
+            }
+            while index2 < endpoint_count2 {
                 if picr.num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY as i32 {
                     picr.endp_in2_only[picr.num_endp_in2_only as usize] = endpoints2[index2];
                     picr.num_endp_in2_only = picr.num_endp_in2_only.wrapping_add(1);
@@ -7198,34 +9211,30 @@ pub(crate) fn CompareReversedINChI2(
                 index2 += 1;
                 num_in2_only = num_in2_only.wrapping_add(1);
             }
-        }
-        while index1 < endpoints1.len() {
-            if picr.num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY as i32 {
-                picr.endp_in1_only[picr.num_endp_in1_only as usize] = endpoints1[index1];
-                picr.num_endp_in1_only = picr.num_endp_in1_only.wrapping_add(1);
+            if num_in1_only != 0 {
+                ret |= tagInchiDiffBits_IDIF_EXTRA_TG_ENDP;
             }
-            index1 += 1;
-            num_in1_only = num_in1_only.wrapping_add(1);
-        }
-        while index2 < endpoints2.len() {
-            if picr.num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY as i32 {
-                picr.endp_in2_only[picr.num_endp_in2_only as usize] = endpoints2[index2];
-                picr.num_endp_in2_only = picr.num_endp_in2_only.wrapping_add(1);
+            if num_in2_only != 0 {
+                ret |= tagInchiDiffBits_IDIF_MISS_TG_ENDP;
             }
-            index2 += 1;
-            num_in2_only = num_in2_only.wrapping_add(1);
-        }
-        if num_in1_only != 0 {
-            ret |= tagInchiDiffBits_IDIF_EXTRA_TG_ENDP;
-        }
-        if num_in2_only != 0 {
-            ret |= tagInchiDiffBits_IDIF_MISS_TG_ENDP;
-        }
-        if num_in1_only != 0 || num_in2_only != 0 || num_equal == 0 {
-            ret |= tagInchiDiffBits_IDIF_DIFF_TG_ENDP;
-        }
+            if num_in1_only != 0 || num_in2_only != 0 || num_equal == 0 {
+                ret |= tagInchiDiffBits_IDIF_DIFF_TG_ENDP;
+            }
+            Ok(())
+        })();
+        // Source frees both endpoint arrays after comparison. Structural errors
+        // also release both allocations without discarding prior ICR writes.
+        let free1 = inchi_free(heap, endpoint_allocation1);
+        let free2 = inchi_free(heap, endpoint_allocation2);
+        free1?;
+        free2?;
+        endpoint_result?;
     }
 
+    // Endpoint mutations/frees affect only fresh outputs. Safe bounded
+    // phase reborrow replaces whole-record copies; checked cost OPEN.
+    let i1 = first.record(heap)?;
+    let i2 = second.record(heap)?;
     if i1.lenTautomer > 1 && i2.lenTautomer > 1 {
         let raw_tautomer_difference = if i1.lenTautomer != i2.lenTautomer {
             true
@@ -7265,7 +9274,9 @@ pub(crate) fn CompareReversedINChI2(
     if i1.nTotalCharge != i2.nTotalCharge {
         ret |= tagInchiDiffBits_IDIF_CHARGE;
     }
-    if let Some(aux1) = a1 {
+    // Native late auxiliary predicates follow all earlier comparison exits.
+    // INCHI✔️❗: No eager auxiliary admission/clone; one reached safe view.
+    if let Some(aux1) = auxiliary.record(heap)? {
         if aux1.nNumRemovedProtons != 0
             && a2.is_none_or(|aux2| aux2.nNumRemovedProtons != aux1.nNumRemovedProtons)
         {
@@ -7280,15 +9291,14 @@ pub(crate) fn CompareReversedINChI2(
         }
     }
 
+    // INCHI✔️❗: native isotope-first selection reads regular stereo only in
+    // the fallback arm; reached typed-pointer errors and count-sum semantics
+    // remain unchanged. O(1) selection, no scan, clone or allocation; safe
+    // arena lookup constants remain OPEN (INCHI-PERF-STEREO-SELECTION).
     let isotopic_stereo1 = if i1.StereoIsotopic.is_null() {
         None
     } else {
         heap.slice(i1.StereoIsotopic.as_const())?.first()
-    };
-    let regular_stereo1 = if i1.Stereo.is_null() {
-        None
-    } else {
-        heap.slice(i1.Stereo.as_const())?.first()
     };
     let stereo1 = if isotopic_stereo1.is_some_and(|stereo| {
         stereo
@@ -7297,19 +9307,16 @@ pub(crate) fn CompareReversedINChI2(
             != 0
     }) {
         isotopic_stereo1
+    } else if i1.Stereo.is_null() {
+        None
     } else {
-        regular_stereo1
+        heap.slice(i1.Stereo.as_const())?.first()
     };
 
     let isotopic_stereo2 = if i2.StereoIsotopic.is_null() {
         None
     } else {
         heap.slice(i2.StereoIsotopic.as_const())?.first()
-    };
-    let regular_stereo2 = if i2.Stereo.is_null() {
-        None
-    } else {
-        heap.slice(i2.Stereo.as_const())?.first()
     };
     let stereo2 = if isotopic_stereo2.is_some_and(|stereo| {
         stereo
@@ -7318,8 +9325,10 @@ pub(crate) fn CompareReversedINChI2(
             != 0
     }) {
         isotopic_stereo2
+    } else if i2.Stereo.is_null() {
+        None
     } else {
-        regular_stereo2
+        heap.slice(i2.Stereo.as_const())?.first()
     };
 
     ret |= CompareReversedStereoINChI2(heap, stereo1, stereo2, picr)? as u32;
@@ -7620,16 +9629,24 @@ pub(crate) fn CompareReversedINChI(
         }
         let formula1 = heap.slice(i1.szHillFormula.as_const())?;
         let formula2 = heap.slice(i2.szHillFormula.as_const())?;
-        let end1 = formula1
-            .iter()
-            .position(|value| *value == 0)
-            .ok_or(SourceHeapError::MissingNulTerminator)?;
-        let end2 = formula2
-            .iter()
-            .position(|value| *value == 0)
-            .ok_or(SourceHeapError::MissingNulTerminator)?;
-        if formula1[..end1] != formula2[..end2] {
-            return Ok(7);
+        // INCHI✔️❗: Native strcmp stops at the first unequal byte or shared NUL.
+        // No complete formula scans, allocation or buffering. O(reached prefix),
+        // O(1) scratch; scalar checked comparison versus libc cost remains OPEN.
+        let mut formula_index = 0_usize;
+        loop {
+            let left = *formula1
+                .get(formula_index)
+                .ok_or(SourceHeapError::MissingNulTerminator)?;
+            let right = *formula2
+                .get(formula_index)
+                .ok_or(SourceHeapError::MissingNulTerminator)?;
+            if left != right {
+                return Ok(7);
+            }
+            if left == 0 {
+                break;
+            }
+            formula_index += 1;
         }
         let hydrogens1 = heap
             .slice(i1.nNum_H.as_const())?
@@ -7684,8 +9701,13 @@ pub(crate) fn CompareReversedINChI(
                     let mut greater = false;
                     let mut less = false;
                     for (&left, &right) in fixed1.iter().zip(fixed2) {
-                        greater |= left > right;
-                        less |= left < right;
+                        // Native j1/j2 are only observed as nonzero flags after
+                        // this bounded loop; retain its else-if comparison gate.
+                        if left > right {
+                            greater = true;
+                        } else if left < right {
+                            less = true;
+                        }
                     }
                     let ret = if greater && less {
                         20
@@ -8339,33 +10361,43 @@ pub(crate) fn GetDfsOrder4CT(
     // INCHI✔️✔️:
     // END INCHI C FUNCTION: GetDfsOrder4CT
 
-    let atom_count =
-        usize::try_from(number_of_atoms).map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-    if atom_count == 0 {
-        return Err(SourceHeapError::UnsupportedSourceBehavior);
-    }
+    // INCHI✔️❗: Source malloc promotes the signed count to LP64 size_t.
+    // Negative counts request impossible near-SIZE_MAX objects and fail; they
+    // still reach the neighbor helper's first-CT diagnostic and final cleanup.
+    // Do not replace that defined NULL path with an earlier signed-size error.
+    let allocation_count = number_of_atoms as u64;
     let allocate_u16 = |heap: &mut SourceHeap| match inchi_calloc::<u16>(
         heap,
-        atom_count as u64,
+        allocation_count,
         std::mem::size_of::<u16>() as u64,
     ) {
         Ok(pointer) => Ok(pointer),
         Err(SourceHeapError::AllocationFailed) => Ok(SourceMutPointer::null()),
+        Err(SourceHeapError::AllocationSizeOverflow) if number_of_atoms < 0 => {
+            Ok(SourceMutPointer::null())
+        }
         Err(error) => Err(error),
     };
-    let stack = allocate_u16(heap)?;
-    let mut number_of_descendants = allocate_u16(heap)?;
-    let dfs_number = allocate_u16(heap)?;
-    let neighbor_number = match inchi_calloc::<i8>(heap, atom_count as u64, 1) {
-        Ok(pointer) => pointer,
-        Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-        Err(error) => return Err(error),
-    };
-    let neighbor_lists =
-        CreateNeighListFromLinearCT(heap, linear_ct.as_const(), length_ct, number_of_atoms)?;
+    let mut stack = SourceMutPointer::null();
+    let mut number_of_descendants = SourceMutPointer::null();
+    let mut dfs_number = SourceMutPointer::null();
+    let mut neighbor_number = SourceMutPointer::null();
+    let mut neighbor_lists = SourceMutPointer::null();
     let predecessors = ct_mode & crate::source_types::CT_MODE_PREDECESSORS as i32;
 
     let computation = (|| -> Result<SourceMutPointer<AT_NUMB>, SourceHeapError> {
+        // All partial allocations and dependency errors now enter the same
+        // native exit_function lifetime; no scratch buffer escapes cleanup.
+        stack = allocate_u16(heap)?;
+        number_of_descendants = allocate_u16(heap)?;
+        dfs_number = allocate_u16(heap)?;
+        neighbor_number = match inchi_calloc::<i8>(heap, allocation_count, 1) {
+            Ok(pointer) => pointer,
+            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+            Err(error) => return Err(error),
+        };
+        neighbor_lists =
+            CreateNeighListFromLinearCT(heap, linear_ct.as_const(), length_ct, number_of_atoms)?;
         if stack.is_null()
             || number_of_descendants.is_null()
             || dfs_number.is_null()
@@ -8373,6 +10405,13 @@ pub(crate) fn GetDfsOrder4CT(
             || neighbor_lists.is_null()
         {
             return Ok(SourceMutPointer::null());
+        }
+        let atom_count = usize::try_from(number_of_atoms)
+            .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+        if atom_count == 0 {
+            // Preserve the typed error only after source allocation/neighbor
+            // failure paths. A zero-size successful DFS has no native atom0.
+            return Err(SourceHeapError::UnsupportedSourceBehavior);
         }
 
         let mut start = 0_usize;
@@ -8387,9 +10426,10 @@ pub(crate) fn GetDfsOrder4CT(
             }
         }
 
-        heap.slice_mut(dfs_number)?.fill(0);
-        heap.slice_mut(number_of_descendants)?.fill(0);
-        heap.slice_mut(neighbor_number)?.fill(0);
+        // INCHI✔️❗: Fresh initialized integer storage already supplies the
+        // three source memset states. No intervening callback can alias these
+        // unexposed fresh allocations; avoid clearing them a second time.
+        // Native stack malloc's initialization and safe arena costs stay OPEN.
         let mut dfs = 1_u16;
         heap.slice_mut(dfs_number)?[start] = dfs;
         heap.slice_mut(number_of_descendants)?[start] = if predecessors != 0 { 0 } else { 1 };
@@ -8489,6 +10529,11 @@ pub(crate) fn GetDfsOrder4CT(
             .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
         let output_length = usize::try_from(total_length)
             .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+        if predecessors == 0 {
+            // Native2343..2349 releases this before the output calloc2367.
+            inchi_free(heap, number_of_descendants)?;
+            number_of_descendants = SourceMutPointer::null();
+        }
         let output = match inchi_calloc::<u16>(heap, output_length as u64, 2) {
             Ok(pointer) => pointer,
             Err(SourceHeapError::AllocationFailed) => return Ok(SourceMutPointer::null()),
@@ -8537,8 +10582,6 @@ pub(crate) fn GetDfsOrder4CT(
                 position += 3;
             }
         } else {
-            inchi_free(heap, number_of_descendants)?;
-            number_of_descendants = SourceMutPointer::null();
             heap.slice_mut(neighbor_number)?.fill(0);
             heap.slice_mut(stack)?[0] = start as u16;
             stack_top = 0;
@@ -11248,5 +13291,206 @@ mod tests {
             };
             assert_eq!(INChI_SegmentAction(value), expected, "value={value}");
         }
+    }
+}
+
+#[cfg(test)]
+mod input_structure_error_regressions {
+    use super::GetInpStructErrorType;
+    use crate::source_types::{INPUT_PARMS, SourceConstPointer, SourceHeapError, SourceMutPointer};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/input_structure_error/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/input_structure_error/expected.txt"
+    ));
+    fn fnv(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(14695981039346656037, |h, b| {
+            (h ^ u64::from(*b)).wrapping_mul(1099511628211)
+        })
+    }
+    fn parameters(seed: u8, allow: i32) -> INPUT_PARMS {
+        INPUT_PARMS {
+            szSdfDataHeader: [seed as i8; 65],
+            pSdfLabel: SourceMutPointer::null(),
+            pSdfValue: SourceMutPointer::null(),
+            lSdfId: u64::from_ne_bytes([seed; 8]),
+            lMolfileNumber: i64::from_ne_bytes([seed; 8]),
+            path: [SourceConstPointer::null(); 4],
+            num_paths: i32::from_ne_bytes([seed; 4]),
+            first_struct_number: i64::from_ne_bytes([seed; 8]),
+            last_struct_number: i64::from_ne_bytes([seed; 8]),
+            nInputType: 0,
+            nMode: u64::from_ne_bytes([seed; 8]),
+            bAbcNumbers: i32::from_ne_bytes([seed; 4]),
+            bINChIOutputOptions: i32::from_ne_bytes([seed; 4]),
+            bINChIOutputOptions2: i32::from_ne_bytes([seed; 4]),
+            bCtPredecessors: i32::from_ne_bytes([seed; 4]),
+            bDisplayEachComponentINChI: i32::from_ne_bytes([seed; 4]),
+            msec_MaxTime: i64::from_ne_bytes([seed; 8]),
+            msec_LeftTime: i64::from_ne_bytes([seed; 8]),
+            ulDisplTime: i64::from_ne_bytes([seed; 8]),
+            bDisplay: i32::from_ne_bytes([seed; 4]),
+            bDisplayIfRestoreWarnings: i32::from_ne_bytes([seed; 4]),
+            bMergeAllInputStructures: i32::from_ne_bytes([seed; 4]),
+            bSaveWarningStructsAsProblem: i32::from_ne_bytes([seed; 4]),
+            bSaveAllGoodStructsAsProblem: i32::from_ne_bytes([seed; 4]),
+            bGetSdfileId: i32::from_ne_bytes([seed; 4]),
+            bGetMolfileNumber: i32::from_ne_bytes([seed; 4]),
+            bCompareComponents: i32::from_ne_bytes([seed; 4]),
+            bDisplayCompositeResults: i32::from_ne_bytes([seed; 4]),
+            bDoNotAddH: i32::from_ne_bytes([seed; 4]),
+            bNoStructLabels: i32::from_ne_bytes([seed; 4]),
+            bFixNonUniformDraw: i32::from_ne_bytes([seed; 4]),
+            bCalcInChIHash: i32::from_ne_bytes([seed; 4]),
+            bChiralFlag: i32::from_ne_bytes([seed; 4]),
+            bAllowEmptyStructure: allow,
+            bLargeMolecules: i32::from_ne_bytes([seed; 4]),
+            bLooseTSACheck: i32::from_ne_bytes([seed; 4]),
+            bPolymers: i32::from_ne_bytes([seed; 4]),
+            bFoldPolymerSRU: i32::from_ne_bytes([seed; 4]),
+            bFrameShiftScheme: i32::from_ne_bytes([seed; 4]),
+            bNPZz: i32::from_ne_bytes([seed; 4]),
+            bStereoAtZz: i32::from_ne_bytes([seed; 4]),
+            bMergeHash: i32::from_ne_bytes([seed; 4]),
+            bNoWarnings: i32::from_ne_bytes([seed; 4]),
+            bHideInChI: i32::from_ne_bytes([seed; 4]),
+            bTautFlags: u64::from_ne_bytes([seed; 8]),
+            bTautFlagsDone: u64::from_ne_bytes([seed; 8]),
+            bReadInChIOptions: i32::from_ne_bytes([seed; 4]),
+            bRenumber: i32::from_ne_bytes([seed; 4]),
+            bUnderivatize: i32::from_ne_bytes([seed; 4]),
+            bRing2Chain: i32::from_ne_bytes([seed; 4]),
+            bIgnoreUnchanged: i32::from_ne_bytes([seed; 4]),
+            bFilterSS: i32::from_ne_bytes([seed; 4]),
+        }
+    }
+    #[test]
+    fn complete_source_classification_and_reached_only_errors() {
+        assert_eq!(fnv(INPUT.as_bytes()), 11885238070585066093);
+        assert_eq!(fnv(EXPECTED.as_bytes()), 5069096606856348099);
+        let mut expected = EXPECTED.lines();
+        let (
+            mut calls,
+            mut oks,
+            mut nulls,
+            mut quarantines,
+            mut unexpected,
+            mut differences,
+            mut mutations,
+        ) = (0, 0, 0, 0, 0, 0, 0);
+        for (ordinal, line) in INPUT.lines().enumerate() {
+            let v: Vec<i64> = line
+                .split_whitespace()
+                .map(|n| n.parse().unwrap())
+                .collect();
+            assert_eq!(v.len(), 10);
+            assert_eq!(v[0] as usize, ordinal);
+            let (error, atoms, allow, present, kind, first, seed, offset) = (
+                v[2] as i32,
+                v[3] as i32,
+                v[4] as i32,
+                v[5],
+                v[6],
+                v[7] as i8,
+                v[8] as u8,
+                v[9] as usize,
+            );
+            for _ in 0..2 {
+                let e: Vec<i64> = expected
+                    .next()
+                    .expect("missing expected row")
+                    .split_whitespace()
+                    .map(|n| n.parse().unwrap())
+                    .collect();
+                assert_eq!(e.len(), 3);
+                assert_eq!(e[0], v[0]);
+                assert_eq!(e[2], 1);
+                let parameters = parameters(seed, allow);
+                let before = parameters.clone();
+                let mut backing = std::array::from_fn::<i8, 8, _>(|j| {
+                    seed.wrapping_add((j as u8).wrapping_mul(37)) as i8
+                });
+                backing[offset] = first;
+                if kind == 3 {
+                    backing[offset + 1] = 0;
+                }
+                let saved = backing;
+                let message = match kind {
+                    0 => None,
+                    1 => Some(&backing[offset..offset]),
+                    2 => Some(&backing[offset..offset + 1]),
+                    3 => Some(&backing[offset..offset + 3]),
+                    4 => Some(&backing[offset..]),
+                    _ => panic!("invalid kind"),
+                };
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    GetInpStructErrorType(
+                        if present != 0 {
+                            Some(&parameters)
+                        } else {
+                            None
+                        },
+                        error,
+                        message,
+                        atoms,
+                    )
+                }));
+                if parameters != before || backing != saved {
+                    mutations += 1;
+                }
+                let wanted = if e[1] == -1 {
+                    assert_eq!(v[1], 0);
+                    Err(SourceHeapError::NullPointer)
+                } else {
+                    assert_eq!(v[1], 1);
+                    Ok(e[1] as i32)
+                };
+                match result {
+                    Ok(actual) => {
+                        if actual.is_ok() {
+                            oks += 1;
+                        } else if actual == Err(SourceHeapError::NullPointer) {
+                            nulls += 1;
+                        }
+                        if actual != wanted {
+                            differences += 1;
+                            eprintln!("id={} expected={wanted:?} actual={actual:?}", v[0]);
+                        }
+                    }
+                    Err(payload) => {
+                        let text = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if text
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            quarantines += 1;
+                        } else {
+                            unexpected += 1;
+                            eprintln!("unexpected panic id={} {text:?}", v[0]);
+                        }
+                    }
+                }
+                calls += 1;
+            }
+        }
+        assert!(expected.next().is_none());
+        assert_eq!(calls, 73644);
+        eprintln!(
+            "INPUT-ERROR calls={calls} Ok={oks} NullPointer={nulls} exact0159={quarantines} unexpected={unexpected} differences={differences} mutations={mutations}"
+        );
+        assert_eq!(
+            (quarantines, unexpected, differences, mutations),
+            (0, 0, 0, 0),
+            "production must execute complete behavior"
+        );
+        assert_eq!((oks, nulls), (69860, 3784));
     }
 }

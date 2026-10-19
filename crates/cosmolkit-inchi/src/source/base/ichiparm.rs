@@ -43,21 +43,54 @@ pub(crate) struct CommonOptionsByParg {
     pub(crate) hide_inchi: i32,
 }
 
+enum SourceInputParameters<'a> {
+    Borrowed(&'a mut INPUT_PARMS),
+    Pointer(SourceMutPointer<INPUT_PARMS>),
+}
+
+impl SourceInputParameters<'_> {
+    fn get<'h>(&'h self, heap: &'h SourceHeap) -> Result<&'h INPUT_PARMS, SourceHeapError> {
+        // SOURCE ichiparm.c1268: if (INPUT_NONE == ip->nInputType)
+        // INCHI✔️❗: Reached actual record, no snapshot or owner removal.
+        // O(1), typed target dispatch costs REAL-SDF-HEADER-VIEW OPEN.
+        match self {
+            Self::Borrowed(parameters) => Ok(parameters),
+            Self::Pointer(pointer) => heap
+                .slice(pointer.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+        }
+    }
+
+    fn get_mut<'h>(
+        &'h mut self,
+        heap: &'h mut SourceHeap,
+    ) -> Result<&'h mut INPUT_PARMS, SourceHeapError> {
+        // SOURCE ichiparm.c1266: ip->pSdfLabel = ip->szSdfDataHeader;
+        // INCHI✔️❗: Same live record/field identity, exclusively borrowed per write.
+        // No allocation/clone; REAL-SDF-HEADER-VIEW costs OPEN.
+        match self {
+            Self::Borrowed(parameters) => Ok(parameters),
+            Self::Pointer(pointer) => heap
+                .slice_mut(*pointer)?
+                .first_mut()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+        }
+    }
+}
+
 fn option_literal(
     heap: &mut SourceHeap,
     argument: SourceConstPointer<i8>,
     literal: &str,
 ) -> Result<bool, SourceHeapError> {
-    let literal = heap.allocate_model_storage(
-        literal
-            .bytes()
-            .chain(std::iter::once(0))
-            .map(|byte| byte as i8)
-            .collect(),
-    )?;
-    let result = inchi_stricmp(heap, argument, literal.as_const());
-    heap.free(literal)?;
-    result.map(|ordering| ordering == 0)
+    // INCHI source ichiparm.c:174:
+    //     if (!inchi_stricmp(pArg, "INPAUX"))
+    // INCHI✔️❗: Borrow the literal and reached argument; no owned copy,
+    // arena registration or artificial allocation failure. Canonical signed
+    // comparison retains first-NUL/typed errors and source folding.
+    crate::source::base::util::inchi_stricmp_literal(heap.slice(argument)?, literal)
+        .map(|ordering| ordering == 0)
 }
 
 fn option_prefix(
@@ -65,35 +98,20 @@ fn option_prefix(
     argument: SourceConstPointer<i8>,
     literal: &str,
 ) -> Result<bool, SourceHeapError> {
-    let literal_pointer = heap.allocate_model_storage(
-        literal
-            .bytes()
-            .chain(std::iter::once(0))
-            .map(|byte| byte as i8)
-            .collect(),
-    )?;
-    let available = heap.slice(argument)?.len();
-    let padded_argument = if available < literal.len() {
-        let mut bytes = heap.slice(argument)?.to_vec();
-        bytes.resize(literal.len(), 0);
-        Some(heap.allocate_model_storage(bytes)?)
-    } else {
-        None
-    };
-    let compared_argument = padded_argument
-        .map(SourceMutPointer::as_const)
-        .unwrap_or(argument);
-    let result = inchi_memicmp(
-        heap,
-        compared_argument,
-        literal_pointer.as_const(),
-        literal.len() as u64,
-    );
-    heap.free(literal_pointer)?;
-    if let Some(padded_argument) = padded_argument {
-        heap.free(padded_argument)?;
+    // INCHI source ichiparm.c:182:
+    //     else if (!inchi_memicmp(pArg, "START:", 6))
+    // INCHI✔️❗: Raw-count comparison borrows the literal, never pads absent
+    // argument bytes. Early mismatch returns before later out-of-bounds reads;
+    // zero count admits neither input. No allocation or prefix preflight.
+    if literal.is_empty() {
+        return Ok(true);
     }
-    result.map(|ordering| ordering == 0)
+    crate::source::base::util::inchi_memicmp_bytes(
+        heap.slice(argument)?,
+        bytemuck::cast_slice(literal.as_bytes()),
+        literal.len() as u64,
+    )
+    .map(|ordering| ordering == 0)
 }
 
 fn source_strtol_long(
@@ -107,66 +125,200 @@ fn source_strtol_long_with_end(
     heap: &mut SourceHeap,
     pointer: SourceConstPointer<i8>,
 ) -> Result<(i64, usize), SourceHeapError> {
-    let bytes = heap.slice(pointer)?.to_vec();
-    let nul = bytes
-        .iter()
-        .position(|byte| *byte == 0)
-        .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let mut index = 0_usize;
-    while index < nul
-        && matches!(
-            bytes[index] as u8,
-            b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'
-        )
-    {
-        index += 1;
-    }
-    let negative = if index < nul && matches!(bytes[index] as u8, b'+' | b'-') {
-        let negative = bytes[index] as u8 == b'-';
-        index += 1;
-        negative
-    } else {
-        false
-    };
-    let digit_start = index;
-    let mut value = 0_i64;
-    let mut overflowed = false;
-    while index < nul && (bytes[index] as u8).is_ascii_digit() {
-        let digit = i64::from((bytes[index] as u8) - b'0');
-        let next = if negative {
-            value
-                .checked_mul(10)
-                .and_then(|value| value.checked_sub(digit))
-        } else {
-            value
-                .checked_mul(10)
-                .and_then(|value| value.checked_add(digit))
-        };
-        value = next.unwrap_or_else(|| {
-            overflowed = true;
-            if negative { i64::MIN } else { i64::MAX }
-        });
-        index += 1;
-    }
-    if overflowed {
-        heap.set_source_errno(34);
-    }
-    if index == digit_start {
-        Ok((0, 0))
-    } else {
-        Ok((value, index))
-    }
+    // INCHI✔️❗: ichiparm.c:184:
+    // ip->first_struct_number = strtol(pArg + 6, NULL, 10);
+    // Same decimal value/end-offset/errno through the canonical private parser,
+    // O(token)/O(1) scratch/no snapshot. Checked call/arena cost stays OPEN.
+    let mut end = pointer;
+    let value = crate::source::base::ichiprt2::inchi_strtol(heap, pointer, Some(&mut end), 10)?;
+    let consumed = end.as_mut().difference(pointer.as_mut())?;
+    let consumed = usize::try_from(consumed).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    Ok((value, consumed))
 }
 
 pub(crate) fn source_strtod_with_end(
     heap: &mut SourceHeap,
     pointer: SourceConstPointer<i8>,
 ) -> Result<(f64, usize), SourceHeapError> {
-    let bytes = heap.slice(pointer)?.to_vec();
+    // INCHI✔️❗: ichiparm.c:1362
+    // t = strtod(pArg + 1, (char**)&q);
+    // Borrow the unchanged argument; errno writes occur after its final use.
+    // No full-allocation snapshot. Remaining token/parser guards are independent.
+    let mut source_errno = heap.source_errno();
+    let result = source_strtod_bytes_with_end(heap.slice(pointer)?, &mut source_errno)?;
+    heap.set_source_errno(source_errno);
+    Ok(result)
+}
+
+pub(crate) fn source_strtod_bytes_with_end(
+    bytes: &[i8],
+    source_errno: &mut i32,
+) -> Result<(f64, usize), SourceHeapError> {
+    // INCHI source ichiprt2.c:2288..2291:
+    // double inchi_strtod(const char *str, const char **p)
+    // {
+    //     return strtod( str, (char **) p );
+    // }
+    // INCHI❗❌: Canonical existing floating parser over a borrowed input.
+    // This storage projection changes no conversion, scan, token allocation or
+    // errno rule. Every independent parser quarantine remains below.
+    // Borrowed fixed fields need no temporary arena allocation; whole floating
+    // conversion behavior/cost remains unresolved under the retained guards.
     let nul = bytes
         .iter()
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
+    source_strtod_terminated_bytes_with_end(&bytes[..=nul], source_errno)
+}
+
+fn decimal_subnormal_is_exact(token: &[u8], value: f64) -> bool {
+    // SUPPLEMENTAL SOURCE: musl/src/internal/floatscan.c302..311
+    // 	if ((e2+LDBL_MANT_DIG & INT_MAX) > emax-5) {
+    // 		if (fabsl(y) >= 2/LDBL_EPSILON) {
+    // 			if (denormal && bits==LDBL_MANT_DIG+e2-emin)
+    // 				denormal = 0;
+    // 			y *= 0.5;
+    // 			e2++;
+    // 		}
+    // 		if (e2+LDBL_MANT_DIG>emax || (denormal && frac))
+    // 			errno = ERANGE;
+    // 	}
+    // INCHI✔️❌: For a nonzero subnormal, frac is zero exactly when the
+    // recognized decimal equals the returned binary value. FromStr hides
+    // frac, so compare exact integer coefficients rather than tolerances.
+    // value=m*2^-1074=(m*5^1074)*10^-1074. The largest m has52 bits;
+    // its decimal coefficient has at most767 digits, fitting86 base1e9
+    // limbs. After cancelling powers of two, at least5^1023 remains:
+    // every exact decimal coefficient has at least716 significant digits.
+    // Fixed stack scratch, O(token length + bounded precision work), no heap
+    // or clone; known extra conversion work is SUBNORMAL-ERRNO OPEN. This
+    // proves the local frac criterion, not configured-libc/fenv equivalence.
+    if token.len() < 716 {
+        return false;
+    }
+    let exponent_start = token.iter().position(|byte| matches!(*byte, b'e' | b'E'));
+    let mantissa = &token[..exponent_start.unwrap_or(token.len())];
+    let mut fractional = 0_usize;
+    let mut after_radix = false;
+    let mut digits = 0_usize;
+    let mut first_nonzero = None;
+    let mut last_nonzero = 0_usize;
+    for &byte in mantissa {
+        if byte == b'.' {
+            after_radix = true;
+        } else if byte.is_ascii_digit() {
+            if byte != b'0' {
+                if first_nonzero.is_none() {
+                    first_nonzero = Some(digits);
+                }
+                last_nonzero = digits;
+            }
+            digits += 1;
+            fractional += usize::from(after_radix);
+        }
+    }
+    let Some(first_nonzero) = first_nonzero else {
+        return false;
+    };
+    let significant = last_nonzero - first_nonzero + 1;
+    if !(716..=767).contains(&significant) {
+        return false;
+    }
+    let mut exponent = 0_i128;
+    if let Some(start) = exponent_start {
+        let exponent_bytes = &token[start + 1..];
+        let negative = exponent_bytes.first() == Some(&b'-');
+        for &byte in exponent_bytes {
+            if byte.is_ascii_digit() {
+                // Any saturated magnitude exceeds the entire addressable
+                // token length and cannot cancel to a subnormal exponent.
+                exponent = exponent
+                    .saturating_mul(10)
+                    .saturating_add(i128::from(byte - b'0'));
+            }
+        }
+        if negative {
+            exponent = -exponent;
+        }
+    }
+    let exponent = exponent
+        .saturating_sub(fractional as i128)
+        .saturating_add((digits - last_nonzero - 1) as i128);
+    if !(-1074..=-1023).contains(&exponent) {
+        return false;
+    }
+    const BASE: u64 = 1_000_000_000;
+    let binary_mantissa = value.to_bits() & 0x000f_ffff_ffff_ffff;
+    let mut coefficient = [0_u32; 86];
+    coefficient[0] = (binary_mantissa % BASE) as u32;
+    coefficient[1] = (binary_mantissa / BASE) as u32;
+    let mut used = if coefficient[1] == 0 { 1 } else { 2 };
+    for _ in 0..1074 {
+        let mut carry = 0_u64;
+        for limb in &mut coefficient[..used] {
+            let product = u64::from(*limb) * 5 + carry;
+            *limb = (product % BASE) as u32;
+            carry = product / BASE;
+        }
+        if carry != 0 {
+            coefficient[used] = carry as u32;
+            used += 1;
+        }
+    }
+    let mut decimal = [0_u8; 774];
+    let mut length = 0_usize;
+    for &limb in &coefficient[..used] {
+        let mut limb = limb;
+        for _ in 0..9 {
+            decimal[length] = (limb % 10) as u8;
+            length += 1;
+            limb /= 10;
+        }
+    }
+    while decimal[length - 1] == 0 {
+        length -= 1;
+    }
+    let mut trailing = 0_usize;
+    while decimal[trailing] == 0 {
+        trailing += 1;
+    }
+    if significant != length - trailing || exponent != -1074 + trailing as i128 {
+        return false;
+    }
+    let mut ordinal = 0_usize;
+    let mut expected = length;
+    for &byte in mantissa {
+        if byte.is_ascii_digit() {
+            if (first_nonzero..=last_nonzero).contains(&ordinal) {
+                expected -= 1;
+                if byte - b'0' != decimal[expected] {
+                    return false;
+                }
+            }
+            ordinal += 1;
+        }
+    }
+    true
+}
+
+pub(crate) fn source_strtod_terminated_bytes_with_end(
+    bytes: &[i8],
+    source_errno: &mut i32,
+) -> Result<(f64, usize), SourceHeapError> {
+    // INCHI source ichiprt2.c2288..2291:
+    // double inchi_strtod(const char *str, const char **p)
+    // {
+    //     return strtod( str, (char **) p );
+    // }
+    // INCHI❗❗: ONE existing floating conversion/errno path. The old entry
+    // validates the first NUL and retains MissingNulTerminator; AuxInfo calls
+    // only on the actual source-produced terminated line, avoiding repeated
+    // suffix-length validation. No CStr/public API, allocation or FFI.
+    // A NUL fails every recognized ASCII class and stops the lexer naturally.
+    // The specific0266 errno criterion is repaired below; configured native
+    // backend/fenv remains unresolved. Token costs are C548 deferred.
+    // INCHI-PERF-FLOAT-LEXICAL-ADMISSION: admission/checked costs recorded OPEN.
+    let nul = bytes.len();
     let mut index = 0_usize;
     while index < nul
         && matches!(
@@ -216,17 +368,27 @@ pub(crate) fn source_strtod_with_end(
         index += 3;
         let negative = bytes[token_start] as u8 == b'-';
         let mut payload = 0_u64;
-        if bytes.get(index).map(|byte| *byte as u8) == Some(b'(')
-            && let Some(close) = bytes[index + 1..nul]
-                .iter()
-                .position(|byte| *byte as u8 == b')')
-        {
-            let payload_bytes = &bytes[index + 1..index + 1 + close];
-            if payload_bytes.iter().all(|byte| {
+        // VERBATIM SOURCE FRAGMENT: supplemental musl floatscan.c478..490
+        // 		for (i=1; ; i++) {
+        // 			c = shgetc(f);
+        // 			if (c-'0'<10U || c-'A'<26U || c-'a'<26U || c=='_')
+        // 				continue;
+        // 			if (c==')') return NAN;
+        // INCHI✔️❗: Stop at the first invalid payload byte; never search
+        // the unread tail for a closing parenthesis before validating it.
+        // Preserve existing numeric payload/sign rules (not a libc waiver).
+        if bytes.get(index).map(|byte| *byte as u8) == Some(b'(') {
+            let payload_start = index + 1;
+            let mut payload_end = payload_start;
+            while bytes.get(payload_end).is_some_and(|byte| {
                 let byte = *byte as u8;
                 byte.is_ascii_alphanumeric() || byte == b'_'
             }) {
-                index += close + 2;
+                payload_end += 1;
+            }
+            if bytes.get(payload_end).map(|byte| *byte as u8) == Some(b')') {
+                let payload_bytes = &bytes[payload_start..payload_end];
+                index = payload_end + 1;
 
                 let (base, digit_start) = if payload_bytes.len() > 2
                     && payload_bytes[0] as u8 == b'0'
@@ -282,22 +444,36 @@ pub(crate) fn source_strtod_with_end(
     {
         index += 2;
         let mut digits = 0_usize;
-        let mut has_nonzero_digit = false;
         while index < nul && (bytes[index] as u8).is_ascii_hexdigit() {
-            has_nonzero_digit |= bytes[index] as u8 != b'0';
             digits += 1;
             index += 1;
         }
         if index < nul && bytes[index] as u8 == b'.' {
             index += 1;
             while index < nul && (bytes[index] as u8).is_ascii_hexdigit() {
-                has_nonzero_digit |= bytes[index] as u8 != b'0';
                 digits += 1;
                 index += 1;
             }
         }
         if digits == 0 {
-            return Ok((0.0, 0));
+            // VERBATIM SOURCE FRAGMENT: supplemental musl floatscan.c359..367
+            // 	if (!gotdig) {
+            // 		shunget(f);
+            // 		if (pok) {
+            // 			shunget(f);
+            // 			if (gotrad) shunget(f);
+            // 		} else {
+            // 			shlim(f, 0);
+            // 		}
+            // 		return sign * 0.0;
+            // INCHI✔️❗: The longest valid subject remains the signed decimal
+            // leading zero. Do not consume x/radix or lose negative zero.
+            let zero = if bytes[token_start] as u8 == b'-' {
+                -0.0
+            } else {
+                0.0
+            };
+            return Ok((zero, number_start + 1));
         }
         let mut has_complete_exponent = false;
         if index < nul && matches!(bytes[index] as u8, b'p' | b'P') {
@@ -316,22 +492,33 @@ pub(crate) fn source_strtod_with_end(
                 has_complete_exponent = true;
             }
         }
-        let mut token: Vec<u8> = bytes[token_start..index]
-            .iter()
-            .map(|byte| *byte as u8)
-            .collect();
-        if !has_complete_exponent {
+        // INCHI source ichiprt2.c2288..2291 delegates to borrowed strtod.
+        // INCHI❗❗: The recognized complete hex token needs no owned copy.
+        // Preserve the exact lexer/endpoint and existing numeric/error backend.
+        // INCHI-PERF-HEX-TOKEN-AND-SDF-COPY: validation/backend costs OPEN.
+        let token_bytes: &[u8] = bytemuck::cast_slice(&bytes[token_start..index]);
+        let token = if has_complete_exponent {
+            std::borrow::Cow::Borrowed(token_bytes)
+        } else {
+            // INCHI❗❌: Existing hexf-parse requires a contiguous p exponent.
+            // Keep identical token+p0 bytes with one pre-sized allocation;
+            // residual O(token) preparation is explicitly deferred, not no-worse.
+            let mut token = Vec::with_capacity(token_bytes.len() + 2);
+            token.extend_from_slice(token_bytes);
             token.extend_from_slice(b"p0");
-        }
+            std::borrow::Cow::Owned(token)
+        };
         let token =
             std::str::from_utf8(&token).map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
         let value = hexf_parse::parse_hexf64(token, false)
             .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-        if value.is_infinite()
-            || (has_nonzero_digit && (value == 0.0 || value.abs() < f64::MIN_POSITIVE))
-        {
-            heap.set_source_errno(34);
-        }
+        // SUPPLEMENTAL SOURCE: musl floatscan.c421
+        // 	if (!y) errno = ERANGE;
+        // INCHI✔️❗: The existing strict hex backend rejects inexact/range
+        // conversions before this point. Successful nonzero subnormals are
+        // exactly representable and retain prior errno. Zero input is exact.
+        // No extra scan/allocation; rejected hex inputs/backend/fenv remain
+        // unresolved, not made source-equivalent by this local errno repair.
         return Ok((value, index));
     }
 
@@ -367,19 +554,25 @@ pub(crate) fn source_strtod_with_end(
             index = exponent;
         }
     }
-    let token: Vec<u8> = bytes[token_start..index]
-        .iter()
-        .map(|byte| *byte as u8)
-        .collect();
-    let token =
-        std::str::from_utf8(&token).map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
+    // INCHI❗❗: Native strtod borrows its input; borrow the already-recognized
+    // ASCII decimal token without Vec allocation/copy. Preserve every parser,
+    // first-NUL, endpoint, conversion-error and errno rule/independent guard.
+    // INCHI-PERF-DECIMAL-TOKEN-BORROW: validation/conversion costs remain OPEN.
+    let token = std::str::from_utf8(bytemuck::cast_slice(&bytes[token_start..index]))
+        .map_err(|_| SourceHeapError::InvalidSourceTextEncoding)?;
     let value = token
         .parse::<f64>()
         .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
+    // INCHI✔️❌: Supplemental floatscan.c309..310 uses denormal && frac,
+    // not denormal alone. Preserve old errno on an exact nonzero subnormal;
+    // retain overflow/inexact underflow and signed/unsigned zero behavior.
+    // Decimal exactness work/cost is separately SUBNORMAL-ERRNO OPEN.
     if value.is_infinite()
-        || (has_nonzero_digit && (value == 0.0 || value.abs() < f64::MIN_POSITIVE))
+        || (has_nonzero_digit
+            && (value == 0.0
+                || (value.is_subnormal() && !decimal_subnormal_is_exact(token.as_bytes(), value))))
     {
-        heap.set_source_errno(34);
+        *source_errno = 34;
     }
     Ok((value, index))
 }
@@ -390,6 +583,24 @@ pub(crate) fn set_common_options_by_parg(
     pArg: SourceConstPointer<i8>,
     developer_options: i32,
     ip: &mut INPUT_PARMS,
+    options: &mut CommonOptionsByParg,
+) -> Result<i32, SourceHeapError> {
+    // Source's same parameter record, borrowed by existing scalar callers.
+    set_common_options_by_parg_target(
+        heap,
+        pArg,
+        developer_options,
+        &mut SourceInputParameters::Borrowed(ip),
+        options,
+    )
+}
+
+#[allow(non_snake_case)]
+fn set_common_options_by_parg_target(
+    heap: &mut SourceHeap,
+    pArg: SourceConstPointer<i8>,
+    developer_options: i32,
+    ip: &mut SourceInputParameters<'_>,
     options: &mut CommonOptionsByParg,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiparm.c:131 set_common_options_by_parg
@@ -863,20 +1074,20 @@ pub(crate) fn set_common_options_by_parg(
 
     let mut got = 0;
     if option_literal(heap, pArg, "INPAUX")? {
-        if ip.nInputType == tagInputType_INPUT_NONE {
-            ip.nInputType = tagInputType_INPUT_INCHI_PLAIN;
+        if ip.get(heap)?.nInputType == tagInputType_INPUT_NONE {
+            ip.get_mut(heap)?.nInputType = tagInputType_INPUT_INCHI_PLAIN;
         }
         got = 1;
     } else if option_prefix(heap, pArg, "START:")? {
-        ip.first_struct_number = source_strtol_long(heap, pArg.offset(6)?)?;
+        ip.get_mut(heap)?.first_struct_number = source_strtol_long(heap, pArg.offset(6)?)?;
         got = 1;
     } else if option_prefix(heap, pArg, "END:")? {
-        ip.last_struct_number = source_strtol_long(heap, pArg.offset(4)?)?;
+        ip.get_mut(heap)?.last_struct_number = source_strtol_long(heap, pArg.offset(4)?)?;
         got = 1;
     } else if option_prefix(heap, pArg, "RECORD:")? {
         let number = source_strtol_long(heap, pArg.offset(7)?)?;
-        ip.first_struct_number = number;
-        ip.last_struct_number = number;
+        ip.get_mut(heap)?.first_struct_number = number;
+        ip.get_mut(heap)?.last_struct_number = number;
         got = 1;
     } else if option_literal(heap, pArg, "NOLABELS")? {
         options.no_struct_labels = 1;
@@ -1012,24 +1223,33 @@ pub(crate) fn set_common_options_by_parg(
         options.fold_polymer_sru = 1;
         got = 1;
     } else if option_prefix(heap, pArg, "FrameShift:")? {
-        let word = heap.allocate_model_storage(vec![0_i8; 256])?;
-        mystrncpy(heap, word, pArg.offset(11)?, 256)?;
-        let mut length = 0;
-        lrtrim(heap, word, Some(&mut length))?;
+        // INCHI✔️❗: Native wrd[256] is stack storage, not a fallible heap
+        // object. Reuse canonical copy/trim/comparison kernels directly;
+        // required source strlen and reached typed errors remain unchanged.
+        // O(source length + 256), fixed256-byte scratch, no allocation/free
+        // or ownership copy. Safe initialization/dispatch constants remain
+        // OPEN in INCHI-PERF-OPTION-FIXED-SCRATCH, independently of behavior.
+        let mut word = [0_i8; 256];
+        crate::source::base::util::mystrncpy_slice(
+            Some(&mut word),
+            Some(heap.slice(pArg.offset(11)?)?),
+            256,
+        )?;
+        let length = crate::source::base::util::lrtrim_bytes(&mut word)?;
         if length != 0 {
-            if option_literal(heap, word.as_const(), "None")? {
+            if crate::source::base::util::inchi_stricmp_literal(&word, "None")? == 0 {
                 options.frame_shift_scheme = tagFrameShifScheme_FSS_NONE as i32;
-            } else if option_literal(heap, word.as_const(), "Cyclize")? {
+            } else if crate::source::base::util::inchi_stricmp_literal(&word, "Cyclize")? == 0 {
                 options.frame_shift_scheme = tagFrameShifScheme_FSS_STARS_CYCLED as i32;
-            } else if option_literal(heap, word.as_const(), "MoveStars")? {
+            } else if crate::source::base::util::inchi_stricmp_literal(&word, "MoveStars")? == 0 {
                 options.frame_shift_scheme = tagFrameShifScheme_FSS_STARS_OPENED as i32;
-            } else if option_literal(heap, word.as_const(), "MoveBrackets")? {
+            } else if crate::source::base::util::inchi_stricmp_literal(&word, "MoveBrackets")? == 0
+            {
                 options.frame_shift_scheme = tagFrameShifScheme_FSS_STARS_ENDS_OPENED as i32;
             }
         } else {
             options.frame_shift_scheme = tagFrameShifScheme_FSS_STARS_CYCLED as i32;
         }
-        heap.free(word)?;
         got = 1;
     } else if option_literal(heap, pArg, "NoFrameShift")? {
         options.frame_shift_scheme = tagFrameShifScheme_FSS_NONE as i32;
@@ -1045,17 +1265,17 @@ pub(crate) fn set_common_options_by_parg(
 
     if got == 0 && developer_options != 0 {
         if option_literal(heap, pArg, "PGO")? {
-            ip.bSaveAllGoodStructsAsProblem = 1;
+            ip.get_mut(heap)?.bSaveAllGoodStructsAsProblem = 1;
             got = 1;
         } else if option_literal(heap, pArg, "FilterSS")? {
-            ip.bFilterSS = 1;
+            ip.get_mut(heap)?.bFilterSS = 1;
             got = 1;
         } else if option_literal(heap, pArg, "InvFilterSS")? {
-            ip.bFilterSS = -1;
+            ip.get_mut(heap)?.bFilterSS = -1;
             got = 1;
         }
         if option_literal(heap, pArg, "FNUDOFF")? {
-            ip.bFixNonUniformDraw = 0;
+            ip.get_mut(heap)?.bFixNonUniformDraw = 0;
             options.std_format = 0;
             got = 1;
         } else if option_literal(heap, pArg, "FixSp3bugOFF")?
@@ -1088,13 +1308,14 @@ pub(crate) fn set_common_options_by_parg(
 fn source_c_string(
     heap: &SourceHeap,
     pointer: SourceConstPointer<i8>,
-) -> Result<Vec<i8>, SourceHeapError> {
+) -> Result<&[i8], SourceHeapError> {
     let bytes = heap.slice(pointer)?;
     let nul = bytes
         .iter()
         .position(|byte| *byte == 0)
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    Ok(bytes[..=nul].to_vec())
+    // Borrow through the first NUL, retaining the existing typed admission.
+    Ok(&bytes[..=nul])
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -1102,8 +1323,58 @@ pub(crate) fn ReadCommandLineParms(
     heap: &mut SourceHeap,
     argc: i32,
     argv: &[SourceConstPointer<i8>],
-    ip: &mut INPUT_PARMS,
+    ip: SourceMutPointer<INPUT_PARMS>,
     szSdfDataValue: SourceMutPointer<i8>,
+    ulDisplTime: &mut u64,
+    _bReleaseVersion: i32,
+    log_file: Option<&mut INCHI_IOSTREAM>,
+) -> Result<i32, SourceHeapError> {
+    // Complete original source frame and sole algorithm are inside the core
+    // below. Some carries the exact source pointer, including actual NULL.
+    // INCHI✔️❗: O(1) transport, no new scan/clone/allocation; C555 OPEN.
+    read_command_line_parameters_target(
+        heap,
+        argc,
+        argv,
+        SourceInputParameters::Pointer(ip),
+        Some(szSdfDataValue),
+        ulDisplTime,
+        _bReleaseVersion,
+        log_file,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(in crate::source) fn read_command_line_parameters(
+    heap: &mut SourceHeap,
+    argc: i32,
+    argv: &[SourceConstPointer<i8>],
+    ip: &mut INPUT_PARMS,
+    ulDisplTime: &mut u64,
+    _bReleaseVersion: i32,
+    log_file: Option<&mut INCHI_IOSTREAM>,
+) -> Result<i32, SourceHeapError> {
+    // Only the three API-local records whose SDF bindings never escape.
+    // The omitted label/value stores are dead through their complete lifetime.
+    read_command_line_parameters_target(
+        heap,
+        argc,
+        argv,
+        SourceInputParameters::Borrowed(ip),
+        None,
+        ulDisplTime,
+        _bReleaseVersion,
+        log_file,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn read_command_line_parameters_target(
+    heap: &mut SourceHeap,
+    argc: i32,
+    argv: &[SourceConstPointer<i8>],
+    mut ip: SourceInputParameters<'_>,
+    szSdfDataValue: Option<SourceMutPointer<i8>>,
     ulDisplTime: &mut u64,
     _bReleaseVersion: i32,
     mut log_file: Option<&mut INCHI_IOSTREAM>,
@@ -2664,13 +2935,22 @@ pub(crate) fn ReadCommandLineParms(
     let mut timeout_set_warning = 0_i32;
     let mut timeout_set_error = 0_i32;
 
-    *ip = INPUT_PARMS::default();
-    ip.bFixNonUniformDraw = 1;
-    ip.msec_MaxTime = 0;
+    {
+        let parameters = ip.get_mut(heap)?;
+        *parameters = INPUT_PARMS::default();
+        parameters.bFixNonUniformDraw = 1;
+        parameters.msec_MaxTime = 0;
+    }
     *ulDisplTime = 0;
 
+    // VERBATIM SOURCE FRAGMENT: ichiparm.c776
+    //     for (i = 1; i < argc; i++)
+    // INCHI✔️❗: Signed argc<=1 has no reached argv entry, including argv[0].
+    // Zero Rust loop limit preserves that skip without admitting unused argv.
+    // Positive short-argv typed errors stay unchanged. O(1), no allocation,
+    // clone/scan; whole checked/default-path cost remains OPEN.
     let argc = if argc <= 1 {
-        1_usize
+        0_usize
     } else {
         usize::try_from(argc).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
     };
@@ -2681,43 +2961,78 @@ pub(crate) fn ReadCommandLineParms(
     for argument_index in 1..argc {
         let argument = argv[argument_index];
         let argument_bytes = heap.slice(argument)?;
-        let argument_nul = argument_bytes
-            .iter()
-            .position(|byte| *byte == 0)
+        // VERBATIM SOURCE FRAGMENT: ichiparm.c1221
+        //         else if ((bVer1Options & 1) && INCHI_OPTION_PREFX == argv[i][0] && argv[i][1])
+        // INCHI✔️❗: Dispatch reads only the source-reached prefix bytes;
+        // option helpers retain their own reached reads. No full parent NUL
+        // scan before ignored nonoptions, no allocation/clone; checked costs OPEN.
+        let first = *argument_bytes
+            .first()
             .ok_or(SourceHeapError::MissingNulTerminator)?;
-        if argument_nul >= 2
-            && argument_bytes[0] as u8 == INCHI_OPTION_PREFX
-            && argument_bytes[1] != 0
+        if b_ver1_options & 1 != 0
+            && first as u8 == INCHI_OPTION_PREFX
+            && *argument_bytes
+                .get(1)
+                .ok_or(SourceHeapError::MissingNulTerminator)?
+                != 0
         {
             let p_arg = argument.offset(1)?;
             b_ver1_options = b_ver1_options
                 .checked_add(2)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-            let got = set_common_options_by_parg(heap, p_arg, 0, ip, &mut options)?;
+            let got = set_common_options_by_parg_target(heap, p_arg, 0, &mut ip, &mut options)?;
             if got != 0 {
                 continue;
             }
             if option_literal(heap, p_arg, "STDIO")? {
                 b_name_suffix = 0;
             } else if option_prefix(heap, p_arg, "SDF:")? {
-                let header = heap.allocate_model_storage(vec![0_i8; 65])?;
-                mystrncpy(heap, header, p_arg.offset(4)?, 65)?;
-                let mut length = 0_i32;
-                lrtrim(heap, header, Some(&mut length))?;
-                ip.szSdfDataHeader
-                    .copy_from_slice(heap.slice(header.as_const())?);
+                // VERBATIM SOURCE FRAGMENT: ichiparm.c1261..1266
+                //                 mystrncpy(ip->szSdfDataHeader, pArg + 4, MAX_SDF_HEADER + 1);
+                //                 lrtrim(ip->szSdfDataHeader, &k);
+                //                 if (k)
+                //                 {
+                //                     ip->pSdfLabel = ip->szSdfDataHeader;
+                // INCHI✔️❗: One actual header copy/trim, including aliased
+                // argv. Heap parameters publish their real parent-field
+                // pointer; proven API-local borrowed contexts elide dead
+                // bindings. No second label allocation/copy/free or invented
+                // owner identity. REAL-SDF-HEADER-VIEW costs remain OPEN.
+                let (header, length) = match &mut ip {
+                    SourceInputParameters::Pointer(pointer) => {
+                        let header = pointer.as_const().sdf_header_field()?;
+                        mystrncpy(heap, header, p_arg.offset(4)?, 65)?;
+                        let mut length = 0;
+                        lrtrim(heap, header, Some(&mut length))?;
+                        (Some(header), length)
+                    }
+                    SourceInputParameters::Borrowed(parameters) => {
+                        crate::source::base::util::mystrncpy_slice(
+                            Some(&mut parameters.szSdfDataHeader),
+                            Some(heap.slice(p_arg.offset(4)?)?),
+                            65,
+                        )?;
+                        let length = crate::source::base::util::lrtrim_bytes(
+                            &mut parameters.szSdfDataHeader,
+                        )?;
+                        (None, length)
+                    }
+                };
                 if length != 0 {
-                    ip.pSdfLabel = header;
-                    ip.pSdfValue = szSdfDataValue;
-                    if ip.nInputType == tagInputType_INPUT_NONE {
-                        ip.nInputType = tagInputType_INPUT_SDFILE;
+                    if let Some(header) = header {
+                        ip.get_mut(heap)?.pSdfLabel = header;
+                    }
+                    if let Some(value) = szSdfDataValue {
+                        ip.get_mut(heap)?.pSdfValue = value;
+                    }
+                    if ip.get(heap)?.nInputType == tagInputType_INPUT_NONE {
+                        ip.get_mut(heap)?.nInputType = tagInputType_INPUT_SDFILE;
                     }
                 } else {
-                    inchi_free(heap, header)?;
-                    ip.pSdfLabel = SourceMutPointer::null();
-                    ip.pSdfValue = SourceMutPointer::null();
-                    if ip.nInputType == tagInputType_INPUT_NONE {
-                        ip.nInputType = tagInputType_INPUT_MOLFILE;
+                    ip.get_mut(heap)?.pSdfLabel = SourceMutPointer::null();
+                    ip.get_mut(heap)?.pSdfValue = SourceMutPointer::null();
+                    if ip.get(heap)?.nInputType == tagInputType_INPUT_NONE {
+                        ip.get_mut(heap)?.nInputType = tagInputType_INPUT_MOLFILE;
                     }
                 }
             } else if option_literal(heap, p_arg, "OUTPUTSDF")? {
@@ -2729,18 +3044,18 @@ pub(crate) fn ReadCommandLineParms(
             } else if option_prefix(heap, p_arg, "F")? {
                 let (_, end) = source_strtol_long_with_end(heap, p_arg.offset(1)?)?;
                 if end == 0 {
-                    let bytes = source_c_string(heap, p_arg)?;
+                    let _ = source_c_string(heap, p_arg)?;
                     eprint_call(
                         heap,
                         log_file.as_deref_mut(),
                         "Unrecognized optionQ3: \"%s\".\n",
-                        vec![PrintArgument::Bytes(bytes)],
+                        [PrintArgument::SourceBytes(p_arg)],
                     )?;
                 }
             } else if option_literal(heap, p_arg, "EQU")? {
                 // bCompareComponents is unconditionally cleared by COMPILE_ANSI_ONLY.
             } else if option_literal(heap, p_arg, "WarnOnEmptyStructure")? {
-                ip.bAllowEmptyStructure = 1;
+                ip.get_mut(heap)?.bAllowEmptyStructure = 1;
             } else if option_prefix(heap, p_arg, "W")? {
                 let bytes = heap.slice(p_arg)?;
                 let c1 = *bytes.get(1).ok_or(SourceHeapError::PointerOutOfBounds)? as u8;
@@ -2785,46 +3100,56 @@ pub(crate) fn ReadCommandLineParms(
                     }
                 }
                 if timeout_set_error == 0 {
-                    ip.msec_MaxTime = timeout_value;
+                    ip.get_mut(heap)?.msec_MaxTime = timeout_value;
                 }
             } else if option_literal(heap, p_arg, "InChI2InChI")? {
-                ip.nInputType = tagInputType_INPUT_INCHI;
-                ip.bReadInChIOptions |= READ_INCHI_OUTPUT_INCHI as i32;
-                ip.bReadInChIOptions &= !(READ_INCHI_TO_STRUCTURE as i32);
+                ip.get_mut(heap)?.nInputType = tagInputType_INPUT_INCHI;
+                ip.get_mut(heap)?.bReadInChIOptions |= READ_INCHI_OUTPUT_INCHI as i32;
+                ip.get_mut(heap)?.bReadInChIOptions &= !(READ_INCHI_TO_STRUCTURE as i32);
             } else if option_literal(heap, p_arg, "InChI2Struct")? {
-                ip.bReadInChIOptions |= READ_INCHI_TO_STRUCTURE as i32;
-                ip.bReadInChIOptions &= !(READ_INCHI_OUTPUT_INCHI as i32);
-                ip.nInputType = tagInputType_INPUT_INCHI;
+                ip.get_mut(heap)?.bReadInChIOptions |= READ_INCHI_TO_STRUCTURE as i32;
+                ip.get_mut(heap)?.bReadInChIOptions &= !(READ_INCHI_OUTPUT_INCHI as i32);
+                ip.get_mut(heap)?.nInputType = tagInputType_INPUT_INCHI;
             } else if option_literal(heap, p_arg, "DoDrvReport")? {
-                ip.bUnderivatize = 3;
+                ip.get_mut(heap)?.bUnderivatize = 3;
                 options.std_format = 0;
             } else {
-                let bytes = source_c_string(heap, p_arg)?;
+                let _ = source_c_string(heap, p_arg)?;
                 eprint_call(
                     heap,
                     log_file.as_deref_mut(),
                     "Unrecognized optionQ3: \"%s\".\n",
-                    vec![PrintArgument::Bytes(bytes)],
+                    [PrintArgument::SourceBytes(p_arg)],
                 )?;
             }
-        } else if ip.num_paths < MAX_NUM_PATHS as i32 && argument_nul != 0 {
-            let copied = argument_bytes[..=argument_nul].to_vec();
+        } else if ip.get(heap)?.num_paths < MAX_NUM_PATHS as i32 && first != 0 {
+            // VERBATIM SOURCE FRAGMENT: ichiparm.c1671
+            //             if (argv[i] && argv[i][0])
+            // INCHI✔️❗: Selected API/GCC/ENG0 leaves ALLOW_EMPTY_PATHS
+            // undefined (mode.h132..167); preserve this native nonempty gate.
+            // Only a reached path needs strlen admission; full slots skip it.
+            let argument_nul = argument_bytes
+                .iter()
+                .position(|byte| *byte == 0)
+                .ok_or(SourceHeapError::MissingNulTerminator)?;
+            let copied_len = argument_nul + 1;
             let allocation = match inchi_malloc(
                 heap,
-                u64::try_from(copied.len())
+                u64::try_from(copied_len)
                     .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
             ) {
                 Ok(allocation) => {
-                    heap.slice_mut(allocation)?.copy_from_slice(&copied);
+                    // The malloc result is fresh and disjoint from argv.
+                    heap.copy_nonoverlapping_prefix(allocation, argument, copied_len, false)?;
                     allocation.as_const()
                 }
                 Err(SourceHeapError::AllocationFailed) => SourceConstPointer::null(),
                 Err(error) => return Err(error),
             };
-            let path_index = usize::try_from(ip.num_paths)
+            let path_index = usize::try_from(ip.get(heap)?.num_paths)
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            ip.path[path_index] = allocation;
-            ip.num_paths += 1;
+            ip.get_mut(heap)?.path[path_index] = allocation;
+            ip.get_mut(heap)?.num_paths += 1;
         }
     }
 
@@ -2833,7 +3158,7 @@ pub(crate) fn ReadCommandLineParms(
             heap,
             log_file.as_deref_mut(),
             "Warning: timeout value may have been modified (truncated?) due to number formatting issues;\n",
-            Vec::new(),
+            [],
         )?;
     }
     if timeout_set_error != 0 {
@@ -2841,26 +3166,26 @@ pub(crate) fn ReadCommandLineParms(
             heap,
             log_file.as_deref_mut(),
             "Warning: specified timeout value was ignored due to invalid number format, using the default;\n",
-            Vec::new(),
+            [],
         )?;
     }
 
     if options.hash_key != 0 {
-        if ip.bAbcNumbers == 1 && ip.bCtPredecessors == 1 {
+        if ip.get(heap)?.bAbcNumbers == 1 && ip.get(heap)?.bCtPredecessors == 1 {
             eprint_call(
                 heap,
                 log_file.as_deref_mut(),
                 "Terminating: generation of InChIKey is not available with 'Compress' option\n",
-                Vec::new(),
+                [],
             )?;
             return Ok(-1);
         }
-        if ip.nInputType == tagInputType_INPUT_INCHI {
+        if ip.get(heap)?.nInputType == tagInputType_INPUT_INCHI {
             eprint_call(
                 heap,
                 log_file.as_deref_mut(),
                 "Terminating: generation of InChIKey is not available in InChI conversion mode\n",
-                Vec::new(),
+                [],
             )?;
             return Ok(-1);
         }
@@ -2869,7 +3194,7 @@ pub(crate) fn ReadCommandLineParms(
                 heap,
                 log_file.as_deref_mut(),
                 "Terminating: generation of InChIKey is not available with 'OutputSDF' option\n",
-                Vec::new(),
+                [],
             )?;
             return Ok(-1);
         }
@@ -2877,7 +3202,7 @@ pub(crate) fn ReadCommandLineParms(
 
     if b_name_suffix != 0 {
         let mut first_path = SourceConstPointer::null();
-        for path in ip.path {
+        for path in ip.get(heap)?.path {
             if !path.is_null() && heap.slice(path)?.first() != Some(&0) {
                 first_path = path;
                 break;
@@ -2893,310 +3218,460 @@ pub(crate) fn ReadCommandLineParms(
             if previous.is_null() {
                 break;
             }
-            let path_is_empty =
-                ip.path[index].is_null() || heap.slice(ip.path[index])?.first() == Some(&0);
+            let old_path = ip.get(heap)?.path[index];
+            let path_is_empty = old_path.is_null() || heap.slice(old_path)?.first() == Some(&0);
             if path_is_empty {
-                let previous_bytes = source_c_string(heap, previous.as_const())?;
-                let mut generated = previous_bytes[..previous_bytes.len() - 1].to_vec();
-                generated.extend(extension.bytes().map(|byte| byte as i8));
-                generated.push(0);
-                let allocation = match inchi_malloc(
-                    heap,
-                    u64::try_from(generated.len())
-                        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
-                ) {
+                let prefix_len = source_c_string(heap, previous.as_const())?.len() - 1;
+                // Native int len = (int)strlen(p_prev) + strlen(szNameSuffix)
+                //                  + strlen(ext[i]); szNameSuffix is empty here.
+                // Both conversions narrow to the configured 32-bit C int.
+                let native_len = (prefix_len as i32).wrapping_add(extension.len() as i32);
+                let allocation = match inchi_malloc(heap, (i64::from(native_len) + 1) as u64) {
                     Ok(allocation) => allocation,
                     Err(SourceHeapError::AllocationFailed) => continue,
                     Err(error) => return Err(error),
                 };
-                heap.slice_mut(allocation)?.copy_from_slice(&generated);
-                ip.num_paths += 1;
-                if !ip.path[index].is_null() {
-                    inchi_free(heap, ip.path[index].as_mut())?;
+                // INCHI✔️❗: Fresh target; copy prefix and literal extension
+                // directly, with O(1) scratch and no owned staging buffer.
+                // Checked heap/layout/whole-call costs remain CLI-SNAPSHOTS OPEN.
+                heap.with_slice_mut_and_heap(allocation, |target, heap| {
+                    let prefix = heap
+                        .slice(previous.as_const())?
+                        .get(..prefix_len)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    target
+                        .get_mut(..prefix_len)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .copy_from_slice(prefix);
+                    let tail = target
+                        .get_mut(prefix_len..)
+                        .and_then(|tail| tail.get_mut(..extension.len() + 1))
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    for (target, byte) in tail.iter_mut().zip(extension.bytes()) {
+                        *target = byte as i8;
+                    }
+                    tail[extension.len()] = 0;
+                    Ok(())
+                })?;
+                ip.get_mut(heap)?.num_paths += 1;
+                if !old_path.is_null() {
+                    inchi_free(heap, old_path.as_mut())?;
                 }
-                ip.path[index] = allocation.as_const();
-            } else if option_literal(heap, ip.path[index], "NUL")? {
-                inchi_free(heap, ip.path[index].as_mut())?;
-                ip.path[index] = SourceConstPointer::null();
+                ip.get_mut(heap)?.path[index] = allocation.as_const();
+            } else if option_literal(heap, old_path, "NUL")? {
+                inchi_free(heap, old_path.as_mut())?;
+                ip.get_mut(heap)?.path[index] = SourceConstPointer::null();
             }
         }
         inchi_free(heap, previous)?;
     }
 
-    if ip.nInputType == tagInputType_INPUT_INCHI {
-        b_output_molfile_only = 0;
-        options.inchi_output_options |= INCHI_OUT_NO_AUX_INFO as i32;
-        options.inchi_output_options &= !(INCHI_OUT_SHORT_AUX_INFO as i32);
-        options.inchi_output_options &= !(INCHI_OUT_ONLY_AUX_INFO as i32);
-        if options.inchi_output_options
-            & (INCHI_OUT_SDFILE_ONLY | INCHI_OUT_PLAIN_TEXT | INCHI_OUT_PLAIN_TEXT_COMMENTS) as i32
-            == 0
-        {
-            options.inchi_output_options |= INCHI_OUT_PLAIN_TEXT as i32;
+    {
+        let ip = ip.get_mut(heap)?;
+        if ip.nInputType == tagInputType_INPUT_INCHI {
+            b_output_molfile_only = 0;
+            options.inchi_output_options |= INCHI_OUT_NO_AUX_INFO as i32;
+            options.inchi_output_options &= !(INCHI_OUT_SHORT_AUX_INFO as i32);
+            options.inchi_output_options &= !(INCHI_OUT_ONLY_AUX_INFO as i32);
+            if options.inchi_output_options
+                & (INCHI_OUT_SDFILE_ONLY | INCHI_OUT_PLAIN_TEXT | INCHI_OUT_PLAIN_TEXT_COMMENTS)
+                    as i32
+                == 0
+            {
+                options.inchi_output_options |= INCHI_OUT_PLAIN_TEXT as i32;
+            }
         }
-    }
 
-    if b_ver1_options != 0 {
-        options.mode |= options.ver1_default_mode as i32;
-    }
-    ip.bDisplayEachComponentINChI = 0;
-    ip.bCompareComponents = 0;
-    ip.bMergeAllInputStructures = b_merge_all_input_structures;
-    ip.bDoNotAddH = options.do_not_add_h;
+        if b_ver1_options != 0 {
+            options.mode |= options.ver1_default_mode as i32;
+        }
+        ip.bDisplayEachComponentINChI = 0;
+        ip.bCompareComponents = 0;
+        ip.bMergeAllInputStructures = b_merge_all_input_structures;
+        ip.bDoNotAddH = options.do_not_add_h;
 
-    if options.mode == 0 || options.mode == REQ_MODE_STEREO as i32 {
-        options.mode |=
-            (REQ_MODE_BASIC | REQ_MODE_TAUT | REQ_MODE_ISO | REQ_MODE_NON_ISO | REQ_MODE_STEREO)
-                as i32;
-    } else {
-        if options.mode & (REQ_MODE_BASIC | REQ_MODE_TAUT) as i32 == 0 {
-            options.mode |= (REQ_MODE_BASIC | REQ_MODE_TAUT) as i32;
-        }
-        if options.mode & REQ_MODE_STEREO as i32 != 0
-            && options.mode & (REQ_MODE_ISO | REQ_MODE_NON_ISO) as i32 == 0
-        {
-            options.mode |= (REQ_MODE_ISO | REQ_MODE_NON_ISO) as i32;
-        }
-    }
-    if options.mode & REQ_MODE_ISO as i32 != 0 {
-        options.mode |= REQ_MODE_NON_ISO as i32;
-    }
-    options.mode |=
-        ((MIN_SB_RING_SIZE as i32) << REQ_MODE_MIN_SB_RING_SHFT) & REQ_MODE_MIN_SB_RING_MASK as i32;
-    if ip.nInputType == tagInputType_INPUT_NONE && ip.num_paths > 0 {
-        ip.nInputType = tagInputType_INPUT_MOLFILE;
-    }
-    ip.nMode = options.mode as INCHI_MODE;
-    ip.bINChIOutputOptions = options.inchi_output_options
-        | if b_output_molfile_only != 0 {
-            INCHI_OUT_SDFILE_ONLY as i32
+        if options.mode == 0 || options.mode == REQ_MODE_STEREO as i32 {
+            options.mode |= (REQ_MODE_BASIC
+                | REQ_MODE_TAUT
+                | REQ_MODE_ISO
+                | REQ_MODE_NON_ISO
+                | REQ_MODE_STEREO) as i32;
         } else {
-            0
+            if options.mode & (REQ_MODE_BASIC | REQ_MODE_TAUT) as i32 == 0 {
+                options.mode |= (REQ_MODE_BASIC | REQ_MODE_TAUT) as i32;
+            }
+            if options.mode & REQ_MODE_STEREO as i32 != 0
+                && options.mode & (REQ_MODE_ISO | REQ_MODE_NON_ISO) as i32 == 0
+            {
+                options.mode |= (REQ_MODE_ISO | REQ_MODE_NON_ISO) as i32;
+            }
+        }
+        if options.mode & REQ_MODE_ISO as i32 != 0 {
+            options.mode |= REQ_MODE_NON_ISO as i32;
+        }
+        options.mode |= ((MIN_SB_RING_SIZE as i32) << REQ_MODE_MIN_SB_RING_SHFT)
+            & REQ_MODE_MIN_SB_RING_MASK as i32;
+        if ip.nInputType == tagInputType_INPUT_NONE && ip.num_paths > 0 {
+            ip.nInputType = tagInputType_INPUT_MOLFILE;
+        }
+        ip.nMode = options.mode as INCHI_MODE;
+        ip.bINChIOutputOptions = options.inchi_output_options
+            | if b_output_molfile_only != 0 {
+                INCHI_OUT_SDFILE_ONLY as i32
+            } else {
+                0
+            };
+        if b_output_molfile_only != 0 {
+            b_output_style &= !((INCHI_OUT_PLAIN_TEXT
+                | INCHI_OUT_PLAIN_TEXT_COMMENTS
+                | INCHI_OUT_TABBED_OUTPUT) as i32);
+            if b_output_molfile_dt != 0 {
+                ip.bINChIOutputOptions |= INCHI_OUT_SDFILE_ATOMS_DT as i32;
+            }
+            if b_output_molfile_split != 0 {
+                ip.bINChIOutputOptions |= INCHI_OUT_SDFILE_SPLIT as i32;
+            }
+        }
+        ip.bINChIOutputOptions |= b_output_style;
+        ip.bNoStructLabels = options.no_struct_labels;
+        if options.forced_chiral_flag != 0 {
+            ip.bChiralFlag = options.forced_chiral_flag;
+        }
+
+        ip.bTautFlags = (TG_FLAG_TEST_TAUT__ATOMS
+            | TG_FLAG_DISCONNECT_SALTS
+            | TG_FLAG_TEST_TAUT__SALTS
+            | TG_FLAG_MOVE_POS_CHARGES
+            | TG_FLAG_TEST_TAUT2_SALTS
+            | TG_FLAG_MERGE_TAUT_SALTS
+            | TG_FLAG_DISCONNECT_COORD
+            | TG_FLAG_VARIABLE_PROTONS
+            | TG_FLAG_HARD_ADD_REM_PROTONS) as INCHI_MODE;
+        if options.reconnect_coord != 0 {
+            ip.bTautFlags |= TG_FLAG_RECONNECT_COORD as INCHI_MODE;
+        }
+        if options.keto_enol_taut != 0 {
+            ip.bTautFlags |= TG_FLAG_KETO_ENOL_TAUT as INCHI_MODE;
+        }
+        if options.taut_15_non_ring != 0 {
+            ip.bTautFlags |= TG_FLAG_1_5_TAUT as INCHI_MODE;
+        }
+        for (enabled, flag) in [
+            (options.pt_22_00_taut, TG_FLAG_PT_22_00),
+            (options.pt_16_00_taut, TG_FLAG_PT_16_00),
+            (options.pt_06_00_taut, TG_FLAG_PT_06_00),
+            (options.pt_39_00_taut, TG_FLAG_PT_39_00),
+            (options.pt_13_00_taut, TG_FLAG_PT_13_00),
+            (options.pt_18_00_taut, TG_FLAG_PT_18_00),
+            (options.pointed_edge_stereo, TG_FLAG_POINTED_EDGE_STEREO),
+            (options.add_phosphine_stereo, TG_FLAG_PHOSPHINE_STEREO),
+            (options.add_arsine_stereo, TG_FLAG_ARSINE_STEREO),
+            (options.fix_sp3_bug, TG_FLAG_FIX_SP3_BUG),
+        ] {
+            if enabled != 0 {
+                ip.bTautFlags |= flag as INCHI_MODE;
+            }
+        }
+        ip.bTautFlagsDone = 0;
+        if options.fix_fb2 != 0 {
+            ip.bTautFlags |=
+                (TG_FLAG_FIX_ISO_FIXEDH_BUG | TG_FLAG_FIX_TERM_H_CHRG_BUG) as INCHI_MODE;
+            ip.bINChIOutputOptions |= INCHI_OUT_FIX_TRANSPOSITION_CHARGE_BUG as i32;
+        }
+        if ip.nInputType == tagInputType_INPUT_NONE {
+            ip.nInputType = tagInputType_INPUT_MOLFILE;
+        }
+        if ip.nMode & REQ_MODE_STEREO as INCHI_MODE == 0 {
+            ip.nMode &= !(REQ_MODE_DIFF_UU_STEREO as INCHI_MODE);
+            ip.nMode &= !((REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) as INCHI_MODE);
+        }
+        if options.std_format != 0 {
+            ip.bINChIOutputOptions |= INCHI_OUT_STDINCHI as i32;
+        }
+        ip.bCalcInChIHash = if options.hash_key == 0 {
+            tagInChIHashCalc_INCHIHASH_NONE as i32
+        } else if options.hash_xtra1 != 0 && options.hash_xtra2 != 0 {
+            tagInChIHashCalc_INCHIHASH_KEY_XTRA1_XTRA2 as i32
+        } else if options.hash_xtra1 != 0 {
+            tagInChIHashCalc_INCHIHASH_KEY_XTRA1 as i32
+        } else if options.hash_xtra2 != 0 {
+            tagInChIHashCalc_INCHIHASH_KEY_XTRA2 as i32
+        } else {
+            tagInChIHashCalc_INCHIHASH_KEY as i32
         };
-    if b_output_molfile_only != 0 {
-        b_output_style &= !((INCHI_OUT_PLAIN_TEXT
-            | INCHI_OUT_PLAIN_TEXT_COMMENTS
-            | INCHI_OUT_TABBED_OUTPUT) as i32);
-        if b_output_molfile_dt != 0 {
-            ip.bINChIOutputOptions |= INCHI_OUT_SDFILE_ATOMS_DT as i32;
-        }
-        if b_output_molfile_split != 0 {
-            ip.bINChIOutputOptions |= INCHI_OUT_SDFILE_SPLIT as i32;
-        }
-    }
-    ip.bINChIOutputOptions |= b_output_style;
-    ip.bNoStructLabels = options.no_struct_labels;
-    if options.forced_chiral_flag != 0 {
-        ip.bChiralFlag = options.forced_chiral_flag;
     }
 
-    ip.bTautFlags = (TG_FLAG_TEST_TAUT__ATOMS
-        | TG_FLAG_DISCONNECT_SALTS
-        | TG_FLAG_TEST_TAUT__SALTS
-        | TG_FLAG_MOVE_POS_CHARGES
-        | TG_FLAG_TEST_TAUT2_SALTS
-        | TG_FLAG_MERGE_TAUT_SALTS
-        | TG_FLAG_DISCONNECT_COORD
-        | TG_FLAG_VARIABLE_PROTONS
-        | TG_FLAG_HARD_ADD_REM_PROTONS) as INCHI_MODE;
-    if options.reconnect_coord != 0 {
-        ip.bTautFlags |= TG_FLAG_RECONNECT_COORD as INCHI_MODE;
-    }
-    if options.keto_enol_taut != 0 {
-        ip.bTautFlags |= TG_FLAG_KETO_ENOL_TAUT as INCHI_MODE;
-    }
-    if options.taut_15_non_ring != 0 {
-        ip.bTautFlags |= TG_FLAG_1_5_TAUT as INCHI_MODE;
-    }
-    for (enabled, flag) in [
-        (options.pt_22_00_taut, TG_FLAG_PT_22_00),
-        (options.pt_16_00_taut, TG_FLAG_PT_16_00),
-        (options.pt_06_00_taut, TG_FLAG_PT_06_00),
-        (options.pt_39_00_taut, TG_FLAG_PT_39_00),
-        (options.pt_13_00_taut, TG_FLAG_PT_13_00),
-        (options.pt_18_00_taut, TG_FLAG_PT_18_00),
-        (options.pointed_edge_stereo, TG_FLAG_POINTED_EDGE_STEREO),
-        (options.add_phosphine_stereo, TG_FLAG_PHOSPHINE_STEREO),
-        (options.add_arsine_stereo, TG_FLAG_ARSINE_STEREO),
-        (options.fix_sp3_bug, TG_FLAG_FIX_SP3_BUG),
-    ] {
-        if enabled != 0 {
-            ip.bTautFlags |= flag as INCHI_MODE;
-        }
-    }
-    ip.bTautFlagsDone = 0;
-    if options.fix_fb2 != 0 {
-        ip.bTautFlags |= (TG_FLAG_FIX_ISO_FIXEDH_BUG | TG_FLAG_FIX_TERM_H_CHRG_BUG) as INCHI_MODE;
-        ip.bINChIOutputOptions |= INCHI_OUT_FIX_TRANSPOSITION_CHARGE_BUG as i32;
-    }
-    if ip.nInputType == tagInputType_INPUT_NONE {
-        ip.nInputType = tagInputType_INPUT_MOLFILE;
-    }
-    if ip.nMode & REQ_MODE_STEREO as INCHI_MODE == 0 {
-        ip.nMode &= !(REQ_MODE_DIFF_UU_STEREO as INCHI_MODE);
-        ip.nMode &= !((REQ_MODE_SB_IGN_ALL_UU | REQ_MODE_SC_IGN_ALL_UU) as INCHI_MODE);
-    }
-    if options.std_format != 0 {
-        ip.bINChIOutputOptions |= INCHI_OUT_STDINCHI as i32;
-    }
-    ip.bCalcInChIHash = if options.hash_key == 0 {
-        tagInChIHashCalc_INCHIHASH_NONE as i32
-    } else if options.hash_xtra1 != 0 && options.hash_xtra2 != 0 {
-        tagInChIHashCalc_INCHIHASH_KEY_XTRA1_XTRA2 as i32
-    } else if options.hash_xtra1 != 0 {
-        tagInChIHashCalc_INCHIHASH_KEY_XTRA1 as i32
-    } else if options.hash_xtra2 != 0 {
-        tagInChIHashCalc_INCHIHASH_KEY_XTRA2 as i32
-    } else {
-        tagInChIHashCalc_INCHIHASH_KEY as i32
-    };
     if options.hash_key == 0 && (options.hash_xtra1 != 0 || options.hash_xtra2 != 0) {
         eprint_call(
             heap,
             log_file.as_deref_mut(),
             "Hash extension(s) not generated: InChIKey not requested",
-            Vec::new(),
+            [],
         )?;
     }
-    ip.bLargeMolecules = options.large_molecules;
-    ip.bLooseTSACheck = options.loose_tsa_check;
-    ip.bNPZz = options.np_zz;
-    ip.bStereoAtZz = options.stereo_at_zz;
-    ip.bNoWarnings = options.no_warnings;
-    ip.bMergeHash = options.merge_hash;
-    ip.bHideInChI = options.hide_inchi;
-    ip.bPolymers = options.polymers;
-    ip.bFoldPolymerSRU = options.fold_polymer_sru;
-    ip.bFrameShiftScheme = options.frame_shift_scheme;
-    ip.bINChIOutputOptions2 = options.inchi_output_options2;
+    {
+        let ip = ip.get_mut(heap)?;
+        ip.bLargeMolecules = options.large_molecules;
+        ip.bLooseTSACheck = options.loose_tsa_check;
+        ip.bNPZz = options.np_zz;
+        ip.bStereoAtZz = options.stereo_at_zz;
+        ip.bNoWarnings = options.no_warnings;
+        ip.bMergeHash = options.merge_hash;
+        ip.bHideInChI = options.hide_inchi;
+        ip.bPolymers = options.polymers;
+        ip.bFoldPolymerSRU = options.fold_polymer_sru;
+        ip.bFrameShiftScheme = options.frame_shift_scheme;
+        ip.bINChIOutputOptions2 = options.inchi_output_options2;
+    }
     Ok(0)
 }
 
-enum PrintArgument {
+enum PrintArgument<'a> {
     Signed(i64),
-    Text(&'static str),
-    Bytes(Vec<i8>),
+    Text(&'a str),
+    Bytes(&'a [i8]),
+    SourceBytes(SourceConstPointer<i8>),
 }
 
-fn eprint_call(
+fn parameter_print_arguments<'a, const N: usize>(
+    arguments: &'a [PrintArgument<'a>; N],
+) -> (
+    [SourceFormatArgument; N],
+    [Option<crate::source::base::ichi_io::SourceFormat<'a>>; N],
+) {
+    use crate::source::base::ichi_io::SourceFormat;
+    // INCHI source ichiparm.c2303..2310:
+    // INCHI✔️❗:             inchi_ios_eprint(log_file, "  %s%s%s%sStereo ON\n",
+    // INCHI✔️❗:                 (nMode & REQ_MODE_NOEQ_STEREO) ? "Slow " : "",
+    // INCHI✔️❗:                 (nMode & REQ_MODE_REDNDNT_STEREO) ? "Redund. " : "",
+    // INCHI✔️❗:                 (nMode & REQ_MODE_NO_ALT_SBONDS) ? "No AltBond " : "",
+    // INCHI✔️❗:
+    // INCHI✔️❗:                 (nMode & REQ_MODE_RACEMIC_STEREO) ? "Racemic " :
+    // INCHI✔️❗:                 (nMode & REQ_MODE_RELATIVE_STEREO) ? "Relative " :
+    // INCHI✔️❗:                 (nMode & REQ_MODE_CHIR_FLG_STEREO) ? "Chiral Flag " : "Absolute ");
+    // INCHI✔️❗: Preserve argument slots and borrow reached strings directly.
+    // Exact call-site arity supplies stack storage, including zero and ten;
+    // no arbitrary cap, arena registration, NUL preflight or owned string.
+    // O(N) descriptor setup/O(N) stack, no allocation/copy/clone. Descriptor
+    // and cursor constants versus native variadic ABI remain OPEN in
+    // INCHI-PERF-PARAMETER-PRINT-STAGING; whole printer costs are independent.
+    let mut values = [const { SourceFormatArgument::Signed(0) }; N];
+    let mut strings = [None; N];
+    for (index, argument) in arguments.iter().enumerate() {
+        match argument {
+            PrintArgument::Signed(value) => values[index] = SourceFormatArgument::Signed(*value),
+            PrintArgument::SourceBytes(pointer) => {
+                values[index] = SourceFormatArgument::Bytes(*pointer);
+            }
+            PrintArgument::Text(value) => strings[index] = Some(SourceFormat::Text(value)),
+            PrintArgument::Bytes(value) => strings[index] = Some(SourceFormat::Bytes(value)),
+        }
+    }
+    (values, strings)
+}
+
+fn eprint_call<const N: usize>(
     heap: &mut SourceHeap,
     log_file: Option<&mut INCHI_IOSTREAM>,
     format: &str,
-    arguments: Vec<PrintArgument>,
+    arguments: [PrintArgument<'_>; N],
 ) -> Result<i32, SourceHeapError> {
+    // INCHI✔️❗: int inchi_ios_eprint(INCHI_IOSTREAM* ios, const char* lpszFormat, ...)
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     int ret = 0, ret2 = 0;
+    // INCHI✔️❗:     va_list argList;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (!ios)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         return -1;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (ios->type == INCHI_IOS_TYPE_STRING)
+    // INCHI✔️❗:         /* was #if ( defined(TARGET_API_LIB) || defined(INCHI_STANDALONE_EXE) ) */
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         /* output to string buffer */
+    // INCHI✔️❗:         int max_len, nAddLength = 0;
+    // INCHI✔️❗:         char* new_str = NULL;
+    // INCHI✔️❗:
+    // INCHI✔️❗:         my_va_start(argList, lpszFormat);
+    // INCHI✔️❗:         max_len = GetMaxPrintfLength(lpszFormat, argList);
+    // INCHI✔️❗:         va_end(argList);
+    // INCHI✔️❗:
+    // INCHI✔️❗:         if (max_len >= 0)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             if (ios->s.nAllocatedLength - ios->s.nUsedLength <= max_len)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 /* enlarge output string */
+    // INCHI✔️❗:                 nAddLength = inchi_max(INCHI_ADD_STR_LEN, max_len);
+    // INCHI✔️❗:                 new_str = (char*)inchi_calloc((long long)ios->s.nAllocatedLength + (long long)nAddLength, sizeof(new_str[0])); /* djb-rwth: cast operators added */
+    // INCHI✔️❗:                 if (new_str)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     if (ios->s.pStr)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         if (ios->s.nUsedLength > 0)
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             memcpy(new_str, ios->s.pStr, sizeof(new_str[0]) * ios->s.nUsedLength);
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         inchi_free(ios->s.pStr);
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     ios->s.pStr = new_str;
+    // INCHI✔️❗:                     ios->s.nAllocatedLength += nAddLength;
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 else
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     return -1; /* failed */
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:
+    // INCHI✔️❗:             /* output */
+    // INCHI✔️❗:             my_va_start(argList, lpszFormat);
+    // INCHI✔️❗:             ret = vsprintf(ios->s.pStr + ios->s.nUsedLength, lpszFormat, argList);
+    // INCHI✔️❗:             va_end(argList);
+    // INCHI✔️❗:             if (ret >= 0)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 ios->s.nUsedLength += ret;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             return ret;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         return -1;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     else if (ios->type == INCHI_IOS_TYPE_FILE)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         if (ios->f)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             /* output to plain file */
+    // INCHI✔️❗:             my_va_start(argList, lpszFormat);
+    // INCHI✔️❗:             ret = inchi_vfprintf(ios->f, lpszFormat, argList);
+    // INCHI✔️❗:             va_end(argList);
+    // INCHI✔️❗:             /*  No output to stderr from within dll or GUI program */
+    // INCHI✔️❗: #if ( !defined(TARGET_API_LIB) && !defined(TARGET_LIB_FOR_WINCHI) )
+    // INCHI✔️❗:             if (ios->f != stderr)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 my_va_start(argList, lpszFormat);
+    // INCHI✔️❗:                 ret2 = vfprintf(stderr, lpszFormat, argList);
+    // INCHI✔️❗:                 va_end(argList);
+    // INCHI✔️❗:             }
+    // INCHI✔️❗: #endif
+    // INCHI✔️❗:             return ret ? ret : ret2;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     /* no output */
+    // INCHI✔️❗:     return 0;
+    // INCHI✔️❗: }
+    // INCHI✔️❗: Native variadic arguments borrow source string storage.
+    // None returns before inspecting arguments; canonical printer retains
+    // independent estimate/render cursors, errors and publication/FILE state.
+    // No argument or text heap staging; full cost remains independently OPEN.
     let Some(log_file) = log_file else {
         return Ok(-1);
     };
-    let format_pointer = heap.allocate_model_storage(
-        format
-            .bytes()
-            .chain(std::iter::once(0))
-            .map(|byte| byte as i8)
-            .collect(),
-    )?;
-    let mut text_pointers = Vec::new();
-    let mut source_arguments = Vec::with_capacity(arguments.len());
-    for argument in arguments {
-        match argument {
-            PrintArgument::Signed(value) => {
-                source_arguments.push(SourceFormatArgument::Signed(value));
-            }
-            PrintArgument::Text(value) => {
-                let pointer = heap.allocate_model_storage(
-                    value
-                        .bytes()
-                        .chain(std::iter::once(0))
-                        .map(|byte| byte as i8)
-                        .collect(),
-                )?;
-                text_pointers.push(pointer);
-                source_arguments.push(SourceFormatArgument::Bytes(pointer.as_const()));
-            }
-            PrintArgument::Bytes(value) => {
-                let pointer = heap.allocate_model_storage(value)?;
-                text_pointers.push(pointer);
-                source_arguments.push(SourceFormatArgument::Bytes(pointer.as_const()));
-            }
-        }
-    }
-    let result = inchi_ios_eprint(
+    let (values, strings) = parameter_print_arguments(&arguments);
+    crate::source::base::ichi_io::inchi_ios_eprint_format_strings(
         heap,
         Some(log_file),
-        format_pointer.as_const(),
-        &SourceVaList {
-            arguments: source_arguments,
+        crate::source::base::ichi_io::SourceFormat::Text(format),
+        &crate::source::base::ichi_io::SourcePrintArguments {
+            arguments: &values,
             position: 0,
         },
-    );
-    heap.free(format_pointer)?;
-    for pointer in text_pointers {
-        heap.free(pointer)?;
-    }
-    result
+        &strings,
+    )
 }
 
-fn nodisplay_call(
+fn nodisplay_call<const N: usize>(
     heap: &mut SourceHeap,
     stream: &mut INCHI_IOSTREAM,
     stdout: SourceMutPointer<FILE>,
     format: &str,
-    arguments: Vec<PrintArgument>,
+    arguments: [PrintArgument<'_>; N],
 ) -> Result<i32, SourceHeapError> {
-    let format_pointer = heap.allocate_model_storage(
-        format
-            .bytes()
-            .chain(std::iter::once(0))
-            .map(|byte| byte as i8)
-            .collect(),
-    )?;
-    let mut text_pointers = Vec::new();
-    let mut source_arguments = Vec::with_capacity(arguments.len());
-    for argument in arguments {
-        match argument {
-            PrintArgument::Signed(value) => {
-                source_arguments.push(SourceFormatArgument::Signed(value));
-            }
-            PrintArgument::Text(value) => {
-                let pointer = heap.allocate_model_storage(
-                    value
-                        .bytes()
-                        .chain(std::iter::once(0))
-                        .map(|byte| byte as i8)
-                        .collect(),
-                )?;
-                text_pointers.push(pointer);
-                source_arguments.push(SourceFormatArgument::Bytes(pointer.as_const()));
-            }
-            PrintArgument::Bytes(value) => {
-                let pointer = heap.allocate_model_storage(value)?;
-                text_pointers.push(pointer);
-                source_arguments.push(SourceFormatArgument::Bytes(pointer.as_const()));
-            }
-        }
-    }
-    let result = inchi_ios_print_nodisplay(
+    // INCHI✔️❗: int inchi_ios_print_nodisplay( INCHI_IOSTREAM * ios,
+    // INCHI✔️❗:                                const char* lpszFormat,
+    // INCHI✔️❗:                                ... )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     va_list argList;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (!ios)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         return -1;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (ios->type == INCHI_IOS_TYPE_STRING)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         /* output to string buffer */
+    // INCHI✔️❗:         int ret = 0, max_len;
+    // INCHI✔️❗:         my_va_start( argList, lpszFormat );
+    // INCHI✔️❗:         max_len = GetMaxPrintfLength( lpszFormat, argList );
+    // INCHI✔️❗:         va_end( argList );
+    // INCHI✔️❗:         if (max_len >= 0)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             /* djb-rwth: fixing oss-fuzz issue #30163 */
+    // INCHI✔️❗:             int  nAddLength = inchi_max(INCHI_ADD_STR_LEN, max_len);
+    // INCHI✔️❗:             long long new_str_len = (long long)ios->s.nAllocatedLength + (long long)nAddLength;
+    // INCHI✔️❗:             if (ios->s.nAllocatedLength - ios->s.nUsedLength <= max_len)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 /* enlarge output string */
+    // INCHI✔️❗:                 char* new_str = (char*)inchi_calloc(new_str_len, sizeof(new_str[0])); /* djb-rwth: cast operators added */
+    // INCHI✔️❗:                 if (new_str)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     if (ios->s.pStr)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         if (ios->s.nUsedLength > 0)
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             memcpy( new_str, ios->s.pStr, sizeof( new_str[0] )*ios->s.nUsedLength );
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                         inchi_free( ios->s.pStr );
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                     ios->s.pStr = new_str;
+    // INCHI✔️❗:                     ios->s.nAllocatedLength += nAddLength;
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 else
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     return -1; /* failed */
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             /* output */
+    // INCHI✔️❗:             /* djb-rwth: fixing oss-fuzz issue #67676 */
+    // INCHI✔️❗:             my_va_start(argList, lpszFormat);
+    // INCHI✔️❗:             ret = vsprintf(ios->s.pStr + ios->s.nUsedLength, lpszFormat, argList); /* djb-rwth: not using vsnprintf due to variable length argument; fixing GHI #71 */
+    // INCHI✔️❗:             va_end(argList);
+    // INCHI✔️❗:             if (ret >= 0)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 ios->s.nUsedLength += ret;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             return ret;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         return -1;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     else if (ios->type == INCHI_IOS_TYPE_FILE)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         my_va_start( argList, lpszFormat );
+    // INCHI✔️❗:         inchi_print_nodisplay( ios->f, lpszFormat, argList );
+    // INCHI✔️❗:         va_end( argList );
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     /* no output */
+    // INCHI✔️❗:     return 0;
+    // INCHI✔️❗: }
+    // INCHI✔️❗: Borrow the exact source argument slots with fixed stack
+    // storage; canonical nodisplay owns STRING/FILE behavior and failures.
+    // No argument/text allocation, byte snapshot or cleanup lifetime.
+    // Stack descriptors/checked cursor whole-call cost stays independently OPEN.
+    let (values, strings) = parameter_print_arguments(&arguments);
+    crate::source::base::ichi_io::inchi_ios_print_nodisplay_format_strings(
         heap,
         Some(stream),
         stdout,
-        format_pointer.as_const(),
-        &SourceVaList {
-            arguments: source_arguments,
+        crate::source::base::ichi_io::SourceFormat::Text(format),
+        &crate::source::base::ichi_io::SourcePrintArguments {
+            arguments: &values,
             position: 0,
         },
-    );
-    heap.free(format_pointer)?;
-    for pointer in text_pointers {
-        heap.free(pointer)?;
-    }
-    result
-}
-
-fn c_text(value: &str) -> Vec<i8> {
-    value
-        .bytes()
-        .chain(std::iter::once(0))
-        .map(|byte| byte as i8)
-        .collect()
+        &strings,
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3797,7 +4272,7 @@ pub(crate) fn PrintInputParms(
                 heap,
                 log_file.as_deref_mut(),
                 $format,
-                vec![$($argument),*],
+                [$($argument),*],
             )?;
         }};
     }
@@ -3828,9 +4303,13 @@ pub(crate) fn PrintInputParms(
         }
         print!("  Do not add H\n");
     }
-    if ip.bRenumber == 1 {
-        print!("\nGenerate InChI upon random atom renumbering\n\n");
-    }
+    // INCHI source mode.h69..82:
+    // INCHI✔️✔️: #if defined(TARGET_EXE_STANDALONE)
+    // INCHI✔️✔️: /* Uncomment the next line to perform atom ordering/renumbering tests (internal only) */
+    // INCHI✔️✔️: #define RENUMBER_ATOMS_AND_RECALC_V106 1
+    // INCHI✔️✔️: TARGET_API_LIB excludes the renumber diagnostic in the
+    // native frame above. Do not inspect/reset bRenumber or emit text here.
+    // Zero work/storage reproduces the compiled-out native branch.
     if ip.bUnderivatize == 1 {
         print!("\nConvert input structure to derivative precursor before InChI calculation\n\n");
     } else if ip.bUnderivatize == 3 {
@@ -4042,7 +4521,7 @@ pub(crate) fn PrintInputParms(
     if ip.szSdfDataHeader[0] != 0 && ip.nInputType != tagInputType_INPUT_SDFILE {
         print!(
             "  SDfile data header: \"%s\"\n",
-            PrintArgument::Bytes(ip.szSdfDataHeader.to_vec())
+            PrintArgument::Bytes(&ip.szSdfDataHeader)
         );
     }
 
@@ -4119,11 +4598,15 @@ pub(crate) fn PrintInputParms(
             PrintArgument::Signed(ip.last_struct_number)
         );
     }
-    let problem_path_present = pointer_starts_with_nonzero(heap, ip.path[3])?;
-    if ip.bSaveWarningStructsAsProblem != 0 && problem_path_present {
+    // INCHI✔️❗: Match both native short-circuit predicates independently;
+    // neither path is inspected when its corresponding flag is zero. The
+    // second read remains after the first print, preserving error/state order.
+    // O(1), no scan/allocation/clone; arena-resolution constants versus native
+    // pointer access remain OPEN in INCHI-PERF-PARAMETER-REPORT-PATH.
+    if ip.bSaveWarningStructsAsProblem != 0 && pointer_starts_with_nonzero(heap, ip.path[3])? {
         print!("Saving warning structures into the problem file\n");
     }
-    if ip.bSaveAllGoodStructsAsProblem != 0 && problem_path_present {
+    if ip.bSaveAllGoodStructsAsProblem != 0 && pointer_starts_with_nonzero(heap, ip.path[3])? {
         print!("Saving only all good structures into the problem file\n");
     }
     if ip.bINChIOutputOptions2 & INCHI_OUT_INCHI_GEN_ERROR as i32 != 0 {
@@ -4365,7 +4848,7 @@ pub(crate) fn HelpCommandLineParms(
     };
     macro_rules! print {
         ($format:expr $(, $argument:expr)* $(,)?) => {{
-            nodisplay_call(heap, stream, stdout, $format, vec![$($argument),*])?;
+            nodisplay_call(heap, stream, stdout, $format, [$($argument),*])?;
         }};
     }
 
@@ -4374,10 +4857,10 @@ pub(crate) fn HelpCommandLineParms(
         PrintArgument::Text("InChI version 1, Software 1.07.5 (API Library)"),
         PrintArgument::Text(""),
         PrintArgument::Text("Linux 64-bit"),
-        PrintArgument::Bytes(c_text(build.compiler)),
+        PrintArgument::Text(build.compiler),
         PrintArgument::Text(""),
-        PrintArgument::Bytes(c_text(build.date)),
-        PrintArgument::Bytes(c_text(build.time)),
+        PrintArgument::Text(build.date),
+        PrintArgument::Text(build.time),
         PrintArgument::Text(""),
         PrintArgument::Signed(i64::from(INCHI_OPTION_PREFX)),
         PrintArgument::Signed(i64::from(INCHI_OPTION_PREFX)),
@@ -4581,12 +5064,13 @@ mod tests {
             ..INPUT_PARMS::default()
         };
         let mut display_time = 99_u64;
+        let sdf_parameter_owner_ip = heap.allocate_model_storage(vec![ip]).unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut ip,
+                sdf_parameter_owner_ip,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4594,6 +5078,7 @@ mod tests {
             ),
             Ok(0)
         );
+        let ip = &heap.slice(sdf_parameter_owner_ip.as_const()).unwrap()[0];
         assert_eq!(display_time, 0);
         assert_eq!(ip.nInputType, tagInputType_INPUT_MOLFILE);
         assert_eq!(ip.nMode, default_mode);
@@ -4611,12 +5096,13 @@ mod tests {
 
         let argv = allocate_argv(&mut heap, &["inchi", "sample"]);
         let mut paths = INPUT_PARMS::default();
+        let sdf_parameter_owner_paths = heap.allocate_model_storage(vec![paths]).unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut paths,
+                sdf_parameter_owner_paths,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4624,6 +5110,7 @@ mod tests {
             ),
             Ok(0)
         );
+        let paths = &heap.slice(sdf_parameter_owner_paths.as_const()).unwrap()[0];
         assert_eq!(paths.num_paths, 4);
         assert_eq!(
             paths.path.map(|pointer| path_text(&heap, pointer)),
@@ -4637,12 +5124,13 @@ mod tests {
 
         let argv = allocate_argv(&mut heap, &["inchi", "NUL"]);
         let mut nul_paths = INPUT_PARMS::default();
+        let sdf_parameter_owner_nul_paths = heap.allocate_model_storage(vec![nul_paths]).unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut nul_paths,
+                sdf_parameter_owner_nul_paths,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4650,6 +5138,9 @@ mod tests {
             ),
             Ok(0)
         );
+        let nul_paths = &heap
+            .slice(sdf_parameter_owner_nul_paths.as_const())
+            .unwrap()[0];
         assert!(nul_paths.path[0].is_null());
         assert_eq!(
             path_text(&heap, nul_paths.path[1]).as_deref(),
@@ -4672,12 +5163,13 @@ mod tests {
             ],
         );
         let mut sdf = INPUT_PARMS::default();
+        let sdf_parameter_owner_sdf = heap.allocate_model_storage(vec![sdf]).unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut sdf,
+                sdf_parameter_owner_sdf,
                 sdf_value,
                 &mut display_time,
                 0,
@@ -4685,6 +5177,7 @@ mod tests {
             ),
             Ok(0)
         );
+        let sdf = &heap.slice(sdf_parameter_owner_sdf.as_const()).unwrap()[0];
         assert_eq!(sdf.nInputType, tagInputType_INPUT_SDFILE);
         assert_eq!(&sdf.szSdfDataHeader[..3], &[b'I' as i8, b'D' as i8, 0]);
         assert_eq!(
@@ -4718,12 +5211,13 @@ mod tests {
         let mut log = string_stream();
         let mut timeout = INPUT_PARMS::default();
         heap.set_source_errno(0);
+        let sdf_parameter_owner_timeout = heap.allocate_model_storage(vec![timeout]).unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut timeout,
+                sdf_parameter_owner_timeout,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4731,6 +5225,7 @@ mod tests {
             ),
             Ok(0)
         );
+        let timeout = &heap.slice(sdf_parameter_owner_timeout.as_const()).unwrap()[0];
         assert_eq!(timeout.msec_MaxTime, 1250);
         let messages = output(&heap, &log);
         assert!(messages.contains("may have been modified"));
@@ -4740,12 +5235,15 @@ mod tests {
         let argv = allocate_argv(&mut heap, &["inchi", "-W0x1.8p1"]);
         let mut hexadecimal_timeout = INPUT_PARMS::default();
         heap.set_source_errno(0);
+        let sdf_parameter_owner_hexadecimal_timeout = heap
+            .allocate_model_storage(vec![hexadecimal_timeout])
+            .unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut hexadecimal_timeout,
+                sdf_parameter_owner_hexadecimal_timeout,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4753,17 +5251,23 @@ mod tests {
             ),
             Ok(0)
         );
+        let hexadecimal_timeout = &heap
+            .slice(sdf_parameter_owner_hexadecimal_timeout.as_const())
+            .unwrap()[0];
         assert_eq!(hexadecimal_timeout.msec_MaxTime, 3000);
 
         let argv = allocate_argv(&mut heap, &["inchi", "-W2"]);
         let mut stale_errno_timeout = INPUT_PARMS::default();
         heap.set_source_errno(34);
+        let sdf_parameter_owner_stale_errno_timeout = heap
+            .allocate_model_storage(vec![stale_errno_timeout])
+            .unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut stale_errno_timeout,
+                sdf_parameter_owner_stale_errno_timeout,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4771,6 +5275,9 @@ mod tests {
             ),
             Ok(0)
         );
+        let stale_errno_timeout = &heap
+            .slice(sdf_parameter_owner_stale_errno_timeout.as_const())
+            .unwrap()[0];
         assert_eq!(stale_errno_timeout.msec_MaxTime, 0);
 
         let argv = allocate_argv(
@@ -4780,12 +5287,13 @@ mod tests {
         let mut conversion_log = string_stream();
         let mut conversion = INPUT_PARMS::default();
         heap.set_source_errno(0);
+        let sdf_parameter_owner_conversion = heap.allocate_model_storage(vec![conversion]).unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut conversion,
+                sdf_parameter_owner_conversion,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4793,6 +5301,9 @@ mod tests {
             ),
             Ok(0)
         );
+        let conversion = &heap
+            .slice(sdf_parameter_owner_conversion.as_const())
+            .unwrap()[0];
         assert_eq!(conversion.nInputType, tagInputType_INPUT_INCHI);
         assert_ne!(
             conversion.bReadInChIOptions & READ_INCHI_OUTPUT_INCHI as i32,
@@ -4815,12 +5326,13 @@ mod tests {
             let argv = allocate_argv(&mut heap, &arguments);
             let mut early_log = string_stream();
             let mut early = INPUT_PARMS::default();
+            let sdf_parameter_owner_early = heap.allocate_model_storage(vec![early]).unwrap();
             assert_eq!(
                 ReadCommandLineParms(
                     &mut heap,
                     argv.len() as i32,
                     &argv,
-                    &mut early,
+                    sdf_parameter_owner_early,
                     SourceMutPointer::null(),
                     &mut display_time,
                     1,
@@ -4846,12 +5358,13 @@ mod tests {
         );
         let mut common_log = string_stream();
         let mut common = INPUT_PARMS::default();
+        let sdf_parameter_owner_common = heap.allocate_model_storage(vec![common]).unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut common,
+                sdf_parameter_owner_common,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4859,6 +5372,7 @@ mod tests {
             ),
             Ok(0)
         );
+        let common = &heap.slice(sdf_parameter_owner_common.as_const()).unwrap()[0];
         assert_ne!(common.bTautFlags & TG_FLAG_PT_22_00 as u64, 0);
         assert_ne!(common.bTautFlags & TG_FLAG_KETO_ENOL_TAUT as u64, 0);
         assert_ne!(common.bTautFlags & TG_FLAG_RECONNECT_COORD as u64, 0);
@@ -4871,12 +5385,15 @@ mod tests {
         let argv = allocate_argv(&mut heap, &["inchi", "lost"]);
         let mut allocation_failure = INPUT_PARMS::default();
         heap.fail_after_allocations(0);
+        let sdf_parameter_owner_allocation_failure = heap
+            .allocate_model_storage(vec![allocation_failure])
+            .unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 argv.len() as i32,
                 &argv,
-                &mut allocation_failure,
+                sdf_parameter_owner_allocation_failure,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4884,17 +5401,21 @@ mod tests {
             ),
             Ok(0)
         );
+        let allocation_failure = &heap
+            .slice(sdf_parameter_owner_allocation_failure.as_const())
+            .unwrap()[0];
         assert_eq!(allocation_failure.num_paths, 1);
         assert!(allocation_failure.path[0].is_null());
 
         let argv = allocate_argv(&mut heap, &["inchi"]);
         let mut bounds = INPUT_PARMS::default();
+        let sdf_parameter_owner_bounds = heap.allocate_model_storage(vec![bounds]).unwrap();
         assert_eq!(
             ReadCommandLineParms(
                 &mut heap,
                 2,
                 &argv,
-                &mut bounds,
+                sdf_parameter_owner_bounds,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -4910,7 +5431,7 @@ mod tests {
                 &mut heap,
                 2,
                 &[argv[0], unterminated.as_const()],
-                &mut bounds,
+                sdf_parameter_owner_bounds,
                 SourceMutPointer::null(),
                 &mut display_time,
                 1,
@@ -5302,9 +5823,10 @@ mod tests {
             Ok(0)
         );
         let rich_output = output(&heap, &rich_stream);
+        // mode.h69..82: this diagnostic is excluded from TARGET_API_LIB.
+        assert!(!rich_output.contains("Generate InChI upon random atom renumbering"));
         for expected in [
             "Both ends of wedge point to stereocenters",
-            "Generate InChI upon random atom renumbering",
             "Convert input structure to derivative precursor",
             "Slow Redund. No AltBond Racemic Stereo ON",
             "Min. stereobond ring size: 3",

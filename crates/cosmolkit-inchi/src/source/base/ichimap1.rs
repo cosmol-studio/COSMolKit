@@ -479,12 +479,17 @@ pub(crate) fn SetUseAtomForStereo(
         let used = used
             .get_mut(..count)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let atoms = heap.slice(at)?;
-        let atoms = atoms
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❗: Source memset precedes all reached atom reads.
+        // O(num_atoms), O(1), no allocation; checked-access cost remains OPEN.
         used.fill(0);
-        for (index, atom) in atoms.iter().enumerate() {
+        if count == 0 {
+            return Ok(());
+        }
+        let atoms = heap.slice(at)?;
+        for index in 0..count {
+            let atom = atoms
+                .get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if atom.parity != 0 {
                 let mut stereo_count = 0_usize;
                 while stereo_count < MAX_NUM_STEREO_BONDS as usize
@@ -656,36 +661,32 @@ pub(crate) fn bUniqueAtNbrFromMappingRank(
     */
     // END INCHI C FUNCTION: bUniqueAtNbrFromMappingRank
 
+    // INCHI✔️❗: Read order[r] before ranks, then short-circuit before r-1.
+    // O(1) time/storage, no allocation; safe arena/Result cost remains OPEN.
+    let r = i32::from(nAtRank) - 1;
     let stack = heap.slice(pRankStack.as_const())?;
-    let ranks = *stack.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
     let order = *stack.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let ranks = heap.slice(ranks.as_const())?;
-    let order = heap.slice(order.as_const())?;
-    let r = i32::from(nAtRank).wrapping_sub(1);
-    let r_index = usize::try_from(r).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = *order
-        .get(r_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let atom = *heap.element_signed(order.as_const(), r)?;
+    let ranks_pointer = *stack.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let ranks = heap.slice(ranks_pointer.as_const())?;
     let atom_rank = *ranks
         .get(usize::from(atom))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let unique_from_previous = if r == 0 {
-        true
-    } else {
-        let previous_atom = *order
-            .get(r_index - 1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        nAtRank
-            != *ranks
+    if nAtRank != atom_rank {
+        return Ok(0);
+    }
+    if r != 0 {
+        let previous_atom = *heap.element_signed(order.as_const(), r - 1)?;
+        if nAtRank
+            == *ranks
                 .get(usize::from(previous_atom))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
-    };
-    if nAtRank == atom_rank && unique_from_previous {
-        *nAtNumber = atom;
-        Ok(1)
-    } else {
-        Ok(0)
+        {
+            return Ok(0);
+        }
     }
+    *nAtNumber = atom;
+    Ok(1)
 }
 
 #[allow(non_snake_case)]
@@ -863,23 +864,34 @@ pub(crate) fn All_SC_Same(
     */
     // END INCHI C FUNCTION: All_SC_Same
 
+    // INCHI✔️❗: native mapping reads are admitted only on reached rank/atom branches;
+    // rank zero preserves the source signed preceding-word subscript.
+    // Complexity: unchanged mapping loops, O(1) cached borrowed views, no allocation
+    // or cloning; safe bounds/cache branches and whole-call cost remain OPEN C096.
+
     let canon_order = heap.slice(nAtomNumberCanonFrom)?;
-    let canon_index = i32::from(canon_rank1).wrapping_sub(1);
-    let n1 = *canon_order
-        .get(usize::try_from(canon_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let n1 = if canon_rank1 == 0 {
+        *heap.element_signed(nAtomNumberCanonFrom, -1)?
+    } else {
+        *canon_order
+            .get(usize::from(canon_rank1) - 1)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+    };
     let stack1 = heap.slice(pRankStack1.as_const())?;
     let rank1_pointer = *stack1.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
     let rank1 = heap.slice(rank1_pointer.as_const())?;
     let r1 = *rank1
         .get(usize::from(n1))
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if r1 == 0 {
+        return Ok(0);
+    }
     let stack2 = heap.slice(pRankStack2.as_const())?;
     let rank2_pointer = *stack2.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
     let order2_pointer = *stack2.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let rank2 = heap.slice(rank2_pointer.as_const())?;
     let order2 = heap.slice(order2_pointer.as_const())?;
-    let atoms = heap.slice(at)?;
+    let mut atoms_view: Option<&[sp_ATOM]> = None;
 
     let iMax1 = i32::from(r1);
     let mut bFound = 0_i32;
@@ -897,6 +909,14 @@ pub(crate) fn All_SC_Same(
         {
             break;
         }
+        let atoms = match atoms_view {
+            Some(view) => view,
+            None => {
+                let view = heap.slice(at)?;
+                atoms_view = Some(view);
+                view
+            }
+        };
         let atom = atoms
             .get(usize::from(s1))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1015,6 +1035,11 @@ pub(crate) fn Next_SC_At_CanonRank2(
     */
     // END INCHI C FUNCTION: Next_SC_At_CanonRank2
 
+    // INCHI✔️❗: native mapping reads are admitted only on reached rank/atom branches;
+    // rank zero preserves the source signed preceding-word subscript.
+    // Complexity: unchanged mapping loops, O(1) cached borrowed views, no allocation
+    // or cloning; safe bounds/cache branches and whole-call cost remain OPEN C096.
+
     let mut canon_rank1_inp = *canon_rank1;
     if canon_rank1_inp < *canon_rank1_min {
         canon_rank1_inp = *canon_rank1_min;
@@ -1031,27 +1056,51 @@ pub(crate) fn Next_SC_At_CanonRank2(
         let stack1 = heap.slice(pRankStack1.as_const())?;
         let rank1_pointer = *stack1.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
         let rank1 = heap.slice(rank1_pointer.as_const())?;
-        let stack2 = heap.slice(pRankStack2.as_const())?;
-        let rank2_pointer = *stack2.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let order2_pointer = *stack2.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let rank2 = heap.slice(rank2_pointer.as_const())?;
-        let order2 = heap.slice(order2_pointer.as_const())?;
-        let used = heap.slice(bAtomUsedForStereo)?;
+        let mut target_views: Option<(&[AT_RANK], &[AT_RANK])> = None;
+        let mut used_view: Option<&[i8]> = None;
+        let mut negative_canon_word: Option<AT_RANK> = None;
 
         while i32::from(cr1) <= num_atoms {
-            let canon_index = i32::from(cr1).wrapping_sub(1);
-            let n1 = *canon_order
-                .get(
-                    usize::try_from(canon_index)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let n1 = if cr1 == 0 {
+                match negative_canon_word {
+                    Some(word) => word,
+                    None => {
+                        let word = *heap.element_signed(nAtomNumberCanonFrom, -1)?;
+                        negative_canon_word = Some(word);
+                        word
+                    }
+                }
+            } else {
+                *canon_order
+                    .get(usize::from(cr1) - 1)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            };
             let r1 = *rank1
                 .get(usize::from(n1))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let iMax1 = i32::from(r1);
             let mut i1 = 1_i32;
             while i1 <= iMax1 {
+                let (rank2, order2) = match target_views {
+                    Some(views) => views,
+                    None => {
+                        let stack2 = heap.slice(pRankStack2.as_const())?;
+                        let order2 = heap.slice(
+                            stack2
+                                .get(1)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                                .as_const(),
+                        )?;
+                        let rank2 = heap.slice(
+                            stack2
+                                .first()
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                                .as_const(),
+                        )?;
+                        target_views = Some((rank2, order2));
+                        (rank2, order2)
+                    }
+                };
                 let order_index = iMax1.wrapping_sub(i1);
                 let s1 = *order2
                     .get(
@@ -1066,6 +1115,14 @@ pub(crate) fn Next_SC_At_CanonRank2(
                 {
                     break;
                 }
+                let used = match used_view {
+                    Some(view) => view,
+                    None => {
+                        let view = heap.slice(bAtomUsedForStereo)?;
+                        used_view = Some(view);
+                        view
+                    }
+                };
                 if *used
                     .get(usize::from(s1))
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -1434,6 +1491,11 @@ pub(crate) fn Next_SB_At_CanonRanks2(
     */
     // END INCHI C FUNCTION: Next_SB_At_CanonRanks2
 
+    // INCHI✔️❗: native mapping reads are admitted only on reached rank/atom branches;
+    // rank zero preserves the source signed preceding-word subscript.
+    // Complexity: unchanged mapping loops, O(1) cached borrowed views, no allocation
+    // or cloning; safe bounds/cache branches and whole-call cost remain OPEN C096.
+
     let mut canon_rank1_inp = *canon_rank1;
     let mut canon_rank2_inp = *canon_rank2;
     if canon_rank1_inp < *canon_rank1_min
@@ -1446,53 +1508,65 @@ pub(crate) fn Next_SB_At_CanonRanks2(
         canon_rank2_inp = 0;
     }
 
+    if i32::from(canon_rank1_inp) > num_atoms {
+        return Ok(0);
+    }
+    let atom_from_canon = heap.slice(nAtomNumberCanonFrom)?;
     let stack1 = heap.slice(pRankStack1.as_const())?;
-    let stack2 = heap.slice(pRankStack2.as_const())?;
     let rank1 = heap.slice(
         stack1
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .as_const(),
     )?;
-    let order1 = heap.slice(
-        stack1
-            .get(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
-    let rank2 = heap.slice(
-        stack2
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
-    let order2 = heap.slice(
-        stack2
-            .get(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
-    let canon_from = heap.slice(nCanonRankFrom)?;
-    let atom_from_canon = heap.slice(nAtomNumberCanonFrom)?;
-    let atoms = heap.slice(at)?;
-    let used = heap.slice(bAtomUsedForStereo)?;
+    let mut target_views: Option<(&[AT_RANK], &[AT_RANK])> = None;
+    let mut order1_view: Option<&[AT_RANK]> = None;
+    let mut canon_from_view: Option<&[AT_RANK]> = None;
+    let mut atoms_view: Option<&[sp_ATOM]> = None;
+    let mut used_view: Option<&[i8]> = None;
+    let mut negative_canon_word: Option<AT_RANK> = None;
 
     let mut cr1 = canon_rank1_inp;
     let mut cr2 = num_atoms as AT_RANK;
     while i32::from(cr1) <= num_atoms {
         cr2 = cr1;
-        let n1 = usize::from(
+        let n1 = usize::from(if cr1 == 0 {
+            match negative_canon_word {
+                Some(word) => word,
+                None => {
+                    let word = *heap.element_signed(nAtomNumberCanonFrom, -1)?;
+                    negative_canon_word = Some(word);
+                    word
+                }
+            }
+        } else {
             *atom_from_canon
-                .get(
-                    usize::from(cr1)
-                        .checked_sub(1)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+                .get(usize::from(cr1) - 1)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        });
         let r1 = *rank1.get(n1).ok_or(SourceHeapError::PointerOutOfBounds)?;
         let i_max1 = usize::from(r1);
         for i1_count in 1..=i_max1 {
+            let (rank2, order2) = match target_views {
+                Some(views) => views,
+                None => {
+                    let stack2 = heap.slice(pRankStack2.as_const())?;
+                    let order2 = heap.slice(
+                        stack2
+                            .get(1)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            .as_const(),
+                    )?;
+                    let rank2 = heap.slice(
+                        stack2
+                            .first()
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            .as_const(),
+                    )?;
+                    target_views = Some((rank2, order2));
+                    (rank2, order2)
+                }
+            };
             let s1 = usize::from(
                 *order2
                     .get(i_max1 - i1_count)
@@ -1501,10 +1575,26 @@ pub(crate) fn Next_SB_At_CanonRanks2(
             if *rank2.get(s1).ok_or(SourceHeapError::PointerOutOfBounds)? != r1 {
                 break;
             }
+            let used = match used_view {
+                Some(view) => view,
+                None => {
+                    let view = heap.slice(bAtomUsedForStereo)?;
+                    used_view = Some(view);
+                    view
+                }
+            };
             let used_s1 = *used.get(s1).ok_or(SourceHeapError::PointerOutOfBounds)?;
             if used_s1 == 0 || i32::from(used_s1) >= STEREO_AT_MARK as i32 {
                 continue;
             }
+            let atoms = match atoms_view {
+                Some(view) => view,
+                None => {
+                    let view = heap.slice(at)?;
+                    atoms_view = Some(view);
+                    view
+                }
+            };
             for k in 0..MAX_NUM_STEREO_BONDS as usize {
                 let neighbor = atoms
                     .get(s1)
@@ -1532,6 +1622,19 @@ pub(crate) fn Next_SB_At_CanonRanks2(
                 let r2 = *rank2.get(s2).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let i_max2 = usize::from(r2);
                 for i2_count in 1..=i_max2 {
+                    let order1 = match order1_view {
+                        Some(view) => view,
+                        None => {
+                            let view = heap.slice(
+                                stack1
+                                    .get(1)
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                                    .as_const(),
+                            )?;
+                            order1_view = Some(view);
+                            view
+                        }
+                    };
                     let n2 = usize::from(
                         *order1
                             .get(i_max2 - i2_count)
@@ -1592,6 +1695,14 @@ pub(crate) fn Next_SB_At_CanonRanks2(
                         }
                     }
                     if m < valence {
+                        let canon_from = match canon_from_view {
+                            Some(view) => view,
+                            None => {
+                                let view = heap.slice(nCanonRankFrom)?;
+                                canon_from_view = Some(view);
+                                view
+                            }
+                        };
                         let candidate = *canon_from
                             .get(n2)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1759,11 +1870,43 @@ pub(crate) fn All_SB_Same(
     */
     // END INCHI C FUNCTION: All_SB_Same
 
+    // INCHI✔️❗: native mapping reads are admitted only on reached rank/atom branches;
+    // rank zero preserves the source signed preceding-word subscript.
+    // Complexity: unchanged mapping loops, O(1) cached borrowed views, no allocation
+    // or cloning; safe bounds/cache branches and whole-call cost remain OPEN C096.
+
+    let canon_from = heap.slice(nAtomNumberCanonFrom)?;
+    let mut n1 = usize::from(if canon_rank1 == 0 {
+        *heap.element_signed(nAtomNumberCanonFrom, -1)?
+    } else {
+        *canon_from
+            .get(usize::from(canon_rank1) - 1)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+    });
+    let n2 = usize::from(if canon_rank2 == 0 {
+        *heap.element_signed(nAtomNumberCanonFrom, -1)?
+    } else {
+        *canon_from
+            .get(usize::from(canon_rank2) - 1)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+    });
     let stack1 = heap.slice(pRankStack1.as_const())?;
-    let stack2 = heap.slice(pRankStack2.as_const())?;
     let rank1 = heap.slice(
         stack1
             .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .as_const(),
+    )?;
+    let r1 = *rank1.get(n1).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let r2 = *rank1.get(n2).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let i_max1 = usize::from(r1);
+    if r1 == 0 {
+        return Ok(-1);
+    }
+    let stack2 = heap.slice(pRankStack2.as_const())?;
+    let order2 = heap.slice(
+        stack2
+            .get(1)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .as_const(),
     )?;
@@ -1773,34 +1916,8 @@ pub(crate) fn All_SB_Same(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .as_const(),
     )?;
-    let order2 = heap.slice(
-        stack2
-            .get(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .as_const(),
-    )?;
-    let canon_from = heap.slice(nAtomNumberCanonFrom)?;
-    let atoms = heap.slice(at)?;
-
-    let canon1 = usize::from(canon_rank1)
-        .checked_sub(1)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let canon2 = usize::from(canon_rank2)
-        .checked_sub(1)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let mut n1 = usize::from(
-        *canon_from
-            .get(canon1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    );
-    let n2 = usize::from(
-        *canon_from
-            .get(canon2)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-    );
-    let r1 = *rank1.get(n1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let r2 = *rank1.get(n2).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let i_max1 = usize::from(r1);
+    let mut atoms: &[sp_ATOM] = &[];
+    let mut atoms_loaded = false;
 
     let mut mapped_s1 = 0_usize;
     let mut mapped_s2 = 0_usize;
@@ -1818,6 +1935,10 @@ pub(crate) fn All_SB_Same(
             != r1
         {
             break;
+        }
+        if !atoms_loaded {
+            atoms = heap.slice(at)?;
+            atoms_loaded = true;
         }
         mapped_s1 = candidate;
         mapped_s2 = 0;
@@ -1916,8 +2037,8 @@ pub(crate) fn All_SB_Same(
             break;
         }
         let atom1 = atoms.get(i1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let valence =
-            usize::try_from(atom1.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let valence = usize::try_from(atom1.valence.max(0))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         for k in 0..valence {
             n1 = usize::from(
                 *atom1
@@ -2329,15 +2450,17 @@ pub(crate) fn CompareLinCtStereoCarb(
             let num = usize::try_from(num).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let first = heap.slice(LinearCTStereoCarb1)?;
             let second = heap.slice(LinearCTStereoCarb2)?;
-            if first.len() < num || second.len() < num {
-                return Err(SourceHeapError::PointerOutOfBounds);
-            }
+            // INCHI✔️❗: stop at the first differing reached record, without
+            // requiring unused later records. O(reached records)/O(1), no copies
+            // or allocation; safe-load hot-path cost remains OPEN.
             for i in 0..num {
-                let mut ret = i32::from(first[i].at_num) - i32::from(second[i].at_num);
+                let first = first.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let second = second.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let mut ret = i32::from(first.at_num) - i32::from(second.at_num);
                 if ret != 0 {
                     return Ok(ret);
                 }
-                ret = i32::from(first[i].parity) - i32::from(second[i].parity);
+                ret = i32::from(first.parity) - i32::from(second.parity);
                 if ret != 0 {
                     return Ok(ret);
                 }
@@ -2415,19 +2538,21 @@ pub(crate) fn CompareLinCtStereoDble(
             let num = usize::try_from(num).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             let first = heap.slice(LinearCTStereoDble1)?;
             let second = heap.slice(LinearCTStereoDble2)?;
-            if first.len() < num || second.len() < num {
-                return Err(SourceHeapError::PointerOutOfBounds);
-            }
+            // INCHI✔️❗: stop at the first differing reached record, without
+            // requiring unused later records. O(reached records)/O(1), no copies
+            // or allocation; safe-load hot-path cost remains OPEN.
             for i in 0..num {
-                let mut ret = i32::from(first[i].at_num1) - i32::from(second[i].at_num1);
+                let first = first.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let second = second.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let mut ret = i32::from(first.at_num1) - i32::from(second.at_num1);
                 if ret != 0 {
                     return Ok(ret);
                 }
-                ret = i32::from(first[i].at_num2) - i32::from(second[i].at_num2);
+                ret = i32::from(first.at_num2) - i32::from(second.at_num2);
                 if ret != 0 {
                     return Ok(ret);
                 }
-                ret = i32::from(first[i].parity) - i32::from(second[i].parity);
+                ret = i32::from(first.parity) - i32::from(second.parity);
                 if ret != 0 {
                     return Ok(ret);
                 }

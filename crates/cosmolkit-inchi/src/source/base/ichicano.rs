@@ -1,3 +1,36 @@
+#[derive(Clone, Copy)]
+pub(crate) enum CanonGroupRead<'a> {
+    Stored(SourceMutPointer<T_GROUP_INFO>),
+    Borrowed(Option<&'a T_GROUP_INFO>),
+}
+
+impl CanonGroupRead<'_> {
+    pub(crate) fn is_null(self) -> bool {
+        match self {
+            Self::Stored(p) => p.is_null(),
+            Self::Borrowed(p) => p.is_none(),
+        }
+    }
+
+    pub(crate) fn get<'a>(
+        &'a self,
+        heap: &'a SourceHeap,
+    ) -> Result<&'a T_GROUP_INFO, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichimak2.c1150 / ichicano.c1050
+        //         pINChI_Aux->nNumRemovedProtons = t_group_info->tni.nNumRemovedProtons;
+        // INCHI✔️❗: Resolve only at a reached field read; typed root metadata
+        // cannot alias endpoint/rank arrays. O(1), no clone/scan/allocation.
+        // INCHI-PERF-CANON-ACTUAL-TARGETS: checked transport remains OPEN.
+        match self {
+            Self::Borrowed(p) => p.ok_or(SourceHeapError::NullPointer),
+            Self::Stored(p) => heap
+                .slice(p.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+        }
+    }
+}
+
 use std::mem::size_of;
 
 use crate::source::base::ichicans::{
@@ -9,9 +42,11 @@ use crate::source::base::ichimap2::{SortedEquInfoToRanks, SortedRanksToEquInfo};
 use crate::source::base::ichimap4::map_stereo_bonds4;
 use crate::source::base::ichisort::{
     CompNeighborsAT_NUMBER, CompNeighborsATNumberContext, CompRank, CompRanksOrd, FreeNeighList,
-    inchi_qsort, insertions_sort,
+    inchi_qsort, insertions_sort, sort_rank_order,
 };
-use crate::source::base::ichitaut::SortTautomerGroupsAndEndpoints;
+use crate::source::base::ichitaut::{
+    SortTautomerGroupsAndEndpoints, sort_tautomer_groups_and_endpoints_optional,
+};
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
     AB_PARITY_UNDF, AB_PARITY_UNKN, AT_FLAG_ISO_H_POINT, AT_ISO_TGROUP, AT_ISOTOPIC, AT_NUMB,
@@ -31,17 +66,7 @@ fn source_copy<T: Clone + 'static>(
     source: SourceConstPointer<T>,
     count: usize,
 ) -> Result<(), SourceHeapError> {
-    heap.with_slice_mut_and_heap(destination, |destination, heap| {
-        let destination = destination
-            .get_mut(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let source = heap
-            .slice(source)?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        destination.clone_from_slice(source);
-        Ok(())
-    })
+    heap.copy_nonoverlapping_prefix(destination, source, count, true)
 }
 
 fn source_returned_error(value: i32) -> bool {
@@ -49,7 +74,7 @@ fn source_returned_error(value: i32) -> bool {
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn InchiClock(clock_result: clock_t) -> clock_t {
+pub(crate) fn InchiClock(clock_result: impl crate::source_types::SourceClock) -> clock_t {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:111 InchiClock
     // INCHI✔❌: static clock_t InchiClock( void )
     // INCHI✔❌: {
@@ -62,14 +87,19 @@ pub(crate) fn InchiClock(clock_result: clock_t) -> clock_t {
     // INCHI✔❌: }
     // END INCHI C FUNCTION: InchiClock
 
-    // clock() is a libc environment boundary. Its clock_t result is injected
-    // explicitly so production code does not replace process CPU time with a
-    // wall-clock heuristic or a native FFI call.
+    // INCHI✔️❗: Sample at the original clock() point, not at caller entry.
+    // Native uses process CPU time; Wasm elapsed time is human-approved.
+    // Original fixed-value inputs and the source -1 -> 0 rule remain.
+    // INCHI-PERF-PLATFORM-CLOCK: O(1), allocation-free sampling; cost OPEN.
+    let clock_result = clock_result.sample();
     if clock_result != -1 { clock_result } else { 0 }
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn InchiTimeGet(tick_end: &mut inchiTime, clock_result: clock_t) {
+pub(crate) fn InchiTimeGet(
+    tick_end: &mut inchiTime,
+    clock_result: impl crate::source_types::SourceClock,
+) {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:146 InchiTimeGet
     // INCHI✔❌: void InchiTimeGet( inchiTime *TickEnd )
     // INCHI✔❌: {
@@ -218,7 +248,7 @@ pub(crate) fn InchiTimeMsecDiff(
 pub(crate) fn InchiTimeElapsed(
     ic: &mut INCHI_CLOCK,
     tick_start: Option<&inchiTime>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> i64 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:223 InchiTimeElapsed
     // INCHI✔❌: long InchiTimeElapsed( INCHI_CLOCK *ic, inchiTime *TickStart )
@@ -284,7 +314,7 @@ pub(crate) fn InchiTimeAddMsec(
 pub(crate) fn bInchiTimeIsOver(
     ic: &mut INCHI_CLOCK,
     tick_start: Option<&inchiTime>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:257 bInchiTimeIsOver
     // INCHI✔❌: int bInchiTimeIsOver( INCHI_CLOCK *ic, inchiTime *TickStart )
@@ -611,13 +641,19 @@ pub(crate) fn GetCanonLengths(
     // END INCHI C FUNCTION: GetCanonLengths
 
     let atom_count = usize::try_from(num_at).unwrap_or(0);
-    let atoms = if atom_count == 0 {
+    // INCHI✔️❗: num_at bounds iteration, not the source at[k-1] access.
+    // Retain the full borrowed allocation for reached neighbors; actual
+    // allocation bounds remain checked. No scan, allocation or clone is added.
+    // O(num_at*MAX_NUM_STEREO_BONDS)/O(1); checked-access constants remain
+    // OPEN in INCHI-PERF-CANON-NEIGHBOR-EXTENT.
+    let atom_storage = if atom_count == 0 {
         &[][..]
     } else {
         heap.slice(at)?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
     };
+    let atoms = atom_storage
+        .get(..atom_count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut n_num_bonds = 0_i32;
     let mut n_num_dbl_bonds_stereo = 0_i32;
     let mut n_num_asym_carb_stereo = 0_i32;
@@ -635,7 +671,7 @@ pub(crate) fn GetCanonLengths(
                 if opposite == 0 {
                     break;
                 }
-                let opposite_atom = atoms
+                let opposite_atom = atom_storage
                     .get(usize::from(opposite - 1))
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 n_stereo_bonds_to_atom =
@@ -871,6 +907,43 @@ pub(crate) fn AllocateCS(
     nMode: crate::source_types::INCHI_MODE,
     pBCN: SourceMutPointer<crate::source_types::BCN>,
 ) -> Result<i32, SourceHeapError> {
+    AllocateCSWithBcnPresence(
+        heap,
+        pCS,
+        num_at,
+        num_at_tg,
+        nLenCT,
+        nLenCTAtOnly,
+        nLenLinearCTStereoDble,
+        nLenLinearCTIsotopicStereoDble,
+        nLenLinearCTStereoCarb,
+        nLenLinearCTIsotopicStereoCarb,
+        nLenLinearCTTautomer,
+        nLenLinearCTIsotopicTautomer,
+        nLenIsotopic,
+        nMode,
+        !pBCN.is_null(),
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn AllocateCSWithBcnPresence(
+    heap: &mut SourceHeap,
+    pCS: &mut CANON_STAT,
+    num_at: i32,
+    num_at_tg: i32,
+    nLenCT: i32,
+    nLenCTAtOnly: i32,
+    nLenLinearCTStereoDble: i32,
+    nLenLinearCTIsotopicStereoDble: i32,
+    nLenLinearCTStereoCarb: i32,
+    nLenLinearCTIsotopicStereoCarb: i32,
+    nLenLinearCTTautomer: i32,
+    nLenLinearCTIsotopicTautomer: i32,
+    nLenIsotopic: i32,
+    nMode: crate::source_types::INCHI_MODE,
+    has_bcn: bool,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:575 AllocateCS
     // INCHI✔️❌: complete source frame follows verbatim.
     /*
@@ -1070,7 +1143,7 @@ pub(crate) fn AllocateCS(
         pCS.nLenLinearCTAtOnly = nLenCTAtOnly;
         calloc_field!(nCanonOrd, AT_RANK, num_at_tg);
         calloc_field!(nSymmRank, AT_RANK, num_at_tg);
-        if !pBCN.is_null() {
+        if has_bcn {
             calloc_field!(nNum_H, i8, num_at);
             calloc_field!(nNum_H_fixed, i8, num_at);
             calloc_field!(nExchgIsoH, i8, num_at);
@@ -1438,6 +1511,205 @@ pub(crate) fn FillTautLinearCT2(
     // INCHI✔️❌:
     // END INCHI C FUNCTION: FillTautLinearCT2
 
+    // The preceding empty historical frame is retained; this is the actual source.
+    // BEGIN INCHI VERBATIM SOURCE: ichicano.c:858..1043 FillTautLinearCT2
+    // INCHI✔️❗: int FillTautLinearCT2( CANON_GLOBALS *pCG,
+    // INCHI✔️❗:                       int num_atoms,
+    // INCHI✔️❗:                       int num_at_tg,
+    // INCHI✔️❗:                       int bIsoTaut,
+    // INCHI✔️❗:                       const AT_RANK *nRank,
+    // INCHI✔️❗:                       const AT_RANK *nAtomNumber,
+    // INCHI✔️❗:                       const AT_RANK *nSymmRank,
+    // INCHI✔️❗:                       const AT_RANK *nRankIso,
+    // INCHI✔️❗:                       const AT_RANK *nAtomNumberIso,
+    // INCHI✔️❗:                       const AT_RANK *nSymmRankIso,
+    // INCHI✔️❗:                       AT_TAUTOMER   *LinearCTTautomer,
+    // INCHI✔️❗:                       int nMaxLenLinearCTTautomer,
+    // INCHI✔️❗:                       int *pnLenLinearCTTautomer,
+    // INCHI✔️❗:                       AT_ISO_TGROUP *LinearCTIsotopicTautomer,
+    // INCHI✔️❗:                       int nMaxLenLinearCTIsotopicTautomer,
+    // INCHI✔️❗:                       int *pnLenLinearCTIsotopicTautomer,
+    // INCHI✔️❗:                       T_GROUP_INFO *t_group_info )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     /* nRank[i]  = Canonical numbers of atoms,.. */
+    // INCHI✔️❗:     /* nAtomNumber[r] = orig. atom number= 0,1,...  for r = nRank-1  */
+    // INCHI✔️❗:     /* nRank[nAtomNumber[r]] = r; r = 0,1,... */
+    // INCHI✔️❗:     /* nAtomNumber[nRank[i]-1] = i; */
+    // INCHI✔️❗:
+    // INCHI✔️❗:     T_GROUP *t_group;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     int      i, j, len = 0, g, offset, max_len = 0, len_iso = 0; /* djb-rwth: removing redundant variable */
+    // INCHI✔️❗:     static const int max_num_num = sizeof( t_group->num ) / sizeof( t_group->num[0] );
+    // INCHI✔️❗:     static const int max_num_iso = sizeof( LinearCTIsotopicTautomer->num ) / sizeof( LinearCTIsotopicTautomer->num[0] ) + T_NUM_NO_ISOTOPIC;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     /****************************************************************************
+    // INCHI✔️❗:
+    // INCHI✔️❗:                    Tautomeric groups 07-22-2002, modified 12-2003
+    // INCHI✔️❗:
+    // INCHI✔️❗:     ****************************************************************************/
+    // INCHI✔️❗:
+    // INCHI✔️❗:     if (num_at_tg > num_atoms && t_group_info && t_group_info->num_t_groups)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         int        num_t_groups = t_group_info->num_t_groups;
+    // INCHI✔️❗:         AT_NUMB   *tGroupNumber = t_group_info->tGroupNumber;
+    // INCHI✔️❗:         AT_NUMB   *tSymmRank = tGroupNumber + TGSO_SYMM_RANK*num_t_groups;  /*  equivalence */
+    // INCHI✔️❗:         AT_NUMB   *tiSymmRank = tGroupNumber + TGSO_SYMM_IRANK*(long long)num_t_groups; /* djb-rwth: cast operator added */
+    // INCHI✔️❗:         AT_NUMB   *tiGroupNumber = tGroupNumber + TGSO_SYMM_IORDER*(long long)num_t_groups; /* djb-rwth: cast operator added */
+    // INCHI✔️❗:         AT_RANK    nOffset = (AT_RANK) num_atoms;
+    // INCHI✔️❗:
+    // INCHI✔️❗:         /*  Fill Canonical ranks and Symmetry Ranks */
+    // INCHI✔️❗:         /* memcpy( tPrevGroupNumber, tGroupNumber, num_t_groups*sizeof(tPrevGroupNumber[0])); */
+    // INCHI✔️❗:         for (i = num_atoms, j = 0; i < num_at_tg; i++, j++)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             /* tPrevGroupNumber[j] = */
+    // INCHI✔️❗:             tGroupNumber[j] = nAtomNumber[i] - nOffset;
+    // INCHI✔️❗:             tSymmRank[j] = nSymmRank[i] - nOffset;
+    // INCHI✔️❗:             if (bIsoTaut)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 tiGroupNumber[j] = nAtomNumberIso[i] - nOffset;
+    // INCHI✔️❗:                 tiSymmRank[j] = nSymmRankIso[i] - nOffset;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:
+    // INCHI✔️❗:         /*  Sort enpoints within each tautomeric group according to the canonical ranks */
+    // INCHI✔️❗:         pCG->m_pn_RankForSort = nRank;
+    // INCHI✔️❗:         for (i = 0; i < num_t_groups; i++)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             inchi_qsort( pCG,
+    // INCHI✔️❗:                          t_group_info->nEndpointAtomNumber + (int) t_group_info->t_group[i].nFirstEndpointAtNoPos,
+    // INCHI✔️❗:                          t_group_info->t_group[i].nNumEndpoints,
+    // INCHI✔️❗:                          sizeof( t_group_info->nEndpointAtomNumber[0] ),
+    // INCHI✔️❗:                          CompRank );
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         /* fill out LinearCTTautomer */
+    // INCHI✔️❗:         if (nMaxLenLinearCTTautomer)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             max_len = T_GROUP_HDR_LEN * t_group_info->num_t_groups + t_group_info->nNumEndpoints + 1;
+    // INCHI✔️❗:             if (max_len > nMaxLenLinearCTTautomer)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 return CT_OVERFLOW;  /*   <BRKPT> */
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:
+    // INCHI✔️❗:         /****************************************************************
+    // INCHI✔️❗:          * tautomer group format (#: is an offset)
+    // INCHI✔️❗:          ****************************************************************
+    // INCHI✔️❗:          *             HEADER (T_GROUP_HDR_LEN=3+3iso)
+    // INCHI✔️❗:          * 0:       N = number of endpoints   ( t_group->nNumEndpoints )
+    // INCHI✔️❗:          * 1:       number of mobile groups   ( t_group->num[0] )
+    // INCHI✔️❗:          * 2:       number of neg. charges    ( t_group->num[1] )  {note: T_NUM_NO_ISOTOPIC=2}
+    // INCHI✔️❗:          *             ENDPOINT RANKS
+    // INCHI✔️❗:          * 3..N+2:  sorted tautomer group endpoint ranks; the sorting order is in
+    // INCHI✔️❗:          *          t_group_info->nEndpointAtomNumber[t_group->nFirstEndpointAtNoPos+j], j=0..N-1
+    // INCHI✔️❗:          *
+    // INCHI✔️❗:          * End mark : N==0
+    // INCHI✔️❗:          ****************************************************************/
+    // INCHI✔️❗:         /* num_num = t_group_info->bIgnoreIsotopic? T_NUM_NO_ISOTOPIC : max_num_num; */
+    // INCHI✔️❗:         /* num_num = max_num_num;   always include isotopic info; ignore it at the CT comparison step. */ /* djb-rwth: removing redundant code */
+    // INCHI✔️❗:         for (i = 0; i < t_group_info->num_t_groups; i++)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             g = tGroupNumber[i]; /*  ith tautomeric group number in canonical order */
+    // INCHI✔️❗:             t_group = t_group_info->t_group + g;
+    // INCHI✔️❗:             /*******************************************************
+    // INCHI✔️❗:              * Tautomer non-isotopic part: LinearCTTautomer
+    // INCHI✔️❗:              *******************************************************/
+    // INCHI✔️❗:             /*  check length */
+    // INCHI✔️❗:             if (CHECK_OVERFLOW( len + T_GROUP_HDR_LEN + t_group->nNumEndpoints, max_len ))
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 return CT_OVERFLOW;  /*   <BRKPT> */
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:
+    // INCHI✔️❗:             /*  t_group header: number of endpoints */
+    // INCHI✔️❗:             LinearCTTautomer[len++] = t_group->nNumEndpoints;
+    // INCHI✔️❗:             /*  t_group header: */
+    // INCHI✔️❗:             /*  (a) number of mobile groups in the t_group (number of H + number of (-) ) and */
+    // INCHI✔️❗:             /*  (b) number of mobile negative charges (-) in the t_group */
+    // INCHI✔️❗:             for (j = 0; j < T_NUM_NO_ISOTOPIC; j++)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 LinearCTTautomer[len++] = t_group->num[j];
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             /*  t_group endpoint ranks link the group to the tautomeric endpoint atoms in the structure */
+    // INCHI✔️❗:             /*  according to their ranks */
+    // INCHI✔️❗:             for (j = 0, offset = t_group->nFirstEndpointAtNoPos; j < t_group->nNumEndpoints; j++)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 LinearCTTautomer[len++] = nRank[(int) t_group_info->nEndpointAtomNumber[offset + j]];
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         if (nMaxLenLinearCTTautomer)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             LinearCTTautomer[len++] = 0; /*  or CT_INITVALUE ??? */
+    // INCHI✔️❗:             if (len != max_len)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 len = -len; /*  program error */ /*   <BRKPT> */
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             else if (*pnLenLinearCTTautomer && *pnLenLinearCTTautomer != len)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 return CT_LEN_MISMATCH;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             else
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 *pnLenLinearCTTautomer = len;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         else
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             *pnLenLinearCTTautomer = 0;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:
+    // INCHI✔️❗:         /******************************************************************
+    // INCHI✔️❗:          * Isotopic Tautomeric mobile groups part: LinearCTIsotopicTautomer
+    // INCHI✔️❗:          ******************************************************************/
+    // INCHI✔️❗:         if (nMaxLenLinearCTIsotopicTautomer && !t_group_info->nNumIsotopicEndpoints)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             for (i = 0; i < t_group_info->num_t_groups; i++)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 g = tiGroupNumber[i]; /*  ith tautomeric group number in canonical order */
+    // INCHI✔️❗:                 t_group = t_group_info->t_group + g;
+    // INCHI✔️❗:                 /*  find if mobile hydrogens are isotopic */
+    // INCHI✔️❗:                 if (!t_group->iWeight)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     continue; /* no isotopic H */
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 if (CHECK_OVERFLOW( len_iso, nMaxLenLinearCTIsotopicTautomer ))
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     return CT_OVERFLOW;  /*   <BRKPT> */
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 for (j = T_NUM_NO_ISOTOPIC; j < max_num_num && j < max_num_iso; j++)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                      /*  num_T, num_D, num_1H */
+    // INCHI✔️❗:                     LinearCTIsotopicTautomer[len_iso].num[j - T_NUM_NO_ISOTOPIC] = t_group->num[j];
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:                 /*  link to tautomer group LinearCTTautomer[i]:  */
+    // INCHI✔️❗:                 LinearCTIsotopicTautomer[len_iso++].tgroup_num = (AT_NUMB) ( i + 1 ); /*  t_group isotopic rank */
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         if (nMaxLenLinearCTIsotopicTautomer)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             if (*pnLenLinearCTIsotopicTautomer && *pnLenLinearCTIsotopicTautomer != len_iso)
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 return CT_LEN_MISMATCH;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             *pnLenLinearCTIsotopicTautomer = len_iso;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:         else
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             *pnLenLinearCTIsotopicTautomer = 0;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     return len;
+    // INCHI✔️❗: }
+    // END INCHI VERBATIM SOURCE: FillTautLinearCT2
+    // INCHI✔️❗: Signed pseudoatom/work offsets retain valid interior pointers;
+    // each work store precedes the next rank load, including ushort aliases.
+    // Canonical qsort swaps live endpoint storage, so aliased ranks observe
+    // every swap. Different typed group records cannot alias rank/output rows;
+    // only consumed fixed fields are copied, with no allocation or whole clone.
+    // Average O(sum(Eg log Eg)), worst O(sum(Eg squared)); fixed sort stack,
+    // O(1) additional scratch. No endpoint Vec/copy/writeback. Checked arena
+    // loads and stores may cost more than native addresses; net cost remains
+    // INCHI-PERF-TAUT-CT-LIVE-SORT OPEN, not performance equivalence.
+
     let mut len = 0_i32;
     let Some(info) = t_group_info else {
         return Ok(0);
@@ -1445,83 +1717,56 @@ pub(crate) fn FillTautLinearCT2(
     if num_at_tg <= num_atoms || info.num_t_groups == 0 {
         return Ok(0);
     }
-    let group_count =
-        usize::try_from(info.num_t_groups).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let total_count =
-        usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let group_count = info.num_t_groups;
     let offset = num_atoms as AT_RANK;
-    for (group_index, pseudo_index) in (atom_count..total_count).enumerate() {
+    for (group_index, pseudo_index) in (num_atoms..num_at_tg).enumerate() {
         let group_number = heap
-            .slice(nAtomNumber)?
-            .get(pseudo_index)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .element_signed(nAtomNumber, pseudo_index)?
             .wrapping_sub(offset);
+        *heap.element_signed_mut(info.tGroupNumber, group_index as i32)? = group_number;
         let symmetry = heap
-            .slice(nSymmRank)?
-            .get(pseudo_index)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .element_signed(nSymmRank, pseudo_index)?
             .wrapping_sub(offset);
-        let work = heap.slice_mut(info.tGroupNumber)?;
-        *work
-            .get_mut(group_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)? = group_number;
-        *work
-            .get_mut(TGSO_SYMM_RANK as usize * group_count + group_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)? = symmetry;
+        let symmetry_slot = info
+            .tGroupNumber
+            .offset(i64::from(TGSO_SYMM_RANK) * i64::from(group_count) + group_index as i64)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        *heap.element_signed_mut(symmetry_slot, 0)? = symmetry;
         if bIsoTaut != 0 {
             let iso_group = heap
-                .slice(nAtomNumberIso)?
-                .get(pseudo_index)
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .element_signed(nAtomNumberIso, pseudo_index)?
                 .wrapping_sub(offset);
+            let iso_order_slot = info
+                .tGroupNumber
+                .offset(i64::from(TGSO_SYMM_IORDER) * i64::from(group_count) + group_index as i64)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            *heap.element_signed_mut(iso_order_slot, 0)? = iso_group;
             let iso_symmetry = heap
-                .slice(nSymmRankIso)?
-                .get(pseudo_index)
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .element_signed(nSymmRankIso, pseudo_index)?
                 .wrapping_sub(offset);
-            let work = heap.slice_mut(info.tGroupNumber)?;
-            *work
-                .get_mut(TGSO_SYMM_IORDER as usize * group_count + group_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = iso_group;
-            *work
-                .get_mut(TGSO_SYMM_IRANK as usize * group_count + group_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = iso_symmetry;
+            let iso_symmetry_slot = info
+                .tGroupNumber
+                .offset(i64::from(TGSO_SYMM_IRANK) * i64::from(group_count) + group_index as i64)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            *heap.element_signed_mut(iso_symmetry_slot, 0)? = iso_symmetry;
         }
     }
 
     pCG.m_pn_RankForSort = nRank;
     for group_index in 0..group_count {
-        let group = heap
-            .slice(info.t_group.as_const())?
-            .get(group_index)
-            .cloned()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let start = usize::from(group.nFirstEndpointAtNoPos);
+        let group = heap.element_signed(info.t_group.as_const(), group_index)?;
+        let start = i64::from(group.nFirstEndpointAtNoPos);
         let count = usize::from(group.nNumEndpoints);
-        let mut endpoints = heap
-            .slice(info.nEndpointAtomNumber.as_const())?
-            .get(start..start + count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        inchi_qsort(
-            bytemuck::cast_slice_mut(&mut endpoints),
-            count,
-            size_of::<AT_NUMB>(),
-            &mut |left, right| {
-                CompRank(
-                    heap,
-                    AT_NUMB::from_ne_bytes([left[0], left[1]]),
-                    AT_NUMB::from_ne_bytes([right[0], right[1]]),
-                    pCG,
-                )
-            },
-        )?;
-        heap.slice_mut(info.nEndpointAtomNumber)?[start..start + count].copy_from_slice(&endpoints);
+        // Native qsort does not dereference base or ranks for zero/one entry.
+        if count > 1 {
+            sort_rank_order(
+                heap,
+                info.nEndpointAtomNumber.offset(start)?,
+                count,
+                false,
+                &mut |heap, first, second| CompRank(heap, first, second, pCG),
+            )?;
+        }
     }
 
     let mut max_len = 0_i32;
@@ -1538,29 +1783,29 @@ pub(crate) fn FillTautLinearCT2(
         let group_number = usize::from(
             *heap
                 .slice(info.tGroupNumber.as_const())?
-                .get(canonical_index)
+                .get(canonical_index as usize)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
         let group = heap
             .slice(info.t_group.as_const())?
             .get(group_number)
-            .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let endpoint_count = group.nNumEndpoints;
+        let start = usize::from(group.nFirstEndpointAtNoPos);
+        let numbers = group.num;
         let required = len
             .wrapping_add(T_GROUP_HDR_LEN as i32)
-            .wrapping_add(i32::from(group.nNumEndpoints));
+            .wrapping_add(i32::from(endpoint_count));
         if required >= max_len {
             return Ok(CT_OVERFLOW);
         }
-        let output = heap.slice_mut(LinearCTTautomer)?;
-        output[usize::try_from(len).unwrap()] = group.nNumEndpoints;
+        *heap.element_signed_mut(LinearCTTautomer, len)? = endpoint_count;
         len = len.wrapping_add(1);
-        for value in &group.num[..T_NUM_NO_ISOTOPIC as usize] {
-            output[usize::try_from(len).unwrap()] = *value;
+        for value in &numbers[..T_NUM_NO_ISOTOPIC as usize] {
+            *heap.element_signed_mut(LinearCTTautomer, len)? = *value;
             len = len.wrapping_add(1);
         }
-        let start = usize::from(group.nFirstEndpointAtNoPos);
-        for endpoint_index in 0..usize::from(group.nNumEndpoints) {
+        for endpoint_index in 0..usize::from(endpoint_count) {
             let atom_number = usize::from(
                 *heap
                     .slice(info.nEndpointAtomNumber.as_const())?
@@ -1571,12 +1816,12 @@ pub(crate) fn FillTautLinearCT2(
                 .slice(nRank)?
                 .get(atom_number)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            heap.slice_mut(LinearCTTautomer)?[usize::try_from(len).unwrap()] = rank;
+            *heap.element_signed_mut(LinearCTTautomer, len)? = rank;
             len = len.wrapping_add(1);
         }
     }
     if nMaxLenLinearCTTautomer != 0 {
-        heap.slice_mut(LinearCTTautomer)?[usize::try_from(len).unwrap()] = 0;
+        *heap.element_signed_mut(LinearCTTautomer, len)? = 0;
         len = len.wrapping_add(1);
         if len != max_len {
             len = len.wrapping_neg();
@@ -1595,13 +1840,14 @@ pub(crate) fn FillTautLinearCT2(
             let group_number = usize::from(
                 *heap
                     .slice(info.tGroupNumber.as_const())?
-                    .get(TGSO_SYMM_IORDER as usize * group_count + canonical_index)
+                    .get(
+                        TGSO_SYMM_IORDER as usize * group_count as usize + canonical_index as usize,
+                    )
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             );
             let group = heap
                 .slice(info.t_group.as_const())?
                 .get(group_number)
-                .cloned()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if group.iWeight == 0 {
                 continue;
@@ -1609,12 +1855,14 @@ pub(crate) fn FillTautLinearCT2(
             if len_iso >= nMaxLenLinearCTIsotopicTautomer {
                 return Ok(CT_OVERFLOW);
             }
+            let numbers = group.num;
             let record = heap
                 .slice_mut(LinearCTIsotopicTautomer)?
                 .get_mut(usize::try_from(len_iso).unwrap())
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            for index in T_NUM_NO_ISOTOPIC as usize..group.num.len() {
-                record.num[index - T_NUM_NO_ISOTOPIC as usize] = group.num[index];
+            let max_num_iso = record.num.len() + T_NUM_NO_ISOTOPIC as usize;
+            for index in T_NUM_NO_ISOTOPIC as usize..numbers.len().min(max_num_iso) {
+                record.num[index - T_NUM_NO_ISOTOPIC as usize] = numbers[index];
             }
             record.tgroup_num = (canonical_index as AT_NUMB).wrapping_add(1);
             len_iso = len_iso.wrapping_add(1);
@@ -1675,6 +1923,23 @@ pub(crate) fn UpdateFullLinearCT(
     pCG: &mut CANON_GLOBALS,
     bFirstTime: i32,
 ) -> Result<i32, SourceHeapError> {
+    let group = CanonGroupRead::Stored(pCS.t_group_info);
+    UpdateFullLinearCTWithGroup(heap, num_atoms, num_at_tg, at, nRank, nAtomNumber, pCS, pCG, bFirstTime, group)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn UpdateFullLinearCTWithGroup(
+    heap: &mut SourceHeap,
+    num_atoms: i32,
+    num_at_tg: i32,
+    at: SourceConstPointer<sp_ATOM>,
+    nRank: SourceMutPointer<AT_RANK>,
+    nAtomNumber: SourceMutPointer<AT_RANK>,
+    pCS: &mut CANON_STAT,
+    pCG: &mut CANON_GLOBALS,
+    bFirstTime: i32,
+    group: CanonGroupRead<'_>,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:1050 UpdateFullLinearCT
     // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap accesses add overhead.
     /*
@@ -1692,34 +1957,34 @@ pub(crate) fn UpdateFullLinearCT(
         /* nAtomNumber[r] = orig. atom number= 0,1,...  for r = nRank-1  */
         /* nRank[nAtomNumber[r]] = r; r = 0,1,... */
         /* nAtomNumber[nRank[i]-1] = i; */
-    
+
         AT_NUMB nNeighborNumber[MAXVAL];
         int  i, j, k, num_neigh, rank, bCompare; /*, nRetVal; */
-    
+
         T_GROUP_INFO *t_group_info = NULL;
         T_GROUP      *t_group = NULL;
         AT_NUMB      *nEndpointAtomNumber = NULL;
-    
+
         int  nCTLen = 0, nCTLenAtOnly = 0;
-        
-    
+
+
         AT_NUMB         r_neigh;
         AT_NUMB        *LinearCT = pCS->LinearCT;
-    
+
         /* the following parts of the "name" should be compared */
         /* after the connection table comparison is done */
         /* to avoid wrong difference sign. So, these parts */
         /* go to a separate buffers. */
         /* -- currently not used at all at all -- */
-    
+
     #if CT_ATOMID != CT_ATOMID_DONTINCLUDE
         AT_NUMB          r0_at_type;
     #endif
-    
+
         num_neigh = 0; /* Moved from above 2024-09-01 DT; djb-rwth: num_neigh initialisation added */
-    
+
         bCompare = bFirstTime ? 0 : 1;
-    
+
         if (num_at_tg > num_atoms)
         {
             t_group_info = pCS->t_group_info;
@@ -1730,7 +1995,7 @@ pub(crate) fn UpdateFullLinearCT(
             t_group_info = NULL;
             t_group = NULL;
         }
-    
+
         /**********************************************************************/
         /*                                                                    */
         /*    CYCLE 1: FILL OUT  CONNECTION TABLE(S) FOR ALL ATOMS            */
@@ -1741,7 +2006,7 @@ pub(crate) fn UpdateFullLinearCT(
         for (rank = 1; rank <= num_atoms; rank++)
         {
             i = (int) nAtomNumber[rank - 1];  /* current atom */
-    
+
     #if ( CT_ATOMID == CT_ATOMID_IS_CURRANK )
             r0_at_type = (AT_NUMB) rank; /* current Rank */
     #else
@@ -1754,7 +2019,7 @@ pub(crate) fn UpdateFullLinearCT(
     #endif
     #endif
     #endif
-    
+
             /* add atom to the CT */
     #if ( CT_ATOMID != CT_ATOMID_DONTINCLUDE )
             if (CHECK_OVERFLOW( nCTLen, pCS->nMaxLenLinearCT ))
@@ -1763,11 +2028,11 @@ pub(crate) fn UpdateFullLinearCT(
             }
             COMPARE_WITH_CT( LinearCT, nCTLen, r0_at_type, bCompare );
     #endif
-    
+
             /*******************************************************
                  add neighbors and (if required) bonds to CT
             ********************************************************/
-    
+
             /* sort neighbors */
             num_neigh = at[i].valence;
             for (k = 0; k < num_neigh; k++)
@@ -1777,7 +2042,7 @@ pub(crate) fn UpdateFullLinearCT(
             pCG->m_pNeighborsForSort = at[i].neighbor;
             pCG->m_pn_RankForSort = nRank;
             insertions_sort( pCG, nNeighborNumber, (size_t) num_neigh, sizeof( nNeighborNumber[0] ), CompNeighborsAT_NUMBER );
-    
+
             for (k = 0; k < num_neigh; k++)
             {
                 /* rank = (new current atom Rank) */
@@ -1791,23 +2056,23 @@ pub(crate) fn UpdateFullLinearCT(
                     COMPARE_WITH_CT( LinearCT, nCTLen, r_neigh, bCompare );
                 }
             }
-    
+
             /* add CT row delimiter */
         } /* end of cycle over all atoms. */
-    
+
         nCTLenAtOnly = nCTLen;
-    
+
         /**************************************************************
-    
+
                     Tautomeric groups 07-22-2002
-    
+
         ***************************************************************/
-    
+
         for (rank = num_atoms + 1; rank <= num_at_tg; rank++)
         {
             j = (int) nAtomNumber[rank - 1];  /* current "atom" */
             i = j - num_atoms;             /* current t-group */
-    
+
     #if ( CT_ATOMID == CT_ATOMID_IS_CURRANK )
             r0_at_type = (AT_NUMB) rank; /* current Rank */
     #else
@@ -1820,32 +2085,32 @@ pub(crate) fn UpdateFullLinearCT(
     #endif
     #endif
     #endif
-    
+
             /* add atom to the CT */
     #if ( CT_ATOMID != CT_ATOMID_DONTINCLUDE )
             if (CHECK_OVERFLOW( nCTLen, pCS->nMaxLenLinearCT ))
                 return CT_OVERFLOW;  /*  <BRKPT> */
             COMPARE_WITH_CT( LinearCT, nCTLen, r0_at_type, bCompare );
     #endif
-    
+
             /*******************************************************
                   add neighbors and (if required) bonds to CT
             ********************************************************/
-    
+
             /* sort endpoints */
-            if (t_group_info) 
+            if (t_group_info)
                 nEndpointAtomNumber = t_group_info->nEndpointAtomNumber + (int) t_group[i].nFirstEndpointAtNoPos; /* djb-rwth: fixing a NULL pointer dereference */
             pCG->m_pn_RankForSort = nRank;
             if (t_group + i) /* djb-rwth: ignoring GCC warning */
                 num_neigh = (int)t_group[i].nNumEndpoints;
             insertions_sort( pCG, nEndpointAtomNumber, (size_t) num_neigh, sizeof( nEndpointAtomNumber[0] ), CompRank );
-    
+
             for (k = 0; k < num_neigh; k++)
             {
                 /* rank = (new current atom Rank) */
                 if (nEndpointAtomNumber + k) /* djb-rwth: fixing a NULL pointer dereference; ignoring GCC warning */
                 {
-                    if ((int)(r_neigh = (AT_NUMB)nRank[(int)nEndpointAtomNumber[k]]) CT_NEIGH_SMALLER_THAN rank) 
+                    if ((int)(r_neigh = (AT_NUMB)nRank[(int)nEndpointAtomNumber[k]]) CT_NEIGH_SMALLER_THAN rank)
                     {
                         if (CHECK_OVERFLOW(nCTLen, pCS->nMaxLenLinearCT))
                         {
@@ -1856,13 +2121,13 @@ pub(crate) fn UpdateFullLinearCT(
                 }
             }
         } /* end of cycle over all tautomeric groups. */
-    
+
         /* compare bonds types */
         /* compare elements */
-    
+
         if (LinearCT)
         {
-    
+
             if (pCS->nLenLinearCT)
             {
                 if (pCS->nLenLinearCT != nCTLen)
@@ -1874,7 +2139,7 @@ pub(crate) fn UpdateFullLinearCT(
             {
                 pCS->nLenLinearCT = nCTLen;
             }
-    
+
             if (pCS->nLenLinearCT)
             {
                 if (pCS->nLenLinearCTAtOnly != nCTLenAtOnly)
@@ -1887,12 +2152,12 @@ pub(crate) fn UpdateFullLinearCT(
                 pCS->nLenLinearCTAtOnly = nCTLenAtOnly;
             }
         }
-    
+
         /* Return: 0=> identical CT; -1=> new CT is smaller than the previous one */
         return ( bCompare - 1 );
     }
-    
-    
+
+
     */
     // END INCHI C FUNCTION: UpdateFullLinearCT
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: UpdateFullLinearCT
@@ -1903,40 +2168,23 @@ pub(crate) fn UpdateFullLinearCT(
     // INCHI✔️❌: #define CHECK_OVERFLOW(Len, Maxlen) ((Len) >= (Maxlen))
     // END INCHI ACTIVE MACRO CONFIGURATION: UpdateFullLinearCT
 
-    let atom_count =
-        usize::try_from(num_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let total_count =
-        usize::try_from(num_at_tg).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    if total_count < atom_count {
-        return Err(SourceHeapError::SourceIntegerOverflow);
-    }
+    // INCHI✔️❗: Keep signed source loop limits, including total < atoms;
+    // admit only reached order/atom/group cells. CT checks and stores precede
+    // atom valence reads. No atom snapshot; O(1) extra scratch. Whole checked
+    // heap/sort cost remains OPEN; independent sort-state guards retained.
     let mut ct_length = 0_i32;
     let mut compare = i32::from(bFirstTime == 0);
     let linear_ct = pCS.LinearCT;
     let mut neighbor_numbers = [0_u16; MAXVAL as usize];
-    let t_group_info = if total_count > atom_count {
-        Some(
-            heap.slice(pCS.t_group_info.as_const())?
-                .first()
-                .cloned()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        )
+    let group_handles = if num_at_tg > num_atoms {
+        let info = group.get(heap)?;
+        Some((info.t_group, info.nEndpointAtomNumber))
     } else {
         None
     };
 
-    for rank in 1..=atom_count {
-        let atom_index = usize::from(
-            *heap
-                .slice(nAtomNumber.as_const())?
-                .get(rank - 1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
-        let atom = heap
-            .slice(at)?
-            .get(atom_index)
-            .cloned()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    for rank in 1..=num_atoms {
+        let atom_index = i32::from(*heap.element_signed(nAtomNumber.as_const(), rank - 1)?);
         if let Some(result) = update_full_linear_ct_value(
             heap,
             linear_ct,
@@ -1948,6 +2196,7 @@ pub(crate) fn UpdateFullLinearCT(
             return Ok(result);
         }
 
+        let atom = heap.element_signed(at, atom_index)?;
         let neighbor_count = usize::try_from(i32::from(atom.valence).max(0))
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         if neighbor_count > neighbor_numbers.len() {
@@ -1956,8 +2205,12 @@ pub(crate) fn UpdateFullLinearCT(
         for (index, value) in neighbor_numbers[..neighbor_count].iter_mut().enumerate() {
             *value = index as AT_NUMB;
         }
+        // INCHI✔️❗: Native1147 retains the actual field even at degree0/1.
+        // O(1), no model/copy/allocation; C572 field lookup costs OPEN.
+        pCG.m_pNeighborsForSort = at.neighbor_field(atom_index)?;
         pCG.m_pn_RankForSort = nRank.as_const();
         if neighbor_count > 1 {
+            let neighbors = heap.slice(pCG.m_pNeighborsForSort)?;
             let ranks = heap.slice(nRank.as_const())?;
             let bytes =
                 bytemuck::cast_slice_mut::<AT_NUMB, u8>(&mut neighbor_numbers[..neighbor_count]);
@@ -1979,21 +2232,19 @@ pub(crate) fn UpdateFullLinearCT(
                     CompNeighborsAT_NUMBER(
                         first,
                         second,
-                        CompNeighborsATNumberContext::Slices {
-                            neighbors: &atom.neighbor,
-                            ranks,
-                        },
+                        CompNeighborsATNumberContext::Slices { neighbors, ranks },
                     )
                 },
             )?;
         }
         for &neighbor_order in &neighbor_numbers[..neighbor_count] {
-            let neighbor = atom.neighbor[usize::from(neighbor_order)];
+            let neighbor =
+                heap.element_signed(at, atom_index)?.neighbor[usize::from(neighbor_order)];
             let neighbor_rank = *heap
                 .slice(nRank.as_const())?
                 .get(usize::from(neighbor))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if usize::from(neighbor_rank) < rank
+            if i32::from(neighbor_rank) < rank
                 && let Some(result) = update_full_linear_ct_value(
                     heap,
                     linear_ct,
@@ -2009,15 +2260,13 @@ pub(crate) fn UpdateFullLinearCT(
     }
     let atom_only_length = ct_length;
 
-    for rank in atom_count + 1..=total_count {
-        let pseudo_atom = usize::from(
-            *heap
-                .slice(nAtomNumber.as_const())?
-                .get(rank - 1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+    let first_group_rank = num_atoms
+        .checked_add(1)
+        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+    for rank in first_group_rank..=num_at_tg {
+        let pseudo_atom = i32::from(*heap.element_signed(nAtomNumber.as_const(), rank - 1)?);
         let group_index = pseudo_atom
-            .checked_sub(atom_count)
+            .checked_sub(num_atoms)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if let Some(result) = update_full_linear_ct_value(
             heap,
@@ -2030,43 +2279,22 @@ pub(crate) fn UpdateFullLinearCT(
             return Ok(result);
         }
 
-        let info = t_group_info.as_ref().ok_or(SourceHeapError::NullPointer)?;
-        let group = heap
-            .slice(info.t_group.as_const())?
-            .get(group_index)
-            .cloned()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let (groups, endpoints) = group_handles.ok_or(SourceHeapError::NullPointer)?;
+        let group = heap.element_signed(groups.as_const(), group_index)?;
         let endpoint_count = usize::from(group.nNumEndpoints);
-        let endpoint_pointer = info
-            .nEndpointAtomNumber
-            .offset(i64::from(group.nFirstEndpointAtNoPos))?;
+        let endpoint_pointer = endpoints.offset(i64::from(group.nFirstEndpointAtNoPos))?;
         pCG.m_pn_RankForSort = nRank.as_const();
         if endpoint_count > 1 {
-            heap.with_slice_mut_and_heap(endpoint_pointer, |endpoints, heap| {
-                let endpoints = endpoints
-                    .get_mut(..endpoint_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let bytes = bytemuck::cast_slice_mut::<AT_NUMB, u8>(endpoints);
-                insertions_sort(
-                    bytes,
-                    endpoint_count,
-                    size_of::<AT_NUMB>(),
-                    &mut |first, second| {
-                        let first = AT_NUMB::from_ne_bytes(
-                            first
-                                .try_into()
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        );
-                        let second = AT_NUMB::from_ne_bytes(
-                            second
-                                .try_into()
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        );
-                        CompRank(heap, first, second, pCG)
-                    },
-                )
-                .map(|_| ())
-            })?;
+            // INCHI✔️❗: Source insertions_sort/CompRank reads live rank aliases
+            // after every adjacent swap; keep the allocation in the arena.
+            // O(E²) time/O(1) scratch, no clone/allocation; checked costs OPEN.
+            sort_rank_order(
+                heap,
+                endpoint_pointer,
+                endpoint_count,
+                true,
+                &mut |heap, first, second| CompRank(heap, first, second, pCG),
+            )?;
         }
         for index in 0..endpoint_count {
             let endpoint = heap.slice(endpoint_pointer.as_const())?[index];
@@ -2074,7 +2302,7 @@ pub(crate) fn UpdateFullLinearCT(
                 .slice(nRank.as_const())?
                 .get(usize::from(endpoint))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if usize::from(endpoint_rank) < rank
+            if i32::from(endpoint_rank) < rank
                 && let Some(result) = update_full_linear_ct_value(
                     heap,
                     linear_ct,
@@ -2207,31 +2435,16 @@ pub(crate) fn FixCanonEquivalenceInfo(
     let count = usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     pCG.m_pn_RankForSort = nSymmRank.as_const();
     if count > 1 {
-        heap.with_slice_mut_and_heap(nAtomNumber, |atom_numbers, heap| {
-            let atom_numbers = atom_numbers
-                .get_mut(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let byte_len = count
-                .checked_mul(size_of::<AT_NUMB>())
-                .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-            // AT_NUMB and the comparator's AT_RANK records are the same source uint16_t type.
-            let bytes = unsafe {
-                std::slice::from_raw_parts_mut(atom_numbers.as_mut_ptr().cast::<u8>(), byte_len)
-            };
-            inchi_qsort(bytes, count, size_of::<AT_NUMB>(), &mut |first, second| {
-                let first = AT_RANK::from_ne_bytes(
-                    first
-                        .try_into()
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                );
-                let second = AT_RANK::from_ne_bytes(
-                    second
-                        .try_into()
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                );
-                CompRanksOrd(heap, first, second, pCG)
-            })
-        })?;
+        // INCHI✔️❗: Preserve source qsort partition/comparator order against
+        // live storage, including rank aliases affected by prior swaps.
+        // Average O(N log N), worst O(N²), fixed stack; checked costs OPEN.
+        sort_rank_order(
+            heap,
+            nAtomNumber,
+            count,
+            false,
+            &mut |heap, first, second| CompRanksOrd(heap, first, second, pCG),
+        )?;
     }
 
     let mut bChangeSymmRank = 0_i32;
@@ -2258,17 +2471,7 @@ pub(crate) fn FixCanonEquivalenceInfo(
         current != temporary
     };
     if bChangeCurrRank {
-        heap.with_slice_mut_and_heap(nCurrRank, |current, heap| {
-            let current = current
-                .get_mut(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let temporary = heap
-                .slice(nTempRank.as_const())?
-                .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            current.copy_from_slice(temporary);
-            Ok(())
-        })?;
+        heap.copy_nonoverlapping_prefix(nCurrRank, nTempRank.as_const(), count, true)?;
     }
     if bChangeSymmRank != 0 {
         SortedRanksToEquInfo(heap, nSymmRank, nTempRank, nAtomNumber, num_at_tg)?;
@@ -2284,7 +2487,7 @@ pub(crate) fn FixCanonEquivalenceInfo(
 pub(crate) fn Canon_INChI3(
     heap: &mut SourceHeap,
     ic: &mut INCHI_CLOCK,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
     user_action: Option<fn() -> i32>,
     console_quit: Option<fn() -> i32>,
     num_atoms: i32,
@@ -2294,6 +2497,42 @@ pub(crate) fn Canon_INChI3(
     pCG: &mut CANON_GLOBALS,
     mut nMode: u32,
     bTautFtcn: i32,
+) -> Result<i32, SourceHeapError> {
+    let mut start_time = inchiTime::default();
+    InchiTimeGet(&mut start_time, clock_result);
+    let bcn = heap.slice(pCS.pBCN.as_const())?.first().cloned()
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let ftcn_index = usize::try_from(bTautFtcn).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let ftcn = bcn.ftcn.get(ftcn_index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let group = pCS.t_group_info;
+    if group.is_null() {
+        canon_inchi3_targets(heap, ic, clock_result, user_action, console_quit, num_atoms, num_at_tg, at, pCS, pCG, nMode, bTautFtcn, &bcn, ftcn, None, start_time)
+    } else {
+        heap.with_slice_mut_and_heap_mut(group, |values, heap| {
+            let tgi = values.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
+            canon_inchi3_targets(heap, ic, clock_result, user_action, console_quit, num_atoms, num_at_tg, at, pCS, pCG, nMode, bTautFtcn, &bcn, ftcn, Some(tgi), start_time)
+        })
+    }
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn canon_inchi3_targets(
+    heap: &mut SourceHeap,
+    ic: &mut INCHI_CLOCK,
+    clock_result: impl crate::source_types::SourceClock,
+    user_action: Option<fn() -> i32>,
+    console_quit: Option<fn() -> i32>,
+    num_atoms: i32,
+    num_at_tg: i32,
+    at: SourceMutPointer<sp_ATOM>,
+    pCS: &mut CANON_STAT,
+    pCG: &mut CANON_GLOBALS,
+    mut nMode: u32,
+    bTautFtcn: i32,
+    bcn: &crate::source_types::BCN,
+    ftcn: &crate::source_types::FTCN,
+    mut tgi: Option<&mut T_GROUP_INFO>,
+    start_time: inchiTime,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:1370 Canon_INChI3
     // INCHI✔️❌: complete raw source frame follows verbatim; Rust executes the
@@ -2311,23 +2550,23 @@ pub(crate) fn Canon_INChI3(
                      INCHI_MODE nMode,
                      int bTautFtcn )
     {
-    
+
     /****************************************************************
-    
+
     0.    Initiation, Prepare initial ranks for GetCanonRanking()
-    
+
     I.    Find constitutionally equivalent atoms and possibly canonical numbering
     I.1      Set tautomer=On, stereo=isotopic=Off
     I.2      GetCanonRanking(): Find constitutionally equivalent atoms and possibly canonical numbering
     1.3      Fix canonical equivalence info if needed (if the fix is needed then the numbering is not canonical)
-    
+
     II.   Get final non-isotopic canonical numbering. Simultaneously obtain non-minimal isotopic and stereo CTs
              GetCanonRanking() with pCS->bKeepSymmRank = 1
              FillOutStereoParities() (create initial stereo descriptors)
              save non-isotopic canonicalization final results
              hide isotopic and tautomeric results (for historical reasons only)
-    
-    
+
+
     III.  Find constitutionally equivalent isotopic atoms (for isotopic stereo canonicalization)
     III.1    Allocate more memory
     III.2    fill allocated memory with the initial data
@@ -2335,109 +2574,109 @@ pub(crate) fn Canon_INChI3(
     III.4    Prepare initial isotopic ranks for GetCanonRanking()
     III.5    GetCanonRanking() to Find constitutionally equivalent ISOTOPIC atoms and tautomer groups
     III.6    Fix canonical isotopic equivalence information and derive ranks out of it
-    
+
     IV.      Prepare a second Rank/AtomNumber Stack for mapping.
-    
+
     V.    Optimize isotopic part (optimized)
              map_isotopic_atoms2()
              save isotopic canonical numbering
-    
+
     VI.   Optimize stereo descriptors (optimized)
              map_stereo_bonds4()
-    
-    
+
+
     VII. Optimize isotopic stereo descriptors (optimized)
              SwitchAtomStereoAndIsotopicStereo()
              SetCtToIsotopicStereo()
              FillOutStereoParities()
              SetUseAtomForStereo()
              map_stereo_bonds4()
-    
+
              SwitchAtomStereoAndIsotopicStereo()
              SetCtToNonIsotopicStereo()
-    
-    
-    
-    
+
+
+
+
     *****************************************************************/
-    
+
         int     nRet = 0, i, n;
-    
-    
+
+
         /********************************************************
                   input non-stereo canonical info
          ********************************************************/
         BCN            *pBCN = pCS->pBCN;
         FTCN           *ftcn = pBCN->ftcn + bTautFtcn;
-    
+
         /********************************************************
                   set mode flags
          ********************************************************/
-    
+
         /* tautomeric structure */
         int bTaut = ( num_at_tg > num_atoms ) && pCS->t_group_info && pCS->t_group_info->num_t_groups && pCS->t_group_info->t_group;
-    
+
         /* special case: induced by exchangable isotopic H inequivalence of atoms in formally non-tautomeric structure */
         int bIsoXchgH = pCS->t_group_info && pCS->t_group_info->nNumIsotopicEndpoints > 1 &&
             pCS->t_group_info->nIsotopicEndpointAtomNumber && pCS->t_group_info->nIsotopicEndpointAtomNumber[0] &&
             ( pCS->t_group_info->bTautFlagsDone & ( TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE ) )
             /* && (ftcn->nCanonFlags & CANON_FLAG_ISO_TAUT_DIFF)*/;
         int bHasIsotopicCanonData = ( ftcn->PartitionCtIso.AtNumber && ftcn->PartitionCtIso.Rank && ftcn->nSymmRankCtIso );
-    
+
         /* bHasIsotopicCanonData==0 means
          *       (1) No isotopic atoms in the component OR
          *       (2) the component has only exchangable isotopic H that do not change canonical numbering and equivalence.
          */
         T_GROUP_INFO *t_group_info1 = bTaut ? pCS->t_group_info : NULL;
-    
+
         /*int bIsoXchgH = t_group_info1 && t_group_info1->nNumIsotopicEndpoints && t_group_info1->nIsotopicEndpointAtomNumber;*/
         /* isotopic canonicalization */
         int bCanonIsotopic = bHasIsotopicCanonData && ( nMode & CMODE_ISO ) && ( pCS->LinearCTIsotopic || pCS->LinearCTIsotopicTautomer || bIsoXchgH );
-    
+
         /* stereo canonicalization */
         int bCanonStereo = ( nMode & CMODE_STEREO ) && ( pCS->LinearCTStereoDble || pCS->LinearCTStereoCarb );
-    
+
         /* stereo isotopic canonicalization */
         int bCanonIsoStereo = bHasIsotopicCanonData && ( nMode & CMODE_ISO_STEREO ) && ( pCS->LinearCTIsotopicStereoDble || pCS->LinearCTIsotopicStereoCarb ) && bCanonIsotopic;
         int bIsoTaut = ( bTaut && bCanonIsotopic );
-    
+
         int            bIgnoreIsotopicInputGroups;
         int            bIgnoreIsotopicInputAtoms;
-    
+
         AT_RANK       **pRankStack1 = pBCN->pRankStack;
         int             nRankStackLen = pBCN->nMaxLenRankStack;
         int             num_max = pBCN->num_max;     /* allocation lengths in *pRankStack1[] */
         NEIGH_LIST     *NeighList = ftcn->NeighList;
-    
+
         int             nNumCurrRanks = 0;
         AT_RANK        *nTempRank = NULL;
-    
+
         AT_RANK        *nSymmRank = NULL;
-    
+
         AT_RANK        *nAtomNumber = NULL;
         AT_RANK        *nRank = NULL;
-    
+
         AT_RANK       **pRankStack2 = NULL;
         AT_RANK        *nCanonRankStereo = NULL;
         AT_RANK        *nCanonRankStereoInv = NULL;
         AT_RANK        *nSymmStereo = NULL;
-    
+
         AT_RANK        *nCanonRankIsotopicStereo = NULL;
         AT_RANK        *nCanonRankIsotopicStereoInv = NULL;
-    
+
         CUR_TREE *cur_tree = NULL;
         CUR_TREE CurrentTree;
-    
-    
+
+
         /*AT_ISO_TGROUP  *LinearCTIsotopicTautomer  = NULL; */
-    
-    
+
+
         CANON_STAT   CS2;
         CANON_STAT* pCS2 = &CS2;
-    
+
         inchiTime   ulStartTime, ulEndTime;
         /*=========== Mode Bits (low 8 bits, bit 0 is Least Significant Bit) ===========
-    
+
           Mode      Bits       Description
            '0' c    0          Only one connection table canonicalization
            '1' C    1          Recalculate CT using fixed nSymmRank
@@ -2446,7 +2685,7 @@ pub(crate) fn Canon_INChI3(
            '4' s    1|8        Stereo canonicalization
            '5' S    1|2|4|16   Stereo isotopic canonicalization
            '6' A    1|2|4|8|16 Output All
-    
+
           --- high 8 bits ----
           --- obsolete, only historical interest. ------
           1-2 : 0 => at[i].init_rank from Morgan+NeighList
@@ -2459,11 +2698,11 @@ pub(crate) fn Canon_INChI3(
           5   : 1 => Get Charge/Radical canonical info
         ==================================================================*/
         /*int             nOutputMode = 0;*/ /* obsolete */
-    
-    
+
+
         int bSwitchedAtomToIsotopic = 0;
-    
-    
+
+
         /* vABParityUnknown holds actual value of an internal constant signifying       */
         /* unknown parity: either the same as for undefined parity (default==standard)  */
         /*  or a specific one (non-std; requested by SLUUD switch).                     */
@@ -2473,11 +2712,11 @@ pub(crate) fn Canon_INChI3(
             /* Make labels for unknown and undefined stereo different */
             vABParityUnknown = AB_PARITY_UNKN;
         }
-    
+
         InchiTimeGet( &ulStartTime );
-    
+
         *pCS2 = *pCS;  /* save input information and pointers to allocated memory */
-    
+
         /* Set "ignore isotopic differences in tautomer groups" true */
         if (bTaut)
         {
@@ -2493,12 +2732,12 @@ pub(crate) fn Canon_INChI3(
         bIgnoreIsotopicInputAtoms = pCS->bIgnoreIsotopic;
         /* set "ignore isotopic differences in atoms" true */
         pCS->bIgnoreIsotopic = 1;
-    
-    
+
+
         /* Save non-isotopic and isotopic canonicalization results */
         pCS->nCanonFlags = ftcn->nCanonFlags;
         /* 1. non-isotopic */
-    
+
         /* linear CT, H */
         memcpy(pCS->LinearCT, ftcn->LinearCt, ftcn->nLenLinearCt * sizeof(pCS->LinearCT[0]));
         if (pCS->nNum_H && ftcn->nNumH)
@@ -2517,7 +2756,7 @@ pub(crate) fn Canon_INChI3(
         }
         pCS->nLenLinearCT = ftcn->nLenLinearCt;
         pCS->nLenLinearCTAtOnly = ftcn->nLenLinearCtAtOnly;
-    
+
         /* save non-isotopic atoms equivalence and numbering */
         if (pCS->nSymmRank)
         {
@@ -2536,7 +2775,7 @@ pub(crate) fn Canon_INChI3(
             }
         }
         /* 2. isotopic */
-    
+
         if (bCanonIsotopic)
         {
             /* linear CT, num_H are same as non-isotopic */
@@ -2550,13 +2789,13 @@ pub(crate) fn Canon_INChI3(
                 memcpy(pCS->nCanonOrdIsotopic, ftcn->PartitionCtIso.AtNumber, num_at_tg * sizeof(pCS->nCanonOrdIsotopic[0]));
                 pCS->nLenCanonOrdIsotopic = num_at_tg;
             }
-    
+
             nRet = FillIsotopicAtLinearCT( num_atoms, at,
                                            ftcn->PartitionCtIso.AtNumber,
                                            pCS->LinearCTIsotopic,
                                            pCS->nMaxLenLinearCTIsotopic,
                                            &pCS->nLenLinearCTIsotopic );
-    
+
             if (RETURNED_ERROR( nRet ))
             {
                 goto exit_function;
@@ -2572,20 +2811,20 @@ pub(crate) fn Canon_INChI3(
             pCS->nMaxLenLinearCTIsotopic = 0;
             pCS->nMaxLenLinearCTIsotopicTautomer = 0;
         }
-    
+
         /* fill out tautomeric groups, isotopic and non-isotopic tautomeric CT and t_group_info1->tGroupNumber */
         if (bTaut)
         {
             bIsoTaut = bIsoTaut && ftcn->PartitionCtIso.Rank &&
                 ftcn->PartitionCtIso.AtNumber && ftcn->nSymmRankCtIso;
-    
+
             nRet = FillTautLinearCT2( pCG, num_atoms, num_at_tg, bIsoTaut,
                     ftcn->PartitionCt.Rank, ftcn->PartitionCt.AtNumber, ftcn->nSymmRankCt,
                     ftcn->PartitionCtIso.Rank, ftcn->PartitionCtIso.AtNumber, ftcn->nSymmRankCtIso,
                     pCS->LinearCTTautomer, pCS->nMaxLenLinearCTTautomer, &pCS->nLenLinearCTTautomer,
                     pCS->LinearCTIsotopicTautomer, pCS->nMaxLenLinearCTIsotopicTautomer, &pCS->nLenLinearCTIsotopicTautomer,
                     t_group_info1 );
-    
+
             if (RETURNED_ERROR( nRet ))
             {
                 goto exit_function;
@@ -2632,7 +2871,7 @@ pub(crate) fn Canon_INChI3(
             pCS->nLenLinearCT2 = pCS->nLenLinearCT;
             pCS->nLenLinearCTAtOnly2 = pCS->nLenLinearCTAtOnly;
         }
-    
+
         if (num_atoms <= 1)
         {
             bCanonStereo = 0;  /* a sinle atom + possibly terminal hydrogen atoms */
@@ -2641,58 +2880,58 @@ pub(crate) fn Canon_INChI3(
                 bCanonIsoStereo = 0;  /*  structure; for example Cl- or CH4 */
             }
         }
-    
+
         if (!bCanonStereo && !( bCanonIsotopic && bCanonIsoStereo ))
         {
             goto exit_function; /* skip stereo canonicalization */
         }
-    
-    
-    
+
+
+
         /**********************************************************
                          Mode
         ***********************************************************/
         nMode = nMode & CANON_MODE_MASK;
-    
+
         /* memory allocation */
-    
+
         nAtomNumber = (AT_RANK *) qmalloc( num_max * sizeof( *nAtomNumber ) );
         nRank = (AT_RANK *) qmalloc( num_max * sizeof( *nRank ) );
         nTempRank = (AT_RANK *) qmalloc( num_max * sizeof( *nTempRank ) );
         nSymmRank = (AT_RANK *) qmalloc( num_max * sizeof( *nSymmRank ) );
-    
+
         /***********************************************
                     0.1 Initialization
         ************************************************/
-    
-    
+
+
         if (!NeighList || !nAtomNumber || !nTempRank ||
              !nRank || !pCS->LinearCT)
         {
             nRet = CT_OUT_OF_RAM;  /* program error */  /*  <BRKPT> */
             goto exit_function;
         }
-    
+
         pCS->NeighList = NeighList;
-    
+
         *pCS2 = *pCS;  /* save input information and pointers to allocated memory */
-    
+
         if (!( nMode & CMODE_NOEQ_STEREO ) && ( bCanonStereo || bCanonIsoStereo ))
         {
             /* will be used to discover vertex equivalences in stereo canonicalization */
             memset( &CurrentTree, 0, sizeof( CurrentTree ) ); /* djb-rwth: memset_s C11/Annex K variant? */
             cur_tree = &CurrentTree;
         }
-    
-    
+
+
         pCS->bCmpStereo = 0;
         pCS->bCmpIsotopicStereo = 0;
-    
-    
+
+
         if (bCanonStereo || bCanonIsoStereo)
         {
             int ii, nn;
-    
+
             /* stereo or isotopic canonicalization: we need a second set of ranks for mapping */
             /* (isotopic atoms or stereo can only increase nNumCurrRanks) */
             pRankStack2 = (AT_RANK **) inchi_calloc( nRankStackLen, sizeof( AT_RANK * ) );
@@ -2721,17 +2960,17 @@ pub(crate) fn Canon_INChI3(
                 goto exit_function; /* program error */
             }
         }
-    
+
         if (bCanonStereo)
         {
-    
+
            /* *pCS2 = *pCS; */ /* save input information and pointers to allocated memory */
-    
+
             /* initial ranking for non-isotopic mapping */
             memcpy(nAtomNumber, ftcn->PartitionCt.AtNumber, num_at_tg * sizeof(nAtomNumber[0]));
             memcpy(nRank, ftcn->PartitionCt.Rank, num_at_tg * sizeof(nRank[0]));
             memcpy(nSymmRank, ftcn->nSymmRankCt, num_at_tg * sizeof(nSymmRank[0]));
-    
+
             /* nSymmRank changes if canonical numbers of constitutionally equivalent atoms are not contiguous */
             nNumCurrRanks = FixCanonEquivalenceInfo( pCG, num_at_tg,
                                                      nSymmRank /* in&out*/,
@@ -2740,7 +2979,7 @@ pub(crate) fn Canon_INChI3(
                                                      NULL );
             /* atom numbers in canonical order */
             memcpy(pCS->nPrevAtomNumber, ftcn->PartitionCt.AtNumber, num_at_tg * sizeof(nAtomNumber[0]));
-    
+
             /* fill stereo part of the connection table with initial (not optimized) parities */
             /* input
             pCS->LinearCTStereoDble
@@ -2748,17 +2987,17 @@ pub(crate) fn Canon_INChI3(
             pCS->nMaxLenLinearCTStereoCarb
             pCS->nMaxLenLinearCTStereoDble
             */
-    
+
             nRet = FillOutStereoParities( at, num_atoms, ftcn->PartitionCt.Rank, ftcn->PartitionCt.AtNumber,
                                           nRank, nAtomNumber, pCS, pCG, 0 /* bIsotopic */ );
-    
+
             /* output
             pCS->LinearCTStereoDble
             pCS->LinearCTStereoCarb
             pCS2->nLenLinearCTStereoCarb
             pCS2->nLenLinearCTStereoDble
             */
-    
+
             if (RETURNED_ERROR( nRet ))
             {
                 goto exit_function;
@@ -2768,15 +3007,15 @@ pub(crate) fn Canon_INChI3(
                 nRet = CT_STEREOCOUNT_ERR;
                 goto exit_function;
             }
-    
+
             /***************************************************************
              *
              *  VI. Optimize non-isotopic stereo descriptors (optimized)
              *
              ***************************************************************/
-    
+
             /* allocate memory for stereo canonicalization */
-    
+
             if (!nCanonRankStereo)
             {
                 nCanonRankStereo = (AT_RANK *) qmalloc( num_max * sizeof( *nCanonRankStereo ) );
@@ -2785,7 +3024,7 @@ pub(crate) fn Canon_INChI3(
             {
                 nSymmStereo = (AT_RANK *) qmalloc( ( (long long)num_max + 1 ) * sizeof( *nSymmStereo ) ); /* djb-rwth: cast operator added */
             }
-    
+
             if (!( nMode & CMODE_NOEQ_STEREO ) && 0 > CurTreeAlloc( cur_tree, num_at_tg ))
             {
                 nRet = CT_OUT_OF_RAM;  /*  <BRKPT> */
@@ -2805,13 +3044,13 @@ pub(crate) fn Canon_INChI3(
                 nRet = CT_OUT_OF_RAM;  /*  <BRKPT> */
                 goto exit_function;
             }
-    
+
             /****************************************************************
              *
              *  VI-A. Optimize non-isotopic non-inverted stereo descriptors
              *
              ****************************************************************/
-    
+
             /* set the 1st ranks in the rest of the stack to zero: prepare for ranks reuse */
             for (n = 2; n < nRankStackLen && pRankStack1[n]; n++)
             {
@@ -2822,7 +3061,7 @@ pub(crate) fn Canon_INChI3(
             {
                 pRankStack2[n][0] = 0; /* means ranks have to be recalculated */
             }
-    
+
             /* for debugging or statistics */
             pCS->lNumBreakTies =
                 pCS->lNumNeighListIter =
@@ -2832,7 +3071,7 @@ pub(crate) fn Canon_INChI3(
                 pCS->lNumEqualCT = 0;
             pCS->bKeepSymmRank = 0;
             pCS->bFirstCT = 1; /* To fill out nCanonRankStereo[] in map_stero_atoms2() */
-    
+
             /******************************************************************************
                  nCanonRank contains input canonical numbering
                  nCanonRankStereo will be filled with a transposition of canonical numbering
@@ -2841,7 +3080,7 @@ pub(crate) fn Canon_INChI3(
                              pCS->LinearCTStereoDble (length=pCS->nLenLinearCTStereoDble)
                              pCS->LinearCTStereoCarb (length=pCS->nLenLinearCTStereoCarb)
              */
-    
+
             nRet = map_stereo_bonds4( ic, pCG, at, num_atoms, num_at_tg, num_max, 0,
                                        ftcn->PartitionCt.Rank, ftcn->PartitionCt.AtNumber,
                                        nCanonRankStereo, nSymmRank,
@@ -2849,7 +3088,7 @@ pub(crate) fn Canon_INChI3(
                                        nTempRank, nNumCurrRanks,nSymmStereo,
                                        NeighList, pCS, cur_tree, 0 /* nNumMappedBonds */,
                                        vABParityUnknown );
-    
+
             if (RETURNED_ERROR( nRet ))
             {
                 if (nRet == CT_TIMEOUT_ERR)
@@ -2881,7 +3120,7 @@ pub(crate) fn Canon_INChI3(
                     pCS2->nLenLinearCTStereoCarb = pCS->nLenLinearCTStereoCarb;
                     /* djb-rwth: removing redundant code */
                 }
-    
+
                 /* save stereo canonical numbering */
                 if (pCS->nCanonOrdStereo)
                 {
@@ -2898,7 +3137,7 @@ pub(crate) fn Canon_INChI3(
                     }
                     pCS->nLenCanonOrdStereo = ( bFailed ) ? -num_atoms : num_atoms;
                 }
-    
+
                 /* save stereo tautomer groups numbering */
                 if (bTaut && pCS->nCanonOrdStereoTaut)
                 {
@@ -2923,8 +3162,8 @@ pub(crate) fn Canon_INChI3(
                     /*SortTautomerGroupsAndEndpoints( t_group_info1, nCanonRank ); */ /* ??? return to non-isotopic canonical numbering */
                 }
             }
-    
-    
+
+
             /****************************************************
              *
              *  VI-B. Optimize INVERTED stereo descriptors
@@ -2939,21 +3178,21 @@ pub(crate) fn Canon_INChI3(
                 nRet = CT_OUT_OF_RAM;  /*  <BRKPT> */
                 goto exit_function;
             }
-    
+
             /* copy previous non-isotopic stereo canonicalization results to Inv initial data */
             /* assign pointers */
             pCS->LinearCTStereoDble = pCS2->LinearCTStereoDbleInv;
             pCS->LinearCTStereoCarb = pCS2->LinearCTStereoCarbInv;
-    
+
             /* copy the lengths */
             pCS2->nLenLinearCTStereoDbleInv =
                 pCS->nLenLinearCTStereoDbleInv =
                 pCS->nLenLinearCTStereoDble = pCS2->nLenLinearCTStereoDble;
-    
+
             pCS2->nLenLinearCTStereoCarbInv =
                 pCS->nLenLinearCTStereoCarbInv =
                 pCS->nLenLinearCTStereoCarb = pCS2->nLenLinearCTStereoCarb;
-    
+
             if (pCS->nLenLinearCTStereoDble > 0 || pCS->nLenLinearCTStereoCarb > 0)
             {
                 /* copy previous results, the canonical stereo CT */
@@ -2966,13 +3205,13 @@ pub(crate) fn Canon_INChI3(
                 /* in case there is nothing to invert */
                 memcpy(pCS->nCanonOrdStereoInv, pCS->nCanonOrdStereo, num_at_tg * sizeof(pCS->nCanonOrdStereoInv[0]));
             }
-    
+
             /******************************
              *
              * Invert stereo
              *
              ******************************/
-    
+
             /*********************************************************************************
              * Create initial approximation for the minimization of the stereo descriptors:
              *  invert stereogenic atom parities, one parity in each allene, all parities in
@@ -2988,7 +3227,7 @@ pub(crate) fn Canon_INChI3(
                 /* InvertStereo() has done some changes */
                 /* djb-rwth: removing redundant code */
                 /* FillOutStereoParities() has already been called to fill out these 2 LinearCTs */
-    
+
                 /* set the 1st ranks in the rest of the stack to zero: prepare for ranks reuse */
                 for (n = 2; n < nRankStackLen && pRankStack1[n]; n++)
                 {
@@ -2999,7 +3238,7 @@ pub(crate) fn Canon_INChI3(
                 {
                     pRankStack2[n][0] = 0; /* means ranks have to be recalculated */
                 }
-    
+
                 /* for debugging or statistics */
                 pCS->lNumBreakTies =
                     pCS->lNumNeighListIter =
@@ -3009,11 +3248,11 @@ pub(crate) fn Canon_INChI3(
                     pCS->lNumEqualCT = 0;
                 pCS->bKeepSymmRank = 0;
                 pCS->bFirstCT = 1; /* To fill out nCanonRankStereo[] in map_stero_atoms2() */
-    
+
     #ifdef FIX_STEREOCOUNT_ERR
                 CurTreeSetPos( cur_tree, 0 );
     #endif
-    
+
                 /******************************************************************************
                      ftcn->PartitionCt.Rank contains input canonical numbering
                      nCanonRankStereoInv will be filled with a transposition of canonical numbering
@@ -3022,7 +3261,7 @@ pub(crate) fn Canon_INChI3(
                                  pCS->LinearCTStereoDble (length=pCS->nLenLinearCTStereoDble)
                                  pCS->LinearCTStereoCarb (length=pCS->nLenLinearCTStereoCarb)
                  ******************************************************************************/
-    
+
                 nRet = map_stereo_bonds4( ic,pCG, at, num_atoms, num_at_tg, num_max, 0,
                                           ftcn->PartitionCt.Rank,
                                           ftcn->PartitionCt.AtNumber,
@@ -3031,7 +3270,7 @@ pub(crate) fn Canon_INChI3(
                                           nTempRank, nNumCurrRanks, nSymmStereo,
                                           NeighList, pCS, cur_tree, 0,
                                           vABParityUnknown );
-    
+
                 if (RETURNED_ERROR( nRet ))
                 {
                     if (nRet == CT_TIMEOUT_ERR)
@@ -3056,13 +3295,13 @@ pub(crate) fn Canon_INChI3(
                         nRet = CT_STEREOCOUNT_ERR;  /*  <BRKPT> */
                         goto exit_function; /* program error */
                     }
-    
+
                     /* save non-isotopic pointers & lengths for INVERTED stereo */
                     pCS->nLenLinearCTStereoDbleInv =
                         pCS2->nLenLinearCTStereoDbleInv = pCS->nLenLinearCTStereoDble;
                     pCS->nLenLinearCTStereoCarbInv =
                         pCS2->nLenLinearCTStereoCarbInv = pCS->nLenLinearCTStereoCarb;
-    
+
                         /* restore pointers and lengths to non-inverted stereo    */
                         /*  -- this is needed for InvertStereo() back, see below  */
                     pCS->LinearCTStereoDble = pCS2->LinearCTStereoDble;
@@ -3076,7 +3315,7 @@ pub(crate) fn Canon_INChI3(
                         nRet = CT_CALC_STEREO_ERR;
                         goto exit_function; /* program error */
                     }
-    
+
                     /******************************
                      *
                      * Invert stereo back
@@ -3098,14 +3337,14 @@ pub(crate) fn Canon_INChI3(
                                          nTempRank,
                                          pCS,
                                          0 );
-    
+
                     if (RETURNED_ERROR( nRet ))
                     {
                         goto exit_function;
                     }
                     nRet = 0;
-    
-    
+
+
                     /* save stereo canonical numbering */
                     if (pCS->nCanonOrdStereoInv)
                     {
@@ -3122,7 +3361,7 @@ pub(crate) fn Canon_INChI3(
                         }
                         pCS->nLenCanonOrdStereo = ( bFailed ) ? -num_atoms : num_atoms;
                     }
-    
+
                     /* compare inverted and non-inverted stereo */
                     pCS->bCmpStereo = 2 + CompareLinCtStereo(
                                              pCS->LinearCTStereoDbleInv, pCS->nLenLinearCTStereoDbleInv,
@@ -3141,20 +3380,20 @@ pub(crate) fn Canon_INChI3(
                 pCS->nLenLinearCTStereoCarb = pCS2->nLenLinearCTStereoCarb;
             }
         }
-    
+
         /* restore "ignore isotopic differences in tautomer groups" */
         if (bTaut)
         {
             /* save request for isotopic tautomeric groups */
             pCS->t_group_info->bIgnoreIsotopic = bIgnoreIsotopicInputGroups;
         }
-    
+
         /* restore request for isotopic name */
         pCS->bIgnoreIsotopic = bIgnoreIsotopicInputAtoms;
-    
+
         if (bCanonIsoStereo && bCanonIsotopic)
         {
-    
+
             /****************************************************************
              *
              *   VII. Optimize isotopic stereo descriptors (optimized)
@@ -3163,7 +3402,7 @@ pub(crate) fn Canon_INChI3(
             /*
             pCS->LinearCTIsotopic     = NULL;
             */
-    
+
             /* Initial ranking for isotopic mapping */
             memcpy(nAtomNumber, ftcn->PartitionCtIso.AtNumber, num_at_tg * sizeof(nAtomNumber[0]));
             memcpy(nRank, ftcn->PartitionCtIso.Rank, num_at_tg * sizeof(nRank[0]));
@@ -3187,13 +3426,13 @@ pub(crate) fn Canon_INChI3(
                 nRet = CT_OUT_OF_RAM;  /*  <BRKPT> */
                 goto exit_function;
             }
-    
+
             /* Check allocations and assign first 2 elements of pRankStack2 */
             if (pRankStack1 && pRankStack2 &&
                  nCanonRankIsotopicStereo &&
                  ( nSymmStereo || ( nMode & CMODE_NOEQ_STEREO ) ))
             {
-    
+
                 pRankStack1[0] = pRankStack2[0] = nRank; /* pRankStack1[0,1] shall be unchanged */
                 pRankStack1[1] = pRankStack2[1] = nAtomNumber;
             }
@@ -3202,27 +3441,27 @@ pub(crate) fn Canon_INChI3(
                 nRet = CT_OUT_OF_RAM;  /*  <BRKPT> */
                 goto exit_function;
             }
-    
+
             /******************************************************************
                Important: fill out a list of stereo atoms and bonds including
                those which are stereo due to isotopic atoms only and create
                LinearCT stereo descriptors for the canonical numbering
              ******************************************************************/
-    
-    
+
+
             /* at[] has certain members for non-isotopic and isotopic stereo; switch them */
             SwitchAtomStereoAndIsotopicStereo( at, num_atoms, &bSwitchedAtomToIsotopic );
-    
+
             /* Prepare stereo connection tables' pointers */
             SetCtToIsotopicStereo( pCS, pCS2 );
-    
+
             nRet = FillOutStereoParities( at, num_atoms,
                                           ftcn->PartitionCtIso.Rank,
                                           ftcn->PartitionCtIso.AtNumber,
                                           nRank, nAtomNumber,
                                           pCS, pCG, 1 /* bIsotopic */ );
-    
-    
+
+
             if (RETURNED_ERROR( nRet ))
             {
                 goto exit_function;  /* program error */
@@ -3241,16 +3480,16 @@ pub(crate) fn Canon_INChI3(
                     goto bypass_isotopic_stereo;
                 }
             }
-    
+
             /* djb-rwth: removing redundant code */
-    
-    
+
+
             /*************************************************************
              *
              *  VII-A. Optimize non-inverted isotopic stereo descriptors
              *
              *************************************************************/
-    
+
             /* set the 1st ranks in the rest of the stack to zero: prepare for ranks reuse */
             for (n = 2; n < nRankStackLen && pRankStack1[n]; n++)
             {
@@ -3261,7 +3500,7 @@ pub(crate) fn Canon_INChI3(
             {
                 pRankStack2[n][0] = 0; /* means ranks have to be recalculated */
             }
-    
+
             /* for debugging or statistics */
             pCS->lNumBreakTies =
                 pCS->lNumNeighListIter =
@@ -3271,7 +3510,7 @@ pub(crate) fn Canon_INChI3(
                 pCS->lNumEqualCT = 0;
             pCS->bKeepSymmRank = 0;
             pCS->bFirstCT = 1; /* To fill out nCanonRankStereo[] in map_stero_atoms2() */
-    
+
             /**************************************************************************************
               nCanonRankIsotopic contains input canonical numbering
               nCanonRankIsotopicStereo will be filled with a transposition of canonical numbering
@@ -3280,7 +3519,7 @@ pub(crate) fn Canon_INChI3(
                           pCS->LinearCTStereoDble (length=pCS->nLenLinearCTStereoDble)
                           pCS->LinearCTStereoCarb (length=pCS->nLenLinearCTStereoCarb)
             ***************************************************************************************/
-    
+
             nRet = map_stereo_bonds4( ic, pCG,at, num_atoms, num_at_tg, num_max, 0,
                                       ftcn->PartitionCtIso.Rank,
                                       ftcn->PartitionCtIso.AtNumber,
@@ -3289,7 +3528,7 @@ pub(crate) fn Canon_INChI3(
                                       nTempRank, nNumCurrRanks, nSymmStereo,
                                       NeighList, pCS, cur_tree,
                                       0, vABParityUnknown );
-    
+
             if (RETURNED_ERROR( nRet ))
             {
                 goto exit_function;
@@ -3297,7 +3536,7 @@ pub(crate) fn Canon_INChI3(
             else
             {
                 int bFailed = 0;
-    
+
                 if (!nRet)
                 {
                     /* djb-rwth: removing redundant code */
@@ -3315,7 +3554,7 @@ pub(crate) fn Canon_INChI3(
                         pCS2->nLenLinearCTIsotopicStereoDble = pCS->nLenLinearCTStereoDble;
                     pCS->nLenLinearCTIsotopicStereoCarb =
                         pCS2->nLenLinearCTIsotopicStereoCarb = pCS->nLenLinearCTStereoCarb;
-    
+
                         /* save stereo canonical numbering */
                     if (pCS->nCanonOrdIsotopicStereo)
                     {
@@ -3332,7 +3571,7 @@ pub(crate) fn Canon_INChI3(
                         }
                         pCS->nLenCanonOrdIsotopicStereo = bFailed ? -num_atoms : num_atoms;
                     }
-    
+
                     /* save stereo tautomer groups numbering */
                     if (pCS->nCanonOrdIsotopicStereoTaut)
                     {
@@ -3344,7 +3583,7 @@ pub(crate) fn Canon_INChI3(
                             /*AT_NUMB *tiSymmRank        = tGroupNumber + TGSO_SYMM_IRANK*num_t_groups; */
                             memcpy(pCS->nCanonOrdIsotopicStereoTaut, tGroupNumber, num_t_groups * sizeof(pCS->nCanonOrdIsotopicStereoTaut[0]));
                             pCS->nLenCanonOrdIsotopicStereoTaut = bFailed ? -num_t_groups : num_t_groups;
-    
+
                             /*SortTautomerGroupsAndEndpoints( t_group_info1, nCanonRank ); */ /* ??? return to non-isotopic canonical numbering */
                         }
                         else
@@ -3358,7 +3597,7 @@ pub(crate) fn Canon_INChI3(
                     }
                 }
             }
-    
+
             /**********************************************************
              *
              *  VII-B. Optimize INVERTED isotopic stereo descriptors
@@ -3371,21 +3610,21 @@ pub(crate) fn Canon_INChI3(
                 nRet = CT_OUT_OF_RAM;  /*  <BRKPT> */
                 goto exit_function;
             }
-    
+
             /* copy previous isotopic stereo canonicalization results to Inv initial data */
             /* assign pointers */
             pCS->LinearCTStereoDble = pCS2->LinearCTIsotopicStereoDbleInv; /*  enable stereo */
             pCS->LinearCTStereoCarb = pCS2->LinearCTIsotopicStereoCarbInv;
-    
+
             /* copy the lengths */
             pCS2->nLenLinearCTIsotopicStereoDbleInv =
                 pCS->nLenLinearCTStereoDbleInv =
                 pCS->nLenLinearCTStereoDble = pCS2->nLenLinearCTIsotopicStereoDble;
-    
+
             pCS2->nLenLinearCTIsotopicStereoCarbInv =
                 pCS->nLenLinearCTStereoCarbInv =
                 pCS->nLenLinearCTStereoCarb = pCS2->nLenLinearCTIsotopicStereoCarb;
-    
+
             if (pCS->nLenLinearCTStereoDble > 0 || pCS->nLenLinearCTStereoCarb > 0)
             {
                 /* copy previous results, the canonical stereo CT */
@@ -3398,26 +3637,26 @@ pub(crate) fn Canon_INChI3(
                 /* in case there is nothing to invert */
                 memcpy(pCS->nCanonOrdIsotopicStereoInv, pCS->nCanonOrdIsotopicStereo, num_at_tg * sizeof(pCS->nCanonOrdIsotopicStereoInv[0]));
             }
-    
+
             /******************************
              *
              * Invert isotopic stereo
              *
              ******************************/
-    
+
             /*********************************************************************************
              * Create initial approximation for the minimization of the stereo descriptors:
              *  invert stereogenic atom parities, one parity in each allene, all parities in
              *  pCS->LinearCTStereoCarb and allene parities in pCS->nLenLinearCTStereoDble
              */
-    
+
             nRet = InvertStereo( at,
                                  num_at_tg,
                                  nCanonRankIsotopicStereo,
                                  nTempRank,
                                  pCS,
                                  1 );
-    
+
             if (RETURNED_ERROR( nRet ))
             {
                 goto exit_function;
@@ -3427,7 +3666,7 @@ pub(crate) fn Canon_INChI3(
                 /* InvertStereo() has done some changes */
                 /* djb-rwth: removing redundant code */
                 /* FillOutStereoParities() has already been called to fill out these 2 LinearCTs */
-    
+
                 /* set the 1st ranks in the rest of the stack to zero: prepare for ranks reuse */
                 for (n = 2; n < nRankStackLen && pRankStack1[n]; n++)
                 {
@@ -3447,7 +3686,7 @@ pub(crate) fn Canon_INChI3(
                     pCS->lNumEqualCT = 0;
                 pCS->bKeepSymmRank = 0;
                 pCS->bFirstCT = 1; /* To fill out nCanonRankStereo[] in map_stero_atoms2() */
-    
+
                 /**************************************************************************************
                   nCanonRankIsotopic contains input canonical numbering
                   nCanonRankIsotopicStereo will be filled with a transposition of canonical numbering
@@ -3476,7 +3715,7 @@ pub(crate) fn Canon_INChI3(
                                           cur_tree,
                                           0,
                                           vABParityUnknown );
-    
+
                 if (RETURNED_ERROR( nRet ))
                 {
                     if (nRet == CT_TIMEOUT_ERR)
@@ -3487,7 +3726,7 @@ pub(crate) fn Canon_INChI3(
                 else
                 {
                     int bFailed = 0;
-    
+
                     if (!nRet)
                     {
                         /* djb-rwth: removing redundant code */
@@ -3498,22 +3737,22 @@ pub(crate) fn Canon_INChI3(
                         nRet = CT_STEREOCOUNT_ERR;  /*  <BRKPT> */
                         goto exit_function; /* program error */
                     }
-    
+
                     /* save isotopic pointers & lengths for INVERTED stereo */
-    
+
                     /* save isotopic lengths */
                     pCS->nLenLinearCTIsotopicStereoDbleInv =
                         pCS2->nLenLinearCTIsotopicStereoDbleInv = pCS->nLenLinearCTStereoDble;
                     pCS->nLenLinearCTIsotopicStereoCarbInv =
                         pCS2->nLenLinearCTIsotopicStereoCarbInv = pCS->nLenLinearCTStereoCarb;
-    
+
                         /* restore pointers and lengths to non-inverted isotopic stereo */
                         /*  -- this is needed for InvertStereo() back, see below        */
                     pCS->LinearCTStereoDble = pCS2->LinearCTIsotopicStereoDble;
                     pCS->LinearCTStereoCarb = pCS2->LinearCTIsotopicStereoCarb;
                     pCS->nLenLinearCTStereoDble = pCS2->nLenLinearCTIsotopicStereoDble;
                     pCS->nLenLinearCTStereoCarb = pCS2->nLenLinearCTIsotopicStereoCarb;
-    
+
                     /* consistency check */
                     if (pCS->nLenLinearCTIsotopicStereoDbleInv != pCS->nLenLinearCTIsotopicStereoDble ||
                          pCS->nLenLinearCTIsotopicStereoCarbInv != pCS->nLenLinearCTIsotopicStereoCarb)
@@ -3521,7 +3760,7 @@ pub(crate) fn Canon_INChI3(
                         nRet = CT_CALC_STEREO_ERR;
                         goto exit_function; /* program error */
                     }
-    
+
                     /******************************
                      *
                      * Invert stereo back
@@ -3533,16 +3772,16 @@ pub(crate) fn Canon_INChI3(
                      *  and corresponding lengths
                      *  have been restored)
                      ******************************/
-    
+
                     nRet = InvertStereo( at, num_at_tg, nCanonRankIsotopicStereo,
                                          nTempRank, pCS, 0 );
-    
+
                     if (RETURNED_ERROR( nRet ))
                     {
                         goto exit_function;
                     }
                     nRet = 0;
-    
+
                     /* save stereo canonical numbering */
                     if (pCS->nCanonOrdIsotopicStereoInv)
                     {
@@ -3559,7 +3798,7 @@ pub(crate) fn Canon_INChI3(
                         }
                         pCS->nLenCanonOrdIsotopicStereo = bFailed ? -num_atoms : num_atoms;
                     }
-    
+
                     /* compare inverted and non-inverted isotopic stereo */
                     pCS->bCmpIsotopicStereo = 2 + CompareLinCtStereo(
                                              pCS->LinearCTIsotopicStereoDbleInv, pCS->nLenLinearCTIsotopicStereoDbleInv,
@@ -3577,23 +3816,23 @@ pub(crate) fn Canon_INChI3(
                 pCS->nLenLinearCTStereoDble = pCS2->nLenLinearCTIsotopicStereoDble;
                 pCS->nLenLinearCTStereoCarb = pCS2->nLenLinearCTIsotopicStereoCarb;
             }
-    
-    
+
+
         bypass_isotopic_stereo:;  /* ???       */
-    
+
             pCS->LinearCTIsotopic = pCS2->LinearCTIsotopic;
         }
-    
-    
-    
+
+
+
     exit_function:
-    
+
         if (bSwitchedAtomToIsotopic)
         {
             SwitchAtomStereoAndIsotopicStereo( at, num_atoms, &bSwitchedAtomToIsotopic );
             SetCtToNonIsotopicStereo( pCS, pCS2 ); /* ??? */
         }
-    
+
         /* restore non-isotopic connection table */
         if (pCS->LinearCT2)
         {
@@ -3601,7 +3840,7 @@ pub(crate) fn Canon_INChI3(
             inchi_swap( (char*) &pCS->nLenLinearCT, (char*) &pCS->nLenLinearCT2, sizeof( pCS->nLenLinearCT ) );
             inchi_swap( (char*) &pCS->nLenLinearCTAtOnly, (char*) &pCS->nLenLinearCTAtOnly2, sizeof( pCS->nLenLinearCTAtOnly ) );
         }
-    
+
         /* free memory */
         i = 2;
         if (pRankStack1)
@@ -3627,15 +3866,15 @@ pub(crate) fn Canon_INChI3(
                 }
             }
         }
-    
+
         inchi_free(pRankStack2); /* djb-rwth: fixing coverity ID #499631 */
-    
+
         pCS->NeighList = NULL; /* keep the pointer in pBCN->ftcn[bTaut].NeighList for further deallocation */
         qfree( nAtomNumber );
         qfree( nTempRank );
         qfree( nRank );
         qfree( nSymmRank );
-    
+
         qfree( nSymmStereo );
         CurTreeFree( cur_tree );
         /* memory leak fix */
@@ -3645,42 +3884,24 @@ pub(crate) fn Canon_INChI3(
         */
         qfree( nCanonRankIsotopicStereo );
         qfree( nCanonRankIsotopicStereoInv );
-    
+
         qfree( nCanonRankStereo );
         qfree( nCanonRankStereoInv );
-    
+
         InchiTimeGet( &ulEndTime );
-    
+
         pCS->lTotalTime = InchiTimeMsecDiff( ic, &ulEndTime, &ulStartTime );
-    
+
         return ( nRet >= -1 ) ? num_atoms : nRet;
             /* cannot easily get number of ranks for now */
     }
     */
 
-    let mut start_time = inchiTime::default();
-    InchiTimeGet(&mut start_time, clock_result);
-    let bcn = heap
-        .slice(pCS.pBCN.as_const())?
-        .first()
-        .cloned()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let ftcn_index = usize::try_from(bTautFtcn).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let ftcn = bcn
-        .ftcn
-        .get(ftcn_index)
-        .cloned()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let mut tgi = if pCS.t_group_info.is_null() {
-        None
-    } else {
-        Some(
-            heap.slice(pCS.t_group_info.as_const())?
-                .first()
-                .cloned()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        )
-    };
+    // INCHI✔️❗: Native pBCN/ftcn metadata is stable throughout this call;
+    // reached rank-stack and group-array pointees remain live in SourceHeap.
+    // Mutate the ACTUAL TGI, including writes preceding Result/early exits.
+    // No model allocation/clone/copyback. O(1) view; checked costs OPEN under
+    // INCHI-PERF-CANON-ACTUAL-TARGETS; unrelated guards stay installed.
     let b_taut = num_at_tg > num_atoms
         && tgi
             .as_ref()
@@ -3710,8 +3931,7 @@ pub(crate) fn Canon_INChI3(
         && (!pCS.LinearCTStereoDble.is_null() || !pCS.LinearCTStereoCarb.is_null());
     let mut canon_iso_stereo = has_isotopic_canon_data
         && nMode & CMODE_ISO_STEREO != 0
-        && (!pCS.LinearCTIsotopicStereoDble.is_null()
-            || !pCS.LinearCTIsotopicStereoCarb.is_null())
+        && (!pCS.LinearCTIsotopicStereoDble.is_null() || !pCS.LinearCTIsotopicStereoCarb.is_null())
         && canon_isotopic;
     let mut iso_taut = b_taut && canon_isotopic;
     let mut switched_atom_to_isotopic = 0_i32;
@@ -3739,10 +3959,9 @@ pub(crate) fn Canon_INChI3(
         let status = 'exit_function: {
             let mut ignore_iso_groups = 1_i32;
             if b_taut {
-                let value = tgi.as_mut().ok_or(SourceHeapError::NullPointer)?;
+                let value = tgi.as_deref_mut().ok_or(SourceHeapError::NullPointer)?;
                 ignore_iso_groups = value.bIgnoreIsotopic;
                 value.bIgnoreIsotopic = 1;
-                heap.slice_mut(pCS.t_group_info)?[0].bIgnoreIsotopic = 1;
             }
             let ignore_iso_atoms = pCS.bIgnoreIsotopic;
             pCS.bIgnoreIsotopic = 1;
@@ -3750,64 +3969,76 @@ pub(crate) fn Canon_INChI3(
             let linear_count = usize::try_from(ftcn.nLenLinearCt)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             source_copy(heap, pCS.LinearCT, ftcn.LinearCt.as_const(), linear_count)?;
-            let atom_count = usize::try_from(num_atoms)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let atom_tg_count = usize::try_from(num_at_tg)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            // VERBATIM SOURCE FRAGMENT: ichicano.c1587..1590
+            //     if (pCS->nSymmRank)
+            //     {
+            //         memcpy(pCS->nSymmRank, ftcn->nSymmRankCt, num_at_tg * sizeof(pCS->nSymmRank[0]));
+            //     }
+            // INCHI✔️❗: Only reached memcpy consumers require a size count.
+            // Cache conversion without propagating an unused-count error;
+            // each of the fourteen source copy sites below admits this Result.
+            // Signed loop counts remain untouched, with no clamp/default.
+            // O(1) scalar state/no allocation/repeated conversion; compiler
+            // and whole-call costs remain OPEN.
+            let atom_tg_count =
+                usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds);
             if !pCS.nNum_H.is_null() && !ftcn.nNumH.is_null() {
-                let input = heap
-                    .slice(ftcn.nNumH.as_const())?
-                    .get(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                let output = heap
-                    .slice_mut(pCS.nNum_H)?
-                    .get_mut(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                for (output, input) in output.iter_mut().zip(input) {
-                    *output = (input as u16 & 0xff) as u8 as i8;
+                // VERBATIM SOURCE FRAGMENT: ichicano.c1573
+                //             pCS->nNum_H[i] = /*(S_CHAR)*/( CHAR_MASK & ftcn->nNumH[i] );
+                // INCHI✔️❗: Read each reached RHS immediately before its
+                // forward store; overlapping exchange rows observe prior
+                // writes. No prefix snapshot/allocation, O(N)/O(1); checked
+                // live-arena costs remain OPEN. Wider character aliases and
+                // the independent signed-count guards remain protected.
+                for i in 0..num_atoms {
+                    let input = *heap.element_signed(ftcn.nNumH.as_const(), i)?;
+                    *heap.element_signed_mut(pCS.nNum_H, i)? = (input as u16 & 0xff) as u8 as i8;
                 }
             }
             if !pCS.nNum_H_fixed.is_null() && !ftcn.nNumHFixH.is_null() {
-                let input = heap
-                    .slice(ftcn.nNumHFixH.as_const())?
-                    .get(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                let output = heap
-                    .slice_mut(pCS.nNum_H_fixed)?
-                    .get_mut(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                for (output, input) in output.iter_mut().zip(input) {
-                    *output = (input as u16 & 0xff) as u8 as i8;
+                // VERBATIM SOURCE FRAGMENT: ichicano.c1580
+                //             pCS->nNum_H_fixed[i] = /*(S_CHAR)*/( CHAR_MASK & ftcn->nNumHFixH[i] );
+                // INCHI✔️❗: Read each reached RHS immediately before its
+                // forward store; overlapping exchange rows observe prior
+                // writes. No prefix snapshot/allocation, O(N)/O(1); checked
+                // live-arena costs remain OPEN. Wider character aliases and
+                // the independent signed-count guards remain protected.
+                for i in 0..num_atoms {
+                    let input = *heap.element_signed(ftcn.nNumHFixH.as_const(), i)?;
+                    *heap.element_signed_mut(pCS.nNum_H_fixed, i)? =
+                        (input as u16 & 0xff) as u8 as i8;
                 }
             }
             pCS.nLenLinearCT = ftcn.nLenLinearCt;
             pCS.nLenLinearCTAtOnly = ftcn.nLenLinearCtAtOnly;
             if !pCS.nSymmRank.is_null() {
-                source_copy(heap, pCS.nSymmRank, ftcn.nSymmRankCt.as_const(), atom_tg_count)?;
+                source_copy(
+                    heap,
+                    pCS.nSymmRank,
+                    ftcn.nSymmRankCt.as_const(),
+                    atom_tg_count?,
+                )?;
             }
             if !pCS.nCanonOrd.is_null() {
                 source_copy(
                     heap,
                     pCS.nCanonOrd,
                     ftcn.PartitionCt.AtNumber.as_const(),
-                    atom_tg_count,
+                    atom_tg_count?,
                 )?;
                 pCS.nLenCanonOrd = num_atoms;
             }
             if !ftcn.iso_exchg_atnos.is_null() && !pCS.nExchgIsoH.is_null() {
-                let input = heap
-                    .slice(ftcn.iso_exchg_atnos.as_const())?
-                    .get(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                let output = heap
-                    .slice_mut(pCS.nExchgIsoH)?
-                    .get_mut(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                for (output, input) in output.iter_mut().zip(input) {
-                    *output = i8::from(input == 0);
+                // VERBATIM SOURCE FRAGMENT: ichicano.c1600
+                //             pCS->nExchgIsoH[i] = !ftcn->iso_exchg_atnos[i]; /* (pCS->nExchgIsoH[i]==1) => tautomeric or hetero atoms that may exchange isotopic H */
+                // INCHI✔️❗: Read each reached RHS immediately before its
+                // forward store; overlapping exchange rows observe prior
+                // writes. No prefix snapshot/allocation, O(N)/O(1); checked
+                // live-arena costs remain OPEN. Wider character aliases and
+                // the independent signed-count guards remain protected.
+                for i in 0..num_atoms {
+                    let input = *heap.element_signed(ftcn.iso_exchg_atnos.as_const(), i)?;
+                    *heap.element_signed_mut(pCS.nExchgIsoH, i)? = i8::from(input == 0);
                 }
             }
             let mut nret = 0_i32;
@@ -3817,7 +4048,7 @@ pub(crate) fn Canon_INChI3(
                         heap,
                         pCS.nSymmRankIsotopic,
                         ftcn.nSymmRankCtIso.as_const(),
-                        atom_tg_count,
+                        atom_tg_count?,
                     )?;
                 }
                 if !pCS.nCanonOrdIsotopic.is_null() {
@@ -3825,7 +4056,7 @@ pub(crate) fn Canon_INChI3(
                         heap,
                         pCS.nCanonOrdIsotopic,
                         ftcn.PartitionCtIso.AtNumber.as_const(),
-                        atom_tg_count,
+                        atom_tg_count?,
                     )?;
                     pCS.nLenCanonOrdIsotopic = num_at_tg;
                 }
@@ -3871,11 +4102,8 @@ pub(crate) fn Canon_INChI3(
                     pCS.LinearCTIsotopicTautomer,
                     pCS.nMaxLenLinearCTIsotopicTautomer,
                     &mut pCS.nLenLinearCTIsotopicTautomer,
-                    tgi.as_mut(),
+                    tgi.as_deref_mut(),
                 )?;
-                if let Some(value) = tgi.as_ref() {
-                    heap.slice_mut(pCS.t_group_info)?[0] = value.clone();
-                }
                 if source_returned_error(nret) {
                     break 'exit_function nret;
                 }
@@ -3889,7 +4117,10 @@ pub(crate) fn Canon_INChI3(
                     source_copy(
                         heap,
                         pCS.nSymmRankTaut,
-                        value.tGroupNumber.offset(value.num_t_groups as i64)?.as_const(),
+                        value
+                            .tGroupNumber
+                            .offset(value.num_t_groups as i64)?
+                            .as_const(),
                         group_count,
                     )?;
                 }
@@ -3953,9 +4184,12 @@ pub(crate) fn Canon_INChI3(
             }
 
             nMode &= 0x00ff;
-            let num_max = usize::try_from(bcn.num_max)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let allocate_rank = |heap: &mut SourceHeap| heap.allocate(vec![0_u16; num_max]);
+            let num_max =
+                usize::try_from(bcn.num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            // Fallible backing storage reaches the existing source NULL/cleanup handlers.
+            // Native malloc zeroing cost remains separately quarantined; no new allocator.
+            let allocate_rank =
+                |heap: &mut SourceHeap| inchi_calloc::<AT_RANK>(heap, num_max as u64, 2);
             let atom_number_result = allocate_rank(heap);
             let rank_result = allocate_rank(heap);
             let temp_rank_result = allocate_rank(heap);
@@ -3991,11 +4225,14 @@ pub(crate) fn Canon_INChI3(
             if canon_stereo || canon_iso_stereo {
                 let stack_len = usize::try_from(bcn.nMaxLenRankStack)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                rank_stack2 = match heap.allocate(vec![SourceMutPointer::null(); stack_len]) {
-                    Ok(value) => value,
-                    Err(SourceHeapError::AllocationFailed) => break 'exit_function CT_OUT_OF_RAM,
-                    Err(error) => return Err(error),
-                };
+                rank_stack2 =
+                    match inchi_calloc::<SourceMutPointer<AT_RANK>>(heap, stack_len as u64, 8) {
+                        Ok(value) => value,
+                        Err(SourceHeapError::AllocationFailed) => {
+                            break 'exit_function CT_OUT_OF_RAM;
+                        }
+                        Err(error) => return Err(error),
+                    };
                 let mut nn = 2_usize;
                 while nn < stack_len {
                     let pointer = heap.slice(bcn.pRankStack.as_const())?[nn];
@@ -4021,20 +4258,10 @@ pub(crate) fn Canon_INChI3(
                     heap,
                     atom_number,
                     ftcn.PartitionCt.AtNumber.as_const(),
-                    atom_tg_count,
+                    atom_tg_count?,
                 )?;
-                source_copy(
-                    heap,
-                    rank,
-                    ftcn.PartitionCt.Rank.as_const(),
-                    atom_tg_count,
-                )?;
-                source_copy(
-                    heap,
-                    symm_rank,
-                    ftcn.nSymmRankCt.as_const(),
-                    atom_tg_count,
-                )?;
+                source_copy(heap, rank, ftcn.PartitionCt.Rank.as_const(), atom_tg_count?)?;
+                source_copy(heap, symm_rank, ftcn.nSymmRankCt.as_const(), atom_tg_count?)?;
                 num_current_ranks = FixCanonEquivalenceInfo(
                     heap,
                     pCG,
@@ -4049,7 +4276,7 @@ pub(crate) fn Canon_INChI3(
                     heap,
                     pCS.nPrevAtomNumber,
                     ftcn.PartitionCt.AtNumber.as_const(),
-                    atom_tg_count,
+                    atom_tg_count?,
                 )?;
                 nret = FillOutStereoParities(
                     heap,
@@ -4069,33 +4296,45 @@ pub(crate) fn Canon_INChI3(
                 if nret < 0 {
                     break 'exit_function CT_STEREOCOUNT_ERR;
                 }
-                canon_rank_stereo = match allocate_rank(heap) {
-                    Ok(value) => value,
-                    Err(SourceHeapError::AllocationFailed) => break 'exit_function CT_OUT_OF_RAM,
-                    Err(error) => return Err(error),
-                };
-                if nMode & CMODE_NOEQ_STEREO == 0 {
-                    symm_stereo = match heap.allocate(vec![0_u16; num_max + 1]) {
-                        Ok(value) => value,
-                        Err(SourceHeapError::AllocationFailed) => {
-                            break 'exit_function CT_OUT_OF_RAM;
-                        }
-                        Err(error) => return Err(error),
-                    };
-                    if CurTreeAlloc(heap, Some(&mut current_tree), num_at_tg)? < 0 {
-                        break 'exit_function CT_OUT_OF_RAM;
-                    }
+                // VERBATIM SOURCE FRAGMENT: ichicano.c1860..1867
+                //         if (pRankStack1 && pRankStack2 &&
+                //              nCanonRankStereo &&
+                //              /* nCurrRankStereo  && nAtomNumberCurrStereo &&*/
+                //              ( nSymmStereo || ( nMode & CMODE_NOEQ_STEREO ) ))
+                //         {
+                //             pRankStack1[0] = pRankStack2[0] = nRank;
+                //             pRankStack1[1] = pRankStack2[1] = nAtomNumber;
+                //         }
+                // INCHI✔️❌: Preserve nullable source allocation outcomes,
+                // remaining allocations/tree call, then the joint NULL check.
+                // Reuse the existing source_malloc_result; other typed errors
+                // propagate unchanged. Original modeled zero-initialized rank
+                // storage versus qmalloc/whole-call costs stay separately OPEN.
+                canon_rank_stereo = source_malloc_result(allocate_rank(heap))?;
+                if symm_stereo.is_null() && nMode & CMODE_NOEQ_STEREO == 0 {
+                    symm_stereo = source_malloc_result(inchi_calloc::<AT_RANK>(
+                        heap,
+                        (num_max + 1) as u64,
+                        2,
+                    ))?;
                 }
-                if rank_stack2.is_null()
+                if nMode & CMODE_NOEQ_STEREO == 0
+                    && CurTreeAlloc(heap, Some(&mut current_tree), num_at_tg)? < 0
+                {
+                    break 'exit_function CT_OUT_OF_RAM;
+                }
+                if bcn.pRankStack.is_null()
+                    || rank_stack2.is_null()
                     || canon_rank_stereo.is_null()
                     || (symm_stereo.is_null() && nMode & CMODE_NOEQ_STEREO == 0)
                 {
                     break 'exit_function CT_OUT_OF_RAM;
                 }
-                heap.slice_mut(bcn.pRankStack)?[0] = rank;
-                heap.slice_mut(rank_stack2)?[0] = rank;
-                heap.slice_mut(bcn.pRankStack)?[1] = atom_number;
-                heap.slice_mut(rank_stack2)?[1] = atom_number;
+                // Source chained assignments store secondary then primary.
+                *heap.element_signed_mut(rank_stack2, 0)? = rank;
+                *heap.element_signed_mut(bcn.pRankStack, 0)? = rank;
+                *heap.element_signed_mut(rank_stack2, 1)? = atom_number;
+                *heap.element_signed_mut(bcn.pRankStack, 1)? = atom_number;
                 for stack in [bcn.pRankStack, rank_stack2] {
                     let mut index = 2_usize;
                     let stack_len = usize::try_from(bcn.nMaxLenRankStack)
@@ -4140,7 +4379,11 @@ pub(crate) fn Canon_INChI3(
                     symm_stereo,
                     ftcn.NeighList,
                     pCS,
-                    if use_tree { Some(&mut current_tree) } else { None },
+                    if use_tree {
+                        Some(&mut current_tree)
+                    } else {
+                        None
+                    },
                     0,
                     parity_unknown,
                 )?;
@@ -4158,15 +4401,19 @@ pub(crate) fn Canon_INChI3(
                 saved.nLenLinearCTStereoDble = pCS.nLenLinearCTStereoDble;
                 saved.nLenLinearCTStereoCarb = pCS.nLenLinearCTStereoCarb;
                 if !pCS.nCanonOrdStereo.is_null() {
-                    let ranks = heap
-                        .slice(canon_rank_stereo.as_const())?
-                        .get(..atom_tg_count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec();
-                    let order = heap.slice_mut(pCS.nCanonOrdStereo)?;
-                    for (index, value) in ranks.into_iter().enumerate() {
+                    // VERBATIM SOURCE FRAGMENT: ichicano.c1957
+                    //                         pCS->nCanonOrdStereo[(int) nCanonRankStereo[i] - 1] = (AT_NUMB) i;
+                    // INCHI✔️❗: Preserve each live forward rank read and
+                    // only its reached numbering write, including aliases.
+                    // Invalid ranks keep the existing failed counter; no
+                    // input snapshot/unused output admission. O(N)/O(1),
+                    // checked arena/whole-call costs remain OPEN.
+                    for index in 0..num_at_tg {
+                        let value = *heap.element_signed(canon_rank_stereo.as_const(), index)?;
                         if value != 0 && i32::from(value) <= num_at_tg {
-                            order[usize::from(value) - 1] = index as AT_NUMB;
+                            *heap
+                                .element_signed_mut(pCS.nCanonOrdStereo, i32::from(value) - 1)? =
+                                index as AT_NUMB;
                         } else {
                             failed += 1;
                         }
@@ -4244,7 +4491,7 @@ pub(crate) fn Canon_INChI3(
                         heap,
                         pCS.nCanonOrdStereoInv,
                         pCS.nCanonOrdStereo.as_const(),
-                        atom_tg_count,
+                        atom_tg_count?,
                     )?;
                 }
                 nret = InvertStereo(
@@ -4262,8 +4509,9 @@ pub(crate) fn Canon_INChI3(
                 if nret > 0 {
                     for stack in [bcn.pRankStack, rank_stack2] {
                         let mut index = 2_usize;
-                        while index < usize::try_from(bcn.nMaxLenRankStack)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+                        while index
+                            < usize::try_from(bcn.nMaxLenRankStack)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                         {
                             let pointer = heap.slice(stack.as_const())?[index];
                             if pointer.is_null() {
@@ -4281,7 +4529,14 @@ pub(crate) fn Canon_INChI3(
                     pCS.lNumEqualCT = 0;
                     pCS.bKeepSymmRank = 0;
                     pCS.bFirstCT = 1;
-                    CurTreeSetPos(if use_tree { Some(&mut current_tree) } else { None }, 0);
+                    CurTreeSetPos(
+                        if use_tree {
+                            Some(&mut current_tree)
+                        } else {
+                            None
+                        },
+                        0,
+                    );
                     nret = map_stereo_bonds4(
                         heap,
                         ic,
@@ -4305,7 +4560,11 @@ pub(crate) fn Canon_INChI3(
                         symm_stereo,
                         ftcn.NeighList,
                         pCS,
-                        if use_tree { Some(&mut current_tree) } else { None },
+                        if use_tree {
+                            Some(&mut current_tree)
+                        } else {
+                            None
+                        },
                         0,
                         parity_unknown,
                     )?;
@@ -4347,33 +4606,38 @@ pub(crate) fn Canon_INChI3(
                     }
                     nret = 0;
                     if !pCS.nCanonOrdStereoInv.is_null() {
-                        let ranks = heap
-                            .slice(canon_rank_stereo_inv.as_const())?
-                            .get(..atom_tg_count)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .to_vec();
-                        let order = heap.slice_mut(pCS.nCanonOrdStereoInv)?;
-                        for (index, value) in ranks.into_iter().enumerate() {
+                        // VERBATIM SOURCE FRAGMENT: ichicano.c2181
+                        //                             pCS->nCanonOrdStereoInv[(int) nCanonRankStereoInv[i] - 1] = (AT_NUMB) i;
+                        // INCHI✔️❗: Preserve each live forward rank read and
+                        // only its reached numbering write, including aliases.
+                        // Invalid ranks keep the existing failed counter; no
+                        // input snapshot/unused output admission. O(N)/O(1),
+                        // checked arena/whole-call costs remain OPEN.
+                        for index in 0..num_at_tg {
+                            let value =
+                                *heap.element_signed(canon_rank_stereo_inv.as_const(), index)?;
                             if value != 0 && i32::from(value) <= num_at_tg {
-                                order[usize::from(value) - 1] = index as AT_NUMB;
+                                *heap.element_signed_mut(
+                                    pCS.nCanonOrdStereoInv,
+                                    i32::from(value) - 1,
+                                )? = index as AT_NUMB;
                             } else {
                                 failed += 1;
                             }
                         }
                         pCS.nLenCanonOrdStereo = if failed != 0 { -num_atoms } else { num_atoms };
                     }
-                    pCS.bCmpStereo = 2
-                        + CompareLinCtStereo(
-                            heap,
-                            pCS.LinearCTStereoDbleInv.as_const(),
-                            pCS.nLenLinearCTStereoDbleInv,
-                            pCS.LinearCTStereoCarbInv.as_const(),
-                            pCS.nLenLinearCTStereoCarbInv,
-                            pCS.LinearCTStereoDble.as_const(),
-                            pCS.nLenLinearCTStereoDble,
-                            pCS.LinearCTStereoCarb.as_const(),
-                            pCS.nLenLinearCTStereoCarb,
-                        )?;
+                    pCS.bCmpStereo = 2 + CompareLinCtStereo(
+                        heap,
+                        pCS.LinearCTStereoDbleInv.as_const(),
+                        pCS.nLenLinearCTStereoDbleInv,
+                        pCS.LinearCTStereoCarbInv.as_const(),
+                        pCS.nLenLinearCTStereoCarbInv,
+                        pCS.LinearCTStereoDble.as_const(),
+                        pCS.nLenLinearCTStereoDble,
+                        pCS.LinearCTStereoCarb.as_const(),
+                        pCS.nLenLinearCTStereoCarb,
+                    )?;
                 } else {
                     pCS.LinearCTStereoDble = saved.LinearCTStereoDble;
                     pCS.LinearCTStereoCarb = saved.LinearCTStereoCarb;
@@ -4382,9 +4646,8 @@ pub(crate) fn Canon_INChI3(
                 }
             }
             if b_taut {
-                let value = tgi.as_mut().ok_or(SourceHeapError::NullPointer)?;
+                let value = tgi.as_deref_mut().ok_or(SourceHeapError::NullPointer)?;
                 value.bIgnoreIsotopic = ignore_iso_groups;
-                heap.slice_mut(pCS.t_group_info)?[0].bIgnoreIsotopic = ignore_iso_groups;
             }
             pCS.bIgnoreIsotopic = ignore_iso_atoms;
 
@@ -4393,19 +4656,19 @@ pub(crate) fn Canon_INChI3(
                     heap,
                     atom_number,
                     ftcn.PartitionCtIso.AtNumber.as_const(),
-                    atom_tg_count,
+                    atom_tg_count?,
                 )?;
                 source_copy(
                     heap,
                     rank,
                     ftcn.PartitionCtIso.Rank.as_const(),
-                    atom_tg_count,
+                    atom_tg_count?,
                 )?;
                 source_copy(
                     heap,
                     symm_rank,
                     ftcn.nSymmRankCtIso.as_const(),
-                    atom_tg_count,
+                    atom_tg_count?,
                 )?;
                 num_current_ranks = FixCanonEquivalenceInfo(
                     heap,
@@ -4421,37 +4684,44 @@ pub(crate) fn Canon_INChI3(
                     heap,
                     pCS.nPrevAtomNumber,
                     ftcn.PartitionCtIso.AtNumber.as_const(),
-                    atom_tg_count,
+                    atom_tg_count?,
                 )?;
-                canon_rank_iso_stereo = match allocate_rank(heap) {
-                    Ok(value) => value,
-                    Err(SourceHeapError::AllocationFailed) => break 'exit_function CT_OUT_OF_RAM,
-                    Err(error) => return Err(error),
-                };
+                // VERBATIM SOURCE FRAGMENT: ichicano.c2257..2263
+                //         if (pRankStack1 && pRankStack2 &&
+                //              nCanonRankIsotopicStereo &&
+                //              ( nSymmStereo || ( nMode & CMODE_NOEQ_STEREO ) ))
+                //         {
+                //
+                //             pRankStack1[0] = pRankStack2[0] = nRank; /* pRankStack1[0,1] shall be unchanged */
+                //             pRankStack1[1] = pRankStack2[1] = nAtomNumber;
+                // INCHI✔️❌: Same source-ordered nullable admissions; reuse
+                // symmetry when already allocated. Keep isotope tree !=0,
+                // distinct from ordinary <0. Existing rank-storage cost OPEN.
+                canon_rank_iso_stereo = source_malloc_result(allocate_rank(heap))?;
                 if symm_stereo.is_null() && nMode & CMODE_NOEQ_STEREO == 0 {
-                    symm_stereo = match heap.allocate(vec![0_u16; num_max + 1]) {
-                        Ok(value) => value,
-                        Err(SourceHeapError::AllocationFailed) => {
-                            break 'exit_function CT_OUT_OF_RAM;
-                        }
-                        Err(error) => return Err(error),
-                    };
+                    symm_stereo = source_malloc_result(inchi_calloc::<AT_RANK>(
+                        heap,
+                        (num_max + 1) as u64,
+                        2,
+                    ))?;
                 }
                 if nMode & CMODE_NOEQ_STEREO == 0
                     && CurTreeAlloc(heap, Some(&mut current_tree), num_at_tg)? != 0
                 {
                     break 'exit_function CT_OUT_OF_RAM;
                 }
-                if rank_stack2.is_null()
+                if bcn.pRankStack.is_null()
+                    || rank_stack2.is_null()
                     || canon_rank_iso_stereo.is_null()
                     || (symm_stereo.is_null() && nMode & CMODE_NOEQ_STEREO == 0)
                 {
                     break 'exit_function CT_OUT_OF_RAM;
                 }
-                heap.slice_mut(bcn.pRankStack)?[0] = rank;
-                heap.slice_mut(rank_stack2)?[0] = rank;
-                heap.slice_mut(bcn.pRankStack)?[1] = atom_number;
-                heap.slice_mut(rank_stack2)?[1] = atom_number;
+                // Source chained assignments store secondary then primary.
+                *heap.element_signed_mut(rank_stack2, 0)? = rank;
+                *heap.element_signed_mut(bcn.pRankStack, 0)? = rank;
+                *heap.element_signed_mut(rank_stack2, 1)? = atom_number;
+                *heap.element_signed_mut(bcn.pRankStack, 1)? = atom_number;
                 SwitchAtomStereoAndIsotopicStereo(
                     heap,
                     at,
@@ -4488,8 +4758,9 @@ pub(crate) fn Canon_INChI3(
                 } else {
                     for stack in [bcn.pRankStack, rank_stack2] {
                         let mut index = 2_usize;
-                        while index < usize::try_from(bcn.nMaxLenRankStack)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+                        while index
+                            < usize::try_from(bcn.nMaxLenRankStack)
+                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                         {
                             let pointer = heap.slice(stack.as_const())?[index];
                             if pointer.is_null() {
@@ -4530,7 +4801,11 @@ pub(crate) fn Canon_INChI3(
                         symm_stereo,
                         ftcn.NeighList,
                         pCS,
-                        if use_tree { Some(&mut current_tree) } else { None },
+                        if use_tree {
+                            Some(&mut current_tree)
+                        } else {
+                            None
+                        },
                         0,
                         parity_unknown,
                     )?;
@@ -4539,14 +4814,10 @@ pub(crate) fn Canon_INChI3(
                     }
                     let mut failed = 0_i32;
                     if nret == 0 {
-                        pCS.nLenLinearCTIsotopicStereoDble =
-                            -pCS.nLenLinearCTStereoDble.abs();
-                        saved.nLenLinearCTIsotopicStereoDble =
-                            pCS.nLenLinearCTIsotopicStereoDble;
-                        pCS.nLenLinearCTIsotopicStereoCarb =
-                            -pCS.nLenLinearCTStereoCarb.abs();
-                        saved.nLenLinearCTIsotopicStereoCarb =
-                            pCS.nLenLinearCTIsotopicStereoCarb;
+                        pCS.nLenLinearCTIsotopicStereoDble = -pCS.nLenLinearCTStereoDble.abs();
+                        saved.nLenLinearCTIsotopicStereoDble = pCS.nLenLinearCTIsotopicStereoDble;
+                        pCS.nLenLinearCTIsotopicStereoCarb = -pCS.nLenLinearCTStereoCarb.abs();
+                        saved.nLenLinearCTIsotopicStereoCarb = pCS.nLenLinearCTIsotopicStereoCarb;
                         break 'exit_function CT_STEREOCOUNT_ERR;
                     }
                     pCS.nLenLinearCTIsotopicStereoDble = pCS.nLenLinearCTStereoDble;
@@ -4554,15 +4825,21 @@ pub(crate) fn Canon_INChI3(
                     pCS.nLenLinearCTIsotopicStereoCarb = pCS.nLenLinearCTStereoCarb;
                     saved.nLenLinearCTIsotopicStereoCarb = pCS.nLenLinearCTStereoCarb;
                     if !pCS.nCanonOrdIsotopicStereo.is_null() {
-                        let ranks = heap
-                            .slice(canon_rank_iso_stereo.as_const())?
-                            .get(..atom_tg_count)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .to_vec();
-                        let order = heap.slice_mut(pCS.nCanonOrdIsotopicStereo)?;
-                        for (index, value) in ranks.into_iter().enumerate() {
+                        // VERBATIM SOURCE FRAGMENT: ichicano.c2391
+                        //                             pCS->nCanonOrdIsotopicStereo[(int) nCanonRankIsotopicStereo[i] - 1] = (AT_NUMB) i;
+                        // INCHI✔️❗: Preserve each live forward rank read and
+                        // only its reached numbering write, including aliases.
+                        // Invalid ranks keep the existing failed counter; no
+                        // input snapshot/unused output admission. O(N)/O(1),
+                        // checked arena/whole-call costs remain OPEN.
+                        for index in 0..num_at_tg {
+                            let value =
+                                *heap.element_signed(canon_rank_iso_stereo.as_const(), index)?;
                             if value != 0 && i32::from(value) <= num_at_tg {
-                                order[usize::from(value) - 1] = index as AT_NUMB;
+                                *heap.element_signed_mut(
+                                    pCS.nCanonOrdIsotopicStereo,
+                                    i32::from(value) - 1,
+                                )? = index as AT_NUMB;
                             } else {
                                 failed += 1;
                             }
@@ -4571,10 +4848,19 @@ pub(crate) fn Canon_INChI3(
                             if failed != 0 { -num_atoms } else { num_atoms };
                     }
                     if !pCS.nCanonOrdIsotopicStereoTaut.is_null() {
-                        nret = SortTautomerGroupsAndEndpoints(
+                        // VERBATIM SOURCE: ichicano.c2402..2405
+                        //                 if (pCS->nCanonOrdIsotopicStereoTaut)
+                        //                 {
+                        //                     if (0 < ( nRet = SortTautomerGroupsAndEndpoints( pCG, t_group_info1, num_atoms, num_at_tg, nCanonRankIsotopicStereo ) ))
+                        //                     {
+                        // INCHI✔️❗: The canonical child checks group count
+                        // BEFORE metadata; actual None may be source-unused.
+                        // Positive results alone read/copy its group fields
+                        // below. O(1), no extra state/copy; C515 costs OPEN.
+                        nret = sort_tautomer_groups_and_endpoints_optional(
                             heap,
                             pCG,
-                            tgi.as_ref().ok_or(SourceHeapError::NullPointer)?,
+                            tgi.as_deref(),
                             num_atoms,
                             num_at_tg,
                             canon_rank_iso_stereo,
@@ -4610,16 +4896,24 @@ pub(crate) fn Canon_INChI3(
                     pCS.LinearCTStereoCarb = saved.LinearCTIsotopicStereoCarbInv;
                     pCS.nLenLinearCTStereoDble = saved.nLenLinearCTIsotopicStereoDble;
                     pCS.nLenLinearCTStereoDbleInv = saved.nLenLinearCTIsotopicStereoDble;
-                    pCS.nLenLinearCTIsotopicStereoDbleInv =
-                        saved.nLenLinearCTIsotopicStereoDble;
-                    saved.nLenLinearCTIsotopicStereoDbleInv =
-                        saved.nLenLinearCTIsotopicStereoDble;
+                    // VERBATIM SOURCE FRAGMENT: ichicano.c2445..2452
+                    //         /* copy the lengths */
+                    //         pCS2->nLenLinearCTIsotopicStereoDbleInv =
+                    //             pCS->nLenLinearCTStereoDbleInv =
+                    //             pCS->nLenLinearCTStereoDble = pCS2->nLenLinearCTIsotopicStereoDble;
+                    //
+                    //         pCS2->nLenLinearCTIsotopicStereoCarbInv =
+                    //             pCS->nLenLinearCTStereoCarbInv =
+                    //             pCS->nLenLinearCTStereoCarb = pCS2->nLenLinearCTIsotopicStereoCarb;
+                    // INCHI✔️❗: Preparation updates saved isotope inverse
+                    // and ordinary current/inverse lengths only. Real isotope
+                    // inverse lengths publish at the existing positive-map
+                    // stores below (native2571..2574); zero/error exits retain
+                    // prior values. No extra state work/allocation; whole cost OPEN.
+                    saved.nLenLinearCTIsotopicStereoDbleInv = saved.nLenLinearCTIsotopicStereoDble;
                     pCS.nLenLinearCTStereoCarb = saved.nLenLinearCTIsotopicStereoCarb;
                     pCS.nLenLinearCTStereoCarbInv = saved.nLenLinearCTIsotopicStereoCarb;
-                    pCS.nLenLinearCTIsotopicStereoCarbInv =
-                        saved.nLenLinearCTIsotopicStereoCarb;
-                    saved.nLenLinearCTIsotopicStereoCarbInv =
-                        saved.nLenLinearCTIsotopicStereoCarb;
+                    saved.nLenLinearCTIsotopicStereoCarbInv = saved.nLenLinearCTIsotopicStereoCarb;
                     if pCS.nLenLinearCTStereoDble > 0 {
                         source_copy(
                             heap,
@@ -4651,7 +4945,7 @@ pub(crate) fn Canon_INChI3(
                             heap,
                             pCS.nCanonOrdIsotopicStereoInv,
                             pCS.nCanonOrdIsotopicStereo.as_const(),
-                            atom_tg_count,
+                            atom_tg_count?,
                         )?;
                     }
                     nret = InvertStereo(
@@ -4669,8 +4963,9 @@ pub(crate) fn Canon_INChI3(
                     if nret > 0 {
                         for stack in [bcn.pRankStack, rank_stack2] {
                             let mut index = 2_usize;
-                            while index < usize::try_from(bcn.nMaxLenRankStack)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+                            while index
+                                < usize::try_from(bcn.nMaxLenRankStack)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                             {
                                 let pointer = heap.slice(stack.as_const())?[index];
                                 if pointer.is_null() {
@@ -4711,7 +5006,11 @@ pub(crate) fn Canon_INChI3(
                             symm_stereo,
                             ftcn.NeighList,
                             pCS,
-                            if use_tree { Some(&mut current_tree) } else { None },
+                            if use_tree {
+                                Some(&mut current_tree)
+                            } else {
+                                None
+                            },
                             0,
                             parity_unknown,
                         )?;
@@ -4720,12 +5019,10 @@ pub(crate) fn Canon_INChI3(
                         }
                         failed = 0;
                         if nret == 0 {
-                            pCS.nLenLinearCTIsotopicStereoDble =
-                                -pCS.nLenLinearCTStereoDble.abs();
+                            pCS.nLenLinearCTIsotopicStereoDble = -pCS.nLenLinearCTStereoDble.abs();
                             saved.nLenLinearCTIsotopicStereoDble =
                                 pCS.nLenLinearCTIsotopicStereoDble;
-                            pCS.nLenLinearCTIsotopicStereoCarb =
-                                -pCS.nLenLinearCTStereoCarb.abs();
+                            pCS.nLenLinearCTIsotopicStereoCarb = -pCS.nLenLinearCTStereoCarb.abs();
                             saved.nLenLinearCTIsotopicStereoCarb =
                                 pCS.nLenLinearCTIsotopicStereoCarb;
                             break 'exit_function CT_STEREOCOUNT_ERR;
@@ -4759,15 +5056,21 @@ pub(crate) fn Canon_INChI3(
                         }
                         nret = 0;
                         if !pCS.nCanonOrdIsotopicStereoInv.is_null() {
-                            let ranks = heap
-                                .slice(canon_rank_iso_stereo_inv.as_const())?
-                                .get(..atom_tg_count)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                                .to_vec();
-                            let order = heap.slice_mut(pCS.nCanonOrdIsotopicStereoInv)?;
-                            for (index, value) in ranks.into_iter().enumerate() {
+                            // VERBATIM SOURCE FRAGMENT: ichicano.c2618
+                            //                             pCS->nCanonOrdIsotopicStereoInv[(int) nCanonRankIsotopicStereoInv[i] - 1] = (AT_NUMB) i;
+                            // INCHI✔️❗: Preserve each live forward rank read and
+                            // only its reached numbering write, including aliases.
+                            // Invalid ranks keep the existing failed counter; no
+                            // input snapshot/unused output admission. O(N)/O(1),
+                            // checked arena/whole-call costs remain OPEN.
+                            for index in 0..num_at_tg {
+                                let value = *heap
+                                    .element_signed(canon_rank_iso_stereo_inv.as_const(), index)?;
                                 if value != 0 && i32::from(value) <= num_at_tg {
-                                    order[usize::from(value) - 1] = index as AT_NUMB;
+                                    *heap.element_signed_mut(
+                                        pCS.nCanonOrdIsotopicStereoInv,
+                                        i32::from(value) - 1,
+                                    )? = index as AT_NUMB;
                                 } else {
                                     failed += 1;
                                 }
@@ -4775,18 +5078,17 @@ pub(crate) fn Canon_INChI3(
                             pCS.nLenCanonOrdIsotopicStereo =
                                 if failed != 0 { -num_atoms } else { num_atoms };
                         }
-                        pCS.bCmpIsotopicStereo = 2
-                            + CompareLinCtStereo(
-                                heap,
-                                pCS.LinearCTIsotopicStereoDbleInv.as_const(),
-                                pCS.nLenLinearCTIsotopicStereoDbleInv,
-                                pCS.LinearCTIsotopicStereoCarbInv.as_const(),
-                                pCS.nLenLinearCTIsotopicStereoCarbInv,
-                                pCS.LinearCTIsotopicStereoDble.as_const(),
-                                pCS.nLenLinearCTIsotopicStereoDble,
-                                pCS.LinearCTIsotopicStereoCarb.as_const(),
-                                pCS.nLenLinearCTIsotopicStereoCarb,
-                            )?;
+                        pCS.bCmpIsotopicStereo = 2 + CompareLinCtStereo(
+                            heap,
+                            pCS.LinearCTIsotopicStereoDbleInv.as_const(),
+                            pCS.nLenLinearCTIsotopicStereoDbleInv,
+                            pCS.LinearCTIsotopicStereoCarbInv.as_const(),
+                            pCS.nLenLinearCTIsotopicStereoCarbInv,
+                            pCS.LinearCTIsotopicStereoDble.as_const(),
+                            pCS.nLenLinearCTIsotopicStereoDble,
+                            pCS.LinearCTIsotopicStereoCarb.as_const(),
+                            pCS.nLenLinearCTIsotopicStereoCarb,
+                        )?;
                     } else {
                         pCS.LinearCTStereoDble = saved.LinearCTIsotopicStereoDble;
                         pCS.LinearCTStereoCarb = saved.LinearCTIsotopicStereoCarb;
@@ -4797,12 +5099,20 @@ pub(crate) fn Canon_INChI3(
                 pCS.LinearCTIsotopic = saved.LinearCTIsotopic;
             }
 
-            if b_taut {
-                let value = tgi.as_mut().ok_or(SourceHeapError::NullPointer)?;
-                value.bIgnoreIsotopic = ignore_iso_groups;
-                heap.slice_mut(pCS.t_group_info)?[0].bIgnoreIsotopic = ignore_iso_groups;
-            }
-            pCS.bIgnoreIsotopic = ignore_iso_atoms;
+            // VERBATIM SOURCE FRAGMENT: ichicano.c2645..2653
+            //
+            //
+            //     bypass_isotopic_stereo:;  /* ???       */
+            //
+            //         pCS->LinearCTIsotopic = pCS2->LinearCTIsotopic;
+            //     }
+            //
+            //
+            //
+            // INCHI✔️❗: Native proceeds to exit without another ignore-flag
+            // restore. Keep the sole source2209..2216 restoration above and
+            // every helper-produced state; no duplicate local/heap stores or
+            // arena lookup. O(1)/no allocation; whole-call costs remain OPEN.
             break 'exit_function nret;
         };
         Ok(status)
@@ -4817,28 +5127,41 @@ pub(crate) fn Canon_INChI3(
         std::mem::swap(&mut pCS.nLenLinearCT, &mut pCS.nLenLinearCT2);
         std::mem::swap(&mut pCS.nLenLinearCTAtOnly, &mut pCS.nLenLinearCTAtOnly2);
     }
-    let stack_len = usize::try_from(bcn.nMaxLenRankStack)
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let mut first_free = 2_usize;
+    // VERBATIM SOURCE FRAGMENT: ichicano.c2671..2675
+    //     i = 2;
+    //     if (pRankStack1)
+    //     {
+    //         pRankStack1[0] =
+    //             pRankStack1[1] = NULL; /* deallocated separately */
+    // INCHI✔️❗: The chained source assignment clears slot1 then slot0
+    // whenever the primary stack exists, regardless of its active limit.
+    // Admit actual reached slots; short signed limits skip unused scans.
+    // Scan/recycle counters never exceed the signed limit, and limit-1
+    // executes only in a body reached with limit>=3. O(slots)/O(1), no
+    // allocation/snapshot; checked arena/free whole-call costs remain OPEN.
+    let stack_len = bcn.nMaxLenRankStack;
+    let mut first_free = 2_i32;
     if !bcn.pRankStack.is_null() {
-        if stack_len > 0 {
-            heap.slice_mut(bcn.pRankStack)?[0] = SourceMutPointer::null();
-        }
-        if stack_len > 1 {
-            heap.slice_mut(bcn.pRankStack)?[1] = SourceMutPointer::null();
-        }
+        *heap.element_signed_mut(bcn.pRankStack, 1)? = SourceMutPointer::null();
+        *heap.element_signed_mut(bcn.pRankStack, 0)? = SourceMutPointer::null();
         while first_free < stack_len
-            && !heap.slice(bcn.pRankStack.as_const())?[first_free].is_null()
+            && !heap
+                .element_signed(bcn.pRankStack.as_const(), first_free)?
+                .is_null()
         {
             first_free += 1;
         }
     }
     if !bcn.pRankStack.is_null() && !rank_stack2.is_null() {
-        let mut index = 2_usize;
-        while index < stack_len && !heap.slice(rank_stack2.as_const())?[index].is_null() {
-            let pointer = heap.slice(rank_stack2.as_const())?[index];
-            if first_free < stack_len.saturating_sub(1) {
-                heap.slice_mut(bcn.pRankStack)?[first_free] = pointer;
+        let mut index = 2_i32;
+        while index < stack_len
+            && !heap
+                .element_signed(rank_stack2.as_const(), index)?
+                .is_null()
+        {
+            let pointer = *heap.element_signed(rank_stack2.as_const(), index)?;
+            if first_free < stack_len - 1 {
+                *heap.element_signed_mut(bcn.pRankStack, first_free)? = pointer;
                 first_free += 1;
             } else {
                 inchi_free(heap, pointer)?;
@@ -4851,7 +5174,14 @@ pub(crate) fn Canon_INChI3(
     for pointer in [atom_number, temp_rank, rank, symm_rank, symm_stereo] {
         inchi_free(heap, pointer)?;
     }
-    CurTreeFree(heap, if use_tree { Some(&mut current_tree) } else { None })?;
+    CurTreeFree(
+        heap,
+        if use_tree {
+            Some(&mut current_tree)
+        } else {
+            None
+        },
+    )?;
     for pointer in [
         canon_rank_iso_stereo,
         canon_rank_iso_stereo_inv,
@@ -4871,7 +5201,7 @@ pub(crate) fn Canon_INChI3(
 pub(crate) fn Canon_INChI(
     heap: &mut SourceHeap,
     ic: &mut INCHI_CLOCK,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
     user_action: Option<fn() -> i32>,
     console_quit: Option<fn() -> i32>,
     num_atoms: i32,
@@ -4921,6 +5251,63 @@ pub(crate) fn Canon_INChI(
         );
     }
     Ok(CT_CANON_ERR)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Canon_INChIWithTargets(
+    heap: &mut SourceHeap,
+    ic: &mut INCHI_CLOCK,
+    clock_result: impl crate::source_types::SourceClock,
+    user_action: Option<fn() -> i32>,
+    console_quit: Option<fn() -> i32>,
+    num_atoms: i32,
+    num_at_tg: i32,
+    at: SourceMutPointer<sp_ATOM>,
+    pCS: &mut CANON_STAT,
+    pCG: &mut CANON_GLOBALS,
+    nMode: u32,
+    bTautFtcn: i32,
+    bcn: &crate::source_types::BCN,
+    tgi: Option<&mut T_GROUP_INFO>,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichicano.c2737..2742
+    //     if (pCS->pBCN && !pCS->NeighList)
+    //     {
+    //         return Canon_INChI3( ic, num_atoms, num_at_tg, at, pCS, pCG, nMode, bTautFtcn );
+    //     }
+    //
+    //     return CT_CANON_ERR;
+    // INCHI✔️❗: The actual borrowed BCN is non-NULL by construction. An
+    // unused physical pCS.pBCN is not a semantic NULL. No heap model/copyback.
+    // INCHI-PERF-CANON-ACTUAL-TARGETS: fixed checked transport cost OPEN.
+    if !pCS.NeighList.is_null() {
+        return Ok(CT_CANON_ERR);
+    }
+    let mut start_time = inchiTime::default();
+    InchiTimeGet(&mut start_time, clock_result);
+    let ftcn_index = usize::try_from(bTautFtcn).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let ftcn = bcn
+        .ftcn
+        .get(ftcn_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    canon_inchi3_targets(
+        heap,
+        ic,
+        clock_result,
+        user_action,
+        console_quit,
+        num_atoms,
+        num_at_tg,
+        at,
+        pCS,
+        pCG,
+        nMode,
+        bTautFtcn,
+        bcn,
+        ftcn,
+        tgi,
+        start_time,
+    )
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@ use crate::source_types::{
 };
 
 const SOURCE_SIZEOF_OAD_POLYMER: u64 = 48;
-const SOURCE_SIZEOF_OAD_POLYMER_UNIT: u64 = 240;
+const SOURCE_SIZEOF_OAD_POLYMER_UNIT: u64 = 248;
 const SOURCE_SIZEOF_OAD_V3000: u64 = 104;
 const SOURCE_SIZEOF_POINTER: u64 = 8;
 const SOURCE_SIZEOF_INT: u64 = 4;
@@ -442,11 +442,19 @@ exitf:
         }
 
         if !orv.is_null() {
-            let input = heap
-                .slice(orv.as_const())?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
+            // VERBATIM SOURCE FRAGMENT: inchi_dll.c3362..3370
+            //         *iiv = (inchi_Input_V3000 *) inchi_calloc( 1, sizeof(inchi_Input_V3000) ); /* djb-rwth: fixing the incorrect type of variable */
+            //         if (!*iiv)
+            //         {
+            //             err = 9001;
+            //             goto exitf;
+            //         }
+            //         memset( *iiv, 0, sizeof( **iiv ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+            //
+            //         ( *iiv )->n_collections = orv->n_collections;
+            // INCHI✔️❗: Native allocates/publishes output before input reads;
+            // allocation failure skips unused metadata and reaches original cleanup.
+            // Fixed metadata only, no Vec/extra allocation/scan; whole-call cost OPEN.
             *iiv = match inchi_calloc(heap, 1, SOURCE_SIZEOF_INCHI_INPUT_V3000) {
                 Ok(pointer) => pointer,
                 Err(_) => SourceMutPointer::null(),
@@ -455,6 +463,11 @@ exitf:
                 err = 9001;
                 break 'conversion;
             }
+            let input = heap
+                .slice(orv.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .clone();
             {
                 let output = &mut heap.slice_mut(*iiv)?[0];
                 output.n_collections = input.n_collections;
@@ -959,11 +972,11 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                 }
                 for k in 0..input_polymer.n {
                     let group_pointer = heap.slice(input_polymer.units.as_const())?[k as usize];
-                    let group = heap
-                        .slice(group_pointer.as_const())?
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .clone();
+                    // INCHI✔️❗: inpdef.h261..292 gives LP64 unit size248:
+                    // 36+4+64+80+28+4+16+8+8 bytes, alignment8. Source
+                    // logical allocation size corrected; canonical typed model unchanged.
+                    // First group dereference follows successful calloc/table publication;
+                    // allocation order/error cleanup unchanged, checked costs OPEN.
                     let unit = match inchi_calloc(heap, 1, SOURCE_SIZEOF_OAD_POLYMER_UNIT) {
                         Ok(pointer) => pointer,
                         Err(_) => {
@@ -972,6 +985,11 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
                         }
                     };
                     heap.slice_mut(units)?[k as usize] = unit;
+                    let group = heap
+                        .slice(group_pointer.as_const())?
+                        .first()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .clone();
                     {
                         let output = &mut heap.slice_mut(unit)?[0];
                         output.id = group.id;
@@ -1025,11 +1043,6 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
         }
 
         if !iev.is_null() {
-            let input = heap
-                .slice(iev.as_const())?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
             *pp_v3000 = match inchi_calloc(heap, 1, SOURCE_SIZEOF_OAD_V3000) {
                 Ok(pointer) => pointer,
                 Err(_) => {
@@ -1041,6 +1054,14 @@ pub(crate) fn SetExtOrigAtDataByInChIExtInput(
             if pv.is_null() {
                 break 'port;
             }
+            // INCHI✔️❗: Source first reads the input V3000 record after
+            // successful output allocation/publication. No added clone/scan;
+            // existing fixed record snapshot and checked cost remain independent.
+            let input = heap
+                .slice(iev.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .clone();
             {
                 let output = &mut heap.slice_mut(pv)?[0];
                 output.n_collections = input.n_collections;

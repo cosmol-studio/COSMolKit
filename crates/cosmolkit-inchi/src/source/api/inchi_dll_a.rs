@@ -9,17 +9,22 @@ use crate::source::base::ichi_io::{
 };
 use crate::source::base::ichican2::SetBitFree;
 use crate::source::base::ichierr::AddErrorMessage;
+use crate::source::base::ichierr::add_error_message_bytes;
 use crate::source::base::ichinorm::FreeInpAtomData;
 use crate::source::base::ichiparm::{
     HelpCommandLineParms, InchiBuildMetadata, PrintInputParms, ReadCommandLineParms,
 };
 use crate::source::base::ichiprt1::{OrigStruct_FillOut, OrigStruct_Free};
+use crate::source::base::ichiprt1::{OriginalStructure, SourceSortFlags};
 use crate::source::base::ichitaut::free_t_group_info;
-use crate::source::base::mol_fmt4::OrigAtData_WriteToSDfile;
+use crate::source::base::mol_fmt4::OrigAtData_WriteToSDfile_name_bytes;
 use crate::source::base::mol2atom::{FreeCompAtomData, FreeOrigAtData};
 use crate::source::base::runichi4::{
-    FreeAllINChIArrays, SortAndPrintINChI, TreatCreateINChIWarning, bIsStructChiral,
+    FreeAllINChIArrays, SourceComponentRowPair, TreatCreateINChIWarning, bIsStructChiral,
+    sort_and_print_inchi_rows,
 };
+use crate::source::base::util::SourceInputArray;
+use crate::source::base::util::allocate_model_payload;
 use crate::source::base::util::{inchi_free, inchi_malloc, inchi_stricmp};
 use crate::source_types::{
     _IS_EOF, _IS_ERROR, _IS_FATAL, _IS_OKAY, _IS_SKIP, _IS_UNKNOWN, _IS_WARNING, CANON_GLOBALS,
@@ -435,13 +440,9 @@ ret:switch (retcode)
     'source: {
         let input = p_inp.ok_or(SourceHeapError::NullPointer)?;
         if input_erroneously_contains_pseudoatoms(heap, Some(input), None)? != 0 {
-            let message = b"Pseudoatoms are not supported in current API mode\0"
-                .iter()
-                .map(|byte| *byte as i8)
-                .collect::<Vec<_>>();
-            AddErrorMessage(
+            add_error_message_bytes(
                 Some(&mut control.StructData.pStrErrStruct),
-                Some(&message),
+                b"Pseudoatoms are not supported in current API mode\0",
             )?;
             control.StructData.nStructReadError = 99;
             control.StructData.nErrorType = _IS_ERROR as i32;
@@ -465,8 +466,9 @@ ret:switch (retcode)
         };
         *data = INCHIGEN_DATA::default();
 
-        let mut parsed_arguments = vec![SourceArgvPointer::Null; INCHI_MAX_NUM_ARG as usize + 1];
-        let empty_argument = heap.allocate_model_storage(vec![0_i8])?;
+        // INCHI✔️❌: Native argv[33]; unchanged tokenizer max32 yields argc<=31.
+        // Two expanded typed stack tables retain a larger fixed footprint (C078 OPEN).
+        let mut parsed_arguments = [SourceArgvPointer::Null; INCHI_MAX_NUM_ARG as usize + 1];
         let mut options = SourceMutPointer::null();
         let argument_count = if input.szOptions.is_null() {
             parsed_arguments[0] = SourceArgvPointer::EmptyLiteral;
@@ -477,11 +479,27 @@ ret:switch (retcode)
                 .iter()
                 .position(|byte| *byte == 0)
                 .ok_or(SourceHeapError::MissingNulTerminator)?;
-            let source = source[..=length].to_vec();
-            options = match inchi_malloc(heap, (length + 1) as u64) {
+            // INCHI✔️❗: Source malloc + strcpy (native frame above).
+            // Reserve the final fresh buffer fallibly and initialize it by
+            // the one required copy, avoiding zero-fill then overwrite.
+            // The preceding strlen admitted the complete immutable prefix;
+            // registration/copy cannot mutate its source or published state.
+            // O(length), one payload allocation; arena cost remains OPEN.
+            let allocation = (|| {
+                let mut copied = Vec::new();
+                copied
+                    .try_reserve_exact(length + 1)
+                    .map_err(|_| SourceHeapError::AllocationFailed)?;
+                copied.extend_from_slice(
+                    heap.slice(input.szOptions.as_const())?
+                        .get(..=length)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                );
+                heap.allocate(copied)
+            })();
+            options = match allocation {
                 Ok(pointer) => pointer,
                 Err(SourceHeapError::AllocationFailed) => {
-                    heap.free(empty_argument)?;
                     *heap
                         .slice_mut(control_pointer)?
                         .first_mut()
@@ -490,7 +508,6 @@ ret:switch (retcode)
                 }
                 Err(error) => return Err(error),
             };
-            heap.slice_mut(options)?[..=length].copy_from_slice(&source);
             parse_options_string(
                 heap,
                 options,
@@ -498,14 +515,19 @@ ret:switch (retcode)
                 INCHI_MAX_NUM_ARG as i32,
             )?
         };
-        let mut argv = Vec::with_capacity(argument_count as usize);
-        for argument in parsed_arguments.iter().copied().take(argument_count as usize) {
-            argv.push(match argument {
-                SourceArgvPointer::EmptyLiteral => empty_argument.as_const(),
+        let mut argv = [SourceConstPointer::null(); INCHI_MAX_NUM_ARG as usize + 1];
+        for (index, argument) in parsed_arguments
+            .iter().copied().take(argument_count as usize).enumerate()
+        {
+            argv[index] = match argument {
+                // Native argv[0] is unused; all consumers below start at index1.
+                // This private placeholder never escapes as a string pointer.
+                SourceArgvPointer::EmptyLiteral => SourceConstPointer::null(),
                 SourceArgvPointer::Command(pointer) => pointer.as_const(),
                 SourceArgvPointer::Null => return Err(SourceHeapError::NullPointer),
-            });
+            };
         }
+        let argv = &argv[..argument_count as usize];
 
         let no_input = input.num_atoms <= 0 || input.atom.is_null();
         let help_requested = if argument_count == 2 {
@@ -515,12 +537,10 @@ ret:switch (retcode)
                 let suffix = argument.offset(1)?;
                 let suffix_bytes = heap.slice(suffix)?;
                 let is_question = suffix_bytes.starts_with(&[b'?' as i8, 0]);
-                let help = heap.allocate_model_storage(
-                    b"help\0".iter().map(|byte| *byte as i8).collect(),
-                )?;
-                let is_help = inchi_stricmp(heap, suffix, help.as_const())? == 0;
-                heap.free(help)?;
-                is_question || is_help
+                // Preserve native OR short-circuit and borrow its static literal.
+                is_question || crate::source::base::util::inchi_stricmp_bytes(
+                    suffix_bytes, bytemuck::cast_slice(b"help\0"),
+                )? == 0
             } else {
                 false
             }
@@ -530,7 +550,6 @@ ret:switch (retcode)
         if (argument_count == 1 && no_input) || help_requested {
             HelpCommandLineParms(heap, Some(&mut control.inchi_file[1]), stdout, build)?;
             control.inchi_file[1] = Default::default();
-            heap.free(empty_argument)?;
             *heap
                 .slice_mut(control_pointer)?
                 .first_mut()
@@ -538,23 +557,43 @@ ret:switch (retcode)
             return Ok(_IS_EOF);
         }
 
-        let sdf_value = heap.allocate_model_storage(vec![0_i8; MAX_SDF_VALUE as usize + 1])?;
+        // INCHI❗❌: Existing legacy staging/retained allocation is KNOWN extra;
+        // C563 defers cost only. Underlying operations and behavior guards stay.
+        let sdf_value = allocate_model_payload(heap, std::iter::repeat_n(0_i8, MAX_SDF_VALUE as usize + 1))?;
         let mut display_time = 0_u64;
-        retcode = ReadCommandLineParms(
+        // Native ip=&HGen->InpParms: parse its actual field so an error
+        // return's SDF label keeps the real inline header owner. The copied
+        // argv is independent. No copied label/model allocation (C580 OPEN).
+        let parameters = control_pointer.as_const().input_parameters_field()?;
+        let parsed = ReadCommandLineParms(
             heap,
             argument_count,
-            &argv,
-            &mut control.InpParms,
+            argv,
+            parameters,
             sdf_value,
             &mut display_time,
             bRELEASE_VERSION as i32,
             Some(&mut control.inchi_file[1]),
-        )?;
+        );
+        retcode = match parsed {
+            Ok(value) => {
+                // Keep the existing caller's local control state synchronized;
+                // actual parent header remains live for every escaped alias.
+                // Fixed metadata copy is known-extra C580, not no-worse.
+                control.InpParms = heap.slice(parameters.as_const())?[0].clone();
+                value
+            }
+            Err(error) => {
+                // Preserve the pre-existing Rust-only Err publication state
+                // from the already retained original, without another clone.
+                heap.slice_mut(parameters)?[0] = control.InpParms;
+                return Err(error);
+            }
+        };
         heap.free(sdf_value)?;
         if !options.is_null() {
             inchi_free(heap, options)?;
         }
-        heap.free(empty_argument)?;
         control.InpParms.bNoStructLabels = 1;
         if retcode < 0 {
             break 'source;
@@ -908,7 +947,10 @@ exit_function:
         .cloned()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let generation_data = p_gen_data.ok_or(SourceHeapError::NullPointer)?;
-    let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()])?;
+    // INCHI❗❌: Fixed clock metadata allocation/copy/free remains KNOWN
+    // extra. INCHI-PERF-FIXED-CLOCK-METADATA C562 defers cost only;
+    // operations/errors/identity and temporal0099 stay independent.
+    let clock = allocate_model_payload(heap, std::iter::once(INCHI_CLOCK::default()))?;
     let mut canonical_globals = CANON_GLOBALS::default();
 
     let operation = (|| -> Result<i32, SourceHeapError> {
@@ -938,17 +980,23 @@ exit_function:
             control.ncFlags = Default::default();
 
             if control.InpParms.bINChIOutputOptions & INCHI_OUT_SDFILE_ONLY as i32 != 0 {
-                let title = format!("Structure #{}", control.num_inp);
-                if title.len() >= 32 {
-                    return Err(SourceHeapError::PointerOutOfBounds);
-                }
-                let title = heap.allocate_model_storage(
-                    title
-                        .bytes()
-                        .chain(std::iter::once(0))
-                        .map(|byte| byte as i8)
-                        .collect(),
-                )?;
+                // VERBATIM SOURCE FRAGMENT: inchi_dll_a.c561..564
+                //         char szNumber[32];
+                //         int ret1a = 0, ret2a = 0; /* for derivatives and ring-chain */ /* djb-rwth: ignoring LLVM warning: variables used to store function return values */
+                //         ret1a = sprintf( szNumber, "Structure #%ld", HGen->num_inp );
+                //         ret2a = OrigAtData_WriteToSDfile( orig_inp_data, out_file, szNumber, NULL,
+                // INCHI✔️❗: LP64 signed long needs at most20 bytes, so the
+                // 11-byte prefix plus NUL fits native title32 for every i64.
+                // Reuse one writer kernel with borrowed stack title; no String,
+                // Vec, arena allocation/free or new fallible admission. O(digits),
+                // fixed53-byte scratch; decimal/check/whole-call costs OPEN.
+                let mut number = [0_u8; 21];
+                let number = crate::source::base::ichi_io::source_decimal_i64(
+                    control.num_inp, None, &mut number,
+                );
+                let mut title = [0_i8; 32];
+                title[..11].copy_from_slice(bytemuck::cast_slice(b"Structure #"));
+                title[11..11 + number.len()].copy_from_slice(bytemuck::cast_slice(number));
                 let chiral = i32::from(
                     control.StructData.bChiralFlag & FLAG_INP_AT_CHIRAL as i32 != 0,
                 );
@@ -957,19 +1005,18 @@ exit_function:
                 );
                 let label = control.InpParms.pSdfLabel.as_const();
                 let value = control.InpParms.pSdfValue.as_const();
-                let write_result = OrigAtData_WriteToSDfile(
+                let write_result = OrigAtData_WriteToSDfile_name_bytes(
                     heap,
                     &control.OrigInpData,
                     Some(&mut control.inchi_file[0]),
                     SourceMutPointer::null(),
-                    title.as_const(),
+                    &title,
                     SourceConstPointer::null(),
                     chiral,
                     atoms_dt,
                     label,
                     value,
                 );
-                heap.free(title)?;
                 let _ = write_result?;
                 break 'normalization;
             }
@@ -1013,7 +1060,7 @@ exit_function:
                     &mut control,
                     INCHI_BAS as i32,
                     Some(&mut input_stream),
-                    0,
+                    crate::source_types::LiveSourceClock,
                 )?;
                 result = result.max(component_result);
             }
@@ -1033,7 +1080,7 @@ exit_function:
                     &mut control,
                     INCHI_REC as i32,
                     Some(&mut input_stream),
-                    0,
+                    crate::source_types::LiveSourceClock,
                 )?;
                 result = result.max(component_result);
             }
@@ -1052,7 +1099,14 @@ exit_function:
             let proton_mask =
                 u64::from(FLAG_NORM_CONSIDER_TAUT & !FLAG_PROTON_CHARGE_CANCEL);
             for structure in 0..INCHI_NUM as usize {
-                let count = usize::try_from(generation_data.num_components[structure])
+                // VERBATIM SOURCE FRAGMENT: inchi_dll_a.c637..639
+                //             if (nc[istruct] > 0)
+                //             {
+                //                 for (ics = 0; ics < nc[istruct]; ics++)
+                // INCHI✔️❗: Nonpositive source count reaches no normalized
+                // storage. Positive read/error/warning order stays unchanged;
+                // O(reached components), no extra allocation/scan, cost OPEN.
+                let count = usize::try_from(generation_data.num_components[structure].max(0))
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                 for component in 0..count {
                     for source in [
@@ -1313,7 +1367,10 @@ exit_function:
         .cloned()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let generation_data = p_gen_data.ok_or(SourceHeapError::NullPointer)?;
-    let clock = heap.allocate_model_storage(vec![INCHI_CLOCK::default()])?;
+    // INCHI❗❌: Fixed clock metadata allocation/copy/free remains KNOWN
+    // extra. INCHI-PERF-FIXED-CLOCK-METADATA C562 defers cost only;
+    // operations/errors/identity and temporal0099 stay independent.
+    let clock = allocate_model_payload(heap, std::iter::once(INCHI_CLOCK::default()))?;
     let mut canonical_globals = CANON_GLOBALS::default();
 
     let operation = (|| -> Result<i32, SourceHeapError> {
@@ -1354,7 +1411,7 @@ exit_function:
                     &mut control,
                     INCHI_BAS as i32,
                     Some(&mut input_stream),
-                    0,
+                    crate::source_types::LiveSourceClock,
                 )?;
                 result = result.max(component_result);
             }
@@ -1373,7 +1430,7 @@ exit_function:
                     &mut control,
                     INCHI_REC as i32,
                     Some(&mut input_stream),
-                    0,
+                    crate::source_types::LiveSourceClock,
                 )?;
                 result = result.max(component_result);
             }
@@ -1771,11 +1828,24 @@ frees:
         SourceMutPointer::null(),
     )?;
 
-    let canonical_pointer = heap.allocate_model_storage(vec![CANON_GLOBALS::default()])?;
-    let original_pointer = heap.allocate_model_storage(vec![control.OrigInpData.clone()])?;
-    let prepared_pointer = heap.allocate_model_storage(vec![control.PrepInpData[0].clone()])?;
-    let original_structure_pointer = heap.allocate_model_storage(vec![control.OrigStruct.clone()])?;
-    let sort_flags_pointer = heap.allocate_model_storage(vec![0_i32])?;
+    // INCHI source inchi_dll_a.c892..893:
+    //     CANON_GLOBALS CG;
+    //     memset(&CG, 0, sizeof(CG)); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️❗: Output never observes CG; retain the actual source zero
+    // stack object for cleanup, with no arena model/snapshot/free. O(1),
+    // INCHI-PERF-OUTPUT-DEAD-GLOBALS records entry-call/whole costs OPEN.
+    let mut canonical_globals = CANON_GLOBALS::default();
+    // INCHI✔️❗: Native886/980 passes the actual inline OrigInpData.
+    // One readonly view through the whole output chain, no model/clone/free.
+    // Payload handles remain live; C546 whole checked costs stay OPEN.
+    // INCHI✔️✔️: Native887 passes its inline prepared record only to the
+    // source-excluded GUI sort branch. No active consumer, model or clone.
+    // C545 removes this dead temporary; other root quarantines stay intact.
+    // Native inchi_dll_a.c uses &(HGen->OrigStruct), not a new record.
+    // INCHI✔️❗: Borrow the actual stable metadata through output (C527 OPEN).
+    // Native inchi_dll_a.c889: int bSortPrintINChIFlags = 0;
+    // INCHI✔️❗: Source-local scalar, no model registration/free (C526 OPEN).
+    let mut sort_flags = 0_i32;
 
     let operation = (|| -> Result<i32, SourceHeapError> {
         let mut retcode = 0_i32;
@@ -1828,17 +1898,15 @@ frees:
             let aux_components = control.pINChI_Aux;
             let (out_file, remaining_files) = control.inchi_file.split_at_mut(1);
             let log_file = &mut remaining_files[0];
-            n_ret = SortAndPrintINChI(
+            n_ret = sort_and_print_inchi_rows(
                 heap,
-                canonical_pointer,
                 &mut out_file[0],
                 Some(&mut control.strbuf_container),
                 log_file,
                 &input_parameters,
-                original_pointer.as_const(),
-                prepared_pointer.as_const(),
+                SourceInputArray::Borrowed(std::slice::from_ref(&control.OrigInpData)),
                 Some(&mut control.composite_norm_data),
-                original_structure_pointer.as_const(),
+                OriginalStructure::Borrowed(Some(&control.OrigStruct)),
                 &component_counts,
                 &non_tautomeric_counts,
                 &tautomeric_counts,
@@ -1846,9 +1914,10 @@ frees:
                 &mut taut_flags_done,
                 &normalization_flags,
                 input_number,
-                inchi_components,
-                aux_components,
-                sort_flags_pointer,
+                std::array::from_fn(|index| SourceComponentRowPair::Pointers {
+                    inchi: inchi_components[index], aux: aux_components[index],
+                }),
+                &mut SourceSortFlags::Borrowed(&mut sort_flags),
                 save_option_bits,
                 SourceMutPointer::null(),
             )?;
@@ -1890,47 +1959,30 @@ frees:
                 results.szInChI = output_pointer;
                 results.szAuxInfo = SourceMutPointer::null();
                 if control.InpParms.bINChIOutputOptions & INCHI_OUT_SDFILE_ONLY as i32 == 0 {
-                    let allocation = heap.slice(output_pointer.as_const())?;
-                    let nul = allocation
-                        .iter()
-                        .position(|byte| *byte == 0)
-                        .ok_or(SourceHeapError::MissingNulTerminator)?;
+                    // INCHI✔️❗: Native strchr starts at p+1 after each mutation.
+                    // No whole-string NUL preflight or per-byte heap resolution.
+                    // O(reached bytes), O(1), zero allocation; C080 cost OPEN.
+                    let bytes = heap.slice_mut(output_pointer)?;
                     let mut search = 0_usize;
-                    loop {
-                        let next = heap.slice(output_pointer.as_const())?[search..nul]
-                            .iter()
-                            .position(|byte| *byte == b'\n' as i8)
-                            .map(|offset| search + offset);
-                        let Some(position) = next else {
-                            break;
-                        };
-                        let is_aux = nul - position >= 8
-                            && heap.slice(output_pointer.as_const())?[position..position + 8]
-                                == [
-                                    b'\n' as i8,
-                                    b'A' as i8,
-                                    b'u' as i8,
-                                    b'x' as i8,
-                                    b'I' as i8,
-                                    b'n' as i8,
-                                    b'f' as i8,
-                                    b'o' as i8,
-                                ];
+                    while let Some(position) =
+                        crate::source::base::util::source_c_string_delimiter(bytes, search, b'\n' as i8)?
+                    {
+                        // Keep the previous Rust-only short-extent nonmatch;
+                        // all native-defined memcmp inputs have eight readable bytes.
+                        let is_aux = bytes[position..].starts_with(&[
+                            b'\n' as i8, b'A' as i8, b'u' as i8, b'x' as i8,
+                            b'I' as i8, b'n' as i8, b'f' as i8, b'o' as i8,
+                        ]);
                         if is_aux {
-                            heap.slice_mut(output_pointer)?[position] = 0;
+                            bytes[position] = 0;
                             results.szAuxInfo = output_pointer.offset((position + 1) as i64)?;
-                            search = position + 1;
-                        } else {
-                            let next_is_nul = heap
-                                .slice(output_pointer.as_const())?
-                                .get(position + 1)
-                                == Some(&0);
-                            if !results.szAuxInfo.is_null() || next_is_nul {
-                                heap.slice_mut(output_pointer)?[position] = 0;
-                                break;
-                            }
-                            search = position + 1;
+                        } else if !results.szAuxInfo.is_null()
+                            || bytes.get(position + 1) == Some(&0)
+                        {
+                            bytes[position] = 0;
+                            break;
                         }
+                        search = position + 1;
                     }
                 }
                 control.inchi_file[0].s.pStr = SourceMutPointer::null();
@@ -1985,9 +2037,7 @@ frees:
                 *path = SourceConstPointer::null();
             }
         }
-        let mut canonical_globals = heap.slice(canonical_pointer.as_const())?[0].clone();
         SetBitFree(heap, &mut canonical_globals)?;
-        heap.slice_mut(canonical_pointer)?[0] = canonical_globals;
 
         if let Some(generation_data) = p_gen_data {
             let message_length = control
@@ -2006,22 +2056,11 @@ frees:
         Ok(retcode)
     })();
 
-    let cleanup = [
-        heap.free(sort_flags_pointer),
-        heap.free(original_structure_pointer),
-        heap.free(prepared_pointer),
-        heap.free(original_pointer),
-        heap.free(canonical_pointer),
-    ];
     *heap
         .slice_mut(control_pointer)?
         .first_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)? = control;
-    let result = operation?;
-    for cleanup_result in cleanup {
-        cleanup_result?;
-    }
-    Ok(result)
+    operation
 }
 
 #[rustfmt::skip]
@@ -2106,7 +2145,17 @@ INCHIGEN_HANDLE INCHI_DECL INCHIGEN_Create( void )
     // INCHI✔️❌: Typed SourceHeap allocation and map bookkeeping are materially slower than native malloc and direct field stores.
     // END INCHI ACTIVE MACRO CONFIGURATION: INCHIGEN_Create
 
-    let control_pointer = match heap.allocate(vec![INCHIGEN_CONTROL::default()]) {
+    // INCHI✔️❗: allocation failure reaches the source NULL branch before
+    // registration; fixed control initialization has no child allocations.
+    // One allocation/O(1) scratch; reserve/arena/expanded-record cost OPEN.
+    let control_pointer = match (|| {
+        let mut values = Vec::new();
+        values
+            .try_reserve_exact(1)
+            .map_err(|_| SourceHeapError::AllocationFailed)?;
+        values.push(INCHIGEN_CONTROL::default());
+        heap.allocate(values)
+    })() {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(SourceMutPointer::null()),
         Err(error) => return Err(error),

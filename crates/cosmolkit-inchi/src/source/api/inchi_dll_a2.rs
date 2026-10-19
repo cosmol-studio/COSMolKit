@@ -1,13 +1,19 @@
-use crate::source::base::ichi_bns::mark_alt_bonds_and_taut_groups;
+use crate::source::base::ichi_bns::normalize_with_group;
+use crate::source::base::ichi_bns::{SourceNormalizationFlags, mark_alt_bonds_with_flag_storage};
 use crate::source::base::ichi_io::inchi_ios_init;
 use crate::source::base::ichican2::{DeAllocBCN, GetBaseCanonRanking};
 use crate::source::base::ichicano::{
     AllocateCS, Canon_INChI, DeAllocateCS, GetCanonLengths, InchiTimeAddMsec, InchiTimeElapsed,
     InchiTimeGet,
 };
+use crate::source::base::ichicano::{
+    AllocateCSWithBcnPresence, Canon_INChIWithTargets, CanonGroupRead,
+};
 use crate::source::base::ichierr::AddErrorMessage;
 use crate::source::base::ichiisot::set_atom_iso_sort_keys;
+use crate::source::base::ichimak2::FillOutINChIWithGroup;
 use crate::source::base::ichimak2::{FillOutINChIBehavior, FillOutINChIWithBehavior};
+use crate::source::base::ichimake::CheckCanonNumberingCorrectnessWithGroup;
 use crate::source::base::ichimake::{CheckCanonNumberingCorrectness, inp2spATOM};
 use crate::source::base::ichinorm::{FreeInpAtomData, MarkRingSystemsInp};
 use crate::source::base::ichister::set_stereo_parity;
@@ -25,6 +31,7 @@ use crate::source::base::runichi4::{
 use crate::source::base::strutil::{
     Alloc_INChI, Alloc_INChI_Aux, SetConnectedComponentNumber, add_DT_to_num_H, remove_terminal_HDT,
 };
+use crate::source::base::util::allocate_model_payload;
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
     _IS_ERROR, _IS_FATAL, AB_PARITY_UNDF, AB_PARITY_UNKN, AT_NUMB, ATT_PROTON, BCN, CANON_GLOBALS,
@@ -68,7 +75,7 @@ pub(crate) fn Normalization_step(
     taut_flags: &mut INCHI_MODE,
     taut_flags_done: &mut INCHI_MODE,
     z: &mut COMPONENT_TREAT_INFO,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_a2.c:1138 Normalization_step
     // INCHI✔️❌: complete source frame follows verbatim.
@@ -577,6 +584,12 @@ exit_function:
             match count {
                 Some(count) => {
                     let mut atoms = Vec::new();
+                    // INCHI✔️❗: Native1197..1203 malloc failure sets ret=-1;
+                    // both payload reservation and arena registration are
+                    // fallible. sp_ATOM default/clone contains no allocation,
+                    // and resize fits the reserved capacity. Continue the
+                    // second source attempt and retain caller cleanup.
+                    // Default fill/arena costs remain OPEN (C501).
                     if atoms.try_reserve_exact(count).is_err() {
                         ret = -1;
                         SourceMutPointer::null()
@@ -615,15 +628,23 @@ exit_function:
         out_norm_data[TAUT_NON as usize].at
     };
     let count = count.ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let input_atoms = heap
-        .slice(inp_at.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    heap.slice_mut(z.out_at)?
-        .get_mut(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone_from_slice(&input_atoms);
+    {
+        // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+        // reached bounds/errors and modeled overlap without a payload Vec.
+        // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+        let copy_source = inp_at.as_const();
+        let copy_count = (heap.slice(copy_source)?.get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?).len();
+        let copy_destination = z.out_at;
+        {
+            let copy_target = &mut (heap.slice_mut(copy_destination)?.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?);
+            assert_eq!(copy_target.len(), copy_count);
+        }
+        if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+            heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+        } else {
+            heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+        }
+    }
     z.vt_group_info.bIgnoreIsotopic = 0;
     z.vt_group_info.bTautFlags = *taut_flags;
     z.vt_group_info.bTautFlagsDone = *taut_flags_done;
@@ -651,21 +672,52 @@ exit_function:
 
     for index in [TAUT_YES as usize, TAUT_NON as usize] {
         if z.out_at != out_norm_data[index].at && !out_norm_data[index].at.is_null() {
-            let source = heap.slice(z.out_at.as_const())?[..count].to_vec();
-            heap.slice_mut(out_norm_data[index].at)?[..count].clone_from_slice(&source);
+            {
+                // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                // reached bounds/errors and modeled overlap without a payload Vec.
+                // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                let copy_source = z.out_at.as_const();
+                let copy_count = (heap.slice(copy_source)?[..count]).len();
+                let copy_destination = out_norm_data[index].at;
+                {
+                    let copy_target = &mut (heap.slice_mut(copy_destination)?[..count]);
+                    assert_eq!(copy_target.len(), copy_count);
+                }
+                if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+                    heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                } else {
+                    heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+                }
+            }
         }
     }
     if !out_norm_data[TAUT_YES as usize].at_fixed_bonds.is_null()
         && !out_norm_data[TAUT_YES as usize].at.is_null()
     {
-        let source = heap.slice(z.out_at.as_const())?[..count].to_vec();
-        heap.slice_mut(out_norm_data[TAUT_YES as usize].at_fixed_bonds)?[..count]
-            .clone_from_slice(&source);
+        {
+            // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+            // reached bounds/errors and modeled overlap without a payload Vec.
+            // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+            let copy_source = z.out_at.as_const();
+            let copy_count = (heap.slice(copy_source)?[..count]).len();
+            let copy_destination = out_norm_data[TAUT_YES as usize].at_fixed_bonds;
+            {
+                let copy_target = &mut (heap.slice_mut(copy_destination)?[..count]);
+                assert_eq!(copy_target.len(), copy_count);
+            }
+            if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+                heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+            } else {
+                heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+            }
+        }
     }
 
     if !out_norm_data[TAUT_YES as usize].at.is_null() && !z.at[TAUT_YES as usize].is_null() {
-        let t_group_pointer = heap.allocate_model_storage(vec![z.vt_group_info.clone()])?;
-        let result = mark_alt_bonds_and_taut_groups(
+        // Native1153 binds &(z->vt_group_info), then1312 forwards that field.
+        // INCHI✔️❗: Actual partial writes survive Result errors; no temporary
+        // model, metadata clone, copyback or free. O(1) transport; C535 cost OPEN.
+        let result = normalize_with_group(
             heap,
             ic,
             pCG,
@@ -673,15 +725,14 @@ exit_function:
             out_norm_data[TAUT_YES as usize].at_fixed_bonds,
             z.num_atoms,
             max_time,
-            t_group_pointer,
-            SourceMutPointer::null(),
-            SourceMutPointer::null(),
+            Some(&mut z.vt_group_info),
+            SourceNormalizationFlags::Pointers {
+                flags: SourceMutPointer::null(), done: SourceMutPointer::null(),
+            },
             0,
             SourceMutPointer::null(),
             clock_result,
         );
-        z.vt_group_info = heap.slice(t_group_pointer.as_const())?[0].clone();
-        heap.free(t_group_pointer)?;
         ret = result?;
         if ret < 0 {
             return Ok(ret);
@@ -797,9 +848,9 @@ exit_function:
     {
         out_norm_data[TAUT_YES as usize].bTautomeric = 0;
     } else if !out_norm_data[TAUT_NON as usize].at.is_null() && !z.at[TAUT_NON as usize].is_null() {
-        let flags_pointer = heap.allocate_model_storage(vec![z.bTautFlags])?;
-        let done_pointer = heap.allocate_model_storage(vec![z.bTautFlagsDone])?;
-        let result = mark_alt_bonds_and_taut_groups(
+        // Native inchi_dll_a2.c1450 passes the actual z flag fields.
+        // INCHI✔️❗: No model/copyback; reached writes survive (C529 OPEN).
+        let result = mark_alt_bonds_with_flag_storage(
             heap,
             ic,
             pCG,
@@ -808,16 +859,11 @@ exit_function:
             z.num_atoms,
             max_time,
             SourceMutPointer::null(),
-            flags_pointer,
-            done_pointer,
+            SourceNormalizationFlags::Borrowed { flags: &mut z.bTautFlags, done: &mut z.bTautFlagsDone },
             0,
             SourceMutPointer::null(),
             clock_result,
         );
-        z.bTautFlags = heap.slice(flags_pointer.as_const())?[0];
-        z.bTautFlagsDone = heap.slice(done_pointer.as_const())?[0];
-        heap.free(flags_pointer)?;
-        heap.free(done_pointer)?;
         ret = result?;
         if ret < 0 {
             return Ok(ret);
@@ -960,7 +1006,7 @@ pub(crate) fn NormOneStructureINChI(
     control: &mut INCHIGEN_CONTROL,
     inchi_kind: i32,
     mut input_file: Option<&mut crate::source_types::INCHI_IOSTREAM>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_a2.c:188 NormOneStructureINChI
     // INCHI✔️❌: complete source frame follows verbatim.
@@ -1328,8 +1374,8 @@ exit_function:
             return Ok(_IS_FATAL as i32);
         }
     };
-    control.composite_norm_data[kind] =
-        std::array::from_fn(|_| COMP_ATOM_DATA::default());
+    // INCHI✔️❗: native224..226 clears composites once at entry; the valid
+    // selected row above is already zero. No second source-absent reset.
 
     let mut input_number = control.num_inp;
     if (control.PrepInpData[0].at.is_null()
@@ -1423,20 +1469,42 @@ exit_function:
             let old_count = usize::try_from(control.StructData.num_components[kind].max(0))
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
             if !control.pINChI[kind].is_null() && old_count > 0 {
-                let old = heap
-                    .slice(control.pINChI[kind].as_const())?
-                    .get(..old_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                heap.slice_mut(new_inchi)?[..old_count].copy_from_slice(&old);
+                {
+                    // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                    // reached bounds/errors and modeled overlap without a payload Vec.
+                    // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                    let copy_source = control.pINChI[kind].as_const();
+                    let copy_count = (heap.slice(copy_source)?.get(..old_count).ok_or(SourceHeapError::PointerOutOfBounds)?).len();
+                    let copy_destination = new_inchi;
+                    {
+                        let copy_target = &mut (heap.slice_mut(copy_destination)?[..old_count]);
+                        assert_eq!(copy_target.len(), copy_count);
+                    }
+                    if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+                        heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                    } else {
+                        heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+                    }
+                }
             }
             if !control.pINChI_Aux[kind].is_null() && old_count > 0 {
-                let old = heap
-                    .slice(control.pINChI_Aux[kind].as_const())?
-                    .get(..old_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                heap.slice_mut(new_aux)?[..old_count].copy_from_slice(&old);
+                {
+                    // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                    // reached bounds/errors and modeled overlap without a payload Vec.
+                    // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                    let copy_source = control.pINChI_Aux[kind].as_const();
+                    let copy_count = (heap.slice(copy_source)?.get(..old_count).ok_or(SourceHeapError::PointerOutOfBounds)?).len();
+                    let copy_destination = new_aux;
+                    {
+                        let copy_target = &mut (heap.slice_mut(copy_destination)?[..old_count]);
+                        assert_eq!(copy_target.len(), copy_count);
+                    }
+                    if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+                        heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                    } else {
+                        heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+                    }
+                }
             }
             inchi_free(heap, control.pINChI[kind])?;
             inchi_free(heap, control.pINChI_Aux[kind])?;
@@ -1457,7 +1525,11 @@ exit_function:
         }
     }
 
-    let allocation_count = component_count_i32 as u64;
+    // INCHI✔️❗: native389..395 allocates all six arrays using the retained
+    // structure capacity, including when it exceeds the current input count.
+    // Preserve the same size_t conversion, allocation/error order and default
+    // rows. O(capacity) storage/initialization; checked model costs remain OPEN.
+    let allocation_count = control.StructData.num_components[kind] as u64;
     generation_data.NormAtomsNontaut[kind] =
         match inchi_calloc::<NORM_ATOMS>(heap, allocation_count, SOURCE_SIZEOF_NORM_ATOMS) {
             Ok(pointer) => pointer,
@@ -1579,13 +1651,20 @@ exit_function:
     }
 
     if result != _IS_FATAL as i32 && result != _IS_ERROR as i32 && !all_normalized.is_null() {
-        let records = heap.slice(all_normalized.as_const())?.to_vec();
-        let _ = CreateCompositeNormAtom(
-            heap,
-            &mut control.composite_norm_data[kind],
-            &records,
-            component_count_i32,
-        )?;
+        // INCHI✔️❗: native passes the canonical normalized component table.
+        // Fresh table ID is not in control or any other child input; its atom
+        // fields and composite atom/offset outputs have distinct storage types.
+        // Entry composites are zero; allocations never reuse the held ID.
+        // One full-table Vec removed, O(1) transport scratch; arena cost OPEN.
+        // Existing borrow restores the slot on Result errors, not unwinding.
+        let _ = heap.with_slice_mut_and_heap_mut(all_normalized, |records, heap| {
+            CreateCompositeNormAtom(
+                heap,
+                &mut control.composite_norm_data[kind],
+                records,
+                component_count_i32,
+            )
+        })?;
     }
     if !all_normalized.is_null() {
         for component in 0..component_count {
@@ -1606,7 +1685,7 @@ fn normalization_component_elapsed(
     heap: &mut SourceHeap,
     clock: SourceMutPointer<INCHI_CLOCK>,
     start: &inchiTime,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i64, SourceHeapError> {
     let mut clock_value = heap
         .slice(clock.as_const())?
@@ -1630,7 +1709,7 @@ pub(crate) fn NormOneComponentINChI(
     control: &mut INCHIGEN_CONTROL,
     inchi_kind: i32,
     component_index: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_a2.c:654 NormOneComponentINChI
     // INCHI✔️❌: complete source frame follows verbatim.
@@ -1911,7 +1990,9 @@ int NormOneComponentINChI( CANON_GLOBALS *pCG,
         .ok()
         .filter(|index| *index < control.InpCurAtData.len())
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let row = usize::try_from(component_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: native component indices are signed relative pointer offsets;
+    // no unused unsigned admission before canonical per-storage bounds/types.
+    // O(1), no new allocation/scan/copy; checked-arena whole-call cost OPEN.
     let current_pointer = control.InpCurAtData[kind].offset(i64::from(component_index))?;
     let non_pointer = control.InpNormAtData[kind].offset(i64::from(component_index))?;
     let taut_pointer = control.InpNormTautData[kind].offset(i64::from(component_index))?;
@@ -1965,14 +2046,15 @@ int NormOneComponentINChI( CANON_GLOBALS *pCG,
         input_parameters.bTautFlagsDone | structure_data.bTautFlagsDone[INCHI_BAS as usize];
     let atom_count = usize::try_from(current_input.num_at.max(0))
         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let atoms = if current_input.at.is_null() {
-        Vec::new()
-    } else {
+    // INCHI✔️❗: Preserve original nonNULL prefix/type/bounds admission,
+    // without owning/cloning input rows. The canonical allocator reads only
+    // borrowed atom fields and fresh output allocations, never this input ID.
+    // O(N) allocator work/O(1) transport; checked/whole-call costs remain OPEN.
+    if !current_input.at.is_null() {
         heap.slice(current_input.at.as_const())?
             .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    }
 
     for representation in 0..TAUT_NUM as usize {
         let allocation_condition = representation == TAUT_YES as usize
@@ -1989,14 +2071,33 @@ int NormOneComponentINChI( CANON_GLOBALS *pCG,
             || (representation == TAUT_YES as usize
                 && input_parameters.nMode & u64::from(REQ_MODE_TAUT) != 0);
         if enabled {
-            current_inchi[representation] = Alloc_INChI(
-                heap,
-                &atoms,
-                current_input.num_at,
-                &mut current_input.num_bonds,
-                &mut current_input.num_isotopic,
-                allocation_mode,
-            )?;
+            // VERBATIM SOURCE FRAGMENT: inchi_dll_a2.c724
+            //             cur_INChI[k] = Alloc_INChI( inp_cur_data->at, inp_cur_data->num_at, &inp_cur_data->num_bonds,
+            // INCHI✔️❗: Existing safe storage projection restores the original
+            // ID before any Aux/output/clock callback; no temporary atom Vec.
+            // NULL/nonpositive input retains the former empty-slice path.
+            let num_atoms = current_input.num_at;
+            current_inchi[representation] = if current_input.at.is_null() || num_atoms <= 0 {
+                Alloc_INChI(
+                    heap,
+                    &[],
+                    num_atoms,
+                    &mut current_input.num_bonds,
+                    &mut current_input.num_isotopic,
+                    allocation_mode,
+                )?
+            } else {
+                heap.with_slice_mut_and_heap_mut(current_input.at, |atoms, heap| {
+                    Alloc_INChI(
+                        heap,
+                        atoms,
+                        num_atoms,
+                        &mut current_input.num_bonds,
+                        &mut current_input.num_isotopic,
+                        allocation_mode,
+                    )
+                })?
+            };
             current_aux[representation] = Alloc_INChI_Aux(
                 heap,
                 current_input.num_at,
@@ -2027,7 +2128,10 @@ int NormOneComponentINChI( CANON_GLOBALS *pCG,
 
     InchiTimeGet(&mut start, clock_result);
     let maximum_time = if input_parameters.msec_MaxTime != 0 {
-        let pointer = heap.allocate_model_storage(vec![start.clone()])?;
+        // INCHI❗❌: Fixed clock metadata allocation/copy/free remains KNOWN
+        // extra. INCHI-PERF-FIXED-CLOCK-METADATA C562 defers cost only;
+        // operations/errors/identity and temporal0099 stay independent.
+        let pointer = allocate_model_payload(heap, std::iter::once(start.clone()))?;
         if input_parameters.msec_LeftTime > 0 {
             let mut clock_value = heap.slice(clock.as_const())?[0].clone();
             InchiTimeAddMsec(
@@ -2150,11 +2254,12 @@ int NormOneComponentINChI( CANON_GLOBALS *pCG,
             let last = if taut_in { TAUT_YES } else { TAUT_NON } as usize;
             for representation in first..=last {
                 let inchi = &heap.slice(inchi_row[representation].as_const())?[0];
-                let possible_isotope_h = !inchi.nPossibleLocationsOfIsotopicH.is_null()
-                    && heap.slice(inchi.nPossibleLocationsOfIsotopicH.as_const())?[0] > 1;
+                // INCHI✔️❗: native886..888 short-circuits location admission
+                // behind both isotope counts; no eager optional-array access.
                 let mut isotopic = inchi.nNumberOfIsotopicAtoms != 0
                     || inchi.nNumberOfIsotopicTGroups != 0
-                    || possible_isotope_h;
+                    || (!inchi.nPossibleLocationsOfIsotopicH.is_null()
+                        && heap.slice(inchi.nPossibleLocationsOfIsotopicH.as_const())?[0] > 1);
                 if representation == TAUT_YES as usize && !aux_row[representation].is_null() {
                     let aux = &heap.slice(aux_row[representation].as_const())?[0];
                     isotopic |= aux
@@ -2203,7 +2308,6 @@ int NormOneComponentINChI( CANON_GLOBALS *pCG,
     control.InpParms = input_parameters;
     control.StructData = structure_data;
     control.ncFlags = normalization_flags;
-    let _ = row;
     Ok(ret)
 }
 
@@ -2216,7 +2320,7 @@ pub(crate) fn CanonOneStructureINChI(
     genctl: &mut INCHIGEN_CONTROL,
     iINChI: i32,
     mut inp_file: Option<&mut crate::source_types::INCHI_IOSTREAM>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_a2.c:503 CanonOneStructureINChI
     // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap row access adds overhead.
@@ -2507,7 +2611,7 @@ pub(crate) fn CanonOneComponentINChI(
     genctl: &mut INCHIGEN_CONTROL,
     iINChI: i32,
     i: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_a2.c:923 CanonOneComponentINChI
     // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap row access and cloned control state add overhead.
@@ -2736,7 +2840,9 @@ int CanonOneComponentINChI( CANON_GLOBALS *pCG,
         .ok()
         .filter(|index| *index < genctl.InpCurAtData.len())
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let component = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: retain signed source-relative component offsets; canonical
+    // per-storage checks replace the unused source-absent unsigned rejection.
+    // O(1), no new allocation/scan/copy; checked-arena whole-call cost OPEN.
     let current_pointer = genctl.InpCurAtData[kind].offset(i64::from(i))?;
     let non_pointer = genctl.InpNormAtData[kind].offset(i64::from(i))?;
     let taut_pointer = genctl.InpNormTautData[kind].offset(i64::from(i))?;
@@ -2788,7 +2894,10 @@ int CanonOneComponentINChI( CANON_GLOBALS *pCG,
 
     InchiTimeGet(&mut start, clock_result);
     let maximum_time = if input_parameters.msec_MaxTime != 0 {
-        let pointer = heap.allocate_model_storage(vec![start.clone()])?;
+        // INCHI❗❌: Fixed clock metadata allocation/copy/free remains KNOWN
+        // extra. INCHI-PERF-FIXED-CLOCK-METADATA C562 defers cost only;
+        // operations/errors/identity and temporal0099 stay independent.
+        let pointer = allocate_model_payload(heap, std::iter::once(start.clone()))?;
         if input_parameters.msec_LeftTime > 0 {
             let mut clock_value = heap
                 .slice(ic.as_const())?
@@ -2945,11 +3054,12 @@ int CanonOneComponentINChI( CANON_GLOBALS *pCG,
             let last = if taut_in { TAUT_YES } else { TAUT_NON } as usize;
             for representation in first..=last {
                 let inchi = &heap.slice(inchi_row[representation].as_const())?[0];
-                let possible_isotopic_h = !inchi.nPossibleLocationsOfIsotopicH.is_null()
-                    && heap.slice(inchi.nPossibleLocationsOfIsotopicH.as_const())?[0] > 1;
+                // INCHI✔️❗: native1101..1103 admits location storage only
+                // after both preceding isotope counts fail the OR gate.
                 let mut isotopic = inchi.nNumberOfIsotopicAtoms != 0
                     || inchi.nNumberOfIsotopicTGroups != 0
-                    || possible_isotopic_h;
+                    || (!inchi.nPossibleLocationsOfIsotopicH.is_null()
+                        && heap.slice(inchi.nPossibleLocationsOfIsotopicH.as_const())?[0] > 1);
                 if representation == TAUT_YES as usize && !aux_row[representation].is_null() {
                     let aux = &heap.slice(aux_row[representation].as_const())?[0];
                     isotopic |= aux
@@ -2997,7 +3107,6 @@ int CanonOneComponentINChI( CANON_GLOBALS *pCG,
     genctl.InpParms = input_parameters;
     genctl.StructData = structure_data;
     genctl.ncFlags = canonical_flags;
-    let _ = component;
     Ok(ret)
 }
 
@@ -3015,7 +3124,7 @@ pub(crate) fn Canonicalization_step(
     mut pStrErrStruct: Option<&mut [i8]>,
     z: &mut COMPONENT_TREAT_INFO,
     LargeMolecules: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_API/libinchi/src/inchi_dll_a2.c:1612 Canonicalization_step
     // INCHI✔️❌: complete source frame follows verbatim; checked SourceHeap access and stack-object pointer modeling add overhead.
@@ -3380,6 +3489,11 @@ exit_function:
 }
     */
     // END INCHI C FUNCTION: Canonicalization_step
+
+    // INCHI✔️❗: The complete source lifetime uses actual BCN/TGI targets
+    // through normalization/canonicalization/output/check/cleanup. No arena
+    // models or late metadata copybacks; earlier partial writes remain live.
+    // INCHI-PERF-CANON-ACTUAL-TARGETS: O(1) transport, checked costs OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: Canonicalization_step
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; USE_CANON2 is active.
     // INCHI✔️❌: DOUBLE_BOND_NEIGH_LIST == 0; pBCN is always the address of z->Bcn.
@@ -3395,8 +3509,6 @@ exit_function:
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut cs = CANON_STAT::default();
     let mut cs_allocations = CANON_STAT::default();
-    let mut bcn_storage = SourceMutPointer::<BCN>::null();
-    let mut tgi_storage = SourceMutPointer::<crate::source_types::T_GROUP_INFO>::null();
     let mut ret = 0_i32;
 
     let computation = (|| -> Result<i32, SourceHeapError> {
@@ -3460,7 +3572,7 @@ exit_function:
             return Ok(CT_TAUCOUNT_ERR);
         }
 
-        bcn_storage = heap.allocate_model_storage(vec![z.Bcn.clone()])?;
+
 
         let mut i = z.n2;
         while i >= z.n1 && !returned_error(ret) {
@@ -3515,7 +3627,7 @@ exit_function:
             }
             z.nMode = u64::from(canon_mode);
 
-            ret = AllocateCS(
+            ret = AllocateCSWithBcnPresence(
                 heap,
                 &mut cs,
                 z.num_atoms,
@@ -3542,7 +3654,7 @@ exit_function:
                 },
                 z.s[index].nLenIsotopic,
                 z.nMode,
-                bcn_storage,
+                true,
             )?;
             if ret != 0 {
                 return Ok(ret);
@@ -3565,13 +3677,6 @@ exit_function:
             }
 
             if i == TAUT_YES as i32 {
-                if tgi_storage.is_null() {
-                    tgi_storage =
-                        heap.allocate_model_storage(vec![z.vt_group_info.clone()])?;
-                } else {
-                    heap.slice_mut(tgi_storage)?[0] = z.vt_group_info.clone();
-                }
-                cs.t_group_info = tgi_storage;
                 z.vt_group_info.bIgnoreIsotopic = i32::from(
                     !(z.s[TAUT_YES as usize].bHasIsotopicTautGroups != 0
                         || z.nUserMode & u64::from(REQ_MODE_NON_ISO) != 0
@@ -3582,13 +3687,11 @@ exit_function:
                 {
                     z.vt_group_info.bIgnoreIsotopic = 1;
                 }
-                heap.slice_mut(tgi_storage)?[0] = z.vt_group_info.clone();
             }
 
-            cs.ulTimeOutTime = heap.slice(bcn_storage.as_const())?[0].ulTimeOutTime;
+            cs.ulTimeOutTime = z.Bcn.ulTimeOutTime;
             cs.NeighList = SourceMutPointer::null();
-            cs.pBCN = bcn_storage;
-            ret = Canon_INChI(
+            ret = Canon_INChIWithTargets(
                 heap,
                 &mut clock,
                 clock_result,
@@ -3605,10 +3708,9 @@ exit_function:
                 pCG,
                 canon_mode,
                 i,
+                &z.Bcn,
+                if i == TAUT_YES as i32 { Some(&mut z.vt_group_info) } else { None },
             )?;
-            if i == TAUT_YES as i32 {
-                z.vt_group_info = heap.slice(tgi_storage.as_const())?[0].clone();
-            }
 
             let mut inchi = heap
                 .slice(ppINChI[index].as_const())?
@@ -3634,7 +3736,7 @@ exit_function:
                 aux.bTautFlagsDone = out_norm_data[index].bTautFlagsDone;
                 aux.bNormalizationFlags = out_norm_data[index].bNormalizationFlags;
 
-                ret = FillOutINChIReducedWarn(
+                ret = FillOutINChIWithGroup(
                     heap,
                     &mut inchi,
                     &mut aux,
@@ -3656,6 +3758,8 @@ exit_function:
                     i,
                     z.nUserMode,
                     pStrErrStruct.as_deref_mut(),
+                    FillOutINChIBehavior::ReducedWarn,
+                    CanonGroupRead::Borrowed(if i == TAUT_YES as i32 { Some(&z.vt_group_info) } else { None }),
                 )?;
                 if returned_error(ret) {
                     inchi.nErrorCode = ret;
@@ -3665,7 +3769,7 @@ exit_function:
                         aux.bIsTautomeric =
                             z.s[TAUT_YES as usize].nLenLinearCTTautomer;
                     }
-                    let ret2 = CheckCanonNumberingCorrectness(
+                    let ret2 = CheckCanonNumberingCorrectnessWithGroup(
                         heap,
                         z.num_atoms,
                         if i == TAUT_YES as i32 {
@@ -3678,6 +3782,7 @@ exit_function:
                         pCG,
                         i,
                         pStrErrStruct.as_deref_mut(),
+                        CanonGroupRead::Borrowed(if i == TAUT_YES as i32 { Some(&z.vt_group_info) } else { None }),
                     )?;
                     if ret2 != 0 {
                         inchi.nErrorCode = ret2;
@@ -3708,12 +3813,10 @@ exit_function:
         Ok(ret)
     })();
 
-    DeAllocateCS(heap, &mut cs_allocations)?;
-    if !tgi_storage.is_null() {
-        z.vt_group_info = heap.slice(tgi_storage.as_const())?[0].clone();
-    }
-    if !bcn_storage.is_null() {
-        z.Bcn = heap.slice(bcn_storage.as_const())?[0].clone();
+    // INCHI✔️❗: Native normal exits do not repeat the completed iteration cleanup.
+    // INCHI-PERF-API-NORMAL-EXIT: preserve cleanup for Rust-only Result errors.
+    if computation.is_err() {
+        DeAllocateCS(heap, &mut cs_allocations)?;
     }
     DeAllocBCN(heap, Some(&mut z.Bcn))?;
 
@@ -3731,12 +3834,6 @@ exit_function:
     }
     free_t_group_info(heap, Some(&mut z.vt_group_info_orig))?;
 
-    if !tgi_storage.is_null() {
-        heap.free(tgi_storage)?;
-    }
-    if !bcn_storage.is_null() {
-        heap.free(bcn_storage)?;
-    }
     *heap
         .slice_mut(ic)?
         .first_mut()
@@ -4964,11 +5061,9 @@ pub(crate) fn CreateCompositeNormAtom(
                     };
                 let source_count = usize::try_from(component[k].num_at)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let source_atoms = heap
-                    .slice(source_pointer.as_const())?
+                heap.slice(source_pointer.as_const())?
                     .get(..source_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let current_atom_count = usize::try_from(current_atoms)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 let current_hydrogen_count = usize::try_from(current_hydrogens)
@@ -4978,8 +5073,16 @@ pub(crate) fn CreateCompositeNormAtom(
                 let hydrogen_start = usize::try_from(num_at[jj].wrapping_add(total_hydrogens))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
 
-                {
-                    let destination = heap.slice_mut(composite_norm_data[jj].at)?;
+                // INCHI✔️❗: borrow source data alongside the fresh composite allocation.
+                // Native main copy/shift precedes hydrogen copy/shift; retain typed
+                // source-prefix validation above. No atom shadow/copyback allocation.
+                // O(copied atoms + neighbors), O(1) scratch; checked borrow cost
+                // remains INCHI-PERF-COMPOSITE-SOURCE-VIEWS OPEN.
+                heap.with_slice_mut_and_heap(composite_norm_data[jj].at, |destination, heap| {
+                    let source_atoms = heap
+                        .slice(source_pointer.as_const())?
+                        .get(..source_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let main_end = main_start
                         .checked_add(current_atom_count)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -5021,7 +5124,8 @@ pub(crate) fn CreateCompositeNormAtom(
                             }
                         }
                     }
-                }
+                    Ok(())
+                })?;
 
                 composite_norm_data[jj].bHasIsotopicLayer |= component[k].bHasIsotopicLayer;
                 composite_norm_data[jj].num_isotopic = composite_norm_data[jj]
@@ -5097,7 +5201,7 @@ pub(crate) fn make_norm_atoms_from_inp_atoms(
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: make_norm_atoms_from_inp_atoms
     // INCHI✔️❌: INCHI_NUM is 2 in the selected TARGET_API_LIB configuration.
     // INCHI✔️❌: NORM_ATOMS and INP_ATOM_DATA have the same active C layout; memcpy is shallow.
-    // INCHI✔️❌: Typed SourceHeap conversion allocates a temporary Vec, retaining known overhead.
+    // INCHI✔️❗: Direct shallow field projection; checked typed borrowing cost remains OPEN.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: make_norm_atoms_from_inp_atoms
 
     for k in 0..INCHI_NUM as usize {
@@ -5109,35 +5213,49 @@ pub(crate) fn make_norm_atoms_from_inp_atoms(
             }
             let count = usize::try_from(control.StructData.num_components[k])
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            let source = heap
-                .slice(source.as_const())?
+            // Validate the source prefix first, preserving existing typed error order.
+            heap.slice(source.as_const())?
                 .get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .iter()
-                .map(|value| NORM_ATOMS {
-                    at: value.at.cast(),
-                    at_fixed_bonds: value.at_fixed_bonds.cast(),
-                    num_at: value.num_at,
-                    num_removed_H: value.num_removed_H,
-                    num_bonds: value.num_bonds,
-                    num_isotopic: value.num_isotopic,
-                    bExists: value.bExists,
-                    bDeleted: value.bDeleted,
-                    bHasIsotopicLayer: value.bHasIsotopicLayer,
-                    bTautomeric: value.bTautomeric,
-                    bTautPreprocessed: value.bTautPreprocessed,
-                    nNumRemovedProtons: value.nNumRemovedProtons,
-                    nNumRemovedProtonsIsotopic: value.nNumRemovedProtonsIsotopic,
-                    num_iso_H: value.num_iso_H,
-                    bTautFlags: value.bTautFlags,
-                    bTautFlagsDone: value.bTautFlagsDone,
-                    bNormalizationFlags: value.bNormalizationFlags,
-                })
-                .collect::<Vec<_>>();
-            heap.slice_mut(destination)?
-                .get_mut(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from_slice(&source);
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            // Native memcpy is shallow. Canonical source/destination element types
+            // occupy distinct allocations; no child buffers or temporary Vec are copied.
+            // O(count) time/O(1) scratch, same source fields; checked pair-borrow
+            // cost remains INCHI-PERF-NORM-SHALLOW-PROJECTION OPEN.
+            heap.with_two_slices_mut_and_optional_third::<INP_ATOM_DATA, NORM_ATOMS, u8, _>(
+                source,
+                destination,
+                None,
+                |source, destination, _| {
+                    let source = source
+                        .get(..count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let destination = destination
+                        .get_mut(..count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    for (value, target) in source.iter().zip(destination) {
+                        *target = NORM_ATOMS {
+                            at: value.at.cast(),
+                            at_fixed_bonds: value.at_fixed_bonds.cast(),
+                            num_at: value.num_at,
+                            num_removed_H: value.num_removed_H,
+                            num_bonds: value.num_bonds,
+                            num_isotopic: value.num_isotopic,
+                            bExists: value.bExists,
+                            bDeleted: value.bDeleted,
+                            bHasIsotopicLayer: value.bHasIsotopicLayer,
+                            bTautomeric: value.bTautomeric,
+                            bTautPreprocessed: value.bTautPreprocessed,
+                            nNumRemovedProtons: value.nNumRemovedProtons,
+                            nNumRemovedProtonsIsotopic: value.nNumRemovedProtonsIsotopic,
+                            num_iso_H: value.num_iso_H,
+                            bTautFlags: value.bTautFlags,
+                            bTautFlagsDone: value.bTautFlagsDone,
+                            bNormalizationFlags: value.bNormalizationFlags,
+                        };
+                    }
+                    Ok(())
+                },
+            )?;
             Ok(())
         };
 

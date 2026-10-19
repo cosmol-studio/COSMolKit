@@ -1,3 +1,8 @@
+use crate::source::base::ichitaut::{
+    MarkSaltChargeGroups_source_flags, MarkSaltChargeGroups2_source_flags,
+    MarkTautomerGroups_source_flags, MergeSaltTautGroups_source_flags,
+};
+use crate::source::base::runichi::CanonicalTarget;
 use crate::source::base::{
     ichican2::{
         AddNodeSet2ToNodeSet1, AddNodesToRadEndpoints, DoNodeSetsIntersect, IsNodeSetEmpty,
@@ -7,8 +12,8 @@ use crate::source::base::{
     ichisort::insertions_sort_typed,
     ichister::get_opposite_sb_atom_slice,
     ichitaut::{
-        MakeIsotopicHGroup, MarkChargeGroups, MarkSaltChargeGroups, MarkSaltChargeGroups2,
-        MarkTautomerGroups, MergeSaltTautGroups, is_centerpoint_elem, nGetEndpointInfo,
+        MakeIsotopicHGroup, MarkSaltChargeGroups, MarkSaltChargeGroups2, MarkTautomerGroups,
+        MergeSaltTautGroups, is_centerpoint_elem, mark_charge_groups_flags, nGetEndpointInfo,
         nGetEndpointInfo_KET, nGetEndpointInfo_PT_06_00, nGetEndpointInfo_PT_13_00,
         nGetEndpointInfo_PT_16_00, nGetEndpointInfo_PT_18_00, nGetEndpointInfo_PT_22_00,
         nGetEndpointInfo_PT_39_00,
@@ -54,17 +59,17 @@ use crate::source_types::{
     MAX_ALT_AATG_ARRAY_LEN, MAX_BOND_EDGE_CAP, MAX_NUM_STEREO_BONDS, MIN_NUM_STEREO_BOND_NEIGH,
     NO_VERTEX, NUM_H, NUM_H_ISOTOPES, NUM_KINDS_OF_GROUPS, NodeSet, RADICAL_DOUBLET,
     RADICAL_SINGLET, RADICAL_TRIPLET, RI_ERR_PROGR, S_CANDIDATE, S_CHAR, S_GROUP_INFO,
-    SALT_ACCEPTOR, SALT_DONOR_H, SALT_DONOR_Neg, STEREO_DBLE_EITHER, SourceHeap, SourceHeapError,
-    SourceMutPointer, StableSourceConstSlice, StableSourceSlice, T_GROUP, T_GROUP_INFO,
-    TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00, TAUT_PT_22_00, TAUT_PT_39_00,
-    TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE, TG_FLAG_HARD_ADD_REM_PROTONS,
-    TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MERGE_TAUT_SALTS, TG_FLAG_MERGE_TAUT_SALTS_DONE,
-    TG_FLAG_MOVE_POS_CHARGES, TG_FLAG_MOVE_POS_CHARGES_DONE, TG_FLAG_PT_06_00, TG_FLAG_PT_13_00,
-    TG_FLAG_PT_16_00, TG_FLAG_PT_18_00, TG_FLAG_PT_22_00, TG_FLAG_PT_39_00,
-    TG_FLAG_TEST_TAUT__ATOMS_DONE, TG_FLAG_TEST_TAUT__SALTS, TG_FLAG_TEST_TAUT__SALTS_DONE,
-    TG_FLAG_TEST_TAUT2_SALTS, TG_FLAG_TEST_TAUT2_SALTS_DONE, TG_FLAG_TEST_TAUT3_SALTS_DONE,
-    TG_FLAG_VARIABLE_PROTONS, Vertex, Vertex_s, Vertex_t, VertexFlow, bRELEASE_VERSION, clock_t,
-    inchiTime, inp_ATOM,
+    SALT_ACCEPTOR, SALT_DONOR_H, SALT_DONOR_Neg, STEREO_DBLE_EITHER, SourceConstPointer,
+    SourceHeap, SourceHeapError, SourceMutPointer, StableSourceConstSlice, StableSourceSlice,
+    T_GROUP, T_GROUP_INFO, TAUT_PT_06_00, TAUT_PT_13_00, TAUT_PT_16_00, TAUT_PT_18_00,
+    TAUT_PT_22_00, TAUT_PT_39_00, TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE, TG_FLAG_FOUND_ISOTOPIC_H_DONE,
+    TG_FLAG_HARD_ADD_REM_PROTONS, TG_FLAG_KETO_ENOL_TAUT, TG_FLAG_MERGE_TAUT_SALTS,
+    TG_FLAG_MERGE_TAUT_SALTS_DONE, TG_FLAG_MOVE_POS_CHARGES, TG_FLAG_MOVE_POS_CHARGES_DONE,
+    TG_FLAG_PT_06_00, TG_FLAG_PT_13_00, TG_FLAG_PT_16_00, TG_FLAG_PT_18_00, TG_FLAG_PT_22_00,
+    TG_FLAG_PT_39_00, TG_FLAG_TEST_TAUT__ATOMS_DONE, TG_FLAG_TEST_TAUT__SALTS,
+    TG_FLAG_TEST_TAUT__SALTS_DONE, TG_FLAG_TEST_TAUT2_SALTS, TG_FLAG_TEST_TAUT2_SALTS_DONE,
+    TG_FLAG_TEST_TAUT3_SALTS_DONE, TG_FLAG_VARIABLE_PROTONS, Vertex, Vertex_s, Vertex_t,
+    VertexFlow, bRELEASE_VERSION, clock_t, inchiTime, inp_ATOM,
     local_ichi_bns::{
         AA_HARD_TYP_CO, AA_HARD_TYP_H, AA_HARD_TYP_NEG, AA_HARD_TYP_POS, AA_SIMPLE_TYP1,
         AA_SIMPLE_TYP4, ALT_PATH_CHANGES, AR_HARD_TYP_HA, AR_HARD_TYP_HN, AR_HARD_TYP_NEG,
@@ -1082,6 +1087,148 @@ fn allocate_zeroed<T: Default + Clone + 'static>(
     heap.allocate(values)
 }
 
+// Temporary normalization scalar storage. Borrowed targets are independent
+// actual caller locals/fields, never registered as fabricated heap pointers.
+pub(crate) enum SourceNormalizationFlags<'a> {
+    Pointers {
+        flags: SourceMutPointer<u64>,
+        done: SourceMutPointer<u64>,
+    },
+    Borrowed {
+        flags: &'a mut u64,
+        done: &'a mut u64,
+    },
+}
+
+impl SourceNormalizationFlags<'_> {
+    fn flags(&self, heap: &SourceHeap) -> Result<u64, SourceHeapError> {
+        // Native ichi_bns.c5321:
+        //     if (( *pbTautFlags & TG_FLAG_MOVE_POS_CHARGES ) && num_atoms > 1)
+        // INCHI✔️❗: Reached read, same pointer admission, O(1)/no allocation.
+        // Actual borrowed scalar is read live; C529 checked costs OPEN.
+        match self {
+            Self::Pointers { flags, .. } => work_get(heap, *flags, 0),
+            Self::Borrowed { flags, .. } => Ok(**flags),
+        }
+    }
+
+    fn done(&self, heap: &SourceHeap) -> Result<u64, SourceHeapError> {
+        // Native ichi_bns.c5545:
+        //                     *pbTautFlagsDone |= TG_FLAG_MOVE_POS_CHARGES_DONE;
+        // INCHI✔️❗: Read the actual reached OR operand, no cached value,
+        // clone/root/scan. O(1), C529 whole-call cost OPEN.
+        match self {
+            Self::Pointers { done, .. } => work_get(heap, *done, 0),
+            Self::Borrowed { done, .. } => Ok(**done),
+        }
+    }
+
+    fn set_flags(&mut self, heap: &mut SourceHeap, value: u64) -> Result<(), SourceHeapError> {
+        // Native ichi_bns.c5266:
+        //     INCHI_MODE    *pbTautFlags = t_group_info ? &t_group_info->bTautFlags : inpbTautFlags;
+        // INCHI✔️❗: Actual external target only; TGI uses its own field.
+        // O(1), no model allocation/copyback; C529/C534 cost remains OPEN.
+        match self {
+            Self::Pointers { flags, .. } => work_set(heap, *flags, 0, value),
+            Self::Borrowed { flags, .. } => {
+                **flags = value;
+                Ok(())
+            }
+        }
+    }
+
+    fn set_done(&mut self, heap: &mut SourceHeap, value: u64) -> Result<(), SourceHeapError> {
+        // Native ichi_bns.c5545:
+        //                     *pbTautFlagsDone |= TG_FLAG_MOVE_POS_CHARGES_DONE;
+        // INCHI✔️❗: Reached actual target store; legacy errors and source
+        // partial writes retained. O(1), no copyback/root; C529 cost OPEN.
+        match self {
+            Self::Pointers { done, .. } => work_set(heap, *done, 0, value),
+            Self::Borrowed { done, .. } => {
+                **done = value;
+                Ok(())
+            }
+        }
+    }
+}
+
+// Native ichi_bns.c5266/5391 and c6812 select/carry the same flag lvalue.
+// A scalar is confined to a synchronous no-AATG call with no TGI writer.
+#[derive(Clone, Copy)]
+pub(crate) enum SourceBnsFlagRead<'a> {
+    Pointer(SourceConstPointer<u64>),
+    Borrowed(&'a u64),
+    Scalar(u64),
+}
+
+impl SourceBnsFlagRead<'_> {
+    fn flags(self, heap: &SourceHeap) -> Result<u64, SourceHeapError> {
+        // INCHI✔️❗: Reached read only; no admission/cache/allocation. C534 OPEN.
+        match self {
+            Self::Pointer(p) => heap
+                .slice(p)?
+                .first()
+                .copied()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+            Self::Borrowed(value) => Ok(*value),
+            Self::Scalar(value) => Ok(value),
+        }
+    }
+}
+
+// Temporary call state owns no source allocation and retains no fabricated ID.
+struct SourceNormalizationState<'g, 'e> {
+    group: Option<&'g mut T_GROUP_INFO>,
+    external: SourceNormalizationFlags<'e>,
+}
+
+impl SourceNormalizationState<'_, '_> {
+    fn read_view(&self) -> SourceBnsFlagRead<'_> {
+        // Native5266: INCHI_MODE *pbTautFlags = t_group_info ? &t_group_info->bTautFlags : inpbTautFlags;
+        // INCHI✔️❗: Group scalar only enters synchronous readers with no TGI
+        // writes. External target stays live; no early admission. C534 OPEN.
+        if let Some(info) = self.group.as_deref() {
+            SourceBnsFlagRead::Scalar(info.bTautFlags)
+        } else {
+            match &self.external {
+                SourceNormalizationFlags::Pointers { flags, .. } => {
+                    SourceBnsFlagRead::Pointer(flags.as_const())
+                }
+                SourceNormalizationFlags::Borrowed { flags, .. } => {
+                    SourceBnsFlagRead::Borrowed(flags)
+                }
+            }
+        }
+    }
+
+    fn flags(&self, heap: &SourceHeap) -> Result<u64, SourceHeapError> {
+        // Native5321: if (( *pbTautFlags & TG_FLAG_MOVE_POS_CHARGES ) && num_atoms > 1)
+        // INCHI✔️❗: Actual current selected field, no shadow. C534 cost OPEN.
+        self.read_view().flags(heap)
+    }
+
+    fn done(&self, heap: &SourceHeap) -> Result<u64, SourceHeapError> {
+        // Native5545: *pbTautFlagsDone |= TG_FLAG_MOVE_POS_CHARGES_DONE;
+        // INCHI✔️❗: Read actual reached OR operand. C534 cost OPEN.
+        match self.group.as_deref() {
+            Some(info) => Ok(info.bTautFlagsDone),
+            None => self.external.done(heap),
+        }
+    }
+
+    fn set_done(&mut self, heap: &mut SourceHeap, value: u64) -> Result<(), SourceHeapError> {
+        // Native5545: *pbTautFlagsDone |= TG_FLAG_MOVE_POS_CHARGES_DONE;
+        // INCHI✔️❗: Immediate actual write including partial-error paths. C534 OPEN.
+        match self.group.as_deref_mut() {
+            Some(info) => {
+                info.bTautFlagsDone = value;
+                Ok(())
+            }
+            None => self.external.set_done(heap, value),
+        }
+    }
+}
+
 fn work_get<T: Clone + 'static>(
     heap: &SourceHeap,
     pointer: SourceMutPointer<T>,
@@ -1476,7 +1623,8 @@ pub(crate) fn fix_special_bonds(
                 } else {
                     (n2, i2)
                 };
-                if num_of_H(&atoms, n3)? == 0
+                // INCHI✔️❗: if (0 == NUMH( at, n3 ) && 2 == nNoMetalNumBonds( at, n3 ) &&
+                if input_atom_numh(input_atom_ref(&atoms, n3)?) == 0
                     && n_no_metal_num_bonds(Some(&atoms), n3)? == 2
                     && n_no_metal_bonds_valence(Some(&atoms), n3)? == 3
                     && ion_el_group(i32::from(input_atom_ref(&atoms, n3)?.el_number)) == 7
@@ -1570,32 +1718,42 @@ pub(crate) fn fix_special_bonds(
                 let mut num_other = 0_i32;
                 let mut n2 = 0_i32;
                 let mut i2 = 0_i32;
+                // INCHI✔️❗: if (BOND_TYPE_DOUBLE == ( at[i].bond_type[i1] & BOND_TYPE_MASK ) &&
+                // INCHI✔️❗:      !is_el_a_metal( at[n1 = (int) at[i].neighbor[i1]].el_number ) &&
+                // INCHI✔️❗:      ion_el_group( at[n1].el_number ) == EL_NUMBER_N)
+                // Cost: admit the neighbor/metal query only after the double-bond gate.
                 for i1 in 0..i32::from(atom.valence) {
+                    if input_atom_bond_type(atom, i1)? & 15 != 2 {
+                        continue;
+                    }
                     let n1 = input_atom_neighbor(atom, i1)?;
                     if is_el_a_metal(i32::from(input_atom_ref(&atoms, n1)?.el_number))? != 0 {
                         continue;
                     }
-                    if input_atom_bond_type(atom, i1)? & 15 == 2
-                        && ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 7
-                    {
+                    if ion_el_group(i32::from(input_atom_ref(&atoms, n1)?.el_number)) == 7 {
                         num_n += 1;
                         n2 = n1;
                         i2 = i1;
                     }
                     let _ = num_other;
                 }
+                // INCHI✔️❗: if (1 == num_N && 0 == NUMH( at, n2 ) &&
+                // INCHI✔️❗:      2 == nNoMetalNumBonds( at, n2 ) &&
+                // INCHI✔️❗:      3 == nNoMetalBondsValence( at, n2 ) &&
+                // INCHI✔️❗:      0 <= ( i3 = nNoMetalOtherNeighIndex( at, n2, i ) ) &&
+                // INCHI✔️❗:      BOND_TYPE_SINGLE == ( at[n2].bond_type[i3] & BOND_TYPE_MASK ))
+                // Cost: one reached neighbor scan, with its ordinal reused for the update.
+                let mut i3 = -1;
                 if num_n == 1
-                    && num_of_H(&atoms, n2)? == 0
+                    && input_atom_numh(input_atom_ref(&atoms, n2)?) == 0
                     && n_no_metal_num_bonds(Some(&atoms), n2)? == 2
                     && n_no_metal_bonds_valence(Some(&atoms), n2)? == 3
-                    && 0 <= n_no_metal_other_neigh_index(Some(&atoms), n2, i)?
-                    && input_atom_bond_type(
-                        input_atom_ref(&atoms, n2)?,
-                        n_no_metal_other_neigh_index(Some(&atoms), n2, i)?,
-                    )? & 15
-                        == 1
+                    && {
+                        i3 = n_no_metal_other_neigh_index(Some(&atoms), n2, i)?;
+                        i3 >= 0
+                    }
+                    && input_atom_bond_type(input_atom_ref(&atoms, n2)?, i3)? & 15 == 1
                 {
-                    let i3 = n_no_metal_other_neigh_index(Some(&atoms), n2, i)?;
                     mark_forbidden_atom_edge(heap, pBNS, n2, i3, edge_forbidden_mask)?;
                     num_changes += 1;
                     mark_forbidden_atom_edge(heap, pBNS, i, i2, edge_forbidden_mask)?;
@@ -1630,6 +1788,7 @@ pub(crate) fn fix_special_bonds(
                     continue;
                 }
                 let bond_type = input_atom_bond_type(atom, i1)? & 15;
+                // Native c2414..2420 uses an unconditional final else; no extra scan.
                 if bond_type == 2 {
                     num_n += 1;
                     n2 = n1;
@@ -1649,9 +1808,6 @@ pub(crate) fn fix_special_bonds(
                     } else {
                         num_om += 1;
                     }
-                } else if bond_type == 1 && 1 < n_no_metal_num_bonds(Some(&atoms), n1)? {
-                    num_other += 1;
-                    i4 = i1;
                 } else {
                     num_other += 1;
                     i4 = i1;
@@ -3091,10 +3247,12 @@ pub(crate) fn mark_at_type(
     // END INCHI C FUNCTION: mark_at_type
 
     if let Some(totals) = n_at_type_totals.as_deref_mut() {
-        for index in 0..ATTOT_ARRAY_LEN {
-            *totals
-                .get_mut(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+        // INCHI✔️❗: One contiguous source-sized clear. A short Rust buffer
+        // retains the old cleared prefix before its required bounds error.
+        let available = totals.len().min(ATTOT_ARRAY_LEN);
+        totals[..available].fill(0);
+        if available < ATTOT_ARRAY_LEN {
+            return Err(SourceHeapError::PointerOutOfBounds);
         }
     }
 
@@ -3160,21 +3318,57 @@ pub(crate) fn AddChangedAtHChargeBNS(
     // INCHI✔️❌: #define FIX_NORM_BUG_ADD_ION_PAIR     1
     // END INCHI ACTIVE MACRO CONFIGURATION: AddChangedAtHChargeBNS
 
+    add_changed_with_accounting(
+        None,
+        atoms,
+        num_atoms,
+        SourceChargeAccounting::Borrowed {
+            totals: n_at_type_totals,
+            marks: mark,
+        },
+    )
+}
+
+fn add_changed_with_accounting(
+    mut heap: Option<&mut SourceHeap>,
+    atoms: &mut [inp_ATOM],
+    num_atoms: i32,
+    mut accounting: SourceChargeAccounting<'_>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:775 add_changed_with_accounting
+    // INCHI✔️❗: One readdition algorithm over reached targets; C533 cost OPEN.
+    /*
+    int AddChangedAtHChargeBNS( inp_ATOM *at,
+                                int num_atoms,
+                                int nAtTypeTotals[],
+                                S_CHAR *mark )
+    {
+        int i, mask, num;
+        for (i = 0, num = 0; i < num_atoms; i++)
+        {
+            if (mark[i])
+            {
+                mark[i] = 0;
+    #if ( FIX_NORM_BUG_ADD_ION_PAIR == 1 )
+                /* add ignoring adjacent charges */
+                at[i].at_type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, -2 );
+    #else
+                at[i].at_type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, 0 );
+    #endif
+                num++;
+            }
+        }
+
+        return num;
+    }
+        */
+    // END INCHI C FUNCTION: add_changed_with_accounting
     let mut num = 0_i32;
     for i in 0..num_atoms {
         let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if *mark.get(index).ok_or(SourceHeapError::PointerOutOfBounds)? != 0 {
-            *mark
-                .get_mut(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-            let mut mask = 0_i32;
-            let type_ = GetAtomChargeType(
-                &*atoms,
-                i,
-                Some(&mut *n_at_type_totals),
-                Some(&mut mask),
-                -2,
-            )?;
+        if accounting.mark(heap.as_deref(), index)? != 0 {
+            accounting.set_mark(heap.as_deref_mut(), index, 0)?;
+            let type_ = accounting.charge_type(heap.as_deref_mut(), &*atoms, i, -2)?;
             atoms
                 .get_mut(index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -3612,6 +3806,470 @@ pub(crate) fn SubtractOrChangeAtHChargeBNS(
     // INCHI✔️❌: #define ALTP_THIS_ATOM_NEIGHBOR(altp, i) (altp)[iALTP_NEIGHBOR+(i)].ineigh[0]
     // END INCHI ACTIVE MACRO CONFIGURATION: SubtractOrChangeAtHChargeBNS
 
+    subtract_or_change_with_group(
+        heap,
+        pBNS,
+        atoms,
+        num_atoms,
+        SourceChargeAccounting::Borrowed {
+            totals: n_at_type_totals,
+            marks: mark,
+        },
+        SourceHydrogenGroup::Borrowed(t_group_info),
+        b_subtract,
+    )
+}
+
+// Temporary accounting lvalues. Pointer targets stay in the heap between
+// reached operations, including when totals alias graph adjacency storage.
+enum SourceChargeAccounting<'a> {
+    Borrowed {
+        totals: &'a mut [i32],
+        marks: &'a mut [S_CHAR],
+    },
+    BorrowedTotals {
+        totals: &'a mut [i32],
+        marks: SourceMutPointer<S_CHAR>,
+    },
+    Pointers {
+        totals: SourceMutPointer<i32>,
+        marks: SourceMutPointer<S_CHAR>,
+    },
+}
+
+impl SourceChargeAccounting<'_> {
+    fn mark(&self, heap: Option<&SourceHeap>, index: usize) -> Result<S_CHAR, SourceHeapError> {
+        // Native ichi_bns.c782/1121:
+        //         if (mark[i])
+        //                         if (!mark[v1])
+        // INCHI✔️❗: Reached scalar only; no prefix copy. C533 cost OPEN.
+        let marks = match self {
+            Self::Borrowed { marks, .. } => &**marks,
+            Self::Pointers { marks, .. } | Self::BorrowedTotals { marks, .. } => heap
+                .ok_or(SourceHeapError::NullPointer)?
+                .slice(marks.as_const())?,
+        };
+        marks
+            .get(index)
+            .copied()
+            .ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+
+    fn set_mark(
+        &mut self,
+        heap: Option<&mut SourceHeap>,
+        index: usize,
+        value: S_CHAR,
+    ) -> Result<(), SourceHeapError> {
+        // Native ichi_bns.c784/1132:
+        //             mark[i] = 0;
+        //                             mark[v1] ++;
+        // INCHI✔️❗: Actual lvalue, no delayed publication. C533 OPEN.
+        let marks = match self {
+            Self::Borrowed { marks, .. } => &mut **marks,
+            Self::Pointers { marks, .. } | Self::BorrowedTotals { marks, .. } => heap
+                .ok_or(SourceHeapError::NullPointer)?
+                .slice_mut(*marks)?,
+        };
+        *marks
+            .get_mut(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+        Ok(())
+    }
+
+    fn charge_type(
+        &mut self,
+        heap: Option<&mut SourceHeap>,
+        atoms: &[inp_ATOM],
+        index: i32,
+        subtract: i32,
+    ) -> Result<i32, SourceHeapError> {
+        // Native ichi_bns.c788/1127:
+        //             at[i].at_type = GetAtomChargeType( at, i, nAtTypeTotals, &mask, -2 );
+        //                             type = GetAtomChargeType(at, v1, nAtTypeTotals, &mask, 2);
+        // INCHI✔️❗: Canonical classifier, actual optional totals. The
+        // pure borrowed entry uses no heap; pointer targets always supply
+        // their actual context. No stored context/model; C533 cost OPEN.
+        let totals = match self {
+            Self::Borrowed { totals, .. } | Self::BorrowedTotals { totals, .. } => {
+                Some(&mut **totals)
+            }
+            Self::Pointers { totals, .. } if totals.is_null() => None,
+            Self::Pointers { totals, .. } => Some(
+                heap.ok_or(SourceHeapError::NullPointer)?
+                    .slice_mut(*totals)?,
+            ),
+        };
+        let mut mask = 0_i32;
+        GetAtomChargeType(atoms, index, totals, Some(&mut mask), subtract)
+    }
+}
+
+// Native5472..5473 binds actual stack totals and the actual TGI, without
+// registering field identities. Borrowed mode is private to fresh root AATG.
+enum SourceAatgTargets<'a> {
+    Pointers {
+        totals: SourceMutPointer<i32>,
+        group: SourceMutPointer<T_GROUP_INFO>,
+    },
+    Borrowed {
+        totals: &'a mut [i32],
+        group: &'a mut T_GROUP_INFO,
+    },
+}
+
+impl SourceAatgTargets<'_> {
+    fn has_totals(&self) -> bool {
+        // Native8680 tests the actual selected totals pointer. C536 OPEN.
+        match self {
+            Self::Pointers { totals, .. } => !totals.is_null(),
+            Self::Borrowed { .. } => true,
+        }
+    }
+
+    fn total(&self, heap: &SourceHeap, index: usize) -> Result<i32, SourceHeapError> {
+        // Native5118/4375: pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES]
+        // INCHI✔️❗: One live reached scalar, no detachment across graph reads.
+        // O(1) transport, pointer arena costs remain OPEN (C536).
+        let totals = match self {
+            Self::Pointers { totals, .. } => heap.slice(totals.as_const())?,
+            Self::Borrowed { totals, .. } => &**totals,
+        };
+        totals
+            .get(index)
+            .copied()
+            .ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+
+    fn group<'a>(&'a self, heap: &'a SourceHeap) -> Result<&'a T_GROUP_INFO, SourceHeapError> {
+        // Native5096 binds the selected actual group; read only when reached.
+        // INCHI✔️❗: No clone/identity/snapshot, C536 constant cost OPEN.
+        match self {
+            Self::Pointers { group, .. } => heap
+                .slice(group.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+            Self::Borrowed { group, .. } => Ok(group),
+        }
+    }
+
+    fn flags(&self, heap: &SourceHeap) -> Result<u64, SourceHeapError> {
+        Ok(self.group(heap)?.bTautFlags)
+    }
+    fn removed(&self, heap: &SourceHeap) -> Result<i32, SourceHeapError> {
+        Ok(self.group(heap)?.tni.nNumRemovedProtons as i32)
+    }
+
+    fn flag_view(&self) -> Option<SourceBnsFlagRead<'static>> {
+        // Native hard searches receive the same BNS field. Scalar lifetime is
+        // this synchronous call only; no group writer precedes SetPath's read.
+        // INCHI✔️❗: Legacy uses its physical field, no extra admission. C536 OPEN.
+        match self {
+            Self::Borrowed { group, .. } => Some(SourceBnsFlagRead::Scalar(group.bTautFlags)),
+            Self::Pointers { .. } => None,
+        }
+    }
+
+    fn add_normalization_flags(
+        &mut self,
+        heap: &mut SourceHeap,
+        flags: u64,
+    ) -> Result<(), SourceHeapError> {
+        // Native5227: t_group_info->tni.bNormalizationFlags |= nNumCanceledCharges ? FLAG_PROTON_CHARGE_CANCEL : 0;
+        // INCHI✔️❗: Actual reached write/partial errors, no copyback. C536 OPEN.
+        let group = match self {
+            Self::Pointers { group, .. } => heap
+                .slice_mut(*group)?
+                .first_mut()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            Self::Borrowed { group, .. } => &mut **group,
+        };
+        group.tni.bNormalizationFlags |= flags;
+        Ok(())
+    }
+
+    fn classify(
+        &mut self,
+        heap: &mut SourceHeap,
+        atoms: &[inp_ATOM],
+        index: i32,
+        mask: &mut i32,
+        delta: i32,
+    ) -> Result<i32, SourceHeapError> {
+        // Native4178/4301 calls the sole classifier with actual totals.
+        // INCHI✔️❗: Retain legacy pointer admission before chemistry writes;
+        // borrowed root has real fixed storage, no fabricated NULL. C536 OPEN.
+        let totals = match self {
+            Self::Pointers { totals, .. } => heap.slice_mut(*totals)?,
+            Self::Borrowed { totals, .. } => &mut **totals,
+        };
+        GetAtomChargeType(atoms, index, Some(totals), Some(mask), delta)
+    }
+
+    fn hydrogen(
+        &mut self,
+        heap: &mut SourceHeap,
+        delta: i32,
+        atoms: &mut [inp_ATOM],
+        num_atoms: i32,
+        index: AT_NUMB,
+    ) -> Result<i32, SourceHeapError> {
+        // Native4182/4305: AddOrRemoveExplOrImplH(..., pAATG->t_group_info);
+        // INCHI✔️❗: Actual group only at reached H operation, C536 cost OPEN.
+        let group = match self {
+            Self::Pointers { group, .. } => heap
+                .slice_mut(*group)?
+                .get_mut(0)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            Self::Borrowed { group, .. } => &mut **group,
+        };
+        AddOrRemoveExplOrImplH(delta, atoms, num_atoms, index, group)
+    }
+
+    fn simple_np(
+        &mut self,
+        heap: &mut SourceHeap,
+        at: SourceMutPointer<inp_ATOM>,
+        num_atoms: i32,
+    ) -> Result<i32, SourceHeapError> {
+        // Native5123 directly forwards at/totals/actual TGI. Preserve old
+        // pointer entry's exact extractor admission, and explicit-H suffix.
+        // INCHI✔️❗: O(1) scratch, no copying/extra allocation; C536 OPEN.
+        if num_atoms <= 0 {
+            return Ok(0);
+        }
+        match self {
+            Self::Pointers { totals, group } => heap.with_two_slices_mut_and_optional_third(
+                at,
+                *totals,
+                Some(*group),
+                |atoms, totals, groups| {
+                    let group = groups
+                        .ok_or(SourceHeapError::NullPointer)?
+                        .first_mut()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    SimpleRemoveHplusNPO(atoms, num_atoms, Some(totals), group)
+                },
+            ),
+            Self::Borrowed { totals, group } => heap.with_slice_mut_and_heap_mut(at, |atoms, _| {
+                SimpleRemoveHplusNPO(atoms, num_atoms, Some(&mut **totals), group)
+            }),
+        }
+    }
+
+    fn subtract(
+        &mut self,
+        heap: &mut SourceHeap,
+        bns: &mut BN_STRUCT,
+        atoms: &mut [inp_ATOM],
+        num_atoms: i32,
+        marks: SourceMutPointer<S_CHAR>,
+        subtract: i32,
+    ) -> Result<i32, SourceHeapError> {
+        // Native8684..8688: original accounting phases, NULL group on first
+        // pass and NULL totals/marks on second. INCHI✔️❗: C536 cost OPEN.
+        match self {
+            Self::Pointers { totals, group } => subtract_or_change_with_group(
+                heap,
+                bns,
+                atoms,
+                num_atoms,
+                SourceChargeAccounting::Pointers {
+                    totals: if subtract != 0 {
+                        *totals
+                    } else {
+                        SourceMutPointer::null()
+                    },
+                    marks: if subtract != 0 {
+                        marks
+                    } else {
+                        SourceMutPointer::null()
+                    },
+                },
+                SourceHydrogenGroup::Pointer(if subtract != 0 {
+                    SourceMutPointer::null()
+                } else {
+                    *group
+                }),
+                subtract,
+            ),
+            Self::Borrowed { totals, group } => {
+                if subtract != 0 {
+                    subtract_or_change_with_group(
+                        heap,
+                        bns,
+                        atoms,
+                        num_atoms,
+                        SourceChargeAccounting::BorrowedTotals { totals, marks },
+                        SourceHydrogenGroup::Pointer(SourceMutPointer::null()),
+                        subtract,
+                    )
+                } else {
+                    subtract_or_change_with_group(
+                        heap,
+                        bns,
+                        atoms,
+                        num_atoms,
+                        SourceChargeAccounting::Pointers {
+                            totals: SourceMutPointer::null(),
+                            marks: SourceMutPointer::null(),
+                        },
+                        SourceHydrogenGroup::Borrowed(group),
+                        subtract,
+                    )
+                }
+            }
+        }
+    }
+
+    fn readd(
+        &mut self,
+        heap: &mut SourceHeap,
+        atoms: &mut [inp_ATOM],
+        num_atoms: i32,
+        marks: SourceMutPointer<S_CHAR>,
+    ) -> Result<i32, SourceHeapError> {
+        // Native8751: AddChangedAtHChargeBNS(at,num_atoms,pAATG->nAtTypeTotals,pAATG->nMarkedAtom);
+        // INCHI✔️❗: Same clear/classify order, totals live between graph reads.
+        // O(1) extra/no snapshots; C536 whole-call cost remains OPEN.
+        let accounting = match self {
+            Self::Pointers { totals, .. } => SourceChargeAccounting::Pointers {
+                totals: *totals,
+                marks,
+            },
+            Self::Borrowed { totals, .. } => {
+                SourceChargeAccounting::BorrowedTotals { totals, marks }
+            }
+        };
+        add_changed_with_accounting(Some(heap), atoms, num_atoms, accounting)
+    }
+}
+
+// Temporary group argument: preserve actual identity without eager admission.
+// The pointer is resolved only at a source-reached H-changing operation.
+enum SourceHydrogenGroup<'a> {
+    Borrowed(&'a mut T_GROUP_INFO),
+    Pointer(SourceMutPointer<T_GROUP_INFO>),
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn subtract_or_change_with_group(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    atoms: &mut [inp_ATOM],
+    num_atoms: i32,
+    mut accounting: SourceChargeAccounting<'_>,
+    mut t_group_info: SourceHydrogenGroup<'_>,
+    b_subtract: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:1057 subtract_or_change_with_group
+    // INCHI✔️❗: Same sole algorithm; actual group admission only for H. C532 cost OPEN.
+    /*
+    int SubtractOrChangeAtHChargeBNS( BN_STRUCT *pBNS,
+                                      inp_ATOM *at,
+                                      int num_atoms,
+                                      int nAtTypeTotals[],
+                                      S_CHAR *mark,
+                                      T_GROUP_INFO *t_group_info,
+                                      int bSubtract )
+    {
+        int       pass, i, v0, v1, v2, ineigh1, /*ineigh2,*/ vLast, n, delta, ret, err = 0;
+        BNS_EDGE *edge;
+        int       nDeltaH, nDeltaCharge;
+        int       mask, type; /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+
+        for (pass = pBNS->num_altp - 1, ret = 0; 0 <= pass; pass--)
+        {
+
+            pBNS->alt_path = pBNS->altp[pass];
+            v1 = ALTP_START_ATOM( pBNS->alt_path );
+            n = ALTP_PATH_LEN( pBNS->alt_path );
+            delta = ALTP_DELTA( pBNS->alt_path );
+            vLast = ALTP_END_ATOM( pBNS->alt_path );
+            v0 = v2 = NO_VERTEX;
+
+            for (i = 0; i < n; i++, delta = -delta, v0 = v1, v1 = v2)
+            {
+                ineigh1 = ALTP_THIS_ATOM_NEIGHBOR( pBNS->alt_path, i );  /* v1->v2 neighbor */
+                                                                         /*ineigh2 = ALTP_NEXT_ATOM_NEIGHBOR(pBNS->alt_path, i);*/  /* v2->v1 neighbor */
+                edge = pBNS->edge + pBNS->vert[v1].iedge[ineigh1];
+                /* follow the BN Structure, not the inp_ATOM, to take care of swithching to
+                t-groups, c-groups or other fictitious edges/vertices
+                */
+                v2 = edge->neighbor12 ^ v1;
+                if (v1 < num_atoms && ( v0 >= num_atoms || v2 >= num_atoms ))
+                {
+                    nDeltaH = nDeltaCharge = 0;
+                    if (v0 >= num_atoms)
+                    {
+                        /* delta(v0-v1) = -delta(v1-v2) along the alternating path */
+                        if (pBNS->vert[v0].type & BNS_VERT_TYPE_TGROUP)
+                        {
+                            nDeltaH -= delta;
+                        }
+                        else
+                        {
+                            if (pBNS->vert[v0].type & BNS_VERT_TYPE_C_GROUP)
+                            {
+                                nDeltaCharge += delta;
+                            }
+                        }
+                    }
+                    if (v2 >= num_atoms)
+                    {
+                        if (pBNS->vert[v2].type & BNS_VERT_TYPE_TGROUP)
+                        {
+                            nDeltaH += delta;
+                        }
+                        else
+                        {
+                            if (pBNS->vert[v2].type & BNS_VERT_TYPE_C_GROUP)
+                            {
+                                nDeltaCharge -= delta;
+                            }
+                        }
+                    }
+                    if (nDeltaH || nDeltaCharge)
+                    {
+                        if (bSubtract)
+                        {
+                            if (!mark[v1])
+                            {
+                                /* first time the atom has been encountered: subtract */
+                                /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    #if ( FIX_NORM_BUG_ADD_ION_PAIR == 1 )
+                                type = GetAtomChargeType(at, v1, nAtTypeTotals, &mask, 2);
+    #else
+                                type = GetAtomChargeType(at, v1, nAtTypeTotals, &mask, 1);
+    #endif
+                                ret++; /* number of changed atoms */
+                                mark[v1] ++;
+                            }
+                        }
+                        else
+                        {
+                            /* Change */
+                            at[v1].charge += nDeltaCharge;
+                            if (nDeltaH)
+                            {
+                                AddOrRemoveExplOrImplH( nDeltaH, at, num_atoms, (AT_NUMB) v1, t_group_info );
+                            }
+                            ret++; /* number of changed atoms */
+                        }
+                    }
+                }
+            }
+
+            if (v2 != vLast)
+            {
+                err = BNS_PROGRAM_ERR;
+            }
+        }
+
+        return err ? err : ret;
+    }
+        */
+    // END INCHI C FUNCTION: subtract_or_change_with_group
     let mut pass = pBNS.num_altp.wrapping_sub(1);
     let mut ret = 0_i32;
     let mut err = 0_i32;
@@ -3671,20 +4329,11 @@ pub(crate) fn SubtractOrChangeAtHChargeBNS(
                     let atom_index =
                         usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if b_subtract != 0 {
-                        let mark_slot = mark
-                            .get_mut(atom_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        if *mark_slot == 0 {
-                            let mut mask = 0_i32;
-                            let _type = GetAtomChargeType(
-                                &*atoms,
-                                v1,
-                                Some(n_at_type_totals),
-                                Some(&mut mask),
-                                2,
-                            )?;
+                        if accounting.mark(Some(&*heap), atom_index)? == 0 {
+                            let _type = accounting.charge_type(Some(heap), &*atoms, v1, 2)?;
                             ret = ret.wrapping_add(1);
-                            *mark_slot = (*mark_slot).wrapping_add(1);
+                            let mark = accounting.mark(Some(&*heap), atom_index)?.wrapping_add(1);
+                            accounting.set_mark(Some(heap), atom_index, mark)?;
                         }
                     } else {
                         let atom = atoms
@@ -3692,13 +4341,33 @@ pub(crate) fn SubtractOrChangeAtHChargeBNS(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         atom.charge = atom.charge.wrapping_add(n_delta_charge as S_CHAR);
                         if n_delta_h != 0 {
-                            AddOrRemoveExplOrImplH(
-                                n_delta_h,
-                                atoms,
-                                num_atoms,
-                                v1 as AT_NUMB,
-                                t_group_info,
-                            )?;
+                            // Native1139..1142 reaches group metadata only
+                            // for H movement, after the actual charge store.
+                            // INCHI✔️❗: No TGI/atom clone; C532 cost OPEN.
+                            match &mut t_group_info {
+                                SourceHydrogenGroup::Borrowed(info) => {
+                                    AddOrRemoveExplOrImplH(
+                                        n_delta_h,
+                                        atoms,
+                                        num_atoms,
+                                        v1 as AT_NUMB,
+                                        info,
+                                    )?;
+                                }
+                                SourceHydrogenGroup::Pointer(pointer) => {
+                                    let info = heap
+                                        .slice_mut(*pointer)?
+                                        .first_mut()
+                                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    AddOrRemoveExplOrImplH(
+                                        n_delta_h,
+                                        atoms,
+                                        num_atoms,
+                                        v1 as AT_NUMB,
+                                        info,
+                                    )?;
+                                }
+                            }
                         }
                         ret = ret.wrapping_add(1);
                     }
@@ -3842,16 +4511,19 @@ pub(crate) fn EliminatePlusMinusChargeAmbiguity(
                 )?
                 .ineigh(0),
             );
-            let vertex = bns_vertex(heap, pBNS, v1)?;
+            let vertex = heap.element_signed(pBNS.vert.as_const(), v1)?;
             let edge_index = bns_edge_index(heap, &vertex, ineigh1)?;
-            let edge = bns_edge(heap, pBNS, edge_index)?;
+            let edge = heap.element_signed(pBNS.edge.as_const(), edge_index)?;
             v2 = i32::from(edge.neighbor12) ^ v1;
 
             if v1 < num_atoms
                 && ((v0 >= num_atoms
-                    && (bns_vertex(heap, pBNS, v0)?.type_ & BNS_VERT_TYPE_C_GROUP as AT_NUMB) != 0)
+                    && (heap.element_signed(pBNS.vert.as_const(), v0)?.type_
+                        & BNS_VERT_TYPE_C_GROUP as AT_NUMB)
+                        != 0)
                     || (v2 >= num_atoms
-                        && (bns_vertex(heap, pBNS, v2)?.type_ & BNS_VERT_TYPE_C_GROUP as AT_NUMB)
+                        && (heap.element_signed(pBNS.vert.as_const(), v2)?.type_
+                            & BNS_VERT_TYPE_C_GROUP as AT_NUMB)
                             != 0))
             {
                 let mut cg_pos = 0_i32;
@@ -3859,13 +4531,13 @@ pub(crate) fn EliminatePlusMinusChargeAmbiguity(
                 let mut neigh_pos = -1_i32;
                 let mut neigh_neg = -1_i32;
                 let mut n_found = 0_i32;
-                let atom_vertex = bns_vertex(heap, pBNS, v1)?;
+                let atom_vertex = heap.element_signed(pBNS.vert.as_const(), v1)?;
                 let mut k = i32::from(atom_vertex.num_adj_edges) - 1;
                 while k >= 0 && (neigh_pos < 0 || neigh_neg < 0) {
                     let next_edge_index = bns_edge_index(heap, &atom_vertex, k)?;
-                    let next_edge = bns_edge(heap, pBNS, next_edge_index)?;
+                    let next_edge = heap.element_signed(pBNS.edge.as_const(), next_edge_index)?;
                     let v = i32::from(next_edge.neighbor12) ^ v1;
-                    let group_vertex = bns_vertex(heap, pBNS, v)?;
+                    let group_vertex = heap.element_signed(pBNS.vert.as_const(), v)?;
                     if group_vertex.type_ & BNS_VERT_TYPE_C_GROUP as AT_NUMB != 0 {
                         if group_vertex.type_ & BNS_VERT_TYPE_C_NEGATIVE as AT_NUMB != 0 {
                             cg_neg = v;
@@ -3885,24 +4557,28 @@ pub(crate) fn EliminatePlusMinusChargeAmbiguity(
                 if n_found == 2 && neigh_pos >= 0 && neigh_neg >= 0 {
                     let edge_pos_index = bns_edge_index(heap, &atom_vertex, neigh_pos)?;
                     let edge_neg_index = bns_edge_index(heap, &atom_vertex, neigh_neg)?;
-                    let mut edge_pos = bns_edge(heap, pBNS, edge_pos_index)?;
-                    let mut edge_neg = bns_edge(heap, pBNS, edge_neg_index)?;
-                    if edge_pos.flow < edge_neg.flow {
-                        let dflow = edge_neg.flow.wrapping_sub(edge_pos.flow);
+                    let pos_flow = heap
+                        .element_signed(pBNS.edge.as_const(), edge_pos_index)?
+                        .flow;
+                    let neg_flow = heap
+                        .element_signed(pBNS.edge.as_const(), edge_neg_index)?
+                        .flow;
+                    if pos_flow < neg_flow {
+                        // Behavior: native c877..883 orders positive edge/group writes
+                        // before negative edge/group writes, including partial errors.
+                        // Cost: borrowed reads/direct fields, no whole-record traffic or
+                        // allocation. Checked arena/full-call cost remains unresolved.
+                        let dflow = neg_flow.wrapping_sub(pos_flow);
+                        let edge_pos = bns_edge_mut(heap, pBNS, edge_pos_index)?;
                         edge_pos.flow = edge_pos.flow.wrapping_add(dflow);
-                        edge_neg.flow = edge_neg.flow.wrapping_sub(dflow);
-                        *bns_edge_mut(heap, pBNS, edge_pos_index)? = edge_pos;
-                        *bns_edge_mut(heap, pBNS, edge_neg_index)? = edge_neg;
-
-                        let mut pos_vertex = bns_vertex(heap, pBNS, cg_pos)?;
+                        let pos_vertex = bns_vertex_mut(heap, pBNS, cg_pos)?;
                         pos_vertex.st_edge.cap = pos_vertex.st_edge.cap.wrapping_add(dflow);
                         pos_vertex.st_edge.flow = pos_vertex.st_edge.flow.wrapping_add(dflow);
-                        *bns_vertex_mut(heap, pBNS, cg_pos)? = pos_vertex;
-
-                        let mut neg_vertex = bns_vertex(heap, pBNS, cg_neg)?;
+                        let edge_neg = bns_edge_mut(heap, pBNS, edge_neg_index)?;
+                        edge_neg.flow = edge_neg.flow.wrapping_sub(dflow);
+                        let neg_vertex = bns_vertex_mut(heap, pBNS, cg_neg)?;
                         neg_vertex.st_edge.cap = neg_vertex.st_edge.cap.wrapping_sub(dflow);
                         neg_vertex.st_edge.flow = neg_vertex.st_edge.flow.wrapping_sub(dflow);
-                        *bns_vertex_mut(heap, pBNS, cg_neg)? = neg_vertex;
                         ret += 1;
                     }
                 }
@@ -4184,24 +4860,22 @@ pub(crate) fn MarkAtomsAtTautGroups(
             )?;
             let ineigh1 = i32::from(neighbor.ineigh(0));
             let _ineigh2 = neighbor.ineigh(1);
-            let vertex = bns_vertex(heap, pBNS, v1)?;
-            let edge_index = bns_edge_index(heap, &vertex, ineigh1)?;
-            let edge = bns_edge(heap, pBNS, edge_index)?;
+            let vertex = heap.element_signed(pBNS.vert.as_const(), v1)?;
+            let edge_index = bns_edge_index(heap, vertex, ineigh1)?;
+            let edge = heap.element_signed(pBNS.edge.as_const(), edge_index)?;
             v2 = i32::from(edge.neighbor12) ^ v1;
 
-            let v1_group_or_temp = if v1 >= num_atoms {
-                let vertex = bns_vertex(heap, pBNS, v1)?;
-                (vertex.type_ & ((BNS_VERT_TYPE_TGROUP | BNS_VERT_TYPE_TEMP) as AT_NUMB)) != 0
-            } else {
-                false
-            };
-            let v2_atom = if 0 <= v2 && v2 < num_atoms {
-                (bns_vertex(heap, pBNS, v2)?.type_ & BNS_VERT_TYPE_ATOM as AT_NUMB) != 0
-            } else {
-                false
-            };
-
-            if v1 >= num_atoms && v1_group_or_temp && v2_atom {
+            // INCHI✔️❗: preserve native short-circuit type reads. O(path length)
+            // plus bounded marking passes, fixed stack arrays/no allocation;
+            // checked arena and whole-call cost remain independently OPEN.
+            if v1 >= num_atoms
+                && (vertex.type_ & ((BNS_VERT_TYPE_TGROUP | BNS_VERT_TYPE_TEMP) as AT_NUMB)) != 0
+                && 0 <= v2
+                && v2 < num_atoms
+                && (heap.element_signed(pBNS.vert.as_const(), v2)?.type_
+                    & BNS_VERT_TYPE_ATOM as AT_NUMB)
+                    != 0
+            {
                 if n_len_delta < MAX_ALT_AATG_ARRAY_LEN as i32 {
                     let index = usize::try_from(n_len_delta)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -4210,18 +4884,14 @@ pub(crate) fn MarkAtomsAtTautGroups(
                     n_len_delta += 1;
                 }
             } else {
-                let v2_group_or_temp = if v2 >= num_atoms {
-                    let vertex = bns_vertex(heap, pBNS, v2)?;
-                    (vertex.type_ & ((BNS_VERT_TYPE_TGROUP | BNS_VERT_TYPE_TEMP) as AT_NUMB)) != 0
-                } else {
-                    false
-                };
-                let v1_atom = if 0 <= v1 && v1 < num_atoms {
-                    (bns_vertex(heap, pBNS, v1)?.type_ & BNS_VERT_TYPE_ATOM as AT_NUMB) != 0
-                } else {
-                    false
-                };
-                if v2 >= num_atoms && v2_group_or_temp && v1_atom {
+                if v2 >= num_atoms
+                    && (heap.element_signed(pBNS.vert.as_const(), v2)?.type_
+                        & ((BNS_VERT_TYPE_TGROUP | BNS_VERT_TYPE_TEMP) as AT_NUMB))
+                        != 0
+                    && 0 <= v1
+                    && v1 < num_atoms
+                    && (vertex.type_ & BNS_VERT_TYPE_ATOM as AT_NUMB) != 0
+                {
                     if n_len_delta < MAX_ALT_AATG_ARRAY_LEN as i32 {
                         let index = usize::try_from(n_len_delta)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -4452,6 +5122,22 @@ pub(crate) fn SimpleRemoveAcidicProtons(
     p_aatg: &BN_AATG,
     num2remove: i32,
 ) -> Result<i32, SourceHeapError> {
+    let mut targets = SourceAatgTargets::Pointers {
+        totals: p_aatg.nAtTypeTotals,
+        group: p_aatg.t_group_info,
+    };
+    SimpleRemoveAcidicProtons_targets(heap, atoms, num_atoms, p_aatg, num2remove, &mut targets)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn SimpleRemoveAcidicProtons_targets(
+    heap: &mut SourceHeap,
+    atoms: &mut [inp_ATOM],
+    num_atoms: i32,
+    p_aatg: &BN_AATG,
+    num2remove: i32,
+    targets: &mut SourceAatgTargets<'_>,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:4129 SimpleRemoveAcidicProtons
     // INCHI✔️✔️: int SimpleRemoveAcidicProtons( inp_ATOM *at,
     // INCHI✔️✔️:                                int num_atoms,
@@ -4543,6 +5229,9 @@ pub(crate) fn SimpleRemoveAcidicProtons(
     // INCHI✔️✔️:     0
     // INCHI✔️✔️: };
     // END INCHI ACTIVE MACRO CONFIGURATION: SimpleRemoveAcidicProtons
+    // INCHI✔️❗: Preserve all three reached heap admissions and source mutation order.
+    // The native logical mask test is intentional. Safe arena lookup hot-path
+    // cost is deferred in performance_pending.md (BNS-ACIDIC-SCALAR), not parity.
 
     let mut max_j = -1_i32;
     let mut num = [0_i32; AR_SIMPLE_STEPS as usize + 1];
@@ -4605,9 +5294,7 @@ pub(crate) fn SimpleRemoveAcidicProtons(
                         && (mask != 0 && AR_TYP_MASK[table_index + 1] != 0)
                     {
                         {
-                            let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
-                            let _ =
-                                GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 1)?;
+                            let _ = targets.classify(heap, &*atoms, i, &mut mask, 1)?;
                         }
                         num[num_index] -= 1;
                         let atom_index =
@@ -4618,23 +5305,11 @@ pub(crate) fn SimpleRemoveAcidicProtons(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .charge = new_charge;
                         {
-                            let t_group_info = heap
-                                .slice_mut(p_aatg.t_group_info)?
-                                .get_mut(0)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            AddOrRemoveExplOrImplH(
-                                -1,
-                                atoms,
-                                num_atoms,
-                                i as AT_NUMB,
-                                t_group_info,
-                            )?;
+                            targets.hydrogen(heap, -1, atoms, num_atoms, i as AT_NUMB)?;
                         }
                         num_removed += 1;
                         {
-                            let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
-                            let _ =
-                                GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 0)?;
+                            let _ = targets.classify(heap, &*atoms, i, &mut mask, 0)?;
                         }
                         break;
                     }
@@ -4729,6 +5404,22 @@ pub(crate) fn SimpleAddAcidicProtons(
     p_aatg: &BN_AATG,
     num2add: i32,
 ) -> Result<i32, SourceHeapError> {
+    let mut targets = SourceAatgTargets::Pointers {
+        totals: p_aatg.nAtTypeTotals,
+        group: p_aatg.t_group_info,
+    };
+    SimpleAddAcidicProtons_targets(heap, atoms, num_atoms, p_aatg, num2add, &mut targets)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn SimpleAddAcidicProtons_targets(
+    heap: &mut SourceHeap,
+    atoms: &mut [inp_ATOM],
+    num_atoms: i32,
+    p_aatg: &BN_AATG,
+    num2add: i32,
+    targets: &mut SourceAatgTargets<'_>,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:4253 SimpleAddAcidicProtons
     // INCHI✔️✔️: int SimpleAddAcidicProtons( inp_ATOM *at,
     // INCHI✔️✔️:                             int num_atoms,
@@ -4822,6 +5513,9 @@ pub(crate) fn SimpleAddAcidicProtons(
     // INCHI✔️✔️:     0
     // INCHI✔️✔️: };
     // END INCHI ACTIVE MACRO CONFIGURATION: SimpleAddAcidicProtons
+    // INCHI✔️❗: Preserve all three reached heap admissions and source mutation order.
+    // The native logical mask test is intentional. Safe arena lookup hot-path
+    // cost is deferred in performance_pending.md (BNS-ACIDIC-SCALAR), not parity.
 
     let mut max_j = -1_i32;
     let mut num = [0_i32; AR_SIMPLE_STEPS as usize + 1];
@@ -4884,9 +5578,7 @@ pub(crate) fn SimpleAddAcidicProtons(
                         && (mask != 0 && AA_TYP_MASK[table_index + 1] != 0)
                     {
                         {
-                            let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
-                            let _ =
-                                GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 1)?;
+                            let _ = targets.classify(heap, &*atoms, i, &mut mask, 1)?;
                         }
                         num[num_index] -= 1;
                         let atom_index =
@@ -4897,23 +5589,11 @@ pub(crate) fn SimpleAddAcidicProtons(
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .charge = new_charge;
                         {
-                            let t_group_info = heap
-                                .slice_mut(p_aatg.t_group_info)?
-                                .get_mut(0)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            AddOrRemoveExplOrImplH(
-                                1,
-                                atoms,
-                                num_atoms,
-                                i as AT_NUMB,
-                                t_group_info,
-                            )?;
+                            targets.hydrogen(heap, 1, atoms, num_atoms, i as AT_NUMB)?;
                         }
                         num_added += 1;
                         {
-                            let totals = heap.slice_mut(p_aatg.nAtTypeTotals)?;
-                            let _ =
-                                GetAtomChargeType(&*atoms, i, Some(totals), Some(&mut mask), 0)?;
+                            let _ = targets.classify(heap, &*atoms, i, &mut mask, 0)?;
                         }
                         break;
                     }
@@ -5223,7 +5903,40 @@ pub(crate) fn HardRemoveAcidicProtons(
     nNumCanceledCharges: Option<&mut i32>,
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    let mut targets = SourceAatgTargets::Pointers {
+        totals: pAATG.nAtTypeTotals,
+        group: pAATG.t_group_info,
+    };
+    HardRemoveAcidicProtons_targets(
+        heap,
+        pCG,
+        at,
+        num_atoms,
+        pAATG,
+        num2remove,
+        nNumCanceledCharges,
+        pBNS,
+        pBD,
+        clock_result,
+        &mut targets,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn HardRemoveAcidicProtons_targets(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    pAATG: &mut BN_AATG,
+    num2remove: i32,
+    nNumCanceledCharges: Option<&mut i32>,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    clock_result: impl crate::source_types::SourceClock,
+    targets: &mut SourceAatgTargets<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:4351 HardRemoveAcidicProtons
     // INCHI✔️❌: int HardRemoveAcidicProtons( CANON_GLOBALS *pCG,
@@ -5266,6 +5979,212 @@ pub(crate) fn HardRemoveAcidicProtons(
     // INCHI✔️❌:     return nNumMoved2AcidH;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: HardRemoveAcidicProtons
+    // BEGIN VERBATIM SOURCE FRAGMENT: C536 HardRemoveAcidicProtons
+    /*
+    int HardRemoveAcidicProtons( CANON_GLOBALS *pCG,
+                                 inp_ATOM *at,
+                                 int num_atoms,
+                                 BN_AATG *pAATG,
+                                 int num2remove,
+                                 int *nNumCanceledCharges,
+                                 BN_STRUCT *pBNS,
+                                 BN_DATA *pBD )
+    {
+        int cg_Plus = 0;
+        int cg_Minus = 0;
+        int tg_H_Other = 0;
+        int tg_H_Acid = 0;
+
+        int ret = 0, ret2;
+        int nDelta, nNumMoved2AcidH = 0, nNumNeutralized = 0, nPrevNumCharges; /* djb-rwth: removing redundant variables */
+
+        int nPosCharges, nPosCharges2;
+        int nNegCharges, nNegCharges2;
+        /*
+        int nNumNP_H, nNumNP_H2;
+        int nNumOS_H, nNumOS_H2;
+        */
+
+        nPosCharges = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] + pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        nNegCharges = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] - pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        /*
+        nNumNP_H    =  pAATG->nAtTypeTotals[ATTOT_NUM_NP_H] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_NP_Proton];
+        nNumOS_H    =  pAATG->nAtTypeTotals[ATTOT_NUM_COH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_CSH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_ZOH];
+        */
+
+        /* Prevent free exchange H <-> (-) */
+        pBNS->type_CN = ( BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE );
+        pBNS->type_T = BNS_VERT_TYPE_TGROUP;
+        pBNS->type_TACN = BNS_VERT_TYPE_ACID;
+
+        /* Create (+) charge group */
+        cg_Plus = CreateCGroupInBnStruct( at, num_atoms, pBNS, AR_HARD_TYP_POS, AR_HARD_MSK_POS, 1 );
+
+        /* create (-) charge group */
+        /*
+        if ( nAtTypeTotals[ATTOT_NUM_CO_Minus] +
+        nAtTypeTotals[ATTOT_NUM_CS_Minus] +
+        nAtTypeTotals[ATTOT_NUM_ZO_Minus] +
+        nAtTypeTotals[ATTOT_NUM_N_Minus] )
+        */
+
+        cg_Minus = CreateCGroupInBnStruct( at, num_atoms, pBNS, AR_HARD_TYP_NEG, AR_HARD_MSK_NEG, -1 );
+
+        pBNS->type_CN = ( BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE );
+        pBNS->type_T = BNS_VERT_TYPE_TGROUP;
+        pBNS->type_TACN = BNS_VERT_TYPE_ACID;
+
+        /* Create tautomeric group for non-acidic or negatively charged acidic O  */
+        tg_H_Other = CreateTGroupInBnStruct( at, num_atoms, pBNS, AR_HARD_TYP_HN, AR_HARD_MSK_HN );
+
+        /* Create tautomeric group for possibly acidic O */
+        tg_H_Acid = CreateTGroupInBnStruct( at, num_atoms, pBNS, AR_HARD_TYP_HA, AR_HARD_MSK_HA );
+        if (tg_H_Other >= num_atoms && tg_H_Acid >= num_atoms)
+        {
+            /* Find alt path to remove one proton */
+            do
+            {
+                /* Remove a proton */
+                nPrevNumCharges = pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES];
+                /* djb-rwth: addressing coverity ID #499503 -- tg_H_Other negative values handled properly */
+                ret = bExistsAltPath( pCG, pBNS, pBD, pAATG,
+                                      at, num_atoms,
+                                      tg_H_Other /*nVertDoubleBond*/,
+                                      tg_H_Acid /*nVertSingleBond*/,
+                                      ALT_PATH_MODE_REM_PROTON );
+                if (IS_BNS_ERROR( ret ))
+                {
+                    return ret;
+                }
+                if (ret & 1)
+                {
+                    nDelta = ( ret & ~3 ) >> 2;
+                    /* djb-rwth: removing redundant code */
+                    if (nDelta)
+                    {
+                        /* Radical pair has disappeared */
+                        ; /* goto quick_exit;*/
+                    }
+                    nNumMoved2AcidH++;
+                    if (nPrevNumCharges > pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] + 1)
+                    {
+                        nNumNeutralized += ( nPrevNumCharges - ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] - 1 ) ) / 2;
+                    }
+                }
+            } while (( ret & 1 ) && nNumMoved2AcidH < num2remove);
+
+            /* Neutralize: remove ion pairs like >N(+)=-O(-) => >N-=O */
+            if (( nNumMoved2AcidH /*|| bCancelChargesAlways*/ ) && cg_Minus >= num_atoms && cg_Plus >= num_atoms &&
+                 pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] > abs( pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ))
+            {
+                do
+                {
+                    nPrevNumCharges = pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES];
+                    ret = bExistsAltPath( pCG, pBNS, pBD, pAATG,
+                                          at, num_atoms,
+                                          cg_Minus /*nVertDoubleBond*/,
+                                          cg_Plus /*nVertSingleBond*/,
+                                          ALT_PATH_MODE_REM_PROTON );
+                    if (IS_BNS_ERROR( ret ))
+                    {
+                        return ret;
+                    }
+                    if (ret & 1)
+                    {
+                        nDelta = ( ret & ~3 ) >> 2;
+                        /* djb-rwth: removing redundant code */
+                        if (nDelta)
+                        {
+                            /* Radical pair has disappeared */
+                            ; /* goto quick_exit;*/
+                        }
+                        if (nPrevNumCharges > pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES])
+                        {
+                            nNumNeutralized += ( nPrevNumCharges - pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] ) / 2;
+                        }
+                    }
+                } while (ret & 1);
+            }
+        }
+
+        ret = 0;
+        if (tg_H_Acid >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, tg_H_Acid, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+        if (tg_H_Other >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, tg_H_Other, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+        if (cg_Minus >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, cg_Minus, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+        if (cg_Plus >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, cg_Plus, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+
+        pBNS->type_CN = 0;
+        pBNS->type_T = 0;
+        pBNS->type_TACN = 0;
+
+        if (ret)
+        {
+            return ret;
+        }
+
+        if (pAATG->nAtTypeTotals[ATTOT_NUM_CO_Minus] + pAATG->nAtTypeTotals[ATTOT_NUM_ZO_Minus] &&
+             pAATG->nAtTypeTotals[ATTOT_NUM_N_Minus])
+        {
+        }
+
+        nPosCharges2 = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] + pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        nNegCharges2 = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] - pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        /*
+        nNumNP_H2    = pAATG->nAtTypeTotals[ATTOT_NUM_NP_H] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_NP_Proton];
+        nNumOS_H2    = pAATG->nAtTypeTotals[ATTOT_NUM_COH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_CSH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_ZOH];
+        */
+        if (( nPosCharges - nNegCharges ) - ( nPosCharges2 - nNegCharges2 ) != 0)
+        {
+            return BNS_PROGRAM_ERR;
+        }
+
+        if (nNumCanceledCharges)
+        {
+    #if ( FIX_CANCEL_CHARGE_COUNT_BUG == 1 )
+            *nNumCanceledCharges += 2 * nNumNeutralized;
+    #else
+            *nNumCanceledCharges = 2 * nNumNeutralized;
+    #endif
+        }
+
+        return nNumMoved2AcidH;
+    }
+        */
+    // END VERBATIM SOURCE FRAGMENT: C536 HardRemoveAcidicProtons
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: HardRemoveAcidicProtons
     // INCHI✔️❌: #define FIX_CANCEL_CHARGE_COUNT_BUG 0
     // INCHI✔️❌: #define AR_HARD_MSK_POS ATBIT_MSK_NP
@@ -5274,73 +6193,30 @@ pub(crate) fn HardRemoveAcidicProtons(
     // INCHI✔️❌: #define AR_HARD_MSK_HN ((ATBIT_MSK_NP | ATBIT_MSK_OS) & ~AR_HARD_MSK_HA)
     // END INCHI ACTIVE MACRO CONFIGURATION: HardRemoveAcidicProtons
 
-    fn clone_atoms(
-        heap: &SourceHeap,
-        at: SourceMutPointer<inp_ATOM>,
-        num_atoms: i32,
-    ) -> Result<Vec<inp_ATOM>, SourceHeapError> {
-        let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atoms = heap.slice(at.as_const())?;
-        if atoms.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        Ok(atoms[..count].to_vec())
-    }
-
-    fn write_atoms(
-        heap: &mut SourceHeap,
-        at: SourceMutPointer<inp_ATOM>,
-        atoms: &[inp_ATOM],
-        num_atoms: i32,
-    ) -> Result<(), SourceHeapError> {
-        let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if atoms.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        let destination = heap.slice_mut(at)?;
-        if destination.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        destination[..count].clone_from_slice(&atoms[..count]);
-        Ok(())
-    }
-
-    fn aatg_total(
-        heap: &SourceHeap,
-        p_aatg: &BN_AATG,
-        index: usize,
-    ) -> Result<i32, SourceHeapError> {
-        heap.slice(p_aatg.nAtTypeTotals.as_const())?
-            .get(index)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)
-    }
-
-    let n_pos_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    // INCHI✔️❗: Source C/T builders read live atoms only when reached;
+    // removal clears only the conditional atom0 field after graph stores.
+    // No full-array snapshots/writebacks; checked projection cost OPEN.
+    let n_pos_charges =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? + targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? - targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
 
     pBNS.type_CN = (BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE) as AT_NUMB;
     pBNS.type_T = BNS_VERT_TYPE_TGROUP as AT_NUMB;
     pBNS.type_TACN = BNS_VERT_TYPE_ACID as AT_NUMB;
 
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let cg_plus = CreateCGroupInBnStruct(
+    let cg_plus = create_c_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         AR_HARD_TYP_POS as i32,
         AR_HARD_MSK_POS,
         1,
     )?;
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let cg_minus = CreateCGroupInBnStruct(
+    let cg_minus = create_c_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         AR_HARD_TYP_NEG as i32,
@@ -5352,19 +6228,17 @@ pub(crate) fn HardRemoveAcidicProtons(
     pBNS.type_T = BNS_VERT_TYPE_TGROUP as AT_NUMB;
     pBNS.type_TACN = BNS_VERT_TYPE_ACID as AT_NUMB;
 
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let tg_h_other = CreateTGroupInBnStruct(
+    let tg_h_other = create_t_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         AR_HARD_TYP_HN as i32,
         AR_HARD_MSK_HN,
     )?;
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let tg_h_acid = CreateTGroupInBnStruct(
+    let tg_h_acid = create_t_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         AR_HARD_TYP_HA as i32,
@@ -5376,8 +6250,8 @@ pub(crate) fn HardRemoveAcidicProtons(
     let mut ret = 0_i32;
     if tg_h_other >= num_atoms && tg_h_acid >= num_atoms {
         loop {
-            let n_prev_num_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
-            ret = bExistsAltPath(
+            let n_prev_num_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
+            ret = exists_alt_path_accounting(
                 heap,
                 pCG,
                 pBNS,
@@ -5389,6 +6263,8 @@ pub(crate) fn HardRemoveAcidicProtons(
                 tg_h_acid,
                 ALT_PATH_MODE_REM_PROTON as i32,
                 clock_result,
+                targets.flag_view(),
+                Some(&mut *targets),
             )?;
             if is_bns_error(ret) {
                 return Ok(ret);
@@ -5397,7 +6273,7 @@ pub(crate) fn HardRemoveAcidicProtons(
                 let n_delta = (ret & !3) >> 2;
                 let _ = n_delta;
                 n_num_moved2_acid_h += 1;
-                let current_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
+                let current_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
                 if n_prev_num_charges > current_charges + 1 {
                     n_num_neutralized += (n_prev_num_charges - (current_charges - 1)) / 2;
                 }
@@ -5410,12 +6286,12 @@ pub(crate) fn HardRemoveAcidicProtons(
         if n_num_moved2_acid_h != 0
             && cg_minus >= num_atoms
             && cg_plus >= num_atoms
-            && aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-                > aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?.abs()
+            && targets.total(heap, ATTOT_NUM_CHARGES)?
+                > targets.total(heap, ATTOT_TOT_CHARGE)?.abs()
         {
             loop {
-                let n_prev_num_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
-                ret = bExistsAltPath(
+                let n_prev_num_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
+                ret = exists_alt_path_accounting(
                     heap,
                     pCG,
                     pBNS,
@@ -5427,6 +6303,8 @@ pub(crate) fn HardRemoveAcidicProtons(
                     cg_plus,
                     ALT_PATH_MODE_REM_PROTON as i32,
                     clock_result,
+                    targets.flag_view(),
+                    Some(&mut *targets),
                 )?;
                 if is_bns_error(ret) {
                     return Ok(ret);
@@ -5434,7 +6312,7 @@ pub(crate) fn HardRemoveAcidicProtons(
                 if (ret & 1) != 0 {
                     let n_delta = (ret & !3) >> 2;
                     let _ = n_delta;
-                    let current_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
+                    let current_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
                     if n_prev_num_charges > current_charges {
                         n_num_neutralized += (n_prev_num_charges - current_charges) / 2;
                     }
@@ -5449,9 +6327,7 @@ pub(crate) fn HardRemoveAcidicProtons(
     ret = 0;
     for group in [tg_h_acid, tg_h_other, cg_minus, cg_plus] {
         if group >= num_atoms {
-            let mut atoms = clone_atoms(heap, at, num_atoms)?;
-            let ret2 = RemoveLastGroupFromBnStruct(heap, &mut atoms, num_atoms, group, pBNS)?;
-            write_atoms(heap, at, &atoms, num_atoms)?;
+            let ret2 = remove_group_from_heap(heap, at, num_atoms, group, pBNS)?;
             if ret == 0 && ret2 != 0 {
                 ret = ret2;
             }
@@ -5466,17 +6342,14 @@ pub(crate) fn HardRemoveAcidicProtons(
         return Ok(ret);
     }
 
-    if aatg_total(heap, pAATG, ATTOT_NUM_CO_MINUS)? + aatg_total(heap, pAATG, ATTOT_NUM_ZO_MINUS)?
-        != 0
-        && aatg_total(heap, pAATG, ATTOT_NUM_N_MINUS)? != 0
+    if targets.total(heap, ATTOT_NUM_CO_MINUS)? + targets.total(heap, ATTOT_NUM_ZO_MINUS)? != 0
+        && targets.total(heap, ATTOT_NUM_N_MINUS)? != 0
     {}
 
-    let n_pos_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    let n_pos_charges2 =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? + targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges2 =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? - targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
     if (n_pos_charges - n_neg_charges) - (n_pos_charges2 - n_neg_charges2) != 0 {
         return Ok(BNS_PROGRAM_ERR);
     }
@@ -5499,7 +6372,40 @@ pub(crate) fn HardAddAcidicProtons(
     nNumCanceledCharges: Option<&mut i32>,
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    let mut targets = SourceAatgTargets::Pointers {
+        totals: pAATG.nAtTypeTotals,
+        group: pAATG.t_group_info,
+    };
+    HardAddAcidicProtons_targets(
+        heap,
+        pCG,
+        at,
+        num_atoms,
+        pAATG,
+        num2add,
+        nNumCanceledCharges,
+        pBNS,
+        pBD,
+        clock_result,
+        &mut targets,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn HardAddAcidicProtons_targets(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    pAATG: &mut BN_AATG,
+    num2add: i32,
+    nNumCanceledCharges: Option<&mut i32>,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    clock_result: impl crate::source_types::SourceClock,
+    targets: &mut SourceAatgTargets<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:4556 HardAddAcidicProtons
     // INCHI✔️❌: int HardAddAcidicProtons( CANON_GLOBALS *pCG,
@@ -5531,6 +6437,212 @@ pub(crate) fn HardAddAcidicProtons(
     // INCHI✔️❌:     return nNumMoved2AcidMinus;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: HardAddAcidicProtons
+    // BEGIN VERBATIM SOURCE FRAGMENT: C536 HardAddAcidicProtons
+    /*
+    int HardAddAcidicProtons( CANON_GLOBALS *pCG,
+                              inp_ATOM *at,
+                              int num_atoms,
+                              BN_AATG *pAATG,
+                              int num2add,
+                              int *nNumCanceledCharges,
+                              BN_STRUCT *pBNS,
+                              BN_DATA *pBD )
+    {
+        int cg_Plus = 0;
+        int cg_Minus_CO = 0;
+        int cg_Minus_Other = 0;
+        int tg_H = 0;
+
+        int ret = 0, ret2;
+        int nDelta, nNumChanges = 0, nNumMoved2AcidMinus = 0, nNumNeutralized = 0, nPrevNumCharges; /* djb-rwth: removing redundant variables */
+
+        int nPosCharges, nPosCharges2;
+        int nNegCharges, nNegCharges2;
+        /*
+        int nNumNP_H, nNumNP_H2;
+        int nNumOS_H, nNumOS_H2;
+        */
+        nPosCharges = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] + pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        nNegCharges = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] - pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        /*
+        nNumNP_H    =  pAATG->nAtTypeTotals[ATTOT_NUM_NP_H] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_NP_Proton];
+        nNumOS_H    =  pAATG->nAtTypeTotals[ATTOT_NUM_COH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_CSH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_ZOH];
+        */
+
+        /* Prevent free exchange H <-> (-) */
+        pBNS->type_CN = ( BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE );
+        pBNS->type_T = BNS_VERT_TYPE_TGROUP;
+        pBNS->type_TACN = BNS_VERT_TYPE_ACID;
+
+        /* Create (+) charge group */
+        cg_Plus = CreateCGroupInBnStruct( at, num_atoms, pBNS, AA_HARD_TYP_POS, AA_HARD_MSK_POS, 1 );
+
+        /* Create (-) charge group */
+        /*
+        if ( nAtTypeTotals[ATTOT_NUM_CO_Minus] +
+        nAtTypeTotals[ATTOT_NUM_CS_Minus] +
+        nAtTypeTotals[ATTOT_NUM_ZO_Minus] +
+        nAtTypeTotals[ATTOT_NUM_N_Minus] )
+        */
+        cg_Minus_CO = CreateCGroupInBnStruct( at, num_atoms, pBNS, AA_HARD_TYP_CO, AA_HARD_MSK_CO, -1 );
+
+        cg_Minus_Other = CreateCGroupInBnStruct( at, num_atoms, pBNS, AA_HARD_TYP_NEG, AA_HARD_MSK_NEG, -1 );
+
+        pBNS->type_CN = ( BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE );
+        pBNS->type_T = BNS_VERT_TYPE_TGROUP;
+        pBNS->type_TACN = BNS_VERT_TYPE_ACID;
+
+        /* Create tautomeric group for all H  */
+        tg_H = CreateTGroupInBnStruct( at, num_atoms, pBNS, AA_HARD_TYP_H, AA_HARD_MSK_H );
+
+        if (cg_Minus_Other >= num_atoms && cg_Minus_CO >= num_atoms)
+        {
+            /* Find alt path to remove one proton */
+            do
+            {
+                /* Add a proton */
+                nPrevNumCharges = pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES];
+                /* djb-rwth: addressing coverity ID #499474 -- cg_Minus_CO negative values handled properly */
+                ret = bExistsAltPath( pCG, pBNS, pBD, pAATG,
+                                      at, num_atoms,
+                                      cg_Minus_Other /*nVertDoubleBond*/,
+                                      cg_Minus_CO /*nVertSingleBond*/,
+                                      ALT_PATH_MODE_REM_PROTON );
+                if (IS_BNS_ERROR( ret ))
+                {
+                    return ret;
+                }
+                if (ret & 1)
+                {
+                    nDelta = ( ret & ~3 ) >> 2;
+                    nNumChanges += (0 != (ret & 2)); /* djb-rwth: ignoring LLVM warning: variable used */
+                    if (nDelta)
+                    {
+                        /* Radical pair has disappeared */
+                        ; /* goto quick_exit;*/
+                    }
+                    nNumMoved2AcidMinus++;
+                    if (nPrevNumCharges > pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] + 1)
+                    {
+                        nNumNeutralized += ( nPrevNumCharges - ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] - 1 ) ) / 2;
+                    }
+                }
+            } while (( ret & 1 ) && nNumMoved2AcidMinus < num2add);
+
+            /* Neutralize: remove ion pairs like >N(+)=-O(-) => >N-=O */
+            if (( nNumMoved2AcidMinus /*|| bCancelChargesAlways*/ ) &&
+                 cg_Minus_Other >= num_atoms && cg_Plus >= num_atoms &&
+                 pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] > abs( pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ))
+            {
+                do
+                {
+                    nPrevNumCharges = pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES];
+                    ret = bExistsAltPath( pCG, pBNS, pBD, pAATG,
+                                          at, num_atoms,
+                                          cg_Minus_Other /*nVertDoubleBond*/,
+                                          cg_Plus /*nVertSingleBond*/,
+                                          ALT_PATH_MODE_REM_PROTON );
+                    if (IS_BNS_ERROR( ret ))
+                    {
+                        return ret;
+                    }
+                    if (ret & 1)
+                    {
+                        nDelta = ( ret & ~3 ) >> 2;
+                        nNumChanges += (0 != (ret & 2)); /* djb-rwth: ignoring LLVM warning: variable used */
+                        if (nDelta)
+                        {
+                            /* Radical pair has disappeared */
+                            ; /* goto quick_exit;*/
+                        }
+                        if (nPrevNumCharges > pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES])
+                        {
+                            nNumNeutralized += ( nPrevNumCharges - pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] ) / 2;
+                        }
+                    }
+                } while (ret & 1);
+            }
+        }
+
+        ret = 0;
+        if (tg_H >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, tg_H, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+        if (cg_Minus_Other >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, cg_Minus_Other, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+        if (cg_Minus_CO >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, cg_Minus_CO, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+        if (cg_Plus >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, cg_Plus, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+
+        pBNS->type_CN = 0;
+        pBNS->type_T = 0;
+        pBNS->type_TACN = 0;
+
+        if (ret)
+        {
+            return ret;
+        }
+
+        if (pAATG->nAtTypeTotals[ATTOT_NUM_CO_Minus] + pAATG->nAtTypeTotals[ATTOT_NUM_ZO_Minus] &&
+             pAATG->nAtTypeTotals[ATTOT_NUM_N_Minus])
+        {
+        }
+
+        nPosCharges2 = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] + pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        nNegCharges2 = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] - pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        /*
+        nNumNP_H2    = pAATG->nAtTypeTotals[ATTOT_NUM_NP_H] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_NP_Proton];
+        nNumOS_H2    = pAATG->nAtTypeTotals[ATTOT_NUM_COH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_CSH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_ZOH];
+        */
+
+        if (( nPosCharges - nNegCharges ) - ( nPosCharges2 - nNegCharges2 ) != 0)
+        {
+            return BNS_PROGRAM_ERR;
+        }
+
+        if (nNumCanceledCharges)
+        {
+    #if ( FIX_CANCEL_CHARGE_COUNT_BUG == 1 )
+            *nNumCanceledCharges += 2 * nNumNeutralized;
+    #else
+            *nNumCanceledCharges = 2 * nNumNeutralized;
+    #endif
+        }
+
+        return nNumMoved2AcidMinus;
+    }
+        */
+    // END VERBATIM SOURCE FRAGMENT: C536 HardAddAcidicProtons
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: HardAddAcidicProtons
     // INCHI✔️❌: #define FIX_CANCEL_CHARGE_COUNT_BUG 0
     // INCHI✔️❌: #define AA_HARD_MSK_POS ATBIT_MSK_NP
@@ -5539,83 +6651,39 @@ pub(crate) fn HardAddAcidicProtons(
     // INCHI✔️❌: #define AA_HARD_MSK_H (ATBIT_MSK_NP | ATBIT_MSK_OS)
     // END INCHI ACTIVE MACRO CONFIGURATION: HardAddAcidicProtons
 
-    fn clone_atoms(
-        heap: &SourceHeap,
-        at: SourceMutPointer<inp_ATOM>,
-        num_atoms: i32,
-    ) -> Result<Vec<inp_ATOM>, SourceHeapError> {
-        let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atoms = heap.slice(at.as_const())?;
-        if atoms.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        Ok(atoms[..count].to_vec())
-    }
-
-    fn write_atoms(
-        heap: &mut SourceHeap,
-        at: SourceMutPointer<inp_ATOM>,
-        atoms: &[inp_ATOM],
-        num_atoms: i32,
-    ) -> Result<(), SourceHeapError> {
-        let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if atoms.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        let destination = heap.slice_mut(at)?;
-        if destination.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        destination[..count].clone_from_slice(&atoms[..count]);
-        Ok(())
-    }
-
-    fn aatg_total(
-        heap: &SourceHeap,
-        p_aatg: &BN_AATG,
-        index: usize,
-    ) -> Result<i32, SourceHeapError> {
-        heap.slice(p_aatg.nAtTypeTotals.as_const())?
-            .get(index)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)
-    }
-
-    let n_pos_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    // INCHI✔️❗: Source C/T builders read live atoms only when reached;
+    // removal clears only the conditional atom0 field after graph stores.
+    // No full-array snapshots/writebacks; checked projection cost OPEN.
+    let n_pos_charges =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? + targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? - targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
 
     pBNS.type_CN = (BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE) as AT_NUMB;
     pBNS.type_T = BNS_VERT_TYPE_TGROUP as AT_NUMB;
     pBNS.type_TACN = BNS_VERT_TYPE_ACID as AT_NUMB;
 
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let cg_plus = CreateCGroupInBnStruct(
+    let cg_plus = create_c_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         AA_HARD_TYP_POS as i32,
         AA_HARD_MSK_POS,
         1,
     )?;
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let cg_minus_co = CreateCGroupInBnStruct(
+    let cg_minus_co = create_c_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         AA_HARD_TYP_CO as i32,
         AA_HARD_MSK_CO,
         -1,
     )?;
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let cg_minus_other = CreateCGroupInBnStruct(
+    let cg_minus_other = create_c_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         AA_HARD_TYP_NEG as i32,
@@ -5627,10 +6695,9 @@ pub(crate) fn HardAddAcidicProtons(
     pBNS.type_T = BNS_VERT_TYPE_TGROUP as AT_NUMB;
     pBNS.type_TACN = BNS_VERT_TYPE_ACID as AT_NUMB;
 
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let tg_h = CreateTGroupInBnStruct(
+    let tg_h = create_t_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         AA_HARD_TYP_H as i32,
@@ -5643,8 +6710,8 @@ pub(crate) fn HardAddAcidicProtons(
     let mut n_num_changes = 0_i32;
     if cg_minus_other >= num_atoms && cg_minus_co >= num_atoms {
         loop {
-            let n_prev_num_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
-            ret = bExistsAltPath(
+            let n_prev_num_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
+            ret = exists_alt_path_accounting(
                 heap,
                 pCG,
                 pBNS,
@@ -5656,6 +6723,8 @@ pub(crate) fn HardAddAcidicProtons(
                 cg_minus_co,
                 ALT_PATH_MODE_REM_PROTON as i32,
                 clock_result,
+                targets.flag_view(),
+                Some(&mut *targets),
             )?;
             if is_bns_error(ret) {
                 return Ok(ret);
@@ -5665,7 +6734,7 @@ pub(crate) fn HardAddAcidicProtons(
                 n_num_changes += i32::from((ret & 2) != 0);
                 let _ = n_delta;
                 n_num_moved2_acid_minus += 1;
-                let current_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
+                let current_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
                 if n_prev_num_charges > current_charges + 1 {
                     n_num_neutralized += (n_prev_num_charges - (current_charges - 1)) / 2;
                 }
@@ -5678,12 +6747,12 @@ pub(crate) fn HardAddAcidicProtons(
         if n_num_moved2_acid_minus != 0
             && cg_minus_other >= num_atoms
             && cg_plus >= num_atoms
-            && aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-                > aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?.abs()
+            && targets.total(heap, ATTOT_NUM_CHARGES)?
+                > targets.total(heap, ATTOT_TOT_CHARGE)?.abs()
         {
             loop {
-                let n_prev_num_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
-                ret = bExistsAltPath(
+                let n_prev_num_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
+                ret = exists_alt_path_accounting(
                     heap,
                     pCG,
                     pBNS,
@@ -5695,6 +6764,8 @@ pub(crate) fn HardAddAcidicProtons(
                     cg_plus,
                     ALT_PATH_MODE_REM_PROTON as i32,
                     clock_result,
+                    targets.flag_view(),
+                    Some(&mut *targets),
                 )?;
                 if is_bns_error(ret) {
                     return Ok(ret);
@@ -5703,7 +6774,7 @@ pub(crate) fn HardAddAcidicProtons(
                     let n_delta = (ret & !3) >> 2;
                     n_num_changes += i32::from((ret & 2) != 0);
                     let _ = n_delta;
-                    let current_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
+                    let current_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
                     if n_prev_num_charges > current_charges {
                         n_num_neutralized += (n_prev_num_charges - current_charges) / 2;
                     }
@@ -5719,9 +6790,7 @@ pub(crate) fn HardAddAcidicProtons(
     ret = 0;
     for group in [tg_h, cg_minus_other, cg_minus_co, cg_plus] {
         if group >= num_atoms {
-            let mut atoms = clone_atoms(heap, at, num_atoms)?;
-            let ret2 = RemoveLastGroupFromBnStruct(heap, &mut atoms, num_atoms, group, pBNS)?;
-            write_atoms(heap, at, &atoms, num_atoms)?;
+            let ret2 = remove_group_from_heap(heap, at, num_atoms, group, pBNS)?;
             if ret == 0 && ret2 != 0 {
                 ret = ret2;
             }
@@ -5736,17 +6805,14 @@ pub(crate) fn HardAddAcidicProtons(
         return Ok(ret);
     }
 
-    if aatg_total(heap, pAATG, ATTOT_NUM_CO_MINUS)? + aatg_total(heap, pAATG, ATTOT_NUM_ZO_MINUS)?
-        != 0
-        && aatg_total(heap, pAATG, ATTOT_NUM_N_MINUS)? != 0
+    if targets.total(heap, ATTOT_NUM_CO_MINUS)? + targets.total(heap, ATTOT_NUM_ZO_MINUS)? != 0
+        && targets.total(heap, ATTOT_NUM_N_MINUS)? != 0
     {}
 
-    let n_pos_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    let n_pos_charges2 =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? + targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges2 =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? - targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
     if (n_pos_charges - n_neg_charges) - (n_pos_charges2 - n_neg_charges2) != 0 {
         return Ok(BNS_PROGRAM_ERR);
     }
@@ -5769,7 +6835,40 @@ pub(crate) fn HardRemoveHplusNP(
     pAATG: &mut BN_AATG,
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    let mut targets = SourceAatgTargets::Pointers {
+        totals: pAATG.nAtTypeTotals,
+        group: pAATG.t_group_info,
+    };
+    HardRemoveHplusNP_targets(
+        heap,
+        pCG,
+        at,
+        num_atoms,
+        bCancelChargesAlways,
+        nNumCanceledCharges,
+        pAATG,
+        pBNS,
+        pBD,
+        clock_result,
+        &mut targets,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn HardRemoveHplusNP_targets(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    bCancelChargesAlways: i32,
+    nNumCanceledCharges: Option<&mut i32>,
+    pAATG: &mut BN_AATG,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    clock_result: impl crate::source_types::SourceClock,
+    targets: &mut SourceAatgTargets<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:4770 HardRemoveHplusNP
     // INCHI✔️❌: int HardRemoveHplusNP( CANON_GLOBALS *pCG,
@@ -5853,6 +6952,277 @@ pub(crate) fn HardRemoveHplusNP(
     // INCHI✔️❌:     return nNumRemovedProtons;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: HardRemoveHplusNP
+    // BEGIN VERBATIM SOURCE FRAGMENT: C536 HardRemoveHplusNP
+    /*
+    int HardRemoveHplusNP( CANON_GLOBALS *pCG,
+                           inp_ATOM *at,
+                           int num_atoms,
+                           int bCancelChargesAlways,
+                           int *nNumCanceledCharges,
+                           BN_AATG *pAATG,
+                           BN_STRUCT *pBNS,
+                           BN_DATA *pBD )
+    {
+
+        int cg_Plus = 0;
+        int cg_Minus = 0;
+        int tg_H = 0;
+    #if ( MOVE_PPLUS_TO_REMOVE_PROTONS == 1 )
+        int cg_PlusP = 0;
+    #endif
+    #if ( FIX_REM_PROTON_COUNT_BUG == 1 )
+        int nPrevRemovedProtons, nCurrRemovedProtons;
+    #endif
+        int ret = 0, ret2;
+        int nDelta, nNumChanges = 0, nNumRemovedProtons = 0, nNumNeutralized = 0, nPrevNumCharges; /* djb-rwth: ignoring LLVM warning: variable used */
+
+        int nPosCharges, nPosCharges2;
+        int nNegCharges, nNegCharges2;
+        /*
+        int nNumNP_H, nNumNP_H2;
+        int nNumOS_H, nNumOS_H2;
+        */
+
+        nPosCharges = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] + pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        nNegCharges = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] - pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        /*
+        nNumNP_H    =  pAATG->nAtTypeTotals[ATTOT_NUM_NP_H] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_NP_Proton];
+        nNumOS_H    =  pAATG->nAtTypeTotals[ATTOT_NUM_COH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_CSH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_ZOH];
+        */
+
+        /* Prevent free exchange H <-> (-) */
+        pBNS->type_CN = ( BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE );
+        pBNS->type_T = BNS_VERT_TYPE_TGROUP;
+        pBNS->type_TACN = BNS_VERT_TYPE_ACID;
+
+        /* Create (+) charge group */
+        cg_Plus = CreateCGroupInBnStruct( at, num_atoms, pBNS, PR_HARD_TYP_POS, PR_HARD_MSK_POS, 1 );
+
+        /* Create (-) charge group */
+        /*
+        if ( nAtTypeTotals[ATTOT_NUM_CO_Minus] +
+        nAtTypeTotals[ATTOT_NUM_CS_Minus] +
+        nAtTypeTotals[ATTOT_NUM_ZO_Minus] +
+        nAtTypeTotals[ATTOT_NUM_N_Minus] )
+        */
+    #if ( MOVE_PPLUS_TO_REMOVE_PROTONS == 1 )
+        cg_PlusP = CreateCGroupInBnStruct( at, num_atoms, pBNS, PR_HARD_TYP_POSP, PR_HARD_MSK_POS, 1 );
+    #endif
+        cg_Minus = CreateCGroupInBnStruct( at, num_atoms, pBNS, PR_HARD_TYP_NEG, PR_HARD_MSK_NEG, -1 );
+
+        /* Create single tautomeric group */
+        tg_H = CreateTGroupInBnStruct( at, num_atoms, pBNS, PR_HARD_TYP_H, PR_HARD_MSK_H );
+
+        if (tg_H >= num_atoms && cg_Plus >= num_atoms)
+        {
+
+    #if ( FIX_N_MINUS_NORN_BUG == 1 )
+            /* neutralize: remove ion pairs like >N(+)=-O(-) => >N-=O; >N(+)=-NH(-) => >N-=NH */
+            if (( nNumRemovedProtons || bCancelChargesAlways ) && cg_Minus >= num_atoms && cg_Plus >= num_atoms &&
+                 pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] > abs( pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ))
+            {
+                do
+                {
+                    nPrevNumCharges = pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES];
+    #if ( FIX_REM_PROTON_COUNT_BUG == 1 )
+                    nPrevRemovedProtons = pAATG->t_group_info->tni.nNumRemovedProtons;
+    #endif
+                    ret = bExistsAltPath( pCG, pBNS, pBD, pAATG, at, num_atoms,
+                                          cg_Minus /*nVertDoubleBond*/, cg_Plus /*nVertSingleBond*/, ALT_PATH_MODE_REM_PROTON );
+                    if (IS_BNS_ERROR( ret ))
+                    {
+                        return ret;
+                    }
+    #if ( FIX_REM_PROTON_COUNT_BUG == 1 )
+                    nCurrRemovedProtons = pAATG->t_group_info->tni.nNumRemovedProtons;
+                    if (nCurrRemovedProtons != nPrevRemovedProtons)
+                    {
+                        return BNS_RADICAL_ERR;
+                    }
+    #endif
+                    if (ret & 1)
+                    {
+                        nDelta = ( ret & ~3 ) >> 2;
+                        nNumChanges += ( 0 != ( ret & 2 ) );
+                        if (nDelta)
+                        {
+                            /* radical pair has disappeared */
+                            ; /* goto quick_exit;*/
+                        }
+                        if (nPrevNumCharges > pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES])
+                        {
+                            nNumNeutralized += ( nPrevNumCharges - pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] ) / 2;
+                        }
+                    }
+                } while (ret & 1);
+            }
+    #endif
+
+            /* Find alt path to remove one proton */
+            do
+            {
+                /* Remove a proton */
+                nPrevNumCharges = pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES];
+    #if ( FIX_REM_PROTON_COUNT_BUG == 1 )
+                nPrevRemovedProtons = pAATG->t_group_info->tni.nNumRemovedProtons;
+    #endif
+                /* djb-rwth: addressing coverity ID #499572 -- tg_H negative values handled properly */
+                ret = bExistsAltPath( pCG, pBNS, pBD, pAATG, at, num_atoms,
+                                      tg_H /*nVertDoubleBond*/,
+                                      cg_Plus /*nVertSingleBond*/,
+                                      ALT_PATH_MODE_REM_PROTON );
+                if (IS_BNS_ERROR( ret ))
+                {
+                    return ret;
+                }
+    #if ( FIX_REM_PROTON_COUNT_BUG == 1 )
+                nCurrRemovedProtons = pAATG->t_group_info->tni.nNumRemovedProtons;
+                if (nCurrRemovedProtons != nPrevRemovedProtons + ( ret & 1 ))
+                {
+                    return BNS_RADICAL_ERR;
+                }
+    #endif
+                if (ret & 1)
+                {
+                    nDelta = ( ret & ~3 ) >> 2;
+                    nNumChanges += (0 != (ret & 2)); /* djb-rwth: ignoring LLVM warning: variable used */
+                    if (nDelta)
+                    {
+                        /* radical pair has disappeared */
+                        ; /* goto quick_exit;*/
+                    }
+                    nNumRemovedProtons++;
+                    if (nPrevNumCharges > pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] + 1)
+                    {
+                        nNumNeutralized += ( nPrevNumCharges - ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] - 1 ) ) / 2;
+                    }
+                }
+            } while (ret & 1);
+
+            /* Neutralize: remove ion pairs like >N(+)=-O(-) => >N-=O */
+            if (( nNumRemovedProtons || bCancelChargesAlways ) && cg_Minus >= num_atoms && cg_Plus >= num_atoms &&
+                 pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] > abs( pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ))
+            {
+                do
+                {
+                    nPrevNumCharges = pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES];
+    #if ( FIX_REM_PROTON_COUNT_BUG == 1 )
+                    nPrevRemovedProtons = pAATG->t_group_info->tni.nNumRemovedProtons;
+    #endif
+                    ret = bExistsAltPath( pCG, pBNS, pBD, pAATG, at, num_atoms,
+                                          cg_Minus /*nVertDoubleBond*/,
+                                          cg_Plus /*nVertSingleBond*/,
+                                          ALT_PATH_MODE_REM_PROTON );
+                    if (IS_BNS_ERROR( ret ))
+                    {
+                        return ret;
+                    }
+    #if ( FIX_REM_PROTON_COUNT_BUG == 1 )
+                    nCurrRemovedProtons = pAATG->t_group_info->tni.nNumRemovedProtons;
+                    if (nCurrRemovedProtons != nPrevRemovedProtons)
+                    {
+                        return BNS_RADICAL_ERR;
+                    }
+    #endif
+                    if (ret & 1)
+                    {
+                        nDelta = ( ret & ~3 ) >> 2;
+                        nNumChanges += (0 != (ret & 2)); /* djb-rwth: ignoring LLVM warning: variable used */
+                        if (nDelta)
+                        {
+                            /* Radical pair has disappeared */
+                            ; /* goto quick_exit;*/
+                        }
+                        if (nPrevNumCharges > pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES])
+                        {
+                            nNumNeutralized += ( nPrevNumCharges - pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] ) / 2;
+                        }
+                    }
+                } while (ret & 1);
+            }
+        }
+
+        ret = 0;
+        if (tg_H >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, tg_H, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+        if (cg_Minus >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, cg_Minus, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+    #if ( MOVE_PPLUS_TO_REMOVE_PROTONS == 1 )
+        if (cg_PlusP >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, cg_PlusP, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+    #endif
+        if (cg_Plus >= num_atoms)
+        {
+            ret2 = RemoveLastGroupFromBnStruct( at, num_atoms, cg_Plus, pBNS );
+            if (!ret && ret2)
+            {
+                ret = ret2;
+            }
+        }
+
+        pBNS->type_CN = 0;
+        pBNS->type_T = 0;
+        pBNS->type_TACN = 0;
+
+        if (ret)
+        {
+            return ret;
+        }
+
+        if (pAATG->nAtTypeTotals[ATTOT_NUM_CO_Minus] + pAATG->nAtTypeTotals[ATTOT_NUM_ZO_Minus] &&
+             pAATG->nAtTypeTotals[ATTOT_NUM_N_Minus])
+        {
+        }
+
+        nPosCharges2 = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] + pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        nNegCharges2 = ( pAATG->nAtTypeTotals[ATTOT_NUM_CHARGES] - pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] ) / 2;
+        /*
+        nNumNP_H2    = pAATG->nAtTypeTotals[ATTOT_NUM_NP_H] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_NP_Proton];
+        nNumOS_H2    = pAATG->nAtTypeTotals[ATTOT_NUM_COH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_CSH] +
+        pAATG->nAtTypeTotals[ATTOT_NUM_ZOH];
+        */
+
+        if (( nPosCharges - nNegCharges ) - ( nPosCharges2 - nNegCharges2 ) != nNumRemovedProtons)
+        {
+            return BNS_PROGRAM_ERR;
+        }
+
+        if (nNumCanceledCharges)
+        {
+    #if ( FIX_CANCEL_CHARGE_COUNT_BUG == 1 )
+            *nNumCanceledCharges += 2 * nNumNeutralized;
+    #else
+            *nNumCanceledCharges = 2 * nNumNeutralized;
+    #endif
+        }
+
+        return nNumRemovedProtons;
+    }
+        */
+    // END VERBATIM SOURCE FRAGMENT: C536 HardRemoveHplusNP
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: HardRemoveHplusNP
     // INCHI✔️❌: #define MOVE_PPLUS_TO_REMOVE_PROTONS 0
     // INCHI✔️❌: #define FIX_REM_PROTON_COUNT_BUG 1
@@ -5863,92 +7233,39 @@ pub(crate) fn HardRemoveHplusNP(
     // INCHI✔️❌: #define PR_HARD_MSK_H (ATBIT_MSK_NP | ATBIT_MSK_OS)
     // END INCHI ACTIVE MACRO CONFIGURATION: HardRemoveHplusNP
 
-    fn clone_atoms(
-        heap: &SourceHeap,
-        at: SourceMutPointer<inp_ATOM>,
-        num_atoms: i32,
-    ) -> Result<Vec<inp_ATOM>, SourceHeapError> {
-        let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atoms = heap.slice(at.as_const())?;
-        if atoms.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        Ok(atoms[..count].to_vec())
-    }
-
-    fn write_atoms(
-        heap: &mut SourceHeap,
-        at: SourceMutPointer<inp_ATOM>,
-        atoms: &[inp_ATOM],
-        num_atoms: i32,
-    ) -> Result<(), SourceHeapError> {
-        let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if atoms.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        let destination = heap.slice_mut(at)?;
-        if destination.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        destination[..count].clone_from_slice(&atoms[..count]);
-        Ok(())
-    }
-
-    fn aatg_total(
-        heap: &SourceHeap,
-        p_aatg: &BN_AATG,
-        index: usize,
-    ) -> Result<i32, SourceHeapError> {
-        heap.slice(p_aatg.nAtTypeTotals.as_const())?
-            .get(index)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)
-    }
-
-    fn removed_protons(heap: &SourceHeap, p_aatg: &BN_AATG) -> Result<i32, SourceHeapError> {
-        Ok(heap
-            .slice(p_aatg.t_group_info.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .tni
-            .nNumRemovedProtons as i32)
-    }
-
-    let n_pos_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    // INCHI✔️❗: Source C/T builders read live atoms only when reached;
+    // removal clears only the conditional atom0 field after graph stores.
+    // No full-array snapshots/writebacks; checked projection cost OPEN.
+    let n_pos_charges =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? + targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? - targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
 
     pBNS.type_CN = (BNS_VERT_TYPE_C_GROUP | BNS_VERT_TYPE_C_NEGATIVE) as AT_NUMB;
     pBNS.type_T = BNS_VERT_TYPE_TGROUP as AT_NUMB;
     pBNS.type_TACN = BNS_VERT_TYPE_ACID as AT_NUMB;
 
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let cg_plus = CreateCGroupInBnStruct(
+    let cg_plus = create_c_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         PR_HARD_TYP_POS as i32,
         PR_HARD_MSK_POS,
         1,
     )?;
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let cg_minus = CreateCGroupInBnStruct(
+    let cg_minus = create_c_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         PR_HARD_TYP_NEG as i32,
         PR_HARD_MSK_NEG,
         -1,
     )?;
-    let atoms = clone_atoms(heap, at, num_atoms)?;
-    let tg_h = CreateTGroupInBnStruct(
+    let tg_h = create_t_group_with_atoms(
         heap,
-        &atoms,
+        BnsGroupAtoms::Heap(at.as_const()),
         num_atoms,
         pBNS,
         PR_HARD_TYP_H as i32,
@@ -5961,9 +7278,9 @@ pub(crate) fn HardRemoveHplusNP(
     let mut ret = 0_i32;
     if tg_h >= num_atoms && cg_plus >= num_atoms {
         loop {
-            let n_prev_num_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
-            let n_prev_removed_protons = removed_protons(heap, pAATG)?;
-            ret = bExistsAltPath(
+            let n_prev_num_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
+            let n_prev_removed_protons = targets.removed(heap)?;
+            ret = exists_alt_path_accounting(
                 heap,
                 pCG,
                 pBNS,
@@ -5975,11 +7292,13 @@ pub(crate) fn HardRemoveHplusNP(
                 cg_plus,
                 ALT_PATH_MODE_REM_PROTON as i32,
                 clock_result,
+                targets.flag_view(),
+                Some(&mut *targets),
             )?;
             if is_bns_error(ret) {
                 return Ok(ret);
             }
-            let n_curr_removed_protons = removed_protons(heap, pAATG)?;
+            let n_curr_removed_protons = targets.removed(heap)?;
             if n_curr_removed_protons != n_prev_removed_protons + (ret & 1) {
                 return Ok(BNS_RADICAL_ERR);
             }
@@ -5988,7 +7307,7 @@ pub(crate) fn HardRemoveHplusNP(
                 n_num_changes += i32::from((ret & 2) != 0);
                 let _ = n_delta;
                 n_num_removed_protons += 1;
-                let current_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
+                let current_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
                 if n_prev_num_charges > current_charges + 1 {
                     n_num_neutralized += (n_prev_num_charges - (current_charges - 1)) / 2;
                 }
@@ -6001,13 +7320,13 @@ pub(crate) fn HardRemoveHplusNP(
         if (n_num_removed_protons != 0 || bCancelChargesAlways != 0)
             && cg_minus >= num_atoms
             && cg_plus >= num_atoms
-            && aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-                > aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?.abs()
+            && targets.total(heap, ATTOT_NUM_CHARGES)?
+                > targets.total(heap, ATTOT_TOT_CHARGE)?.abs()
         {
             loop {
-                let n_prev_num_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
-                let n_prev_removed_protons = removed_protons(heap, pAATG)?;
-                ret = bExistsAltPath(
+                let n_prev_num_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
+                let n_prev_removed_protons = targets.removed(heap)?;
+                ret = exists_alt_path_accounting(
                     heap,
                     pCG,
                     pBNS,
@@ -6019,11 +7338,13 @@ pub(crate) fn HardRemoveHplusNP(
                     cg_plus,
                     ALT_PATH_MODE_REM_PROTON as i32,
                     clock_result,
+                    targets.flag_view(),
+                    Some(&mut *targets),
                 )?;
                 if is_bns_error(ret) {
                     return Ok(ret);
                 }
-                let n_curr_removed_protons = removed_protons(heap, pAATG)?;
+                let n_curr_removed_protons = targets.removed(heap)?;
                 if n_curr_removed_protons != n_prev_removed_protons {
                     return Ok(BNS_RADICAL_ERR);
                 }
@@ -6031,7 +7352,7 @@ pub(crate) fn HardRemoveHplusNP(
                     let n_delta = (ret & !3) >> 2;
                     n_num_changes += i32::from((ret & 2) != 0);
                     let _ = n_delta;
-                    let current_charges = aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?;
+                    let current_charges = targets.total(heap, ATTOT_NUM_CHARGES)?;
                     if n_prev_num_charges > current_charges {
                         n_num_neutralized += (n_prev_num_charges - current_charges) / 2;
                     }
@@ -6047,9 +7368,7 @@ pub(crate) fn HardRemoveHplusNP(
     ret = 0;
     for group in [tg_h, cg_minus, cg_plus] {
         if group >= num_atoms {
-            let mut atoms = clone_atoms(heap, at, num_atoms)?;
-            let ret2 = RemoveLastGroupFromBnStruct(heap, &mut atoms, num_atoms, group, pBNS)?;
-            write_atoms(heap, at, &atoms, num_atoms)?;
+            let ret2 = remove_group_from_heap(heap, at, num_atoms, group, pBNS)?;
             if ret == 0 && ret2 != 0 {
                 ret = ret2;
             }
@@ -6064,17 +7383,14 @@ pub(crate) fn HardRemoveHplusNP(
         return Ok(ret);
     }
 
-    if aatg_total(heap, pAATG, ATTOT_NUM_CO_MINUS)? + aatg_total(heap, pAATG, ATTOT_NUM_ZO_MINUS)?
-        != 0
-        && aatg_total(heap, pAATG, ATTOT_NUM_N_MINUS)? != 0
+    if targets.total(heap, ATTOT_NUM_CO_MINUS)? + targets.total(heap, ATTOT_NUM_ZO_MINUS)? != 0
+        && targets.total(heap, ATTOT_NUM_N_MINUS)? != 0
     {}
 
-    let n_pos_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        + aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
-    let n_neg_charges2 = (aatg_total(heap, pAATG, ATTOT_NUM_CHARGES)?
-        - aatg_total(heap, pAATG, ATTOT_TOT_CHARGE)?)
-        / 2;
+    let n_pos_charges2 =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? + targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
+    let n_neg_charges2 =
+        (targets.total(heap, ATTOT_NUM_CHARGES)? - targets.total(heap, ATTOT_TOT_CHARGE)?) / 2;
     if (n_pos_charges - n_neg_charges) - (n_pos_charges2 - n_neg_charges2) != n_num_removed_protons
     {
         return Ok(BNS_PROGRAM_ERR);
@@ -6096,7 +7412,36 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
     pAATG: &mut BN_AATG,
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    let mut targets = SourceAatgTargets::Pointers {
+        totals: pAATG.nAtTypeTotals,
+        group: pAATG.t_group_info,
+    };
+    remove_np_with_targets(
+        heap,
+        pCG,
+        at,
+        num_atoms,
+        pAATG,
+        pBNS,
+        pBD,
+        clock_result,
+        &mut targets,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn remove_np_with_targets(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    pAATG: &mut BN_AATG,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    clock_result: impl crate::source_types::SourceClock,
+    targets: &mut SourceAatgTargets<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:5084 RemoveNPProtonsAndAcidCharges
     // INCHI✔️❌: int RemoveNPProtonsAndAcidCharges( CANON_GLOBALS *pCG,
@@ -6126,6 +7471,163 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
     // INCHI✔️❌:     return ret;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: RemoveNPProtonsAndAcidCharges
+    // BEGIN VERBATIM SOURCE FRAGMENT: C536 RemoveNPProtonsAndAcidCharges
+    /*
+    int RemoveNPProtonsAndAcidCharges( CANON_GLOBALS *pCG,
+                                       inp_ATOM *at,
+                                       int num_atoms,
+                                       BN_AATG *pAATG,
+                                       BN_STRUCT *pBNS,
+                                       BN_DATA *pBD )
+    {
+
+        /* Prepare data structure */
+        int num;
+        int nNumCanceledCharges = 0;
+        /* djb-rwth: removing redundant variables */
+        T_GROUP_INFO *t_group_info = pAATG->t_group_info;
+        int ret = 0, bError = 0;
+
+        int bAllowHardRemove = ( t_group_info->bTautFlags & TG_FLAG_TEST_TAUT__SALTS ) &&
+            ( t_group_info->bTautFlags & TG_FLAG_TEST_TAUT2_SALTS ) &&
+            ( t_group_info->bTautFlags & TG_FLAG_MOVE_POS_CHARGES ) &&
+            ( t_group_info->bTautFlags & TG_FLAG_HARD_ADD_REM_PROTONS );
+
+        if (pAATG->nMarkedAtom && num_atoms < pAATG->nAllocLen)
+        {
+            inchi_free( pAATG->nMarkedAtom );
+            qzfree( pAATG->nEndPoint );
+            memset( pAATG, 0, sizeof( *pAATG ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+        }
+
+        if (!pAATG->nMarkedAtom && ( pAATG->nMarkedAtom = (S_CHAR *) inchi_malloc( num_atoms * sizeof( pAATG->nMarkedAtom[0] ) ) ))
+        {
+            pAATG->nAllocLen = num_atoms;
+            pAATG->nNumFound = 0;
+        }
+
+        /* o TECHMAN-5.1. Remove protons from charged heteroatoms */
+
+        /* (TECHMAN-5.1a) Simple remove of protons from N, P, and O,S,Se,Te */
+        if ((num = pAATG->nAtTypeTotals[ATTOT_NUM_NP_Proton] + pAATG->nAtTypeTotals[ATTOT_NUM_OH_Plus])) /* djb-rwth: addressing LLVM warning */
+        {
+            ret = SimpleRemoveHplusNPO( at, num_atoms, pAATG->nAtTypeTotals, t_group_info );
+            if (ret != num)
+            {
+                bError = BNS_PROGRAM_ERR;
+                goto exit_function;
+            }
+            /*t_group_info->nNumRemovedProtons  += ret;*/
+            t_group_info->tni.bNormalizationFlags |= ( ret > 0 ) ? FLAG_PROTON_NPO_SIMPLE_REMOVED : 0;
+        }
+
+        if (( num = pAATG->nAtTypeTotals[ATTOT_NUM_NP_Plus] ) && bAllowHardRemove) /* djb-rwth: ignoring LLVM warning: variable used */
+        {
+            /* [TECHMAN-5.1b] Hard removing more protons from cationic N; charges may be canceled */
+            ret = HardRemoveHplusNP( pCG, at, num_atoms, 1, &nNumCanceledCharges, pAATG, pBNS, pBD );
+            if (IS_BNS_ERROR( ret ))
+            {
+                bError = ret;
+                goto exit_function;
+            }
+            /* djb-rwth: removing redundant code */
+            /*t_group_info->nNumRemovedProtons  += ret;*/
+            t_group_info->tni.bNormalizationFlags |= ( ret > 0 ) ? FLAG_PROTON_NP_HARD_REMOVED : 0;
+        }
+
+        if (pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] > 0)
+        {
+            /* o TECHMAN-5.2. Remove protons from neutral heteroatoms */
+
+            /* (TECHMAN-5.2a) Simple removal */
+            ret = SimpleRemoveAcidicProtons( at, num_atoms, pAATG, pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] );
+            if (IS_BNS_ERROR( ret ))
+            {
+                bError = ret;
+                goto exit_function;
+            }
+
+            /*t_group_info->nNumRemovedProtons  += ret;*/
+            t_group_info->tni.bNormalizationFlags |= ( ret > 0 ) ? FLAG_PROTON_AC_SIMPLE_REMOVED : 0;
+
+
+            if (pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] > 0 && bAllowHardRemove)
+            {
+                /* (TECHMAN-5.2b) Hard removal */
+                ret = HardRemoveAcidicProtons(pCG, at, num_atoms, pAATG, pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE], &nNumCanceledCharges, pBNS, pBD);
+                if (IS_BNS_ERROR(ret))
+                {
+                    bError = ret;
+                    goto exit_function;
+                }
+                if (ret > 0)
+                {
+                    int ret2 = SimpleRemoveAcidicProtons(at, num_atoms, pAATG, ret);
+                    if (ret2 != ret)
+                    {
+                        bError = BNS_PROGRAM_ERR;
+                        goto exit_function;
+                    }
+                    /*t_group_info->nNumRemovedProtons  += ret;*/
+                    t_group_info->tni.bNormalizationFlags |= (ret > 0) ? FLAG_PROTON_AC_HARD_REMOVED : 0;
+                    /* djb-rwth: removing redundant code */
+                }
+            }
+
+
+        }
+        else
+        {
+            if (pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] < 0)
+            {
+                ret = SimpleAddAcidicProtons( at, num_atoms, pAATG, -pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] );
+                if (IS_BNS_ERROR( ret ))
+                {
+                    bError = ret;
+                    goto exit_function;
+                }
+                /*t_group_info->nNumRemovedProtons  -= ret;*/
+                /*
+                CHECK_TACN == 1 prohibits replacing (-) on N with H unless H can be moved to N
+                along an alternating path from another heteroatom (t-group will be detected).
+                */
+                t_group_info->tni.bNormalizationFlags |= ( ret > 0 ) ? FLAG_PROTON_AC_SIMPLE_ADDED : 0;
+                if (pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE] < 0 && bAllowHardRemove)
+                {
+                    ret = HardAddAcidicProtons( pCG, at, num_atoms, pAATG, -pAATG->nAtTypeTotals[ATTOT_TOT_CHARGE], &nNumCanceledCharges, pBNS, pBD );
+                    if (IS_BNS_ERROR( ret ))
+                    {
+                        bError = ret;
+                        goto exit_function;
+                    }
+                    if (ret > 0)
+                    {
+                        int ret2 = SimpleAddAcidicProtons( at, num_atoms, pAATG, ret );
+                        if (ret2 != ret)
+                        {
+                            bError = BNS_PROGRAM_ERR;
+                            goto exit_function;
+                        }
+                        /*t_group_info->nNumRemovedProtons  -= ret;*/
+                        t_group_info->tni.bNormalizationFlags |= FLAG_PROTON_AC_HARD_ADDED; /* djb-rwth: fixing coverity ID #499527 */
+                        /* djb-rwth: removing redundant code */
+                    }
+                }
+            }
+        }
+
+        t_group_info->tni.bNormalizationFlags |= nNumCanceledCharges ? FLAG_PROTON_CHARGE_CANCEL : 0;
+
+    exit_function:
+        if (bError)
+        {
+            ret = IS_BNS_ERROR( bError ) ? bError : BNS_PROGRAM_ERR;
+        }
+
+        return ret;
+    }
+        */
+    // END VERBATIM SOURCE FRAGMENT: C536 RemoveNPProtonsAndAcidCharges
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: RemoveNPProtonsAndAcidCharges
     // INCHI✔️❌: #define TG_FLAG_TEST_TAUT__SALTS 4
     // INCHI✔️❌: #define TG_FLAG_TEST_TAUT2_SALTS 16
@@ -6133,71 +7635,39 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
     // INCHI✔️❌: #define TG_FLAG_HARD_ADD_REM_PROTONS 4096
     // END INCHI ACTIVE MACRO CONFIGURATION: RemoveNPProtonsAndAcidCharges
 
-    fn clone_atoms(
-        heap: &SourceHeap,
+    fn simple_acidic_from_heap(
+        heap: &mut SourceHeap,
         at: SourceMutPointer<inp_ATOM>,
         num_atoms: i32,
-        t_group_info: SourceMutPointer<T_GROUP_INFO>,
-    ) -> Result<Vec<inp_ATOM>, SourceHeapError> {
-        let removed_explicit_h = heap
-            .slice(t_group_info.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .tni
-            .nNumRemovedExplicitH;
-        let count =
-            usize::try_from(i64::from(num_atoms).wrapping_add(i64::from(removed_explicit_h)))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atoms = heap.slice(at.as_const())?;
-        if atoms.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
+        p_aatg: &BN_AATG,
+        count: i32,
+        add: bool,
+        targets: &mut SourceAatgTargets<'_>,
+    ) -> Result<i32, SourceHeapError> {
+        // INCHI✔️❗: Native calls use the live atom allocation, including the
+        // explicit-H suffix. Both helpers skip atom reads for nonpositive
+        // num_atoms, but scan positive counts even when count is nonpositive.
+        // Reuse their sole algorithms; no snapshot, allocation or writeback.
+        // O(1) projection/scratch; checked arena/Result whole-call cost OPEN.
+        let mut operation = |atoms: &mut [inp_ATOM], heap: &mut SourceHeap| {
+            if add {
+                SimpleAddAcidicProtons_targets(heap, atoms, num_atoms, p_aatg, count, &mut *targets)
+            } else {
+                SimpleRemoveAcidicProtons_targets(
+                    heap,
+                    atoms,
+                    num_atoms,
+                    p_aatg,
+                    count,
+                    &mut *targets,
+                )
+            }
+        };
+        if num_atoms > 0 {
+            heap.with_slice_mut_and_heap_mut(at, operation)
+        } else {
+            operation(&mut [], heap)
         }
-        Ok(atoms[..count].to_vec())
-    }
-
-    fn write_atoms(
-        heap: &mut SourceHeap,
-        at: SourceMutPointer<inp_ATOM>,
-        atoms: &[inp_ATOM],
-    ) -> Result<(), SourceHeapError> {
-        let count = atoms.len();
-        let destination = heap.slice_mut(at)?;
-        if destination.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        destination[..count].clone_from_slice(&atoms[..count]);
-        Ok(())
-    }
-
-    fn tgroup_info(
-        heap: &SourceHeap,
-        pointer: SourceMutPointer<T_GROUP_INFO>,
-    ) -> Result<T_GROUP_INFO, SourceHeapError> {
-        Ok(heap
-            .slice(pointer.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone())
-    }
-
-    fn store_tgroup_info(
-        heap: &mut SourceHeap,
-        pointer: SourceMutPointer<T_GROUP_INFO>,
-        value: T_GROUP_INFO,
-    ) -> Result<(), SourceHeapError> {
-        let target = heap
-            .slice_mut(pointer)?
-            .first_mut()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        *target = value;
-        Ok(())
-    }
-
-    fn total(heap: &SourceHeap, p_aatg: &BN_AATG, index: usize) -> Result<i32, SourceHeapError> {
-        heap.slice(p_aatg.nAtTypeTotals.as_const())?
-            .get(index)
-            .copied()
-            .ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
     let mut ret = 0_i32;
@@ -6205,11 +7675,12 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
     let mut n_num_canceled_charges = 0_i32;
     let t_group_info_ptr = pAATG.t_group_info;
     let n_at_type_totals_ptr = pAATG.nAtTypeTotals;
-    let t_group_info0 = tgroup_info(heap, t_group_info_ptr)?;
-    let b_allow_hard_remove = (t_group_info0.bTautFlags & TG_FLAG_TEST_TAUT__SALTS as u64) != 0
-        && (t_group_info0.bTautFlags & TG_FLAG_TEST_TAUT2_SALTS as u64) != 0
-        && (t_group_info0.bTautFlags & TG_FLAG_MOVE_POS_CHARGES as u64) != 0
-        && (t_group_info0.bTautFlags & TG_FLAG_HARD_ADD_REM_PROTONS as u64) != 0;
+    // INCHI✔️❗: Read only the flags used by the native initial gate.
+    let taut_flags = targets.flags(heap)?;
+    let b_allow_hard_remove = (taut_flags & TG_FLAG_TEST_TAUT__SALTS as u64) != 0
+        && (taut_flags & TG_FLAG_TEST_TAUT2_SALTS as u64) != 0
+        && (taut_flags & TG_FLAG_MOVE_POS_CHARGES as u64) != 0
+        && (taut_flags & TG_FLAG_HARD_ADD_REM_PROTONS as u64) != 0;
 
     if !pAATG.nMarkedAtom.is_null() && num_atoms < pAATG.nAllocLen {
         inchi_free(heap, pAATG.nMarkedAtom)?;
@@ -6229,26 +7700,25 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
         }
     }
 
-    let num = total(heap, pAATG, ATTOT_NUM_NP_PROTON)? + total(heap, pAATG, ATTOT_NUM_OH_PLUS)?;
+    let num = targets.total(heap, ATTOT_NUM_NP_PROTON)? + targets.total(heap, ATTOT_NUM_OH_PLUS)?;
     if num != 0 {
-        let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
-        let mut t_group_info = tgroup_info(heap, t_group_info_ptr)?;
-        {
-            let totals = heap.slice_mut(pAATG.nAtTypeTotals)?;
-            ret = SimpleRemoveHplusNPO(&mut atoms, num_atoms, Some(totals), &mut t_group_info)?;
-        }
-        write_atoms(heap, at, &atoms)?;
+        // INCHI✔️❗: ichi_bns.c5123 uses at directly. Metadata was already
+        // reached above; these three distinct typed allocations cannot alias.
+        // Both atom and metadata writes survive a Result error, with no whole
+        // array copy or explicit-H extent preflight. O(1) extra storage;
+        // safe arena admission/whole-call cost remains OPEN.
+        ret = targets.simple_np(heap, at, num_atoms)?;
         if ret != num {
-            b_error = BNS_PROGRAM_ERR;
+            // Native goto exit_function skips this and every later flag write.
+            return Ok(BNS_PROGRAM_ERR);
         }
         if ret > 0 {
-            t_group_info.tni.bNormalizationFlags |= FLAG_PROTON_NPO_SIMPLE_REMOVED as u64;
+            targets.add_normalization_flags(heap, FLAG_PROTON_NPO_SIMPLE_REMOVED as u64)?;
         }
-        store_tgroup_info(heap, t_group_info_ptr, t_group_info)?;
     }
 
-    if b_error == 0 && total(heap, pAATG, ATTOT_NUM_NP_PLUS)? != 0 && b_allow_hard_remove {
-        ret = HardRemoveHplusNP(
+    if b_error == 0 && targets.total(heap, ATTOT_NUM_NP_PLUS)? != 0 && b_allow_hard_remove {
+        ret = HardRemoveHplusNP_targets(
             heap,
             pCG,
             at,
@@ -6259,33 +7729,36 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
             pBNS,
             pBD,
             clock_result,
+            &mut *targets,
         )?;
         if is_bns_error(ret) {
             b_error = ret;
         }
         if ret > 0 {
-            let mut t_group_info = tgroup_info(heap, t_group_info_ptr)?;
-            t_group_info.tni.bNormalizationFlags |= FLAG_PROTON_NP_HARD_REMOVED as u64;
-            store_tgroup_info(heap, t_group_info_ptr, t_group_info)?;
+            targets.add_normalization_flags(heap, FLAG_PROTON_NP_HARD_REMOVED as u64)?;
         }
     }
 
-    if b_error == 0 && total(heap, pAATG, ATTOT_TOT_CHARGE)? > 0 {
-        let current_charge = total(heap, pAATG, ATTOT_TOT_CHARGE)?;
-        let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
-        ret = SimpleRemoveAcidicProtons(heap, &mut atoms, num_atoms, pAATG, current_charge)?;
-        write_atoms(heap, at, &atoms)?;
+    if b_error == 0 && targets.total(heap, ATTOT_TOT_CHARGE)? > 0 {
+        let current_charge = targets.total(heap, ATTOT_TOT_CHARGE)?;
+        ret = simple_acidic_from_heap(
+            heap,
+            at,
+            num_atoms,
+            pAATG,
+            current_charge,
+            false,
+            &mut *targets,
+        )?;
         if is_bns_error(ret) {
             b_error = ret;
         } else if ret > 0 {
-            let mut t_group_info = tgroup_info(heap, t_group_info_ptr)?;
-            t_group_info.tni.bNormalizationFlags |= FLAG_PROTON_AC_SIMPLE_REMOVED as u64;
-            store_tgroup_info(heap, t_group_info_ptr, t_group_info)?;
+            targets.add_normalization_flags(heap, FLAG_PROTON_AC_SIMPLE_REMOVED as u64)?;
         }
 
-        if b_error == 0 && total(heap, pAATG, ATTOT_TOT_CHARGE)? > 0 && b_allow_hard_remove {
-            let remaining_charge = total(heap, pAATG, ATTOT_TOT_CHARGE)?;
-            ret = HardRemoveAcidicProtons(
+        if b_error == 0 && targets.total(heap, ATTOT_TOT_CHARGE)? > 0 && b_allow_hard_remove {
+            let remaining_charge = targets.total(heap, ATTOT_TOT_CHARGE)?;
+            ret = HardRemoveAcidicProtons_targets(
                 heap,
                 pCG,
                 at,
@@ -6296,38 +7769,40 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
                 pBNS,
                 pBD,
                 clock_result,
+                &mut *targets,
             )?;
             if is_bns_error(ret) {
                 b_error = ret;
             } else if ret > 0 {
-                let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
-                let ret2 = SimpleRemoveAcidicProtons(heap, &mut atoms, num_atoms, pAATG, ret)?;
-                write_atoms(heap, at, &atoms)?;
+                let ret2 =
+                    simple_acidic_from_heap(heap, at, num_atoms, pAATG, ret, false, &mut *targets)?;
                 if ret2 != ret {
                     b_error = BNS_PROGRAM_ERR;
                 } else {
-                    let mut t_group_info = tgroup_info(heap, t_group_info_ptr)?;
-                    t_group_info.tni.bNormalizationFlags |= FLAG_PROTON_AC_HARD_REMOVED as u64;
-                    store_tgroup_info(heap, t_group_info_ptr, t_group_info)?;
+                    targets.add_normalization_flags(heap, FLAG_PROTON_AC_HARD_REMOVED as u64)?;
                 }
             }
         }
-    } else if b_error == 0 && total(heap, pAATG, ATTOT_TOT_CHARGE)? < 0 {
-        let current_charge = total(heap, pAATG, ATTOT_TOT_CHARGE)?.wrapping_neg();
-        let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
-        ret = SimpleAddAcidicProtons(heap, &mut atoms, num_atoms, pAATG, current_charge)?;
-        write_atoms(heap, at, &atoms)?;
+    } else if b_error == 0 && targets.total(heap, ATTOT_TOT_CHARGE)? < 0 {
+        let current_charge = targets.total(heap, ATTOT_TOT_CHARGE)?.wrapping_neg();
+        ret = simple_acidic_from_heap(
+            heap,
+            at,
+            num_atoms,
+            pAATG,
+            current_charge,
+            true,
+            &mut *targets,
+        )?;
         if is_bns_error(ret) {
             b_error = ret;
         } else if ret > 0 {
-            let mut t_group_info = tgroup_info(heap, t_group_info_ptr)?;
-            t_group_info.tni.bNormalizationFlags |= FLAG_PROTON_AC_SIMPLE_ADDED as u64;
-            store_tgroup_info(heap, t_group_info_ptr, t_group_info)?;
+            targets.add_normalization_flags(heap, FLAG_PROTON_AC_SIMPLE_ADDED as u64)?;
         }
 
-        if b_error == 0 && total(heap, pAATG, ATTOT_TOT_CHARGE)? < 0 && b_allow_hard_remove {
-            let remaining_charge = total(heap, pAATG, ATTOT_TOT_CHARGE)?.wrapping_neg();
-            ret = HardAddAcidicProtons(
+        if b_error == 0 && targets.total(heap, ATTOT_TOT_CHARGE)? < 0 && b_allow_hard_remove {
+            let remaining_charge = targets.total(heap, ATTOT_TOT_CHARGE)?.wrapping_neg();
+            ret = HardAddAcidicProtons_targets(
                 heap,
                 pCG,
                 at,
@@ -6338,29 +7813,32 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
                 pBNS,
                 pBD,
                 clock_result,
+                &mut *targets,
             )?;
             if is_bns_error(ret) {
                 b_error = ret;
             } else if ret > 0 {
-                let mut atoms = clone_atoms(heap, at, num_atoms, t_group_info_ptr)?;
-                let ret2 = SimpleAddAcidicProtons(heap, &mut atoms, num_atoms, pAATG, ret)?;
-                write_atoms(heap, at, &atoms)?;
+                let ret2 =
+                    simple_acidic_from_heap(heap, at, num_atoms, pAATG, ret, true, &mut *targets)?;
                 if ret2 != ret {
                     b_error = BNS_PROGRAM_ERR;
                 } else {
-                    let mut t_group_info = tgroup_info(heap, t_group_info_ptr)?;
-                    t_group_info.tni.bNormalizationFlags |= FLAG_PROTON_AC_HARD_ADDED as u64;
-                    store_tgroup_info(heap, t_group_info_ptr, t_group_info)?;
+                    targets.add_normalization_flags(heap, FLAG_PROTON_AC_HARD_ADDED as u64)?;
                 }
             }
         }
     }
 
-    let mut t_group_info = tgroup_info(heap, t_group_info_ptr)?;
-    if n_num_canceled_charges != 0 {
-        t_group_info.tni.bNormalizationFlags |= FLAG_PROTON_CHARGE_CANCEL as u64;
+    if b_error == 0 {
+        targets.add_normalization_flags(
+            heap,
+            if n_num_canceled_charges != 0 {
+                FLAG_PROTON_CHARGE_CANCEL as u64
+            } else {
+                0
+            },
+        )?;
     }
-    store_tgroup_info(heap, t_group_info_ptr, t_group_info)?;
 
     if b_error != 0 {
         ret = if is_bns_error(b_error) {
@@ -6371,6 +7849,47 @@ pub(crate) fn RemoveNPProtonsAndAcidCharges(
     }
 
     Ok(ret)
+}
+
+enum BnsGroupAtoms<'a> {
+    Slice(&'a [inp_ATOM]),
+    Heap(crate::source_types::SourceConstPointer<inp_ATOM>),
+}
+
+impl BnsGroupAtoms<'_> {
+    #[inline]
+    fn slice<'h>(&'h self, heap: &'h SourceHeap) -> Result<&'h [inp_ATOM], SourceHeapError> {
+        // INCHI✔️❗: ichi_bns.c3624/3838 reaches the original atom base only
+        // in GetAtomChargeType calls; no admission for overflow/empty loops.
+        // O(1) safe projection, no copy/allocation; enum/arena cost OPEN.
+        match self {
+            Self::Slice(atoms) => Ok(atoms),
+            Self::Heap(pointer) => heap.slice(*pointer),
+        }
+    }
+}
+
+fn remove_group_from_heap(
+    heap: &mut SourceHeap,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    tg: i32,
+    p_bns: &mut BN_STRUCT,
+) -> Result<i32, SourceHeapError> {
+    // INCHI✔️❗: ichi_bns.c4073/4077, reached only after graph/edge stores:
+    //             at->endpoint = 0;
+    //             at->c_point = 0;
+    // The canonical kernel retains the two independent source predicates.
+    // O(1) per reached scalar clear; no whole-atom writeback. Cost OPEN.
+    remove_group_with_atom_clear(heap, num_atoms, tg, p_bns, |heap, endpoint| {
+        let atom = heap.element_signed_mut(at, 0)?;
+        if endpoint {
+            atom.endpoint = 0;
+        } else {
+            atom.c_point = 0;
+        }
+        Ok(())
+    })
 }
 
 #[allow(non_snake_case)]
@@ -6604,17 +8123,261 @@ pub(crate) fn CreateCGroupInBnStruct(
     // INCHI✔️❌: #define KNOWN_ACIDIC_TYPE (ATT_ACIDIC_CO | ATT_ACIDIC_S | ATT_OO | ATT_ZOO | ATT_NO)
     // END INCHI ACTIVE MACRO CONFIGURATION: CreateCGroupInBnStruct
 
+    create_c_group_with_atoms(
+        heap,
+        BnsGroupAtoms::Slice(atoms),
+        num_atoms,
+        p_bns,
+        n_type,
+        n_mask,
+        n_charge,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_c_group_with_atoms(
+    heap: &mut SourceHeap,
+    atoms: BnsGroupAtoms<'_>,
+    num_atoms: i32,
+    p_bns: &mut BN_STRUCT,
+    n_type: i32,
+    n_mask: i32,
+    n_charge: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:3599 CreateCGroupInBnStruct
+    // INCHI✔️❌: int CreateCGroupInBnStruct( inp_ATOM *at,
+    // INCHI✔️❌:                             int num_atoms,
+    // INCHI✔️❌:                             BN_STRUCT *pBNS,
+    // INCHI✔️❌:                             int nType,
+    // INCHI✔️❌:                             int nMask,
+    // INCHI✔️❌:                             int nCharge )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int         k, c_point, cg, centerpoint, fictpoint, type, ret = 0;
+    // INCHI✔️❌:     int         num_cg = 1;
+    // INCHI✔️❌:     int         num_edges = pBNS->num_edges;
+    // INCHI✔️❌:     int         num_vertices = pBNS->num_vertices; /* new c-group bns-ID */
+    // INCHI✔️❌:     BNS_VERTEX *vert_ficpoint, *ver_ficpont_prev;  /* fictitious vertex describing charge c-group */
+    // INCHI✔️❌:     BNS_VERTEX *vertex_cpoint;
+    // INCHI✔️❌:     BNS_EDGE   *edge;      /* edge between that vertex and the tautomeric c_point */
+    // INCHI✔️❌:     int        mask, num_CPoints;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Debug: check overflow */
+    // INCHI✔️❌:     if (num_vertices + num_cg >= pBNS->max_vertices)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Count new c-group edges */
+    // INCHI✔️❌:     for (c_point = 0, num_CPoints = 0; c_point < num_atoms; c_point++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         if (( nType & GetAtomChargeType( at, c_point, NULL, &mask, 0 ) ) && ( mask & nMask )
+    // INCHI❌❌: #if ( OPPOSITE_CHARGE_IN_CGROUP == 0 )
+    // INCHI❌❌:              && ( at[c_point].charge == nCharge || !at[c_point].charge )
+    // INCHI❌❌: #endif
+    // INCHI✔️❌:              )
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             num_CPoints++;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (!num_CPoints)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return 0;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Clear the new vertex */
+    // INCHI✔️❌:     memset( pBNS->vert + num_vertices, 0, 1 * sizeof( pBNS->vert[0] ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* *old* Make sure the last t-group has the largest t-group ID:
+    // INCHI✔️❌:     this is necessary to correctly add new edges and vertices for testing augmenting paths
+    // INCHI✔️❌:     */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /**************************************/
+    // INCHI✔️❌:     /* initialize new fictitious vertex   */
+    // INCHI✔️❌:     /* representing c-point group         */
+    // INCHI✔️❌:     /**************************************/
+    // INCHI✔️❌:
+    // INCHI✔️❌:     ver_ficpont_prev = pBNS->vert + num_vertices - 1;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (cg = 0; cg < num_cg; cg++, ver_ficpont_prev = vert_ficpoint)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /*
+    // INCHI✔️❌:         vert_ficpoint-1 is the last vertex;
+    // INCHI✔️❌:         vert_ficpoint   is the being added vertex
+    // INCHI✔️❌:         Note: nGroupNumber are not contiguous
+    // INCHI✔️❌:         */
+    // INCHI✔️❌:         vert_ficpoint = pBNS->vert + num_vertices + cg;
+    // INCHI✔️❌:         vert_ficpoint->iedge = ver_ficpont_prev->iedge + ver_ficpont_prev->max_adj_edges;
+    // INCHI✔️❌:         vert_ficpoint->max_adj_edges = num_CPoints + BNS_ADD_EDGES;
+    // INCHI✔️❌:         vert_ficpoint->num_adj_edges = 0;
+    // INCHI✔️❌:         vert_ficpoint->st_edge.flow = vert_ficpoint->st_edge.flow0 = 0;
+    // INCHI✔️❌:         vert_ficpoint->st_edge.cap = vert_ficpoint->st_edge.cap0 = 0;
+    // INCHI✔️❌:         vert_ficpoint->type = BNS_VERT_TYPE_C_GROUP | ( ( nCharge < 0 ) ? BNS_VERT_TYPE_C_NEGATIVE : 0 );
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /************************************************/
+    // INCHI✔️❌:     /* Connect c-points to the fictitious vertices  */
+    // INCHI✔️❌:     /* representing c-point groups; set caps, flows */
+    // INCHI✔️❌:     /************************************************/
+    // INCHI✔️❌:     cg = 1;
+    // INCHI✔️❌:     for (c_point = 0; c_point < num_atoms; c_point++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         if (( nType & ( type = GetAtomChargeType( at, c_point, NULL, &mask, 0 ) ) ) && ( mask & nMask )
+    // INCHI❌❌: #if ( OPPOSITE_CHARGE_IN_CGROUP == 0 )
+    // INCHI❌❌:              && ( at[c_point].charge == nCharge || !at[c_point].charge )
+    // INCHI❌❌: #endif
+    // INCHI✔️❌:              )
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             ;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         else
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             continue;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         fictpoint = cg + num_vertices - 1; /* c-group vertex index */
+    // INCHI✔️❌:         vert_ficpoint = pBNS->vert + fictpoint; /* c-group vertex */
+    // INCHI✔️❌:         vertex_cpoint = pBNS->vert + c_point;   /* c_point vertex */
+    // INCHI✔️❌:
+    // INCHI✔️❌:                                                 /* Debug: check overflow */
+    // INCHI✔️❌:         if (fictpoint >= pBNS->max_vertices ||
+    // INCHI✔️❌:              num_edges >= pBNS->max_edges ||
+    // INCHI✔️❌:              vert_ficpoint->num_adj_edges >= vert_ficpoint->max_adj_edges ||
+    // INCHI✔️❌:              vertex_cpoint->num_adj_edges >= vertex_cpoint->max_adj_edges)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:             break;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         vertex_cpoint->type |= BNS_VERT_TYPE_C_POINT;
+    // INCHI✔️❌:         if (( KNOWN_ACIDIC_TYPE & type ) && nCharge < 0)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             vertex_cpoint->type |= pBNS->type_TACN;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI❌❌: #if ( FIX_CPOINT_BOND_CAP != 1 )  /* { */
+    // INCHI❌❌:         /* Set capacity = 1 to the edges from the c_point to the centerpoint(s)     */
+    // INCHI❌❌:         /* if their current capacity is zero                                        */
+    // INCHI❌❌:         /* the centerpoint is any adjacent atom that is adjacent to a multiple bond */
+    // INCHI❌❌:         for (k = 0; k < vertex_cpoint->num_adj_edges; k++)
+    // INCHI❌❌:         {
+    // INCHI❌❌:             int iedge = vertex_cpoint->iedge[k];
+    // INCHI❌❌:             if (!pBNS->edge[iedge].cap)
+    // INCHI❌❌:             {
+    // INCHI❌❌:                 /* single bond, possibly between c_point and centerpoint */
+    // INCHI❌❌:                 centerpoint = ( pBNS->edge[iedge].neighbor12 ^ c_point );
+    // INCHI❌❌:                 if (centerpoint < pBNS->num_atoms &&
+    // INCHI❌❌:                      pBNS->vert[centerpoint].st_edge.cap >= 1)
+    // INCHI❌❌:                 {
+    // INCHI❌❌:                     int bond_type = ( at[c_point].bond_type[k] & BOND_TYPE_MASK );
+    // INCHI❌❌:                     if (bond_type == BOND_TAUTOM ||
+    // INCHI❌❌:                          bond_type == BOND_ALTERN ||
+    // INCHI❌❌:                          bond_type == BOND_SINGLE)
+    // INCHI❌❌:                     {
+    // INCHI❌❌:                         pBNS->edge[iedge].cap = 1;
+    // INCHI❌❌:                     }
+    // INCHI❌❌:                 }
+    // INCHI❌❌:             }
+    // INCHI❌❌:         }
+    // INCHI❌❌: #endif /* } FIX_CPOINT_BOND_CAP */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Create a new edge connecting c_point to the new fictitious c-group vertex vert_ficpoint */
+    // INCHI✔️❌:         edge = pBNS->edge + num_edges;
+    // INCHI✔️❌:         edge->cap = 1;
+    // INCHI✔️❌:         edge->flow = 0;
+    // INCHI✔️❌:         edge->pass = 0;
+    // INCHI✔️❌: #if ( RESET_EDGE_FORBIDDEN_MASK == 1 )
+    // INCHI✔️❌:         edge->forbidden &= pBNS->edge_forbidden_mask; /* remove previous temporary ban */
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:                                                       /* nCharge = +1: mark edge to c-point having no (+)-moveable charge with flow=1 */
+    // INCHI✔️❌:                                                       /* nCharge = -1: mark edge to c-point having -1 moveable charge with flow=1 */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         if ((nCharge == 1 && at[c_point].charge != 1) || (nCharge == -1 && at[c_point].charge == -1)) /* djb-rwth: addressing LLVM warning */
+    // INCHI✔️❌:             /*if ( !CHARGED_CPOINT(at,c_point) )*/
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* Increment new edge flow, update st_edges of the adjacent vertices */
+    // INCHI✔️❌:             edge->flow++;
+    // INCHI✔️❌:             /* Increment c-group vertex st-flow & cap */
+    // INCHI✔️❌:             vert_ficpoint->st_edge.flow++;
+    // INCHI✔️❌:             vert_ficpoint->st_edge.cap++;
+    // INCHI✔️❌:             /* Increment c-point vertex st-flow & cap */
+    // INCHI✔️❌:             vertex_cpoint->st_edge.flow++;
+    // INCHI✔️❌:             vertex_cpoint->st_edge.cap++;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌: #if ( FIX_CPOINT_BOND_CAP == 1 ) /* { */
+    // INCHI✔️❌:         /* Set capacity = 1 to the edges from the c_point to the centerpoint(s)     */
+    // INCHI✔️❌:         /* if their current capacity is zero                                        */
+    // INCHI✔️❌:         /* the centerpoint is any adjacent atom that is adjacent to a multiple bond */
+    // INCHI✔️❌:         for (k = 0; k < vertex_cpoint->num_adj_edges; k++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             int iedge = vertex_cpoint->iedge[k];
+    // INCHI✔️❌:             VertexFlow  nNewCap = vertex_cpoint->st_edge.cap;
+    // INCHI✔️❌:             centerpoint = ( pBNS->edge[iedge].neighbor12 ^ c_point );
+    // INCHI✔️❌:             if (!pBNS->edge[iedge].cap)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /* Single bond, possibly between c_point and centerpoint */
+    // INCHI✔️❌:                 if (centerpoint < pBNS->num_atoms &&
+    // INCHI✔️❌:                      pBNS->vert[centerpoint].st_edge.cap >= 1)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     nNewCap = inchi_min( pBNS->vert[centerpoint].st_edge.cap, nNewCap );
+    // INCHI✔️❌:                     nNewCap = inchi_min( nNewCap, MAX_BOND_EDGE_CAP );
+    // INCHI✔️❌:                     pBNS->edge[iedge].cap = nNewCap;
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI❌❌: #if ( FIX_CPOINT_BOND_CAP2 == 1 ) /* multiple bond */
+    // INCHI❌❌:             else
+    // INCHI❌❌:             {
+    // INCHI❌❌:                 if (centerpoint < pBNS->num_atoms &&
+    // INCHI❌❌:                      edge->flow && pBNS->edge[iedge].cap < MAX_BOND_EDGE_CAP)
+    // INCHI❌❌:                 {
+    // INCHI❌❌:                     pBNS->edge[iedge].cap++;
+    // INCHI❌❌:                 }
+    // INCHI❌❌:             }
+    // INCHI❌❌: #endif
+    // INCHI✔️❌:         }
+    // INCHI✔️❌: #endif  /* } FIX_CPOINT_BOND_CAP */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Connect edge to c_point and fictpoint and increment the counters of neighbors and edges */
+    // INCHI✔️❌:         edge->neighbor1 = c_point; /* the smallest out of v1=endopoint and v2=num_vertices */
+    // INCHI✔️❌:         edge->neighbor12 = c_point ^ fictpoint; /* v1 ^ v2 */
+    // INCHI✔️❌:         vertex_cpoint->iedge[vertex_cpoint->num_adj_edges] = num_edges;
+    // INCHI✔️❌:         vert_ficpoint->iedge[vert_ficpoint->num_adj_edges] = num_edges++;
+    // INCHI✔️❌:         edge->neigh_ord[0] = vertex_cpoint->num_adj_edges++;
+    // INCHI✔️❌:         edge->neigh_ord[1] = vert_ficpoint->num_adj_edges++;
+    // INCHI✔️❌:         edge->cap0 = edge->cap;
+    // INCHI✔️❌:         edge->flow0 = edge->flow;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     ret = pBNS->num_vertices; /* new c-group atom number */
+    // INCHI✔️❌:     pBNS->num_edges = num_edges;
+    // INCHI✔️❌:     pBNS->num_vertices += num_cg;
+    // INCHI✔️❌:     pBNS->num_c_groups += num_cg;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: CreateCGroupInBnStruct
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: CreateCGroupInBnStruct
+    // INCHI✔️❌: #define OPPOSITE_CHARGE_IN_CGROUP 1
+    // INCHI✔️❌: #define FIX_CPOINT_BOND_CAP 1
+    // INCHI✔️❌: #define FIX_CPOINT_BOND_CAP2 0
+    // INCHI✔️❌: #define RESET_EDGE_FORBIDDEN_MASK 1
+    // INCHI✔️❌: #define KNOWN_ACIDIC_TYPE (ATT_ACIDIC_CO | ATT_ACIDIC_S | ATT_OO | ATT_ZOO | ATT_NO)
+    // END INCHI ACTIVE MACRO CONFIGURATION: CreateCGroupInBnStruct
+
+    // INCHI✔️❗: Update live fields at each native write, including aliased vertices
+    // and new/existing edges. No record snapshots/writeback or allocation;
+    // safe arena lookup and whole-call costs remain OPEN (BNS-GROUP-CONSTRUCTION).
     let num_cg = 1_i32;
     let mut num_edges = p_bns.num_edges;
     let num_vertices = p_bns.num_vertices;
     if num_vertices.wrapping_add(num_cg) >= p_bns.max_vertices {
         return Ok(BNS_VERT_EDGE_OVFL);
     }
-
     let mut num_c_points = 0_i32;
     for c_point in 0..num_atoms {
         let mut mask = 0_i32;
-        let type_ = GetAtomChargeType(atoms, c_point, None, Some(&mut mask), 0)?;
+        let type_ = GetAtomChargeType(atoms.slice(heap)?, c_point, None, Some(&mut mask), 0)?;
         if (n_type & type_) != 0 && (mask & n_mask) != 0 {
             num_c_points = num_c_points.wrapping_add(1);
         }
@@ -6622,123 +8385,124 @@ pub(crate) fn CreateCGroupInBnStruct(
     if num_c_points == 0 {
         return Ok(0);
     }
-
-    *bns_vertex_mut(heap, p_bns, num_vertices)? = BNS_VERTEX::default();
-    let previous_vertex = bns_vertex(heap, p_bns, num_vertices - 1)?;
-    let mut vert_ficpoint = bns_vertex(heap, p_bns, num_vertices)?;
-    vert_ficpoint.iedge = previous_vertex
-        .iedge
-        .offset(i64::from(previous_vertex.max_adj_edges))?;
-    vert_ficpoint.max_adj_edges = (num_c_points + BNS_ADD_EDGES as i32) as AT_NUMB;
-    vert_ficpoint.num_adj_edges = 0;
-    vert_ficpoint.st_edge.flow = 0;
-    vert_ficpoint.st_edge.flow0 = 0;
-    vert_ficpoint.st_edge.cap = 0;
-    vert_ficpoint.st_edge.cap0 = 0;
-    vert_ficpoint.type_ = (BNS_VERT_TYPE_C_GROUP
-        | if n_charge < 0 {
-            BNS_VERT_TYPE_C_NEGATIVE
-        } else {
-            0
-        }) as AT_NUMB;
-    *bns_vertex_mut(heap, p_bns, num_vertices)? = vert_ficpoint;
-
-    let cg = 1_i32;
+    *heap.element_signed_mut(p_bns.vert, num_vertices)? = BNS_VERTEX::default();
+    let previous = heap.element_signed(p_bns.vert.as_const(), num_vertices - 1)?;
+    let iedge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
+    {
+        let vertex = heap.element_signed_mut(p_bns.vert, num_vertices)?;
+        vertex.iedge = iedge;
+        vertex.max_adj_edges = (num_c_points + BNS_ADD_EDGES as i32) as AT_NUMB;
+        vertex.num_adj_edges = 0;
+        vertex.st_edge.flow0 = 0;
+        vertex.st_edge.flow = 0;
+        vertex.st_edge.cap0 = 0;
+        vertex.st_edge.cap = 0;
+        vertex.type_ = (BNS_VERT_TYPE_C_GROUP
+            | if n_charge < 0 {
+                BNS_VERT_TYPE_C_NEGATIVE
+            } else {
+                0
+            }) as AT_NUMB;
+    }
     for c_point in 0..num_atoms {
         let mut mask = 0_i32;
-        let type_ = GetAtomChargeType(atoms, c_point, None, Some(&mut mask), 0)?;
+        let type_ = GetAtomChargeType(atoms.slice(heap)?, c_point, None, Some(&mut mask), 0)?;
         if !((n_type & type_) != 0 && (mask & n_mask) != 0) {
             continue;
         }
-
-        let fictpoint = cg + num_vertices - 1;
-        let mut vert_ficpoint = bns_vertex(heap, p_bns, fictpoint)?;
-        let mut vertex_cpoint = bns_vertex(heap, p_bns, c_point)?;
-        if fictpoint >= p_bns.max_vertices
-            || num_edges >= p_bns.max_edges
-            || vert_ficpoint.num_adj_edges >= vert_ficpoint.max_adj_edges
-            || vertex_cpoint.num_adj_edges >= vertex_cpoint.max_adj_edges
-        {
+        let fictpoint = num_vertices;
+        if fictpoint >= p_bns.max_vertices || num_edges >= p_bns.max_edges {
             break;
         }
-
-        vertex_cpoint.type_ |= BNS_VERT_TYPE_C_POINT as AT_NUMB;
-        if (KNOWN_ACIDIC_TYPE as i32 & type_) != 0 && n_charge < 0 {
-            vertex_cpoint.type_ |= p_bns.type_TACN;
+        {
+            let vertex = heap.element_signed(p_bns.vert.as_const(), fictpoint)?;
+            if vertex.num_adj_edges >= vertex.max_adj_edges {
+                break;
+            }
         }
-
-        let mut edge = bns_edge(heap, p_bns, num_edges)?;
-        edge.cap = 1;
-        edge.flow = 0;
-        edge.pass = 0;
-        edge.forbidden &= p_bns.edge_forbidden_mask;
-
-        let atom_charge = input_atom_ref(atoms, c_point)?.charge;
-        if (n_charge == 1 && atom_charge != 1) || (n_charge == -1 && atom_charge == -1) {
+        {
+            let vertex = heap.element_signed(p_bns.vert.as_const(), c_point)?;
+            if vertex.num_adj_edges >= vertex.max_adj_edges {
+                break;
+            }
+        }
+        {
+            let vertex = heap.element_signed_mut(p_bns.vert, c_point)?;
+            vertex.type_ |= BNS_VERT_TYPE_C_POINT as AT_NUMB;
+            if (KNOWN_ACIDIC_TYPE as i32 & type_) != 0 && n_charge < 0 {
+                vertex.type_ |= p_bns.type_TACN;
+            }
+        }
+        {
+            let edge = heap.element_signed_mut(p_bns.edge, num_edges)?;
+            edge.cap = 1;
+            edge.flow = 0;
+            edge.pass = 0;
+            edge.forbidden &= p_bns.edge_forbidden_mask;
+        }
+        if (n_charge == 1 && input_atom_ref(atoms.slice(heap)?, c_point)?.charge != 1)
+            || (n_charge == -1 && input_atom_ref(atoms.slice(heap)?, c_point)?.charge == -1)
+        {
+            let edge = heap.element_signed_mut(p_bns.edge, num_edges)?;
             edge.flow = edge.flow.wrapping_add(1);
-            vert_ficpoint.st_edge.flow = vert_ficpoint.st_edge.flow.wrapping_add(1);
-            vert_ficpoint.st_edge.cap = vert_ficpoint.st_edge.cap.wrapping_add(1);
-            vertex_cpoint.st_edge.flow = vertex_cpoint.st_edge.flow.wrapping_add(1);
-            vertex_cpoint.st_edge.cap = vertex_cpoint.st_edge.cap.wrapping_add(1);
+            for index in [fictpoint, c_point] {
+                let vertex = heap.element_signed_mut(p_bns.vert, index)?;
+                vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
+                vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(1);
+            }
         }
-
-        for k in 0..i32::from(vertex_cpoint.num_adj_edges) {
-            let iedge = bns_edge_index(heap, &vertex_cpoint, k)?;
-            let current_edge = bns_edge(heap, p_bns, iedge)?;
-            if current_edge.cap == 0 {
-                let centerpoint = i32::from(current_edge.neighbor12 ^ c_point as AT_NUMB);
+        let vertex = heap.element_signed(p_bns.vert.as_const(), c_point)?;
+        let adjacency = vertex.iedge;
+        let degree = i32::from(vertex.num_adj_edges);
+        for k in 0..degree {
+            let iedge = *heap.element_signed(adjacency.as_const(), k)?;
+            let mut new_cap = heap
+                .element_signed(p_bns.vert.as_const(), c_point)?
+                .st_edge
+                .cap;
+            let edge = heap.element_signed(p_bns.edge.as_const(), iedge)?;
+            let centerpoint = i32::from(edge.neighbor12) ^ c_point;
+            let cap = edge.cap;
+            if cap == 0 {
                 if centerpoint < p_bns.num_atoms {
-                    let center_cap = if centerpoint == c_point {
-                        vertex_cpoint.st_edge.cap
-                    } else {
-                        bns_vertex(heap, p_bns, centerpoint)?.st_edge.cap
-                    };
+                    let center_cap = heap
+                        .element_signed(p_bns.vert.as_const(), centerpoint)?
+                        .st_edge
+                        .cap;
                     if center_cap >= 1 {
-                        let mut n_new_cap = vertex_cpoint.st_edge.cap;
-                        if center_cap < n_new_cap {
-                            n_new_cap = center_cap;
-                        }
-                        if n_new_cap > MAX_BOND_EDGE_CAP as i32 {
-                            n_new_cap = MAX_BOND_EDGE_CAP as i32;
-                        }
-                        bns_edge_mut(heap, p_bns, iedge)?.cap = n_new_cap;
+                        new_cap = new_cap.min(center_cap).min(MAX_BOND_EDGE_CAP as i32);
+                        heap.element_signed_mut(p_bns.edge, iedge)?.cap = new_cap;
                     }
                 }
             }
         }
-
-        edge.neighbor1 = c_point as AT_NUMB;
-        edge.neighbor12 = (c_point as AT_NUMB) ^ fictpoint as AT_NUMB;
-        work_set(
-            heap,
-            vertex_cpoint.iedge,
-            i32::from(vertex_cpoint.num_adj_edges),
-            num_edges,
-        )?;
-        work_set(
-            heap,
-            vert_ficpoint.iedge,
-            i32::from(vert_ficpoint.num_adj_edges),
-            num_edges,
-        )?;
-        edge.neigh_ord[0] = vertex_cpoint.num_adj_edges;
-        vertex_cpoint.num_adj_edges = vertex_cpoint.num_adj_edges.wrapping_add(1);
-        edge.neigh_ord[1] = vert_ficpoint.num_adj_edges;
-        vert_ficpoint.num_adj_edges = vert_ficpoint.num_adj_edges.wrapping_add(1);
+        {
+            let edge = heap.element_signed_mut(p_bns.edge, num_edges)?;
+            edge.neighbor1 = c_point as AT_NUMB;
+            edge.neighbor12 = (c_point ^ fictpoint) as AT_NUMB;
+        }
+        let vertex = heap.element_signed(p_bns.vert.as_const(), c_point)?;
+        let (adjacency, degree) = (vertex.iedge, i32::from(vertex.num_adj_edges));
+        *heap.element_signed_mut(adjacency, degree)? = num_edges;
+        let vertex = heap.element_signed(p_bns.vert.as_const(), fictpoint)?;
+        let (adjacency, degree) = (vertex.iedge, i32::from(vertex.num_adj_edges));
+        let new_edge = num_edges;
+        num_edges = num_edges.wrapping_add(1);
+        *heap.element_signed_mut(adjacency, degree)? = new_edge;
+        for (ordinal, index) in [(0, c_point), (1, fictpoint)] {
+            let vertex = heap.element_signed_mut(p_bns.vert, index)?;
+            let degree = vertex.num_adj_edges;
+            vertex.num_adj_edges = degree.wrapping_add(1);
+            heap.element_signed_mut(p_bns.edge, new_edge)?.neigh_ord[ordinal] = degree;
+        }
+        let edge = heap.element_signed_mut(p_bns.edge, new_edge)?;
         edge.cap0 = edge.cap;
         edge.flow0 = edge.flow;
-
-        *bns_edge_mut(heap, p_bns, num_edges)? = edge;
-        *bns_vertex_mut(heap, p_bns, c_point)? = vertex_cpoint;
-        *bns_vertex_mut(heap, p_bns, fictpoint)? = vert_ficpoint;
-        num_edges = num_edges.wrapping_add(1);
     }
-
     let ret = p_bns.num_vertices;
     p_bns.num_edges = num_edges;
     p_bns.num_vertices = p_bns.num_vertices.wrapping_add(num_cg);
     p_bns.num_c_groups = p_bns.num_c_groups.wrapping_add(num_cg);
-
     Ok(ret)
 }
 
@@ -6932,17 +8696,219 @@ pub(crate) fn CreateTGroupInBnStruct(
     // INCHI✔️❌: #define MAX_BOND_EDGE_CAP 2
     // END INCHI ACTIVE MACRO CONFIGURATION: CreateTGroupInBnStruct
 
+    create_t_group_with_atoms(
+        heap,
+        BnsGroupAtoms::Slice(atoms),
+        num_atoms,
+        p_bns,
+        n_type,
+        n_mask,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_t_group_with_atoms(
+    heap: &mut SourceHeap,
+    atoms: BnsGroupAtoms<'_>,
+    num_atoms: i32,
+    p_bns: &mut BN_STRUCT,
+    n_type: i32,
+    n_mask: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:3813 CreateTGroupInBnStruct
+    // INCHI✔️❌: int CreateTGroupInBnStruct( inp_ATOM *at,
+    // INCHI✔️❌:                             int num_atoms,
+    // INCHI✔️❌:                             BN_STRUCT *pBNS,
+    // INCHI✔️❌:                             int nType,
+    // INCHI✔️❌:                             int nMask )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int ret = 0;
+    // INCHI✔️❌:     /* ret = ReInitBnStruct( pBNS ); */
+    // INCHI✔️❌:     int         k, endpoint, tg, centerpoint, fictpoint;
+    // INCHI✔️❌:     int         num_tg = 1;
+    // INCHI✔️❌:     int         num_edges = pBNS->num_edges;
+    // INCHI✔️❌:     int         num_vertices = pBNS->num_vertices;
+    // INCHI✔️❌:     BNS_VERTEX *vert_ficpoint, *ver_ficpont_prev;  /* fictitious vertex describing t-group */
+    // INCHI✔️❌:     BNS_VERTEX *vert_endpoint;
+    // INCHI✔️❌:     BNS_EDGE   *edge;      /* edge between that vertex and the tautomeric endpoint */
+    // INCHI✔️❌:     int        mask, num_endpoints, neutral_valence, edge_flow, edge_cap, num_bonds;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Debug: check overflow */
+    // INCHI✔️❌:     if (num_vertices + num_tg >= pBNS->max_vertices)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Count new t-group edges */
+    // INCHI✔️❌:     for (endpoint = 0, num_endpoints = 0; endpoint < num_atoms; endpoint++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         if (( nType & GetAtomChargeType( at, endpoint, NULL, &mask, 0 ) ) && ( mask & nMask )
+    // INCHI✔️❌:              )
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             num_endpoints++;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (!num_endpoints)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return 0;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Since t-group IDs may be not contiguous, clear all vertices that will be added.
+    // INCHI✔️❌:     all-zeroes-vertex will be ignored by the BNS
+    // INCHI✔️❌:     */
+    // INCHI✔️❌:     memset( pBNS->vert + num_vertices, 0, num_tg * sizeof( pBNS->vert[0] ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* *old* Make sure the last t-group has the largest t-group ID:
+    // INCHI✔️❌:     this is necessary to correctly add new edges and vertices for testing augmenting paths
+    // INCHI✔️❌:     */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /**************************************/
+    // INCHI✔️❌:     /* Initialize new fictitious vertex   */
+    // INCHI✔️❌:     /* representing t-point group         */
+    // INCHI✔️❌:     /**************************************/
+    // INCHI✔️❌:     ver_ficpont_prev = pBNS->vert + num_vertices - 1;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (tg = 0; tg < num_tg; tg++, ver_ficpont_prev = vert_ficpoint)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /*
+    // INCHI✔️❌:         vert_ficpoint-1 is the last vertex;
+    // INCHI✔️❌:         vert_ficpoint   is the vertex that is being added
+    // INCHI✔️❌:         Note: nGroupNumber are not contiguous
+    // INCHI✔️❌:         */
+    // INCHI✔️❌:         vert_ficpoint = pBNS->vert + num_vertices + tg;
+    // INCHI✔️❌:         vert_ficpoint->iedge = ver_ficpont_prev->iedge + ver_ficpont_prev->max_adj_edges;
+    // INCHI✔️❌:         vert_ficpoint->max_adj_edges = num_endpoints + BNS_ADD_EDGES + BNS_ADD_SUPER_TGROUP;
+    // INCHI✔️❌:         vert_ficpoint->num_adj_edges = 0;
+    // INCHI✔️❌:         vert_ficpoint->st_edge.flow = vert_ficpoint->st_edge.flow0 = 0;
+    // INCHI✔️❌:         vert_ficpoint->st_edge.cap = vert_ficpoint->st_edge.cap0 = 0;
+    // INCHI✔️❌:         vert_ficpoint->type |= BNS_VERT_TYPE_TGROUP;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     tg = 1;
+    // INCHI✔️❌:     for (endpoint = 0; endpoint < num_atoms; endpoint++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         if (( nType & GetAtomChargeType( at, endpoint, NULL, &mask, 0 ) ) && ( mask & nMask ))
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             ;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         else
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             continue;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         fictpoint = tg + num_vertices - 1;
+    // INCHI✔️❌:         vert_ficpoint = pBNS->vert + fictpoint;
+    // INCHI✔️❌:         vert_endpoint = pBNS->vert + endpoint;
+    // INCHI✔️❌:         /* Debug: check overflow */
+    // INCHI✔️❌:         if (fictpoint >= pBNS->max_vertices ||
+    // INCHI✔️❌:              num_edges >= pBNS->max_edges ||
+    // INCHI✔️❌:              vert_ficpoint->num_adj_edges >= vert_ficpoint->max_adj_edges ||
+    // INCHI✔️❌:              vert_endpoint->num_adj_edges >= vert_endpoint->max_adj_edges)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:             break;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Obtain donor/acceptor info */
+    // INCHI✔️❌:         neutral_valence = at[endpoint].chem_bonds_valence + at[endpoint].num_H - at[endpoint].charge;
+    // INCHI✔️❌:         if (neutral_valence != 2 /* O, S, Se, Te */ &&
+    // INCHI✔️❌:              neutral_valence != 3 /* N, P */)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:             break;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         edge_flow = at[endpoint].num_H;
+    // INCHI✔️❌:         num_bonds = at[endpoint].valence;
+    // INCHI✔️❌:         edge_cap = neutral_valence - num_bonds; /* does not allow to reduce -NH3(+) to #N or -OH(+)- to -O- */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         if (3 == neutral_valence /* N or P */ && 1 < num_bonds)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             edge_cap++; /* allow -NH2(+)- => -N=, >NH(+)- => >N- */
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         edge_flow = inchi_min( edge_flow, edge_cap );
+    // INCHI✔️❌:         /*
+    // INCHI✔️❌:         if ( !nGetEndpointInfo( at, endpoint, &eif ) ) {
+    // INCHI✔️❌:         ret = BNS_BOND_ERR;
+    // INCHI✔️❌:         break;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         */
+    // INCHI✔️❌:         vert_endpoint->type |= BNS_VERT_TYPE_ENDPOINT;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Create a new edge connecting endpoint to the new fictitious t-group vertex vert_ficpoint */
+    // INCHI✔️❌:         edge = pBNS->edge + num_edges;
+    // INCHI✔️❌:         edge->cap = edge_cap;
+    // INCHI✔️❌:         edge->flow = edge_flow;
+    // INCHI✔️❌:         edge->pass = 0;
+    // INCHI✔️❌: #if ( RESET_EDGE_FORBIDDEN_MASK == 1 )
+    // INCHI✔️❌:         edge->forbidden &= pBNS->edge_forbidden_mask;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Adjust st_flow and st_cap of the adjacent vertices */
+    // INCHI✔️❌:         /* Adjust t-group vertex st-flow & cap */
+    // INCHI✔️❌:         vert_ficpoint->st_edge.flow += edge->flow;
+    // INCHI✔️❌:         vert_ficpoint->st_edge.cap += edge->flow;
+    // INCHI✔️❌:         /* adjust endpoint vertex st-flow & cap */
+    // INCHI✔️❌:         vert_endpoint->st_edge.flow += edge->flow;
+    // INCHI✔️❌:         vert_endpoint->st_edge.cap += edge->flow;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Adjust edge cap & flow according to the number of H and number of bonds */
+    // INCHI✔️❌:         for (k = 0; k < vert_endpoint->num_adj_edges; k++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             int iedge = vert_endpoint->iedge[k];
+    // INCHI✔️❌:             VertexFlow  nNewCap = vert_endpoint->st_edge.cap;
+    // INCHI✔️❌:             if (!pBNS->edge[iedge].cap)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /* single bond, possibly between endpoint and centerpoint */
+    // INCHI✔️❌:                 centerpoint = ( pBNS->edge[iedge].neighbor12 ^ endpoint );
+    // INCHI✔️❌:                 if (centerpoint < pBNS->num_atoms &&
+    // INCHI✔️❌:                      pBNS->vert[centerpoint].st_edge.cap >= 1)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     nNewCap = inchi_min( pBNS->vert[centerpoint].st_edge.cap, nNewCap );
+    // INCHI✔️❌:                     nNewCap = inchi_min( nNewCap, MAX_BOND_EDGE_CAP );
+    // INCHI✔️❌:                     pBNS->edge[iedge].cap = nNewCap;
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Connect edge to endpoint and fictpoint and increment the counters of neighbors and edges */
+    // INCHI✔️❌:         edge->neighbor1 = endpoint; /* the smallest out of v1=endopoint and v2=num_vertices */
+    // INCHI✔️❌:         edge->neighbor12 = endpoint ^ fictpoint; /* v1 ^ v2 */
+    // INCHI✔️❌:         vert_endpoint->iedge[vert_endpoint->num_adj_edges] = num_edges;
+    // INCHI✔️❌:         vert_ficpoint->iedge[vert_ficpoint->num_adj_edges] = num_edges++;
+    // INCHI✔️❌:         edge->neigh_ord[0] = vert_endpoint->num_adj_edges++;
+    // INCHI✔️❌:         edge->neigh_ord[1] = vert_ficpoint->num_adj_edges++;
+    // INCHI✔️❌:         edge->cap0 = edge->cap;
+    // INCHI✔️❌:         edge->flow0 = edge->flow;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     ret = pBNS->num_vertices; /* new t-group atom number */
+    // INCHI✔️❌:     pBNS->num_edges = num_edges;
+    // INCHI✔️❌:     pBNS->num_vertices += num_tg;
+    // INCHI✔️❌:     pBNS->num_t_groups += num_tg;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: CreateTGroupInBnStruct
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: CreateTGroupInBnStruct
+    // INCHI✔️❌: #define RESET_EDGE_FORBIDDEN_MASK 1
+    // INCHI✔️❌: #define BNS_ADD_EDGES 1
+    // INCHI✔️❌: #define BNS_ADD_SUPER_TGROUP 1
+    // INCHI✔️❌: #define MAX_BOND_EDGE_CAP 2
+    // END INCHI ACTIVE MACRO CONFIGURATION: CreateTGroupInBnStruct
+
+    // INCHI✔️❗: Update live fields at each native write, including aliased vertices
+    // and new/existing edges. No record snapshots/writeback or allocation;
+    // safe arena lookup and whole-call costs remain OPEN (BNS-GROUP-CONSTRUCTION).
     let num_tg = 1_i32;
     let mut num_edges = p_bns.num_edges;
     let num_vertices = p_bns.num_vertices;
     if num_vertices.wrapping_add(num_tg) >= p_bns.max_vertices {
         return Ok(BNS_VERT_EDGE_OVFL);
     }
-
     let mut num_endpoints = 0_i32;
     for endpoint in 0..num_atoms {
         let mut mask = 0_i32;
-        let type_ = GetAtomChargeType(atoms, endpoint, None, Some(&mut mask), 0)?;
+        let type_ = GetAtomChargeType(atoms.slice(heap)?, endpoint, None, Some(&mut mask), 0)?;
         if (n_type & type_) != 0 && (mask & n_mask) != 0 {
             num_endpoints = num_endpoints.wrapping_add(1);
         }
@@ -6950,127 +8916,122 @@ pub(crate) fn CreateTGroupInBnStruct(
     if num_endpoints == 0 {
         return Ok(0);
     }
-
-    *bns_vertex_mut(heap, p_bns, num_vertices)? = BNS_VERTEX::default();
-    let previous_vertex = bns_vertex(heap, p_bns, num_vertices - 1)?;
-    let mut vert_ficpoint = bns_vertex(heap, p_bns, num_vertices)?;
-    vert_ficpoint.iedge = previous_vertex
-        .iedge
-        .offset(i64::from(previous_vertex.max_adj_edges))?;
-    vert_ficpoint.max_adj_edges =
-        (num_endpoints + BNS_ADD_EDGES as i32 + BNS_ADD_SUPER_TGROUP as i32) as AT_NUMB;
-    vert_ficpoint.num_adj_edges = 0;
-    vert_ficpoint.st_edge.flow = 0;
-    vert_ficpoint.st_edge.flow0 = 0;
-    vert_ficpoint.st_edge.cap = 0;
-    vert_ficpoint.st_edge.cap0 = 0;
-    vert_ficpoint.type_ |= BNS_VERT_TYPE_TGROUP as AT_NUMB;
-    *bns_vertex_mut(heap, p_bns, num_vertices)? = vert_ficpoint;
-
-    let tg = 1_i32;
+    *heap.element_signed_mut(p_bns.vert, num_vertices)? = BNS_VERTEX::default();
+    let previous = heap.element_signed(p_bns.vert.as_const(), num_vertices - 1)?;
+    let iedge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
+    {
+        let vertex = heap.element_signed_mut(p_bns.vert, num_vertices)?;
+        vertex.iedge = iedge;
+        vertex.max_adj_edges =
+            (num_endpoints + BNS_ADD_EDGES as i32 + BNS_ADD_SUPER_TGROUP as i32) as AT_NUMB;
+        vertex.num_adj_edges = 0;
+        vertex.st_edge.flow0 = 0;
+        vertex.st_edge.flow = 0;
+        vertex.st_edge.cap0 = 0;
+        vertex.st_edge.cap = 0;
+        vertex.type_ |= BNS_VERT_TYPE_TGROUP as AT_NUMB;
+    }
     for endpoint in 0..num_atoms {
         let mut mask = 0_i32;
-        let type_ = GetAtomChargeType(atoms, endpoint, None, Some(&mut mask), 0)?;
+        let type_ = GetAtomChargeType(atoms.slice(heap)?, endpoint, None, Some(&mut mask), 0)?;
         if !((n_type & type_) != 0 && (mask & n_mask) != 0) {
             continue;
         }
-        let fictpoint = tg + num_vertices - 1;
-        let mut vert_ficpoint = bns_vertex(heap, p_bns, fictpoint)?;
-        let mut vert_endpoint = bns_vertex(heap, p_bns, endpoint)?;
-        if fictpoint >= p_bns.max_vertices
-            || num_edges >= p_bns.max_edges
-            || vert_ficpoint.num_adj_edges >= vert_ficpoint.max_adj_edges
-            || vert_endpoint.num_adj_edges >= vert_endpoint.max_adj_edges
-        {
+        let fictpoint = num_vertices;
+        if fictpoint >= p_bns.max_vertices || num_edges >= p_bns.max_edges {
             break;
         }
-
-        let atom = input_atom_ref(atoms, endpoint)?;
-        let neutral_valence = i32::from(atom.chem_bonds_valence)
-            .wrapping_add(i32::from(atom.num_H))
-            .wrapping_sub(i32::from(atom.charge));
+        {
+            let vertex = heap.element_signed(p_bns.vert.as_const(), fictpoint)?;
+            if vertex.num_adj_edges >= vertex.max_adj_edges {
+                break;
+            }
+        }
+        {
+            let vertex = heap.element_signed(p_bns.vert.as_const(), endpoint)?;
+            if vertex.num_adj_edges >= vertex.max_adj_edges {
+                break;
+            }
+        }
+        let atom = input_atom_ref(atoms.slice(heap)?, endpoint)?;
+        let neutral_valence =
+            i32::from(atom.chem_bonds_valence) + i32::from(atom.num_H) - i32::from(atom.charge);
         if neutral_valence != 2 && neutral_valence != 3 {
             break;
         }
-        let mut edge_flow = i32::from(atom.num_H);
         let num_bonds = i32::from(atom.valence);
-        let mut edge_cap = neutral_valence.wrapping_sub(num_bonds);
+        let mut edge_cap = neutral_valence - num_bonds;
         if neutral_valence == 3 && 1 < num_bonds {
-            edge_cap = edge_cap.wrapping_add(1);
+            edge_cap += 1;
         }
-        if edge_cap < edge_flow {
-            edge_flow = edge_cap;
+        let edge_flow = i32::from(atom.num_H).min(edge_cap);
+        heap.element_signed_mut(p_bns.vert, endpoint)?.type_ |= BNS_VERT_TYPE_ENDPOINT as AT_NUMB;
+        {
+            let edge = heap.element_signed_mut(p_bns.edge, num_edges)?;
+            edge.cap = edge_cap;
+            edge.flow = edge_flow;
+            edge.pass = 0;
+            edge.forbidden &= p_bns.edge_forbidden_mask;
         }
-
-        vert_endpoint.type_ |= BNS_VERT_TYPE_ENDPOINT as AT_NUMB;
-        let mut edge = bns_edge(heap, p_bns, num_edges)?;
-        edge.cap = edge_cap;
-        edge.flow = edge_flow;
-        edge.pass = 0;
-        edge.forbidden &= p_bns.edge_forbidden_mask;
-
-        vert_ficpoint.st_edge.flow = vert_ficpoint.st_edge.flow.wrapping_add(edge.flow);
-        vert_ficpoint.st_edge.cap = vert_ficpoint.st_edge.cap.wrapping_add(edge.flow);
-        vert_endpoint.st_edge.flow = vert_endpoint.st_edge.flow.wrapping_add(edge.flow);
-        vert_endpoint.st_edge.cap = vert_endpoint.st_edge.cap.wrapping_add(edge.flow);
-
-        for k in 0..i32::from(vert_endpoint.num_adj_edges) {
-            let iedge = bns_edge_index(heap, &vert_endpoint, k)?;
-            let current_edge = bns_edge(heap, p_bns, iedge)?;
-            if current_edge.cap == 0 {
-                let centerpoint = i32::from(current_edge.neighbor12 ^ endpoint as AT_NUMB);
+        for index in [fictpoint, endpoint] {
+            let vertex = heap.element_signed_mut(p_bns.vert, index)?;
+            vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(edge_flow);
+            vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(edge_flow);
+        }
+        let vertex = heap.element_signed(p_bns.vert.as_const(), endpoint)?;
+        let adjacency = vertex.iedge;
+        let degree = i32::from(vertex.num_adj_edges);
+        for k in 0..degree {
+            let iedge = *heap.element_signed(adjacency.as_const(), k)?;
+            let mut new_cap = heap
+                .element_signed(p_bns.vert.as_const(), endpoint)?
+                .st_edge
+                .cap;
+            let cap = heap.element_signed(p_bns.edge.as_const(), iedge)?.cap;
+            if cap == 0 {
+                let centerpoint = i32::from(
+                    heap.element_signed(p_bns.edge.as_const(), iedge)?
+                        .neighbor12,
+                ) ^ endpoint;
                 if centerpoint < p_bns.num_atoms {
-                    let center_cap = if centerpoint == endpoint {
-                        vert_endpoint.st_edge.cap
-                    } else {
-                        bns_vertex(heap, p_bns, centerpoint)?.st_edge.cap
-                    };
+                    let center_cap = heap
+                        .element_signed(p_bns.vert.as_const(), centerpoint)?
+                        .st_edge
+                        .cap;
                     if center_cap >= 1 {
-                        let mut n_new_cap = vert_endpoint.st_edge.cap;
-                        if center_cap < n_new_cap {
-                            n_new_cap = center_cap;
-                        }
-                        if n_new_cap > MAX_BOND_EDGE_CAP as i32 {
-                            n_new_cap = MAX_BOND_EDGE_CAP as i32;
-                        }
-                        bns_edge_mut(heap, p_bns, iedge)?.cap = n_new_cap;
+                        new_cap = new_cap.min(center_cap).min(MAX_BOND_EDGE_CAP as i32);
+                        heap.element_signed_mut(p_bns.edge, iedge)?.cap = new_cap;
                     }
                 }
             }
         }
-
-        edge.neighbor1 = endpoint as AT_NUMB;
-        edge.neighbor12 = (endpoint as AT_NUMB) ^ fictpoint as AT_NUMB;
-        work_set(
-            heap,
-            vert_endpoint.iedge,
-            i32::from(vert_endpoint.num_adj_edges),
-            num_edges,
-        )?;
-        work_set(
-            heap,
-            vert_ficpoint.iedge,
-            i32::from(vert_ficpoint.num_adj_edges),
-            num_edges,
-        )?;
-        edge.neigh_ord[0] = vert_endpoint.num_adj_edges;
-        vert_endpoint.num_adj_edges = vert_endpoint.num_adj_edges.wrapping_add(1);
-        edge.neigh_ord[1] = vert_ficpoint.num_adj_edges;
-        vert_ficpoint.num_adj_edges = vert_ficpoint.num_adj_edges.wrapping_add(1);
+        {
+            let edge = heap.element_signed_mut(p_bns.edge, num_edges)?;
+            edge.neighbor1 = endpoint as AT_NUMB;
+            edge.neighbor12 = (endpoint ^ fictpoint) as AT_NUMB;
+        }
+        let vertex = heap.element_signed(p_bns.vert.as_const(), endpoint)?;
+        let (adjacency, degree) = (vertex.iedge, i32::from(vertex.num_adj_edges));
+        *heap.element_signed_mut(adjacency, degree)? = num_edges;
+        let vertex = heap.element_signed(p_bns.vert.as_const(), fictpoint)?;
+        let (adjacency, degree) = (vertex.iedge, i32::from(vertex.num_adj_edges));
+        let new_edge = num_edges;
+        num_edges = num_edges.wrapping_add(1);
+        *heap.element_signed_mut(adjacency, degree)? = new_edge;
+        for (ordinal, index) in [(0, endpoint), (1, fictpoint)] {
+            let vertex = heap.element_signed_mut(p_bns.vert, index)?;
+            let degree = vertex.num_adj_edges;
+            vertex.num_adj_edges = degree.wrapping_add(1);
+            heap.element_signed_mut(p_bns.edge, new_edge)?.neigh_ord[ordinal] = degree;
+        }
+        let edge = heap.element_signed_mut(p_bns.edge, new_edge)?;
         edge.cap0 = edge.cap;
         edge.flow0 = edge.flow;
-
-        *bns_edge_mut(heap, p_bns, num_edges)? = edge;
-        *bns_vertex_mut(heap, p_bns, endpoint)? = vert_endpoint;
-        *bns_vertex_mut(heap, p_bns, fictpoint)? = vert_ficpoint;
-        num_edges = num_edges.wrapping_add(1);
     }
-
     let ret = p_bns.num_vertices;
     p_bns.num_edges = num_edges;
     p_bns.num_vertices = p_bns.num_vertices.wrapping_add(num_tg);
     p_bns.num_t_groups = p_bns.num_t_groups.wrapping_add(num_tg);
-
     Ok(ret)
 }
 
@@ -7162,82 +9123,76 @@ pub(crate) fn bAddNewVertex(
     // INCHI✔️❌: #define BNS_VERT_TYPE_TEMP 0x0040
     // END INCHI ACTIVE MACRO CONFIGURATION: bAddNewVertex
 
+    // Behavior: mutate fields in source order; old/new endpoints may coincide.
+    // LP64 pointer differences remain wide through the storage-limit predicate.
+    // Cost: no whole record snapshots/writebacks, O(1); safe lookup cost OPEN.
     let vlast = pBNS.num_vertices.wrapping_sub(1);
     let vnew = pBNS.num_vertices;
     let v2 = nVertDoubleBond;
     let iedge = pBNS.num_edges;
-
     if iedge >= pBNS.max_edges || vnew >= pBNS.max_vertices {
         return Ok(BNS_VERT_EDGE_OVFL);
     }
-
-    let last_vertex = bns_vertex(heap, pBNS, vlast)?;
-    let iedge_offset = last_vertex.iedge.difference(pBNS.iedge)?;
-    let iedge_limit = i32::try_from(iedge_offset)
-        .map_err(|_| SourceHeapError::PointerDifferenceOverflow)?
-        .wrapping_add(i32::from(last_vertex.max_adj_edges))
-        .wrapping_add(nMaxAdjEdges);
-    if iedge_limit >= pBNS.max_iedges {
+    let last = heap.element_signed(pBNS.vert.as_const(), vlast)?;
+    let last_iedge = last.iedge;
+    let last_max = last.max_adj_edges;
+    let limit = last_iedge
+        .difference(pBNS.iedge)?
+        .wrapping_add(i64::from(last_max))
+        .wrapping_add(i64::from(nMaxAdjEdges));
+    if limit >= i64::from(pBNS.max_iedges) {
         return Ok(BNS_VERT_EDGE_OVFL);
     }
-
-    let vert2 = bns_vertex(heap, pBNS, v2)?;
+    let vert2 = heap.element_signed(pBNS.vert.as_const(), v2)?;
     if vert2.num_adj_edges >= vert2.max_adj_edges || nMaxAdjEdges <= 0 {
         return Ok(BNS_VERT_EDGE_OVFL);
     }
-
-    let mut edge = bns_edge(heap, pBNS, iedge)?;
-    edge.cap = nCap;
-    edge.cap0 = nCap;
-    edge.flow = nFlow;
-    edge.flow0 = nFlow;
-    edge.pass = 0;
-    edge.neighbor1 = v2 as AT_NUMB;
-    edge.neighbor12 = (v2 ^ vnew) as AT_NUMB;
-    edge.forbidden = 0;
-
-    let mut new_vertex = bns_vertex(heap, pBNS, vnew)?;
-    new_vertex.max_adj_edges = nMaxAdjEdges as AT_NUMB;
-    new_vertex.num_adj_edges = 0;
-    new_vertex.st_edge.cap = nCap;
-    new_vertex.st_edge.cap0 = nCap;
-    new_vertex.st_edge.flow = nFlow;
-    new_vertex.st_edge.flow0 = nFlow;
-    new_vertex.st_edge.pass = 0;
-    new_vertex.iedge = last_vertex
-        .iedge
-        .offset(i64::from(last_vertex.max_adj_edges))?;
-    new_vertex.type_ = BNS_VERT_TYPE_TEMP as AT_NUMB;
-    *nDots = (*nDots).wrapping_add(nCap.wrapping_sub(nFlow));
-
-    edge.neigh_ord[usize::from(v2 > vnew)] = vert2.num_adj_edges;
-    edge.neigh_ord[usize::from(v2 < vnew)] = new_vertex.num_adj_edges;
-    *bns_edge_mut(heap, pBNS, iedge)? = edge;
-
-    let mut vert2 = bns_vertex(heap, pBNS, v2)?;
-    work_set(heap, vert2.iedge, i32::from(vert2.num_adj_edges), iedge)?;
-    vert2.num_adj_edges = vert2.num_adj_edges.wrapping_add(1);
-
-    work_set(
-        heap,
-        new_vertex.iedge,
-        i32::from(new_vertex.num_adj_edges),
-        iedge,
-    )?;
-    new_vertex.num_adj_edges = new_vertex.num_adj_edges.wrapping_add(1);
-
-    *nDots = (*nDots).wrapping_sub(vert2.st_edge.cap.wrapping_sub(vert2.st_edge.flow));
-    vert2.st_edge.flow = vert2.st_edge.flow.wrapping_add(nFlow);
-    if vert2.st_edge.cap < vert2.st_edge.flow {
-        vert2.st_edge.cap = vert2.st_edge.flow;
+    {
+        let edge = heap.element_signed_mut(pBNS.edge, iedge)?;
+        edge.cap = nCap;
+        edge.cap0 = nCap;
+        edge.flow = nFlow;
+        edge.flow0 = nFlow;
+        edge.pass = 0;
+        edge.neighbor1 = v2 as AT_NUMB;
+        edge.neighbor12 = (v2 ^ vnew) as AT_NUMB;
+        edge.forbidden = 0;
     }
-    *nDots = (*nDots).wrapping_add(vert2.st_edge.cap.wrapping_sub(vert2.st_edge.flow));
-
-    *bns_vertex_mut(heap, pBNS, v2)? = vert2;
-    *bns_vertex_mut(heap, pBNS, vnew)? = new_vertex;
+    {
+        let vertex = heap.element_signed_mut(pBNS.vert, vnew)?;
+        vertex.max_adj_edges = nMaxAdjEdges as AT_NUMB;
+        vertex.num_adj_edges = 0;
+        vertex.st_edge.cap = nCap;
+        vertex.st_edge.cap0 = nCap;
+        vertex.st_edge.flow = nFlow;
+        vertex.st_edge.flow0 = nFlow;
+        vertex.st_edge.pass = 0;
+        vertex.iedge = last_iedge.offset(i64::from(last_max))?;
+        vertex.type_ = BNS_VERT_TYPE_TEMP as AT_NUMB;
+    }
+    *nDots = (*nDots).wrapping_add(nCap.wrapping_sub(nFlow));
+    let old_order = heap.element_signed(pBNS.vert.as_const(), v2)?.num_adj_edges;
+    heap.element_signed_mut(pBNS.edge, iedge)?.neigh_ord[usize::from(v2 > vnew)] = old_order;
+    let new_order = heap
+        .element_signed(pBNS.vert.as_const(), vnew)?
+        .num_adj_edges;
+    heap.element_signed_mut(pBNS.edge, iedge)?.neigh_ord[usize::from(v2 < vnew)] = new_order;
+    for vertex_index in [v2, vnew] {
+        let vertex = heap.element_signed_mut(pBNS.vert, vertex_index)?;
+        let pointer = vertex.iedge;
+        let index = vertex.num_adj_edges;
+        vertex.num_adj_edges = index.wrapping_add(1);
+        work_set(heap, pointer, i32::from(index), iedge)?;
+    }
+    let vertex = heap.element_signed_mut(pBNS.vert, v2)?;
+    *nDots = (*nDots).wrapping_sub(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow));
+    vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(nFlow);
+    if vertex.st_edge.cap < vertex.st_edge.flow {
+        vertex.st_edge.cap = vertex.st_edge.flow;
+    }
+    *nDots = (*nDots).wrapping_add(vertex.st_edge.cap.wrapping_sub(vertex.st_edge.flow));
     pBNS.num_edges = pBNS.num_edges.wrapping_add(1);
     pBNS.num_vertices = pBNS.num_vertices.wrapping_add(1);
-
     Ok(vnew)
 }
 
@@ -7319,73 +9274,63 @@ pub(crate) fn AddNewEdge(
         return Ok(BNS_VERT_EDGE_OVFL);
     }
 
-    let mut p1 = bns_vertex(heap, pBNS, ip1)?;
-    let mut p2 = bns_vertex(heap, pBNS, ip2)?;
-    let p1_iedge_offset = p1.iedge.difference(pBNS.iedge)?;
-    let p2_iedge_offset = p2.iedge.difference(pBNS.iedge)?;
-    if p1_iedge_offset < 0
-        || p1_iedge_offset.wrapping_add(i64::from(p1.max_adj_edges)) > i64::from(pBNS.max_iedges)
-        || p2_iedge_offset < 0
-        || p2_iedge_offset.wrapping_add(i64::from(p2.max_adj_edges)) > i64::from(pBNS.max_iedges)
+    // Behavior: preserve debug short-circuit and each source write, including
+    // two self-edge adjacency stores before increments and both flow additions
+    // before cap comparisons. Cost: O(1), no clones; safe lookup costs OPEN.
+    let p1 = heap.element_signed(pBNS.vert.as_const(), ip1)?;
+    let p1_offset = p1.iedge.difference(pBNS.iedge)?;
+    if p1_offset < 0
+        || p1_offset.wrapping_add(i64::from(p1.max_adj_edges)) > i64::from(pBNS.max_iedges)
+    {
+        return Ok(BNS_VERT_EDGE_OVFL);
+    }
+    let p2 = heap.element_signed(pBNS.vert.as_const(), ip2)?;
+    let p2_offset = p2.iedge.difference(pBNS.iedge)?;
+    if p2_offset < 0
+        || p2_offset.wrapping_add(i64::from(p2.max_adj_edges)) > i64::from(pBNS.max_iedges)
         || p1.num_adj_edges >= p1.max_adj_edges
         || p2.num_adj_edges >= p2.max_adj_edges
     {
         return Ok(BNS_VERT_EDGE_OVFL);
     }
-
-    let mut edge = BNS_EDGE::default();
-    edge.neighbor1 = ip1.min(ip2) as AT_NUMB;
-    edge.neighbor12 = (ip1 ^ ip2) as AT_NUMB;
-
-    if ip1 == ip2 {
-        work_set(heap, p1.iedge, i32::from(p1.num_adj_edges), ie)?;
-        let ord = if ip1 > ip2 { 1 } else { 0 };
-        edge.neigh_ord[ord] = p1.num_adj_edges;
-        p1.num_adj_edges = p1.num_adj_edges.wrapping_add(1);
-        let ord = if ip1 < ip2 { 1 } else { 0 };
-        edge.neigh_ord[ord] = p1.num_adj_edges;
-        p1.num_adj_edges = p1.num_adj_edges.wrapping_add(1);
-        edge.cap = nEdgeCap;
-        edge.cap0 = nEdgeCap;
-        edge.flow = nEdgeFlow;
-        edge.flow0 = nEdgeFlow;
-        p1.st_edge.flow = p1.st_edge.flow.wrapping_add(nEdgeFlow);
-        if p1.st_edge.cap < p1.st_edge.flow {
-            p1.st_edge.cap = p1.st_edge.flow;
-        }
-        p1.st_edge.flow = p1.st_edge.flow.wrapping_add(nEdgeFlow);
-        if p1.st_edge.cap < p1.st_edge.flow {
-            p1.st_edge.cap = p1.st_edge.flow;
-        }
-        *bns_vertex_mut(heap, pBNS, ip1)? = p1;
-    } else {
-        work_set(heap, p1.iedge, i32::from(p1.num_adj_edges), ie)?;
-        work_set(heap, p2.iedge, i32::from(p2.num_adj_edges), ie)?;
-        let p1_ord = if ip1 > ip2 { 1 } else { 0 };
-        edge.neigh_ord[p1_ord] = p1.num_adj_edges;
-        p1.num_adj_edges = p1.num_adj_edges.wrapping_add(1);
-        let p2_ord = if ip1 < ip2 { 1 } else { 0 };
-        edge.neigh_ord[p2_ord] = p2.num_adj_edges;
-        p2.num_adj_edges = p2.num_adj_edges.wrapping_add(1);
-        edge.cap = nEdgeCap;
-        edge.cap0 = nEdgeCap;
-        edge.flow = nEdgeFlow;
-        edge.flow0 = nEdgeFlow;
-        p1.st_edge.flow = p1.st_edge.flow.wrapping_add(nEdgeFlow);
-        p2.st_edge.flow = p2.st_edge.flow.wrapping_add(nEdgeFlow);
-        if p1.st_edge.cap < p1.st_edge.flow {
-            p1.st_edge.cap = p1.st_edge.flow;
-        }
-        if p2.st_edge.cap < p2.st_edge.flow {
-            p2.st_edge.cap = p2.st_edge.flow;
-        }
-        *bns_vertex_mut(heap, pBNS, ip1)? = p1;
-        *bns_vertex_mut(heap, pBNS, ip2)? = p2;
+    let p1_iedge = p1.iedge;
+    let p1_count = p1.num_adj_edges;
+    let p2_iedge = p2.iedge;
+    let p2_count = p2.num_adj_edges;
+    {
+        let edge = heap.element_signed_mut(pBNS.edge, ie)?;
+        *edge = BNS_EDGE::default();
+        edge.neighbor1 = ip1.min(ip2) as AT_NUMB;
+        edge.neighbor12 = (ip1 ^ ip2) as AT_NUMB;
     }
-
-    *bns_edge_mut(heap, pBNS, ie)? = edge;
+    work_set(heap, p1_iedge, i32::from(p1_count), ie)?;
+    work_set(heap, p2_iedge, i32::from(p2_count), ie)?;
+    let vertex = heap.element_signed_mut(pBNS.vert, ip1)?;
+    let order = vertex.num_adj_edges;
+    vertex.num_adj_edges = order.wrapping_add(1);
+    heap.element_signed_mut(pBNS.edge, ie)?.neigh_ord[usize::from(ip1 > ip2)] = order;
+    let vertex = heap.element_signed_mut(pBNS.vert, ip2)?;
+    let order = vertex.num_adj_edges;
+    vertex.num_adj_edges = order.wrapping_add(1);
+    heap.element_signed_mut(pBNS.edge, ie)?.neigh_ord[usize::from(ip1 < ip2)] = order;
+    {
+        let edge = heap.element_signed_mut(pBNS.edge, ie)?;
+        edge.cap = nEdgeCap;
+        edge.cap0 = nEdgeCap;
+        edge.flow = nEdgeFlow;
+        edge.flow0 = nEdgeFlow;
+    }
+    for index in [ip1, ip2] {
+        let vertex = heap.element_signed_mut(pBNS.vert, index)?;
+        vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(nEdgeFlow);
+    }
+    for index in [ip1, ip2] {
+        let vertex = heap.element_signed_mut(pBNS.vert, index)?;
+        if vertex.st_edge.cap < vertex.st_edge.flow {
+            vertex.st_edge.cap = vertex.st_edge.flow;
+        }
+    }
     pBNS.num_edges = pBNS.num_edges.wrapping_add(1);
-
     Ok(ie)
 }
 
@@ -7658,7 +9603,9 @@ pub(crate) fn bAddStCapToAVertex(
     // END INCHI ACTIVE MACRO CONFIGURATION: bAddStCapToAVertex
 
     let mut n = 0_i32;
-    let mut vert1 = bns_vertex(heap, pBNS, v1)?;
+    // Behavior: direct field updates retain old-cap writes and skip gates.
+    // Cost: no record clones/writebacks, O(degree)/O(1); safe checks OPEN.
+    let vert1 = bns_vertex_mut(heap, pBNS, v1)?;
     *nOldCapVertSingleBond
         .get_mut(usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .ok_or(SourceHeapError::PointerOutOfBounds)? = vert1.st_edge.cap;
@@ -7670,12 +9617,16 @@ pub(crate) fn bAddStCapToAVertex(
     let vert1_num_adj_edges = vert1.num_adj_edges;
     let vert1_iedge = vert1.iedge;
     let vert1_st_cap = vert1.st_edge.cap;
-    *bns_vertex_mut(heap, pBNS, v1)? = vert1;
 
     if (vert1_type & BNS_VERT_TYPE_ANY_GROUP as AT_NUMB) == 0 {
         for i in 0..i32::from(vert1_num_adj_edges) {
             let iedge = work_get(heap, vert1_iedge, i)?;
-            let mut edge = bns_edge(heap, pBNS, iedge)?;
+            let edge_index =
+                usize::try_from(iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let edge = heap
+                .slice(pBNS.edge.as_const())?
+                .get(edge_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             *nOldCapVertSingleBond
                 .get_mut(usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = edge.cap;
@@ -7686,7 +9637,12 @@ pub(crate) fn bAddStCapToAVertex(
                 continue;
             }
 
-            let vert = bns_vertex(heap, pBNS, v)?;
+            let vertex_index =
+                usize::try_from(v).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let vert = heap
+                .slice(pBNS.vert.as_const())?
+                .get(vertex_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if (vert.type_ & BNS_VERT_TYPE_ANY_GROUP as AT_NUMB) != 0 {
                 continue;
             }
@@ -7696,12 +9652,82 @@ pub(crate) fn bAddStCapToAVertex(
                 .cap
                 .min(vert1_st_cap)
                 .min(MAX_BOND_EDGE_CAP as VertexFlow);
-            edge.cap = n_new_cap;
-            *bns_edge_mut(heap, pBNS, iedge)? = edge;
+            bns_edge_mut(heap, pBNS, iedge)?.cap = n_new_cap;
         }
     }
 
     Ok(n)
+}
+
+// Private transient access to source stack scratch or the original arena pointer.
+// No pointer identity is invented, and no view escapes the synchronous call.
+enum SourceFlowChanges<'a> {
+    Pointer(SourceMutPointer<BNS_FLOW_CHANGES>),
+    Borrowed(&'a mut [BNS_FLOW_CHANGES]),
+}
+
+impl SourceFlowChanges<'_> {
+    #[inline(always)]
+    fn slice<'b>(
+        &'b self,
+        heap: &'b SourceHeap,
+    ) -> Result<&'b [BNS_FLOW_CHANGES], SourceHeapError> {
+        match self {
+            Self::Pointer(pointer) => heap.slice(pointer.as_const()),
+            Self::Borrowed(values) => Ok(values),
+        }
+    }
+
+    #[inline(always)]
+    fn slice_mut<'b>(
+        &'b mut self,
+        heap: &'b mut SourceHeap,
+    ) -> Result<&'b mut [BNS_FLOW_CHANGES], SourceHeapError> {
+        match self {
+            Self::Pointer(pointer) => heap.slice_mut(*pointer),
+            Self::Borrowed(values) => Ok(values),
+        }
+    }
+
+    #[inline(always)]
+    fn get(&self, heap: &SourceHeap, index: i32) -> Result<BNS_FLOW_CHANGES, SourceHeapError> {
+        let index = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        self.slice(heap)?
+            .get(index)
+            .cloned()
+            .ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+
+    #[inline(always)]
+    fn set(
+        &mut self,
+        heap: &mut SourceHeap,
+        index: i32,
+        value: BNS_FLOW_CHANGES,
+    ) -> Result<(), SourceHeapError> {
+        let index = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        *self
+            .slice_mut(heap)?
+            .get_mut(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn suffix(&mut self, elements: i64) -> Result<SourceFlowChanges<'_>, SourceHeapError> {
+        match self {
+            Self::Pointer(pointer) => Ok(SourceFlowChanges::Pointer(pointer.offset(elements)?)),
+            Self::Borrowed(values) => {
+                let index =
+                    usize::try_from(elements).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                Ok(SourceFlowChanges::Borrowed(
+                    values
+                        .get_mut(index..)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ))
+            }
+        }
+    }
 }
 
 #[allow(non_snake_case)]
@@ -7750,27 +9776,697 @@ pub(crate) fn bSetBnsToCheckAltPath(
     // INCHI✔️❌: #define IS_BNS_ERROR(X) (BNS_ERR <= (X) && (X) <= BNS_MAX_ERR_VALUE)
     // END INCHI ACTIVE MACRO CONFIGURATION: bSetBnsToCheckAltPath
 
+    set_bns_to_check_alt_path_buffer(
+        heap,
+        pBNS,
+        nVertDoubleBond,
+        nVertSingleBond,
+        type_,
+        path_type,
+        apc,
+        &mut SourceFlowChanges::Pointer(fcd),
+        nDots,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn set_bns_to_check_alt_path_buffer(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    nVertDoubleBond: i32,
+    nVertSingleBond: i32,
+    type_: AT_NUMB,
+    path_type: i32,
+    apc: &mut ALT_PATH_CHANGES,
+    fcd: &mut SourceFlowChanges<'_>,
+    nDots: &mut i32,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: set_bns_to_check_alt_path_buffer (ichi_bns.c:6778)
+    // int bSetBnsToCheckAltPath( BN_STRUCT *pBNS,
+    //                            int nVertDoubleBond,
+    //                            int nVertSingleBond,
+    //                            AT_NUMB type,
+    //                            int path_type,
+    //                            ALT_PATH_CHANGES *apc,
+    //                            BNS_FLOW_CHANGES *fcd,
+    //                            int *nDots )
+    // {
+    //
+    //     if (!pBNS->vert[nVertDoubleBond].st_edge.flow &&
+    //
+    //          !( path_type == ALT_PATH_MODE_REM2H_CHG ||
+    //             path_type == ALT_PATH_MODE_ADD2H_CHG ||
+    //             path_type == ALT_PATH_MODE_REM2H_TST ||
+    //             path_type == ALT_PATH_MODE_ADD2H_TST )
+    //          )
+    //     {
+    //         return BNS_CHK_ALTP_NO_ALTPATH;
+    //     }
+    //     else
+    //     {
+    //         Vertex      vNew;
+    //         Vertex      v1 = nVertSingleBond;
+    //         Vertex      v2 = nVertDoubleBond;
+    //
+    //         BNS_VERTEX *pVert1 = pBNS->vert + v1;
+    //         BNS_VERTEX *pVert2 = pBNS->vert + v2;
+    //         int n, bAdjacentDonors = 0;
+    //         int ifcd = 0;
+    //
+    //         Vertex     t1 = NO_VERTEX;
+    //         Vertex     t2 = NO_VERTEX;
+    //         int        iapc;
+    //
+    //         /*#if ( TEST_REMOVE_S_ATOMS == 1 )*/ /* && ALT_PATH_MODE_4_SALT == path_type */
+    //         if (( *pBNS->pbTautFlags & TG_FLAG_TEST_TAUT2_SALTS ) &&
+    //              ALT_PATH_MODE_4_SALT2 == path_type &&
+    //              ( BNS_VERT_TYPE_ENDPOINT & type ))
+    //         {
+    //             /*
+    //             ---------------------------------------------------------
+    //             \   action |  DB action (v2)   |   SB action (v1)  |
+    //             vertex \        | accept H @ vertex | donate H @ vertex |
+    //             type     \      | nVertDoubleBond   | nVertSingleBond   |
+    //             ----------------+-------------------+-------------------+
+    //             -ZH (v1)    |  error            |   -ZH(.)          |
+    //             (cap>0 on edge  |                   |   increment       |
+    //             except v1-v2)  |                   |   st-cap on Z     |
+    //             ----------------+-------------------+-------------------+
+    //             =Z  (v2)    |  =Z-(.)           |   error           |
+    //             (st-flow>0)   |  add fict vertex  |                   |
+    //             |  with st-cap=1    |                   |
+    //             ----------------+-------------------+-------------------+
+    //             endpoint      |  T(.)             |   T-(.)           |
+    //             of t-group    |  increment        |   add fict vertex |
+    //             represented   |  st-cap on T      |   with st-cap=1   |
+    //             by fictitious |                   |                   |
+    //             vertex T      |                   |                   |
+    //             ---------------------------------------------------------
+    //             */
+    //
+    //             int         bSet_v1;  /* indicator: v1 has been set */
+    //             int         bSet_v2;  /* indicator: v2 has been set */
+    //             int         i;
+    //
+    //             Vertex      v1t = NO_VERTEX;
+    //             Vertex      v2t = NO_VERTEX;
+    //             Vertex      v1Act, v2Act;
+    //             Vertex      v;
+    //
+    //             memset( apc, 0, sizeof( *apc ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //             fcd[ifcd].iedge = NO_VERTEX;
+    //             *nDots = 0;
+    //
+    //             if (v1 == v2)
+    //             {
+    //                 return BNS_CHK_ALTP_SAME_VERTEX;
+    //             }
+    //
+    //             /* Check whether v1 has neighbors adjacent to multiple bonds */
+    //             for (i = 0, n = 0; i < pVert1->num_adj_edges; i++)
+    //             {
+    //                 v = ( pBNS->edge + pVert1->iedge[i] )->neighbor12 ^ v1; /* v is adjacent to v1 */
+    //                 if (v == v2)
+    //                 {
+    //                     continue; /* ignore connection to v2 */
+    //                 }
+    //                 n += ( pBNS->vert[v].st_edge.cap > 0 );
+    //             }
+    //             if (!n)
+    //             {
+    //                 return BNS_CHK_ALTP_NO_ALTPATH; /* the vertex cannot have flow */
+    //             }
+    //
+    //             v1Act = v1;
+    //             v2Act = v2;
+    //
+    //             /* find t-group that contains v1 */
+    //             if (( pVert1->type & type ) == type)
+    //             {
+    //                 v1t = GetGroupVertex( pBNS, v1, type );
+    //                 if (IS_BNS_ERROR( v1t ))
+    //                 {
+    //                     return v1t;
+    //                 }
+    //                 if (v1t != NO_VERTEX)
+    //                 {
+    //                     v1Act = v1t;
+    //                 }
+    //             }
+    //             /* Find t-group that contains v2 */
+    //             if (( pVert2->type & type ) == type)
+    //             {
+    //                 v2t = GetGroupVertex( pBNS, v2, type );
+    //                 if (IS_BNS_ERROR( v2t ))
+    //                 {
+    //                     return v2t;
+    //                 }
+    //                 if (v2t != NO_VERTEX)
+    //                 {
+    //                     v2Act = v2t;
+    //                 }
+    //             }
+    //             if (v1t != NO_VERTEX && v1t == v2t)
+    //             {
+    //                 return BNS_CHK_ALTP_SAME_TGROUP;
+    //             }
+    //
+    //             bSet_v1 = bSet_v2 = 0;
+    //             /* create new edges adjacent to v1t or v2 */
+    //             iapc = 0;
+    //             if (v1t != NO_VERTEX)
+    //             {
+    //                 /* Create new edge and vertex, connect to v1t */
+    //                 vNew = bAddNewVertex( pBNS, v1t, 1, 0, 1, nDots );
+    //                 if (IS_BNS_ERROR( vNew ))
+    //                 {
+    //                     return vNew;
+    //                 }
+    //                 apc->vNewVertex[iapc] = vNew;
+    //                 apc->bSetNew[iapc] = 1;
+    //                 bSet_v1 = 1;
+    //                 iapc++;
+    //             }
+    //             if (v2t == NO_VERTEX)
+    //             {
+    //                 /* Create new edge and vertex, connect to v2 */
+    //                 vNew = bAddNewVertex( pBNS, v2, 1, 0, 1, nDots );
+    //                 if (IS_BNS_ERROR( vNew ))
+    //                 {
+    //                     return vNew;
+    //                 }
+    //                 apc->vNewVertex[iapc] = vNew;
+    //                 apc->bSetNew[iapc] = 1;
+    //                 bSet_v2 = 1;
+    //                 iapc++;
+    //             }
+    //
+    //             /* Add st-cap to v1 and/or v2t */
+    //             iapc = 0;
+    //             if (!bSet_v1)
+    //             {
+    //                 /* Add st-cap to v1 */
+    //                 if (v1t != NO_VERTEX) /* djb-rwth: addressing coverity ID #499551 -- condition properly written */
+    //                 {
+    //                     return BNS_BOND_ERR;
+    //                 }
+    //                 n = bAddStCapToAVertex( pBNS, v1, v2Act, apc->nOldCapsVert[iapc], nDots, 0 );
+    //                 apc->bSetOldCapsVert[iapc] = n;
+    //                 apc->vOldVert[iapc] = v1;
+    //                 iapc++;
+    //             }
+    //             if (!bSet_v2)
+    //             {
+    //                 /* Add st-cap to v2t */
+    //                 if (v2t == NO_VERTEX)
+    //                 {
+    //                     return BNS_BOND_ERR;
+    //                 }
+    //                 n = bAddStCapToAVertex( pBNS, v2t, v1Act, apc->nOldCapsVert[iapc], nDots, 0 );
+    //                 apc->bSetOldCapsVert[iapc] = n;
+    //                 apc->vOldVert[iapc] = v2t;
+    //                 iapc++;
+    //             }
+    //             if (*nDots < 0 || *nDots % 2)
+    //             {
+    //                 return BNS_SET_ALTP_ERR;
+    //             }
+    //             return BNS_CHK_ALTP_SET_SUCCESS;
+    //         }
+    //
+    //         /* ( *pBNS->pbTautFlags & TG_FLAG_TEST_TAUT2_SALTS ) */
+    //
+    //         /*#endif*/
+    //
+    //         /*  ( TEST_REMOVE_S_ATOMS == 1 && ALT_PATH_MODE_4_SALT == path_type ) */
+    //
+    //         if (path_type == ALT_PATH_MODE_REM2H_CHG ||
+    //              path_type == ALT_PATH_MODE_ADD2H_CHG ||
+    //              path_type == ALT_PATH_MODE_REM2H_TST ||
+    //              path_type == ALT_PATH_MODE_ADD2H_TST)
+    //         {
+    //             /* added 2004-03-18 */
+    //
+    //             int bDonors = ( path_type == ALT_PATH_MODE_REM2H_CHG ) || ( path_type == ALT_PATH_MODE_REM2H_TST );
+    //
+    //             int         bSet_v1;  /* indicator: v1 has been set */
+    //             int         bSet_v2;  /* indicator: v2 has been set */
+    //             int         i, cap = 1;
+    //             Vertex      v1t = NO_VERTEX;
+    //             Vertex      v2t = NO_VERTEX;
+    //             Vertex      v1Act, v2Act;
+    //             Vertex      v;
+    //
+    //             memset( apc, 0, sizeof( *apc ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //             fcd[ifcd].iedge = NO_VERTEX;
+    //             *nDots = 0;
+    //             /*
+    //             if ( v1 == v2 ) {
+    //             return BNS_CHK_ALTP_SAME_VERTEX;
+    //             }
+    //             */
+    //
+    //             /* Check whether v1 and v2 have proper neighbors  */
+    //             for (i = 0, n = bAdjacentDonors = 0; i < pVert1->num_adj_edges; i++)
+    //             {
+    //                 v = ( pBNS->edge + pVert1->iedge[i] )->neighbor12 ^ v1; /* v is adjacent to v1 */
+    //                                                                         /* do not ignore connection to v2
+    //                                                                         if ( v == v2 )
+    //                                                                         continue;
+    //                                                                         */
+    //                 n += bDonors ? ( pBNS->vert[v].st_edge.cap > 0 )
+    //                     : ( ( pBNS->edge + pVert1->iedge[i] )->flow > 0 );
+    //                 bAdjacentDonors += bDonors ? ( v == v2 ) && ( ( pBNS->edge + pVert1->iedge[i] )->flow < MAX_BOND_EDGE_CAP ) : 0;
+    //                 /* two donors connected by a single or double bond */
+    //             }
+    //
+    //             if (!n && !bAdjacentDonors)
+    //             {
+    //                 return BNS_CHK_ALTP_NO_ALTPATH; /* the vertex cannot have flow */
+    //             }
+    //             for (i = 0, n = bAdjacentDonors = 0; i < pVert2->num_adj_edges; i++)
+    //             {
+    //                 v = ( pBNS->edge + pVert2->iedge[i] )->neighbor12 ^ v2; /* v is adjacent to v2 */
+    //                                                                         /* do not ignore connection to v1
+    //                                                                         if ( v == v1 )
+    //                                                                         continue;
+    //                                                                         */
+    //                 n += bDonors ? ( pBNS->vert[v].st_edge.cap > 0 ) : ( ( pBNS->edge + pVert2->iedge[i] )->flow > 0 );
+    //                 bAdjacentDonors += bDonors ? ( v == v1 ) && ( ( pBNS->edge + pVert2->iedge[i] )->flow < MAX_BOND_EDGE_CAP ) : 0;
+    //                 /* two donors connected by a single or double bond */
+    //             }
+    //
+    //             if (!n && !bAdjacentDonors)
+    //             {
+    //                 return BNS_CHK_ALTP_NO_ALTPATH; /* the vertex cannot have flow */
+    //             }
+    //
+    //             v1Act = v1;
+    //             v2Act = v2;
+    //
+    //             /* Find t-group that contains v1 */
+    //             if (( pVert1->type & type ) == type)
+    //             {
+    //                 v1t = GetGroupVertex( pBNS, v1, type );
+    //                 if (BNS_BOND_ERR == v1t)
+    //                 {
+    //                     v1t = NO_VERTEX;
+    //                 }
+    //                 else
+    //                 {
+    //                     if (IS_BNS_ERROR( v1t ))
+    //                     {
+    //                         return v1t;
+    //                     }
+    //                     else
+    //                     {
+    //                         if (v1t != NO_VERTEX)
+    //                         {
+    //                             v1Act = v1t;
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //
+    //             /* Find t-group that contains v2 */
+    //             if (( pVert2->type & type ) == type)
+    //             {
+    //                 v2t = GetGroupVertex( pBNS, v2, type );
+    //                 if (BNS_BOND_ERR == v2t)
+    //                 {
+    //                     v2t = NO_VERTEX;
+    //                 }
+    //                 else
+    //                 {
+    //                     if (IS_BNS_ERROR( v2t ))
+    //                     {
+    //                         return v2t;
+    //                     }
+    //                     else
+    //                     {
+    //                         if (v2t != NO_VERTEX)
+    //                         {
+    //                             v2Act = v2t;
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //
+    //             if (v1t != NO_VERTEX && v1t == v2t)
+    //             {
+    //                 cap = 2; /* same t-group */
+    //             }
+    //
+    //             /*  bAddNewVertex: (bDonors != 0) == (vit != NO_VERTEX), i=1,2 */
+    //             bSet_v1 = bSet_v2 = 0;
+    //             /* create new edges adjacent to v1t or v2 */
+    //             iapc = 0;
+    //             if (( bDonors != 0 ) == ( v1t != NO_VERTEX ))
+    //             {
+    //                 /* Create new edge and vertex, connect to v1Act */
+    //                 vNew = bAddNewVertex( pBNS, v1Act, cap, 0, 1, nDots );
+    //                 if (IS_BNS_ERROR( vNew ))
+    //                 {
+    //                     return vNew;
+    //                 }
+    //                 apc->vNewVertex[iapc] = vNew;
+    //                 apc->bSetNew[iapc] = 1;
+    //                 bSet_v1 = 1;
+    //                 iapc++;
+    //             }
+    //             if (( bDonors != 0 ) == ( v2t != NO_VERTEX ) && cap == 1)
+    //             {
+    //                 /* Create new edge and vertex, connect to v2Act; do not do it if cap==2 */
+    //                 vNew = bAddNewVertex( pBNS, v2Act, cap, 0, 1, nDots );
+    //                 if (IS_BNS_ERROR( vNew ))
+    //                 {
+    //                     return vNew;
+    //                 }
+    //                 apc->vNewVertex[iapc] = vNew;
+    //                 apc->bSetNew[iapc] = 1;
+    //                 bSet_v2 = 1;
+    //                 iapc++;
+    //             }
+    //             else
+    //             {
+    //                 if (( bDonors != 0 ) == ( v2t != NO_VERTEX ))
+    //                 {
+    //                     bSet_v2 = 1;
+    //                 }
+    //             }
+    //
+    //             /* Add st-cap to v1 and/or v2t */
+    //             iapc = 0;
+    //             /* If cap=2 then just increment st_cap 2 times */
+    //             if (!bSet_v1)
+    //             {
+    //                 /* Add st-cap to v1 */
+    //                 if (( bDonors != 0 ) == ( v1t != NO_VERTEX ))
+    //                 {
+    //                     return BNS_BOND_ERR;
+    //                 }
+    //                 n = bAddStCapToAVertex( pBNS, v1Act, v2Act, apc->nOldCapsVert[iapc], nDots, bAdjacentDonors );
+    //                 apc->bSetOldCapsVert[iapc] = n;
+    //                 apc->vOldVert[iapc] = v1Act;
+    //                 iapc++;
+    //             }
+    //             if (!bSet_v2)
+    //             {
+    //                 /* Add st-cap to v2t */
+    //                 if (( bDonors != 0 ) == ( v2t != NO_VERTEX ))
+    //                 {
+    //                     return BNS_BOND_ERR;
+    //                 }
+    //                 n = bAddStCapToAVertex( pBNS, v2Act, v1Act, apc->nOldCapsVert[iapc], nDots, bAdjacentDonors );
+    //                 apc->bSetOldCapsVert[iapc] = n;
+    //                 apc->vOldVert[iapc] = v2Act;
+    //                 iapc++;
+    //             }
+    //             if (*nDots < 0 || *nDots % 2)
+    //             {
+    //                 return BNS_SET_ALTP_ERR;
+    //             }
+    //             return BNS_CHK_ALTP_SET_SUCCESS;
+    //         }
+    //
+    //         if (path_type == ALT_PATH_MODE_REM_PROTON)
+    //         {
+    //             /* added 2004-03-05 */
+    //             if (v1 >= 0 && v2 >= 0 &&
+    //                 ( pVert1->type & BNS_VERT_TYPE_ANY_GROUP ) &&
+    //                  ( pVert2->type & BNS_VERT_TYPE_ANY_GROUP ))
+    //             {
+    //                 /* Create new edge and vertex, connect to v2 */
+    //                 if (( pBNS->vert[v1].type & BNS_VERT_TYPE_C_GROUP ) &&
+    //                     ( pBNS->vert[v1].st_edge.flow == 2 * pBNS->vert[v1].num_adj_edges ))
+    //                 {
+    //                     /* so far in a charge group max edge flow = 1 2004-03-08 */
+    //                     return BNS_CHK_ALTP_NO_ALTPATH;
+    //                 }
+    //                 memset( apc, 0, sizeof( *apc ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //                 fcd[ifcd].iedge = NO_VERTEX;
+    //                 *nDots = 0;
+    //                 iapc = 0;
+    //
+    //                 vNew = bAddNewVertex( pBNS, v2, 1, 0, 1, nDots );
+    //                 if (IS_BNS_ERROR( vNew ))
+    //                 {
+    //                     return vNew;
+    //                 }
+    //                 apc->vNewVertex[iapc] = vNew;
+    //                 apc->bSetNew[iapc] = 1;
+    //                 /*iapc ++;*/
+    //                 /* add st-cap (dot) to v1 */
+    //                 n = bAddStCapToAVertex( pBNS, v1, v2, apc->nOldCapsVert[iapc], nDots, 0 );
+    //                 apc->bSetOldCapsVert[iapc] = n;
+    //                 apc->vOldVert[iapc] = v1;
+    //                 iapc++;
+    //                 return BNS_CHK_ALTP_SET_SUCCESS;
+    //             }
+    //         }
+    //
+    // #if ( NEUTRALIZE_ENDPOINTS == 1 ) /* { */
+    //
+    //         *nDots = 0;
+    //         memset( apc, 0, sizeof( *apc ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //         fcd[ifcd].iedge = NO_VERTEX;
+    //
+    //         if (type & BNS_VERT_TYPE_ENDPOINT)
+    //         {
+    //             BNS_IEDGE  iedge;
+    //             AT_NUMB    type2;
+    //             int ret2;
+    //             /* prohibit charge movement */
+    //             type2 = BNS_VERT_TYPE_C_GROUP;
+    //             iedge = GetEdgeToGroupVertex( pBNS, v1, type2 );
+    //             if (iedge != NO_VERTEX)
+    //             {
+    //                 /*  Set flow=1 on an edge to a c-group vertex to make sure
+    //                 there is no positive charge when moving tautomeric H-atoms */
+    //                 ret2 = bSetFlowToCheckOneBond( pBNS, iedge, 1, fcd + ifcd );
+    //                 if (IS_BNS_ERROR( ret2 ))
+    //                 {
+    //                     return ret2;
+    //                 }
+    //                 *nDots += ret2;
+    //                 while (fcd[ifcd].iedge != NO_VERTEX)
+    //                 {
+    //                     ifcd++;
+    //                 }
+    //             }
+    //
+    //             iedge = GetEdgeToGroupVertex( pBNS, v2, type2 );
+    //
+    //             if (iedge != NO_VERTEX)
+    //             {
+    //                 /*  Set flow=1 on an edge to a c-group vertex to make sure
+    //                 there is no positive charge when moving tautomeric H-atoms */
+    //
+    //                 ret2 = bSetFlowToCheckOneBond( pBNS, iedge, 1, fcd + ifcd );
+    //
+    //                 if (IS_BNS_ERROR( ret2 ))
+    //                 {
+    //                     return ret2;
+    //                 }
+    //                 *nDots += ret2;
+    //                 while (fcd[ifcd].iedge != NO_VERTEX)
+    //                 {
+    //                     ifcd++;
+    //                 }
+    //             }
+    //
+    //             /* Set hydrogen counts */
+    //             type2 = BNS_VERT_TYPE_TGROUP;
+    //             iedge = GetEdgeToGroupVertex( pBNS, v1, type2 );
+    //             if (iedge != NO_VERTEX)
+    //             {
+    //                 /*  Set flow=1 on an edge to a t-group vertex to make sure there is
+    //                 a moveable hydrogen atom or (-) on v1 when moving tautomeric H-atoms */
+    // #if ( FIX_H_CHECKING_TAUT == 1 )
+    //                 ret2 = bSetFlowToCheckOneBond( pBNS, iedge, 1, fcd + ifcd );
+    //                 if (IS_BNS_ERROR( ret2 ))
+    //                 {
+    //                     return ret2;
+    //                 }
+    //                 *nDots += ret2;
+    //                 while (fcd[ifcd].iedge != NO_VERTEX)
+    //                 {
+    //                     ifcd++;
+    //                 }
+    // #else
+    //                 t1 = pBNS->edge[iedge].neighbor12 ^ v1;
+    // #endif
+    //             }
+    //
+    //             iedge = GetEdgeToGroupVertex( pBNS, v2, type2 );
+    //             if (iedge != NO_VERTEX)
+    //             {
+    //                 /*  Set flow=0 on an edge to a t-group vertex to make sure there is
+    //                 no moveable hydrogen atom or (-) on v2 when moving tautomeric H-atoms  */
+    // #if ( FIX_H_CHECKING_TAUT == 1 )
+    //                 ret2 = bSetFlowToCheckOneBond( pBNS, iedge, 0, fcd + ifcd );
+    //                 if (IS_BNS_ERROR( ret2 ))
+    //                 {
+    //                     return ret2;
+    //                 }
+    //                 *nDots += ret2;
+    //                 while (fcd[ifcd].iedge != NO_VERTEX)
+    //                 {
+    //                     ifcd++;
+    //                 }
+    // #else
+    //                 t2 = pBNS->edge[iedge].neighbor12 ^ v2;
+    // #endif
+    //             }
+    //
+    // #if ( FIX_H_CHECKING_TAUT == 1 )
+    // #else
+    //             if (t1 == t2 && t1 != NO_VERTEX)
+    //             {
+    //                 return BNS_CHK_ALTP_SAME_TGROUP;
+    //             }
+    // #endif
+    //
+    //             iapc = 0;
+    //             /* Create new edge and vertex with cap=1 at v2 and/or t1 */
+    //             if (t1 != NO_VERTEX)
+    //             {
+    //                 /* Create new edge and vertex, connect to t1 */
+    //                 vNew = bAddNewVertex( pBNS, t1, 1/*cap*/, 0/*flow*/, 1/*max_adj_edges*/, nDots ); /* djb-rwth: addressing coverity ID #499581 -- condition works as expected for t1 == -2 */
+    //                 if (IS_BNS_ERROR( vNew ))
+    //                 {
+    //                     return vNew;
+    //                 }
+    //                 apc->vNewVertex[iapc] = vNew;
+    //                 apc->bSetNew[iapc] = 1;
+    //                 iapc++;
+    //             }
+    //             if (t2 == NO_VERTEX)
+    //             {
+    //                 /* Create new edge and vertex, connect to v2 */
+    //                 vNew = bAddNewVertex( pBNS, v2, 1/*cap*/, 0/*flow*/, 1/*max_adj_edges*/, nDots );
+    //                 if (IS_BNS_ERROR( vNew ))
+    //                 {
+    //                     return vNew;
+    //                 }
+    //                 apc->vNewVertex[iapc] = vNew;
+    //                 apc->bSetNew[iapc] = 1;
+    //                 iapc++;
+    //             }
+    //
+    //             /* Add st-cap to v1 and/or v2t */
+    //             iapc = 0;
+    //             if (t1 == NO_VERTEX)
+    //             {
+    //                 /* Add st-cap to v1 */
+    //                 n = bAddStCapToAVertex(pBNS, v1, (Vertex)(t2 == NO_VERTEX ? v2 : t2), apc->nOldCapsVert[iapc], nDots, 0); /* djb-rwth: addressing coverity ID #499501 -- condition works as expected for t2 == -2 */
+    //                 apc->bSetOldCapsVert[iapc] = n;
+    //                 apc->vOldVert[iapc] = v1;
+    //                 iapc++;
+    //             }
+    //             if (t2 != NO_VERTEX)
+    //             {
+    //                 /* Add st-cap to t2 */
+    //                 n = bAddStCapToAVertex( pBNS, t2, (Vertex) ( t1 == NO_VERTEX ? v1 : t1 ), apc->nOldCapsVert[iapc], nDots, 0 );
+    //                 apc->bSetOldCapsVert[iapc] = n;
+    //                 apc->vOldVert[iapc] = t2;
+    //                 iapc++;
+    //             }
+    //         }
+    //         else
+    //         {
+    //             /* Create new edge and vertex, connect to v2 */
+    //             vNew = bAddNewVertex( pBNS, v2, 1 /* cap*/, 0 /* flow */, 1 /* max_adj_edges */, nDots );
+    //             if (IS_BNS_ERROR( vNew ))
+    //             {
+    //                 return vNew;
+    //             }
+    //             apc->vNewVertex[0] = vNew;
+    //             apc->bSetNew[0] = 1;
+    //
+    //             /* add st-cap to v1 */
+    //             n = bAddStCapToAVertex( pBNS, v1, v2, apc->nOldCapsVert[0], nDots, 0 );
+    //             apc->bSetOldCapsVert[0] = n;
+    //             apc->vOldVert[0] = v1;
+    //         }
+    // #else  /* } NEUTRALIZE_ENDPOINTS == 0 {*/
+    //
+    //         *nDots = 0;
+    //         memset( apc, 0, sizeof( *apc ) );
+    //         fcd[ifcd].iedge = NO_VERTEX;
+    //
+    //         /* Create new edge and vertex, connect to v2 */
+    //         vNew = bAddNewVertex( pBNS, v2, 1 /* cap*/, 0 /* flow */, 1 /* max_adj_edges */, nDots, 0 );
+    //         if (IS_BNS_ERROR( vNew ))
+    //         {
+    //             return vNew;
+    //         }
+    //         apc->vNewVertex[0] = vNew;
+    //         apc->bSetNew[0] = 1;
+    //
+    //         /* Add st-cap to v1 */
+    //         n = bAddStCapToAVertex( pBNS, v1, v2, apc->nOldCapsVert[0], nDots );
+    //         apc->bSetOldCapsVert[0] = n;
+    //         apc->vOldVert[0] = v1;
+    // #endif /* } NEUTRALIZE_ENDPOINTS */
+    //
+    //         if (*nDots < 0 || *nDots % 2)
+    //         {
+    //             return BNS_SET_ALTP_ERR;
+    //         }
+    //         return BNS_CHK_ALTP_SET_SUCCESS;
+    //     }
+    //
+    //     /*return BNS_CHK_ALTP_NO_ALTPATH;*/
+    // }
+    // END INCHI C FUNCTION: set_bns_to_check_alt_path_buffer
+    // INCHI✔️❗: One original algorithm over a transient source buffer;
+    // typed pointer admissions remain reached and borrowed slices allocate nothing.
+    // Checked projection and whole-call constants remain OPEN; no new scans.
     fn is_bns_error(value: i32) -> bool {
         (BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&value)
     }
 
     fn set_fcd_sentinel(
         heap: &mut SourceHeap,
-        fcd: SourceMutPointer<BNS_FLOW_CHANGES>,
+        fcd: &mut SourceFlowChanges<'_>,
         index: i32,
     ) -> Result<(), SourceHeapError> {
-        let mut entry = work_get(heap, fcd, index)?;
-        entry.iedge = NO_VERTEX;
-        work_set(heap, fcd, index, entry)
+        // INCHI✔️❗: ichi_bns.c:6850 (also6994/7180/7205):
+        //             fcd[ifcd].iedge = NO_VERTEX;
+        // One reached field store; no nine-field clone/writeback. Arena cost OPEN.
+        let index = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        fcd.slice_mut(heap)?
+            .get_mut(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .iedge = NO_VERTEX;
+        Ok(())
     }
 
     fn advance_fcd(
         heap: &SourceHeap,
-        fcd: SourceMutPointer<BNS_FLOW_CHANGES>,
+        fcd: &mut SourceFlowChanges<'_>,
         ifcd: &mut i32,
     ) -> Result<(), SourceHeapError> {
-        while work_get::<BNS_FLOW_CHANGES>(heap, fcd, *ifcd)?.iedge != NO_VERTEX {
+        // INCHI✔️❗: ichi_bns.c:7225..7228 (also7245/7265/7286):
+        //                 while (fcd[ifcd].iedge != NO_VERTEX)
+        //                 {
+        //                     ifcd++;
+        //                 }
+        // One immutable admission: no callback/mutation can invalidate entries.
+        // O(reached entries)/O(1), no record copies; checked access cost OPEN.
+        let mut index = usize::try_from(*ifcd).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let entries = fcd.slice(heap)?;
+        while entries
+            .get(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .iedge
+            != NO_VERTEX
+        {
             *ifcd = ifcd.wrapping_add(1);
+            index = usize::try_from(*ifcd).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         }
         Ok(())
     }
@@ -7790,7 +10486,13 @@ pub(crate) fn bSetBnsToCheckAltPath(
     let pVert2 = bns_vertex(heap, pBNS, v2)?;
     let mut ifcd = 0_i32;
 
-    let taut_flags = work_get(heap, pBNS.pbTautFlags, 0)?;
+    // Native flag dereference precedes the path-type conjunct, including
+    // CHARGE mode. Never interpret unused BNS fields as NULL in borrowed mode.
+    // INCHI✔️❗: Same reached read, O(1), no cache/root/scan (C529 OPEN).
+    let taut_flags = match flag_storage {
+        Some(flags) => flags.flags(heap)?,
+        None => work_get(heap, pBNS.pbTautFlags, 0)?,
+    };
     if (taut_flags & u64::from(TG_FLAG_TEST_TAUT2_SALTS)) != 0
         && path_type == ALT_PATH_MODE_4_SALT2 as i32
         && (BNS_VERT_TYPE_ENDPOINT as AT_NUMB & type_) != 0
@@ -8079,7 +10781,13 @@ pub(crate) fn bSetBnsToCheckAltPath(
     if (type_ & BNS_VERT_TYPE_ENDPOINT as AT_NUMB) != 0 {
         let mut iedge = GetEdgeToGroupVertex(heap, pBNS, v1, BNS_VERT_TYPE_C_GROUP as AT_NUMB)?;
         if iedge != NO_VERTEX {
-            let ret2 = bSetFlowToCheckOneBond(heap, pBNS, iedge, 1, fcd.offset(i64::from(ifcd))?)?;
+            let ret2 = set_flow_to_check_one_bond_buffer(
+                heap,
+                pBNS,
+                iedge,
+                1,
+                &mut fcd.suffix(i64::from(ifcd))?,
+            )?;
             if is_bns_error(ret2) {
                 return Ok(ret2);
             }
@@ -8089,7 +10797,13 @@ pub(crate) fn bSetBnsToCheckAltPath(
 
         iedge = GetEdgeToGroupVertex(heap, pBNS, v2, BNS_VERT_TYPE_C_GROUP as AT_NUMB)?;
         if iedge != NO_VERTEX {
-            let ret2 = bSetFlowToCheckOneBond(heap, pBNS, iedge, 1, fcd.offset(i64::from(ifcd))?)?;
+            let ret2 = set_flow_to_check_one_bond_buffer(
+                heap,
+                pBNS,
+                iedge,
+                1,
+                &mut fcd.suffix(i64::from(ifcd))?,
+            )?;
             if is_bns_error(ret2) {
                 return Ok(ret2);
             }
@@ -8099,7 +10813,13 @@ pub(crate) fn bSetBnsToCheckAltPath(
 
         iedge = GetEdgeToGroupVertex(heap, pBNS, v1, BNS_VERT_TYPE_TGROUP as AT_NUMB)?;
         if iedge != NO_VERTEX {
-            let ret2 = bSetFlowToCheckOneBond(heap, pBNS, iedge, 1, fcd.offset(i64::from(ifcd))?)?;
+            let ret2 = set_flow_to_check_one_bond_buffer(
+                heap,
+                pBNS,
+                iedge,
+                1,
+                &mut fcd.suffix(i64::from(ifcd))?,
+            )?;
             if is_bns_error(ret2) {
                 return Ok(ret2);
             }
@@ -8109,7 +10829,13 @@ pub(crate) fn bSetBnsToCheckAltPath(
 
         iedge = GetEdgeToGroupVertex(heap, pBNS, v2, BNS_VERT_TYPE_TGROUP as AT_NUMB)?;
         if iedge != NO_VERTEX {
-            let ret2 = bSetFlowToCheckOneBond(heap, pBNS, iedge, 0, fcd.offset(i64::from(ifcd))?)?;
+            let ret2 = set_flow_to_check_one_bond_buffer(
+                heap,
+                pBNS,
+                iedge,
+                0,
+                &mut fcd.suffix(i64::from(ifcd))?,
+            )?;
             if is_bns_error(ret2) {
                 return Ok(ret2);
             }
@@ -8275,27 +11001,44 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: bRestoreBnsAfterCheckAltPath
 
+    // Behavior: restore fields at source writes, including decrement before
+    // adjacency access and live loop bounds when old/new vertices coincide.
+    // Cost: no whole record copies; O(reached adjacency), O(1) space.
+    // Safe lookup/whole-call costs remain OPEN.
     if (bChangeFlow as u32 & BNS_EF_UPD_H_CHARGE) != 0 {
         for i in (0..apc.bSetNew.len()).rev() {
             if apc.bSetNew[i] != 0 {
                 let v_new = apc.vNewVertex[i];
-                let new_vert = bns_vertex(heap, pBNS, v_new)?;
-                for j in 0..i32::from(new_vert.num_adj_edges) {
-                    let iedge = work_get(heap, new_vert.iedge, j)?;
-                    let edge = bns_edge(heap, pBNS, iedge)?;
-                    let v_old = i32::from(edge.neighbor12) ^ v_new;
-                    let mut old_vert = bns_vertex(heap, pBNS, v_old)?;
-                    old_vert.st_edge.flow = old_vert.st_edge.flow.wrapping_sub(edge.flow);
-                    old_vert.st_edge.cap = old_vert.st_edge.cap.wrapping_sub(edge.flow);
-                    let old_adj = old_vert
-                        .num_adj_edges
-                        .checked_sub(1)
+                let mut j = 0;
+                loop {
+                    let new_index =
+                        usize::try_from(v_new).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let new_vert = heap
+                        .slice(pBNS.vert.as_const())?
+                        .get(new_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    work_set(heap, old_vert.iedge, i32::from(old_adj), 0)?;
-                    old_vert.num_adj_edges = old_adj;
-                    *bns_vertex_mut(heap, pBNS, v_old)? = old_vert;
+                    if j >= i32::from(new_vert.num_adj_edges) {
+                        break;
+                    }
+                    let iedge = work_get(heap, new_vert.iedge, j)?;
+                    let edge_index =
+                        usize::try_from(iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge = heap
+                        .slice(pBNS.edge.as_const())?
+                        .get(edge_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let flow = edge.flow;
+                    let v_old = i32::from(edge.neighbor12) ^ v_new;
+                    let old_vert = bns_vertex_mut(heap, pBNS, v_old)?;
+                    old_vert.st_edge.flow = old_vert.st_edge.flow.wrapping_sub(flow);
+                    old_vert.st_edge.cap = old_vert.st_edge.cap.wrapping_sub(flow);
+                    old_vert.num_adj_edges = old_vert.num_adj_edges.wrapping_sub(1);
+                    let old_adj = old_vert.num_adj_edges;
+                    let old_iedge = old_vert.iedge;
+                    work_set(heap, old_iedge, i32::from(old_adj), 0)?;
                     *bns_edge_mut(heap, pBNS, iedge)? = BNS_EDGE::default();
                     pBNS.num_edges = pBNS.num_edges.wrapping_sub(1);
+                    j += 1;
                 }
                 *bns_vertex_mut(heap, pBNS, v_new)? = BNS_VERTEX::default();
                 pBNS.num_vertices = pBNS.num_vertices.wrapping_sub(1);
@@ -8305,20 +11048,18 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
         for i in (0..apc.bSetOldCapsVert.len()).rev() {
             let n = i32::from(apc.bSetOldCapsVert[i]);
             if n != 0 {
-                let mut old_vert = bns_vertex(heap, pBNS, apc.vOldVert[i])?;
+                let old_vert = bns_vertex_mut(heap, pBNS, apc.vOldVert[i])?;
                 if old_vert.st_edge.flow <= apc.nOldCapsVert[i][0] {
                     old_vert.st_edge.cap = apc.nOldCapsVert[i][0];
                     let cap_count = n - 1;
-                    for j in 0..cap_count {
-                        if j < i32::from(old_vert.num_adj_edges) {
-                            let iedge = work_get(heap, old_vert.iedge, j)?;
-                            let mut edge = bns_edge(heap, pBNS, iedge)?;
-                            edge.cap = apc.nOldCapsVert[i][usize::try_from(j + 1)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-                            *bns_edge_mut(heap, pBNS, iedge)? = edge;
-                        }
+                    let old_iedge = old_vert.iedge;
+                    let old_degree = old_vert.num_adj_edges;
+                    for j in 0..cap_count.min(i32::from(old_degree)) {
+                        let iedge = work_get(heap, old_iedge, j)?;
+                        let edge = bns_edge_mut(heap, pBNS, iedge)?;
+                        edge.cap = apc.nOldCapsVert[i][usize::try_from(j + 1)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                     }
-                    *bns_vertex_mut(heap, pBNS, apc.vOldVert[i])? = old_vert;
                 }
             }
         }
@@ -8326,40 +11067,50 @@ pub(crate) fn bRestoreBnsAfterCheckAltPath(
         for i in (0..apc.bSetOldCapsVert.len()).rev() {
             let n = i32::from(apc.bSetOldCapsVert[i]);
             if n != 0 {
-                let mut old_vert = bns_vertex(heap, pBNS, apc.vOldVert[i])?;
+                let old_vert = bns_vertex_mut(heap, pBNS, apc.vOldVert[i])?;
                 old_vert.st_edge.cap = apc.nOldCapsVert[i][0];
                 let cap_count = n - 1;
-                for j in 0..cap_count {
-                    if j < i32::from(old_vert.num_adj_edges) {
-                        let iedge = work_get(heap, old_vert.iedge, j)?;
-                        let mut edge = bns_edge(heap, pBNS, iedge)?;
-                        edge.cap = apc.nOldCapsVert[i][usize::try_from(j + 1)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-                        *bns_edge_mut(heap, pBNS, iedge)? = edge;
-                    }
+                let old_iedge = old_vert.iedge;
+                let old_degree = old_vert.num_adj_edges;
+                for j in 0..cap_count.min(i32::from(old_degree)) {
+                    let iedge = work_get(heap, old_iedge, j)?;
+                    let edge = bns_edge_mut(heap, pBNS, iedge)?;
+                    edge.cap = apc.nOldCapsVert[i][usize::try_from(j + 1)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?];
                 }
-                *bns_vertex_mut(heap, pBNS, apc.vOldVert[i])? = old_vert;
             }
         }
 
         for i in (0..apc.bSetNew.len()).rev() {
             if apc.bSetNew[i] != 0 {
                 let v_new = apc.vNewVertex[i];
-                let new_vert = bns_vertex(heap, pBNS, v_new)?;
-                for j in 0..i32::from(new_vert.num_adj_edges) {
-                    let iedge = work_get(heap, new_vert.iedge, j)?;
-                    let edge = bns_edge(heap, pBNS, iedge)?;
-                    let v_old = i32::from(edge.neighbor12) ^ v_new;
-                    let mut old_vert = bns_vertex(heap, pBNS, v_old)?;
-                    let old_adj = old_vert
-                        .num_adj_edges
-                        .checked_sub(1)
+                let mut j = 0;
+                loop {
+                    let new_index =
+                        usize::try_from(v_new).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let new_vert = heap
+                        .slice(pBNS.vert.as_const())?
+                        .get(new_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    work_set(heap, old_vert.iedge, i32::from(old_adj), 0)?;
-                    old_vert.num_adj_edges = old_adj;
-                    *bns_vertex_mut(heap, pBNS, v_old)? = old_vert;
+                    if j >= i32::from(new_vert.num_adj_edges) {
+                        break;
+                    }
+                    let iedge = work_get(heap, new_vert.iedge, j)?;
+                    let edge_index =
+                        usize::try_from(iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    let edge = heap
+                        .slice(pBNS.edge.as_const())?
+                        .get(edge_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let v_old = i32::from(edge.neighbor12) ^ v_new;
+                    let old_vert = bns_vertex_mut(heap, pBNS, v_old)?;
+                    old_vert.num_adj_edges = old_vert.num_adj_edges.wrapping_sub(1);
+                    let old_adj = old_vert.num_adj_edges;
+                    let old_iedge = old_vert.iedge;
+                    work_set(heap, old_iedge, i32::from(old_adj), 0)?;
                     *bns_edge_mut(heap, pBNS, iedge)? = BNS_EDGE::default();
                     pBNS.num_edges = pBNS.num_edges.wrapping_sub(1);
+                    j += 1;
                 }
                 *bns_vertex_mut(heap, pBNS, v_new)? = BNS_VERTEX::default();
                 pBNS.num_vertices = pBNS.num_vertices.wrapping_sub(1);
@@ -8549,6 +11300,138 @@ pub(crate) fn RemoveLastGroupFromBnStruct(
     // INCHI✔️❌: #define BNS_VERT_TYPE_C_POINT 8
     // END INCHI ACTIVE MACRO CONFIGURATION: RemoveLastGroupFromBnStruct
 
+    remove_group_with_atom_clear(heap, num_atoms, tg, p_bns, |_, endpoint| {
+        let atom = atoms
+            .first_mut()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if endpoint {
+            atom.endpoint = 0;
+        } else {
+            atom.c_point = 0;
+        }
+        Ok(())
+    })
+}
+
+fn remove_group_with_atom_clear(
+    heap: &mut SourceHeap,
+    num_atoms: i32,
+    tg: i32,
+    p_bns: &mut BN_STRUCT,
+    mut clear_atom: impl FnMut(&mut SourceHeap, bool) -> Result<(), SourceHeapError>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:3988 RemoveLastGroupFromBnStruct
+    // INCHI✔️❌: int RemoveLastGroupFromBnStruct( inp_ATOM *at,
+    // INCHI✔️❌:                                  int num_atoms,
+    // INCHI✔️❌:                                  int tg,
+    // INCHI✔️❌:                                  BN_STRUCT *pBNS )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int ret = 0;
+    // INCHI✔️❌:     /* ret = ReInitBnStruct( pBNS ); */
+    // INCHI✔️❌:     int         k, endpoint, /*centerpoint, fictpoint,*/ iedge;
+    // INCHI✔️❌:     int         num_edges = pBNS->num_edges;
+    // INCHI✔️❌:     int         num_vertices = pBNS->num_vertices;
+    // INCHI✔️❌:     BNS_VERTEX *vert_ficpoint /*, *ver_ficpont_prev*/;  /* fictitious vertex describing t-group */
+    // INCHI✔️❌:     BNS_VERTEX *vert_endpoint;
+    // INCHI✔️❌:     BNS_EDGE   *edge;      /* edge between that vertex and the tautomeric endpoint */
+    // INCHI✔️❌:                            /*int        mask, num_endpoints, neutral_valence, edge_flow, edge_cap, num_bonds;*/
+    // INCHI✔️❌:     int        is_t_group = 0, is_c_group = 0;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* Debug: check overflow */
+    // INCHI✔️❌:     if (pBNS->num_added_atoms + pBNS->num_c_groups + pBNS->num_t_groups + num_atoms >= pBNS->max_vertices)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (tg + 1 != num_vertices)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     vert_ficpoint = pBNS->vert + tg;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (vert_ficpoint->type & BNS_VERT_TYPE_TGROUP)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         is_t_group = 1;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     if (vert_ficpoint->type & BNS_VERT_TYPE_C_GROUP)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         is_c_group = 1;
+    // INCHI✔️❌:         if (vert_ficpoint->type & BNS_VERT_TYPE_C_NEGATIVE)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             is_c_group = 2;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (k = vert_ficpoint->num_adj_edges - 1; 0 <= k; k--)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         iedge = vert_ficpoint->iedge[k];
+    // INCHI✔️❌:         if (iedge + 1 != num_edges)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             return BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         edge = pBNS->edge + iedge;
+    // INCHI✔️❌:         endpoint = edge->neighbor12 ^ tg;
+    // INCHI✔️❌:         vert_endpoint = pBNS->vert + endpoint;
+    // INCHI✔️❌:         /* adjust st_flow, st_cap */
+    // INCHI✔️❌:         vert_endpoint->st_edge.cap0 =
+    // INCHI✔️❌:             vert_endpoint->st_edge.cap -= edge->flow;
+    // INCHI✔️❌:         vert_endpoint->st_edge.flow0 =
+    // INCHI✔️❌:             vert_endpoint->st_edge.flow -= edge->flow;
+    // INCHI✔️❌:         if (pBNS->type_TACN && ( vert_endpoint->type & pBNS->type_TACN ) == pBNS->type_TACN)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             vert_endpoint->type ^= pBNS->type_TACN;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (is_t_group)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             vert_endpoint->type ^= ( vert_ficpoint->type & BNS_VERT_TYPE_ENDPOINT );
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (is_c_group)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             vert_endpoint->type ^= ( vert_ficpoint->type & BNS_VERT_TYPE_C_POINT );
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         /* Remove edge */
+    // INCHI✔️❌:         if (edge->neigh_ord[0] + 1 != vert_endpoint->num_adj_edges)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             return BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         vert_endpoint->num_adj_edges--;
+    // INCHI✔️❌:         memset( edge, 0, sizeof( *edge ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️❌:         num_edges--;
+    // INCHI✔️❌:         if (1 == is_t_group && endpoint < num_atoms)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             at->endpoint = 0;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (1 == is_c_group && endpoint < num_atoms)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             at->c_point = 0;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     memset( vert_ficpoint, 0, sizeof( *vert_ficpoint ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️❌:     num_vertices--;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     pBNS->num_edges = num_edges;
+    // INCHI✔️❌:     pBNS->num_vertices = num_vertices;
+    // INCHI✔️❌:     if (is_t_group)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         pBNS->num_t_groups--;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     if (is_c_group)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         pBNS->num_c_groups--;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: RemoveLastGroupFromBnStruct
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: RemoveLastGroupFromBnStruct
+    // INCHI✔️❌: #define BNS_VERT_TYPE_TGROUP 4
+    // INCHI✔️❌: #define BNS_VERT_TYPE_C_GROUP 16
+    // INCHI✔️❌: #define BNS_VERT_TYPE_C_NEGATIVE 256
+    // INCHI✔️❌: #define BNS_VERT_TYPE_ENDPOINT 2
+    // INCHI✔️❌: #define BNS_VERT_TYPE_C_POINT 8
+    // END INCHI ACTIVE MACRO CONFIGURATION: RemoveLastGroupFromBnStruct
+
     let ret = 0_i32;
     let mut num_edges = p_bns.num_edges;
     let mut num_vertices = p_bns.num_vertices;
@@ -8565,7 +11448,9 @@ pub(crate) fn RemoveLastGroupFromBnStruct(
         return Ok(BNS_VERT_EDGE_OVFL);
     }
 
-    let vert_ficpoint = bns_vertex(heap, p_bns, tg)?;
+    // Behavior: live fields preserve partial changes and coinciding endpoints.
+    // Cost: no vertex/edge clones/writebacks, O(degree)/O(1); checks OPEN.
+    let vert_ficpoint = heap.element_signed(p_bns.vert.as_const(), tg)?;
     let mut is_t_group = 0_i32;
     let mut is_c_group = 0_i32;
     if (vert_ficpoint.type_ & BNS_VERT_TYPE_TGROUP as AT_NUMB) != 0 {
@@ -8580,50 +11465,52 @@ pub(crate) fn RemoveLastGroupFromBnStruct(
 
     let mut k = i32::from(vert_ficpoint.num_adj_edges).wrapping_sub(1);
     while k >= 0 {
-        let iedge = bns_edge_index(heap, &vert_ficpoint, k)?;
+        let pointer = heap.element_signed(p_bns.vert.as_const(), tg)?.iedge;
+        let iedge = work_get(heap, pointer, k)?;
         if iedge.wrapping_add(1) != num_edges {
             return Ok(BNS_VERT_EDGE_OVFL);
         }
-        let edge = bns_edge(heap, p_bns, iedge)?;
+        let edge = heap.element_signed(p_bns.edge.as_const(), iedge)?;
+        let flow = edge.flow;
+        let order = edge.neigh_ord[0];
         let endpoint = i32::from(edge.neighbor12) ^ tg;
-        let mut vert_endpoint = bns_vertex(heap, p_bns, endpoint)?;
-        vert_endpoint.st_edge.cap = vert_endpoint.st_edge.cap.wrapping_sub(edge.flow);
-        vert_endpoint.st_edge.cap0 = vert_endpoint.st_edge.cap;
-        vert_endpoint.st_edge.flow = vert_endpoint.st_edge.flow.wrapping_sub(edge.flow);
-        vert_endpoint.st_edge.flow0 = vert_endpoint.st_edge.flow;
-        if p_bns.type_TACN != 0 && (vert_endpoint.type_ & p_bns.type_TACN) == p_bns.type_TACN {
-            vert_endpoint.type_ ^= p_bns.type_TACN;
+        {
+            let vertex = heap.element_signed_mut(p_bns.vert, endpoint)?;
+            vertex.st_edge.cap = vertex.st_edge.cap.wrapping_sub(flow);
+            vertex.st_edge.cap0 = vertex.st_edge.cap;
+            vertex.st_edge.flow = vertex.st_edge.flow.wrapping_sub(flow);
+            vertex.st_edge.flow0 = vertex.st_edge.flow;
+            if p_bns.type_TACN != 0 && (vertex.type_ & p_bns.type_TACN) == p_bns.type_TACN {
+                vertex.type_ ^= p_bns.type_TACN;
+            }
         }
         if is_t_group != 0 {
-            vert_endpoint.type_ ^= vert_ficpoint.type_ & BNS_VERT_TYPE_ENDPOINT as AT_NUMB;
+            let mask = heap.element_signed(p_bns.vert.as_const(), tg)?.type_
+                & BNS_VERT_TYPE_ENDPOINT as AT_NUMB;
+            heap.element_signed_mut(p_bns.vert, endpoint)?.type_ ^= mask;
         }
         if is_c_group != 0 {
-            vert_endpoint.type_ ^= vert_ficpoint.type_ & BNS_VERT_TYPE_C_POINT as AT_NUMB;
+            let mask = heap.element_signed(p_bns.vert.as_const(), tg)?.type_
+                & BNS_VERT_TYPE_C_POINT as AT_NUMB;
+            heap.element_signed_mut(p_bns.vert, endpoint)?.type_ ^= mask;
         }
-        *bns_vertex_mut(heap, p_bns, endpoint)? = vert_endpoint.clone();
-        if i32::from(edge.neigh_ord[0]).wrapping_add(1) != i32::from(vert_endpoint.num_adj_edges) {
+        let vertex = heap.element_signed_mut(p_bns.vert, endpoint)?;
+        if i32::from(order) + 1 != i32::from(vertex.num_adj_edges) {
             return Ok(BNS_VERT_EDGE_OVFL);
         }
-        vert_endpoint.num_adj_edges = vert_endpoint.num_adj_edges.wrapping_sub(1);
-        *bns_vertex_mut(heap, p_bns, endpoint)? = vert_endpoint;
-        *bns_edge_mut(heap, p_bns, iedge)? = BNS_EDGE::default();
+        vertex.num_adj_edges = vertex.num_adj_edges.wrapping_sub(1);
+        *heap.element_signed_mut(p_bns.edge, iedge)? = BNS_EDGE::default();
         num_edges = num_edges.wrapping_sub(1);
         if is_t_group == 1 && endpoint < num_atoms {
-            atoms
-                .get_mut(0)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .endpoint = 0;
+            clear_atom(heap, true)?;
         }
         if is_c_group == 1 && endpoint < num_atoms {
-            atoms
-                .get_mut(0)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .c_point = 0;
+            clear_atom(heap, false)?;
         }
         k = k.wrapping_sub(1);
     }
 
-    *bns_vertex_mut(heap, p_bns, tg)? = BNS_VERTEX::default();
+    *heap.element_signed_mut(p_bns.vert, tg)? = BNS_VERTEX::default();
     num_vertices = num_vertices.wrapping_sub(1);
     p_bns.num_edges = num_edges;
     p_bns.num_vertices = num_vertices;
@@ -8970,6 +11857,9 @@ pub(crate) fn AugmentEdge(
     // INCHI✔️❌: #define ALTP_NEXT(altp) (++ALTP_PATH_LEN(altp))
     // END INCHI ACTIVE MACRO CONFIGURATION: AugmentEdge
 
+    // Behavior: update reached flow/pass fields before path bookkeeping.
+    // Cost: no whole vertex/edge clones or writebacks; O(1), no allocation.
+    // Safe arena and path checks remain independently OPEN.
     let edge_pointer = GetEdgePointer(pBNS, u, v, iuv);
     if !(BNS_ERR <= edge_pointer.backward && edge_pointer.backward <= BNS_MAX_ERR_VALUE) {
         let mut ret = 0_i32;
@@ -8980,19 +11870,11 @@ pub(crate) fn AugmentEdge(
         if edge_pointer.s_or_t != 0 {
             let s_or_t = edge_pointer.s_or_t;
             let index = edge_pointer.target_index;
-            let mut vertex = bns_vertex(heap, pBNS, index)?;
-            let mut st_edge = vertex.st_edge;
+            let st_edge = &mut bns_vertex_mut(heap, pBNS, index)?.st_edge;
             let flow = st_edge.flow;
             let mut f = (flow & EDGE_FLOW_ST_MASK as i32).wrapping_add(delta);
             if delta == 0 {
                 st_edge.flow &= !(EDGE_FLOW_ST_PATH as i32);
-                vertex.st_edge = st_edge;
-                heap.slice_mut(pBNS.vert)?
-                    .get_mut(
-                        usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone_from(&vertex);
             } else if f < 0 || f > st_edge.cap {
                 ret = BNS_WRONG_PARMS;
             } else {
@@ -9003,13 +11885,6 @@ pub(crate) fn AugmentEdge(
                 }
                 st_edge.flow =
                     (flow & !(EDGE_FLOW_ST_PATH as i32 | EDGE_FLOW_ST_MASK as i32)).wrapping_add(f);
-                vertex.st_edge = st_edge;
-                heap.slice_mut(pBNS.vert)?
-                    .get_mut(
-                        usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone_from(&vertex);
 
                 if bReverse != 0 {
                     match s_or_t {
@@ -9107,33 +11982,21 @@ pub(crate) fn AugmentEdge(
         }
 
         let edge_index = edge_pointer.target_index;
-        let mut edge = bns_edge(heap, pBNS, edge_index)?;
+        let edge = bns_edge_mut(heap, pBNS, edge_index)?;
         let mut f = (edge.flow & EDGE_FLOW_MASK as i32).wrapping_add(delta);
         if delta == 0 {
             edge.flow &= !(EDGE_FLOW_PATH as i32);
-            heap.slice_mut(pBNS.edge)?
-                .get_mut(
-                    usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from(&edge);
         } else if f < 0 || f > edge.cap {
             ret = BNS_WRONG_PARMS;
         } else {
-            let iu = u / 2 - 1;
-            let iv = v / 2 - 1;
+            let iu = (u / 2 - 1) as AT_NUMB;
+            let iv = (v / 2 - 1) as AT_NUMB;
             if (bChangeFlow & BNS_EF_CHNG_FLOW as i32) == 0 {
                 f = f.wrapping_sub(delta);
             } else if delta != 0 {
                 edge.pass = edge.pass.wrapping_add(1);
             }
             edge.flow = (edge.flow & !(EDGE_FLOW_PATH as i32 | EDGE_FLOW_MASK as i32)) | f;
-            heap.slice_mut(pBNS.edge)?
-                .get_mut(
-                    usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from(&edge);
 
             let path_len = work_get::<BNS_ALT_PATH>(
                 heap,
@@ -9148,18 +12011,21 @@ pub(crate) fn AugmentEdge(
             )?
             .number();
             if tagAltPathConst_iALTP_NEIGHBOR as i32 + path_len < max_len {
+                let edge = heap.element_signed(pBNS.edge.as_const(), edge_index)?;
+                let neighbor1 = edge.neighbor1;
+                let neigh_ord = edge.neigh_ord;
                 let indx = if bReverse != 0 {
-                    (i32::from(edge.neighbor1) == iv) as usize
+                    (neighbor1 == iv) as usize
                 } else {
-                    (i32::from(edge.neighbor1) == iu) as usize
+                    (neighbor1 == iu) as usize
                 };
                 let mut neighbor = work_get::<BNS_ALT_PATH>(
                     heap,
                     pBNS.alt_path,
                     tagAltPathConst_iALTP_NEIGHBOR as i32 + path_len,
                 )?;
-                neighbor.set_ineigh(0, edge.neigh_ord[1 - indx]);
-                neighbor.set_ineigh(1, edge.neigh_ord[indx]);
+                neighbor.set_ineigh(0, neigh_ord[1 - indx]);
+                neighbor.set_ineigh(1, neigh_ord[indx]);
                 work_set(
                     heap,
                     pBNS.alt_path,
@@ -9345,6 +12211,8 @@ pub(crate) fn rescap_mark(
     // INCHI✔️❌: #define IS_BNS_ERROR(X) (BNS_ERR <= (X) && (X) <= BNS_MAX_ERR_VALUE)
     // END INCHI ACTIVE MACRO CONFIGURATION: rescap_mark
 
+    // Behavior: mark only the reached flow field; path-count order unchanged.
+    // Cost: no full record clone/writeback, O(1), no allocation; checks OPEN.
     let edge_pointer = GetEdgePointer(pBNS, u, v, iuv);
     if BNS_ERR <= edge_pointer.backward && edge_pointer.backward <= BNS_MAX_ERR_VALUE {
         return Ok(edge_pointer.backward);
@@ -9352,7 +12220,7 @@ pub(crate) fn rescap_mark(
 
     if edge_pointer.s_or_t != 0 {
         let index = edge_pointer.target_index;
-        let mut vertex = bns_vertex(heap, pBNS, index)?;
+        let vertex = bns_vertex_mut(heap, pBNS, index)?;
         let flow = vertex.st_edge.flow;
         let mut f = flow & EDGE_FLOW_ST_MASK as i32;
         if edge_pointer.backward == 0 {
@@ -9363,16 +12231,12 @@ pub(crate) fn rescap_mark(
             f /= 2;
         } else {
             vertex.st_edge.flow |= EDGE_FLOW_ST_PATH as i32;
-            heap.slice_mut(pBNS.vert)?
-                .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from(&vertex);
         }
         return Ok(f);
     }
 
     let index = edge_pointer.target_index;
-    let mut edge = bns_edge(heap, pBNS, index)?;
+    let edge = bns_edge_mut(heap, pBNS, index)?;
     let flow = edge.flow;
     let mut f = flow & EDGE_FLOW_MASK as i32;
     if edge_pointer.backward == 0 {
@@ -9383,10 +12247,6 @@ pub(crate) fn rescap_mark(
         pBNS.bNotASimplePath = pBNS.bNotASimplePath.wrapping_add(1);
     } else {
         edge.flow |= EDGE_FLOW_PATH as i32;
-        heap.slice_mut(pBNS.edge)?
-            .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from(&edge);
     }
     Ok(f)
 }
@@ -9843,14 +12703,25 @@ pub(crate) fn bIgnoreVertexNonTACN_group(
     // INCHI✔️❌: #define NO_VERTEX -2
     // END INCHI ACTIVE MACRO CONFIGURATION: bIgnoreVertexNonTACN_group
 
+    // INCHI✔️❗: Native10456..10461 short-circuits the u classification
+    // before any w field read. Borrow only reached type/edge fields rather
+    // than cloning BNS records. O(1) local work/space, no allocation; graph
+    // traversal and checked arena/Result whole-call costs remain OPEN.
+    let vertex_type = |index: i32| -> Result<AT_NUMB, SourceHeapError> {
+        let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        Ok(heap
+            .slice(pBNS.vert.as_const())?
+            .get(offset)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .type_)
+    };
     if v <= 1 || w <= 1 {
         return Ok(0);
     }
     if pBNS.type_TACN == 0 {
         return Ok(0);
     }
-    let v_vertex = bns_vertex(heap, pBNS, v / 2 - 1)?;
-    if v_vertex.type_ & pBNS.type_TACN != 0 {
+    if vertex_type(v / 2 - 1)? & pBNS.type_TACN != 0 {
         return Ok(0);
     }
     if pBNS.type_T == 0 || pBNS.type_CN == 0 {
@@ -9863,7 +12734,10 @@ pub(crate) fn bIgnoreVertexNonTACN_group(
         return Ok(0);
     }
 
-    let edge = bns_edge(heap, pBNS, iuv)?;
+    let edge = heap
+        .slice(pBNS.edge.as_const())?
+        .get(usize::try_from(iuv).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let u_atom = u / 2 - 1;
     let v_atom = v / 2 - 1;
     if (i32::from(edge.neighbor1) != u_atom && i32::from(edge.neighbor1) != v_atom)
@@ -9872,18 +12746,18 @@ pub(crate) fn bIgnoreVertexNonTACN_group(
         return Ok(0);
     }
 
-    let u_vertex = bns_vertex(heap, pBNS, u_atom)?;
-    let w_vertex = bns_vertex(heap, pBNS, w / 2 - 1)?;
-    let u_is_taut = if u_vertex.type_ & pBNS.type_T == pBNS.type_T {
+    let u_type = vertex_type(u_atom)?;
+    let u_is_taut = if u_type & pBNS.type_T == pBNS.type_T {
         1
-    } else if u_vertex.type_ & pBNS.type_CN == pBNS.type_CN {
+    } else if u_type & pBNS.type_CN == pBNS.type_CN {
         0
     } else {
         return Ok(0);
     };
-    let w_is_taut = if w_vertex.type_ & pBNS.type_T == pBNS.type_T {
+    let w_type = vertex_type(w / 2 - 1)?;
+    let w_is_taut = if w_type & pBNS.type_T == pBNS.type_T {
         1
-    } else if w_vertex.type_ & pBNS.type_CN == pBNS.type_CN {
+    } else if w_type & pBNS.type_CN == pBNS.type_CN {
         0
     } else {
         return Ok(0);
@@ -10960,19 +13834,20 @@ pub(crate) fn RemoveRadEndpoints(
     // INCHI✔️❌: #define RAD_SRCH_NORM 0
     // END INCHI ACTIVE MACRO CONFIGURATION: RemoveRadEndpoints
 
+    // INCHI✔️❗: source-order live scalar updates reproduce partial error state
+    // and coinciding endpoints. No record clones/writeback or allocation;
+    // O(nNumRadEdges) time, O(1) space. Checked arena whole-call cost is OPEN.
     let mut i = pBD.nNumRadEdges - 1;
     while i >= 0 {
-        let ie = work_get(heap, pBD.RadEdges, i)?;
+        let ie = *heap.element_signed(pBD.RadEdges.as_const(), i)?;
         if ie < 0 || ie >= pBNS.num_edges {
             return Ok(BNS_PROGRAM_ERR as i32);
         }
-        let edge = bns_edge(heap, pBNS, ie)?;
+        let edge = heap.element_signed(pBNS.edge.as_const(), ie)?;
         let v1 = i32::from(edge.neighbor1);
         let v2 = i32::from(edge.neighbor12) ^ v1;
-        if ie
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            != pBNS.num_edges
+        let flow = edge.flow;
+        if ie + 1 != pBNS.num_edges
             || v1 < 0
             || v1 >= pBNS.num_vertices
             || v2 < 0
@@ -10981,89 +13856,65 @@ pub(crate) fn RemoveRadEndpoints(
             return Ok(BNS_PROGRAM_ERR as i32);
         }
 
-        let mut p1 = bns_vertex(heap, pBNS, v1)?;
-        let mut p2 = bns_vertex(heap, pBNS, v2)?;
-        let p2_last = p2
-            .num_adj_edges
-            .checked_sub(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let p1_last = p1
-            .num_adj_edges
-            .checked_sub(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if work_get(heap, p2.iedge, i32::from(p2_last))? != ie
-            || work_get(heap, p1.iedge, i32::from(p1_last))? != ie
-        {
-            return Ok(BNS_PROGRAM_ERR as i32);
-        }
-
-        p2.num_adj_edges = p2_last;
-        p1.num_adj_edges = p1_last;
-        work_set(heap, p2.iedge, i32::from(p2_last), 0)?;
-        work_set(heap, p1.iedge, i32::from(p1_last), 0)?;
-        p2.st_edge.flow = p2.st_edge.flow.wrapping_sub(edge.flow);
-        p1.st_edge.flow = p1.st_edge.flow.wrapping_sub(edge.flow);
-
-        if p2.num_adj_edges == 0 && v2 >= pBNS.num_atoms {
-            if v2
-                .checked_add(1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                != pBNS.num_vertices
-            {
+        // Native unsigned-short degrees promote to int before subtracting 1.
+        // Resolve each endpoint only when its short-circuit operand is reached.
+        for vertex in [v2, v1] {
+            let point = heap.element_signed(pBNS.vert.as_const(), vertex)?;
+            let edges = point.iedge;
+            let last = i32::from(point.num_adj_edges) - 1;
+            if *heap.element_signed(edges.as_const(), last)? != ie {
                 return Ok(BNS_PROGRAM_ERR as i32);
             }
-            *bns_vertex_mut(heap, pBNS, v2)? = BNS_VERTEX::default();
-            pBNS.num_vertices = pBNS.num_vertices.wrapping_sub(1);
-        } else {
-            *bns_vertex_mut(heap, pBNS, v2)? = p2;
         }
-
-        if p1.num_adj_edges == 0 && v1 >= pBNS.num_atoms {
-            if v1
-                .checked_add(1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                != pBNS.num_vertices
+        for vertex in [v2, v1] {
+            let point = bns_vertex_mut(heap, pBNS, vertex)?;
+            point.num_adj_edges = point.num_adj_edges.wrapping_sub(1);
+        }
+        for vertex in [v2, v1] {
+            let point = heap.element_signed(pBNS.vert.as_const(), vertex)?;
+            let edges = point.iedge;
+            let degree = i32::from(point.num_adj_edges);
+            *heap.element_signed_mut(edges, degree)? = 0;
+        }
+        for vertex in [v2, v1] {
+            let point = bns_vertex_mut(heap, pBNS, vertex)?;
+            point.st_edge.flow = point.st_edge.flow.wrapping_sub(flow);
+        }
+        for vertex in [v2, v1] {
+            if heap
+                .element_signed(pBNS.vert.as_const(), vertex)?
+                .num_adj_edges
+                == 0
+                && vertex >= pBNS.num_atoms
             {
-                return Ok(BNS_PROGRAM_ERR as i32);
+                if vertex + 1 != pBNS.num_vertices {
+                    return Ok(BNS_PROGRAM_ERR as i32);
+                }
+                *bns_vertex_mut(heap, pBNS, vertex)? = BNS_VERTEX::default();
+                pBNS.num_vertices = pBNS.num_vertices.wrapping_sub(1);
             }
-            *bns_vertex_mut(heap, pBNS, v1)? = BNS_VERTEX::default();
-            pBNS.num_vertices = pBNS.num_vertices.wrapping_sub(1);
-        } else {
-            *bns_vertex_mut(heap, pBNS, v1)? = p1.clone();
         }
 
         if let Some(atoms) = at.as_deref_mut() {
             if v1 < pBNS.num_atoms {
-                let delta = p1.st_edge.cap - p1.st_edge.flow;
-                let mut rad = atoms
-                    .get(usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .radical;
+                let point = heap.element_signed(pBNS.vert.as_const(), v1)?;
+                let delta = point.st_edge.cap - point.st_edge.flow;
+                let atom = atoms
+                    .get_mut(usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 match delta {
-                    0 => {
-                        if rad == RADICAL_DOUBLET as i8 {
-                            rad = 0;
-                        }
-                    }
-                    1 => {
-                        if rad != RADICAL_DOUBLET as i8 {
-                            rad = RADICAL_DOUBLET as i8;
-                        }
+                    0 if atom.radical == RADICAL_DOUBLET as i8 => atom.radical = 0,
+                    1 if atom.radical != RADICAL_DOUBLET as i8 => {
+                        atom.radical = RADICAL_DOUBLET as i8;
                     }
                     _ => {}
                 }
-                atoms
-                    .get_mut(usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .radical = rad;
             }
         }
-
         *bns_edge_mut(heap, pBNS, ie)? = BNS_EDGE::default();
         pBNS.num_edges = pBNS.num_edges.wrapping_sub(1);
         i -= 1;
     }
-
     pBD.nNumRadEdges = 0;
     pBD.nNumRadicals = 0;
     pBD.bRadSrchMode = tagBnsRadSrchMode_RAD_SRCH_NORM;
@@ -11257,29 +14108,29 @@ fn sort_rad_endpoint_pairs(
     rad_endpoints: SourceMutPointer<Vertex>,
     pair_count: i32,
 ) -> Result<(), SourceHeapError> {
-    let mut i = 1_i32;
-    while i < pair_count {
-        let key_left = work_get(heap, rad_endpoints, i * 2)?;
-        let key_right = work_get(heap, rad_endpoints, i * 2 + 1)?;
-        let mut j = i - 1;
-        while j >= 0 {
-            let left = work_get(heap, rad_endpoints, j * 2)?;
-            let right = work_get(heap, rad_endpoints, j * 2 + 1)?;
-            if cmp_rad_endpoints(&[left, right], &[key_left, key_right]) <= 0 {
-                break;
-            }
-            work_set(heap, rad_endpoints, (j + 1) * 2, left)?;
-            work_set(heap, rad_endpoints, (j + 1) * 2 + 1, right)?;
-            if j == 0 {
-                j = -1;
-                break;
-            }
-            j -= 1;
-        }
-        work_set(heap, rad_endpoints, (j + 1) * 2, key_left)?;
-        work_set(heap, rad_endpoints, (j + 1) * 2 + 1, key_right)?;
-        i += 1;
+    // INCHI✔️❗: ichi_bns.c:7992 and 8142, both native call sites:
+    //         qsort( pBD->RadEndpoints, pBD->nNumRadEndpoints / 2, 2 * sizeof( pBD->RadEndpoints[0] ), cmp_rad_endpoints );
+    // Pair storage has no identity beyond its two integers; equal pairs are
+    // indistinguishable. Sort only the requested prefix, leaving trailing
+    // storage untouched. Short invalid storage fails admission before writes.
+    // In-place O(n log n) worst-case, O(log n) stack, no heap allocation or
+    // staging clone. Actual configured libc qsort costs remain independently
+    // OPEN; this removes the previous quadratic insertion/arena-access path.
+    if pair_count <= 1 {
+        return Ok(());
     }
+    let count = usize::try_from(pair_count)
+        .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+        .checked_mul(2)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let prefix = heap
+        .slice_mut(rad_endpoints)?
+        .get_mut(..count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    prefix
+        .as_chunks_mut::<2>()
+        .0
+        .sort_unstable_by(|left, right| cmp_rad_endpoints(left, right).cmp(&0));
     Ok(())
 }
 
@@ -11479,6 +14330,281 @@ pub(crate) fn AllocateAndInitBnStruct(
     // INCHI✔️❌: #define BOND_TYPE_MASK 0x0f
     // END INCHI ACTIVE MACRO CONFIGURATION: AllocateAndInitBnStruct
 
+    // INCHI✔️❌: One canonical algorithm borrows the existing atom prefix.
+    // Native num_atoms==0 never dereferences at; bypass model admission then.
+    // Fresh BNS allocations cannot alias this preexisting input allocation;
+    // children access only new BNS handles or scalar atom macros. Restore the
+    // original allocation on every Result, retaining source partial writes.
+    // No whole-array Vec, copy or writeback. Existing extractor fixed map
+    // removal/restore costs remain human-deferred; no panic-unwind claim.
+    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    if atom_count == 0 {
+        return allocate_and_init_bn_struct_atoms(
+            heap,
+            &mut [],
+            num_atoms,
+            nMaxAddAtoms,
+            nMaxAddEdges,
+            max_altp,
+            pNum_changed_bonds,
+        );
+    }
+    heap.with_slice_mut_and_heap_mut(at, |atoms, heap| {
+        let atoms = atoms
+            .get_mut(..atom_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        allocate_and_init_bn_struct_atoms(
+            heap,
+            atoms,
+            num_atoms,
+            nMaxAddAtoms,
+            nMaxAddEdges,
+            max_altp,
+            pNum_changed_bonds,
+        )
+    })
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn allocate_and_init_bn_struct_atoms(
+    heap: &mut SourceHeap,
+    atoms: &mut [inp_ATOM],
+    num_atoms: i32,
+    nMaxAddAtoms: i32,
+    nMaxAddEdges: i32,
+    max_altp: i32,
+    pNum_changed_bonds: &mut i32,
+) -> Result<SourceMutPointer<BN_STRUCT>, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: ichi_bns.c:8783..9006 C417 sole live atom kernel
+    // BN_STRUCT* AllocateAndInitBnStruct( inp_ATOM *at,
+    //                                     int num_atoms,
+    //                                     int nMaxAddAtoms,
+    //                                     int nMaxAddEdges,
+    //                                     int max_altp,
+    //                                     int *pNum_changed_bonds )
+    // {
+    //     BN_STRUCT   *pBNS = NULL;
+    //     BNS_VERTEX  *vert;
+    //
+    //     int    neigh, num_changed_bonds = 0;
+    //     U_CHAR bond_type, bond_mark;
+    //
+    //     int i, j, k, n_edges, num_bonds, num_edges, f1, f2, edge_cap, edge_flow, st_flow; /* djb-rwth: removing redundant variables */
+    //     int tot_st_cap, tot_st_flow;
+    //     int max_tg, max_edges, max_vertices, len_alt_path, max_iedges, num_altp;
+    // #if ( BNS_RAD_SEARCH == 1 )
+    //     int num_rad = 0;
+    //
+    //     nMaxAddEdges += 1;
+    // #endif
+    // #if ( FIX_NUM_TG == 1 )
+    //     max_tg = inchi_max( num_atoms / 2, 5 );
+    // #else
+    //     max_tg = num_atoms;
+    // #endif
+    //     num_changed_bonds = 0;
+    //
+    //     for (i = 0, num_bonds = 0; i < num_atoms; i++)
+    //     {
+    //         /*(@nnuk : Nauman Ullah Khan) */
+    //         LOG_NO_ARGS("\n################# (L8916:ichi_bns.c) ###################\n");
+    //         LOG_MULT_ARGS("Number of changed bonds (Start): %d\n", num_changed_bonds);
+    //         LOG_NO_ARGS("\n########################################################\n");
+    //
+    //         num_bonds += at[i].valence;
+    // #if ( BNS_RAD_SEARCH == 1 )
+    //         num_rad += ( at[i].radical == RADICAL_DOUBLET );
+    // #endif
+    //     }
+    //     /* Each atom has enough edges to belong to a tautomeric group + nMaxAddEdges */
+    //     /* number of atoms is large enough to accommodate max. possible number of t-groups + nMaxAddAtoms */
+    //     /* max_altp cannot be larger than BN_MAX_ALTP = 16 */
+    //     num_edges = ( num_bonds /= 2 );
+    //     /* +1 for a super-tautomeric group */
+    //     max_vertices = num_atoms + nMaxAddAtoms + max_tg + 1;
+    //     /* +max_tg for edges between t-groups and super-tautomeric group */
+    //     max_edges = num_edges + ( nMaxAddEdges + NUM_KINDS_OF_GROUPS )*max_vertices + max_tg;
+    // #if ( BNS_RAD_SEARCH == 1 )
+    //     if (num_rad)
+    //     {
+    //         max_vertices *= 2;
+    //         max_edges *= 2;
+    //     }
+    // #endif
+    //     max_iedges = 2 * max_edges;
+    //     len_alt_path = max_vertices + iALTP_HDR_LEN + 1; /* may overflow if an edge is traversed in 2 directions */
+    //
+    //     if (!( pBNS = (BN_STRUCT   *) inchi_calloc( 1, sizeof( BN_STRUCT ) ) ) ||
+    //          !( pBNS->edge = (BNS_EDGE    *) inchi_calloc( max_edges, sizeof( BNS_EDGE ) ) ) ||
+    //          !( pBNS->vert = (BNS_VERTEX  *) inchi_calloc( max_vertices, sizeof( BNS_VERTEX ) ) ) ||
+    //          !( pBNS->iedge = (BNS_IEDGE   *) inchi_calloc( max_iedges, sizeof( BNS_IEDGE ) ) ))
+    //     {
+    //         return DeAllocateBnStruct( pBNS );
+    //     }
+    //     /* Alt path init */
+    //     for (num_altp = 0; num_altp < max_altp && num_altp < BN_MAX_ALTP; num_altp++)
+    //     {
+    //         if (!( pBNS->altp[num_altp] = (BNS_ALT_PATH*) inchi_calloc( len_alt_path, sizeof( BNS_ALT_PATH ) ) ))
+    //         {
+    //             return DeAllocateBnStruct( pBNS );
+    //         }
+    //         ALTP_ALLOCATED_LEN( pBNS->altp[num_altp] ) = len_alt_path;
+    //         pBNS->len_alt_path = len_alt_path;  /* ??? duplication ??? */
+    //                                             /* re-init */
+    //         ALTP_DELTA( pBNS->altp[num_altp] ) = 0;
+    //         ALTP_START_ATOM( pBNS->altp[num_altp] ) = NO_VERTEX;
+    //         ALTP_END_ATOM( pBNS->altp[num_altp] ) = NO_VERTEX;
+    //         ALTP_PATH_LEN( pBNS->altp[num_altp] ) = 0;
+    //     }
+    //     pBNS->alt_path = NULL;
+    //     pBNS->num_altp = 0;
+    //     pBNS->max_altp = num_altp;
+    //
+    //     /* Fill vertices (no connectivity) */
+    //     pBNS->vert[0].iedge = pBNS->iedge;
+    //     for (i = 0; i < num_atoms; i++)
+    //     {
+    //         k = pBNS->vert[i].max_adj_edges = at[i].valence + ( nMaxAddEdges + NUM_KINDS_OF_GROUPS );
+    //         pBNS->vert[i + 1].iedge = pBNS->vert[i].iedge + k;
+    //     }
+    //     pBNS->num_atoms = num_atoms;      /* number of real atoms */
+    //     pBNS->num_added_atoms = 0;
+    //     pBNS->num_t_groups = 0;              /* number of added t-groups */
+    //     pBNS->num_c_groups = 0;
+    //     pBNS->nMaxAddAtoms = nMaxAddAtoms;
+    //     pBNS->nMaxAddEdges = nMaxAddEdges;
+    //
+    //     pBNS->num_vertices = num_atoms;     /*  current number of vertices, a sum of
+    //                                         pBNS->num_atoms
+    //                                         pBNS->num_t_groups
+    //                                         pBNS->num_added_atoms           */
+    //     pBNS->max_vertices = max_vertices;
+    //
+    //
+    //     pBNS->num_bonds = num_bonds;        /* number of real edges (bonds)         */
+    //     pBNS->max_edges = max_edges;
+    //     pBNS->max_iedges = max_iedges;
+    //
+    //     /*
+    //     To remove t-groups and added atoms:
+    //     In atoms i = 0..pBNS->num_atoms-1
+    //     pBNS->vert[i].num_adj_edges = pBNS->vert[i].max_adj_edges - pBNS->nMaxAddEdges - NUM_KINDS_OF_GROUPS;
+    //     pBNS->num_vertices    = pBNS->num_atoms;
+    //     pBNS->num_edges       = pBNS->num_bonds;
+    //     pBNS->num_added_atoms = 0;
+    //     pBNS->num_t_groups    = 0;
+    //     pBNS->num_added_edges = 0;
+    //
+    //     ALTP_DELTA(pBNS->alt_path)      = 0;
+    //     ALTP_START_ATOM(pBNS->alt_path) = NO_VERTEX;
+    //     ALTP_END_ATOM(pBNS->alt_path)   = NO_VERTEX;
+    //     ALTP_PATH_LEN(pBNS->alt_path)   = 0;
+    //     */
+    //
+    //     /* Fill edges and connectivity */
+    //     tot_st_cap = tot_st_flow = 0;
+    //     for (i = 0, n_edges = 0; i < num_atoms; i++)
+    //     {
+    //         vert = &pBNS->vert[i];
+    //         /* djb-rwth: removing redundant code */
+    //         st_flow = 0;
+    //         /* djb-rwth: removing redundant code */
+    //         for (j = 0; j < at[i].valence; j++)
+    //         {
+    //             neigh = at[i].neighbor[j];
+    //             /* find this bond at the neighbor */
+    //             for (k = 0; k < at[neigh].valence; k++)
+    //             {
+    //                 if (at[neigh].neighbor[k] == i)
+    //                 {
+    //                     break;
+    //                 }
+    //             }
+    //             bond_type = ( at[i].bond_type[j] & BOND_TYPE_MASK );
+    //             bond_mark = ( at[i].bond_type[j] & ~BOND_TYPE_MASK );
+    //             if (bond_type != BOND_SINGLE && bond_type != BOND_DOUBLE &&
+    //                  bond_type != BOND_TRIPLE /*&& bond_type != BOND_ALTERN*/)
+    //             {
+    //                 /* Make Unknown or Alternating bonds single */
+    //                 bond_type = 1;
+    //                 at[i].bond_type[j] = bond_mark | bond_type;
+    //                 num_changed_bonds++;
+    //             }
+    //             if (neigh > i)
+    //             {
+    //                 /* This is the first time we encounter this bond */
+    //                 f1 = MAX_AT_FLOW( at[i] );
+    //                 f2 = MAX_AT_FLOW( at[neigh] );
+    //                 edge_flow = bond_type - 1;
+    //                 if (edge_flow > MAX_BOND_EDGE_CAP)
+    //                 {
+    //                     /* djb-rwth: removing redundant code */
+    //                     edge_flow = 0;  /* BNS will determine flows (that is, bonds) */
+    //                     edge_cap = AROM_BOND_EDGE_CAP;
+    //                 }
+    //                 else
+    //                 {
+    // #if ( 0 && KETO_ENOL_TAUT == 1 )  /* ????? */
+    //                     edge_cap = inchi_max( f1, f2 );
+    // #else
+    //                     edge_cap = inchi_min( f1, f2 );
+    // #endif
+    //                     edge_cap = inchi_min( edge_cap, MAX_BOND_EDGE_CAP ); /* max capacity = 2 means up to triple bond */
+    //                 }
+    //
+    //                 pBNS->edge[n_edges].neighbor1 = (AT_NUMB) i;
+    //                 pBNS->edge[n_edges].neighbor12 = (AT_NUMB) ( i ^ neigh );
+    //                 pBNS->edge[n_edges].flow = pBNS->edge[n_edges].flow0 = edge_flow;
+    //                 pBNS->edge[n_edges].cap = pBNS->edge[n_edges].cap0 = edge_cap;
+    //                 pBNS->edge[n_edges].neigh_ord[0] = j;
+    //                 pBNS->edge[n_edges].neigh_ord[1] = k;
+    //                 pBNS->edge[n_edges].pass = 0;
+    //                 pBNS->edge[n_edges].forbidden = 0;
+    //
+    //                 vert->iedge[j] = pBNS->vert[neigh].iedge[k] = n_edges++;
+    //             }
+    //             else
+    //             {
+    //                 /* This is the second time we encounter this bond. It was stored at */
+    //                 int  iedge = pBNS->vert[neigh].iedge[k];
+    //                 edge_cap = pBNS->edge[iedge].cap; /* djb-rwth: ignoring LLVM warning: variable used */
+    //                 edge_flow = pBNS->edge[iedge].flow;
+    //             }
+    //             st_flow += edge_flow;
+    //             /* djb-rwth: removing redundant code */
+    //         }
+    //         vert->num_adj_edges = j;
+    //         vert->st_edge.cap =
+    //             vert->st_edge.cap0 = MAX_AT_FLOW( at[i] );
+    //         vert->st_edge.flow =
+    //             vert->st_edge.flow0 = st_flow;
+    //         vert->type = BNS_VERT_TYPE_ATOM;
+    //         tot_st_cap += vert->st_edge.cap;
+    //         tot_st_flow += vert->st_edge.flow;
+    //     }
+    //     *pNum_changed_bonds = num_changed_bonds / 2;
+    //
+    //     pBNS->num_edges = n_edges;   /* number of edges */
+    //     pBNS->num_added_edges = 0;
+    //
+    //     /*(@nnuk : Nauman Ullah Khan) */
+    //     LOG_NO_ARGS("\n################# (L9108:ichi_bns.c) ################\n");
+    //     for (i = 0, num_bonds = 0; i < num_atoms; i++) {
+    //
+    //         LOG_MULT_ARGS("Element : %s, Number of changed bonds (End): %d\n", at[i].elname, *pNum_changed_bonds);
+    //     }
+    //     LOG_NO_ARGS("\n#####################################################\n");
+    //
+    //     pBNS->tot_st_cap = tot_st_cap;
+    //     pBNS->tot_st_flow = tot_st_flow;
+    //
+    //     return pBNS;
+    // }
+    // END VERBATIM SOURCE FRAGMENT: C417 sole live atom kernel
+    // INCHI✔️❌: Complete original source algorithm; live atom field writes,
+    // source allocation/error/cleanup ordering and unsigned-short stride.
+    // No added atom storage/copy/scan; extractor/arena whole costs OPEN.
+
     fn source_count(value: i32) -> Result<u64, SourceHeapError> {
         u64::try_from(value).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)
     }
@@ -11502,17 +14628,10 @@ pub(crate) fn AllocateAndInitBnStruct(
         num_atoms
     };
 
-    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let mut atoms = {
-        let source_atoms = heap.slice(at.as_const())?;
-        if source_atoms.len() < atom_count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        source_atoms[..atom_count].to_vec()
-    };
+    let atom_count = atoms.len();
 
     let mut num_bonds = 0_i32;
-    for atom in &atoms {
+    for atom in atoms.iter() {
         num_bonds = num_bonds.wrapping_add(i32::from(atom.valence));
         if BNS_RAD_SEARCH == 1 && atom.radical == RADICAL_DOUBLET as i8 {
             num_rad = num_rad.wrapping_add(1);
@@ -11618,8 +14737,9 @@ pub(crate) fn AllocateAndInitBnStruct(
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .iedge = bns.iedge;
     for i in 0..atom_count {
-        let max_adj_edges =
-            i32::from(atoms[i].valence).wrapping_add(n_max_add_edges + NUM_KINDS_OF_GROUPS as i32);
+        let max_adj_edges = i32::from(atoms[i].valence)
+            .wrapping_add(n_max_add_edges + NUM_KINDS_OF_GROUPS as i32)
+            as AT_NUMB;
         let current_iedge = heap
             .slice(bns.vert.as_const())?
             .get(i)
@@ -11630,8 +14750,14 @@ pub(crate) fn AllocateAndInitBnStruct(
                 .slice_mut(bns.vert)?
                 .get_mut(i)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            vertex.max_adj_edges = max_adj_edges as AT_NUMB;
+            vertex.max_adj_edges = max_adj_edges;
         }
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c:8870..8871 C417 narrowed adjacency stride
+        //         k = pBNS->vert[i].max_adj_edges = at[i].valence + ( nMaxAddEdges + NUM_KINDS_OF_GROUPS );
+        //         pBNS->vert[i + 1].iedge = pBNS->vert[i].iedge + k;
+        // END VERBATIM SOURCE FRAGMENT: C417 narrowed adjacency stride
+        // INCHI✔️❗: Assignment to unsigned-short max_adj_edges narrows
+        // BEFORE int k receives the stride; same cast/store/offset count.
         let next_iedge = current_iedge.offset(i64::from(max_adj_edges))?;
         heap.slice_mut(bns.vert)?
             .get_mut(i + 1)
@@ -11774,14 +14900,6 @@ pub(crate) fn AllocateAndInitBnStruct(
     bns.tot_st_cap = tot_st_cap;
     bns.tot_st_flow = tot_st_flow;
 
-    {
-        let destination = heap.slice_mut(at)?;
-        if destination.len() < atom_count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        destination[..atom_count].clone_from_slice(&atoms[..atom_count]);
-    }
-
     *heap
         .slice_mut(p_bns)?
         .first_mut()
@@ -11834,35 +14952,22 @@ pub(crate) fn DeAllocateBnStruct(
         return Ok(SourceMutPointer::null());
     }
 
-    let bns = heap
-        .slice(pBNS.as_const())?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
-
-    if !bns.edge.is_null() {
-        inchi_free(heap, bns.edge)?;
+    // Behavior: read only reached fields between source-ordered frees.
+    // Cost: no whole BNS clone; O(min(max_altp,16)) time/O(1) space.
+    // Repeated safe arena lookups and whole-call costs remain OPEN.
+    let edge = heap.element_signed(pBNS.as_const(), 0)?.edge;
+    inchi_free(heap, edge)?;
+    let mut index = 0;
+    while index < heap.element_signed(pBNS.as_const(), 0)?.max_altp && index < BN_MAX_ALTP as i32 {
+        let pointer = heap.element_signed(pBNS.as_const(), 0)?.altp[index as usize];
+        inchi_free(heap, pointer)?;
+        index += 1;
     }
-
-    let max_altp = bns.max_altp.min(BN_MAX_ALTP as i32);
-    for index in 0..max_altp {
-        let pointer =
-            bns.altp[usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-        if !pointer.is_null() {
-            inchi_free(heap, pointer)?;
-        }
-    }
-
-    if !bns.vert.is_null() {
-        let first_iedge = heap
-            .slice(bns.vert.as_const())?
-            .first()
-            .map(|vertex| vertex.iedge)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if !first_iedge.is_null() {
-            inchi_free(heap, first_iedge)?;
-        }
-        inchi_free(heap, bns.vert)?;
+    let vert = heap.element_signed(pBNS.as_const(), 0)?.vert;
+    if !vert.is_null() {
+        let first_iedge = heap.element_signed(vert.as_const(), 0)?.iedge;
+        inchi_free(heap, first_iedge)?;
+        inchi_free(heap, vert)?;
     }
 
     inchi_free(heap, pBNS)?;
@@ -12072,11 +15177,16 @@ pub(crate) fn SetRadEndpoints(
 #[allow(non_snake_case)]
 pub(crate) fn SetRadEndpoints2(
     heap: &mut SourceHeap,
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut impl CanonicalTarget,
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
     bRadSrchMode: BRS_MODE,
 ) -> Result<i32, SourceHeapError> {
+    // INCHI✔️❌: Preserve opaque CG through every radical/search/error gate.
+    // Only reached bitmap workers borrow its actual state; no shadow,
+    // clone or early admission. Checked loan constants remain OPEN
+    // in INCHI-PERF-NORMALIZATION-CG-TRANSPORT (C587).
+
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:8064 SetRadEndpoints2
     // INCHI✔️❌: int SetRadEndpoints2( CANON_GLOBALS *pCG,
     // INCHI✔️❌:                       BN_STRUCT *pBNS,
@@ -12380,10 +15490,11 @@ pub(crate) fn SetRadEndpoints2(
     }
 
     while i < pBNS.num_atoms {
-        let mut vert = bns_vertex(heap, pBNS, i)?;
+        let vert = heap.element_signed(pBNS.vert.as_const(), i)?;
         if vert.st_edge.cap.wrapping_sub(delta) == (vert.st_edge.flow & EDGE_FLOW_ST_MASK as i32)
             && n_num_rad < MAX_NUM_RAD as i32
         {
+            let vert = bns_vertex_mut(heap, pBNS, i)?;
             vert.st_edge.cap = vert.st_edge.cap.wrapping_sub(delta);
             pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(delta);
             v_rad_list
@@ -12392,7 +15503,6 @@ pub(crate) fn SetRadEndpoints2(
                 [usize::try_from(n_num_rad).map_err(|_| SourceHeapError::PointerOutOfBounds)?] =
                 n_num_rad;
             n_num_rad += 1;
-            *bns_vertex_mut(heap, pBNS, i)? = vert;
         }
         i += 1;
     }
@@ -12401,7 +15511,8 @@ pub(crate) fn SetRadEndpoints2(
         return Ok(BNS_CAP_FLOW_ERR);
     }
 
-    let v_rad_list_pointer = heap.allocate_model_storage(v_rad_list.to_vec())?;
+    // INCHI✔️❗: Vertex     vRadList[MAX_NUM_RAD], vRadEqul[MAX_NUM_RAD];
+    // Cost: keep the source fixed stack arrays; no retained arena copy or failure.
 
     while j < n_num_rad {
         let idx = usize::try_from(
@@ -12414,9 +15525,8 @@ pub(crate) fn SetRadEndpoints2(
         pBNS.alt_path = pBNS.altp[0];
         pBNS.bChangeFlow = 0;
         {
-            let mut vert = bns_vertex(heap, pBNS, idx as i32)?;
+            let vert = bns_vertex_mut(heap, pBNS, idx as i32)?;
             vert.st_edge.cap = vert.st_edge.cap.wrapping_add(delta);
-            *bns_vertex_mut(heap, pBNS, idx as i32)? = vert;
         }
         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(delta);
         ret = BalancedNetworkSearch(heap, pBNS, pBD, BNS_EF_RAD_SRCH as i32)?;
@@ -12424,17 +15534,16 @@ pub(crate) fn SetRadEndpoints2(
         ReInitBnStructAltPaths(heap, pBNS)?;
         pBD.bRadSrchMode = tagBnsRadSrchMode_RAD_SRCH_NORM;
         {
-            let mut vert = bns_vertex(heap, pBNS, idx as i32)?;
+            let vert = bns_vertex_mut(heap, pBNS, idx as i32)?;
             vert.st_edge.cap = vert.st_edge.cap.wrapping_sub(delta);
-            *bns_vertex_mut(heap, pBNS, idx as i32)? = vert;
         }
         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_sub(delta);
         if is_bns_error(ret) {
-            goto_set_rad_endpoints2_error(heap, pCG, pBNS, pBD, &mut vert_set)?;
+            goto_set_rad_endpoints2_error(heap, pBNS, pBD, &mut vert_set)?;
             return Ok(ret);
         } else if ret != 0 {
             ret = BNS_RADICAL_ERR;
-            goto_set_rad_endpoints2_error(heap, pCG, pBNS, pBD, &mut vert_set)?;
+            goto_set_rad_endpoints2_error(heap, pBNS, pBD, &mut vert_set)?;
             return Ok(ret);
         }
         if ret == 0 && pBD.nNumRadEndpoints >= 2 {
@@ -12443,27 +15552,49 @@ pub(crate) fn SetRadEndpoints2(
                 || work_get(heap, pBD.RadEndpoints, pBD.nNumRadEndpoints - 2)? != idx as i32
             {
                 ret = BNS_RADICAL_ERR;
-                goto_set_rad_endpoints2_error(heap, pCG, pBNS, pBD, &mut vert_set)?;
+                goto_set_rad_endpoints2_error(heap, pBNS, pBD, &mut vert_set)?;
                 return Ok(ret);
             }
             if n_num_rad > 1 {
                 if vert_set.bitword.is_null() {
-                    let _ = SetBitCreate(heap, pCG)?;
-                    if NodeSetCreate(heap, pCG, &mut vert_set, pBNS.num_atoms, n_num_rad)? == 0 {
+                    let _ = pCG
+                        .reborrow_globals()
+                        .with_mut(heap, |pCG, heap| SetBitCreate(heap, pCG))?;
+                    if pCG.reborrow_globals().with_mut(heap, |pCG, heap| {
+                        NodeSetCreate(heap, pCG, &mut vert_set, pBNS.num_atoms, n_num_rad)
+                    })? == 0
+                    {
                         ret = BNS_OUT_OF_RAM;
-                        goto_set_rad_endpoints2_error(heap, pCG, pBNS, pBD, &mut vert_set)?;
+                        goto_set_rad_endpoints2_error(heap, pBNS, pBD, &mut vert_set)?;
                         return Ok(ret);
                     }
                 }
-                NodeSetFromRadEndpoints(
-                    heap,
-                    pCG,
-                    &vert_set,
-                    j,
-                    pBD.RadEndpoints,
-                    pBD.nNumRadEndpoints,
-                )?;
-                RemoveFromNodeSet(heap, pCG, &vert_set, j, v_rad_list_pointer, n_num_rad)?;
+                pCG.reborrow_globals().with_mut(heap, |pCG, heap| {
+                    NodeSetFromRadEndpoints(
+                        heap,
+                        pCG,
+                        &vert_set,
+                        j,
+                        pBD.RadEndpoints,
+                        pBD.nNumRadEndpoints,
+                    )
+                })?;
+                // INCHI✔️❗: RemoveFromNodeSet( pCG, &VertSet, j, vRadList, nNumRad );
+                pCG.reborrow_globals().with_mut(heap, |pCG, heap| {
+                    crate::source::base::ichican2::remove_from_node_set_values(
+                        heap,
+                        pCG,
+                        &vert_set,
+                        j,
+                        n_num_rad,
+                        |_, index| {
+                            v_rad_list
+                                .get(index as usize)
+                                .copied()
+                                .ok_or(SourceHeapError::PointerOutOfBounds)
+                        },
+                    )
+                })?;
             }
         }
         j += 1;
@@ -12473,9 +15604,8 @@ pub(crate) fn SetRadEndpoints2(
     while restore < n_num_rad {
         let atom_index = v_rad_list
             [usize::try_from(restore).map_err(|_| SourceHeapError::PointerOutOfBounds)?];
-        let mut vert = bns_vertex(heap, pBNS, atom_index)?;
+        let vert = bns_vertex_mut(heap, pBNS, atom_index)?;
         vert.st_edge.cap = vert.st_edge.cap.wrapping_add(delta);
-        *bns_vertex_mut(heap, pBNS, atom_index)? = vert;
         pBNS.tot_st_cap = pBNS.tot_st_cap.wrapping_add(delta);
         restore += 1;
     }
@@ -12536,19 +15666,21 @@ pub(crate) fn SetRadEndpoints2(
                         }
                         j += 1;
                     }
-                    n = AddNodesToRadEndpoints(
-                        heap,
-                        pCG,
-                        &vert_set,
-                        i,
-                        pBD.RadEndpoints,
-                        v_rad_list[i_usize],
-                        n,
-                        pBD.max_len_Pu_Pv,
-                    )?;
+                    n = pCG.reborrow_globals().with_mut(heap, |pCG, heap| {
+                        AddNodesToRadEndpoints(
+                            heap,
+                            pCG,
+                            &vert_set,
+                            i,
+                            pBD.RadEndpoints,
+                            v_rad_list[i_usize],
+                            n,
+                            pBD.max_len_Pu_Pv,
+                        )
+                    })?;
                     if n < 0 {
                         ret = BNS_RADICAL_ERR;
-                        goto_set_rad_endpoints2_error(heap, pCG, pBNS, pBD, &mut vert_set)?;
+                        goto_set_rad_endpoints2_error(heap, pBNS, pBD, &mut vert_set)?;
                         return Ok(ret);
                     }
                 } else {
@@ -12561,7 +15693,7 @@ pub(crate) fn SetRadEndpoints2(
             i += 1;
         }
         pBD.nNumRadEndpoints = n;
-        NodeSetFree(heap, pCG, &mut vert_set)?;
+        crate::source::base::ichican2::free_node_set(heap, &mut vert_set)?;
     } else if n_num_rad == 1 && pBD.nNumRadEndpoints == 0 {
         work_set(heap, pBD.RadEndpoints, 0, v_rad_list[0])?;
         work_set(heap, pBD.RadEndpoints, 1, -1)?;
@@ -12573,7 +15705,7 @@ pub(crate) fn SetRadEndpoints2(
         i = 0;
         while i < pBD.nNumRadEndpoints {
             let w_rad = work_get(heap, pBD.RadEndpoints, i)?;
-            let p_rad = bns_vertex(heap, pBNS, w_rad)?;
+            let p_rad = heap.element_signed(pBNS.vert.as_const(), w_rad)?;
             let mut delta2 = p_rad
                 .st_edge
                 .cap
@@ -12600,10 +15732,10 @@ pub(crate) fn SetRadEndpoints2(
             )?;
             if is_bns_error(v_rad) {
                 ret = v_rad;
-                goto_set_rad_endpoints2_error(heap, pCG, pBNS, pBD, &mut vert_set)?;
+                goto_set_rad_endpoints2_error(heap, pBNS, pBD, &mut vert_set)?;
                 return Ok(ret);
             }
-            let p_new = bns_vertex(heap, pBNS, v_rad)?;
+            let p_new = heap.element_signed(pBNS.vert.as_const(), v_rad)?;
             let rad_edge = p_new.iedge;
             let rad_edge_index = i32::from(p_new.num_adj_edges) - 1;
             let saved_edge = work_get(heap, rad_edge, rad_edge_index)?;
@@ -12635,7 +15767,7 @@ pub(crate) fn SetRadEndpoints2(
                 }
                 ret = AddNewEdge(heap, pBNS, v_rad, v_endp, 1, edge_flow)?;
                 if is_bns_error(ret) {
-                    goto_set_rad_endpoints2_error(heap, pCG, pBNS, pBD, &mut vert_set)?;
+                    goto_set_rad_endpoints2_error(heap, pBNS, pBD, &mut vert_set)?;
                     return Ok(ret);
                 }
                 work_set(heap, pBD.RadEdges, pBD.nNumRadEdges, ret)?;
@@ -12653,13 +15785,12 @@ pub(crate) fn SetRadEndpoints2(
 
 fn goto_set_rad_endpoints2_error(
     heap: &mut SourceHeap,
-    pCG: &mut CANON_GLOBALS,
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
     vert_set: &mut NodeSet,
 ) -> Result<(), SourceHeapError> {
     let _ = RemoveRadEndpoints(heap, pBNS, pBD, None)?;
-    NodeSetFree(heap, pCG, vert_set)?;
+    crate::source::base::ichican2::free_node_set(heap, vert_set)?;
     Ok(())
 }
 
@@ -12675,7 +15806,7 @@ pub(crate) fn bExistsAltPath(
     nVertDoubleBond: i32,
     nVertSingleBond: i32,
     path_type: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:8393 bExistsAltPath
     // INCHI✔️❌: int bExistsAltPath( CANON_GLOBALS *pCG,
@@ -12713,35 +15844,867 @@ pub(crate) fn bExistsAltPath(
     // INCHI✔️❌: #define IS_BNS_ERROR(X) (BNS_ERR <= (X) && (X) <= BNS_MAX_ERR_VALUE)
     // END INCHI ACTIVE MACRO CONFIGURATION: bExistsAltPath
 
-    fn clone_heap_prefix<T: Clone + 'static>(
-        heap: &SourceHeap,
-        pointer: SourceMutPointer<T>,
-        count: i32,
-    ) -> Result<Vec<T>, SourceHeapError> {
-        let count = usize::try_from(count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let slice = heap.slice(pointer.as_const())?;
-        if slice.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        Ok(slice[..count].to_vec())
-    }
+    // VERBATIM SOURCE FRAGMENT: ichi_bns.c:8393..8779 bExistsAltPath complete
+    // INCHI❗❌: Endpoint-role closure reproduced; graph/scratch remain independently quarantined.
+    // int bExistsAltPath( CANON_GLOBALS *pCG,
+    //                     BN_STRUCT *pBNS,
+    //                     BN_DATA *pBD,
+    //                     BN_AATG *pAATG,
+    //                     inp_ATOM *at,
+    //                     int num_atoms,
+    //                     int nVertDoubleBond,
+    //                     int nVertSingleBond,
+    //                     int path_type )
+    // {
+    //     ALT_PATH_CHANGES apc;
+    //     int ret, ret_val, bError, bSuccess, bChangeFlow = 0, nDots, nDelta, bDoMarkChangedBonds = 1;
+    //     int bAdjustRadicals = 0;
+    //     AT_NUMB          type;
+    //     BNS_FLOW_CHANGES fcd[4 * BNS_MAX_NUM_FLOW_CHANGES + 1];
+    //     ENDPOINT_INFO    eif;
+    // #if ( KETO_ENOL_TAUT == 1 )
+    //     ENDPOINT_INFO    eif2;
+    // #endif
+    //
+    //     /* Initialize */
+    //     switch (path_type)
+    //     {
+    //         case ALT_PATH_MODE_TAUTOM:
+    //             /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             bChangeFlow = BNS_EF_CHNG_RSTR;
+    //             if (!at[nVertSingleBond].endpoint &&
+    //                 ( !nGetEndpointInfo( at, nVertSingleBond, &eif ) || !eif.cDonor ))
+    //             {
+    //                 return 0;
+    //             }
+    //             if (!at[nVertDoubleBond].endpoint &&
+    //                 ( !nGetEndpointInfo( at, nVertDoubleBond, &eif ) || !eif.cAcceptor ))
+    //             {
+    //                 return 0;
+    //             }
+    //             break;
+    //
+    // #if ( TAUT_PT_22_00 == 1 )
+    //         case ALT_PATH_MODE_TAUTOM_PT_22_00:
+    //             /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             bChangeFlow = BNS_EF_CHNG_RSTR;
+    //             if (!at[nVertSingleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_22_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+    //                 return 0;
+    //             if (!at[nVertDoubleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_22_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+    //                 return 0;
+    //             break;
+    // #endif
+    //
+    // #if ( TAUT_PT_16_00 == 1 )
+    //         case ALT_PATH_MODE_TAUTOM_PT_16_00:
+    //             /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             bChangeFlow = BNS_EF_CHNG_RSTR;
+    //             if (!at[nVertSingleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_16_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+    //                 return 0;
+    //             if (!at[nVertDoubleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_16_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+    //                 return 0;
+    //             break;
+    // #endif
+    //
+    // #if ( TAUT_PT_06_00 == 1 )
+    //         case ALT_PATH_MODE_TAUTOM_PT_06_00:
+    //             /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             bChangeFlow = BNS_EF_CHNG_RSTR;
+    //             if (!at[nVertSingleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_06_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+    //                 return 0;
+    //             if (!at[nVertDoubleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_06_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+    //                 return 0;
+    //             break;
+    // #endif
+    //
+    // #if ( TAUT_PT_39_00 == 1 )
+    //         case ALT_PATH_MODE_TAUTOM_PT_39_00:
+    //             /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             bChangeFlow = BNS_EF_CHNG_RSTR;
+    //             if (!at[nVertSingleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_39_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+    //                 return 0;
+    //             if (!at[nVertDoubleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_39_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+    //                 return 0;
+    //             break;
+    // #endif
+    //
+    // #if ( TAUT_PT_13_00 == 1 )
+    //         case ALT_PATH_MODE_TAUTOM_PT_13_00:
+    //             /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             bChangeFlow = BNS_EF_CHNG_RSTR;
+    //             if (!at[nVertSingleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_13_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+    //                 return 0;
+    //             if (!at[nVertDoubleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_13_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+    //                 return 0;
+    //             break;
+    // #endif
+    //
+    // #if ( TAUT_PT_18_00 == 1 )
+    //         case ALT_PATH_MODE_TAUTOM_PT_18_00:
+    //             /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             bChangeFlow = BNS_EF_CHNG_RSTR;
+    //             if (!at[nVertSingleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_18_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+    //                 return 0;
+    //             if (!at[nVertDoubleBond].endpoint &&
+    //                 (!nGetEndpointInfo_PT_18_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+    //                 return 0;
+    //             break;
+    // #endif
+    //
+    //
+    // #if ( KETO_ENOL_TAUT == 1 )
+    //         case ALT_PATH_MODE_TAUTOM_KET:
+    //             /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             bChangeFlow = BNS_EF_CHNG_RSTR;
+    //
+    //             if (!at[nVertSingleBond].endpoint &&
+    //                 ( !nGetEndpointInfo_KET( at, nVertSingleBond, &eif ) || !eif.cDonor ))
+    //             {
+    //                 return 0;
+    //             }
+    //             if (!at[nVertDoubleBond].endpoint &&
+    //                 ( !nGetEndpointInfo_KET( at, nVertDoubleBond, &eif2 ) || !eif2.cAcceptor ))
+    //             {
+    //                 return 0;
+    //             }
+    //             /*
+    //             if ( eif.cKetoEnolCode + eif2.cKetoEnolCode != 3 )
+    //             return 0;
+    //             */
+    //             break;
+    //
+    // #endif
+    //         case ALT_PATH_MODE_CHARGE:
+    //             /* Find alt path allowing to move (+). Purpose: establish "charge groups",
+    //             mark alt. bonds due to (+) charge movement */
+    //             type = BNS_VERT_TYPE_C_POINT;
+    //             bChangeFlow = ( BNS_EF_CHNG_RSTR | BNS_EF_ALTR_BONDS );
+    //             break;
+    //
+    //         case ALT_PATH_MODE_4_SALT:
+    //         case ALT_PATH_MODE_4_SALT2:
+    //             /* Find alt paths allowing to move (-) and H between "acidic oxygen atoms".
+    //             Purpose: mark alt bonds due to this "long range" tautomerism. */
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             bChangeFlow = ( BNS_EF_CHNG_RSTR | BNS_EF_ALTR_BONDS );
+    //             if (!bIsBnsEndpoint( pBNS, nVertSingleBond ) /* !at[nVertSingleBond].endpoint*/ &&
+    //                 ( !nGetEndpointInfo( at, nVertSingleBond, &eif ) || !eif.cDonor ))
+    //             {
+    //                 return 0;
+    //             }
+    //             if (!bIsBnsEndpoint( pBNS, nVertDoubleBond ) /* !at[nVertDoubleBond].endpoint*/ &&
+    //                 ( !nGetEndpointInfo( at, nVertDoubleBond, &eif ) || !eif.cAcceptor ))
+    //             {
+    //                 return 0;
+    //             }
+    //             memset( &apc, 0, sizeof( apc ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //             break;
+    //
+    //         case ALT_PATH_MODE_REM2H_CHG:
+    //             bChangeFlow |= BNS_EF_ALTR_BONDS; /* fall through */
+    //         case ALT_PATH_MODE_REM2H_TST:
+    //             bChangeFlow |= BNS_EF_CHNG_RSTR;
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             /* Allow non-tautomeric donors or any tautomeric atom */
+    //             if (!bIsBnsEndpoint( pBNS, nVertSingleBond ) /* not linked to a t-group or the edge forbidden */ &&
+    //                 ( !nGetEndpointInfo( at, nVertSingleBond, &eif ) || !eif.cDonor )) /* not a donor */
+    //             {
+    //                 return 0;
+    //             }
+    //             if (!bIsBnsEndpoint( pBNS, nVertDoubleBond ) /* not connected to a t-group */ &&
+    //                 ( !nGetEndpointInfo( at, nVertDoubleBond, &eif ) || !eif.cDonor ))
+    //             {
+    //                 return 0;
+    //             }
+    //             memset( &apc, 0, sizeof( apc ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //             break;
+    //
+    //         case ALT_PATH_MODE_ADD2H_CHG:
+    //             bChangeFlow |= BNS_EF_ALTR_BONDS; /* fall through */
+    //         case ALT_PATH_MODE_ADD2H_TST:
+    //             bChangeFlow |= BNS_EF_CHNG_RSTR;
+    //             type = BNS_VERT_TYPE_ENDPOINT;
+    //             /* Allow non-tautomeric acceptors or any tautomeric atom */
+    //             if (!bIsBnsEndpoint( pBNS, nVertSingleBond ) /* !at[nVertSingleBond].endpoint*/ &&
+    //                 ( !nGetEndpointInfo( at, nVertSingleBond, &eif ) || !eif.cAcceptor ))
+    //             {
+    //                 return 0;
+    //             }
+    //             if (!bIsBnsEndpoint( pBNS, nVertDoubleBond ) /* !at[nVertSingleBond].endpoint*/ &&
+    //                 ( !nGetEndpointInfo( at, nVertDoubleBond, &eif ) || !eif.cAcceptor ))
+    //             {
+    //                 return 0;
+    //             }
+    //             break;
+    //
+    //         case ALT_PATH_MODE_REM_PROTON:
+    //             /* alt path is between the t-group (nVertDoubleBond) and
+    //             the (+)-charge group (nVertSingleBond) */
+    //             type = 0;
+    //             /*bDoMarkChangedBonds = 0;*/
+    //             bChangeFlow = ( BNS_EF_SAVE_ALL | BNS_EF_UPD_H_CHARGE ) | BNS_EF_ALTR_NS; /* added BNS_EF_ALTR_NS: set non-stereo altern non-ring bonds 2004-07-02*/
+    //             break;
+    //         default:
+    //             type = 0;
+    //             bChangeFlow = BNS_EF_CHNG_RSTR;
+    //             break;
+    //     }
+    //
+    //     bError = 0;
+    //     bSuccess = 0;
+    //     nDelta = 0;
+    //
+    //     ret = SetRadEndpoints2( pCG, pBNS, pBD, RAD_SRCH_NORM );
+    //     if (IS_BNS_ERROR( ret ))
+    //     {
+    //         return ret;
+    //     }
+    //
+    //     /* Set BNS to check alt path */
+    //     ret = bSetBnsToCheckAltPath( pBNS, nVertDoubleBond, nVertSingleBond, type, path_type, &apc, fcd, &nDots );
+    //     switch (ret)
+    //     {
+    //         case  BNS_CHK_ALTP_NO_ALTPATH:
+    //             ret = RemoveRadEndpoints( pBNS, pBD, NULL );
+    //             return ret;
+    //         case BNS_CHK_ALTP_SAME_TGROUP:
+    //             bSuccess = 1;
+    //             goto reinit_BNS;
+    //         case BNS_CHK_ALTP_SAME_VERTEX:
+    //             ret = RemoveRadEndpoints( pBNS, pBD, NULL );
+    //             return ret ? ret : 1; /* very strange ... set a breakpoint here */
+    //         case BNS_CHK_ALTP_SET_SUCCESS:
+    //             break;  /* actually check the existence of the altpath */
+    //         case BNS_CANT_SET_BOND:
+    //             goto reinit_BNS;
+    //         default:
+    //             ret_val = RemoveRadEndpoints( pBNS, pBD, NULL ); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    //             if (IS_BNS_ERROR( ret ))
+    //             {
+    //                 return ret;
+    //             }
+    //             return BNS_PROGRAM_ERR;
+    //     }
+    //
+    //     bAdjustRadicals = ( ( bChangeFlow & BNS_EF_UPD_RAD_ORI ) && !( bChangeFlow & BNS_EF_RSTR_FLOW ) );
+    //
+    //     /*****************************************************************
+    //     * nDots = 2 for ALT_PATH_CHARGE (checking moveable positive charges)
+    //     * Now nDots for ALT_PATH_TAUTOM or ALT_PATH_4_SALT can be greater
+    //     * because some of the bonds are effectively removed and dots
+    //     * (vertex st-caps) may be added
+    //     * -- to make sure there is no (+) charge on a tautomeric endpoint
+    //     * -- to fix positions of moveable tautomeric attachements
+    //     *    (H and (-)-charges) at the ends of an alt path
+    //     */
+    //
+    //     /* Run BNS */
+    //
+    //     ret = RunBalancedNetworkSearch( pBNS, pBD, bChangeFlow );
+    //
+    //     if (IS_BNS_ERROR( ret ))
+    //     {
+    //         bError = ret;
+    //     }
+    //     else if (ret > 0)
+    //     {
+    //         if (2 * ret >= nDots)
+    //         {
+    //             nDelta = 2 * ret - nDots;  /* non-zero means augmentation created another alt. path -- between radicals */
+    //             if (pAATG && pAATG->nMarkedAtom)
+    //             {
+    //                 if (pAATG->nAtTypeTotals && ( bChangeFlow & BNS_EF_UPD_H_CHARGE ))
+    //                 {
+    //                     memset( pAATG->nMarkedAtom, 0, num_atoms * sizeof( pAATG->nMarkedAtom[0] ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //                     /* Mark atoms that have charge or H changed, check their input types (that is, before changes),
+    //                     and subtract their input charge/H from nAtTypeTotals */
+    //                     SubtractOrChangeAtHChargeBNS( pBNS, at, num_atoms, pAATG->nAtTypeTotals, pAATG->nMarkedAtom, NULL, 1 );
+    //                     /* ZChange charges and/or H, update t_group_info, do not check types or change nAtTypeTotals */
+    //                     /* Atom types will be checked and nAtTypeTotals will be changed in
+    //                     AddChangedAtHChargeBNS() later */
+    //                     SubtractOrChangeAtHChargeBNS( pBNS, at, num_atoms, NULL, NULL, pAATG->t_group_info, 0 );
+    //                 }
+    //                 else
+    //                 {
+    //                     if (!pAATG->nAtTypeTotals)
+    //                     {
+    //                         bDoMarkChangedBonds = MarkAtomsAtTautGroups( pBNS, num_atoms, pAATG, nVertSingleBond, nVertDoubleBond );
+    //                         if (bDoMarkChangedBonds < 0)
+    //                         {
+    //                             bError = bDoMarkChangedBonds;
+    //                             bDoMarkChangedBonds = 0;
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //             if (bDoMarkChangedBonds)
+    //             {
+    //                 /* Mark bonds that were changed to configure bond testing */
+    //                 ret_val = bSetBondsAfterCheckOneBond( pBNS, fcd, -1, at, num_atoms, bChangeFlow );
+    //                 if (IS_BNS_ERROR( ret_val ))
+    //                 {
+    //                     bError = ret_val;
+    //                 }
+    //                 /*ret = SetBondsRestoreBnStructFlow( pBNS, at, num_atoms, bChangeFlow );*/
+    //                 /* mark all other changed bonds */
+    //                 ret = SetBondsFromBnStructFlow( pBNS, at, num_atoms, bChangeFlow );
+    //                 if (IS_BNS_ERROR( ret ))
+    //                 {
+    //                     bError = ret;
+    //                 }
+    //                 else
+    //                 {
+    //                     if (!( ret & 1 ) && !( ret_val & 1 ))
+    //                     {
+    //                         bSuccess = 1;
+    //                     }
+    //                     else
+    //                     {
+    //                         if ((( ( ret & 1 ) || ( ret_val & 1 ) ) &&
+    //                             ( bChangeFlow & BNS_EF_ALTR_BONDS )) || ( bChangeFlow & BNS_EF_UPD_H_CHARGE )) /* djb-rwth: addressing LLVM warning */
+    //                         {
+    //                             /* Some bonds have been changed to alternating */
+    //                             bSuccess = 3;
+    //                         }
+    //                         else
+    //                         {
+    //                             bError = BNS_BOND_ERR;
+    //                         }
+    //                     }
+    //                 }
+    //                 if (!bError && pAATG && pAATG->nMarkedAtom && ( bChangeFlow & BNS_EF_UPD_H_CHARGE ))
+    //                 {
+    //                     /* Update radicals to avoid errors in atom type check in AddChangedAtHChargeBNS() */
+    //                     if (bAdjustRadicals)
+    //                     {
+    //                         ret_val = RestoreRadicalsOnly( pBNS, pBD, at );
+    //                         if (IS_BNS_ERROR( ret_val ))
+    //                         {
+    //                             bError = ret_val;
+    //                         }
+    //                     }
+    //                     /* Check atom types of marked atoms and add charge/H changes to nAtTypeTotals */
+    //                     /* Changing atoms were marked in the 1st call to SubtractOrChangeAtHChargeBNS(..., 1) above */
+    //                     AddChangedAtHChargeBNS( at, num_atoms, pAATG->nAtTypeTotals, pAATG->nMarkedAtom );
+    //                     if (bChangeFlow & BNS_EF_CHNG_FLOW)
+    //                     {
+    //                         /* Eliminate ambiguities in already changed flow:
+    //                         replace (+)--N==(-) with (+)==N--(-) (both represent neutral N) */
+    //                         EliminatePlusMinusChargeAmbiguity( pBNS, num_atoms );
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //
+    //         ret = RestoreBnStructFlow( pBNS, bChangeFlow & BNS_EF_CHNG_RSTR );
+    //
+    //         if (IS_BNS_ERROR( ret ))
+    //         {
+    //             bError = ret;
+    //         }
+    //     }
+    //
+    // reinit_BNS:
+    //
+    //     /* --- Reinitialize to repeat the calculations --- */
+    //     bRestoreBnsAfterCheckAltPath( pBNS, &apc, bChangeFlow & BNS_EF_UPD_H_CHARGE );
+    //     bRestoreFlowAfterCheckOneBond( pBNS, fcd );
+    //     ret_val = RemoveRadEndpoints( pBNS, pBD, bAdjustRadicals ? at : NULL );
+    //     ReInitBnStructAltPaths( pBNS );
+    //
+    //     return bError ? bError : ret_val ? ret_val : ( bSuccess + 4 * nDelta );
+    // }
+    // END VERBATIM SOURCE FRAGMENT: bExistsAltPath:8393..8779
 
-    fn write_heap_prefix<T: Clone + 'static>(
+    exists_alt_path_flags(
+        heap,
+        pCG,
+        pBNS,
+        pBD,
+        pAATG,
+        at,
+        num_atoms,
+        nVertDoubleBond,
+        nVertSingleBond,
+        path_type,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn exists_alt_path_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    mut pAATG: Option<&mut BN_AATG>,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    nVertDoubleBond: i32,
+    nVertSingleBond: i32,
+    path_type: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
+) -> Result<i32, SourceHeapError> {
+    exists_alt_path_accounting(
+        heap,
+        pCG,
+        pBNS,
+        pBD,
+        pAATG,
+        at,
+        num_atoms,
+        nVertDoubleBond,
+        nVertSingleBond,
+        path_type,
+        clock_result,
+        flag_storage,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn exists_alt_path_accounting(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    mut pAATG: Option<&mut BN_AATG>,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    nVertDoubleBond: i32,
+    nVertSingleBond: i32,
+    path_type: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
+    mut targets: Option<&mut SourceAatgTargets<'_>>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c: bExistsAltPath canonical storage view
+    // INCHI❗❌: Exact pinned source; independent chemistry/state/cost quarantines retained.
+    /*
+    int bExistsAltPath( CANON_GLOBALS *pCG,
+                        BN_STRUCT *pBNS,
+                        BN_DATA *pBD,
+                        BN_AATG *pAATG,
+                        inp_ATOM *at,
+                        int num_atoms,
+                        int nVertDoubleBond,
+                        int nVertSingleBond,
+                        int path_type )
+    {
+        ALT_PATH_CHANGES apc;
+        int ret, ret_val, bError, bSuccess, bChangeFlow = 0, nDots, nDelta, bDoMarkChangedBonds = 1;
+        int bAdjustRadicals = 0;
+        AT_NUMB          type;
+        BNS_FLOW_CHANGES fcd[4 * BNS_MAX_NUM_FLOW_CHANGES + 1];
+        ENDPOINT_INFO    eif;
+    #if ( KETO_ENOL_TAUT == 1 )
+        ENDPOINT_INFO    eif2;
+    #endif
+
+        /* Initialize */
+        switch (path_type)
+        {
+            case ALT_PATH_MODE_TAUTOM:
+                /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+                type = BNS_VERT_TYPE_ENDPOINT;
+                bChangeFlow = BNS_EF_CHNG_RSTR;
+                if (!at[nVertSingleBond].endpoint &&
+                    ( !nGetEndpointInfo( at, nVertSingleBond, &eif ) || !eif.cDonor ))
+                {
+                    return 0;
+                }
+                if (!at[nVertDoubleBond].endpoint &&
+                    ( !nGetEndpointInfo( at, nVertDoubleBond, &eif ) || !eif.cAcceptor ))
+                {
+                    return 0;
+                }
+                break;
+
+    #if ( TAUT_PT_22_00 == 1 )
+            case ALT_PATH_MODE_TAUTOM_PT_22_00:
+                /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+                type = BNS_VERT_TYPE_ENDPOINT;
+                bChangeFlow = BNS_EF_CHNG_RSTR;
+                if (!at[nVertSingleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_22_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+                    return 0;
+                if (!at[nVertDoubleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_22_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+                    return 0;
+                break;
+    #endif
+
+    #if ( TAUT_PT_16_00 == 1 )
+            case ALT_PATH_MODE_TAUTOM_PT_16_00:
+                /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+                type = BNS_VERT_TYPE_ENDPOINT;
+                bChangeFlow = BNS_EF_CHNG_RSTR;
+                if (!at[nVertSingleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_16_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+                    return 0;
+                if (!at[nVertDoubleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_16_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+                    return 0;
+                break;
+    #endif
+
+    #if ( TAUT_PT_06_00 == 1 )
+            case ALT_PATH_MODE_TAUTOM_PT_06_00:
+                /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+                type = BNS_VERT_TYPE_ENDPOINT;
+                bChangeFlow = BNS_EF_CHNG_RSTR;
+                if (!at[nVertSingleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_06_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+                    return 0;
+                if (!at[nVertDoubleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_06_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+                    return 0;
+                break;
+    #endif
+
+    #if ( TAUT_PT_39_00 == 1 )
+            case ALT_PATH_MODE_TAUTOM_PT_39_00:
+                /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+                type = BNS_VERT_TYPE_ENDPOINT;
+                bChangeFlow = BNS_EF_CHNG_RSTR;
+                if (!at[nVertSingleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_39_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+                    return 0;
+                if (!at[nVertDoubleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_39_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+                    return 0;
+                break;
+    #endif
+
+    #if ( TAUT_PT_13_00 == 1 )
+            case ALT_PATH_MODE_TAUTOM_PT_13_00:
+                /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+                type = BNS_VERT_TYPE_ENDPOINT;
+                bChangeFlow = BNS_EF_CHNG_RSTR;
+                if (!at[nVertSingleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_13_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+                    return 0;
+                if (!at[nVertDoubleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_13_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+                    return 0;
+                break;
+    #endif
+
+    #if ( TAUT_PT_18_00 == 1 )
+            case ALT_PATH_MODE_TAUTOM_PT_18_00:
+                /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+                type = BNS_VERT_TYPE_ENDPOINT;
+                bChangeFlow = BNS_EF_CHNG_RSTR;
+                if (!at[nVertSingleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_18_00(at, nVertSingleBond, &eif) || !eif.cDonor))
+                    return 0;
+                if (!at[nVertDoubleBond].endpoint &&
+                    (!nGetEndpointInfo_PT_18_00(at, nVertDoubleBond, &eif) || !eif.cAcceptor))
+                    return 0;
+                break;
+    #endif
+
+
+    #if ( KETO_ENOL_TAUT == 1 )
+            case ALT_PATH_MODE_TAUTOM_KET:
+                /* Check for alt path allowing to move H and (-). Purpose: confirm possible tautomerism */
+                type = BNS_VERT_TYPE_ENDPOINT;
+                bChangeFlow = BNS_EF_CHNG_RSTR;
+
+                if (!at[nVertSingleBond].endpoint &&
+                    ( !nGetEndpointInfo_KET( at, nVertSingleBond, &eif ) || !eif.cDonor ))
+                {
+                    return 0;
+                }
+                if (!at[nVertDoubleBond].endpoint &&
+                    ( !nGetEndpointInfo_KET( at, nVertDoubleBond, &eif2 ) || !eif2.cAcceptor ))
+                {
+                    return 0;
+                }
+                /*
+                if ( eif.cKetoEnolCode + eif2.cKetoEnolCode != 3 )
+                return 0;
+                */
+                break;
+
+    #endif
+            case ALT_PATH_MODE_CHARGE:
+                /* Find alt path allowing to move (+). Purpose: establish "charge groups",
+                mark alt. bonds due to (+) charge movement */
+                type = BNS_VERT_TYPE_C_POINT;
+                bChangeFlow = ( BNS_EF_CHNG_RSTR | BNS_EF_ALTR_BONDS );
+                break;
+
+            case ALT_PATH_MODE_4_SALT:
+            case ALT_PATH_MODE_4_SALT2:
+                /* Find alt paths allowing to move (-) and H between "acidic oxygen atoms".
+                Purpose: mark alt bonds due to this "long range" tautomerism. */
+                type = BNS_VERT_TYPE_ENDPOINT;
+                bChangeFlow = ( BNS_EF_CHNG_RSTR | BNS_EF_ALTR_BONDS );
+                if (!bIsBnsEndpoint( pBNS, nVertSingleBond ) /* !at[nVertSingleBond].endpoint*/ &&
+                    ( !nGetEndpointInfo( at, nVertSingleBond, &eif ) || !eif.cDonor ))
+                {
+                    return 0;
+                }
+                if (!bIsBnsEndpoint( pBNS, nVertDoubleBond ) /* !at[nVertDoubleBond].endpoint*/ &&
+                    ( !nGetEndpointInfo( at, nVertDoubleBond, &eif ) || !eif.cAcceptor ))
+                {
+                    return 0;
+                }
+                memset( &apc, 0, sizeof( apc ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+                break;
+
+            case ALT_PATH_MODE_REM2H_CHG:
+                bChangeFlow |= BNS_EF_ALTR_BONDS; /* fall through */
+            case ALT_PATH_MODE_REM2H_TST:
+                bChangeFlow |= BNS_EF_CHNG_RSTR;
+                type = BNS_VERT_TYPE_ENDPOINT;
+                /* Allow non-tautomeric donors or any tautomeric atom */
+                if (!bIsBnsEndpoint( pBNS, nVertSingleBond ) /* not linked to a t-group or the edge forbidden */ &&
+                    ( !nGetEndpointInfo( at, nVertSingleBond, &eif ) || !eif.cDonor )) /* not a donor */
+                {
+                    return 0;
+                }
+                if (!bIsBnsEndpoint( pBNS, nVertDoubleBond ) /* not connected to a t-group */ &&
+                    ( !nGetEndpointInfo( at, nVertDoubleBond, &eif ) || !eif.cDonor ))
+                {
+                    return 0;
+                }
+                memset( &apc, 0, sizeof( apc ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+                break;
+
+            case ALT_PATH_MODE_ADD2H_CHG:
+                bChangeFlow |= BNS_EF_ALTR_BONDS; /* fall through */
+            case ALT_PATH_MODE_ADD2H_TST:
+                bChangeFlow |= BNS_EF_CHNG_RSTR;
+                type = BNS_VERT_TYPE_ENDPOINT;
+                /* Allow non-tautomeric acceptors or any tautomeric atom */
+                if (!bIsBnsEndpoint( pBNS, nVertSingleBond ) /* !at[nVertSingleBond].endpoint*/ &&
+                    ( !nGetEndpointInfo( at, nVertSingleBond, &eif ) || !eif.cAcceptor ))
+                {
+                    return 0;
+                }
+                if (!bIsBnsEndpoint( pBNS, nVertDoubleBond ) /* !at[nVertSingleBond].endpoint*/ &&
+                    ( !nGetEndpointInfo( at, nVertDoubleBond, &eif ) || !eif.cAcceptor ))
+                {
+                    return 0;
+                }
+                break;
+
+            case ALT_PATH_MODE_REM_PROTON:
+                /* alt path is between the t-group (nVertDoubleBond) and
+                the (+)-charge group (nVertSingleBond) */
+                type = 0;
+                /*bDoMarkChangedBonds = 0;*/
+                bChangeFlow = ( BNS_EF_SAVE_ALL | BNS_EF_UPD_H_CHARGE ) | BNS_EF_ALTR_NS; /* added BNS_EF_ALTR_NS: set non-stereo altern non-ring bonds 2004-07-02*/
+                break;
+            default:
+                type = 0;
+                bChangeFlow = BNS_EF_CHNG_RSTR;
+                break;
+        }
+
+        bError = 0;
+        bSuccess = 0;
+        nDelta = 0;
+
+        ret = SetRadEndpoints2( pCG, pBNS, pBD, RAD_SRCH_NORM );
+        if (IS_BNS_ERROR( ret ))
+        {
+            return ret;
+        }
+
+        /* Set BNS to check alt path */
+        ret = bSetBnsToCheckAltPath( pBNS, nVertDoubleBond, nVertSingleBond, type, path_type, &apc, fcd, &nDots );
+        switch (ret)
+        {
+            case  BNS_CHK_ALTP_NO_ALTPATH:
+                ret = RemoveRadEndpoints( pBNS, pBD, NULL );
+                return ret;
+            case BNS_CHK_ALTP_SAME_TGROUP:
+                bSuccess = 1;
+                goto reinit_BNS;
+            case BNS_CHK_ALTP_SAME_VERTEX:
+                ret = RemoveRadEndpoints( pBNS, pBD, NULL );
+                return ret ? ret : 1; /* very strange ... set a breakpoint here */
+            case BNS_CHK_ALTP_SET_SUCCESS:
+                break;  /* actually check the existence of the altpath */
+            case BNS_CANT_SET_BOND:
+                goto reinit_BNS;
+            default:
+                ret_val = RemoveRadEndpoints( pBNS, pBD, NULL ); /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+                if (IS_BNS_ERROR( ret ))
+                {
+                    return ret;
+                }
+                return BNS_PROGRAM_ERR;
+        }
+
+        bAdjustRadicals = ( ( bChangeFlow & BNS_EF_UPD_RAD_ORI ) && !( bChangeFlow & BNS_EF_RSTR_FLOW ) );
+
+        /*****************************************************************
+        * nDots = 2 for ALT_PATH_CHARGE (checking moveable positive charges)
+        * Now nDots for ALT_PATH_TAUTOM or ALT_PATH_4_SALT can be greater
+        * because some of the bonds are effectively removed and dots
+        * (vertex st-caps) may be added
+        * -- to make sure there is no (+) charge on a tautomeric endpoint
+        * -- to fix positions of moveable tautomeric attachements
+        *    (H and (-)-charges) at the ends of an alt path
+        */
+
+        /* Run BNS */
+
+        ret = RunBalancedNetworkSearch( pBNS, pBD, bChangeFlow );
+
+        if (IS_BNS_ERROR( ret ))
+        {
+            bError = ret;
+        }
+        else if (ret > 0)
+        {
+            if (2 * ret >= nDots)
+            {
+                nDelta = 2 * ret - nDots;  /* non-zero means augmentation created another alt. path -- between radicals */
+                if (pAATG && pAATG->nMarkedAtom)
+                {
+                    if (pAATG->nAtTypeTotals && ( bChangeFlow & BNS_EF_UPD_H_CHARGE ))
+                    {
+                        memset( pAATG->nMarkedAtom, 0, num_atoms * sizeof( pAATG->nMarkedAtom[0] ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+                        /* Mark atoms that have charge or H changed, check their input types (that is, before changes),
+                        and subtract their input charge/H from nAtTypeTotals */
+                        SubtractOrChangeAtHChargeBNS( pBNS, at, num_atoms, pAATG->nAtTypeTotals, pAATG->nMarkedAtom, NULL, 1 );
+                        /* ZChange charges and/or H, update t_group_info, do not check types or change nAtTypeTotals */
+                        /* Atom types will be checked and nAtTypeTotals will be changed in
+                        AddChangedAtHChargeBNS() later */
+                        SubtractOrChangeAtHChargeBNS( pBNS, at, num_atoms, NULL, NULL, pAATG->t_group_info, 0 );
+                    }
+                    else
+                    {
+                        if (!pAATG->nAtTypeTotals)
+                        {
+                            bDoMarkChangedBonds = MarkAtomsAtTautGroups( pBNS, num_atoms, pAATG, nVertSingleBond, nVertDoubleBond );
+                            if (bDoMarkChangedBonds < 0)
+                            {
+                                bError = bDoMarkChangedBonds;
+                                bDoMarkChangedBonds = 0;
+                            }
+                        }
+                    }
+                }
+                if (bDoMarkChangedBonds)
+                {
+                    /* Mark bonds that were changed to configure bond testing */
+                    ret_val = bSetBondsAfterCheckOneBond( pBNS, fcd, -1, at, num_atoms, bChangeFlow );
+                    if (IS_BNS_ERROR( ret_val ))
+                    {
+                        bError = ret_val;
+                    }
+                    /*ret = SetBondsRestoreBnStructFlow( pBNS, at, num_atoms, bChangeFlow );*/
+                    /* mark all other changed bonds */
+                    ret = SetBondsFromBnStructFlow( pBNS, at, num_atoms, bChangeFlow );
+                    if (IS_BNS_ERROR( ret ))
+                    {
+                        bError = ret;
+                    }
+                    else
+                    {
+                        if (!( ret & 1 ) && !( ret_val & 1 ))
+                        {
+                            bSuccess = 1;
+                        }
+                        else
+                        {
+                            if ((( ( ret & 1 ) || ( ret_val & 1 ) ) &&
+                                ( bChangeFlow & BNS_EF_ALTR_BONDS )) || ( bChangeFlow & BNS_EF_UPD_H_CHARGE )) /* djb-rwth: addressing LLVM warning */
+                            {
+                                /* Some bonds have been changed to alternating */
+                                bSuccess = 3;
+                            }
+                            else
+                            {
+                                bError = BNS_BOND_ERR;
+                            }
+                        }
+                    }
+                    if (!bError && pAATG && pAATG->nMarkedAtom && ( bChangeFlow & BNS_EF_UPD_H_CHARGE ))
+                    {
+                        /* Update radicals to avoid errors in atom type check in AddChangedAtHChargeBNS() */
+                        if (bAdjustRadicals)
+                        {
+                            ret_val = RestoreRadicalsOnly( pBNS, pBD, at );
+                            if (IS_BNS_ERROR( ret_val ))
+                            {
+                                bError = ret_val;
+                            }
+                        }
+                        /* Check atom types of marked atoms and add charge/H changes to nAtTypeTotals */
+                        /* Changing atoms were marked in the 1st call to SubtractOrChangeAtHChargeBNS(..., 1) above */
+                        AddChangedAtHChargeBNS( at, num_atoms, pAATG->nAtTypeTotals, pAATG->nMarkedAtom );
+                        if (bChangeFlow & BNS_EF_CHNG_FLOW)
+                        {
+                            /* Eliminate ambiguities in already changed flow:
+                            replace (+)--N==(-) with (+)==N--(-) (both represent neutral N) */
+                            EliminatePlusMinusChargeAmbiguity( pBNS, num_atoms );
+                        }
+                    }
+                }
+            }
+
+            ret = RestoreBnStructFlow( pBNS, bChangeFlow & BNS_EF_CHNG_RSTR );
+
+            if (IS_BNS_ERROR( ret ))
+            {
+                bError = ret;
+            }
+        }
+
+    reinit_BNS:
+
+        /* --- Reinitialize to repeat the calculations --- */
+        bRestoreBnsAfterCheckAltPath( pBNS, &apc, bChangeFlow & BNS_EF_UPD_H_CHARGE );
+        bRestoreFlowAfterCheckOneBond( pBNS, fcd );
+        ret_val = RemoveRadEndpoints( pBNS, pBD, bAdjustRadicals ? at : NULL );
+        ReInitBnStructAltPaths( pBNS );
+
+        return bError ? bError : ret_val ? ret_val : ( bSuccess + 4 * nDelta );
+    }
+        */
+    // END INCHI C FUNCTION: exists_alt_path_flags
+    fn with_atoms<R>(
         heap: &mut SourceHeap,
-        pointer: SourceMutPointer<T>,
-        values: &[T],
-        count: i32,
-    ) -> Result<(), SourceHeapError> {
-        let count = usize::try_from(count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if values.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
+        at: SourceMutPointer<inp_ATOM>,
+        operation: impl FnOnce(&mut [inp_ATOM], &mut SourceHeap) -> Result<R, SourceHeapError>,
+    ) -> Result<R, SourceHeapError> {
+        // Native8684/8688/8751 passes at without an array preflight.
+        // INCHI✔️❗: NULL has no readable atoms; the source algorithm
+        // decides whether any are reached. No fabricated records/counts.
+        // Non-NULL actual storage restores on every Result; C533 OPEN.
+        if at.is_null() {
+            operation(&mut [], heap)
+        } else {
+            heap.with_slice_mut_and_heap_mut(at, operation)
         }
-        let slice = heap.slice_mut(pointer)?;
-        if slice.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        slice[..count].clone_from_slice(&values[..count]);
-        Ok(())
     }
 
     fn endpoint_has(
@@ -12755,15 +16718,32 @@ pub(crate) fn bExistsAltPath(
         if input_atom_ref(atoms, atom_index)?.endpoint != 0 {
             return Ok(true);
         }
+        Ok(endpoint_role(
+            atoms,
+            atom_index,
+            want_acceptor,
+            endpoint_info,
+        ))
+    }
+
+    fn endpoint_role(
+        atoms: &[inp_ATOM],
+        atom_index: i32,
+        want_acceptor: bool,
+        endpoint_info: fn(&[inp_ATOM], i32, &mut ENDPOINT_INFO) -> i32,
+    ) -> bool {
+        // INCHI✔️❌: All eight predicates supply donor/acceptor on success;
+        // a zero result reads neither. Safe six-byte initialization versus
+        // native uninitialized eif is explicitly deferred, no unsafe waiver.
         let mut eif = ENDPOINT_INFO::default();
         if endpoint_info(atoms, atom_index, &mut eif) == 0 {
-            return Ok(false);
+            return false;
         }
-        Ok(if want_acceptor {
+        if want_acceptor {
             eif.cAcceptor != 0
         } else {
             eif.cDonor != 0
-        })
+        }
     }
 
     fn bns_or_endpoint_has(
@@ -12776,7 +16756,16 @@ pub(crate) fn bExistsAltPath(
         if bIsBnsEndpoint(heap, pBNS, atom_index)? != 0 {
             return Ok(true);
         }
-        endpoint_has(heap, at, atom_index, want_acceptor, nGetEndpointInfo)
+        // INCHI✔️❗: Salt/2H fallback tests chemistry directly; an atom's
+        // endpoint tag cannot bypass a forbidden/missing BNS endpoint edge.
+        let atoms = heap.slice(at.as_const())?;
+        input_atom_ref(atoms, atom_index)?;
+        Ok(endpoint_role(
+            atoms,
+            atom_index,
+            want_acceptor,
+            nGetEndpointInfo,
+        ))
     }
 
     let mut apc = ALT_PATH_CHANGES::default();
@@ -12920,10 +16909,14 @@ pub(crate) fn bExistsAltPath(
     let mut b_error = 0_i32;
     let mut b_success = 0_i32;
     let mut n_delta = 0_i32;
-    let fcd = heap.allocate_model_storage(vec![
-        BNS_FLOW_CHANGES::default();
-        4 * BNS_MAX_NUM_FLOW_CHANGES as usize + 1
-    ])?;
+    // Source stack scratch, ichi_bns.c:8407:
+    //     BNS_FLOW_CHANGES fcd[4 * BNS_MAX_NUM_FLOW_CHANGES + 1];
+    // INCHI✔️❌: Real fixed storage, no model allocation/ID/free; safe
+    // initialization adds zero stores versus C uninitialized storage.
+    // Projection/whole-call cost remains OPEN in performance_pending.md.
+    let mut fcd_storage: [BNS_FLOW_CHANGES; 4 * BNS_MAX_NUM_FLOW_CHANGES as usize + 1] =
+        std::array::from_fn(|_| BNS_FLOW_CHANGES::default());
+    let mut fcd = SourceFlowChanges::Borrowed(&mut fcd_storage);
 
     let result = (|| -> Result<i32, SourceHeapError> {
         let mut ret = SetRadEndpoints2(heap, pCG, pBNS, pBD, tagBnsRadSrchMode_RAD_SRCH_NORM)?;
@@ -12932,7 +16925,7 @@ pub(crate) fn bExistsAltPath(
         }
 
         let mut n_dots = 0_i32;
-        ret = bSetBnsToCheckAltPath(
+        ret = set_bns_to_check_alt_path_buffer(
             heap,
             pBNS,
             nVertDoubleBond,
@@ -12940,8 +16933,9 @@ pub(crate) fn bExistsAltPath(
             type_,
             path_type,
             &mut apc,
-            fcd,
+            &mut fcd,
             &mut n_dots,
+            flag_storage,
         )?;
 
         let b_adjust_radicals = (b_change_flow & BNS_EF_UPD_RAD_ORI as i32) != 0
@@ -12967,9 +16961,11 @@ pub(crate) fn bExistsAltPath(
                         n_delta = 2_i32.wrapping_mul(ret).wrapping_sub(n_dots);
                         if let Some(p_aatg) = pAATG.as_deref_mut() {
                             if !p_aatg.nMarkedAtom.is_null() {
-                                if !p_aatg.nAtTypeTotals.is_null()
-                                    && (b_change_flow & BNS_EF_UPD_H_CHARGE as i32) != 0
-                                {
+                                let has_totals = targets.as_deref().map_or(
+                                    !p_aatg.nAtTypeTotals.is_null(),
+                                    SourceAatgTargets::has_totals,
+                                );
+                                if has_totals && (b_change_flow & BNS_EF_UPD_H_CHARGE as i32) != 0 {
                                     let count = usize::try_from(num_atoms)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                     {
@@ -12979,51 +16975,65 @@ pub(crate) fn bExistsAltPath(
                                         }
                                         marks[..count].fill(0);
                                     }
-                                    let mut atoms = clone_heap_prefix(heap, at, num_atoms)?;
-                                    let mut totals =
-                                        clone_heap_prefix(heap, p_aatg.nAtTypeTotals, 33)?;
-                                    let mut marks =
-                                        clone_heap_prefix(heap, p_aatg.nMarkedAtom, num_atoms)?;
-                                    let mut dummy_t_group_info = T_GROUP_INFO::default();
-                                    SubtractOrChangeAtHChargeBNS(
-                                        heap,
-                                        pBNS,
-                                        &mut atoms,
-                                        num_atoms,
-                                        &mut totals,
-                                        &mut marks,
-                                        &mut dummy_t_group_info,
-                                        1,
-                                    )?;
-                                    write_heap_prefix(heap, at, &atoms, num_atoms)?;
-                                    write_heap_prefix(heap, p_aatg.nAtTypeTotals, &totals, 33)?;
-                                    write_heap_prefix(heap, p_aatg.nMarkedAtom, &marks, num_atoms)?;
+                                    // Native8684: keep accounting live between
+                                    // graph reads, including shared i32 storage.
+                                    // INCHI✔️❗: O(1) scratch/no copies; C533 OPEN.
+                                    with_atoms(heap, at, |atoms, heap| {
+                                        if let Some(targets) = targets.as_deref_mut() {
+                                            return targets.subtract(
+                                                heap,
+                                                pBNS,
+                                                atoms,
+                                                num_atoms,
+                                                p_aatg.nMarkedAtom,
+                                                1,
+                                            );
+                                        }
+                                        subtract_or_change_with_group(
+                                            heap,
+                                            pBNS,
+                                            atoms,
+                                            num_atoms,
+                                            SourceChargeAccounting::Pointers {
+                                                totals: p_aatg.nAtTypeTotals,
+                                                marks: p_aatg.nMarkedAtom,
+                                            },
+                                            SourceHydrogenGroup::Pointer(SourceMutPointer::null()),
+                                            1,
+                                        )
+                                    })?;
 
-                                    let mut t_group_info = heap
-                                        .slice(p_aatg.t_group_info.as_const())?
-                                        .first()
-                                        .cloned()
-                                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                    let atom_storage_count = num_atoms.wrapping_add(i32::from(
-                                        t_group_info.tni.nNumRemovedExplicitH,
-                                    ));
-                                    let mut atoms =
-                                        clone_heap_prefix(heap, at, atom_storage_count)?;
-                                    let mut empty_totals: [i32; 0] = [];
-                                    let mut empty_marks: [S_CHAR; 0] = [];
-                                    SubtractOrChangeAtHChargeBNS(
-                                        heap,
-                                        pBNS,
-                                        &mut atoms,
-                                        num_atoms,
-                                        &mut empty_totals,
-                                        &mut empty_marks,
-                                        &mut t_group_info,
-                                        0,
-                                    )?;
-                                    write_heap_prefix(heap, at, &atoms, atom_storage_count)?;
-                                    heap.slice_mut(p_aatg.t_group_info)?[0] = t_group_info;
-                                } else if p_aatg.nAtTypeTotals.is_null() {
+                                    // Native8688 forwards the pointer unchanged;
+                                    // pure charge changes never read TGI or its
+                                    // explicit-H count. Keep the actual atom
+                                    // suffix for reached H operations only.
+                                    // INCHI✔️❗: Live partial writes, no snapshot
+                                    // or model identity; C532 cost remains OPEN.
+                                    with_atoms(heap, at, |atoms, heap| {
+                                        if let Some(targets) = targets.as_deref_mut() {
+                                            return targets.subtract(
+                                                heap,
+                                                pBNS,
+                                                atoms,
+                                                num_atoms,
+                                                p_aatg.nMarkedAtom,
+                                                0,
+                                            );
+                                        }
+                                        subtract_or_change_with_group(
+                                            heap,
+                                            pBNS,
+                                            atoms,
+                                            num_atoms,
+                                            SourceChargeAccounting::Pointers {
+                                                totals: SourceMutPointer::null(),
+                                                marks: SourceMutPointer::null(),
+                                            },
+                                            SourceHydrogenGroup::Pointer(p_aatg.t_group_info),
+                                            0,
+                                        )
+                                    })?;
+                                } else if !has_totals {
                                     b_do_mark_changed_bonds = MarkAtomsAtTautGroups(
                                         heap,
                                         pBNS,
@@ -13040,10 +17050,10 @@ pub(crate) fn bExistsAltPath(
                             }
                         }
                         if b_do_mark_changed_bonds != 0 {
-                            let ret_val = bSetBondsAfterCheckOneBond(
+                            let ret_val = set_bonds_after_check_one_bond_buffer(
                                 heap,
                                 pBNS,
-                                fcd,
+                                &mut fcd,
                                 -1,
                                 at,
                                 num_atoms,
@@ -13073,37 +17083,41 @@ pub(crate) fn bExistsAltPath(
                                         && (b_change_flow & BNS_EF_UPD_H_CHARGE as i32) != 0
                                     {
                                         if b_adjust_radicals {
-                                            let mut atoms = clone_heap_prefix(heap, at, num_atoms)?;
-                                            let ret_val = RestoreRadicalsOnly(
-                                                &*heap,
-                                                pBNS,
-                                                pBD,
-                                                Some(&mut atoms),
-                                            )?;
-                                            write_heap_prefix(heap, at, &atoms, num_atoms)?;
+                                            let ret_val = if at.is_null() {
+                                                RestoreRadicalsOnly(heap, pBNS, pBD, None)?
+                                            } else {
+                                                heap.with_slice_mut_and_heap(at, |atoms, heap| {
+                                                    RestoreRadicalsOnly(
+                                                        heap,
+                                                        pBNS,
+                                                        pBD,
+                                                        Some(atoms),
+                                                    )
+                                                })?
+                                            };
                                             if is_bns_error(ret_val) {
                                                 b_error = ret_val;
                                             }
                                         }
-                                        let mut atoms = clone_heap_prefix(heap, at, num_atoms)?;
-                                        let mut totals =
-                                            clone_heap_prefix(heap, p_aatg.nAtTypeTotals, 33)?;
-                                        let mut marks =
-                                            clone_heap_prefix(heap, p_aatg.nMarkedAtom, num_atoms)?;
-                                        AddChangedAtHChargeBNS(
-                                            &mut atoms,
-                                            num_atoms,
-                                            &mut totals,
-                                            &mut marks,
-                                        )?;
-                                        write_heap_prefix(heap, at, &atoms, num_atoms)?;
-                                        write_heap_prefix(heap, p_aatg.nAtTypeTotals, &totals, 33)?;
-                                        write_heap_prefix(
-                                            heap,
-                                            p_aatg.nMarkedAtom,
-                                            &marks,
-                                            num_atoms,
-                                        )?;
+                                        with_atoms(heap, at, |atoms, heap| {
+                                            if let Some(targets) = targets.as_deref_mut() {
+                                                return targets.readd(
+                                                    heap,
+                                                    atoms,
+                                                    num_atoms,
+                                                    p_aatg.nMarkedAtom,
+                                                );
+                                            }
+                                            add_changed_with_accounting(
+                                                Some(heap),
+                                                atoms,
+                                                num_atoms,
+                                                SourceChargeAccounting::Pointers {
+                                                    totals: p_aatg.nAtTypeTotals,
+                                                    marks: p_aatg.nMarkedAtom,
+                                                },
+                                            )
+                                        })?;
                                         if (b_change_flow & BNS_EF_CHNG_FLOW as i32) != 0 {
                                             EliminatePlusMinusChargeAmbiguity(
                                                 heap, pBNS, num_atoms,
@@ -13131,12 +17145,11 @@ pub(crate) fn bExistsAltPath(
         }
 
         bRestoreBnsAfterCheckAltPath(heap, pBNS, &apc, b_change_flow & BNS_EF_UPD_H_CHARGE as i32)?;
-        bRestoreFlowAfterCheckOneBond(heap, pBNS, fcd)?;
-        let ret_val = if b_adjust_radicals {
-            let mut atoms = clone_heap_prefix(heap, at, num_atoms)?;
-            let ret_val = RemoveRadEndpoints(heap, pBNS, pBD, Some(&mut atoms))?;
-            write_heap_prefix(heap, at, &atoms, num_atoms)?;
-            ret_val
+        restore_flow_after_check_one_bond_buffer(heap, pBNS, &mut fcd)?;
+        let ret_val = if b_adjust_radicals && !at.is_null() {
+            heap.with_slice_mut_and_heap_mut(at, |atoms, heap| {
+                RemoveRadEndpoints(heap, pBNS, pBD, Some(atoms))
+            })?
         } else {
             RemoveRadEndpoints(heap, pBNS, pBD, None)?
         };
@@ -13150,7 +17163,6 @@ pub(crate) fn bExistsAltPath(
             b_success + 4 * n_delta
         })
     })();
-    heap.free(fcd)?;
     result
 }
 
@@ -13165,7 +17177,36 @@ pub(crate) fn bExistsAnyAltPath(
     nVert2: i32,
     nVert1: i32,
     path_type: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    exists_any_alt_path_flags(
+        heap,
+        pCG,
+        pBNS,
+        pBD,
+        at,
+        num_atoms,
+        nVert2,
+        nVert1,
+        path_type,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn exists_any_alt_path_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    nVert2: i32,
+    nVert1: i32,
+    path_type: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:7518 bExistsAnyAltPath
     // INCHI✔️❌: int bExistsAnyAltPath( CANON_GLOBALS *pCG,
@@ -13208,7 +17249,7 @@ pub(crate) fn bExistsAnyAltPath(
     // INCHI✔️❌: #define IS_BNS_ERROR(X) (BNS_ERR <= (X) && (X) <= BNS_MAX_ERR_VALUE)
     // END INCHI ACTIVE MACRO CONFIGURATION: bExistsAnyAltPath
 
-    let nRet1 = bExistsAltPath(
+    let nRet1 = exists_alt_path_flags(
         heap,
         pCG,
         pBNS,
@@ -13220,12 +17261,13 @@ pub(crate) fn bExistsAnyAltPath(
         nVert1,
         path_type,
         clock_result,
+        flag_storage,
     )?;
     if nRet1 > 0 {
         return Ok(nRet1);
     }
 
-    let nRet2 = bExistsAltPath(
+    let nRet2 = exists_alt_path_flags(
         heap,
         pCG,
         pBNS,
@@ -13237,6 +17279,7 @@ pub(crate) fn bExistsAnyAltPath(
         nVert2,
         path_type,
         clock_result,
+        flag_storage,
     )?;
     if nRet2 > 0 {
         return Ok(nRet2);
@@ -13250,17 +17293,31 @@ pub(crate) fn bExistsAnyAltPath(
     Ok(0)
 }
 
+/// Private working projection; shared origins never create mutable stable views.
+enum BnsWorkView<T> {
+    Stable(StableSourceSlice<T>),
+    Arena(SourceMutPointer<T>),
+}
+
+impl<T> BnsWorkView<T> {
+    fn has_stable_capacity(&self, required: usize) -> bool {
+        match self {
+            Self::Stable(values) => values.len() >= required,
+            Self::Arena(_) => false,
+        }
+    }
+}
+
 pub(crate) struct BnsSearchWorkspace {
-    base_ptr: StableSourceSlice<Vertex>,
-    switch_edge: StableSourceSlice<Edge>,
-    tree: StableSourceSlice<S_CHAR>,
-    scan_q: StableSourceSlice<Vertex>,
-    pu: Option<StableSourceSlice<Vertex>>,
-    pv: Option<StableSourceSlice<Vertex>>,
+    base_ptr: BnsWorkView<Vertex>,
+    switch_edge: BnsWorkView<Edge>,
+    tree: BnsWorkView<S_CHAR>,
+    scan_q: BnsWorkView<Vertex>,
+    pu: Option<BnsWorkView<Vertex>>,
+    pv: Option<BnsWorkView<Vertex>>,
     vertices: Option<StableSourceSlice<BNS_VERTEX>>,
     edges: Option<StableSourceSlice<BNS_EDGE>>,
     contiguous_adjacency: Option<(SourceMutPointer<EdgeIndex>, StableSourceSlice<EdgeIndex>)>,
-    split_adjacency: Vec<Option<StableSourceSlice<EdgeIndex>>>,
     source_layout: bool,
 }
 
@@ -13270,6 +17327,22 @@ impl BnsSearchWorkspace {
         bns: &BN_STRUCT,
         data: &BN_DATA,
     ) -> Result<Self, SourceHeapError> {
+        // Native ichi_bns.c:10782..10789 setup (full search frame below):
+        //     Vertex          *BasePtr = pBD->BasePtr;
+        //     Edge            *SwitchEdge = pBD->SwitchEdge;
+        //     S_CHAR          *Tree = pBD->Tree;
+        //     Vertex          *ScanQ = pBD->ScanQ;
+        //     int              QSize = pBD->QSize;
+        //     Vertex          *Pu = pBD->Pu;
+        //     Vertex          *Pv = pBD->Pv;
+        //     int              max_len_Pu_Pv = pBD->max_len_Pu_Pv;
+        // INCHI❗❌: C316 defers only0086 fixed setup cost under human authority.
+        // Unique-view safety/capacity proofs remain; shared work uses arena cells. The
+        // contiguous branch adds bounded ID scans, checked arena queries and
+        // layout branches versus native pointer loads: expected O(1), no
+        // allocation, but known extra work and no net performance agreement.
+        // Split-adjacency staging is removed; actual-pointer reads are reached
+        // below. Shared work follows the same program; whole costs stay OPEN.
         let writable_ids = [
             data.BasePtr.allocation_identity(),
             data.SwitchEdge.allocation_identity(),
@@ -13281,9 +17354,11 @@ impl BnsSearchWorkspace {
         if writable_ids[..4].iter().any(Option::is_none) {
             return Err(SourceHeapError::NullPointer);
         }
+        // Native10782..10819 uses actual working pointers without an origin restriction.
+        let mut stable_work = true;
         for (index, id) in writable_ids.iter().enumerate() {
             if id.is_some() && writable_ids[..index].contains(id) {
-                return Err(SourceHeapError::PointerAllocationMismatch);
+                stable_work = false;
             }
         }
         for graph_id in [
@@ -13292,27 +17367,51 @@ impl BnsSearchWorkspace {
             bns.iedge.allocation_identity(),
         ] {
             if graph_id.is_some() && writable_ids.contains(&graph_id) {
-                return Err(SourceHeapError::PointerAllocationMismatch);
+                stable_work = false;
             }
         }
 
-        // SAFETY: all writable allocation identities above are distinct. The
-        // BNS call keeps these allocations live and never resizes their Vec
-        // buffers; references produced by a handle are confined to individual
-        // expressions before any ordinary heap access.
-        let base_ptr = unsafe { heap.stable_slice_mut(data.BasePtr)? };
-        let switch_edge = unsafe { heap.stable_slice_mut(data.SwitchEdge)? };
-        let tree = unsafe { heap.stable_slice_mut(data.Tree)? };
-        let scan_q = unsafe { heap.stable_slice_mut(data.ScanQ)? };
+        // SAFETY: stable_work proves working allocations mutually distinct
+        // and distinct from every graph view. Shared origins create NO mutable
+        // stable work view; each arena loan is confined to one reached cell.
+        // All buffers stay live/fixed throughout this workspace invocation.
+        let base_ptr = if stable_work {
+            BnsWorkView::Stable(unsafe { heap.stable_slice_mut(data.BasePtr)? })
+        } else {
+            BnsWorkView::Arena(data.BasePtr)
+        };
+        let switch_edge = if stable_work {
+            BnsWorkView::Stable(unsafe { heap.stable_slice_mut(data.SwitchEdge)? })
+        } else {
+            BnsWorkView::Arena(data.SwitchEdge)
+        };
+        let tree = if stable_work {
+            BnsWorkView::Stable(unsafe { heap.stable_slice_mut(data.Tree)? })
+        } else {
+            BnsWorkView::Arena(data.Tree)
+        };
+        let scan_q = if stable_work {
+            BnsWorkView::Stable(unsafe { heap.stable_slice_mut(data.ScanQ)? })
+        } else {
+            BnsWorkView::Arena(data.ScanQ)
+        };
         let pu = if data.Pu.is_null() {
             None
+        } else if stable_work {
+            Some(BnsWorkView::Stable(unsafe {
+                heap.stable_slice_mut(data.Pu)?
+            }))
         } else {
-            Some(unsafe { heap.stable_slice_mut(data.Pu)? })
+            Some(BnsWorkView::Arena(data.Pu))
         };
         let pv = if data.Pv.is_null() {
             None
+        } else if stable_work {
+            Some(BnsWorkView::Stable(unsafe {
+                heap.stable_slice_mut(data.Pv)?
+            }))
         } else {
-            Some(unsafe { heap.stable_slice_mut(data.Pv)? })
+            Some(BnsWorkView::Arena(data.Pv))
         };
         let vertices = if bns.vert.is_null() {
             None
@@ -13330,35 +17429,17 @@ impl BnsSearchWorkspace {
                 vertices.len() == 0 || vertices.get(0).is_ok_and(|v| v.iedge == bns.iedge)
             });
         let contiguous_adjacency = if uses_contiguous_adjacency {
-            // The source allocation places every vertex adjacency list in the
-            // single pBNS->iedge block and stores interior pointers in vert[].
+            // The first vertex selects an available reusable view only. Each
+            // later adjacency pointer independently proves reuse before reading.
             Some((bns.iedge, unsafe { heap.stable_slice_mut(bns.iedge)? }))
         } else {
             None
         };
-        let mut split_adjacency = Vec::new();
-        if contiguous_adjacency.is_none() {
-            let vertex_count = vertices.as_ref().map_or(0, StableSourceSlice::len);
-            split_adjacency.reserve(vertex_count);
-            for index in 0..vertex_count {
-                let pointer = vertices
-                    .as_ref()
-                    .expect("vertex count is nonzero only for a present allocation")
-                    .get(index)?
-                    .iedge;
-                if pointer.is_null() {
-                    split_adjacency.push(None);
-                    continue;
-                }
-                let id = pointer.allocation_identity();
-                if writable_ids.contains(&id) {
-                    return Err(SourceHeapError::PointerAllocationMismatch);
-                }
-                // Compatibility fixtures may model every adjacency list as a
-                // separate allocation instead of the contiguous source block.
-                split_adjacency.push(Some(unsafe { heap.stable_slice_mut(pointer)? }));
-            }
-        }
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c9849
+        //             *iedge = pBNS->vert[i / 2].iedge[neigh];
+        // INCHI✔️❗: Resolve each actual adjacency only when reached below;
+        // no split-view Vec, whole-vertex scan, unused pointer admission or
+        // duplicate mutable handles. Shared checked whole-call cost OPEN.
 
         let data_slots = usize::try_from(data.max_num_vertices).ok();
         let path_slots = usize::try_from(data.max_len_Pu_Pv).ok();
@@ -13399,12 +17480,16 @@ impl BnsSearchWorkspace {
                 && path_slots >= max_vertices.saturating_add(2)
                 && num_vertices <= max_vertices
                 && num_edges <= max_edges
-                && base_ptr.len() >= data_slots
-                && switch_edge.len() >= data_slots
-                && tree.len() >= data_slots
-                && scan_q.len() >= data_slots
-                && pu.as_ref().is_some_and(|path| path.len() >= path_slots)
-                && pv.as_ref().is_some_and(|path| path.len() >= path_slots)
+                && base_ptr.has_stable_capacity(data_slots)
+                && switch_edge.has_stable_capacity(data_slots)
+                && tree.has_stable_capacity(data_slots)
+                && scan_q.has_stable_capacity(data_slots)
+                && pu
+                    .as_ref()
+                    .is_some_and(|path| path.has_stable_capacity(path_slots))
+                && pv
+                    .as_ref()
+                    .is_some_and(|path| path.has_stable_capacity(path_slots))
                 && vertices
                     .as_ref()
                     .is_some_and(|vertices| vertices.len() >= max_vertices)
@@ -13422,7 +17507,6 @@ impl BnsSearchWorkspace {
             vertices,
             edges,
             contiguous_adjacency,
-            split_adjacency,
             source_layout,
         })
     }
@@ -13460,8 +17544,43 @@ impl BnsSearchWorkspace {
         slice.get_mut(Self::index(index)?)
     }
 
+    #[inline(always)]
+    fn work_slot<'a, T: 'static, const SOURCE_LAYOUT: bool>(
+        heap: &'a SourceHeap,
+        view: &'a BnsWorkView<T>,
+        index: i32,
+    ) -> Result<&'a T, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c10819
+        //         u = ScanQ[k]; /* select u from the head of ScanQ */
+        // INCHI✔️❗: Live shared cell, one algorithm/no snapshots/new unsafe.
+        // Typed/signed errors reached; O(1) lookup/view constants remain OPEN
+        // in INCHI-PERF-SHARED-WORK-ARENA-PROJECTION.
+        match view {
+            BnsWorkView::Stable(values) => Self::slot::<_, SOURCE_LAYOUT>(values, index),
+            BnsWorkView::Arena(pointer) => heap.element_signed(pointer.as_const(), index),
+        }
+    }
+
+    #[inline(always)]
+    fn work_slot_mut<'a, T: 'static, const SOURCE_LAYOUT: bool>(
+        heap: &'a mut SourceHeap,
+        view: &'a mut BnsWorkView<T>,
+        index: i32,
+    ) -> Result<&'a mut T, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c10812
+        //     ScanQ[QSize] = Vertex_s;
+        // INCHI✔️❗: Only the reached source cell is borrowed mutably. Shared
+        // roots observe preceding stores, without mutable stable aliases.
+        // No copy/scan/allocation; checked/view constants independently OPEN.
+        match view {
+            BnsWorkView::Stable(values) => Self::slot_mut::<_, SOURCE_LAYOUT>(values, index),
+            BnsWorkView::Arena(pointer) => heap.element_signed_mut(*pointer, index),
+        }
+    }
+
     fn reinit_data<const SOURCE_LAYOUT: bool>(
         &mut self,
+        heap: &mut SourceHeap,
         data: &mut BN_DATA,
     ) -> Result<i32, SourceHeapError> {
         let mut ret = 0_i32;
@@ -13479,14 +17598,27 @@ impl BnsSearchWorkspace {
         }
         if ret == 0 {
             for index in 0..=data.QSize {
-                let u = *Self::slot::<_, SOURCE_LAYOUT>(&self.scan_q, index)?;
+                let u = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &self.scan_q, index)?;
                 let v = u ^ 1;
-                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.base_ptr, u)? = NO_VERTEX;
-                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.base_ptr, v)? = NO_VERTEX;
-                Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.switch_edge, u)?[0] = NO_VERTEX;
-                Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.switch_edge, v)?[0] = NO_VERTEX;
-                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.tree, u)? = TREE_NOT_IN_M as S_CHAR;
-                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.tree, v)? = TREE_NOT_IN_M as S_CHAR;
+                // VERBATIM SOURCE FRAGMENT: ichi_bns.c9746..9751
+                //                 pBD->BasePtr[u] =
+                //                     pBD->BasePtr[v] =
+                //                     pBD->SwitchEdge_Vert1( u ) =
+                //                     pBD->SwitchEdge_Vert1( v ) = NO_VERTEX;
+                //                 pBD->Tree[u] =
+                //                     pBD->Tree[v] = TREE_NOT_IN_M;
+                // INCHI✔️❗: Source chained assignments store rightmost first.
+                // Preserve that live order for shared working origins.
+                Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.switch_edge, v)?[0] =
+                    NO_VERTEX;
+                Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.switch_edge, u)?[0] =
+                    NO_VERTEX;
+                *Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.base_ptr, v)? = NO_VERTEX;
+                *Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.base_ptr, u)? = NO_VERTEX;
+                *Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.tree, v)? =
+                    TREE_NOT_IN_M as S_CHAR;
+                *Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.tree, u)? =
+                    TREE_NOT_IN_M as S_CHAR;
             }
         }
         data.QSize = -1;
@@ -13500,11 +17632,21 @@ impl BnsSearchWorkspace {
     }
 
     #[inline]
-    fn reinit_data_for_layout(&mut self, data: &mut BN_DATA) -> Result<i32, SourceHeapError> {
+    fn reinit_data_for_layout(
+        &mut self,
+        heap: &mut SourceHeap,
+        data: &mut BN_DATA,
+    ) -> Result<i32, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c699
+        //         ReInitBnData( pBD );
+        // INCHI✔️❗: Both specializations share the source reset program;
+        // preserve bounds/working-array proofs and typed errors. One layout
+        // branch per pass, no allocation/clone/scan; compiled constant cost
+        // remains OPEN in INCHI-PERF-RESET-LAYOUT-DISPATCH under human deferral.
         if self.source_layout {
-            self.reinit_data::<true>(data)
+            self.reinit_data::<true>(heap, data)
         } else {
-            self.reinit_data::<false>(data)
+            self.reinit_data::<false>(heap, data)
         }
     }
 
@@ -13575,31 +17717,41 @@ impl BnsSearchWorkspace {
             return Ok((bns.num_vertices, None));
         }
         let vertex_data = self.vertex::<SOURCE_LAYOUT>(index)?;
-        let degree = if vertex_data.st_edge.cap > 0 {
-            i32::from(vertex_data.num_adj_edges) + 1
-        } else {
-            0
-        };
-        let adjacency_base = if SOURCE_LAYOUT {
-            // SAFETY: `source_layout` established the single Official InChI
-            // `pBNS->iedge` allocation and every `vert[].iedge` value is a
-            // forward interior pointer into that fixed block.
-            let (origin, _) = unsafe { self.contiguous_adjacency.as_ref().unwrap_unchecked() };
-            Some(unsafe { vertex_data.iedge.forward_difference_unchecked(*origin) })
-        } else if let Some((origin, _)) = &self.contiguous_adjacency {
-            Some(
-                usize::try_from(vertex_data.iedge.difference(*origin)?)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-            )
-        } else {
-            None
-        };
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c:9784..9787 C415 zero-degree admission
+        //         else
+        //         {
+        //             return 0;   /* since the edge s-v has zero capacity, we ignore vertex v */
+        //         }
+        // END VERBATIM SOURCE FRAGMENT: C415 zero-degree admission
+        // INCHI✔️❗: Both callers skip their neighbor loops for degree zero;
+        // no adjacency pointer is reached or required. Same O(1) source gate,
+        // no allocation/copy/scan; independent workspace costs remain OPEN.
+        if vertex_data.st_edge.cap <= 0 {
+            return Ok((0, None));
+        }
+        let degree = i32::from(vertex_data.num_adj_edges) + 1;
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c9781
+        //             return pBNS->vert[i].num_adj_edges + 1; /* add 1 neighbor for s or t */
+        // INCHI✔️❗: At most neighbor0 is synthetic; no adjacency is reached.
+        // A cached base is only an optimization for this proved pointer,
+        // never a global contiguity assumption or an error fallback.
+        if degree <= 1 {
+            return Ok((degree, None));
+        }
+        let adjacency_base = self.contiguous_adjacency.as_ref().and_then(|(origin, _)| {
+            vertex_data
+                .iedge
+                .difference(*origin)
+                .ok()
+                .and_then(|offset| usize::try_from(offset).ok())
+        });
         Ok((degree, adjacency_base))
     }
 
     #[inline(always)]
     fn vertex_neighbor<const SOURCE_LAYOUT: bool>(
         &self,
+        heap: &SourceHeap,
         vertex: Vertex,
         mut neighbor_index: i32,
         contiguous_base: Option<usize>,
@@ -13619,34 +17771,27 @@ impl BnsSearchWorkspace {
             // INCHI✔️✔️:         if (neigh) { neigh--; }
             neighbor_index -= 1;
             // INCHI✔️✔️:             *iedge = pBNS->vert[i / 2].iedge[neigh];
-            *edge_index = if SOURCE_LAYOUT {
-                // SAFETY: workspace construction proves that source layout has
-                // a contiguous `iedge[]` allocation. `vertex_scan` derives the
-                // base from the same allocation, and the C degree bound keeps
-                // `base + neighbor_index` within `max_iedges`. No buffer is
-                // resized or freed for the lifetime of this workspace.
-                let (_, adjacency) =
-                    unsafe { self.contiguous_adjacency.as_ref().unwrap_unchecked() };
-                let base = unsafe { contiguous_base.unwrap_unchecked() };
-                debug_assert!(neighbor_index >= 0);
-                let index = base + neighbor_index as usize;
-                debug_assert!(index < adjacency.len());
-                *unsafe { adjacency.get_unchecked(index) }
-            } else if let Some((_, adjacency)) = &self.contiguous_adjacency {
-                let base = contiguous_base.ok_or(SourceHeapError::PointerAllocationMismatch)?;
+            // VERBATIM SOURCE FRAGMENT: ichi_bns.c9849
+            //             *iedge = pBNS->vert[i / 2].iedge[neigh];
+            // INCHI✔️❗: Only the selected, proved pointer reuses the stable
+            // global view; every other layout reads its actual allocation.
+            // Borrow ends after the copied index, before graph/work mutations.
+            // O(1) per reached slot/no Vec/scan/new unsafe; whole-call cost
+            // OPEN in INCHI-PERF-SEARCH-REACHED-ADJACENCY.
+            let adjacency_index = Self::index(neighbor_index)?;
+            *edge_index = if let (Some((_, adjacency)), Some(base)) =
+                (&self.contiguous_adjacency, contiguous_base)
+            {
                 let index = base
-                    .checked_add(Self::index(neighbor_index)?)
+                    .checked_add(adjacency_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 *adjacency.get(index)?
             } else {
-                let vertex_index = Self::index(doubled_index / 2)?;
-                let adjacency_index = Self::index(neighbor_index)?;
-                let adjacency = self
-                    .split_adjacency
-                    .get(vertex_index)
-                    .and_then(Option::as_ref)
-                    .ok_or(SourceHeapError::NullPointer)?;
-                *adjacency.get(adjacency_index)?
+                let pointer = self.vertex::<SOURCE_LAYOUT>(doubled_index / 2)?.iedge;
+                *heap
+                    .slice(pointer.as_const())?
+                    .get(adjacency_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
             };
             let edge = self.edge::<SOURCE_LAYOUT>(*edge_index)?;
             // INCHI✔️✔️:             if (!( pBNS->edge[*iedge].cap & EDGE_FLOW_MASK ) || IS_FORBIDDEN( pBNS->edge[*iedge].forbidden, pBNS ))
@@ -13710,69 +17855,75 @@ impl BnsSearchWorkspace {
     #[inline(always)]
     fn find_base<const SOURCE_LAYOUT: bool>(
         &mut self,
+        heap: &mut SourceHeap,
         vertex: Vertex,
     ) -> Result<Vertex, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c:11068..11086 C415 sentinel path compression
+        // Vertex FindBase( Vertex u, Vertex *BasePtr )
+        // {
+        //     if (BasePtr[u] == NO_VERTEX)
+        //     {
+        //         return NO_VERTEX;
+        //     }
+        //     else if (BasePtr[u] == BLOSSOM_BASE)
+        //     {
+        //         return u;
+        //     }
+        //     else
+        //     {
+        //         Vertex b;
+        //         b = FindBase( BasePtr[u], BasePtr );
+        //         BasePtr[u] = b; /* path compression */
+        //         return b;
+        //     }
+        // END VERBATIM SOURCE FRAGMENT: C415 sentinel path compression
+        // INCHI✔️❌: Recursive source unwind writes every ancestor even for
+        // a NO_VERTEX terminal. Retain iterative two-pass storage/error model:
+        // stop at the terminal INDEX, write its RESULT to ancestors only.
+        // No recursion/heap allocation/new scan; existing second walk has
+        // extra reads versus native recursion, human-deferred in C415 cost.
         let mut base = vertex;
-        loop {
-            let parent = *Self::slot::<_, SOURCE_LAYOUT>(&self.base_ptr, base)?;
+        let result = loop {
+            let parent = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &self.base_ptr, base)?;
             if parent == NO_VERTEX {
-                return Ok(NO_VERTEX);
+                break NO_VERTEX;
             }
             if parent == BLOSSOM_BASE {
-                break;
+                break base;
             }
             base = parent;
-        }
+        };
         let mut current = vertex;
         while current != base {
-            let parent = *Self::slot::<_, SOURCE_LAYOUT>(&self.base_ptr, current)?;
-            *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.base_ptr, current)? = base;
+            let parent = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &self.base_ptr, current)?;
+            *Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.base_ptr, current)? = result;
             current = parent;
         }
-        Ok(base)
+        Ok(result)
     }
 
     #[inline(always)]
     fn tree_mark<const SOURCE_LAYOUT: bool>(
         &mut self,
+        heap: &mut SourceHeap,
         vertex: Vertex,
         mark: S_CHAR,
     ) -> Result<(), SourceHeapError> {
-        let slot = Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.tree, vertex)?;
+        let slot = Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.tree, vertex)?;
         if *slot < mark {
             *slot = mark;
         }
         Ok(())
     }
 
-    fn path(&self, use_pu: bool) -> Result<&StableSourceSlice<Vertex>, SourceHeapError> {
-        if use_pu {
-            self.pu.as_ref()
-        } else {
-            self.pv.as_ref()
-        }
-        .ok_or(SourceHeapError::NullPointer)
-    }
-
-    fn path_mut(
-        &mut self,
-        use_pu: bool,
-    ) -> Result<&mut StableSourceSlice<Vertex>, SourceHeapError> {
-        if use_pu {
-            self.pu.as_mut()
-        } else {
-            self.pv.as_mut()
-        }
-        .ok_or(SourceHeapError::NullPointer)
-    }
-
     fn previous_vertex<const SOURCE_LAYOUT: bool>(
         &self,
+        heap: &SourceHeap,
         _bns: &BN_STRUCT,
         vertex: Vertex,
         edge_index: &mut EdgeIndex,
     ) -> Result<Vertex, SourceHeapError> {
-        let mut edge = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, vertex)?;
+        let mut edge = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &self.switch_edge, vertex)?;
         let mut w = edge[0];
         let mut z = self.get2nd_edge_vertex::<SOURCE_LAYOUT>(edge)?;
         let mut previous_edge = edge[1];
@@ -13784,7 +17935,7 @@ impl BnsSearchWorkspace {
         let complement = vertex ^ 1;
         let mut cursor = z ^ 1;
         while cursor != NO_VERTEX {
-            edge = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, cursor)?;
+            edge = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &self.switch_edge, cursor)?;
             w = edge[0];
             z = self.get2nd_edge_vertex::<SOURCE_LAYOUT>(edge)?;
             previous_edge = edge[1];
@@ -13802,6 +17953,7 @@ impl BnsSearchWorkspace {
 
     fn ignore_non_tacn_atom<const SOURCE_LAYOUT: bool>(
         &self,
+        heap: &SourceHeap,
         bns: &BN_STRUCT,
         u: Vertex,
         v: Vertex,
@@ -13829,8 +17981,13 @@ impl BnsSearchWorkspace {
         let (degree, adjacency_base) = self.vertex_scan::<SOURCE_LAYOUT>(bns, v)?;
         for index in 0..degree {
             let mut edge_index = 0;
-            let neighbor =
-                self.vertex_neighbor::<SOURCE_LAYOUT>(v, index, adjacency_base, &mut edge_index)?;
+            let neighbor = self.vertex_neighbor::<SOURCE_LAYOUT>(
+                heap,
+                v,
+                index,
+                adjacency_base,
+                &mut edge_index,
+            )?;
             if neighbor == NO_VERTEX || neighbor <= 1 || neighbor == u {
                 continue;
             }
@@ -13850,6 +18007,7 @@ impl BnsSearchWorkspace {
 
     fn ignore_non_tacn_group<const SOURCE_LAYOUT: bool>(
         &self,
+        heap: &SourceHeap,
         bns: &BN_STRUCT,
         v: Vertex,
         w: Vertex,
@@ -13864,7 +18022,7 @@ impl BnsSearchWorkspace {
             return Ok(false);
         }
         let mut edge_index = 0;
-        let u = self.previous_vertex::<SOURCE_LAYOUT>(bns, v, &mut edge_index)?;
+        let u = self.previous_vertex::<SOURCE_LAYOUT>(heap, bns, v, &mut edge_index)?;
         if u == NO_VERTEX || edge_index < 0 {
             return Ok(false);
         }
@@ -13896,27 +18054,73 @@ impl BnsSearchWorkspace {
 
     fn find_path_to_source<const SOURCE_LAYOUT: bool>(
         &mut self,
+        heap: &mut SourceHeap,
         mut vertex: Vertex,
         use_pu: bool,
         max_len: i32,
     ) -> Result<i32, SourceHeapError> {
-        let mut index = 0;
-        *Self::slot_mut::<_, SOURCE_LAYOUT>(self.path_mut(use_pu)?, 0)? = vertex;
-        while vertex != Vertex_s as Vertex {
-            let edge = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, vertex)?;
-            vertex = self.find_base::<SOURCE_LAYOUT>(edge[0])?;
-            index += 1;
-            if index >= max_len {
-                return Ok(BNS_WRONG_PARMS);
-            }
-            *Self::slot_mut::<_, SOURCE_LAYOUT>(self.path_mut(use_pu)?, index)? = vertex;
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c:11092..11115 C418 FindPathToVertex_s retained path kernel
+        // int FindPathToVertex_s( Vertex x,
+        //                         Edge *SwitchEdge,
+        //                         Vertex *BasePtr,
+        //                         Vertex *Path,
+        //                         int MaxPathLen )
+        // {
+        //     /* x is the base of a blossom, construct a valid Path of blossom bases to s */
+        //     int i = 0;
+        //     Path[i] = x;
+        //     while (x != Vertex_s)
+        //     {
+        //         x = FindBase( SwitchEdge_Vert1( x ), BasePtr );
+        //         if (++i < MaxPathLen)
+        //         {
+        //             Path[i] = x;
+        //         }
+        //         else
+        //         {
+        //             return BNS_WRONG_PARMS;
+        //         }
+        //     }
+        //
+        //     return i;
+        // }
+        // END VERBATIM SOURCE FRAGMENT: C418 FindPathToVertex_s retained path kernel
+        // INCHI✔️❌: Retain the source Path once. Move fixed view metadata,
+        // never array data. Only base_ptr/switch_edge are accessed while the
+        // selected field is vacant. Result restoration preserves partial writes
+        // and errors; no allocation, copy, loop selection or unwind claim.
+        let mut path = if use_pu {
+            self.pu.take()
+        } else {
+            self.pv.take()
         }
-        Ok(index)
+        .ok_or(SourceHeapError::NullPointer)?;
+        let result = (|| -> Result<i32, SourceHeapError> {
+            let mut index = 0;
+            *Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut path, 0)? = vertex;
+            while vertex != Vertex_s as Vertex {
+                let edge = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &self.switch_edge, vertex)?;
+                vertex = self.find_base::<SOURCE_LAYOUT>(heap, edge[0])?;
+                index += 1;
+                if index >= max_len {
+                    return Ok(BNS_WRONG_PARMS);
+                }
+                *Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut path, index)? = vertex;
+            }
+            Ok(index)
+        })();
+        if use_pu {
+            self.pu = Some(path);
+        } else {
+            self.pv = Some(path);
+        }
+        result
     }
 
     #[allow(clippy::too_many_arguments)]
     fn make_blossom<const SOURCE_LAYOUT: bool>(
         &mut self,
+        heap: &mut SourceHeap,
         bns: &BN_STRUCT,
         q_size: &mut i32,
         max_path_len: i32,
@@ -13926,36 +18130,159 @@ impl BnsSearchWorkspace {
         base_u: Vertex,
         base_v: Vertex,
     ) -> Result<Vertex, SourceHeapError> {
-        let len_pu = self.find_path_to_source::<SOURCE_LAYOUT>(base_u, true, max_path_len)?;
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c:11122..11236 C418 MakeBlossom retained path kernel
+        // Vertex MakeBlossom( BN_STRUCT* pBNS,
+        //                     Vertex *ScanQ,
+        //                     int *pQSize,
+        //                     Vertex *Pu,
+        //                     Vertex *Pv,
+        //                     int max_len_Pu_Pv,
+        //                     Edge *SwitchEdge,
+        //                     Vertex *BasePtr,
+        //                     Vertex u,
+        //                     Vertex v,
+        //                     EdgeIndex iuv,
+        //                     Vertex b_u,
+        //                     Vertex b_v,
+        //                     S_CHAR *Tree )
+        // {
+        //     /* In order to find the base of the new blossom, the paths
+        //     P(u) and P(v') are constructed and compared in order to
+        //     find the last blossom base they have in common which
+        //     is reachable on a valid path.
+        //
+        //     Edge uv connects two blossoms, their bases are b_u and b_v.
+        //     */
+        //     Vertex w, z;
+        //     int len_Pu, len_Pv;
+        //     int i, j, k;
+        //     EdgeIndex izw;
+        //
+        //     len_Pu = FindPathToVertex_s( b_u, SwitchEdge, BasePtr, Pu, max_len_Pu_Pv );
+        //     if (IS_BNS_ERROR( len_Pu ))
+        //     {
+        //         return len_Pu;
+        //     }
+        //     len_Pv = FindPathToVertex_s( b_v, SwitchEdge, BasePtr, Pv, max_len_Pu_Pv );
+        //     if (IS_BNS_ERROR( len_Pv ))
+        //     {
+        //         return len_Pv;
+        //     }
+        //     i = len_Pu;
+        //     j = len_Pv;
+        //     /* Initially Pu[i] and Pv[j] both equal to s, but their first elements are different */
+        //     /* Find the last blossom base common to Pu and Pv */
+        //     while (i >= 0 && j >= 0 && Pu[i] == Pv[j])
+        //     {
+        //         /* Was (Pu[i]==Pv[j] && i>=0 && j>=0) => tested Pu[-1], Pv[-1] <- pointed by W.Ihlenfeldt 08-26-2004*/
+        //         i--;
+        //         j--;
+        //     }
+        //     i++;
+        //     w = Pu[i]; /* w is the last common vertex */
+        //     z = SwitchEdge_Vert1( w );
+        //     izw = SwitchEdge_IEdge( w );
+        //     /* now extend the blossom if rescap(zw) >= 2 */
+        //     while (w != Vertex_s && rescap( pBNS, z, w, izw ) >= 2)
+        //     {
+        //         i++;
+        //         w = Pu[i];
+        //         z = SwitchEdge_Vert1( w );
+        //         izw = SwitchEdge_IEdge( w );
+        //     }
+        //     /* w is the base of the new blossom */
+        //     /* first follow the path Pu from w to b_u */
+        //     for (k = i - 1; k >= 0; k--)
+        //     {
+        //         z = Pu[k];  /* z is the base of the blossom */
+        //         BasePtr[z] = w;
+        //         BasePtr[prim( z )] = w; /* w is the new base of the blossom */
+        //                                 /* z and z' may already be part of a blossom that is being
+        //                                 swallowed into a larger blossom.
+        //                                 We don't want to change the switch edge in that case.
+        //                                 */
+        //
+        //         if (!TREE_IS_ON_SCANQ( prim( z ) ) /*!IsInScanQ(prim(z)) */)
+        //         {
+        //             SwitchEdge_Vert1( prim( z ) ) = prim( v );     /* set the switch edge of z' */
+        //                                                            /* SwitchEdge[prim(z)][1] = prim(u);  */
+        //             SwitchEdge_IEdge( prim( z ) ) = iuv;
+        //             ( *pQSize )++;
+        //             ScanQ[*pQSize] = prim( z );    /* add z' to ScanQ */
+        //             TREE_MARK( prim( z ), TREE_IN_2BLOSS ); /* mark z' s-reachable */
+        //         }
+        //     }
+        //     /* Now follow the path Pv */
+        //     for (k = j; k >= 0; k--) /* djb-rwth: converting for loop into while loop to avoid LLVM warning */
+        //     {
+        //         z = Pv[k]; /* z is the base of the blossom */
+        //         BasePtr[z] = w;
+        //         BasePtr[prim( z )] = w; /* w is the new base of the blossom */
+        //                                 /* z and z' may already be part of a blossom that is being
+        //                                 swallowed into a larger blossom.
+        //                                 We don't want to change the switch edge in that case.
+        //                                 */
+        //
+        //         if (!TREE_IS_ON_SCANQ( prim( z ) ) /*!IsInScanQ(prim(z)) */)
+        //         {
+        //             SwitchEdge_Vert1( prim( z ) ) = u;     /* set the switch edge of z' */
+        //                                                    /* SwitchEdge[prim(z)][1] = v;  */
+        //             SwitchEdge_IEdge( prim( z ) ) = iuv;
+        //             ( *pQSize )++;
+        //             ScanQ[*pQSize] = prim( z );    /* add z' to ScanQ */
+        //             TREE_MARK( prim( z ), TREE_IN_2BLOSS ); /* mark z' s-reachable */
+        //         }
+        //     }
+        //
+        //     if (!TREE_IS_ON_SCANQ( prim( w ) ) /* !IsInScanQ(prim(w))*/)
+        //     {   /* add w' to the blossom */
+        //         SwitchEdge_Vert1( prim( w ) ) = u;     /* set the switch edge of w' */
+        //                                                /* SwitchEdge[prim(w)][1] = v;  */
+        //         SwitchEdge_IEdge( prim( w ) ) = iuv;
+        //         ( *pQSize )++;
+        //         ScanQ[*pQSize] = prim( w ); /* add w' to ScanQ */
+        //         TREE_MARK( prim( w ), TREE_IN_2BLOSS );  /* mark w' s-reachable */
+        //     }
+        //
+        //     return w;
+        // }
+        // END VERBATIM SOURCE FRAGMENT: C418 MakeBlossom retained path kernel
+        let len_pu = self.find_path_to_source::<SOURCE_LAYOUT>(heap, base_u, true, max_path_len)?;
         if BNS_ERR <= len_pu && len_pu <= BNS_MAX_ERR_VALUE {
             return Ok(len_pu);
         }
-        let len_pv = self.find_path_to_source::<SOURCE_LAYOUT>(base_v, false, max_path_len)?;
+        let len_pv =
+            self.find_path_to_source::<SOURCE_LAYOUT>(heap, base_v, false, max_path_len)?;
         if BNS_ERR <= len_pv && len_pv <= BNS_MAX_ERR_VALUE {
             return Ok(len_pv);
         }
 
+        // INCHI✔️❌: Both source constructors succeeded. Retain Pu/Pv for
+        // compare/extension once; views expire before workspace absorption.
+        // Fixed metadata/error costs deferred, no repeated loop selection.
+        let pu = self.pu.as_ref().ok_or(SourceHeapError::NullPointer)?;
+        let pv = self.pv.as_ref().ok_or(SourceHeapError::NullPointer)?;
         let mut i = len_pu;
         let mut j = len_pv;
         while i >= 0
             && j >= 0
-            && Self::slot::<_, SOURCE_LAYOUT>(self.path(true)?, i)?
-                == Self::slot::<_, SOURCE_LAYOUT>(self.path(false)?, j)?
+            && Self::work_slot::<_, SOURCE_LAYOUT>(heap, pu, i)?
+                == Self::work_slot::<_, SOURCE_LAYOUT>(heap, pv, j)?
         {
             i -= 1;
             j -= 1;
         }
         i += 1;
-        let mut base = *Self::slot::<_, SOURCE_LAYOUT>(self.path(true)?, i)?;
-        let mut switch = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, base)?;
+        let mut base = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, pu, i)?;
+        let mut switch = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &self.switch_edge, base)?;
         let mut z = switch[0];
         let mut izw = switch[1];
         while base != Vertex_s as Vertex
             && self.residual_capacity::<SOURCE_LAYOUT>(bns, z, base, izw)? >= 2
         {
             i += 1;
-            base = *Self::slot::<_, SOURCE_LAYOUT>(self.path(true)?, i)?;
-            switch = *Self::slot::<_, SOURCE_LAYOUT>(&self.switch_edge, base)?;
+            base = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, pu, i)?;
+            switch = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &self.switch_edge, base)?;
             z = switch[0];
             izw = switch[1];
         }
@@ -13965,38 +18292,74 @@ impl BnsSearchWorkspace {
                                mut path_index: i32,
                                predecessor: Vertex|
          -> Result<(), SourceHeapError> {
-            while path_index >= 0 {
-                let z = *Self::slot::<_, SOURCE_LAYOUT>(workspace.path(use_pu)?, path_index)?;
-                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, z)? = base;
-                let complement = z ^ 1;
-                *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.base_ptr, complement)? = base;
-                if *Self::slot::<_, SOURCE_LAYOUT>(&workspace.tree, complement)?
-                    < TREE_IN_2BLOSS as S_CHAR
-                {
-                    let switch =
-                        Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.switch_edge, complement)?;
-                    switch[0] = predecessor;
-                    switch[1] = edge_index;
-                    *q_size = q_size.wrapping_add(1);
-                    *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.scan_q, *q_size)? =
-                        complement;
-                    workspace.tree_mark::<SOURCE_LAYOUT>(complement, TREE_IN_2BLOSS as S_CHAR)?;
-                }
-                path_index -= 1;
+            if path_index < 0 {
+                return Ok(());
             }
-            Ok(())
+            // Select the source path once; nested calls touch other fields.
+            let path = if use_pu {
+                workspace.pu.take()
+            } else {
+                workspace.pv.take()
+            }
+            .ok_or(SourceHeapError::NullPointer)?;
+            let result = (|| -> Result<(), SourceHeapError> {
+                while path_index >= 0 {
+                    let z = *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &path, path_index)?;
+                    *Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut workspace.base_ptr, z)? =
+                        base;
+                    let complement = z ^ 1;
+                    *Self::work_slot_mut::<_, SOURCE_LAYOUT>(
+                        heap,
+                        &mut workspace.base_ptr,
+                        complement,
+                    )? = base;
+                    if *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &workspace.tree, complement)?
+                        < TREE_IN_2BLOSS as S_CHAR
+                    {
+                        let switch = Self::work_slot_mut::<_, SOURCE_LAYOUT>(
+                            heap,
+                            &mut workspace.switch_edge,
+                            complement,
+                        )?;
+                        switch[0] = predecessor;
+                        switch[1] = edge_index;
+                        *q_size = q_size.wrapping_add(1);
+                        *Self::work_slot_mut::<_, SOURCE_LAYOUT>(
+                            heap,
+                            &mut workspace.scan_q,
+                            *q_size,
+                        )? = complement;
+                        workspace.tree_mark::<SOURCE_LAYOUT>(
+                            heap,
+                            complement,
+                            TREE_IN_2BLOSS as S_CHAR,
+                        )?;
+                    }
+                    path_index -= 1;
+                }
+                Ok(())
+            })();
+            if use_pu {
+                workspace.pu = Some(path);
+            } else {
+                workspace.pv = Some(path);
+            }
+            result
         };
         absorb_path(self, true, i - 1, v ^ 1)?;
         absorb_path(self, false, j, u)?;
 
         let complement = base ^ 1;
-        if *Self::slot::<_, SOURCE_LAYOUT>(&self.tree, complement)? < TREE_IN_2BLOSS as S_CHAR {
-            let switch = Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.switch_edge, complement)?;
+        if *Self::work_slot::<_, SOURCE_LAYOUT>(heap, &self.tree, complement)?
+            < TREE_IN_2BLOSS as S_CHAR
+        {
+            let switch =
+                Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.switch_edge, complement)?;
             switch[0] = u;
             switch[1] = edge_index;
             *q_size = q_size.wrapping_add(1);
-            *Self::slot_mut::<_, SOURCE_LAYOUT>(&mut self.scan_q, *q_size)? = complement;
-            self.tree_mark::<SOURCE_LAYOUT>(complement, TREE_IN_2BLOSS as S_CHAR)?;
+            *Self::work_slot_mut::<_, SOURCE_LAYOUT>(heap, &mut self.scan_q, *q_size)? = complement;
+            self.tree_mark::<SOURCE_LAYOUT>(heap, complement, TREE_IN_2BLOSS as S_CHAR)?;
         }
         Ok(base)
     }
@@ -14235,24 +18598,30 @@ fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
 
         q_size = 0;
         let mut k = 0;
-        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(&mut workspace.scan_q, q_size)? =
-            Vertex_s as Vertex;
-        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+        *BnsSearchWorkspace::work_slot_mut::<_, SOURCE_LAYOUT>(
+            heap,
+            &mut workspace.scan_q,
+            q_size,
+        )? = Vertex_s as Vertex;
+        *BnsSearchWorkspace::work_slot_mut::<_, SOURCE_LAYOUT>(
+            heap,
             &mut workspace.base_ptr,
             Vertex_t as Vertex,
         )? = Vertex_s as Vertex;
-        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+        *BnsSearchWorkspace::work_slot_mut::<_, SOURCE_LAYOUT>(
+            heap,
             &mut workspace.base_ptr,
             Vertex_s as Vertex,
         )? = BLOSSOM_BASE;
-        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+        *BnsSearchWorkspace::work_slot_mut::<_, SOURCE_LAYOUT>(
+            heap,
             &mut workspace.tree,
             Vertex_s as Vertex,
         )? = TREE_IN_1 as S_CHAR;
 
         loop {
-            let u = *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.scan_q, k)?;
-            let mut b_u = workspace.find_base::<SOURCE_LAYOUT>(u)?;
+            let u = *BnsSearchWorkspace::work_slot::<_, SOURCE_LAYOUT>(heap, &workspace.scan_q, k)?;
+            let mut b_u = workspace.find_base::<SOURCE_LAYOUT>(heap, u)?;
             let (degree, adjacency_base) = workspace.vertex_scan::<SOURCE_LAYOUT>(pBNS, u)?;
             let mut n = 0;
             // INCHI✔️✔️:         for (i = 0; i < degree; i++)
@@ -14260,8 +18629,13 @@ fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
             while i < degree {
                 let mut iuv: EdgeIndex = 0;
                 // INCHI✔️✔️:             v = GetVertexNeighbor( pBNS, u, i, &iuv );
-                let v =
-                    workspace.vertex_neighbor::<SOURCE_LAYOUT>(u, i, adjacency_base, &mut iuv)?;
+                let v = workspace.vertex_neighbor::<SOURCE_LAYOUT>(
+                    heap,
+                    u,
+                    i,
+                    adjacency_base,
+                    &mut iuv,
+                )?;
                 // INCHI✔️✔️:             if (v == NO_VERTEX) { continue; }
                 if v == NO_VERTEX {
                     i = i.wrapping_add(1);
@@ -14282,8 +18656,11 @@ fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
                 }
 
                 // INCHI✔️✔️:             ( SwitchEdge_Vert1( u ) != v || SwitchEdge_Vert2( u ) != u )
-                let switch_u =
-                    *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.switch_edge, u)?;
+                let switch_u = *BnsSearchWorkspace::work_slot::<_, SOURCE_LAYOUT>(
+                    heap,
+                    &workspace.switch_edge,
+                    u,
+                )?;
                 let switch_u_avoids_t = switch_u[0] != v
                     || workspace.get2nd_edge_vertex::<SOURCE_LAYOUT>(switch_u)? != u;
                 // INCHI✔️✔️:                  && ( ret = rescap( pBNS, u, v, iuv ) ) > 0
@@ -14294,37 +18671,41 @@ fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
                     // INCHI✔️✔️:                 if (pBNS->type_TACN)
                     if pBNS.type_TACN != 0 {
                         // INCHI✔️✔️:                     if (bIgnoreVertexNonTACN_atom( pBNS, u, v )) { continue; }
-                        if workspace.ignore_non_tacn_atom::<SOURCE_LAYOUT>(pBNS, u, v)? {
+                        if workspace.ignore_non_tacn_atom::<SOURCE_LAYOUT>(heap, pBNS, u, v)? {
                             i = i.wrapping_add(1);
                             continue;
                         }
                         // INCHI✔️✔️:                     if (bIgnoreVertexNonTACN_group( pBNS, u, v, SwitchEdge )) { continue; }
-                        if workspace.ignore_non_tacn_group::<SOURCE_LAYOUT>(pBNS, u, v)? {
+                        if workspace.ignore_non_tacn_group::<SOURCE_LAYOUT>(heap, pBNS, u, v)? {
                             i = i.wrapping_add(1);
                             continue;
                         }
                     }
                     // INCHI✔️✔️:                 b_v = FindBase( v, BasePtr );
-                    let b_v = workspace.find_base::<SOURCE_LAYOUT>(v)?;
+                    let b_v = workspace.find_base::<SOURCE_LAYOUT>(heap, v)?;
                     if b_v == NO_VERTEX {
                         q_size += 1;
-                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+                        *BnsSearchWorkspace::work_slot_mut::<_, SOURCE_LAYOUT>(
+                            heap,
                             &mut workspace.scan_q,
                             q_size,
                         )? = v;
-                        workspace.tree_mark::<SOURCE_LAYOUT>(v, TREE_IN_1 as S_CHAR)?;
-                        workspace.tree_mark::<SOURCE_LAYOUT>(v ^ 1, TREE_IN_2 as S_CHAR)?;
-                        let switch_v = BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+                        workspace.tree_mark::<SOURCE_LAYOUT>(heap, v, TREE_IN_1 as S_CHAR)?;
+                        workspace.tree_mark::<SOURCE_LAYOUT>(heap, v ^ 1, TREE_IN_2 as S_CHAR)?;
+                        let switch_v = BnsSearchWorkspace::work_slot_mut::<_, SOURCE_LAYOUT>(
+                            heap,
                             &mut workspace.switch_edge,
                             v,
                         )?;
                         switch_v[0] = u;
                         switch_v[1] = iuv;
-                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+                        *BnsSearchWorkspace::work_slot_mut::<_, SOURCE_LAYOUT>(
+                            heap,
                             &mut workspace.base_ptr,
                             v ^ 1,
                         )? = v;
-                        *BnsSearchWorkspace::slot_mut::<_, SOURCE_LAYOUT>(
+                        *BnsSearchWorkspace::work_slot_mut::<_, SOURCE_LAYOUT>(
+                            heap,
                             &mut workspace.base_ptr,
                             v,
                         )? = BLOSSOM_BASE;
@@ -14332,23 +18713,41 @@ fn balanced_network_search_impl<const SOURCE_LAYOUT: bool>(
                     } else {
                         let prim_v = v ^ 1;
                         let prim_u = u ^ 1;
-                        let switch_prim_u = *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(
-                            &workspace.switch_edge,
-                            prim_u,
-                        )?;
-                        let avoids_t_prime = switch_prim_u[0] != prim_v
-                            || workspace.get2nd_edge_vertex::<SOURCE_LAYOUT>(switch_prim_u)?
-                                != prim_u;
-                        if *BnsSearchWorkspace::slot::<_, SOURCE_LAYOUT>(&workspace.tree, prim_v)?
-                            >= TREE_IN_2BLOSS as S_CHAR
-                            && avoids_t_prime
+                        // VERBATIM SOURCE FRAGMENT: ichi_bns.c:10951..10955 C415 reachability first
+                        //                 else if (TREE_IS_S_REACHABLE( prim( v ) ) /*Is_s_Reachable(prim(v)*/
+                        //                                                           /* if v' is reachable, an st-path is given by P(u)-uv-P'(v') */
+                        //                                                           /*&& PrevPt[prim(u)] != prim(v) ** avoid edges of T' */
+                        //                           && ( SwitchEdge_Vert1( prim( u ) ) != prim( v ) || SwitchEdge_Vert2( prim( u ) ) != prim( u ) ) /* avoid edges of T' */
+                        // END VERBATIM SOURCE FRAGMENT: C415 reachability first
+                        // INCHI✔️❗: Source &&/|| order; unreachable prim(v)
+                        // never reads switch tuple/edge. No new allocation,
+                        // clone, scan or predicate; checked whole costs OPEN.
+                        if *BnsSearchWorkspace::work_slot::<_, SOURCE_LAYOUT>(
+                            heap,
+                            &workspace.tree,
+                            prim_v,
+                        )? >= TREE_IN_2BLOSS as S_CHAR
+                            && {
+                                let switch_prim_u = *BnsSearchWorkspace::work_slot::<
+                                    _,
+                                    SOURCE_LAYOUT,
+                                >(
+                                    heap, &workspace.switch_edge, prim_u
+                                )?;
+                                switch_prim_u[0] != prim_v
+                                    || workspace
+                                        .get2nd_edge_vertex::<SOURCE_LAYOUT>(switch_prim_u)?
+                                        != prim_u
+                            }
                             && b_u != b_v
                             && !(pBNS.type_TACN != 0
-                                && workspace
-                                    .ignore_non_tacn_group::<SOURCE_LAYOUT>(pBNS, prim_v, u)?)
+                                && workspace.ignore_non_tacn_group::<SOURCE_LAYOUT>(
+                                    heap, pBNS, prim_v, u,
+                                )?)
                         {
                             n += 1;
                             let w = workspace.make_blossom::<SOURCE_LAYOUT>(
+                                heap,
                                 pBNS,
                                 &mut q_size,
                                 max_len_pu_pv,
@@ -14458,7 +18857,7 @@ pub(crate) fn run_balanced_network_search_with_workspace(
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
     bChangeFlow: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
     workspace: &mut BnsSearchWorkspace,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:689 RunBalancedNetworkSearch
@@ -14513,7 +18912,7 @@ pub(crate) fn run_balanced_network_search_with_workspace(
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         pBNS.bChangeFlow = 0;
         delta = balanced_network_search_with_workspace(heap, pBNS, pBD, bChangeFlow, workspace)?;
-        workspace.reinit_data_for_layout(pBD)?;
+        workspace.reinit_data_for_layout(heap, pBD)?;
         if delta > 0 {
             pBNS.num_altp += 1;
             n_sum_delta += delta.abs();
@@ -14555,7 +18954,7 @@ pub(crate) fn RunBalancedNetworkSearch(
     pBNS: &mut BN_STRUCT,
     pBD: &mut BN_DATA,
     bChangeFlow: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     if pBNS.max_altp <= 0 {
         let tick_start: Option<inchiTime> = if pBNS.ulTimeOutTime.is_null() {
@@ -14598,7 +18997,7 @@ pub(crate) fn BnsAdjustFlowBondsRad(
     pBD: &mut BN_DATA,
     at: SourceMutPointer<inp_ATOM>,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:1725 BnsAdjustFlowBondsRad
     // INCHI✔️❌: int BnsAdjustFlowBondsRad( BN_STRUCT *pBNS,
@@ -14738,6 +19137,14 @@ pub(crate) fn BnsAdjustFlowBondsRad(
 
         loop {
             let mut num_removed = 0_i32;
+            // Native ichicano.c292..295, reached from ichi_bns.c713:
+            //         FillMaxMinClock( ic );
+            //         if (!TickStart)
+            //             return 0;
+            //         clockCurrTime = InchiClock( );
+            // INCHI✔️❗: NULL deadline reads no process sample. Keep the
+            // full search/helper call and clock initialization below;
+            // non-NULL repeated queries sample afresh. C531/C590 cost OPEN.
             let mut ret =
                 RunBalancedNetworkSearch(heap, pBNS, pBD, BNS_EF_CHNG_FLOW as i32, clock_result)?;
             if BNS_ERR <= ret && ret <= BNS_MAX_ERR_VALUE {
@@ -15196,10 +19603,12 @@ pub(crate) fn SetAtomBondType(
     if ((bChangeFlow as u32) & BNS_EF_CHNG_BONDS) != 0
         && ((bChangeFlow as u32) & BNS_EF_ALTR_NS) != BNS_EF_ALTR_NS
     {
-        let new_bond_type = flow2.wrapping_add(BOND_SINGLE as i32) as u8;
-        if *bond_type12 != new_bond_type {
-            *bond_type12 = new_bond_type;
-            *bond_type21 = new_bond_type;
+        // INCHI✔️❗: compare promoted byte to the native int before storage
+        // narrowing. Constant time/space/no allocation; full-call cost OPEN.
+        let new_bond_type = flow2.wrapping_add(BOND_SINGLE as i32);
+        if i32::from(*bond_type12) != new_bond_type {
+            *bond_type21 = new_bond_type as u8;
+            *bond_type12 = new_bond_type as u8;
             return 1;
         }
         return 0;
@@ -15280,8 +19689,8 @@ pub(crate) fn SetAtomBondType(
 
     let new_bond_type = (bond_type | bond_mark) as u8;
     if new_bond_type != *bond_type12 {
-        *bond_type12 = new_bond_type;
         *bond_type21 = new_bond_type;
+        *bond_type12 = new_bond_type;
         1
     } else {
         0
@@ -15563,12 +19972,17 @@ pub(crate) fn SetBondsFromBnStructFlow(
         let path_len = work_get::<BNS_ALT_PATH>(heap, path, 2)?.number();
         let mut delta = work_get::<BNS_ALT_PATH>(heap, path, 1)?.flow(0);
         let v_last = work_get::<BNS_ALT_PATH>(heap, path, 4)?.number();
-        let start_vertex = bns_vertex(heap, pBNS, v1_initial)?;
-        let last_vertex = bns_vertex(heap, pBNS, v_last)?;
+        // INCHI✔️❗: endpoint reads remain inside source short-circuit gates.
+        // O(path lengths)/O(1), no allocation or record snapshots; safe arena
+        // and scalar projection whole-call costs remain independently OPEN.
         let mut bChangeFlowAdd = if (bChangeFlow0 & BNS_EF_SET_NOSTEREO as i32) != 0
-            && (start_vertex.st_edge.cap0 > start_vertex.st_edge.flow0
-                || last_vertex.st_edge.cap0 > last_vertex.st_edge.flow0)
-        {
+            && ({
+                let start = heap.element_signed(pBNS.vert.as_const(), v1_initial)?;
+                start.st_edge.cap0 > start.st_edge.flow0
+            } || {
+                let last = heap.element_signed(pBNS.vert.as_const(), v_last)?;
+                last.st_edge.cap0 > last.st_edge.flow0
+            }) {
             ret |= 2;
             BNS_EF_SET_NOSTEREO as i32
         } else {
@@ -15596,100 +20010,72 @@ pub(crate) fn SetBondsFromBnStructFlow(
             let path_entry = work_get::<BNS_ALT_PATH>(heap, path, 5_i32.wrapping_add(i))?;
             let ineigh1 = i32::from(path_entry.ineigh(0));
             let ineigh2 = i32::from(path_entry.ineigh(1));
-            let vertex = bns_vertex(heap, pBNS, v1)?;
-            let edge_index = bns_edge_index(heap, &vertex, ineigh1)?;
-            let edge = bns_edge(heap, pBNS, edge_index)?;
-            v2 = i32::from(edge.neighbor12) ^ v1;
+            let vertex = heap.element_signed(pBNS.vert.as_const(), v1)?;
+            let edge_index = bns_edge_index(heap, vertex, ineigh1)?;
+            v2 = i32::from(
+                heap.element_signed(pBNS.edge.as_const(), edge_index)?
+                    .neighbor12,
+            ) ^ v1;
 
             if (bChangeFlow & BNS_EF_CHNG_BONDS as i32) != 0 && v1 < num_atoms {
-                let atom_index =
-                    usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let atom = heap
-                    .slice_mut(at)?
-                    .get_mut(atom_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if v0 >= num_atoms && v2 < num_atoms {
+                    let atom = heap.element_signed_mut(at, v1)?;
                     atom.chem_bonds_valence = atom.chem_bonds_valence.wrapping_add(delta as S_CHAR);
                 } else if v0 < num_atoms && v2 >= num_atoms && v0 != NO_VERTEX {
+                    let atom = heap.element_signed_mut(at, v1)?;
                     atom.chem_bonds_valence = atom.chem_bonds_valence.wrapping_sub(delta as S_CHAR);
                 }
             }
 
-            if edge.pass != 0 {
-                if v1 < num_atoms && v2 < num_atoms {
-                    let first_index =
-                        usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let second_index =
-                        usize::try_from(v2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let first_neighbor = usize::try_from(ineigh1)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let second_neighbor = usize::try_from(ineigh2)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let (
-                        first_valence,
-                        second_valence,
-                        first_ring,
-                        second_ring,
-                        mut first_type,
-                        mut second_type,
-                    ) = {
-                        let atoms = heap.slice(at.as_const())?;
-                        let first_atom = atoms
-                            .get(first_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let second_atom = atoms
-                            .get(second_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        (
-                            i32::from(first_atom.valence),
-                            i32::from(second_atom.valence),
-                            first_atom.nRingSystem,
-                            second_atom.nRingSystem,
-                            *first_atom
-                                .bond_type
-                                .get(first_neighbor)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                            *second_atom
-                                .bond_type
-                                .get(second_neighbor)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                        )
-                    };
-                    if ineigh1 < first_valence && ineigh2 < second_valence {
-                        if (bChangeFlow0 & BNS_EF_ALTR_NS as i32) == BNS_EF_ALTR_NS as i32
-                            && (bChangeFlow0 & BNS_EF_SAVE_ALL as i32) == BNS_EF_SAVE_ALL as i32
+            if heap.element_signed(pBNS.edge.as_const(), edge_index)?.pass != 0 {
+                if v1 < num_atoms
+                    && ineigh1 < i32::from(heap.element_signed(at.as_const(), v1)?.valence)
+                    && v2 < num_atoms
+                    && ineigh2 < i32::from(heap.element_signed(at.as_const(), v2)?.valence)
+                {
+                    if (bChangeFlow0 & BNS_EF_ALTR_NS as i32) == BNS_EF_ALTR_NS as i32
+                        && (bChangeFlow0 & BNS_EF_SAVE_ALL as i32) == BNS_EF_SAVE_ALL as i32
+                    {
+                        bChangeFlowAdd = if heap.element_signed(at.as_const(), v1)?.nRingSystem
+                            != heap.element_signed(at.as_const(), v2)?.nRingSystem
                         {
-                            bChangeFlowAdd = if first_ring != second_ring {
-                                BNS_EF_ALTR_NS as i32
-                            } else {
-                                0
-                            };
-                        }
-                        let ret_val = SetAtomBondType(
-                            &edge,
-                            &mut first_type,
-                            Some(&mut second_type),
-                            delta,
-                            bChangeFlow | bChangeFlowAdd,
-                        );
-                        if ret_val < 0 {
-                            err = BNS_PROGRAM_ERR;
+                            BNS_EF_ALTR_NS as i32
                         } else {
-                            if ret_val > 0 {
-                                let atoms = heap.slice_mut(at)?;
-                                atoms
-                                    .get_mut(first_index)
-                                    .and_then(|atom| atom.bond_type.get_mut(first_neighbor))
-                                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                                    .clone_from(&first_type);
-                                atoms
-                                    .get_mut(second_index)
-                                    .and_then(|atom| atom.bond_type.get_mut(second_neighbor))
-                                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                                    .clone_from(&second_type);
-                            }
-                            ret |= i32::from(ret_val > 0);
+                            0
+                        };
+                    }
+                    let first_neighbor = ineigh1 as usize;
+                    let second_neighbor = ineigh2 as usize;
+                    let mut first_type = *heap
+                        .element_signed(at.as_const(), v1)?
+                        .bond_type
+                        .get(first_neighbor)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    // SetAtomBondType never reads its reciprocal output byte.
+                    let mut second_type = 0_u8;
+                    let ret_val = SetAtomBondType(
+                        heap.element_signed(pBNS.edge.as_const(), edge_index)?,
+                        &mut first_type,
+                        Some(&mut second_type),
+                        delta,
+                        bChangeFlow | bChangeFlowAdd,
+                    );
+                    if ret_val < 0 {
+                        err = BNS_PROGRAM_ERR;
+                    } else {
+                        if ret_val > 0 {
+                            *heap
+                                .element_signed_mut(at, v2)?
+                                .bond_type
+                                .get_mut(second_neighbor)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)? = second_type;
+                            *heap
+                                .element_signed_mut(at, v1)?
+                                .bond_type
+                                .get_mut(first_neighbor)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)? = first_type;
                         }
+                        ret |= i32::from(ret_val > 0);
                     }
                 }
                 bns_edge_mut(heap, pBNS, edge_index)?.pass = 0;
@@ -15731,7 +20117,7 @@ pub(crate) fn BnsTestAndMarkAltBonds(
     fcd: SourceMutPointer<BNS_FLOW_CHANGES>,
     bChangeFlow: i32,
     nBondTypeToTest: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:1825 BnsTestAndMarkAltBonds
     // INCHI✔️❌: int BnsTestAndMarkAltBonds( BN_STRUCT *pBNS,
@@ -15784,24 +20170,211 @@ pub(crate) fn BnsTestAndMarkAltBonds(
     // INCHI✔️❌: #define BNS_EF_CHNG_RSTR 3
     // END INCHI ACTIVE MACRO CONFIGURATION: BnsTestAndMarkAltBonds
 
-    // SAFETY: the source keeps `at` as one fixed allocation throughout this
-    // search. Calls below may update atom fields but never free or resize the
-    // allocation; each reference from this view is confined to the expression
-    // that copies the current source fields before any such call. Consequently
-    // later iterations observe mutations exactly as repeated C `at[iat]`
-    // reads do, without cloning a complete inp_ATOM for every neighbor.
-    let atoms = unsafe { heap.stable_slice(at.as_const())? };
+    test_and_mark_alt_bonds_buffer(
+        heap,
+        pBNS,
+        pBD,
+        at,
+        num_atoms,
+        &mut SourceFlowChanges::Pointer(fcd),
+        bChangeFlow,
+        nBondTypeToTest,
+        clock_result,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn test_and_mark_alt_bonds_buffer(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    fcd: &mut SourceFlowChanges<'_>,
+    bChangeFlow: i32,
+    nBondTypeToTest: i32,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: test_and_mark_alt_bonds_buffer (ichi_bns.c:1825)
+    // int BnsTestAndMarkAltBonds( BN_STRUCT *pBNS,
+    //                             BN_DATA *pBD,
+    //                             inp_ATOM *at,
+    //                             int num_atoms,
+    //                             BNS_FLOW_CHANGES *fcd,
+    //                             int bChangeFlow,
+    //                             int nBondTypeToTest )
+    // {
+    //     int ret, iat, ineigh, neigh;
+    //     int nMinFlow, nMaxFlow, nTestFlow, nCurFlow;
+    //     int iedge, bError, nDots, nChanges, bTestForNonStereoBond; /* djb-rwth: removing redundant variables */
+    //
+    //     /* Normalize bonds and find tautomeric groups */
+    //     bError = 0;
+    //     nChanges = 0;
+    //     bTestForNonStereoBond = pBNS->tot_st_cap > pBNS->tot_st_flow;
+    //
+    //     for (iat = 0; iat < num_atoms && !bError; iat++)
+    //     {
+    //         for (ineigh = 0; ineigh < at[iat].valence && !bError; ineigh++)
+    //         {
+    //             neigh = at[iat].neighbor[ineigh];
+    //             if (neigh < iat)
+    //             {
+    //                 continue; /* we have already tested the bond */
+    //             }
+    //             iedge = pBNS->vert[iat].iedge[ineigh];
+    //             if (IS_FORBIDDEN( pBNS->edge[iedge].forbidden, pBNS ))
+    //             {
+    //                 continue;
+    //             }
+    //             if (nBondTypeToTest && ( at[iat].bond_type[ineigh] & BOND_TYPE_MASK ) != nBondTypeToTest)
+    //             {
+    //                 continue;
+    //             }
+    //             nMinFlow = nMinFlow2Check( pBNS, iedge );
+    //             nMaxFlow = nMaxFlow2Check( pBNS, iedge );
+    //             nCurFlow = nCurFlow2Check( pBNS, iedge );
+    //             if (nMinFlow == nMaxFlow)
+    //             {
+    //                 if (nMaxFlow && bTestForNonStereoBond)
+    //                 {
+    //                     nTestFlow = nMaxFlow - (int) ( pBNS->tot_st_cap - pBNS->tot_st_flow ); /* temporary use of nTestFlow */
+    //                     nMinFlow = inchi_max( 0, nTestFlow );
+    //                 }
+    //                 else
+    //                 {
+    //                     continue;
+    //                 }
+    //             }
+    //             for (nTestFlow = nMinFlow; nTestFlow <= nMaxFlow && !bError; nTestFlow++)
+    //             {
+    //                 if (nTestFlow == nCurFlow)
+    //                 {
+    //                     continue;
+    //                 }
+    //                 if (!bNeedToTestTheFlow( at[iat].bond_type[ineigh], nTestFlow, bTestForNonStereoBond ))
+    //                 {
+    //                     continue;
+    //                 }
+    //                 /* djb-rwth: removing redundant code */
+    //                 nDots = bSetFlowToCheckOneBond( pBNS, iedge, nTestFlow, fcd );
+    //
+    //                 if (IS_BNS_ERROR( nDots ))
+    //                 {
+    //                     if (nDots == BNS_CANT_SET_BOND)
+    //                     {
+    //                         ret = bRestoreFlowAfterCheckOneBond( pBNS, fcd );
+    //                         if (!IS_BNS_ERROR( ret ))
+    //                         {
+    //                             continue;
+    //                         }
+    //                     }
+    //                     bError = nDots;
+    //                 }
+    //                 else
+    //                 {
+    //                     if (nDots > 0)
+    //                     {
+    //                         ret = RunBalancedNetworkSearch( pBNS, pBD, bChangeFlow );
+    //                         if (IS_BNS_ERROR( ret ))
+    //                         {
+    //                             bError = ret;
+    //                         }
+    //                         else
+    //                         {
+    //                             if (ret > 0)
+    //                             {
+    //                                 if (2 * ret == nDots)
+    //                                 {
+    //                                     ret = bSetBondsAfterCheckOneBond( pBNS, fcd, nTestFlow, at, num_atoms, bChangeFlow );
+    //                                     if (IS_BNS_ERROR( ret ))
+    //                                     {
+    //                                         bError = ret;
+    //                                     }
+    //                                     else
+    //                                     {
+    //                                         nChanges += ( ret & 1 );
+    //                                         ret = SetBondsFromBnStructFlow( pBNS, at, num_atoms, bChangeFlow );
+    //                                         if (IS_BNS_ERROR( ret ))
+    //                                         {
+    //                                             bError = ret;
+    //                                         }
+    //                                         else
+    //                                         {
+    //                                             if (ret >= 0)
+    //                                             {
+    //                                                 nChanges += ( ret & 1 );
+    //                                                 /* djb-rwth: removing redundant code */
+    //                                             }
+    //                                             else
+    //                                             {
+    //                                                 bError = ret;
+    //                                             }
+    //                                         }
+    //                                     }
+    //                                 }
+    //                                 /* typically 2*ret < nDots; 2*ret > nDots should not happen. Check later */
+    //                                 ret = RestoreBnStructFlow( pBNS, bChangeFlow & BNS_EF_CHNG_RSTR );
+    //                                 if (IS_BNS_ERROR( ret ))
+    //                                 {
+    //                                     bError = ret;
+    //                                 }
+    //                             }
+    //                         }
+    //                         /* --- Reinitialize to repeat the calculations --- */
+    //                         ReInitBnStructAltPaths( pBNS );
+    //                     }
+    //
+    //                     else
+    //                     {
+    //                         if (nDots == 0)
+    //                         {
+    //                             ret = bSetBondsAfterCheckOneBond( pBNS, fcd, nTestFlow, at, num_atoms, bChangeFlow );
+    //                             if (IS_BNS_ERROR( ret ))
+    //                             {
+    //                                 bError = ret;
+    //                             }
+    //                             else
+    //                             {
+    //                                 nChanges += ( ret & 1 );
+    //                             }
+    //                         }
+    //                     }
+    //                 }
+    //
+    //                 ret = bRestoreFlowAfterCheckOneBond( pBNS, fcd );
+    //
+    //                 if (IS_BNS_ERROR( ret ))
+    //                 {
+    //                     bError = ret;
+    //                 }
+    //
+    //             } /* for (nTestFlow = */
+    //         } /* for (ineigh = */
+    //     } /* for (iat =  */
+    //
+    //     return bError ? bError : nChanges;
+    // }
+    // END INCHI C FUNCTION: test_and_mark_alt_bonds_buffer
+    // INCHI✔️❗: One original algorithm over a transient source buffer;
+    // typed pointer admissions remain reached and borrowed slices allocate nothing.
+    // Checked projection and whole-call constants remain OPEN; no new scans.
+    // INCHI✔️❗: source repeated reads, ichi_bns.c1844/1881:
+    //         for (ineigh = 0; ineigh < at[iat].valence && !bError; ineigh++)
+    //                 if (!bNeedToTestTheFlow( at[iat].bond_type[ineigh], nTestFlow, bTestForNonStereoBond ))
+    // Admit atoms only inside the nonempty source loop; refresh bond bytes
+    // after earlier trials. No stable unsafe view, snapshots or allocation.
+    // Same bounded flow trials/callee work/O(1) local space; safe arena and
+    // whole-call costs remain independently OPEN, clock0099 unchanged.
     let mut b_error = 0_i32;
     let mut n_changes = 0_i32;
     let b_test_for_non_stereo_bond = i32::from(pBNS.tot_st_cap > pBNS.tot_st_flow);
     let mut iat = 0_i32;
 
     while iat < num_atoms && b_error == 0 {
-        let atom_index = usize::try_from(iat).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let valence = i32::from(atoms.get(atom_index)?.valence);
         let mut ineigh = 0_i32;
-        while ineigh < valence && b_error == 0 {
-            let atom_now = atoms.get(atom_index)?;
+        while ineigh < i32::from(heap.element_signed(at.as_const(), iat)?.valence) && b_error == 0 {
+            let atom_now = heap.element_signed(at.as_const(), iat)?;
             let neighbor_index =
                 usize::try_from(ineigh).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let neigh = i32::from(
@@ -15815,20 +20388,22 @@ pub(crate) fn BnsTestAndMarkAltBonds(
                 continue;
             }
 
-            let vertex = bns_vertex(heap, pBNS, iat)?;
-            let iedge = bns_edge_index(heap, &vertex, ineigh)?;
-            let edge = bns_edge(heap, pBNS, iedge)?;
+            let vertex = heap.element_signed(pBNS.vert.as_const(), iat)?;
+            let iedge = bns_edge_index(heap, vertex, ineigh)?;
+            let edge = heap.element_signed(pBNS.edge.as_const(), iedge)?;
             if edge.forbidden != 0 {
                 ineigh += 1;
                 continue;
             }
-            let bond_type = i32::from(
-                *atom_now
-                    .bond_type
-                    .get(neighbor_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
-            if nBondTypeToTest != 0 && (bond_type & BOND_TYPE_MASK as i32) != nBondTypeToTest {
+            if nBondTypeToTest != 0
+                && (i32::from(
+                    *atom_now
+                        .bond_type
+                        .get(neighbor_index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ) & BOND_TYPE_MASK as i32)
+                    != nBondTypeToTest
+            {
                 ineigh += 1;
                 continue;
             }
@@ -15849,16 +20424,27 @@ pub(crate) fn BnsTestAndMarkAltBonds(
             let mut n_test_flow = n_min_flow;
             while n_test_flow <= n_max_flow && b_error == 0 {
                 if n_test_flow == n_cur_flow
-                    || bNeedToTestTheFlow(bond_type, n_test_flow, b_test_for_non_stereo_bond) == 0
+                    || bNeedToTestTheFlow(
+                        i32::from(
+                            *heap
+                                .element_signed(at.as_const(), iat)?
+                                .bond_type
+                                .get(neighbor_index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        ),
+                        n_test_flow,
+                        b_test_for_non_stereo_bond,
+                    ) == 0
                 {
                     n_test_flow += 1;
                     continue;
                 }
 
-                let n_dots = bSetFlowToCheckOneBond(heap, pBNS, iedge, n_test_flow, fcd)?;
+                let n_dots =
+                    set_flow_to_check_one_bond_buffer(heap, pBNS, iedge, n_test_flow, fcd)?;
                 if (BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&n_dots) {
                     if n_dots == BNS_CANT_SET_BOND {
-                        let ret = bRestoreFlowAfterCheckOneBond(heap, pBNS, fcd)?;
+                        let ret = restore_flow_after_check_one_bond_buffer(heap, pBNS, fcd)?;
                         if !(BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&ret) {
                             n_test_flow += 1;
                             continue;
@@ -15866,12 +20452,20 @@ pub(crate) fn BnsTestAndMarkAltBonds(
                     }
                     b_error = n_dots;
                 } else if n_dots > 0 {
+                    // Native ichicano.c292..295, reached from ichi_bns.c713:
+                    //         FillMaxMinClock( ic );
+                    //         if (!TickStart)
+                    //             return 0;
+                    //         clockCurrTime = InchiClock( );
+                    // INCHI✔️❗: NULL deadline reads no process sample. Keep the
+                    // full search/helper call and clock initialization below;
+                    // non-NULL repeated queries sample afresh. C531/C590 cost OPEN.
                     let ret = RunBalancedNetworkSearch(heap, pBNS, pBD, bChangeFlow, clock_result)?;
                     if (BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&ret) {
                         b_error = ret;
                     } else if ret > 0 {
                         if 2 * ret == n_dots {
-                            let ret = bSetBondsAfterCheckOneBond(
+                            let ret = set_bonds_after_check_one_bond_buffer(
                                 heap,
                                 pBNS,
                                 fcd,
@@ -15908,7 +20502,7 @@ pub(crate) fn BnsTestAndMarkAltBonds(
                     }
                     ReInitBnStructAltPaths(heap, pBNS)?;
                 } else if n_dots == 0 {
-                    let ret = bSetBondsAfterCheckOneBond(
+                    let ret = set_bonds_after_check_one_bond_buffer(
                         heap,
                         pBNS,
                         fcd,
@@ -15924,7 +20518,7 @@ pub(crate) fn BnsTestAndMarkAltBonds(
                     }
                 }
 
-                let ret = bRestoreFlowAfterCheckOneBond(heap, pBNS, fcd)?;
+                let ret = restore_flow_after_check_one_bond_buffer(heap, pBNS, fcd)?;
                 if (BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&ret) {
                     b_error = ret;
                 }
@@ -15961,31 +20555,21 @@ pub(crate) fn remove_alt_bond_marks(
     // INCHI✔️✔️: #define BOND_TYPE_MASK 0x0f
     // END INCHI ACTIVE MACRO CONFIGURATION: remove_alt_bond_marks
 
-    let mut i = 0_i32;
-    while i < num_atoms {
-        let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let val = heap
-            .slice(at.as_const())?
-            .get(atom_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .valence;
-        let mut j = 0_i32;
-        while j < i32::from(val) {
-            let bond_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let atom = heap
-                .slice_mut(at)?
-                .get_mut(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // Behavior: check each reached bond in order; retain prior writes on error.
+    // Cost: one heap admission per atom, no clone/allocation; checks OPEN.
+    for index in 0..num_atoms.max(0) {
+        let atom = heap
+            .slice_mut(at)?
+            .get_mut(index as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        for bond_index in 0..i32::from(atom.valence).max(0) as usize {
             let bond_type = atom
                 .bond_type
                 .get_mut(bond_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             *bond_type &= BOND_TYPE_MASK as u8;
-            j += 1;
         }
-        i += 1;
     }
-
     Ok(())
 }
 
@@ -16118,60 +20702,195 @@ pub(crate) fn bSetBondsAfterCheckOneBond(
     // INCHI✔️❌: #define BNS_MAX_ERR_VALUE (BNS_ERR + 19)
     // END INCHI ACTIVE MACRO CONFIGURATION: bSetBondsAfterCheckOneBond
 
-    let mut bChangeFlow0 = bChangeFlow0 & !(BNS_EF_CHNG_RSTR as i32);
+    set_bonds_after_check_one_bond_buffer(
+        heap,
+        pBNS,
+        &mut SourceFlowChanges::Pointer(fcd),
+        nTestFlow,
+        at,
+        num_atoms,
+        bChangeFlow0,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn set_bonds_after_check_one_bond_buffer(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    fcd: &mut SourceFlowChanges<'_>,
+    nTestFlow: i32,
+    at: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    bChangeFlow0: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: set_bonds_after_check_one_bond_buffer (ichi_bns.c:6071)
+    // int bSetBondsAfterCheckOneBond( BN_STRUCT *pBNS,
+    //                                 BNS_FLOW_CHANGES *fcd,
+    //                                 int nTestFlow,
+    //                                 inp_ATOM *at,
+    //                                 int num_atoms,
+    //                                 int bChangeFlow0 )
+    // {
+    //     int    ifcd, iedge, new_flow, ret_val, nChanges = 0, bError = 0;
+    //     int    bChangeFlow;
+    //     Vertex v1, v2;
+    //     int    ineigh1, ineigh2;
+    //     BNS_EDGE *pEdge;
+    //
+    //     bChangeFlow0 &= ~BNS_EF_CHNG_RSTR;  /* do not change pEdge flow in SetBondType */
+    //     if (!bChangeFlow0)
+    //     {
+    //         return 0;
+    //     }
+    //
+    //     bChangeFlow = ( bChangeFlow0 & ~BNS_EF_SET_NOSTEREO );
+    //
+    //     /* Find the next to the last changed */
+    //     if (bChangeFlow0 & BNS_EF_SET_NOSTEREO)
+    //     {
+    //         for (ifcd = 0; NO_VERTEX != ( iedge = fcd[ifcd].iedge ); ifcd++) /* djb-rwth: ignoring LLVM warning: variable used */
+    //         {
+    //             iedge = fcd[ifcd].iedge;
+    //             pEdge = pBNS->edge + iedge;
+    //             if (!pEdge->pass)
+    //             {
+    //                 continue;
+    //             }
+    //
+    //             if (!ifcd && nTestFlow >= 0)
+    //             {
+    //                 new_flow = nTestFlow;
+    //             }
+    //             else
+    //             {
+    //                 new_flow = (int) pEdge->flow;
+    //             }
+    //
+    //             v1 = pEdge->neighbor1;
+    //             v2 = pEdge->neighbor12 ^ v1;
+    //             if (v1 < num_atoms && v2 < num_atoms && new_flow != pEdge->flow0)
+    //             {
+    //                 if (( pBNS->vert[v1].st_edge.cap0 == pBNS->vert[v1].st_edge.flow0 ) !=
+    //                     ( pBNS->vert[v1].st_edge.cap == pBNS->vert[v1].st_edge.flow ) ||
+    //                      ( pBNS->vert[v2].st_edge.cap0 == pBNS->vert[v2].st_edge.flow0 ) !=
+    //                      ( pBNS->vert[v2].st_edge.cap == pBNS->vert[v2].st_edge.flow ))
+    //                 {
+    //                     bChangeFlow |= BNS_EF_SET_NOSTEREO;
+    //                     nChanges |= BNS_EF_SET_NOSTEREO;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     else
+    //     {
+    //         for (ifcd = 0; NO_VERTEX != ( iedge = fcd[ifcd].iedge ); ifcd++) /* djb-rwth: ignoring LLVM warning: variable used */
+    //         {
+    //             ;
+    //         }
+    //     }
+    //
+    //     /* restore in reversed order to correctly handle vertex changed more than once */
+    //     for (ifcd -= 1; 0 <= ifcd; ifcd--)
+    //     {
+    //
+    //         iedge = fcd[ifcd].iedge;
+    //         pEdge = pBNS->edge + iedge;
+    //         if (!pEdge->pass)
+    //         {
+    //             continue;
+    //         }
+    //
+    //         if (!ifcd && nTestFlow >= 0)
+    //         {
+    //             new_flow = nTestFlow;
+    //         }
+    //         else
+    //         {
+    //             new_flow = (int) pEdge->flow;
+    //         }
+    //
+    //         v1 = pEdge->neighbor1;
+    //         v2 = pEdge->neighbor12 ^ v1;
+    //         if (v1 < num_atoms && v2 < num_atoms && bChangeFlow && new_flow != pEdge->flow0)
+    //         {
+    //             ineigh1 = pEdge->neigh_ord[0];
+    //             ineigh2 = pEdge->neigh_ord[1];
+    //             ret_val = SetAtomBondType( pEdge, &at[v1].bond_type[ineigh1], &at[v2].bond_type[ineigh2], new_flow - pEdge->flow0, bChangeFlow );
+    //             if (!IS_BNS_ERROR( ret_val ))
+    //             {
+    //                 nChanges |= ( ret_val > 0 );
+    //             }
+    //             else
+    //             {
+    //                 bError = ret_val;
+    //             }
+    //         }
+    //         pEdge->pass = 0;
+    //     }
+    //
+    //     return bError ? bError : nChanges;
+    // }
+    // END INCHI C FUNCTION: set_bonds_after_check_one_bond_buffer
+    // INCHI✔️❗: One original algorithm over a transient source buffer;
+    // typed pointer admissions remain reached and borrowed slices allocate nothing.
+    // Checked projection and whole-call constants remain OPEN; no new scans.
+    let bChangeFlow0 = bChangeFlow0 & !(BNS_EF_CHNG_RSTR as i32);
     if bChangeFlow0 == 0 {
         return Ok(0);
     }
+    // INCHI✔️❗: stream source sentinel fields, then apply edges in reverse.
+    // O(reached entries)/O(1), no Vec or whole-record publication; checked
+    // arena and whole-call costs remain OPEN. Missing sentinel is a typed
+    // bounds error; native traversal beyond storage is undefined.
     let mut bChangeFlow = bChangeFlow0 & !(BNS_EF_SET_NOSTEREO as i32);
-    let fcd_entries = heap.slice(fcd.as_const())?.to_vec();
-    let mut ifcd = 0usize;
+    let fcd_entries = fcd.slice(heap)?;
+    let mut ifcd = 0_usize;
     let mut nChanges = 0_i32;
     let mut bError = 0_i32;
-    if (bChangeFlow0 & BNS_EF_SET_NOSTEREO as i32) != 0 {
-        while let Some(entry) = fcd_entries.get(ifcd) {
-            let iedge = entry.iedge;
-            if iedge == NO_VERTEX {
-                break;
-            }
-            let p_edge = bns_edge(heap, pBNS, iedge)?;
-            if p_edge.pass == 0 {
-                ifcd += 1;
-                continue;
-            }
-            let new_flow = if ifcd == 0 && nTestFlow >= 0 {
-                nTestFlow
-            } else {
-                p_edge.flow
-            };
-            let v1 = i32::from(p_edge.neighbor1);
-            let v2 = v1 ^ i32::from(p_edge.neighbor12);
-            if v1 < num_atoms && v2 < num_atoms && new_flow != p_edge.flow0 {
-                let vert1 = bns_vertex(heap, pBNS, v1)?;
-                let vert2 = bns_vertex(heap, pBNS, v2)?;
-                if (vert1.st_edge.cap0 == vert1.st_edge.flow0)
-                    != (vert1.st_edge.cap == vert1.st_edge.flow)
-                    || (vert2.st_edge.cap0 == vert2.st_edge.flow0)
-                        != (vert2.st_edge.cap == vert2.st_edge.flow)
-                {
-                    bChangeFlow |= BNS_EF_SET_NOSTEREO as i32;
-                    nChanges |= BNS_EF_SET_NOSTEREO as i32;
+    loop {
+        let iedge = fcd_entries
+            .get(ifcd)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .iedge;
+        if iedge == NO_VERTEX {
+            break;
+        }
+        if (bChangeFlow0 & BNS_EF_SET_NOSTEREO as i32) != 0 {
+            let edge = heap.element_signed(pBNS.edge.as_const(), iedge)?;
+            if edge.pass != 0 {
+                let new_flow = if ifcd == 0 && nTestFlow >= 0 {
+                    nTestFlow
+                } else {
+                    edge.flow
+                };
+                let v1 = i32::from(edge.neighbor1);
+                let v2 = v1 ^ i32::from(edge.neighbor12);
+                if v1 < num_atoms && v2 < num_atoms && new_flow != edge.flow0 {
+                    let first_changed = {
+                        let point = heap.element_signed(pBNS.vert.as_const(), v1)?;
+                        (point.st_edge.cap0 == point.st_edge.flow0)
+                            != (point.st_edge.cap == point.st_edge.flow)
+                    };
+                    if first_changed || {
+                        let point = heap.element_signed(pBNS.vert.as_const(), v2)?;
+                        (point.st_edge.cap0 == point.st_edge.flow0)
+                            != (point.st_edge.cap == point.st_edge.flow)
+                    } {
+                        bChangeFlow |= BNS_EF_SET_NOSTEREO as i32;
+                        nChanges |= BNS_EF_SET_NOSTEREO as i32;
+                    }
                 }
             }
-            ifcd += 1;
         }
-    } else {
-        while let Some(entry) = fcd_entries.get(ifcd) {
-            if entry.iedge == NO_VERTEX {
-                break;
-            }
-            ifcd += 1;
-        }
+        ifcd += 1;
     }
-
     for rev_index in (0..ifcd).rev() {
-        let entry = fcd_entries[rev_index].clone();
-        let iedge = entry.iedge;
-        let mut edge = bns_edge(heap, pBNS, iedge)?;
+        let iedge = fcd
+            .slice(heap)?
+            .get(rev_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .iedge;
+        let edge = heap.element_signed(pBNS.edge.as_const(), iedge)?;
         if edge.pass == 0 {
             continue;
         }
@@ -16183,105 +20902,41 @@ pub(crate) fn bSetBondsAfterCheckOneBond(
         let v1 = i32::from(edge.neighbor1);
         let v2 = v1 ^ i32::from(edge.neighbor12);
         if v1 < num_atoms && v2 < num_atoms && bChangeFlow != 0 && new_flow != edge.flow0 {
-            let ineigh1 = i32::from(edge.neigh_ord[0]);
-            let ineigh2 = i32::from(edge.neigh_ord[1]);
-            let ret_val = {
-                let atom_index1 =
-                    usize::try_from(v1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let atom_index2 =
-                    usize::try_from(v2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let mut result;
-                if atom_index1 == atom_index2 {
-                    let atoms = heap.slice_mut(at)?;
-                    let atom = atoms
-                        .get_mut(atom_index1)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let first_neighbor = usize::try_from(ineigh1)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let second_neighbor = usize::try_from(ineigh2)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let mut second_value = *atom
-                        .bond_type
-                        .get(second_neighbor)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    result = SetAtomBondType(
-                        &edge,
-                        atom.bond_type
-                            .get_mut(first_neighbor)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                        Some(&mut second_value),
-                        new_flow - edge.flow0,
-                        bChangeFlow,
-                    );
-                    *atom
-                        .bond_type
-                        .get_mut(second_neighbor)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)? = second_value;
-                } else {
-                    let first_neighbor = usize::try_from(ineigh1)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let second_neighbor = usize::try_from(ineigh2)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let (first_type, second_type) = {
-                        let atoms = heap.slice(at.as_const())?;
-                        let first_atom = atoms
-                            .get(atom_index1)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        let second_atom = atoms
-                            .get(atom_index2)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                        (
-                            *first_atom
-                                .bond_type
-                                .get(first_neighbor)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                            *second_atom
-                                .bond_type
-                                .get(second_neighbor)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                        )
-                    };
-                    let mut first_value = first_type;
-                    let mut second_value = second_type;
-                    result = SetAtomBondType(
-                        &edge,
-                        &mut first_value,
-                        Some(&mut second_value),
-                        new_flow - edge.flow0,
-                        bChangeFlow,
-                    );
-                    if result > 0 {
-                        let atoms = heap.slice_mut(at)?;
-                        atoms
-                            .get_mut(atom_index1)
-                            .and_then(|atom| atom.bond_type.get_mut(first_neighbor))
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .clone_from(&first_value);
-                        atoms
-                            .get_mut(atom_index2)
-                            .and_then(|atom| atom.bond_type.get_mut(second_neighbor))
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .clone_from(&second_value);
-                    }
-                }
-                result
-            };
+            let first_neighbor = usize::from(edge.neigh_ord[0]);
+            let second_neighbor = usize::from(edge.neigh_ord[1]);
+            let mut first_type = *heap
+                .element_signed(at.as_const(), v1)?
+                .bond_type
+                .get(first_neighbor)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let mut second_type = 0_u8;
+            let ret_val = SetAtomBondType(
+                edge,
+                &mut first_type,
+                Some(&mut second_type),
+                new_flow.wrapping_sub(edge.flow0),
+                bChangeFlow,
+            );
+            if ret_val > 0 {
+                *heap
+                    .element_signed_mut(at, v2)?
+                    .bond_type
+                    .get_mut(second_neighbor)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = second_type;
+                *heap
+                    .element_signed_mut(at, v1)?
+                    .bond_type
+                    .get_mut(first_neighbor)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = first_type;
+            }
             if !((BNS_ERR..=BNS_MAX_ERR_VALUE).contains(&ret_val)) {
                 nChanges |= i32::from(ret_val > 0);
             } else {
                 bError = ret_val;
             }
         }
-        edge.pass = 0;
-        {
-            let edges = heap.slice_mut(pBNS.edge)?;
-            let idx = usize::try_from(iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            *edges
-                .get_mut(idx)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = edge;
-        }
+        bns_edge_mut(heap, pBNS, iedge)?.pass = 0;
     }
-
     Ok(if bError != 0 { bError } else { nChanges })
 }
 
@@ -16336,16 +20991,81 @@ pub(crate) fn bRestoreFlowAfterCheckOneBond(
     // INCHI✔️❌: #define NO_VERTEX -2
     // END INCHI ACTIVE MACRO CONFIGURATION: bRestoreFlowAfterCheckOneBond
 
-    let fcd_entries = heap.slice(fcd.as_const())?.to_vec();
+    // Behavior: scan to the native sentinel, then restore in reverse order.
+    // Missing sentinel is a typed bounds error before any restoration.
+    // Flow-change records cannot alias edge/vertex allocations of other types.
+    // Cost: O(reached entries), O(1) space, no full-array Vec; checks OPEN.
+    restore_flow_after_check_one_bond_buffer(heap, pBNS, &mut SourceFlowChanges::Pointer(fcd))
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn restore_flow_after_check_one_bond_buffer(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    fcd: &mut SourceFlowChanges<'_>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: restore_flow_after_check_one_bond_buffer (ichi_bns.c:6180)
+    // int bRestoreFlowAfterCheckOneBond( BN_STRUCT *pBNS, BNS_FLOW_CHANGES *fcd )
+    // {
+    //     int ifcd, iedge;
+    //     Vertex v1, v2;
+    //     BNS_EDGE *pEdge;
+    //
+    //     /* Find the next to the last changed */
+    //     for (ifcd = 0; NO_VERTEX != ( iedge = fcd[ifcd].iedge ); ifcd++) /* djb-rwth: ignoring LLVM warning: variable used */
+    //     {
+    //         ;
+    //     }
+    //
+    //     /* Restore in reversed order to correctly handle vertex changed more than once */
+    //     for (ifcd -= 1; 0 <= ifcd; ifcd--)
+    //     {
+    //         /* Restore edge flow & cap */
+    //         iedge = fcd[ifcd].iedge;
+    //         pEdge = pBNS->edge + iedge;
+    //         pEdge->flow = fcd[ifcd].flow;
+    //         pEdge->cap = fcd[ifcd].cap;
+    //         pEdge->pass = 0;
+    //
+    //         /* Restore st-flow, cap */
+    //         if (NO_VERTEX != ( v1 = fcd[ifcd].v1 ))
+    //         {
+    //             pBNS->vert[v1].st_edge.flow = fcd[ifcd].flow_st1;
+    //             pBNS->vert[v1].st_edge.cap = fcd[ifcd].cap_st1;
+    //             pBNS->vert[v1].st_edge.pass = 0;
+    //         }
+    //         if (NO_VERTEX != ( v2 = fcd[ifcd].v2 ))
+    //         {
+    //             pBNS->vert[v2].st_edge.flow = fcd[ifcd].flow_st2;
+    //             pBNS->vert[v2].st_edge.cap = fcd[ifcd].cap_st2;
+    //             pBNS->vert[v2].st_edge.pass = 0;
+    //         }
+    //     }
+    //
+    //     return 0;
+    // }
+    // END INCHI C FUNCTION: restore_flow_after_check_one_bond_buffer
+    // INCHI✔️❗: One original algorithm over a transient source buffer;
+    // typed pointer admissions remain reached and borrowed slices allocate nothing.
+    // Checked projection and whole-call constants remain OPEN; no new scans.
     let mut ifcd = 0usize;
-    while let Some(entry) = fcd_entries.get(ifcd) {
-        if entry.iedge == NO_VERTEX {
-            break;
+    {
+        let entries = fcd.slice(heap)?;
+        while entries
+            .get(ifcd)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .iedge
+            != NO_VERTEX
+        {
+            ifcd += 1;
         }
-        ifcd += 1;
     }
     for rev_index in (0..ifcd).rev() {
-        let entry = fcd_entries[rev_index].clone();
+        let entry = fcd
+            .slice(heap)?
+            .get(rev_index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .clone();
         let edge_index =
             usize::try_from(entry.iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         {
@@ -16641,17 +21361,291 @@ pub(crate) fn bSetFlowToCheckOneBond(
     // INCHI✔️❌: #define BNS_CAP_FLOW_ERR -9989
     // END INCHI ACTIVE MACRO CONFIGURATION: bSetFlowToCheckOneBond
 
-    let mut fcd_entry = work_get::<BNS_FLOW_CHANGES>(heap, fcd, 0)?;
+    // INCHI✔️❗: mutate each live field in native order, so coincident endpoints
+    // and parallel-edge neighbors observe all preceding writes. Read-only
+    // snapshots supply stable adjacency metadata and FCD baselines only.
+    // No new buffer/allocation; checked heap access cost remains unresolved.
+    set_flow_to_check_one_bond_buffer(
+        heap,
+        pBNS,
+        iedge,
+        flow,
+        &mut SourceFlowChanges::Pointer(fcd),
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn set_flow_to_check_one_bond_buffer(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    iedge: i32,
+    flow: i32,
+    fcd: &mut SourceFlowChanges<'_>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: set_flow_to_check_one_bond_buffer (ichi_bns.c:6222)
+    // int bSetFlowToCheckOneBond( BN_STRUCT *pBNS,
+    //                             int iedge,
+    //                             int flow,
+    //                             BNS_FLOW_CHANGES *fcd )
+    // {
+    //     BNS_EDGE *pEdge = pBNS->edge + iedge;
+    //     int       f12 = ( pEdge->flow & EDGE_FLOW_MASK ); /* the original flow */
+    //     int       ifcd = 0;
+    //     int       nDots = 0;
+    //     int       i, iedge_i;
+    //
+    //     fcd[ifcd].iedge = NO_VERTEX;
+    //
+    //     if (f12 < flow)
+    //     {
+    //         /* Increase edge flow: Grab flow from the neighbors and delete it: set flow12=cap12 = 0 */
+    //         /************************************************************************************/
+    //         /* For example, simulate a new fixed double bond in place of a single bond and      */
+    //         /* creates ONE or NONE (in case of a radical on adjacent atom) augmenting paths and */
+    //         /* makes it impossible for the BNS to set same flow as it originally was            */
+    //         /************************************************************************************/
+    //         Vertex    v1 = pEdge->neighbor1;
+    //         Vertex    v2 = v1 ^ pEdge->neighbor12;
+    //         Vertex    v_i;        /* neighbor of v1 or v2 */
+    //         BNS_EDGE *pEdge_i;
+    //         int       delta1, delta2, f, st_edge_rescap;
+    //
+    //         if (( pBNS->vert[v1].st_edge.cap  & EDGE_FLOW_ST_MASK ) < flow ||
+    //             ( pBNS->vert[v2].st_edge.cap  & EDGE_FLOW_ST_MASK ) < flow)
+    //         {
+    //             return BNS_CANT_SET_BOND;
+    //         }
+    //         if (( pBNS->vert[v1].st_edge.flow & EDGE_FLOW_ST_MASK ) < f12 ||
+    //             ( pBNS->vert[v2].st_edge.flow & EDGE_FLOW_ST_MASK ) < f12)
+    //         {
+    //             return BNS_CAP_FLOW_ERR;
+    //         }
+    //
+    //         fcd[ifcd].iedge = iedge;
+    //         fcd[ifcd].flow = pEdge->flow;
+    //         fcd[ifcd].cap = pEdge->cap;
+    //
+    //         fcd[ifcd].v1 = v1;
+    //         fcd[ifcd].flow_st1 = pBNS->vert[v1].st_edge.flow;
+    //         fcd[ifcd].cap_st1 = pBNS->vert[v1].st_edge.cap;
+    //
+    //         fcd[ifcd].v2 = v2;
+    //         fcd[ifcd].flow_st2 = pBNS->vert[v2].st_edge.flow;
+    //         fcd[ifcd].cap_st2 = pBNS->vert[v2].st_edge.cap;
+    //
+    //         fcd[++ifcd].iedge = NO_VERTEX; /* mark the end of the fcd[] data */
+    //         pEdge->pass |= 64;
+    //
+    //         delta1 = delta2 = flow - f12;
+    //
+    //         if (f12 > 0)
+    //         {
+    //             /* Remove old edge flow from the flow and cap of the adjacent vertices' st-edges */
+    //             pBNS->vert[v1].st_edge.cap = ( ( pBNS->vert[v1].st_edge.cap  & EDGE_FLOW_ST_MASK ) - f12 ) | ( pBNS->vert[v1].st_edge.cap  & ~EDGE_FLOW_ST_MASK );
+    //             pBNS->vert[v2].st_edge.cap = ( ( pBNS->vert[v2].st_edge.cap  & EDGE_FLOW_ST_MASK ) - f12 ) | ( pBNS->vert[v2].st_edge.cap  & ~EDGE_FLOW_ST_MASK );
+    //             pBNS->vert[v1].st_edge.flow = ( ( pBNS->vert[v1].st_edge.flow & EDGE_FLOW_ST_MASK ) - f12 ) | ( pBNS->vert[v1].st_edge.flow & ~EDGE_FLOW_ST_MASK );
+    //             pBNS->vert[v2].st_edge.flow = ( ( pBNS->vert[v2].st_edge.flow & EDGE_FLOW_ST_MASK ) - f12 ) | ( pBNS->vert[v2].st_edge.flow & ~EDGE_FLOW_ST_MASK );
+    //             /* Delete current edge flow and capacity */
+    //             pEdge->flow = ( pEdge->flow & ~EDGE_FLOW_MASK );
+    //         }
+    //         pEdge->cap = ( pEdge->cap  & ~EDGE_FLOW_MASK );
+    //
+    //         /* Grab the adjacent vertex1 radical (st_edge_rescap) if it exists */
+    //         st_edge_rescap = ( pBNS->vert[v1].st_edge.cap & EDGE_FLOW_ST_MASK ) - ( pBNS->vert[v1].st_edge.flow & EDGE_FLOW_ST_MASK );
+    //         while (st_edge_rescap && delta1)
+    //         {
+    //             st_edge_rescap--;  /* grab the radical */
+    //             delta1--;
+    //             pBNS->vert[v1].st_edge.cap = ( ( pBNS->vert[v1].st_edge.cap & EDGE_FLOW_ST_MASK ) - 1 ) | ( pBNS->vert[v1].st_edge.cap & ~EDGE_FLOW_ST_MASK );
+    //             nDots--;
+    //         }
+    //
+    //         /* Grab the adjacent vertex2 radical (st_edge_rescap) if it exists */
+    //         st_edge_rescap = ( pBNS->vert[v2].st_edge.cap & EDGE_FLOW_ST_MASK ) - ( pBNS->vert[v2].st_edge.flow & EDGE_FLOW_ST_MASK );
+    //         while (st_edge_rescap && delta2)
+    //         {
+    //             st_edge_rescap--;  /* grab the radical */
+    //             delta2--;
+    //             pBNS->vert[v2].st_edge.cap = ( ( pBNS->vert[v2].st_edge.cap & EDGE_FLOW_ST_MASK ) - 1 ) | ( pBNS->vert[v2].st_edge.cap & ~EDGE_FLOW_ST_MASK );
+    //             nDots--;
+    //         }
+    //
+    //         /* Grab flows from v1 neighbors */
+    //         for (i = 0; delta1 && i < pBNS->vert[v1].num_adj_edges; i++)
+    //         {
+    //             iedge_i = pBNS->vert[v1].iedge[i];
+    //             if (iedge_i == iedge)
+    //             {
+    //                 continue;
+    //             }
+    //             pEdge_i = pBNS->edge + iedge_i;
+    //             if (IS_FORBIDDEN( pEdge_i->forbidden, pBNS ))
+    //             {
+    //                 continue;
+    //             }
+    //             f = ( pEdge_i->flow & EDGE_FLOW_MASK );
+    //             if (f)
+    //             {
+    //                 v_i = pEdge_i->neighbor12 ^ v1;
+    //
+    //                 fcd[ifcd].iedge = iedge_i;
+    //                 fcd[ifcd].flow = pEdge_i->flow;
+    //                 fcd[ifcd].cap = pEdge_i->cap;
+    //
+    //                 fcd[ifcd].v1 = v_i;
+    //                 fcd[ifcd].flow_st1 = pBNS->vert[v_i].st_edge.flow;
+    //                 fcd[ifcd].cap_st1 = pBNS->vert[v_i].st_edge.cap;
+    //
+    //                 fcd[ifcd].v2 = NO_VERTEX;
+    //                 fcd[ifcd].flow_st2 = 0;
+    //                 fcd[ifcd].cap_st2 = 0;
+    //
+    //                 fcd[++ifcd].iedge = NO_VERTEX; /* mark the end of the fcd[] data */
+    //                 pEdge_i->pass |= 64;
+    //
+    //                 while (f && delta1)
+    //                 {
+    //                     f--;
+    //                     delta1--;
+    //                     pEdge_i->flow = ( ( pEdge_i->flow & EDGE_FLOW_MASK ) - 1 ) | ( pEdge_i->flow & ~EDGE_FLOW_MASK );
+    //                     pBNS->vert[v_i].st_edge.flow = ( ( pBNS->vert[v_i].st_edge.flow & EDGE_FLOW_ST_MASK ) - 1 ) | ( pBNS->vert[v_i].st_edge.flow & ~EDGE_FLOW_ST_MASK );
+    //                     /* next 2 lines added 01-22-2002 */
+    //                     pBNS->vert[v1].st_edge.cap = ( ( pBNS->vert[v1].st_edge.cap  & EDGE_FLOW_ST_MASK ) - 1 ) | ( pBNS->vert[v1].st_edge.cap  & ~EDGE_FLOW_ST_MASK );
+    //                     pBNS->vert[v1].st_edge.flow = ( ( pBNS->vert[v1].st_edge.flow & EDGE_FLOW_ST_MASK ) - 1 ) | ( pBNS->vert[v1].st_edge.flow & ~EDGE_FLOW_ST_MASK );
+    //
+    //                     nDots++;
+    //                 }
+    //             }
+    //         }
+    //
+    //         /* Grab flows from v2 neighbors */
+    //         for (i = 0; delta2 && i < pBNS->vert[v2].num_adj_edges; i++)
+    //         {
+    //             iedge_i = pBNS->vert[v2].iedge[i];
+    //             if (iedge_i == iedge)
+    //             {
+    //                 continue;
+    //             }
+    //             pEdge_i = pBNS->edge + iedge_i;
+    //             if (IS_FORBIDDEN( pEdge_i->forbidden, pBNS ))
+    //             {
+    //                 continue;
+    //             }
+    //             f = ( pEdge_i->flow & EDGE_FLOW_MASK );
+    //             if (f)
+    //             {
+    //                 v_i = pEdge_i->neighbor12 ^ v2;
+    //
+    //                 fcd[ifcd].iedge = iedge_i;
+    //                 fcd[ifcd].flow = pEdge_i->flow;
+    //                 fcd[ifcd].cap = pEdge_i->cap;
+    //
+    //                 fcd[ifcd].v1 = v_i;
+    //                 fcd[ifcd].flow_st1 = pBNS->vert[v_i].st_edge.flow;
+    //                 fcd[ifcd].cap_st1 = pBNS->vert[v_i].st_edge.cap;
+    //
+    //                 fcd[ifcd].v2 = NO_VERTEX;
+    //                 fcd[ifcd].flow_st2 = 0;
+    //                 fcd[ifcd].cap_st2 = 0;
+    //
+    //                 fcd[++ifcd].iedge = NO_VERTEX; /* mark the end of the fcd[] data */
+    //                 pEdge_i->pass |= 64;
+    //
+    //                 while (f && delta2)
+    //                 {
+    //                     f--;
+    //                     delta2--;
+    //                     pEdge_i->flow = ( ( pEdge_i->flow & EDGE_FLOW_MASK ) - 1 ) | ( pEdge_i->flow & ~EDGE_FLOW_MASK );
+    //                     pBNS->vert[v_i].st_edge.flow = ( ( pBNS->vert[v_i].st_edge.flow & EDGE_FLOW_ST_MASK ) - 1 ) | ( pBNS->vert[v_i].st_edge.flow & ~EDGE_FLOW_ST_MASK );
+    //                     /* next 2 lines added 01-22-2002 */
+    //                     pBNS->vert[v2].st_edge.cap = ( ( pBNS->vert[v2].st_edge.cap  & EDGE_FLOW_ST_MASK ) - 1 ) | ( pBNS->vert[v2].st_edge.cap  & ~EDGE_FLOW_ST_MASK );
+    //                     pBNS->vert[v2].st_edge.flow = ( ( pBNS->vert[v2].st_edge.flow & EDGE_FLOW_ST_MASK ) - 1 ) | ( pBNS->vert[v2].st_edge.flow & ~EDGE_FLOW_ST_MASK );
+    //
+    //                     nDots++;
+    //                 }
+    //             }
+    //         }
+    //         if (delta1 || delta2)
+    //         {
+    //             return BNS_CANT_SET_BOND;
+    //         }
+    //     }
+    //
+    //     if (f12 >= flow)
+    //     {
+    //         /* Decrease edge flow: Redirect flow to the neighbors and delete it on the edge: set flow12=cap12 = 0 */
+    //         /* f12==flow fixes flow through the edge so that BNS cannot change it */
+    //         /**********************************************************************************************/
+    //         /* For example, simulate a removal of a double bond and create ONE or NONE augmenting path    */
+    //         /* Make it impossible for BNS to set same flow as it originally was                           */
+    //         /**********************************************************************************************/
+    //         Vertex    v1 = pEdge->neighbor1;
+    //         Vertex    v2 = ( v1 ^ pEdge->neighbor12 );
+    //         int       delta;
+    //         /* if NOT (st-cap >= st-flow >= f12 >= flow) then error in the BN structure */
+    //         if (( pBNS->vert[v1].st_edge.flow & EDGE_FLOW_ST_MASK ) < f12 ||
+    //             ( pBNS->vert[v2].st_edge.flow & EDGE_FLOW_ST_MASK ) < f12 ||
+    //              ( pBNS->vert[v1].st_edge.cap  & EDGE_FLOW_ST_MASK ) < flow ||
+    //              ( pBNS->vert[v2].st_edge.cap  & EDGE_FLOW_ST_MASK ) < flow)
+    //         {
+    //             return BNS_CAP_FLOW_ERR;
+    //         }
+    //         fcd[ifcd].iedge = iedge;
+    //         fcd[ifcd].flow = pEdge->flow;
+    //         fcd[ifcd].cap = pEdge->cap;
+    //
+    //         fcd[ifcd].v1 = v1;
+    //         fcd[ifcd].flow_st1 = pBNS->vert[v1].st_edge.flow;
+    //         fcd[ifcd].cap_st1 = pBNS->vert[v1].st_edge.cap;
+    //
+    //         fcd[ifcd].v2 = v2;
+    //         fcd[ifcd].flow_st2 = pBNS->vert[v2].st_edge.flow;
+    //         fcd[ifcd].cap_st2 = pBNS->vert[v2].st_edge.cap;
+    //
+    //         fcd[++ifcd].iedge = NO_VERTEX; /* mark the end of the fcd[] data */
+    //         pEdge->pass |= 64;
+    //
+    //         delta = f12 - flow;
+    //
+    //         /* Remove current edge flow from st-edges */
+    //         /* -- seem to be a bug --
+    //         pBNS->vert[v1].st_edge.flow = ((pBNS->vert[v1].st_edge.flow & EDGE_FLOW_ST_MASK)-delta) | (pBNS->vert[v1].st_edge.flow & ~EDGE_FLOW_ST_MASK);
+    //         pBNS->vert[v2].st_edge.flow = ((pBNS->vert[v2].st_edge.flow & EDGE_FLOW_ST_MASK)-delta) | (pBNS->vert[v2].st_edge.flow & ~EDGE_FLOW_ST_MASK);
+    //         */
+    //
+    //         /* Replacement to the above 2 lines 01-16-2002 */
+    //         /* Remove old edge flow from the flow of the adjacent vertices' st-edges */
+    //
+    //         pBNS->vert[v1].st_edge.flow = ( ( pBNS->vert[v1].st_edge.flow & EDGE_FLOW_ST_MASK ) - f12 ) | ( pBNS->vert[v1].st_edge.flow & ~EDGE_FLOW_ST_MASK );
+    //         pBNS->vert[v2].st_edge.flow = ( ( pBNS->vert[v2].st_edge.flow & EDGE_FLOW_ST_MASK ) - f12 ) | ( pBNS->vert[v2].st_edge.flow & ~EDGE_FLOW_ST_MASK );
+    //
+    //         /* Sdded 01-16-2002: reduce st-cap if new flow > 0  */
+    //         /* Remove new edge flow from the cap of the adjacent vertices' st-edges */
+    //         pBNS->vert[v1].st_edge.cap = ( ( pBNS->vert[v1].st_edge.cap & EDGE_FLOW_ST_MASK ) - flow ) | ( pBNS->vert[v1].st_edge.cap & ~EDGE_FLOW_ST_MASK );
+    //         pBNS->vert[v2].st_edge.cap = ( ( pBNS->vert[v2].st_edge.cap & EDGE_FLOW_ST_MASK ) - flow ) | ( pBNS->vert[v2].st_edge.cap & ~EDGE_FLOW_ST_MASK );
+    //
+    //         /* delete current edge flow and capacity */
+    //         pEdge->flow = ( pEdge->flow & ~EDGE_FLOW_MASK );
+    //         pEdge->cap = ( pEdge->cap  & ~EDGE_FLOW_MASK );
+    //         nDots = 2 * delta;
+    //     }
+    //
+    //     return nDots;
+    // }
+    // END INCHI C FUNCTION: set_flow_to_check_one_bond_buffer
+    // INCHI✔️❗: One original algorithm over a transient source buffer;
+    // typed pointer admissions remain reached and borrowed slices allocate nothing.
+    // Checked projection and whole-call constants remain OPEN; no new scans.
+    let mut fcd_entry = fcd.get(heap, 0)?;
     fcd_entry.iedge = NO_VERTEX;
-    work_set(heap, fcd, 0, fcd_entry)?;
+    fcd.set(heap, 0, fcd_entry)?;
 
     let mask_edge = EDGE_FLOW_MASK as i32;
     let mask_st = EDGE_FLOW_ST_MASK as i32;
     let clear_masked = |value: i32, mask: i32| value & !mask;
-    let replace_masked =
-        |value: i32, mask: i32, new_masked: i32| (value & !mask) | (new_masked & mask);
+    let replace_masked = |value: i32, mask: i32, new_masked: i32| (value & !mask) | new_masked;
 
-    let mut edge = bns_edge(heap, pBNS, iedge)?;
+    let edge = bns_edge(heap, pBNS, iedge)?;
     let f12 = edge.flow & mask_edge;
     let mut ifcd = 0_i32;
     let mut nDots = 0_i32;
@@ -16659,8 +21653,8 @@ pub(crate) fn bSetFlowToCheckOneBond(
     if f12 < flow {
         let v1 = i32::from(edge.neighbor1);
         let v2 = v1 ^ i32::from(edge.neighbor12);
-        let mut v1_vertex = bns_vertex(heap, pBNS, v1)?;
-        let mut v2_vertex = bns_vertex(heap, pBNS, v2)?;
+        let v1_vertex = bns_vertex(heap, pBNS, v1)?;
+        let v2_vertex = bns_vertex(heap, pBNS, v2)?;
         if (v1_vertex.st_edge.cap & mask_st) < flow || (v2_vertex.st_edge.cap & mask_st) < flow {
             return Ok(BNS_CANT_SET_BOND);
         }
@@ -16668,7 +21662,7 @@ pub(crate) fn bSetFlowToCheckOneBond(
             return Ok(BNS_CAP_FLOW_ERR);
         }
 
-        let mut record = work_get::<BNS_FLOW_CHANGES>(heap, fcd, ifcd)?;
+        let mut record = fcd.get(heap, ifcd)?;
         record.iedge = iedge;
         record.flow = edge.flow;
         record.cap = edge.cap;
@@ -16678,70 +21672,89 @@ pub(crate) fn bSetFlowToCheckOneBond(
         record.v2 = v2;
         record.flow_st2 = v2_vertex.st_edge.flow;
         record.cap_st2 = v2_vertex.st_edge.cap;
-        work_set(heap, fcd, ifcd, record)?;
+        fcd.set(heap, ifcd, record)?;
         ifcd += 1;
-        let mut sentinel = work_get::<BNS_FLOW_CHANGES>(heap, fcd, ifcd)?;
+        let mut sentinel = fcd.get(heap, ifcd)?;
         sentinel.iedge = NO_VERTEX;
-        work_set(heap, fcd, ifcd, sentinel)?;
+        fcd.set(heap, ifcd, sentinel)?;
 
-        edge.pass |= 64;
+        bns_edge_mut(heap, pBNS, iedge)?.pass |= 64;
         let mut delta1 = flow - f12;
         let mut delta2 = flow - f12;
 
         if f12 > 0 {
-            v1_vertex.st_edge.cap = replace_masked(
-                v1_vertex.st_edge.cap,
-                mask_st,
-                (v1_vertex.st_edge.cap & mask_st) - f12,
-            );
-            v2_vertex.st_edge.cap = replace_masked(
-                v2_vertex.st_edge.cap,
-                mask_st,
-                (v2_vertex.st_edge.cap & mask_st) - f12,
-            );
-            v1_vertex.st_edge.flow = replace_masked(
-                v1_vertex.st_edge.flow,
-                mask_st,
-                (v1_vertex.st_edge.flow & mask_st) - f12,
-            );
-            v2_vertex.st_edge.flow = replace_masked(
-                v2_vertex.st_edge.flow,
-                mask_st,
-                (v2_vertex.st_edge.flow & mask_st) - f12,
-            );
-            edge.flow = clear_masked(edge.flow, mask_edge);
-            work_set(heap, pBNS.vert, v1, v1_vertex.clone())?;
-            work_set(heap, pBNS.vert, v2, v2_vertex.clone())?;
-            work_set(heap, pBNS.edge, iedge, edge.clone())?;
+            {
+                let vertex = bns_vertex_mut(heap, pBNS, v1)?;
+                vertex.st_edge.cap = replace_masked(
+                    vertex.st_edge.cap,
+                    mask_st,
+                    (vertex.st_edge.cap & mask_st) - f12,
+                );
+            }
+            {
+                let vertex = bns_vertex_mut(heap, pBNS, v2)?;
+                vertex.st_edge.cap = replace_masked(
+                    vertex.st_edge.cap,
+                    mask_st,
+                    (vertex.st_edge.cap & mask_st) - f12,
+                );
+            }
+            {
+                let vertex = bns_vertex_mut(heap, pBNS, v1)?;
+                vertex.st_edge.flow = replace_masked(
+                    vertex.st_edge.flow,
+                    mask_st,
+                    (vertex.st_edge.flow & mask_st) - f12,
+                );
+            }
+            {
+                let vertex = bns_vertex_mut(heap, pBNS, v2)?;
+                vertex.st_edge.flow = replace_masked(
+                    vertex.st_edge.flow,
+                    mask_st,
+                    (vertex.st_edge.flow & mask_st) - f12,
+                );
+            }
+            {
+                let edge = bns_edge_mut(heap, pBNS, iedge)?;
+                edge.flow = clear_masked(edge.flow, mask_edge);
+            }
         }
-        edge.cap = clear_masked(edge.cap, mask_edge);
-        work_set(heap, pBNS.edge, iedge, edge.clone())?;
+        {
+            let edge = bns_edge_mut(heap, pBNS, iedge)?;
+            edge.cap = clear_masked(edge.cap, mask_edge);
+        }
 
-        let mut st_edge_rescap =
-            (v1_vertex.st_edge.cap & mask_st) - (v1_vertex.st_edge.flow & mask_st);
+        let st_edge = bns_vertex(heap, pBNS, v1)?.st_edge;
+        let mut st_edge_rescap = (st_edge.cap & mask_st) - (st_edge.flow & mask_st);
         while st_edge_rescap != 0 && delta1 != 0 {
             st_edge_rescap -= 1;
             delta1 -= 1;
-            v1_vertex.st_edge.cap = replace_masked(
-                v1_vertex.st_edge.cap,
-                mask_st,
-                (v1_vertex.st_edge.cap & mask_st) - 1,
-            );
+            {
+                let vertex = bns_vertex_mut(heap, pBNS, v1)?;
+                vertex.st_edge.cap = replace_masked(
+                    vertex.st_edge.cap,
+                    mask_st,
+                    (vertex.st_edge.cap & mask_st) - 1,
+                );
+            }
             nDots -= 1;
-            work_set(heap, pBNS.vert, v1, v1_vertex.clone())?;
         }
 
-        st_edge_rescap = (v2_vertex.st_edge.cap & mask_st) - (v2_vertex.st_edge.flow & mask_st);
+        let st_edge = bns_vertex(heap, pBNS, v2)?.st_edge;
+        st_edge_rescap = (st_edge.cap & mask_st) - (st_edge.flow & mask_st);
         while st_edge_rescap != 0 && delta2 != 0 {
             st_edge_rescap -= 1;
             delta2 -= 1;
-            v2_vertex.st_edge.cap = replace_masked(
-                v2_vertex.st_edge.cap,
-                mask_st,
-                (v2_vertex.st_edge.cap & mask_st) - 1,
-            );
+            {
+                let vertex = bns_vertex_mut(heap, pBNS, v2)?;
+                vertex.st_edge.cap = replace_masked(
+                    vertex.st_edge.cap,
+                    mask_st,
+                    (vertex.st_edge.cap & mask_st) - 1,
+                );
+            }
             nDots -= 1;
-            work_set(heap, pBNS.vert, v2, v2_vertex.clone())?;
         }
 
         let mut i = 0_i32;
@@ -16751,7 +21764,7 @@ pub(crate) fn bSetFlowToCheckOneBond(
                 i += 1;
                 continue;
             }
-            let mut edge_i = bns_edge(heap, pBNS, iedge_i)?;
+            let edge_i = bns_edge(heap, pBNS, iedge_i)?;
             if edge_i.forbidden != 0 {
                 i += 1;
                 continue;
@@ -16759,8 +21772,8 @@ pub(crate) fn bSetFlowToCheckOneBond(
             let mut f = edge_i.flow & mask_edge;
             if f != 0 {
                 let v_i = i32::from(edge_i.neighbor12) ^ v1;
-                let mut v_i_vertex = bns_vertex(heap, pBNS, v_i)?;
-                let mut record = work_get::<BNS_FLOW_CHANGES>(heap, fcd, ifcd)?;
+                let v_i_vertex = bns_vertex(heap, pBNS, v_i)?;
+                let mut record = fcd.get(heap, ifcd)?;
                 record.iedge = iedge_i;
                 record.flow = edge_i.flow;
                 record.cap = edge_i.cap;
@@ -16770,37 +21783,46 @@ pub(crate) fn bSetFlowToCheckOneBond(
                 record.v2 = NO_VERTEX;
                 record.flow_st2 = 0;
                 record.cap_st2 = 0;
-                work_set(heap, fcd, ifcd, record)?;
+                fcd.set(heap, ifcd, record)?;
                 ifcd += 1;
-                let mut sentinel = work_get::<BNS_FLOW_CHANGES>(heap, fcd, ifcd)?;
+                let mut sentinel = fcd.get(heap, ifcd)?;
                 sentinel.iedge = NO_VERTEX;
-                work_set(heap, fcd, ifcd, sentinel)?;
-                edge_i.pass |= 64;
+                fcd.set(heap, ifcd, sentinel)?;
+                bns_edge_mut(heap, pBNS, iedge_i)?.pass |= 64;
 
                 while f != 0 && delta1 != 0 {
                     f -= 1;
                     delta1 -= 1;
-                    edge_i.flow =
-                        replace_masked(edge_i.flow, mask_edge, (edge_i.flow & mask_edge) - 1);
-                    v_i_vertex.st_edge.flow = replace_masked(
-                        v_i_vertex.st_edge.flow,
-                        mask_st,
-                        (v_i_vertex.st_edge.flow & mask_st) - 1,
-                    );
-                    v1_vertex.st_edge.cap = replace_masked(
-                        v1_vertex.st_edge.cap,
-                        mask_st,
-                        (v1_vertex.st_edge.cap & mask_st) - 1,
-                    );
-                    v1_vertex.st_edge.flow = replace_masked(
-                        v1_vertex.st_edge.flow,
-                        mask_st,
-                        (v1_vertex.st_edge.flow & mask_st) - 1,
-                    );
+                    {
+                        let edge = bns_edge_mut(heap, pBNS, iedge_i)?;
+                        edge.flow =
+                            replace_masked(edge.flow, mask_edge, (edge.flow & mask_edge) - 1);
+                    }
+                    {
+                        let vertex = bns_vertex_mut(heap, pBNS, v_i)?;
+                        vertex.st_edge.flow = replace_masked(
+                            vertex.st_edge.flow,
+                            mask_st,
+                            (vertex.st_edge.flow & mask_st) - 1,
+                        );
+                    }
+                    {
+                        let vertex = bns_vertex_mut(heap, pBNS, v1)?;
+                        vertex.st_edge.cap = replace_masked(
+                            vertex.st_edge.cap,
+                            mask_st,
+                            (vertex.st_edge.cap & mask_st) - 1,
+                        );
+                    }
+                    {
+                        let vertex = bns_vertex_mut(heap, pBNS, v1)?;
+                        vertex.st_edge.flow = replace_masked(
+                            vertex.st_edge.flow,
+                            mask_st,
+                            (vertex.st_edge.flow & mask_st) - 1,
+                        );
+                    }
                     nDots += 1;
-                    work_set(heap, pBNS.edge, iedge_i, edge_i.clone())?;
-                    work_set(heap, pBNS.vert, v_i, v_i_vertex.clone())?;
-                    work_set(heap, pBNS.vert, v1, v1_vertex.clone())?;
                 }
             }
             i += 1;
@@ -16813,7 +21835,7 @@ pub(crate) fn bSetFlowToCheckOneBond(
                 i += 1;
                 continue;
             }
-            let mut edge_i = bns_edge(heap, pBNS, iedge_i)?;
+            let edge_i = bns_edge(heap, pBNS, iedge_i)?;
             if edge_i.forbidden != 0 {
                 i += 1;
                 continue;
@@ -16821,8 +21843,8 @@ pub(crate) fn bSetFlowToCheckOneBond(
             let mut f = edge_i.flow & mask_edge;
             if f != 0 {
                 let v_i = i32::from(edge_i.neighbor12) ^ v2;
-                let mut v_i_vertex = bns_vertex(heap, pBNS, v_i)?;
-                let mut record = work_get::<BNS_FLOW_CHANGES>(heap, fcd, ifcd)?;
+                let v_i_vertex = bns_vertex(heap, pBNS, v_i)?;
+                let mut record = fcd.get(heap, ifcd)?;
                 record.iedge = iedge_i;
                 record.flow = edge_i.flow;
                 record.cap = edge_i.cap;
@@ -16832,37 +21854,46 @@ pub(crate) fn bSetFlowToCheckOneBond(
                 record.v2 = NO_VERTEX;
                 record.flow_st2 = 0;
                 record.cap_st2 = 0;
-                work_set(heap, fcd, ifcd, record)?;
+                fcd.set(heap, ifcd, record)?;
                 ifcd += 1;
-                let mut sentinel = work_get::<BNS_FLOW_CHANGES>(heap, fcd, ifcd)?;
+                let mut sentinel = fcd.get(heap, ifcd)?;
                 sentinel.iedge = NO_VERTEX;
-                work_set(heap, fcd, ifcd, sentinel)?;
-                edge_i.pass |= 64;
+                fcd.set(heap, ifcd, sentinel)?;
+                bns_edge_mut(heap, pBNS, iedge_i)?.pass |= 64;
 
                 while f != 0 && delta2 != 0 {
                     f -= 1;
                     delta2 -= 1;
-                    edge_i.flow =
-                        replace_masked(edge_i.flow, mask_edge, (edge_i.flow & mask_edge) - 1);
-                    v_i_vertex.st_edge.flow = replace_masked(
-                        v_i_vertex.st_edge.flow,
-                        mask_st,
-                        (v_i_vertex.st_edge.flow & mask_st) - 1,
-                    );
-                    v2_vertex.st_edge.cap = replace_masked(
-                        v2_vertex.st_edge.cap,
-                        mask_st,
-                        (v2_vertex.st_edge.cap & mask_st) - 1,
-                    );
-                    v2_vertex.st_edge.flow = replace_masked(
-                        v2_vertex.st_edge.flow,
-                        mask_st,
-                        (v2_vertex.st_edge.flow & mask_st) - 1,
-                    );
+                    {
+                        let edge = bns_edge_mut(heap, pBNS, iedge_i)?;
+                        edge.flow =
+                            replace_masked(edge.flow, mask_edge, (edge.flow & mask_edge) - 1);
+                    }
+                    {
+                        let vertex = bns_vertex_mut(heap, pBNS, v_i)?;
+                        vertex.st_edge.flow = replace_masked(
+                            vertex.st_edge.flow,
+                            mask_st,
+                            (vertex.st_edge.flow & mask_st) - 1,
+                        );
+                    }
+                    {
+                        let vertex = bns_vertex_mut(heap, pBNS, v2)?;
+                        vertex.st_edge.cap = replace_masked(
+                            vertex.st_edge.cap,
+                            mask_st,
+                            (vertex.st_edge.cap & mask_st) - 1,
+                        );
+                    }
+                    {
+                        let vertex = bns_vertex_mut(heap, pBNS, v2)?;
+                        vertex.st_edge.flow = replace_masked(
+                            vertex.st_edge.flow,
+                            mask_st,
+                            (vertex.st_edge.flow & mask_st) - 1,
+                        );
+                    }
                     nDots += 1;
-                    work_set(heap, pBNS.edge, iedge_i, edge_i.clone())?;
-                    work_set(heap, pBNS.vert, v_i, v_i_vertex.clone())?;
-                    work_set(heap, pBNS.vert, v2, v2_vertex.clone())?;
                 }
             }
             i += 1;
@@ -16876,8 +21907,8 @@ pub(crate) fn bSetFlowToCheckOneBond(
     if f12 >= flow {
         let v1 = i32::from(edge.neighbor1);
         let v2 = v1 ^ i32::from(edge.neighbor12);
-        let mut v1_vertex = bns_vertex(heap, pBNS, v1)?;
-        let mut v2_vertex = bns_vertex(heap, pBNS, v2)?;
+        let v1_vertex = bns_vertex(heap, pBNS, v1)?;
+        let v2_vertex = bns_vertex(heap, pBNS, v2)?;
         if (v1_vertex.st_edge.flow & mask_st) < f12
             || (v2_vertex.st_edge.flow & mask_st) < f12
             || (v1_vertex.st_edge.cap & mask_st) < flow
@@ -16886,7 +21917,7 @@ pub(crate) fn bSetFlowToCheckOneBond(
             return Ok(BNS_CAP_FLOW_ERR);
         }
 
-        let mut record = work_get::<BNS_FLOW_CHANGES>(heap, fcd, ifcd)?;
+        let mut record = fcd.get(heap, ifcd)?;
         record.iedge = iedge;
         record.flow = edge.flow;
         record.cap = edge.cap;
@@ -16896,39 +21927,54 @@ pub(crate) fn bSetFlowToCheckOneBond(
         record.v2 = v2;
         record.flow_st2 = v2_vertex.st_edge.flow;
         record.cap_st2 = v2_vertex.st_edge.cap;
-        work_set(heap, fcd, ifcd, record)?;
+        fcd.set(heap, ifcd, record)?;
         ifcd += 1;
-        let mut sentinel = work_get::<BNS_FLOW_CHANGES>(heap, fcd, ifcd)?;
+        let mut sentinel = fcd.get(heap, ifcd)?;
         sentinel.iedge = NO_VERTEX;
-        work_set(heap, fcd, ifcd, sentinel)?;
-        edge.pass |= 64;
+        fcd.set(heap, ifcd, sentinel)?;
+        bns_edge_mut(heap, pBNS, iedge)?.pass |= 64;
 
         let delta = f12 - flow;
-        v1_vertex.st_edge.flow = replace_masked(
-            v1_vertex.st_edge.flow,
-            mask_st,
-            (v1_vertex.st_edge.flow & mask_st) - f12,
-        );
-        v2_vertex.st_edge.flow = replace_masked(
-            v2_vertex.st_edge.flow,
-            mask_st,
-            (v2_vertex.st_edge.flow & mask_st) - f12,
-        );
-        v1_vertex.st_edge.cap = replace_masked(
-            v1_vertex.st_edge.cap,
-            mask_st,
-            (v1_vertex.st_edge.cap & mask_st) - flow,
-        );
-        v2_vertex.st_edge.cap = replace_masked(
-            v2_vertex.st_edge.cap,
-            mask_st,
-            (v2_vertex.st_edge.cap & mask_st) - flow,
-        );
-        edge.flow = clear_masked(edge.flow, mask_edge);
-        edge.cap = clear_masked(edge.cap, mask_edge);
-        work_set(heap, pBNS.vert, v1, v1_vertex)?;
-        work_set(heap, pBNS.vert, v2, v2_vertex)?;
-        work_set(heap, pBNS.edge, iedge, edge)?;
+        {
+            let vertex = bns_vertex_mut(heap, pBNS, v1)?;
+            vertex.st_edge.flow = replace_masked(
+                vertex.st_edge.flow,
+                mask_st,
+                (vertex.st_edge.flow & mask_st) - f12,
+            );
+        }
+        {
+            let vertex = bns_vertex_mut(heap, pBNS, v2)?;
+            vertex.st_edge.flow = replace_masked(
+                vertex.st_edge.flow,
+                mask_st,
+                (vertex.st_edge.flow & mask_st) - f12,
+            );
+        }
+        {
+            let vertex = bns_vertex_mut(heap, pBNS, v1)?;
+            vertex.st_edge.cap = replace_masked(
+                vertex.st_edge.cap,
+                mask_st,
+                (vertex.st_edge.cap & mask_st) - flow,
+            );
+        }
+        {
+            let vertex = bns_vertex_mut(heap, pBNS, v2)?;
+            vertex.st_edge.cap = replace_masked(
+                vertex.st_edge.cap,
+                mask_st,
+                (vertex.st_edge.cap & mask_st) - flow,
+            );
+        }
+        {
+            let edge = bns_edge_mut(heap, pBNS, iedge)?;
+            edge.flow = clear_masked(edge.flow, mask_edge);
+        }
+        {
+            let edge = bns_edge_mut(heap, pBNS, iedge)?;
+            edge.cap = clear_masked(edge.cap, mask_edge);
+        }
         nDots = delta * 2;
     }
 
@@ -17424,126 +22470,73 @@ pub(crate) fn MarkRingSystemsAltBns(
         Err(_) => return Ok(CT_OUT_OF_RAM),
     };
 
+    // INCHI✔️❌: Scratch lifecycle matches the source allocation/check/cleanup order.
+    // All required attempts precede the combined failure check; a one-shot
+    // allocation failure must not suppress subsequent attempts. Existing typed
+    // calloc storage handles real buffer failure without infallible Vec creation.
+    // Safe zero initialization beyond source memset remains a recorded O(n)
+    // write cost versus malloc; no performance equivalence is claimed.
     // INCHI✔️❌:     nStackAtom = (AT_NUMB *) inchi_malloc( num_atoms * sizeof( nStackAtom[0] ) );
-    let nStackAtom = match allocate_zeroed::<AT_NUMB>(heap, atom_count) {
-        Ok(pointer) => pointer,
-        Err(
-            SourceHeapError::AllocationFailed
-            | SourceHeapError::AllocationSizeOverflow
-            | SourceHeapError::AllocationElementCountOutOfRange,
-        ) => return Ok(CT_OUT_OF_RAM),
-        Err(error) => return Err(error),
-    };
+    let nStackAtom_allocation = inchi_calloc::<AT_NUMB>(heap, atom_count as u64, 2);
     // INCHI✔️❌:     nRingStack = (AT_NUMB *) inchi_malloc( num_atoms * sizeof( nRingStack[0] ) );
-    let nRingStack = match allocate_zeroed::<AT_NUMB>(heap, atom_count) {
-        Ok(pointer) => pointer,
-        Err(
-            SourceHeapError::AllocationFailed
-            | SourceHeapError::AllocationSizeOverflow
-            | SourceHeapError::AllocationElementCountOutOfRange,
-        ) => {
-            inchi_free(heap, nStackAtom)?;
-            return Ok(CT_OUT_OF_RAM);
-        }
-        Err(error) => {
-            inchi_free(heap, nStackAtom)?;
-            return Err(error);
-        }
-    };
+    let nRingStack_allocation = inchi_calloc::<AT_NUMB>(heap, atom_count as u64, 2);
     // INCHI✔️❌:     nDfsNumber = (AT_NUMB *) inchi_malloc( num_atoms * sizeof( nDfsNumber[0] ) );
-    let nDfsNumber = match allocate_zeroed::<AT_NUMB>(heap, atom_count) {
-        Ok(pointer) => pointer,
-        Err(
-            SourceHeapError::AllocationFailed
-            | SourceHeapError::AllocationSizeOverflow
-            | SourceHeapError::AllocationElementCountOutOfRange,
-        ) => {
-            inchi_free(heap, nRingStack)?;
-            inchi_free(heap, nStackAtom)?;
-            return Ok(CT_OUT_OF_RAM);
-        }
-        Err(error) => {
-            inchi_free(heap, nRingStack)?;
-            inchi_free(heap, nStackAtom)?;
-            return Err(error);
-        }
-    };
+    let nDfsNumber_allocation = inchi_calloc::<AT_NUMB>(heap, atom_count as u64, 2);
     // INCHI✔️❌:     nLowNumber = (AT_NUMB *) inchi_malloc( num_atoms * sizeof( nLowNumber[0] ) );
-    let nLowNumber = match allocate_zeroed::<AT_NUMB>(heap, atom_count) {
-        Ok(pointer) => pointer,
-        Err(
-            SourceHeapError::AllocationFailed
-            | SourceHeapError::AllocationSizeOverflow
-            | SourceHeapError::AllocationElementCountOutOfRange,
-        ) => {
-            inchi_free(heap, nDfsNumber)?;
-            inchi_free(heap, nRingStack)?;
-            inchi_free(heap, nStackAtom)?;
-            return Ok(CT_OUT_OF_RAM);
-        }
-        Err(error) => {
-            inchi_free(heap, nDfsNumber)?;
-            inchi_free(heap, nRingStack)?;
-            inchi_free(heap, nStackAtom)?;
-            return Err(error);
-        }
-    };
+    let nLowNumber_allocation = inchi_calloc::<AT_NUMB>(heap, atom_count as u64, 2);
     // INCHI✔️❌:     nBondStack = num_edges ? ( (AT_NUMB *) inchi_malloc( num_edges * sizeof( nBondStack[0] ) ) ) : (AT_NUMB *) ( NULL );
-    let nBondStack = if edge_count != 0 {
-        match allocate_zeroed::<AT_NUMB>(heap, edge_count) {
-            Ok(pointer) => pointer,
-            Err(
-                SourceHeapError::AllocationFailed
-                | SourceHeapError::AllocationSizeOverflow
-                | SourceHeapError::AllocationElementCountOutOfRange,
-            ) => {
-                inchi_free(heap, nLowNumber)?;
-                inchi_free(heap, nDfsNumber)?;
-                inchi_free(heap, nRingStack)?;
-                inchi_free(heap, nStackAtom)?;
-                return Ok(CT_OUT_OF_RAM);
-            }
-            Err(error) => {
-                inchi_free(heap, nLowNumber)?;
-                inchi_free(heap, nDfsNumber)?;
-                inchi_free(heap, nRingStack)?;
-                inchi_free(heap, nStackAtom)?;
-                return Err(error);
-            }
-        }
+    let nBondStack_allocation = if edge_count != 0 {
+        inchi_calloc::<AT_NUMB>(heap, edge_count as u64, 2)
     } else {
-        SourceMutPointer::null()
+        Ok(SourceMutPointer::null())
     };
     // INCHI✔️❌:     cNeighNumb = (S_CHAR *) inchi_malloc( num_atoms * sizeof( cNeighNumb[0] ) );
-    let cNeighNumb = match allocate_zeroed::<S_CHAR>(heap, atom_count) {
-        Ok(pointer) => pointer,
-        Err(
-            SourceHeapError::AllocationFailed
-            | SourceHeapError::AllocationSizeOverflow
-            | SourceHeapError::AllocationElementCountOutOfRange,
-        ) => {
-            if !nBondStack.is_null() {
-                inchi_free(heap, nBondStack)?;
-            }
-            inchi_free(heap, nLowNumber)?;
-            inchi_free(heap, nDfsNumber)?;
-            inchi_free(heap, nRingStack)?;
-            inchi_free(heap, nStackAtom)?;
-            return Ok(CT_OUT_OF_RAM);
-        }
-        Err(error) => {
-            if !nBondStack.is_null() {
-                inchi_free(heap, nBondStack)?;
-            }
-            inchi_free(heap, nLowNumber)?;
-            inchi_free(heap, nDfsNumber)?;
-            inchi_free(heap, nRingStack)?;
-            inchi_free(heap, nStackAtom)?;
-            return Err(error);
-        }
-    };
+    let cNeighNumb_allocation = inchi_calloc::<S_CHAR>(heap, atom_count as u64, 1);
+    let nStackAtom = nStackAtom_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
+    let nRingStack = nRingStack_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
+    let nDfsNumber = nDfsNumber_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
+    let nLowNumber = nLowNumber_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
+    let nBondStack = nBondStack_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
+    let cNeighNumb = cNeighNumb_allocation
+        .as_ref()
+        .copied()
+        .unwrap_or(SourceMutPointer::null());
 
     let computation = (|| -> Result<i32, SourceHeapError> {
+        for allocation in [
+            nStackAtom_allocation.map(|_| ()),
+            nRingStack_allocation.map(|_| ()),
+            nDfsNumber_allocation.map(|_| ()),
+            nLowNumber_allocation.map(|_| ()),
+            nBondStack_allocation.map(|_| ()),
+            cNeighNumb_allocation.map(|_| ()),
+        ] {
+            match allocation {
+                Ok(()) => {}
+                Err(
+                    SourceHeapError::AllocationFailed
+                    | SourceHeapError::AllocationSizeOverflow
+                    | SourceHeapError::AllocationElementCountOutOfRange,
+                ) => return Ok(CT_OUT_OF_RAM),
+                Err(error) => return Err(error),
+            }
+        }
+
         let mut nNumRingSystems = 0_i32;
         let mut nDfs: AT_NUMB = 0;
         let mut nStackTop = -1_i32;
@@ -17574,9 +22567,12 @@ pub(crate) fn MarkRingSystemsAltBns(
             nStackTop = -1;
             nRingTop = -1;
             nBondTop = -1;
-            for index in 0..num_atoms {
-                work_set(heap, cNeighNumb, index, 0)?;
-            }
+            // INCHI✔️❗: Native memset uses the fresh atom_count-byte buffer.
+            // Resolve once per reached component, with no per-byte arena store.
+            heap.slice_mut(cNeighNumb)?
+                .get_mut(..atom_count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .fill(0);
             nDfs = nDfs.wrapping_add(1);
             work_set(heap, nLowNumber, u, nDfs)?;
             work_set(heap, nDfsNumber, u, nDfs)?;
@@ -17772,6 +22768,19 @@ impl ReInitBnStructWorkspace {
         num_at: i32,
         require_atoms: bool,
     ) -> Result<Option<Self>, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c:9109..9112 C419 retained source workspace inputs
+        //     if (pBNS)
+        //     {
+        //         if (pBNS->vert && pBNS->edge)
+        //         {
+        // END VERBATIM SOURCE FRAGMENT: C419 retained source workspace inputs
+        // INCHI❗❌: Preserve all existing count/identity/capacity/typed-view
+        // proofs and checked fallback; required by the existing unsafe view
+        // contract. Fixed source-absent O(1) map/check work, no allocation or
+        // scan, is recorded for final performance work under human deferral.
+        // No proof/dispatch bypass or whole-source/performance acceptance.
+        // Each reached adjacency now proves its origin/extent independently;
+        // vertex zero selects a reusable view, not a proof of every pointer.
         let (
             Some(num_atoms),
             Some(num_vertices),
@@ -17860,10 +22869,9 @@ impl ReInitBnStructWorkspace {
 
         // SAFETY: the allocation identities are pairwise distinct, the
         // official constructor capacities were validated above, and no BNS
-        // allocation is resized or freed during BNS reinitialization. CreateBnStruct
-        // establishes every vertex adjacency pointer as a forward interior
-        // pointer into the single iedge allocation; the BNS mutators preserve
-        // that layout and its max_iedges bound.
+        // allocation is resized or freed during BNS reinitialization. Every
+        // adjacency read independently checks its actual pointer and extent;
+        // wider layouts retain source-shaped reads without a whole-array scan.
         let edges = unsafe { heap.stable_slice_mut(bns.edge)? };
         let vertices = unsafe { heap.stable_slice_mut(bns.vert)? };
         let adjacency = unsafe { heap.stable_slice(bns.iedge.as_const())? };
@@ -17882,21 +22890,47 @@ impl ReInitBnStructWorkspace {
     }
 
     #[inline(always)]
-    unsafe fn adjacency_index(
+    fn adjacency_index(
         &self,
+        heap: &SourceHeap,
         vertex_adjacency: SourceMutPointer<BNS_IEDGE>,
         neighbor: i32,
-    ) -> BNS_IEDGE {
-        debug_assert!(neighbor >= 0);
-        // SAFETY: `new` proves the official contiguous adjacency layout. The
-        // source loop bounds `neighbor` by this vertex's declared degree.
-        let base = unsafe { vertex_adjacency.forward_difference_unchecked(self.adjacency_origin) };
-        let index = base + neighbor as usize;
-        debug_assert!(index < self.adjacency.len());
-        *unsafe { self.adjacency.get_unchecked(index) }
+    ) -> Result<BNS_IEDGE, SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c9127
+        //                     iedgefict = pBNS->vert[vfict].iedge[kfict]; /* fictitious edge to the endpoint */
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c9137
+        //                         iedge = pBNS->vert[endpoint].iedge[k]; /* edge to endpoint */
+        // VERBATIM SOURCE FRAGMENT: ichi_bns.c11834
+        //             pBond = pBNS->edge + pAtom->iedge[j];
+        // INCHI✔️❗: Prove this REACHED pointer, never infer later pointers
+        // from vertex zero. Same-origin forward slots reuse the existing
+        // checked stable view; other layouts read the actual pointer.
+        // No certification scan/copy/allocation/new unsafe. O(1) per reached
+        // slot, checked/layout/libc constants OPEN in
+        // INCHI-PERF-REINIT-REACHED-ADJACENCY.
+        let neighbor =
+            usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        if let Ok(difference) = vertex_adjacency.difference(self.adjacency_origin)
+            && let Ok(base) = usize::try_from(difference)
+        {
+            let index = base
+                .checked_add(neighbor)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            return self.adjacency.get(index).copied();
+        }
+        heap.slice(vertex_adjacency.as_const())?
+            .get(neighbor)
+            .copied()
+            .ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
-    fn restore(&mut self, bns: &BN_STRUCT, num_at: i32, remove_groups_from_atoms: i32) -> i32 {
+    fn restore(
+        &mut self,
+        heap: &SourceHeap,
+        bns: &BN_STRUCT,
+        num_at: i32,
+        remove_groups_from_atoms: i32,
+    ) -> Result<i32, SourceHeapError> {
         let mut changed_edges = 0_i32;
         for edge_index in 0..bns.num_edges {
             debug_assert!(edge_index >= 0 && (edge_index as usize) < self.edges.len());
@@ -17918,7 +22952,7 @@ impl ReInitBnStructWorkspace {
             for fictitious_neighbor in 0..fictitious_degree {
                 // SAFETY: the C loop bounds this index by num_adj_edges.
                 let fictitious_edge =
-                    unsafe { self.adjacency_index(fictitious_adjacency, fictitious_neighbor) };
+                    self.adjacency_index(heap, fictitious_adjacency, fictitious_neighbor)?;
                 debug_assert!(
                     fictitious_edge >= 0 && (fictitious_edge as usize) < self.edges.len()
                 );
@@ -17951,7 +22985,7 @@ impl ReInitBnStructWorkspace {
                 for endpoint_neighbor in 0..endpoint_degree {
                     // SAFETY: the C loop bounds this index by num_adj_edges.
                     let edge_index =
-                        unsafe { self.adjacency_index(endpoint_adjacency, endpoint_neighbor) };
+                        self.adjacency_index(heap, endpoint_adjacency, endpoint_neighbor)?;
                     debug_assert!(edge_index >= 0 && (edge_index as usize) < self.edges.len());
                     // SAFETY: source adjacency entries index edge[max_edges].
                     let centerpoint = i32::from(
@@ -17993,10 +23027,15 @@ impl ReInitBnStructWorkspace {
                     as AT_NUMB;
             }
         }
-        ret
+        Ok(ret)
     }
 
-    fn initialize_alt_bns(&mut self, bns: &BN_STRUCT, num_atoms: i32) -> i32 {
+    fn initialize_alt_bns(
+        &mut self,
+        heap: &SourceHeap,
+        bns: &BN_STRUCT,
+        num_atoms: i32,
+    ) -> Result<i32, SourceHeapError> {
         let mut num_to_test = 0_i32;
         for vertex_index in 0..num_atoms {
             debug_assert!(vertex_index >= 0 && (vertex_index as usize) < self.vertices.len());
@@ -18007,9 +23046,9 @@ impl ReInitBnStructWorkspace {
                 (i32::from(vertex.num_adj_edges), vertex.iedge)
             };
             for neighbor_index in 0..degree {
-                // SAFETY: the C loop bounds the slot by valenceAltBns and the
-                // constructor established this vertex's iedge interior pointer.
-                let edge_index = unsafe { self.adjacency_index(vertex_adjacency, neighbor_index) };
+                // The C degree bounds the slot; the safe helper resolves
+                // this actual vertex pointer and checks its reached extent.
+                let edge_index = self.adjacency_index(heap, vertex_adjacency, neighbor_index)?;
                 debug_assert!(edge_index >= 0 && (edge_index as usize) < self.edges.len());
                 // SAFETY: source adjacency entries index edge[max_edges].
                 let edge_before = unsafe { self.edges.get_unchecked(edge_index as usize) };
@@ -18060,7 +23099,7 @@ impl ReInitBnStructWorkspace {
             vertex.st_edge.flow0 = 0;
             vertex.st_edge.flow = 0;
         }
-        num_to_test
+        Ok(num_to_test)
     }
 }
 
@@ -18248,7 +23287,7 @@ pub(crate) fn ReInitBnStruct(
         ret = if let Some(mut workspace) =
             ReInitBnStructWorkspace::new(heap, pBNS, at, num_at, bRemoveGroupsFromAtoms != 0)?
         {
-            workspace.restore(pBNS, num_at, bRemoveGroupsFromAtoms)
+            workspace.restore(heap, pBNS, num_at, bRemoveGroupsFromAtoms)?
         } else {
             reinit_bn_struct_checked(heap, pBNS, at, num_at, bRemoveGroupsFromAtoms)?
         };
@@ -18309,7 +23348,7 @@ pub(crate) fn CompCGroupNumber(first: &C_GROUP, second: &C_GROUP) -> i32 {
 #[allow(non_snake_case)]
 pub(crate) fn AddTGroups2BnStruct(
     heap: &mut SourceHeap,
-    _pCG: &mut CANON_GLOBALS,
+    _pCG: &mut impl CanonicalTarget,
     pBNS: &mut BN_STRUCT,
     atoms: &[inp_ATOM],
     num_atoms: i32,
@@ -18454,63 +23493,230 @@ pub(crate) fn AddTGroups2BnStruct(
     // INCHI✔️❌: #define RESET_EDGE_FORBIDDEN_MASK 1
     // END INCHI ACTIVE MACRO CONFIGURATION: AddTGroups2BnStruct
 
-    fn endpoint_info(atoms: &[inp_ATOM], endpoint: i32, flags: u64) -> Option<ENDPOINT_INFO> {
+    add_t_groups_with_atoms(heap, pBNS, BnsGroupAtoms::Slice(atoms), num_atoms, tgi)
+}
+
+#[allow(non_snake_case)]
+fn add_t_groups_with_atoms(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    atoms: BnsGroupAtoms<'_>,
+    num_atoms: i32,
+    tgi: Option<&mut T_GROUP_INFO>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9209 AddTGroups2BnStruct
+    // INCHI✔️❌: int AddTGroups2BnStruct( CANON_GLOBALS *pCG,
+    // INCHI✔️❌:                          BN_STRUCT *pBNS,
+    // INCHI✔️❌:                          inp_ATOM *at,
+    // INCHI✔️❌:                          int num_atoms,
+    // INCHI✔️❌:                          T_GROUP_INFO *tgi )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int ret = 0;
+    // INCHI✔️❌:     if (tgi && tgi->num_t_groups && tgi->t_group)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         int         i, k, endpoint, centerpoint, fictpoint;
+    // INCHI✔️❌:         int         num_tg = tgi->num_t_groups;
+    // INCHI✔️❌:         int         num_edges = pBNS->num_edges;
+    // INCHI✔️❌:         int         num_vertices = pBNS->num_vertices;
+    // INCHI✔️❌:         BNS_VERTEX *vert_ficpoint, *ver_ficpont_prev;
+    // INCHI✔️❌:         BNS_VERTEX *vert_endpoint;
+    // INCHI✔️❌:         BNS_EDGE   *edge;
+    // INCHI✔️❌:         int        nMaxTGroupNumber = 0;
+    // INCHI✔️❌:         ENDPOINT_INFO eif;
+    // INCHI✔️❌:         if (num_vertices + num_tg >= pBNS->max_vertices)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             return BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         for (i = 0; i < num_tg; i++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (tgi->t_group[i].nGroupNumber > nMaxTGroupNumber)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 nMaxTGroupNumber = tgi->t_group[i].nGroupNumber;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         memset( pBNS->vert + num_vertices, 0, nMaxTGroupNumber * sizeof( pBNS->vert[0] ) );
+    // INCHI❌❌: #if ( bRELEASE_VERSION != 1 )
+    // INCHI❌❌:         insertions_sort( pCG, tgi->t_group, num_tg, sizeof( tgi->t_group[0] ), CompTGroupNumber );
+    // INCHI❌❌:         for (i = 1; i < num_tg; i++) { if (1 != tgi->t_group[i].nGroupNumber - tgi->t_group[i - 1].nGroupNumber) { return BNS_BOND_ERR; } }
+    // INCHI✔️✔️: #else
+    // INCHI✔️✔️:         if (nMaxTGroupNumber != tgi->t_group[num_tg - 1].nGroupNumber)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             insertions_sort( pCG, tgi->t_group, num_tg, sizeof( tgi->t_group[0] ), CompTGroupNumber );
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️: #endif
+    // INCHI✔️❌:         ver_ficpont_prev = pBNS->vert + num_vertices - 1;
+    // INCHI✔️❌:         for (i = 0; i < num_tg; i++, ver_ficpont_prev = vert_ficpoint)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             vert_ficpoint = pBNS->vert + num_vertices + tgi->t_group[i].nGroupNumber - 1;
+    // INCHI✔️❌:             vert_ficpoint->iedge = ver_ficpont_prev->iedge + ver_ficpont_prev->max_adj_edges;
+    // INCHI✔️❌:             vert_ficpoint->max_adj_edges = tgi->t_group[i].nNumEndpoints + BNS_ADD_EDGES + BNS_ADD_SUPER_TGROUP;
+    // INCHI✔️❌:             vert_ficpoint->num_adj_edges = 0;
+    // INCHI✔️❌:             vert_ficpoint->st_edge.flow = vert_ficpoint->st_edge.flow0 = 0;
+    // INCHI✔️❌:             vert_ficpoint->st_edge.cap = vert_ficpoint->st_edge.cap0 = 0;
+    // INCHI✔️❌:             vert_ficpoint->type = BNS_VERT_TYPE_TGROUP;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         for (endpoint = 0; endpoint < num_atoms; endpoint++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (!at[endpoint].endpoint) { continue; }
+    // INCHI✔️❌:             fictpoint = at[endpoint].endpoint + num_vertices - 1;
+    // INCHI✔️❌:             vert_ficpoint = pBNS->vert + fictpoint;
+    // INCHI✔️❌:             vert_endpoint = pBNS->vert + endpoint;
+    // INCHI✔️❌:             if (fictpoint >= pBNS->max_vertices ||
+    // INCHI✔️❌:                  num_edges >= pBNS->max_edges ||
+    // INCHI✔️❌:                  vert_ficpoint->num_adj_edges >= vert_ficpoint->max_adj_edges ||
+    // INCHI✔️❌:                  vert_endpoint->num_adj_edges >= vert_endpoint->max_adj_edges)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 ret = BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:                 break;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             if (!nGetEndpointInfo(at, endpoint, &eif)
+    // INCHI✔️❌:                 && !((tgi->bTautFlags & TG_FLAG_PT_22_00) && nGetEndpointInfo_PT_22_00(at, endpoint, &eif))
+    // INCHI✔️❌:                 && !((tgi->bTautFlags & TG_FLAG_PT_16_00) && nGetEndpointInfo_PT_16_00(at, endpoint, &eif))
+    // INCHI✔️❌:                 && !((tgi->bTautFlags & TG_FLAG_PT_06_00) && nGetEndpointInfo_PT_06_00(at, endpoint, &eif))
+    // INCHI✔️❌:                 && !((tgi->bTautFlags & TG_FLAG_PT_39_00) && nGetEndpointInfo_PT_39_00(at, endpoint, &eif))
+    // INCHI✔️❌:                 && !((tgi->bTautFlags & TG_FLAG_PT_13_00) && nGetEndpointInfo_PT_13_00(at, endpoint, &eif))
+    // INCHI✔️❌:                 && !((tgi->bTautFlags & TG_FLAG_PT_18_00) && nGetEndpointInfo_PT_18_00(at, endpoint, &eif)) )
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 if (!(( tgi->bTautFlags & TG_FLAG_KETO_ENOL_TAUT ) && nGetEndpointInfo_KET( at, endpoint, &eif ) ))
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     ret = BNS_BOND_ERR;
+    // INCHI✔️❌:                     break;
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             vert_endpoint->type |= BNS_VERT_TYPE_ENDPOINT;
+    // INCHI✔️❌:             for (k = 0; k < vert_endpoint->num_adj_edges; k++)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 int iedge = vert_endpoint->iedge[k];
+    // INCHI✔️❌:                 if (!pBNS->edge[iedge].cap)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     centerpoint = ( pBNS->edge[iedge].neighbor12 ^ endpoint );
+    // INCHI✔️❌:                     if (centerpoint < pBNS->num_atoms && pBNS->vert[centerpoint].st_edge.cap >= 1)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         int bond_type = ( at[endpoint].bond_type[k] & BOND_TYPE_MASK );
+    // INCHI✔️❌:                         if (bond_type == BOND_TAUTOM || bond_type == BOND_ALTERN || bond_type == BOND_ALT12NS || bond_type == BOND_SINGLE)
+    // INCHI✔️❌:                         {
+    // INCHI✔️❌:                             pBNS->edge[iedge].cap = 1;
+    // INCHI✔️❌:                         }
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             edge = pBNS->edge + num_edges;
+    // INCHI✔️❌:             edge->cap = 1;
+    // INCHI✔️❌:             edge->flow = 0;
+    // INCHI✔️❌:             edge->pass = 0;
+    // INCHI✔️❌: #if ( RESET_EDGE_FORBIDDEN_MASK == 1 )
+    // INCHI✔️❌:             edge->forbidden &= pBNS->edge_forbidden_mask;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:             if (eif.cDonor)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 edge->flow++;
+    // INCHI✔️❌:                 vert_ficpoint->st_edge.flow++;
+    // INCHI✔️❌:                 vert_ficpoint->st_edge.cap++;
+    // INCHI✔️❌:                 vert_endpoint->st_edge.flow++;
+    // INCHI✔️❌:                 vert_endpoint->st_edge.cap++;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             edge->neighbor1 = endpoint;
+    // INCHI✔️❌:             edge->neighbor12 = endpoint ^ fictpoint;
+    // INCHI✔️❌:             vert_endpoint->iedge[vert_endpoint->num_adj_edges] = num_edges;
+    // INCHI✔️❌:             vert_ficpoint->iedge[vert_ficpoint->num_adj_edges] = num_edges++;
+    // INCHI✔️❌:             edge->neigh_ord[0] = vert_endpoint->num_adj_edges++;
+    // INCHI✔️❌:             edge->neigh_ord[1] = vert_ficpoint->num_adj_edges++;
+    // INCHI✔️❌:             edge->cap0 = edge->cap;
+    // INCHI✔️❌:             edge->flow0 = edge->flow;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         pBNS->num_edges = num_edges;
+    // INCHI✔️❌:         pBNS->num_vertices += nMaxTGroupNumber;
+    // INCHI✔️❌:         pBNS->num_t_groups = num_tg;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: AddTGroups2BnStruct
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: AddTGroups2BnStruct
+    // INCHI✔️❌: #define bRELEASE_VERSION 1
+    // INCHI✔️❌: #define KETO_ENOL_TAUT 1
+    // INCHI✔️❌: #define TAUT_PT_22_00 1
+    // INCHI✔️❌: #define TAUT_PT_16_00 1
+    // INCHI✔️❌: #define TAUT_PT_06_00 1
+    // INCHI✔️❌: #define TAUT_PT_39_00 1
+    // INCHI✔️❌: #define TAUT_PT_13_00 1
+    // INCHI✔️❌: #define TAUT_PT_18_00 1
+    // INCHI✔️❌: #define RESET_EDGE_FORBIDDEN_MASK 1
+    // END INCHI ACTIVE MACRO CONFIGURATION: AddTGroups2BnStruct
+
+    // INCHI✔️❗: One canonical slice/heap kernel. Atom admission occurs
+    // only at reached source reads, after group/capacity/initialization gates.
+    // No retained unsafe view, extraction, clone or allocation. Same source
+    // loops/O(1) scratch; enum/arena/Result whole-call cost remains OPEN.
+
+    fn endpoint_info(atoms: &[inp_ATOM], endpoint: i32, flags: u64) -> Option<bool> {
+        // INCHI✔️❗: Native ichi_bns.c9298..9330/9371 consumes only
+        // cDonor after the first successful ordered query. All eight
+        // canonical helpers assign it on success; failures never expose it.
+        // Return the predicate, avoiding whole-record Option staging.
+        // Safe six-byte initialization remains O(1), no allocation;
+        // its unresolved hot-path cost is deferred, not equivalence.
         let mut eif = ENDPOINT_INFO::default();
         if nGetEndpointInfo(atoms, endpoint, &mut eif) != 0 {
-            return Some(eif);
+            return Some(eif.cDonor != 0);
         }
         if TAUT_PT_22_00 == 1
             && (flags & TG_FLAG_PT_22_00 as u64) != 0
             && nGetEndpointInfo_PT_22_00(atoms, endpoint, &mut eif) != 0
         {
-            return Some(eif);
+            return Some(eif.cDonor != 0);
         }
         if TAUT_PT_16_00 == 1
             && (flags & TG_FLAG_PT_16_00 as u64) != 0
             && nGetEndpointInfo_PT_16_00(atoms, endpoint, &mut eif) != 0
         {
-            return Some(eif);
+            return Some(eif.cDonor != 0);
         }
         if TAUT_PT_06_00 == 1
             && (flags & TG_FLAG_PT_06_00 as u64) != 0
             && nGetEndpointInfo_PT_06_00(atoms, endpoint, &mut eif) != 0
         {
-            return Some(eif);
+            return Some(eif.cDonor != 0);
         }
         if TAUT_PT_39_00 == 1
             && (flags & TG_FLAG_PT_39_00 as u64) != 0
             && nGetEndpointInfo_PT_39_00(atoms, endpoint, &mut eif) != 0
         {
-            return Some(eif);
+            return Some(eif.cDonor != 0);
         }
         if TAUT_PT_13_00 == 1
             && (flags & TG_FLAG_PT_13_00 as u64) != 0
             && nGetEndpointInfo_PT_13_00(atoms, endpoint, &mut eif) != 0
         {
-            return Some(eif);
+            return Some(eif.cDonor != 0);
         }
         if TAUT_PT_18_00 == 1
             && (flags & TG_FLAG_PT_18_00 as u64) != 0
             && nGetEndpointInfo_PT_18_00(atoms, endpoint, &mut eif) != 0
         {
-            return Some(eif);
+            return Some(eif.cDonor != 0);
         }
         if KETO_ENOL_TAUT == 1
             && (flags & TG_FLAG_KETO_ENOL_TAUT as u64) != 0
             && nGetEndpointInfo_KET(atoms, endpoint, &mut eif) != 0
         {
-            return Some(eif);
+            return Some(eif.cDonor != 0);
         }
         None
     }
 
+    // INCHI✔️❗: Keep native zeroing BEFORE sort and every reached field store in
+    // order. Groups, vertices and edges stay live: equal vertex indices and
+    // incident edges naming the new edge observe preceding stores directly.
+    // Each vertex uses its own incident pointer; pBNS.iedge is never required.
+    // Safe borrows replace four unsafe views; no record staging or atom preflight.
+    // Native insertion sort reused: O(g² + vertices + reached adjacency),
+    // O(1) extra storage. Repeated safe arena/Result whole-call cost OPEN.
     let Some(tgi) = tgi else {
         return Ok(0);
     };
     if tgi.num_t_groups == 0 || tgi.t_group.is_null() {
         return Ok(0);
     }
-
     let num_tg = tgi.num_t_groups;
     let mut num_edges = pBNS.num_edges;
     let num_vertices = pBNS.num_vertices;
@@ -18518,87 +23724,63 @@ pub(crate) fn AddTGroups2BnStruct(
         return Ok(BNS_VERT_EDGE_OVFL);
     }
 
-    let group_count = usize::try_from(num_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let groups = heap
-        .slice_mut(tgi.t_group)?
-        .get_mut(..group_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut max_t_group_number = 0_i32;
-    for group in groups.iter() {
-        if i32::from(group.nGroupNumber) > max_t_group_number {
-            max_t_group_number = i32::from(group.nGroupNumber);
+    for i in 0..num_tg {
+        let number = i32::from(heap.element_signed(tgi.t_group.as_const(), i)?.nGroupNumber);
+        if number > max_t_group_number {
+            max_t_group_number = number;
         }
     }
+    if max_t_group_number > 0 {
+        // Native contiguous memset: one checked arena admission, no per-row lookup.
+        let first = pBNS.vert.offset(i64::from(num_vertices))?;
+        heap.slice_mut(first)?
+            .get_mut(..max_t_group_number as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .fill(BNS_VERTEX::default());
+    }
 
-    if bRELEASE_VERSION != 1 {
+    // The pinned bRELEASE_VERSION is 1, independently of Cargo's profile.
+    // Admit/sort only the actual source branch, after the vertex zeroing.
+    if bRELEASE_VERSION != 1
+        || max_t_group_number
+            != i32::from(
+                heap.element_signed(tgi.t_group.as_const(), num_tg - 1)?
+                    .nGroupNumber,
+            )
+    {
+        let count = usize::try_from(num_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let groups = heap
+            .slice_mut(tgi.t_group)?
+            .get_mut(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         insertions_sort_typed(groups, CompTGroupNumber);
-        for i in 1..groups.len() {
-            if groups[i]
-                .nGroupNumber
-                .wrapping_sub(groups[i - 1].nGroupNumber)
-                != 1
-            {
-                return Ok(BNS_BOND_ERR);
+        if bRELEASE_VERSION != 1 {
+            for i in 1..groups.len() {
+                if i32::from(groups[i].nGroupNumber) - i32::from(groups[i - 1].nGroupNumber) != 1 {
+                    return Ok(BNS_BOND_ERR);
+                }
             }
         }
-    } else if max_t_group_number
-        != i32::from(
-            groups
-                .get(group_count - 1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .nGroupNumber,
-        )
-    {
-        insertions_sort_typed(groups, CompTGroupNumber);
     }
-
-    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if atoms.len() < atom_count {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-
-    let vertex_pointer = pBNS.vert;
-    let edge_pointer = pBNS.edge;
-    let incident_edge_pointer = pBNS.iedge;
-    let group_pointer = tgi.t_group.as_const();
-
-    // The four source arrays have different element types, so SourceHeap cannot
-    // place them in the same allocation. No heap allocation is resized or freed
-    // until all views are dropped. This reproduces the C function's direct array
-    // access after validating each allocation exactly once.
-    let groups = unsafe { heap.stable_slice(group_pointer)? };
-    let mut vertices = unsafe { heap.stable_slice_mut(vertex_pointer)? };
-    let mut edges = unsafe { heap.stable_slice_mut(edge_pointer)? };
-    let mut incident_edges = unsafe { heap.stable_slice_mut(incident_edge_pointer)? };
-
-    let first_new_vertex =
-        usize::try_from(num_vertices).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let added_vertex_count =
-        usize::try_from(max_t_group_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let end_new_vertex = first_new_vertex
-        .checked_add(added_vertex_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    vertices
-        .prefix_mut(end_new_vertex)?
-        .get_mut(first_new_vertex..)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .fill(BNS_VERTEX::default());
 
     let mut previous_index = num_vertices - 1;
-    for group_index in 0..group_count {
-        let group = groups.get(group_index)?;
-        let fictpoint = num_vertices + i32::from(group.nGroupNumber) - 1;
-        let previous = vertices.get(
-            usize::try_from(previous_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-        )?;
-        let next_incident_edge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
-        let vertex = vertices.get_mut(
-            usize::try_from(fictpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-        )?;
-        vertex.iedge = next_incident_edge;
-        vertex.max_adj_edges = (i32::from(group.nNumEndpoints)
-            + BNS_ADD_EDGES as i32
-            + BNS_ADD_SUPER_TGROUP as i32) as AT_NUMB;
+    for i in 0..num_tg {
+        let fictpoint = num_vertices
+            + i32::from(heap.element_signed(tgi.t_group.as_const(), i)?.nGroupNumber)
+            - 1;
+        let next_incident_edge = {
+            let previous = heap.element_signed(pBNS.vert.as_const(), previous_index)?;
+            previous.iedge.offset(i64::from(previous.max_adj_edges))?
+        };
+        heap.element_signed_mut(pBNS.vert, fictpoint)?.iedge = next_incident_edge;
+        let capacity = i32::from(
+            heap.element_signed(tgi.t_group.as_const(), i)?
+                .nNumEndpoints,
+        ) + BNS_ADD_EDGES as i32
+            + BNS_ADD_SUPER_TGROUP as i32;
+        let vertex = heap.element_signed_mut(pBNS.vert, fictpoint)?;
+        vertex.max_adj_edges = capacity as AT_NUMB;
         vertex.num_adj_edges = 0;
         vertex.st_edge.flow = 0;
         vertex.st_edge.flow0 = 0;
@@ -18610,110 +23792,118 @@ pub(crate) fn AddTGroups2BnStruct(
 
     let mut ret = 0_i32;
     for endpoint in 0..num_atoms {
-        let endpoint_atom = input_atom_ref(atoms, endpoint)?;
-        if endpoint_atom.endpoint == 0 {
+        let endpoint_group = input_atom_ref(atoms.slice(heap)?, endpoint)?.endpoint;
+        if endpoint_group == 0 {
             continue;
         }
-        let fictpoint = i32::from(endpoint_atom.endpoint) + num_vertices - 1;
-        let endpoint_index =
-            usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let fictpoint_index =
-            usize::try_from(fictpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let mut vert_ficpoint = vertices.get(fictpoint_index)?.clone();
-        let mut vert_endpoint = vertices.get(endpoint_index)?.clone();
+        let fictpoint = i32::from(endpoint_group) + num_vertices - 1;
         if fictpoint >= pBNS.max_vertices
             || num_edges >= pBNS.max_edges
-            || vert_ficpoint.num_adj_edges >= vert_ficpoint.max_adj_edges
-            || vert_endpoint.num_adj_edges >= vert_endpoint.max_adj_edges
+            || {
+                let vertex = heap.element_signed(pBNS.vert.as_const(), fictpoint)?;
+                vertex.num_adj_edges >= vertex.max_adj_edges
+            }
+            || {
+                let vertex = heap.element_signed(pBNS.vert.as_const(), endpoint)?;
+                vertex.num_adj_edges >= vertex.max_adj_edges
+            }
         {
             ret = BNS_VERT_EDGE_OVFL;
             break;
         }
-
-        let Some(eif) = endpoint_info(atoms, endpoint, tgi.bTautFlags) else {
+        let Some(is_donor) = endpoint_info(atoms.slice(heap)?, endpoint, tgi.bTautFlags) else {
             ret = BNS_BOND_ERR;
             break;
         };
-
-        vert_endpoint.type_ |= BNS_VERT_TYPE_ENDPOINT as AT_NUMB;
-        let endpoint_incident_start =
-            usize::try_from(vert_endpoint.iedge.difference(incident_edge_pointer)?)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        for k in 0..i32::from(vert_endpoint.num_adj_edges) {
-            let incident_index = endpoint_incident_start
-                .checked_add(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let iedge = *incident_edges.get(incident_index)?;
-            let edge_index =
-                usize::try_from(iedge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let edge = edges.get(edge_index)?;
-            if edge.cap == 0 {
-                let centerpoint = i32::from(edge.neighbor12 ^ (endpoint as AT_NUMB));
+        heap.element_signed_mut(pBNS.vert, endpoint)?.type_ |= BNS_VERT_TYPE_ENDPOINT as AT_NUMB;
+        let mut k = 0_i32;
+        while k < i32::from(
+            heap.element_signed(pBNS.vert.as_const(), endpoint)?
+                .num_adj_edges,
+        ) {
+            let incident = heap.element_signed(pBNS.vert.as_const(), endpoint)?.iedge;
+            let iedge = *heap.element_signed(incident.as_const(), k)?;
+            if heap.element_signed(pBNS.edge.as_const(), iedge)?.cap == 0 {
+                let centerpoint = i32::from(
+                    heap.element_signed(pBNS.edge.as_const(), iedge)?.neighbor12
+                        ^ endpoint as AT_NUMB,
+                );
                 if centerpoint < pBNS.num_atoms
-                    && vertices
-                        .get(
-                            usize::try_from(centerpoint)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )?
+                    && heap
+                        .element_signed(pBNS.vert.as_const(), centerpoint)?
                         .st_edge
                         .cap
                         >= 1
                 {
-                    let bond_type = input_atom_bond_type(endpoint_atom, k)? & BOND_TYPE_MASK as i32;
+                    let bond_type =
+                        input_atom_bond_type(input_atom_ref(atoms.slice(heap)?, endpoint)?, k)?
+                            & BOND_TYPE_MASK as i32;
                     if bond_type == BOND_TAUTOM as i32
                         || bond_type == BOND_ALTERN as i32
                         || bond_type == BOND_ALT12NS as i32
                         || bond_type == BOND_SINGLE as i32
                     {
-                        edges.get_mut(edge_index)?.cap = 1;
+                        heap.element_signed_mut(pBNS.edge, iedge)?.cap = 1;
                     }
                 }
             }
+            k += 1;
         }
-
-        let new_edge_index =
-            usize::try_from(num_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let mut edge = edges.get(new_edge_index)?.clone();
-        edge.cap = 1;
-        edge.flow = 0;
-        edge.pass = 0;
-        if RESET_EDGE_FORBIDDEN_MASK == 1 {
-            edge.forbidden &= pBNS.edge_forbidden_mask;
+        {
+            let edge = heap.element_signed_mut(pBNS.edge, num_edges)?;
+            edge.cap = 1;
+            edge.flow = 0;
+            edge.pass = 0;
+            if RESET_EDGE_FORBIDDEN_MASK == 1 {
+                edge.forbidden &= pBNS.edge_forbidden_mask;
+            }
         }
-        if eif.cDonor != 0 {
+        if is_donor {
+            let edge = heap.element_signed_mut(pBNS.edge, num_edges)?;
             edge.flow = edge.flow.wrapping_add(1);
-            vert_ficpoint.st_edge.flow = vert_ficpoint.st_edge.flow.wrapping_add(1);
-            vert_ficpoint.st_edge.cap = vert_ficpoint.st_edge.cap.wrapping_add(1);
-            vert_endpoint.st_edge.flow = vert_endpoint.st_edge.flow.wrapping_add(1);
-            vert_endpoint.st_edge.cap = vert_endpoint.st_edge.cap.wrapping_add(1);
+            {
+                let vertex = heap.element_signed_mut(pBNS.vert, fictpoint)?;
+                vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
+                vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(1);
+            }
+            {
+                let vertex = heap.element_signed_mut(pBNS.vert, endpoint)?;
+                vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
+                vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(1);
+            }
         }
 
-        edge.neighbor1 = endpoint as AT_NUMB;
-        edge.neighbor12 = (endpoint as AT_NUMB) ^ (fictpoint as AT_NUMB);
-        let endpoint_slot = endpoint_incident_start
-            .checked_add(usize::from(vert_endpoint.num_adj_edges))
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let fictpoint_incident_start =
-            usize::try_from(vert_ficpoint.iedge.difference(incident_edge_pointer)?)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let fictpoint_slot = fictpoint_incident_start
-            .checked_add(usize::from(vert_ficpoint.num_adj_edges))
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        *incident_edges.get_mut(endpoint_slot)? = num_edges;
-        *incident_edges.get_mut(fictpoint_slot)? = num_edges;
-        edge.neigh_ord[0] = vert_endpoint.num_adj_edges;
-        vert_endpoint.num_adj_edges = vert_endpoint.num_adj_edges.wrapping_add(1);
-        edge.neigh_ord[1] = vert_ficpoint.num_adj_edges;
-        vert_ficpoint.num_adj_edges = vert_ficpoint.num_adj_edges.wrapping_add(1);
+        {
+            let edge = heap.element_signed_mut(pBNS.edge, num_edges)?;
+            edge.neighbor1 = endpoint as AT_NUMB;
+            edge.neighbor12 = endpoint as AT_NUMB ^ fictpoint as AT_NUMB;
+        }
+        let (incident, ordinal) = {
+            let vertex = heap.element_signed(pBNS.vert.as_const(), endpoint)?;
+            (vertex.iedge, vertex.num_adj_edges)
+        };
+        *heap.element_signed_mut(incident, i32::from(ordinal))? = num_edges;
+        let (incident, ordinal) = {
+            let vertex = heap.element_signed(pBNS.vert.as_const(), fictpoint)?;
+            (vertex.iedge, vertex.num_adj_edges)
+        };
+        *heap.element_signed_mut(incident, i32::from(ordinal))? = num_edges;
+        let new_edge = num_edges;
+        num_edges = num_edges.wrapping_add(1);
+        let ordinal = heap
+            .element_signed(pBNS.vert.as_const(), endpoint)?
+            .num_adj_edges;
+        heap.element_signed_mut(pBNS.edge, new_edge)?.neigh_ord[0] = ordinal;
+        heap.element_signed_mut(pBNS.vert, endpoint)?.num_adj_edges = ordinal.wrapping_add(1);
+        let ordinal = heap
+            .element_signed(pBNS.vert.as_const(), fictpoint)?
+            .num_adj_edges;
+        heap.element_signed_mut(pBNS.edge, new_edge)?.neigh_ord[1] = ordinal;
+        heap.element_signed_mut(pBNS.vert, fictpoint)?.num_adj_edges = ordinal.wrapping_add(1);
+        let edge = heap.element_signed_mut(pBNS.edge, new_edge)?;
         edge.cap0 = edge.cap;
         edge.flow0 = edge.flow;
-
-        *edges.get_mut(new_edge_index)? = edge;
-        *vertices.get_mut(endpoint_index)? = vert_endpoint;
-        *vertices.get_mut(fictpoint_index)? = vert_ficpoint;
-        num_edges = num_edges.wrapping_add(1);
     }
-
     pBNS.num_edges = num_edges;
     pBNS.num_vertices = pBNS.num_vertices.wrapping_add(max_t_group_number);
     pBNS.num_t_groups = num_tg;
@@ -18723,7 +23913,7 @@ pub(crate) fn AddTGroups2BnStruct(
 #[allow(non_snake_case)]
 pub(crate) fn AddCGroups2BnStruct(
     heap: &mut SourceHeap,
-    _pCG: &mut CANON_GLOBALS,
+    _pCG: &mut impl CanonicalTarget,
     pBNS: &mut BN_STRUCT,
     atoms: &[inp_ATOM],
     num_atoms: i32,
@@ -18935,13 +24125,240 @@ pub(crate) fn AddCGroups2BnStruct(
     // INCHI✔️❌: #define RESET_EDGE_FORBIDDEN_MASK 1
     // END INCHI ACTIVE MACRO CONFIGURATION: AddCGroups2BnStruct
 
+    add_c_groups_with_atoms(heap, pBNS, BnsGroupAtoms::Slice(atoms), num_atoms, cgi)
+}
+
+#[allow(non_snake_case)]
+fn add_c_groups_with_atoms(
+    heap: &mut SourceHeap,
+    pBNS: &mut BN_STRUCT,
+    atoms: BnsGroupAtoms<'_>,
+    num_atoms: i32,
+    cgi: Option<&mut C_GROUP_INFO>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9406 AddCGroups2BnStruct
+    // INCHI✔️❌: int AddCGroups2BnStruct( CANON_GLOBALS *pCG,
+    // INCHI✔️❌:                          BN_STRUCT *pBNS,
+    // INCHI✔️❌:                          inp_ATOM *at,
+    // INCHI✔️❌:                          int num_atoms,
+    // INCHI✔️❌:                          C_GROUP_INFO *cgi )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int ret = 0;
+    // INCHI✔️❌:     /* ret = ReInitBnStruct( pBNS ); */
+    // INCHI✔️❌:     if (cgi && cgi->num_c_groups && cgi->c_group)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         int         i, k, c_point, centerpoint, fictpoint;
+    // INCHI✔️❌:         int         num_cg = cgi->num_c_groups;
+    // INCHI✔️❌:         int         num_edges = pBNS->num_edges;
+    // INCHI✔️❌:         int         num_vertices = pBNS->num_vertices;
+    // INCHI✔️❌:         BNS_VERTEX *vert_ficpoint, *ver_ficpont_prev;  /* fictitious vertex describing charge c-group */
+    // INCHI✔️❌:         BNS_VERTEX *vertex_cpoint;
+    // INCHI✔️❌:         BNS_EDGE   *edge;      /* edge between that vertex and the tautomeric c_point */
+    // INCHI✔️❌:         int        nMaxCGroupNumber = 0;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Debug: check overflow */
+    // INCHI✔️❌:         if (num_vertices + num_cg >= pBNS->max_vertices)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             return BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         /* Find the largest t-group ID */
+    // INCHI✔️❌:         for (i = 0; i < num_cg; i++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (cgi->c_group[i].nGroupNumber > nMaxCGroupNumber)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 nMaxCGroupNumber = cgi->c_group[i].nGroupNumber;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         /* Since t-group IDs may be not contiguous, clear all vertices that will be added.
+    // INCHI✔️❌:         all-zeroes-vertex will be ignored by the BNS
+    // INCHI✔️❌:         */
+    // INCHI✔️❌:         memset( pBNS->vert + num_vertices, 0, nMaxCGroupNumber * sizeof( pBNS->vert[0] ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️❌:         /* Make sure the last t-group has the largest t-group ID:
+    // INCHI✔️❌:         this is necessary to correctly add new edges and vertices for testing augmenting paths
+    // INCHI✔️❌:         */
+    // INCHI❌❌: #if ( bRELEASE_VERSION != 1 )
+    // INCHI❌❌:         insertions_sort( cgi->c_group, num_cg, sizeof( cgi->c_group[0] ), CompCGroupNumber );
+    // INCHI❌❌:         for (i = 1; i < num_cg; i++)
+    // INCHI❌❌:         {
+    // INCHI❌❌:             if (1 != cgi->c_group[i].nGroupNumber - cgi->c_group[i - 1].nGroupNumber)
+    // INCHI❌❌:             {
+    // INCHI❌❌:                 return BNS_BOND_ERR;
+    // INCHI❌❌:             }
+    // INCHI❌❌:         }
+    // INCHI✔️❌: #else
+    // INCHI✔️❌:         if (nMaxCGroupNumber != cgi->c_group[num_cg - 1].nGroupNumber)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             insertions_sort( pCG, cgi->c_group, num_cg,
+    // INCHI✔️❌:                              sizeof( cgi->c_group[0] ),
+    // INCHI✔️❌:                              CompCGroupNumber );
+    // INCHI✔️❌:         }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:         /**************************************/
+    // INCHI✔️❌:         /* initialize new fictitious vertices */
+    // INCHI✔️❌:         /* representing c-point groups        */
+    // INCHI✔️❌:         /**************************************/
+    // INCHI✔️❌:         ver_ficpont_prev = pBNS->vert + num_vertices - 1;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         for (i = 0; i < num_cg; i++, ver_ficpont_prev = vert_ficpoint)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /*
+    // INCHI✔️❌:             vert_ficpoint-1 is the last vertex;
+    // INCHI✔️❌:             vert_ficpoint   is the being added vertex
+    // INCHI✔️❌:             Note: nGroupNumber are not contiguous
+    // INCHI✔️❌:             */
+    // INCHI✔️❌:             vert_ficpoint = pBNS->vert + num_vertices + cgi->c_group[i].nGroupNumber - 1;
+    // INCHI✔️❌:             vert_ficpoint->iedge = ver_ficpont_prev->iedge + ver_ficpont_prev->max_adj_edges;
+    // INCHI✔️❌:             vert_ficpoint->max_adj_edges = cgi->c_group[i].num_CPoints + BNS_ADD_EDGES;
+    // INCHI✔️❌:             vert_ficpoint->num_adj_edges = 0;
+    // INCHI✔️❌:             vert_ficpoint->st_edge.flow = vert_ficpoint->st_edge.flow0 = 0;
+    // INCHI✔️❌:             vert_ficpoint->st_edge.cap = vert_ficpoint->st_edge.cap0 = 0;
+    // INCHI✔️❌:             vert_ficpoint->type = BNS_VERT_TYPE_C_GROUP;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /************************************************/
+    // INCHI✔️❌:         /* Connect c-points to the fictitious vertices  */
+    // INCHI✔️❌:         /* representing c-point groups; set caps, flows */
+    // INCHI✔️❌:         /************************************************/
+    // INCHI✔️❌:         for (c_point = 0; c_point < num_atoms; c_point++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (!at[c_point].c_point)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 continue;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             fictpoint = at[c_point].c_point + num_vertices - 1; /* c-group vertex index */
+    // INCHI✔️❌:             vert_ficpoint = pBNS->vert + fictpoint; /* c-group vertex */
+    // INCHI✔️❌:             vertex_cpoint = pBNS->vert + c_point;   /* c_point vertex */
+    // INCHI✔️❌:                                                     /* Debug: check overflow */
+    // INCHI✔️❌:             if (fictpoint >= pBNS->max_vertices ||
+    // INCHI✔️❌:                  num_edges >= pBNS->max_edges ||
+    // INCHI✔️❌:                  vert_ficpoint->num_adj_edges >= vert_ficpoint->max_adj_edges ||
+    // INCHI✔️❌:                  vertex_cpoint->num_adj_edges >= vertex_cpoint->max_adj_edges)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 ret = BNS_VERT_EDGE_OVFL;
+    // INCHI✔️❌:                 break;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             vertex_cpoint->type |= BNS_VERT_TYPE_C_POINT;
+    // INCHI❌❌: #if ( FIX_CPOINT_BOND_CAP != 1 )  /* { */
+    // INCHI❌❌:             /* set capacity = 1 to the edges from the c_point to the centerpoint(s)     */
+    // INCHI❌❌:             /* if their current capacity is zero                                        */
+    // INCHI❌❌:             /* the centerpoint is any adjacent atom that is adjacent to a multiple bond */
+    // INCHI❌❌:             for (k = 0; k < vertex_cpoint->num_adj_edges; k++)
+    // INCHI❌❌:             {
+    // INCHI❌❌:                 int iedge = vertex_cpoint->iedge[k];
+    // INCHI❌❌:                 if (!pBNS->edge[iedge].cap)
+    // INCHI❌❌:                 {
+    // INCHI❌❌:                     /* single bond, possibly between c_point and centerpoint */
+    // INCHI❌❌:                     centerpoint = ( pBNS->edge[iedge].neighbor12 ^ c_point );
+    // INCHI❌❌:                     if (centerpoint < pBNS->num_atoms &&
+    // INCHI❌❌:                          pBNS->vert[centerpoint].st_edge.cap >= 1)
+    // INCHI❌❌:                     {
+    // INCHI❌❌:                         int bond_type = ( at[c_point].bond_type[k] & BOND_TYPE_MASK );
+    // INCHI❌❌:                         if (bond_type == BOND_TAUTOM ||
+    // INCHI❌❌:                              bond_type == BOND_ALTERN ||
+    // INCHI❌❌:                              bond_type == BOND_SINGLE)
+    // INCHI❌❌:                         {
+    // INCHI❌❌:                             pBNS->edge[iedge].cap = 1;
+    // INCHI❌❌:                         }
+    // INCHI❌❌:                     }
+    // INCHI❌❌:                 }
+    // INCHI❌❌:             }
+    // INCHI❌❌: #endif /* } FIX_CPOINT_BOND_CAP */
+    // INCHI✔️❌:
+    // INCHI✔️❌:             /* Create a new edge connecting c_point to the new fictitious c-group vertex vert_ficpoint */
+    // INCHI✔️❌:             edge = pBNS->edge + num_edges;
+    // INCHI✔️❌:             edge->cap = 1;
+    // INCHI✔️❌:             edge->flow = 0;
+    // INCHI✔️❌:             edge->pass = 0;
+    // INCHI✔️❌: #if ( RESET_EDGE_FORBIDDEN_MASK == 1 )
+    // INCHI✔️❌:             edge->forbidden &= pBNS->edge_forbidden_mask;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:             /* Mark edge to c-point having NO moveable charge with flow=1 */
+    // INCHI✔️❌:             if (!CHARGED_CPOINT( at, c_point ))
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /* Increment edge flow */
+    // INCHI✔️❌:                 edge->flow++;
+    // INCHI✔️❌:                 /* Increment c-group vertex st-flow & cap */
+    // INCHI✔️❌:                 vert_ficpoint->st_edge.flow++;
+    // INCHI✔️❌:                 vert_ficpoint->st_edge.cap++;
+    // INCHI✔️❌:                 /* Increment c-point vertex st-flow & cap */
+    // INCHI✔️❌:                 vertex_cpoint->st_edge.flow++;
+    // INCHI✔️❌:                 vertex_cpoint->st_edge.cap++;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:
+    // INCHI✔️❌: #if ( FIX_CPOINT_BOND_CAP == 1 ) /* { */
+    // INCHI✔️❌:             /* Set capacity = 1 to the edges from the c_point to the centerpoint(s)     */
+    // INCHI✔️❌:             /* if their current capacity is zero                                        */
+    // INCHI✔️❌:             /* the centerpoint is any adjacent atom that is adjacent to a multiple bond */
+    // INCHI✔️❌:             for (k = 0; k < vertex_cpoint->num_adj_edges; k++)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 int iedge = vertex_cpoint->iedge[k];
+    // INCHI✔️❌:                 VertexFlow  nNewCap = vertex_cpoint->st_edge.cap;
+    // INCHI✔️❌:                 centerpoint = ( pBNS->edge[iedge].neighbor12 ^ c_point );
+    // INCHI✔️❌:                 if (!pBNS->edge[iedge].cap)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     /* Single bond, possibly between c_point and centerpoint */
+    // INCHI✔️❌:                     if (centerpoint < pBNS->num_atoms &&
+    // INCHI✔️❌:                          pBNS->vert[centerpoint].st_edge.cap >= 1)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         nNewCap = inchi_min( pBNS->vert[centerpoint].st_edge.cap, nNewCap );
+    // INCHI✔️❌:                         nNewCap = inchi_min( nNewCap, MAX_BOND_EDGE_CAP );
+    // INCHI✔️❌:                         pBNS->edge[iedge].cap = nNewCap;
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                 }
+    // INCHI❌❌: #if ( FIX_CPOINT_BOND_CAP2 == 1 ) /* multiple bond */
+    // INCHI❌❌:                 else
+    // INCHI❌❌:                     if (centerpoint < pBNS->num_atoms &&
+    // INCHI❌❌:                          edge->flow && pBNS->edge[iedge].cap < MAX_BOND_EDGE_CAP)
+    // INCHI❌❌:                     {
+    // INCHI❌❌:                         pBNS->edge[iedge].cap++;
+    // INCHI❌❌:                     }
+    // INCHI❌❌: #endif
+    // INCHI✔️❌:             }
+    // INCHI✔️❌: #endif  /* } FIX_CPOINT_BOND_CAP */
+    // INCHI✔️❌:
+    // INCHI✔️❌:             /* Connect edge to c_point and fictpoint and increment the counters of neighbors and edges */
+    // INCHI✔️❌:             edge->neighbor1 = c_point; /* the smallest out of v1=endopoint and v2=num_vertices */
+    // INCHI✔️❌:             edge->neighbor12 = c_point ^ fictpoint; /* v1 ^ v2 */
+    // INCHI✔️❌:             vertex_cpoint->iedge[vertex_cpoint->num_adj_edges] = num_edges;
+    // INCHI✔️❌:             vert_ficpoint->iedge[vert_ficpoint->num_adj_edges] = num_edges++;
+    // INCHI✔️❌:             edge->neigh_ord[0] = vertex_cpoint->num_adj_edges++;
+    // INCHI✔️❌:             edge->neigh_ord[1] = vert_ficpoint->num_adj_edges++;
+    // INCHI✔️❌:             edge->cap0 = edge->cap;
+    // INCHI✔️❌:             edge->flow0 = edge->flow;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         pBNS->num_edges = num_edges;
+    // INCHI✔️❌:         pBNS->num_vertices += nMaxCGroupNumber;
+    // INCHI✔️❌:         pBNS->num_c_groups = num_cg;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: AddCGroups2BnStruct
+    // BEGIN INCHI ACTIVE MACRO CONFIGURATION: AddCGroups2BnStruct
+    // INCHI✔️❌: #define bRELEASE_VERSION 1
+    // INCHI✔️❌: #define FIX_CPOINT_BOND_CAP 1
+    // INCHI✔️❌: #define FIX_CPOINT_BOND_CAP2 0
+    // INCHI✔️❌: #define RESET_EDGE_FORBIDDEN_MASK 1
+    // END INCHI ACTIVE MACRO CONFIGURATION: AddCGroups2BnStruct
+
+    // INCHI✔️❗: One canonical slice/heap kernel. Atom admission occurs
+    // only at reached source reads, after group/capacity/initialization gates.
+    // No retained unsafe view, extraction, clone or allocation. Same source
+    // loops/O(1) scratch; enum/arena/Result whole-call cost remains OPEN.
+
+    // INCHI✔️❗: Keep source zeroing/sorting and every reached field store in
+    // order. Groups, vertices and edges stay live: equal vertex indices and
+    // incident edges naming the new edge observe preceding stores directly.
+    // No group snapshot, record staging, full writeback or eager atom scan.
+    // Native insertion sort reused: O(g² + vertices + reached adjacency),
+    // O(1) extra storage. Repeated safe arena/Result whole-call cost OPEN.
     let Some(cgi) = cgi else {
         return Ok(0);
     };
     if cgi.num_c_groups == 0 || cgi.c_group.is_null() {
         return Ok(0);
     }
-
     let num_cg = cgi.num_c_groups;
     let mut num_edges = pBNS.num_edges;
     let num_vertices = pBNS.num_vertices;
@@ -18949,157 +24366,175 @@ pub(crate) fn AddCGroups2BnStruct(
         return Ok(BNS_VERT_EDGE_OVFL);
     }
 
-    let group_count = usize::try_from(num_cg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let mut groups = {
-        let source_groups = heap.slice(cgi.c_group.as_const())?;
-        if source_groups.len() < group_count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        source_groups[..group_count].to_vec()
-    };
     let mut max_c_group_number = 0_i32;
-    for group in &groups {
-        if i32::from(group.nGroupNumber) > max_c_group_number {
-            max_c_group_number = i32::from(group.nGroupNumber);
+    for i in 0..num_cg {
+        let number = i32::from(heap.element_signed(cgi.c_group.as_const(), i)?.nGroupNumber);
+        if number > max_c_group_number {
+            max_c_group_number = number;
         }
     }
-
-    for offset in 0..max_c_group_number {
-        *bns_vertex_mut(heap, pBNS, num_vertices + offset)? = BNS_VERTEX::default();
+    if max_c_group_number > 0 {
+        // Native contiguous memset: one checked arena admission, no per-row lookup.
+        let first = pBNS.vert.offset(i64::from(num_vertices))?;
+        heap.slice_mut(first)?
+            .get_mut(..max_c_group_number as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .fill(BNS_VERTEX::default());
     }
 
-    if bRELEASE_VERSION != 1 {
-        groups.sort_by(|first, second| CompCGroupNumber(first, second).cmp(&0));
-        for i in 1..groups.len() {
-            if groups[i]
-                .nGroupNumber
-                .wrapping_sub(groups[i - 1].nGroupNumber)
-                != 1
-            {
-                return Ok(BNS_BOND_ERR);
+    // The pinned bRELEASE_VERSION is 1, independently of Cargo's profile.
+    // Admit/sort only the actual source branch, after the vertex zeroing.
+    if bRELEASE_VERSION != 1
+        || max_c_group_number
+            != i32::from(
+                heap.element_signed(cgi.c_group.as_const(), num_cg - 1)?
+                    .nGroupNumber,
+            )
+    {
+        let count = usize::try_from(num_cg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let groups = heap
+            .slice_mut(cgi.c_group)?
+            .get_mut(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        insertions_sort_typed(groups, CompCGroupNumber);
+        if bRELEASE_VERSION != 1 {
+            for i in 1..groups.len() {
+                if i32::from(groups[i].nGroupNumber) - i32::from(groups[i - 1].nGroupNumber) != 1 {
+                    return Ok(BNS_BOND_ERR);
+                }
             }
         }
-    } else if max_c_group_number
-        != i32::from(
-            groups
-                .get(group_count - 1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .nGroupNumber,
-        )
-    {
-        groups.sort_by(|first, second| CompCGroupNumber(first, second).cmp(&0));
     }
-    heap.slice_mut(cgi.c_group)?[..group_count].clone_from_slice(&groups);
 
     let mut previous_index = num_vertices - 1;
-    for group in &groups {
-        let fictpoint = num_vertices + i32::from(group.nGroupNumber) - 1;
-        let previous = bns_vertex(heap, pBNS, previous_index)?;
-        let mut vertex = bns_vertex(heap, pBNS, fictpoint)?;
-        vertex.iedge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
-        vertex.max_adj_edges = (i32::from(group.num_CPoints) + BNS_ADD_EDGES as i32) as AT_NUMB;
+    for i in 0..num_cg {
+        let fictpoint = num_vertices
+            + i32::from(heap.element_signed(cgi.c_group.as_const(), i)?.nGroupNumber)
+            - 1;
+        let next_incident_edge = {
+            let previous = heap.element_signed(pBNS.vert.as_const(), previous_index)?;
+            previous.iedge.offset(i64::from(previous.max_adj_edges))?
+        };
+        heap.element_signed_mut(pBNS.vert, fictpoint)?.iedge = next_incident_edge;
+        let capacity = i32::from(heap.element_signed(cgi.c_group.as_const(), i)?.num_CPoints)
+            + BNS_ADD_EDGES as i32;
+        let vertex = heap.element_signed_mut(pBNS.vert, fictpoint)?;
+        vertex.max_adj_edges = capacity as AT_NUMB;
         vertex.num_adj_edges = 0;
         vertex.st_edge.flow = 0;
         vertex.st_edge.flow0 = 0;
         vertex.st_edge.cap = 0;
         vertex.st_edge.cap0 = 0;
         vertex.type_ = BNS_VERT_TYPE_C_GROUP as AT_NUMB;
-        *bns_vertex_mut(heap, pBNS, fictpoint)? = vertex;
         previous_index = fictpoint;
-    }
-
-    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if atoms.len() < atom_count {
-        return Err(SourceHeapError::PointerOutOfBounds);
     }
 
     let mut ret = 0_i32;
     for c_point in 0..num_atoms {
-        let c_atom = input_atom_ref(atoms, c_point)?;
-        if c_atom.c_point == 0 {
+        let charge_group = input_atom_ref(atoms.slice(heap)?, c_point)?.c_point;
+        if charge_group == 0 {
             continue;
         }
-        let fictpoint = i32::from(c_atom.c_point) + num_vertices - 1;
-        let mut vert_ficpoint = bns_vertex(heap, pBNS, fictpoint)?;
-        let mut vertex_cpoint = bns_vertex(heap, pBNS, c_point)?;
+        let fictpoint = i32::from(charge_group) + num_vertices - 1;
         if fictpoint >= pBNS.max_vertices
             || num_edges >= pBNS.max_edges
-            || vert_ficpoint.num_adj_edges >= vert_ficpoint.max_adj_edges
-            || vertex_cpoint.num_adj_edges >= vertex_cpoint.max_adj_edges
+            || {
+                let vertex = heap.element_signed(pBNS.vert.as_const(), fictpoint)?;
+                vertex.num_adj_edges >= vertex.max_adj_edges
+            }
+            || {
+                let vertex = heap.element_signed(pBNS.vert.as_const(), c_point)?;
+                vertex.num_adj_edges >= vertex.max_adj_edges
+            }
         {
             ret = BNS_VERT_EDGE_OVFL;
             break;
         }
-
-        vertex_cpoint.type_ |= BNS_VERT_TYPE_C_POINT as AT_NUMB;
-
-        let mut edge = bns_edge(heap, pBNS, num_edges)?;
-        edge.cap = 1;
-        edge.flow = 0;
-        edge.pass = 0;
-        if RESET_EDGE_FORBIDDEN_MASK == 1 {
-            edge.forbidden &= pBNS.edge_forbidden_mask;
+        heap.element_signed_mut(pBNS.vert, c_point)?.type_ |= BNS_VERT_TYPE_C_POINT as AT_NUMB;
+        {
+            let edge = heap.element_signed_mut(pBNS.edge, num_edges)?;
+            edge.cap = 1;
+            edge.flow = 0;
+            edge.pass = 0;
+            if RESET_EDGE_FORBIDDEN_MASK == 1 {
+                edge.forbidden &= pBNS.edge_forbidden_mask;
+            }
         }
-        if c_atom.charge != 1 {
+        if input_atom_ref(atoms.slice(heap)?, c_point)?.charge != 1 {
+            let edge = heap.element_signed_mut(pBNS.edge, num_edges)?;
             edge.flow = edge.flow.wrapping_add(1);
-            vert_ficpoint.st_edge.flow = vert_ficpoint.st_edge.flow.wrapping_add(1);
-            vert_ficpoint.st_edge.cap = vert_ficpoint.st_edge.cap.wrapping_add(1);
-            vertex_cpoint.st_edge.flow = vertex_cpoint.st_edge.flow.wrapping_add(1);
-            vertex_cpoint.st_edge.cap = vertex_cpoint.st_edge.cap.wrapping_add(1);
-        }
-
-        for k in 0..i32::from(vertex_cpoint.num_adj_edges) {
-            let iedge = bns_edge_index(heap, &vertex_cpoint, k)?;
-            let current_edge = bns_edge(heap, pBNS, iedge)?;
-            if current_edge.cap == 0 {
-                let centerpoint = i32::from(current_edge.neighbor12 ^ c_point as AT_NUMB);
-                if centerpoint < pBNS.num_atoms {
-                    let center_cap = if centerpoint == c_point {
-                        vertex_cpoint.st_edge.cap
-                    } else {
-                        bns_vertex(heap, pBNS, centerpoint)?.st_edge.cap
-                    };
-                    if center_cap >= 1 {
-                        let mut new_cap = vertex_cpoint.st_edge.cap;
-                        if center_cap < new_cap {
-                            new_cap = center_cap;
-                        }
-                        if new_cap > MAX_BOND_EDGE_CAP as i32 {
-                            new_cap = MAX_BOND_EDGE_CAP as i32;
-                        }
-                        bns_edge_mut(heap, pBNS, iedge)?.cap = new_cap;
-                    }
-                }
+            {
+                let vertex = heap.element_signed_mut(pBNS.vert, fictpoint)?;
+                vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
+                vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(1);
+            }
+            {
+                let vertex = heap.element_signed_mut(pBNS.vert, c_point)?;
+                vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(1);
+                vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(1);
             }
         }
 
-        edge.neighbor1 = c_point as AT_NUMB;
-        edge.neighbor12 = (c_point as AT_NUMB) ^ (fictpoint as AT_NUMB);
-        work_set(
-            heap,
-            vertex_cpoint.iedge,
-            i32::from(vertex_cpoint.num_adj_edges),
-            num_edges,
-        )?;
-        work_set(
-            heap,
-            vert_ficpoint.iedge,
-            i32::from(vert_ficpoint.num_adj_edges),
-            num_edges,
-        )?;
-        edge.neigh_ord[0] = vertex_cpoint.num_adj_edges;
-        vertex_cpoint.num_adj_edges = vertex_cpoint.num_adj_edges.wrapping_add(1);
-        edge.neigh_ord[1] = vert_ficpoint.num_adj_edges;
-        vert_ficpoint.num_adj_edges = vert_ficpoint.num_adj_edges.wrapping_add(1);
+        let mut k = 0_i32;
+        while k < i32::from(
+            heap.element_signed(pBNS.vert.as_const(), c_point)?
+                .num_adj_edges,
+        ) {
+            let incident = heap.element_signed(pBNS.vert.as_const(), c_point)?.iedge;
+            let iedge = *heap.element_signed(incident.as_const(), k)?;
+            let new_cap = heap
+                .element_signed(pBNS.vert.as_const(), c_point)?
+                .st_edge
+                .cap;
+            let centerpoint = i32::from(
+                heap.element_signed(pBNS.edge.as_const(), iedge)?.neighbor12 ^ c_point as AT_NUMB,
+            );
+            if heap.element_signed(pBNS.edge.as_const(), iedge)?.cap == 0
+                && centerpoint < pBNS.num_atoms
+            {
+                let center_cap = heap
+                    .element_signed(pBNS.vert.as_const(), centerpoint)?
+                    .st_edge
+                    .cap;
+                if center_cap >= 1 {
+                    heap.element_signed_mut(pBNS.edge, iedge)?.cap =
+                        center_cap.min(new_cap).min(MAX_BOND_EDGE_CAP as i32);
+                }
+            }
+            k += 1;
+        }
+
+        {
+            let edge = heap.element_signed_mut(pBNS.edge, num_edges)?;
+            edge.neighbor1 = c_point as AT_NUMB;
+            edge.neighbor12 = c_point as AT_NUMB ^ fictpoint as AT_NUMB;
+        }
+        let (incident, ordinal) = {
+            let vertex = heap.element_signed(pBNS.vert.as_const(), c_point)?;
+            (vertex.iedge, vertex.num_adj_edges)
+        };
+        *heap.element_signed_mut(incident, i32::from(ordinal))? = num_edges;
+        let (incident, ordinal) = {
+            let vertex = heap.element_signed(pBNS.vert.as_const(), fictpoint)?;
+            (vertex.iedge, vertex.num_adj_edges)
+        };
+        *heap.element_signed_mut(incident, i32::from(ordinal))? = num_edges;
+        let new_edge = num_edges;
+        num_edges = num_edges.wrapping_add(1);
+        let ordinal = heap
+            .element_signed(pBNS.vert.as_const(), c_point)?
+            .num_adj_edges;
+        heap.element_signed_mut(pBNS.edge, new_edge)?.neigh_ord[0] = ordinal;
+        heap.element_signed_mut(pBNS.vert, c_point)?.num_adj_edges = ordinal.wrapping_add(1);
+        let ordinal = heap
+            .element_signed(pBNS.vert.as_const(), fictpoint)?
+            .num_adj_edges;
+        heap.element_signed_mut(pBNS.edge, new_edge)?.neigh_ord[1] = ordinal;
+        heap.element_signed_mut(pBNS.vert, fictpoint)?.num_adj_edges = ordinal.wrapping_add(1);
+        let edge = heap.element_signed_mut(pBNS.edge, new_edge)?;
         edge.cap0 = edge.cap;
         edge.flow0 = edge.flow;
-
-        *bns_edge_mut(heap, pBNS, num_edges)? = edge;
-        *bns_vertex_mut(heap, pBNS, c_point)? = vertex_cpoint;
-        *bns_vertex_mut(heap, pBNS, fictpoint)? = vert_ficpoint;
-        num_edges = num_edges.wrapping_add(1);
     }
-
     pBNS.num_edges = num_edges;
     pBNS.num_vertices = pBNS.num_vertices.wrapping_add(max_c_group_number);
     pBNS.num_c_groups = num_cg;
@@ -19148,11 +24583,15 @@ pub(crate) fn ClearAllBnDataEdges(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: ClearAllBnDataEdges
 
-    for index in 0..size {
-        let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        heap.slice_mut(e)?
-            .get_mut(offset)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?[0] = value;
+    // Behavior: nonpositive size skips admission; earlier writes survive errors.
+    // Cost: one heap admission per nonempty loop, no clone/allocation; checks OPEN.
+    if size > 0 {
+        let edges = heap.slice_mut(e)?;
+        for index in 0..size as usize {
+            edges
+                .get_mut(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?[0] = value;
+        }
     }
     Ok(())
 }
@@ -19215,36 +24654,26 @@ pub(crate) fn DeAllocateBnData(
         return Ok(SourceMutPointer::null());
     }
 
-    let data = heap
-        .slice(pBD.as_const())?
-        .first()
-        .cloned()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if !data.BasePtr.is_null() {
-        inchi_free(heap, data.BasePtr)?;
-    }
-    if !data.SwitchEdge.is_null() {
-        inchi_free(heap, data.SwitchEdge)?;
-    }
-    if !data.Tree.is_null() {
-        inchi_free(heap, data.Tree)?;
-    }
-    if !data.ScanQ.is_null() {
-        inchi_free(heap, data.ScanQ)?;
-    }
-    if !data.Pu.is_null() {
-        inchi_free(heap, data.Pu)?;
-    }
-    if !data.Pv.is_null() {
-        inchi_free(heap, data.Pv)?;
-    }
+    // Behavior: each field read precedes its source-ordered free.
+    // Cost: no whole BN_DATA clone, O(1) time/space, zero allocations.
+    // Safe repeated arena lookups/whole-call costs remain OPEN.
+    let pointer = heap.element_signed(pBD.as_const(), 0)?.BasePtr;
+    inchi_free(heap, pointer)?;
+    let pointer = heap.element_signed(pBD.as_const(), 0)?.SwitchEdge;
+    inchi_free(heap, pointer)?;
+    let pointer = heap.element_signed(pBD.as_const(), 0)?.Tree;
+    inchi_free(heap, pointer)?;
+    let pointer = heap.element_signed(pBD.as_const(), 0)?.ScanQ;
+    inchi_free(heap, pointer)?;
+    let pointer = heap.element_signed(pBD.as_const(), 0)?.Pu;
+    inchi_free(heap, pointer)?;
+    let pointer = heap.element_signed(pBD.as_const(), 0)?.Pv;
+    inchi_free(heap, pointer)?;
     if BNS_RAD_SEARCH == 1 {
-        if !data.RadEndpoints.is_null() {
-            inchi_free(heap, data.RadEndpoints)?;
-        }
-        if !data.RadEdges.is_null() {
-            inchi_free(heap, data.RadEdges)?;
-        }
+        let pointer = heap.element_signed(pBD.as_const(), 0)?.RadEndpoints;
+        inchi_free(heap, pointer)?;
+        let pointer = heap.element_signed(pBD.as_const(), 0)?.RadEdges;
+        inchi_free(heap, pointer)?;
     }
     inchi_free(heap, pBD)?;
     Ok(SourceMutPointer::null())
@@ -19430,12 +24859,26 @@ pub(crate) fn AllocateAndInitBnData(
 #[allow(non_snake_case)]
 pub(crate) fn ReInitBnStructAddGroups(
     heap: &mut SourceHeap,
-    pCG: &mut CANON_GLOBALS,
+    _pCG: &mut CANON_GLOBALS,
     pBNS: &mut BN_STRUCT,
     atoms: SourceMutPointer<inp_ATOM>,
     num_atoms: i32,
     tgi: Option<&mut T_GROUP_INFO>,
     cgi: Option<&mut C_GROUP_INFO>,
+) -> Result<i32, SourceHeapError> {
+    reinit_bn_struct_add_groups_source_flags(heap, _pCG, pBNS, atoms, num_atoms, tgi, cgi, false)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn reinit_bn_struct_add_groups_source_flags(
+    heap: &mut SourceHeap,
+    _pCG: &mut impl CanonicalTarget,
+    pBNS: &mut BN_STRUCT,
+    atoms: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    tgi: Option<&mut T_GROUP_INFO>,
+    cgi: Option<&mut C_GROUP_INFO>,
+    source_group_flags: bool,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:9062 ReInitBnStructAddGroups
     // INCHI✔️❌: int ReInitBnStructAddGroups( CANON_GLOBALS *pCG,
@@ -19485,27 +24928,37 @@ pub(crate) fn ReInitBnStructAddGroups(
         return Ok(BNS_REINIT_ERR);
     }
 
-    // INCHI✔️🔝: AddCGroups2BnStruct and AddTGroups2BnStruct receive the
-    // same atom allocation that the C source passes directly. ReInitBnStruct
-    // has already completed with bRemoveGroupsFromAtoms=0, and both helpers
-    // only read `at`; their writes target disjoint BNS/group allocations. A
-    // stable view therefore preserves the source pointer lifetime and avoids
-    // copying the complete inp_ATOM allocation on every reinitialization.
-    // SAFETY: neither helper frees, resizes, or mutates the `atoms` allocation
-    // while this view is live. The full allocation is retained so malformed
-    // source counts keep the same helper-level bounds/error ordering.
-    let atoms_view: StableSourceConstSlice<inp_ATOM> =
-        unsafe { heap.stable_slice(atoms.as_const())? };
-    let atoms = atoms_view.prefix(atoms_view.len())?;
-    let taut_flags = work_get(heap, pBNS.pbTautFlags, 0)?;
+    // INCHI✔️❗: Native restoration precedes flags and group gates.
+    // Pass the original atom handle to canonical reached-read kernels;
+    // skipped groups/empty loops/capacity errors never admit unused atoms.
+    // O(1) dispatch, no unsafe view/allocation; checked whole-call cost OPEN.
+    // Native9078 reads the original selected flag after ReInitBnStruct.
+    // INCHI✔️❗: Actual group field or legacy pointer, O(1)/no copy. C534 OPEN.
+    let taut_flags = if source_group_flags {
+        tgi.as_ref().ok_or(SourceHeapError::NullPointer)?.bTautFlags
+    } else {
+        work_get(heap, pBNS.pbTautFlags, 0)?
+    };
     if (taut_flags & TG_FLAG_MOVE_POS_CHARGES as u64) != 0 {
-        ret = AddCGroups2BnStruct(heap, pCG, pBNS, atoms, num_atoms, cgi)?;
+        ret = add_c_groups_with_atoms(
+            heap,
+            pBNS,
+            BnsGroupAtoms::Heap(atoms.as_const()),
+            num_atoms,
+            cgi,
+        )?;
         if is_bns_error(ret) {
             return Ok(ret);
         }
     }
 
-    ret = AddTGroups2BnStruct(heap, pCG, pBNS, atoms, num_atoms, tgi)?;
+    ret = add_t_groups_with_atoms(
+        heap,
+        pBNS,
+        BnsGroupAtoms::Heap(atoms.as_const()),
+        num_atoms,
+        tgi,
+    )?;
     if is_bns_error(ret) {
         return Ok(ret);
     }
@@ -19532,25 +24985,22 @@ fn initialize_alt_bns_checked(
                     usize::from(edge_before.neighbor12 ^ (vertex_index as AT_NUMB));
                 let neighbor_slot = usize::try_from(neighbor_index)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let mut bond_type = {
+                // INCHI✔️❗: Native retains at while reading this bond and both
+                // endpoint flags. Reuse one immutable typed view until stores;
+                // keep endpoint OR short-circuit. O(degree sum)/O(1), no copies
+                // or allocation; shared BNS/arena whole-call cost remains OPEN.
+                let bond_type = {
                     let atoms = heap.slice(at.as_const())?;
                     let source_atom = atoms
                         .get(atom_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    u32::from(
+                    let mut bond_type = u32::from(
                         *source_atom
                             .bond_type
                             .get(neighbor_slot)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    ) & BOND_TYPE_MASK
-                };
-                {
-                    let atoms = heap.slice(at.as_const())?;
-                    if atoms
-                        .get(atom_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .endpoint
-                        != 0
+                    ) & BOND_TYPE_MASK;
+                    if source_atom.endpoint != 0
                         || atoms
                             .get(neighbor_atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -19559,7 +25009,8 @@ fn initialize_alt_bns_checked(
                     {
                         bond_type = 0;
                     }
-                }
+                    bond_type
+                };
 
                 let mapped = match bond_type {
                     BOND_ALTERN => {
@@ -19737,7 +25188,7 @@ pub(crate) fn ReInitBnStructForAltBns(
     }
 
     if let Some(mut workspace) = ReInitBnStructWorkspace::new(heap, pBNS, at, num_atoms, true)? {
-        Ok(workspace.initialize_alt_bns(pBNS, num_atoms))
+        workspace.initialize_alt_bns(heap, pBNS, num_atoms)
     } else {
         initialize_alt_bns_checked(heap, pBNS, at, num_atoms)
     }
@@ -19842,61 +25293,54 @@ pub(crate) fn MarkNonStereoAltBns(
         return Ok(BNS_REINIT_ERR);
     }
 
+    // INCHI✔️❗: #define nNumAtInBlockAltBns  cap
+    // INCHI✔️❗: #define nBondTypeInpAltBns   pass    /* 0=>cannot be stereo at all, 1=>alt or taut non-stereo, 2=>can be stereo */
+    // Source gates precede atom admission; chained assignments write endpoint2
+    // first. O(bonds)/O(1), no allocation or record snapshot. Safe arena and
+    // checked field/whole-call costs remain independently OPEN.
     let mut ret = 0_i32;
     for ibond in 0..pBNS.num_bonds {
-        let bond = bns_edge(heap, pBNS, ibond)?;
-        if i32::from(bond.pass) != BT_ALTERN_BOND as i32
-            && i32::from(bond.pass) != BT_IGNORE_BOND as i32
-        {
+        let bond = heap.element_signed(pBNS.edge.as_const(), ibond)?;
+        let kind = i32::from(bond.pass);
+        if kind != BT_ALTERN_BOND as i32 && kind != BT_IGNORE_BOND as i32 {
             continue;
         }
-
+        if kind == BT_ALTERN_BOND as i32 && bond.cap > 3 {
+            continue;
+        }
         let iat1 = usize::from(bond.neighbor1);
         let iat2 = usize::from(bond.neighbor12 ^ bond.neighbor1);
         let ib1 = usize::from(bond.neigh_ord[0]);
         let ib2 = usize::from(bond.neigh_ord[1]);
-        let source_bond_type = {
+        if kind == BT_IGNORE_BOND as i32 || bUnknAltAsNoStereo != 0 {
             let atoms = heap.slice(at.as_const())?;
-            let atom = atoms.get(iat1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            u32::from(
-                *atom
-                    .bond_type
-                    .get(ib1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            ) & BOND_TYPE_MASK
-        };
-        let should_mark = (i32::from(bond.pass) == BT_ALTERN_BOND as i32 && bond.cap <= 3)
-            || (i32::from(bond.pass) == BT_IGNORE_BOND as i32 && source_bond_type == BOND_ALTERN);
-        if !should_mark {
-            continue;
-        }
-
-        let atoms = heap.slice_mut(at)?;
-        if bUnknAltAsNoStereo != 0 {
-            if source_bond_type != BOND_ALTERN {
+            let source_bond_type = *atoms
+                .get(iat1)
+                .and_then(|atom| atom.bond_type.get(ib1))
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if u32::from(source_bond_type) & BOND_TYPE_MASK != BOND_ALTERN {
                 continue;
             }
-            atoms
-                .get_mut(iat1)
-                .and_then(|atom| atom.bond_stereo.get_mut(ib1))
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from(&(STEREO_DBLE_EITHER as i8));
-            atoms
+        }
+        let atoms = heap.slice_mut(at)?;
+        if bUnknAltAsNoStereo != 0 {
+            *atoms
                 .get_mut(iat2)
                 .and_then(|atom| atom.bond_stereo.get_mut(ib2))
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from(&(STEREO_DBLE_EITHER as i8));
-        } else {
-            atoms
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = STEREO_DBLE_EITHER as i8;
+            *atoms
                 .get_mut(iat1)
-                .and_then(|atom| atom.bond_type.get_mut(ib1))
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from(&(BOND_ALT12NS as u8));
-            atoms
+                .and_then(|atom| atom.bond_stereo.get_mut(ib1))
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = STEREO_DBLE_EITHER as i8;
+        } else {
+            *atoms
                 .get_mut(iat2)
                 .and_then(|atom| atom.bond_type.get_mut(ib2))
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from(&(BOND_ALT12NS as u8));
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = BOND_ALT12NS as u8;
+            *atoms
+                .get_mut(iat1)
+                .and_then(|atom| atom.bond_type.get_mut(ib1))
+                .ok_or(SourceHeapError::PointerOutOfBounds)? = BOND_ALT12NS as u8;
         }
         ret = ret.wrapping_add(1);
     }
@@ -19910,98 +25354,117 @@ pub(crate) fn bNeedToTestTheFlow(
     bTestForNonStereoBond: i32,
 ) -> i32 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:1590 bNeedToTestTheFlow
-    // INCHI✔️❌: int bNeedToTestTheFlow( int bond_type,
-    // INCHI✔️❌:                         int nTestFlow,
-    // INCHI✔️❌:                         int bTestForNonStereoBond )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     int nBondType = ( BOND_TYPE_MASK & bond_type );
-    // INCHI✔️❌:     int nBondAttrib = ( BOND_MARK_MASK & bond_type );
-    // INCHI✔️❌:
-    // INCHI✔️❌:     if (bTestForNonStereoBond)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         if (nBondAttrib || nBondType == BOND_ALTERN || nBondType == BOND_ALT12NS)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             switch (nTestFlow)
-    // INCHI✔️❌:             {
-    // INCHI✔️❌:                 case 0:  /* single: can be 1 (single)?  */
-    // INCHI✔️❌:                     if (nBondAttrib == BOND_MARK_ALT12NS ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT123 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT13)
-    // INCHI✔️❌:                     {
-    // INCHI✔️❌:                         return 0; /* yes, already checked */
-    // INCHI✔️❌:                     }
-    // INCHI✔️❌:                     break;
-    // INCHI✔️❌:
-    // INCHI✔️❌:                 case 1:  /* double: can be 2 (double)? */
-    // INCHI✔️❌:                     if (nBondAttrib == BOND_MARK_ALT12NS ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT123 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT23)
-    // INCHI✔️❌:                     {
-    // INCHI✔️❌:                         return 0; /* yes, already checked */
-    // INCHI✔️❌:                     }
-    // INCHI✔️❌:                     break;
-    // INCHI✔️❌:                 case 2:  /* triple: can be 3 (triple)?  */
-    // INCHI✔️❌:                     if (nBondAttrib == BOND_MARK_ALT13 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT123 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT23)
-    // INCHI✔️❌:                     {
-    // INCHI✔️❌:                         return 0; /* yes, already checked */
-    // INCHI✔️❌:                     }
-    // INCHI✔️❌:                     break;
-    // INCHI✔️❌:             }
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:     else
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         if (nBondAttrib || nBondType == BOND_ALTERN || nBondType == BOND_ALT12NS)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             switch (nTestFlow)
-    // INCHI✔️❌:             {
-    // INCHI✔️❌:                 case 0:  /* single: can be 1 (single)?  */
-    // INCHI✔️❌:                     if (nBondAttrib == BOND_MARK_ALT12 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT12NS ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT123 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT13)
-    // INCHI✔️❌:                     {
-    // INCHI✔️❌:                         return 0;
-    // INCHI✔️❌:                     }
-    // INCHI✔️❌:                     break;
-    // INCHI✔️❌:
-    // INCHI✔️❌:                 case 1:  /* double: can be 2 (double)? */
-    // INCHI✔️❌:                     if (nBondAttrib == BOND_MARK_ALT12 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT12NS ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT123 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT23)
-    // INCHI✔️❌:                     {
-    // INCHI✔️❌:                         return 0; /* yes */
-    // INCHI✔️❌:                     }
-    // INCHI✔️❌:                     break;
-    // INCHI✔️❌:                 case 2:  /* triple: can be 3 (triple)?  */
-    // INCHI✔️❌:                     if (nBondAttrib == BOND_MARK_ALT12 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT23 ||
-    // INCHI✔️❌:                          nBondAttrib == BOND_MARK_ALT123)
-    // INCHI✔️❌:                     {
-    // INCHI✔️❌:                         return 0;
-    // INCHI✔️❌:                     }
-    // INCHI✔️❌:                     break;
-    // INCHI✔️❌:             }
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     return 1;
-    // INCHI✔️❌: }
+    // INCHI✔️✔️: int bNeedToTestTheFlow( int bond_type,
+    // INCHI✔️✔️:                         int nTestFlow,
+    // INCHI✔️✔️:                         int bTestForNonStereoBond )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int nBondType = ( BOND_TYPE_MASK & bond_type );
+    // INCHI✔️✔️:     int nBondAttrib = ( BOND_MARK_MASK & bond_type );
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     if (bTestForNonStereoBond)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (nBondAttrib || nBondType == BOND_ALTERN || nBondType == BOND_ALT12NS)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             switch (nTestFlow)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 case 0:  /* single: can be 1 (single)?  */
+    // INCHI✔️✔️:                     if (nBondAttrib == BOND_MARK_ALT12NS ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT123 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT13)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         return 0; /* yes, already checked */
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     break;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:                 case 1:  /* double: can be 2 (double)? */
+    // INCHI✔️✔️:                     if (nBondAttrib == BOND_MARK_ALT12NS ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT123 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT23)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         return 0; /* yes, already checked */
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     break;
+    // INCHI✔️✔️:                 case 2:  /* triple: can be 3 (triple)?  */
+    // INCHI✔️✔️:                     if (nBondAttrib == BOND_MARK_ALT13 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT123 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT23)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         return 0; /* yes, already checked */
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     break;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     else
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         if (nBondAttrib || nBondType == BOND_ALTERN || nBondType == BOND_ALT12NS)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             switch (nTestFlow)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 case 0:  /* single: can be 1 (single)?  */
+    // INCHI✔️✔️:                     if (nBondAttrib == BOND_MARK_ALT12 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT12NS ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT123 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT13)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         return 0;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     break;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:                 case 1:  /* double: can be 2 (double)? */
+    // INCHI✔️✔️:                     if (nBondAttrib == BOND_MARK_ALT12 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT12NS ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT123 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT23)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         return 0; /* yes */
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     break;
+    // INCHI✔️✔️:                 case 2:  /* triple: can be 3 (triple)?  */
+    // INCHI✔️✔️:                     if (nBondAttrib == BOND_MARK_ALT13 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT123 ||
+    // INCHI✔️✔️:                          nBondAttrib == BOND_MARK_ALT23)
+    // INCHI✔️✔️:                     {
+    // INCHI✔️✔️:                         return 0;
+    // INCHI✔️✔️:                     }
+    // INCHI✔️✔️:                     break;
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return 1;
+    // INCHI✔️✔️: }
     // END INCHI C FUNCTION: bNeedToTestTheFlow
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: bNeedToTestTheFlow
-    // INCHI✔️❌: #define BOND_TYPE_MASK 0x0f
-    // INCHI✔️❌: #define BOND_MARK_MASK 0x70
-    // INCHI✔️❌: #define BOND_ALTERN 4
-    // INCHI✔️❌: #define BOND_ALT12NS 9
-    // INCHI✔️❌: #define BOND_MARK_ALT12 0x10
-    // INCHI✔️❌: #define BOND_MARK_ALT12NS 0x50
-    // INCHI✔️❌: #define BOND_MARK_ALT123 0x20
-    // INCHI✔️❌: #define BOND_MARK_ALT13 0x30
-    // INCHI✔️❌: #define BOND_MARK_ALT23 0x40
+    // extr_ct.h:215..233; incomdef.h:70; pinned v1.07.5 GCC/Linux LP64.
+    // INCHI✔️✔️: #define BOND_ALTERN BOND_TYPE_ALTERN  /* 4 single/double                    */
+    // INCHI✔️✔️:
+    // INCHI✔️✔️: #define BOND_ALT_123             5   /* single/double/triple                */
+    // INCHI✔️✔️: #define BOND_ALT_13              6   /* single/triple                       */
+    // INCHI✔️✔️: #define BOND_ALT_23              7   /* double/triple                       */
+    // INCHI✔️✔️: #define BOND_TAUTOM              8
+    // INCHI✔️✔️: #define BOND_ALT12NS             9
+    // INCHI✔️✔️: #define BOND_NUMDIF              9  /* number of different kinds of bonds  */
+    // INCHI✔️✔️:
+    // INCHI✔️✔️: #define BOND_TYPE_MASK        0x0f
+    // INCHI✔️✔️:
+    // INCHI✔️✔️: #define BOND_MARK_ALL         0xf0  /* complement to BOND_TYPE_MASK         */
+    // INCHI✔️✔️:
+    // INCHI✔️✔️: #define BOND_MARK_ALT12       0x10
+    // INCHI✔️✔️: #define BOND_MARK_ALT123      0x20
+    // INCHI✔️✔️: #define BOND_MARK_ALT13       0x30
+    // INCHI✔️✔️: #define BOND_MARK_ALT23       0x40
+    // INCHI✔️✔️: #define BOND_MARK_ALT12NS     0x50  /* 1 or 2, non-stereo                   */
+    // INCHI✔️✔️: #define BOND_MARK_MASK        0x70
+    // INCHI✔️✔️: #define BOND_TYPE_ALTERN    4
     // END INCHI ACTIVE MACRO CONFIGURATION: bNeedToTestTheFlow
+    // Behavior review: both int32 masks, mode truthiness, eligibility gate,
+    // flow cases, comparison order and final return reproduce the complete
+    // pinned source. Casting to u32 preserves masked low bits for negative
+    // inputs; no unmasked arithmetic or state mutation occurs.
+    // Complexity review: constant scalar work/space and bounded comparisons,
+    // with zero allocation, cloning, buffering, scans or heap lookups, as in
+    // the source. No data structure or additional hot-path validation.
 
     let source_bond_type = bond_type as u32;
     let nBondType = BOND_TYPE_MASK & source_bond_type;
@@ -20058,9 +25521,9 @@ pub(crate) fn bNeedToTestTheFlow(
                 }
             }
             2 => {
-                if nBondAttrib == BOND_MARK_ALT12
-                    || nBondAttrib == BOND_MARK_ALT23
+                if nBondAttrib == BOND_MARK_ALT13
                     || nBondAttrib == BOND_MARK_ALT123
+                    || nBondAttrib == BOND_MARK_ALT23
                 {
                     return 0;
                 }
@@ -20086,7 +25549,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
     inpbTautFlagsDone: SourceMutPointer<u64>,
     nebend: i32,
     ebend: SourceMutPointer<i32>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c:5242 mark_alt_bonds_and_taut_groups
     // INCHI✔️❌: int mark_alt_bonds_and_taut_groups( struct tagINCHI_CLOCK   *ic,
@@ -20868,96 +26331,894 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
     // INCHI✔️❌: #define FIX_IMPOSSIBLE_H_ISOTOPE_BUG 1
     // INCHI✔️❌: #define BN_MAX_ALTP 16
     // END INCHI ACTIVE MACRO CONFIGURATION: mark_alt_bonds_and_taut_groups
-    // SourceHeap preserves pointer identity, but checked map-backed accesses are slower than C.
+    mark_alt_bonds_with_flag_storage(
+        heap,
+        ic,
+        pCG,
+        at,
+        at_fixed_bonds_out,
+        num_atoms,
+        ulTimeOutTime,
+        t_group_info,
+        SourceNormalizationFlags::Pointers {
+            flags: inpbTautFlags,
+            done: inpbTautFlagsDone,
+        },
+        nebend,
+        ebend,
+        clock_result,
+    )
+}
 
-    fn one<T: Clone + 'static>(
-        heap: &SourceHeap,
-        pointer: SourceMutPointer<T>,
-    ) -> Result<T, SourceHeapError> {
-        heap.slice(pointer.as_const())?
-            .first()
-            .cloned()
-            .ok_or(SourceHeapError::PointerOutOfBounds)
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn mark_alt_bonds_with_flag_storage(
+    heap: &mut SourceHeap,
+    ic: SourceMutPointer<INCHI_CLOCK>,
+    pCG: &mut impl CanonicalTarget,
+    at: SourceMutPointer<inp_ATOM>,
+    at_fixed_bonds_out: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    ulTimeOutTime: SourceMutPointer<inchiTime>,
+    t_group_info: SourceMutPointer<T_GROUP_INFO>,
+    external_flags: SourceNormalizationFlags<'_>,
+    nebend: i32,
+    ebend: SourceMutPointer<i32>,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // Native5266 selects actual TGI storage. No child in the admitted closure
+    // retains another TGI handle; variable-proton identity stays guarded.
+    // INCHI✔️❗: Existing safe extraction restores all reached writes on Result,
+    // O(1) storage/no clone/root; no unwind or whole-call cost claim (C534 OPEN).
+    if t_group_info.is_null() {
+        return normalize_with_group(
+            heap,
+            ic,
+            pCG,
+            at,
+            at_fixed_bonds_out,
+            num_atoms,
+            ulTimeOutTime,
+            None,
+            external_flags,
+            nebend,
+            ebend,
+            clock_result,
+        );
     }
-
-    fn store_one<T: 'static>(
-        heap: &mut SourceHeap,
-        pointer: SourceMutPointer<T>,
-        value: T,
-    ) -> Result<(), SourceHeapError> {
-        *heap
-            .slice_mut(pointer)?
+    heap.with_slice_mut_and_heap_mut(t_group_info, |values, heap| {
+        let info = values
             .first_mut()
-            .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
-        Ok(())
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        normalize_with_group(
+            heap,
+            ic,
+            pCG,
+            at,
+            at_fixed_bonds_out,
+            num_atoms,
+            ulTimeOutTime,
+            Some(info),
+            external_flags,
+            nebend,
+            ebend,
+            clock_result,
+        )
+    })
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn normalize_with_group(
+    heap: &mut SourceHeap,
+    ic: SourceMutPointer<INCHI_CLOCK>,
+    pCG: &mut impl CanonicalTarget,
+    at: SourceMutPointer<inp_ATOM>,
+    at_fixed_bonds_out: SourceMutPointer<inp_ATOM>,
+    num_atoms: i32,
+    ulTimeOutTime: SourceMutPointer<inchiTime>,
+    t_group_info: Option<&mut T_GROUP_INFO>,
+    external_flags: SourceNormalizationFlags<'_>,
+    nebend: i32,
+    ebend: SourceMutPointer<i32>,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichi_bns.c: mark_alt_bonds_and_taut_groups canonical storage view
+    // INCHI❗❌: Exact pinned source; independent chemistry/state/cost quarantines retained.
+    /*
+    int mark_alt_bonds_and_taut_groups( struct tagINCHI_CLOCK   *ic,
+                                        struct tagCANON_GLOBALS *pCG,
+                                        inp_ATOM                *at,
+                                        inp_ATOM                *at_fixed_bonds_out,
+                                        int                     num_atoms,
+                                        struct tagInchiTime     *ulTimeOutTime,
+                                        T_GROUP_INFO            *t_group_info,
+                                        INCHI_MODE              *inpbTautFlags,
+                                        INCHI_MODE              *inpbTautFlagsDone,
+                                        int                     nebend,
+                                        int                     *ebend )
+
+
+    {
+        BN_STRUCT *pBNS = NULL;
+        BN_DATA   *pBD = NULL;
+        int bError, nChanges, taut_found, salt_found, salt_pass, salt_step, ret, ret2, num, num_changed_bonds; /* djb-rwth: removing redundant variables */
+        int max_altp = BN_MAX_ALTP;
+        int bChangeFlow = ( BNS_EF_CHNG_RSTR | BNS_EF_ALTR_BONDS );
+        BNS_FLOW_CHANGES fcd[BNS_MAX_NUM_FLOW_CHANGES + 1];
+        C_GROUP_INFO CGroupInfo;
+        C_GROUP_INFO *c_group_info = &CGroupInfo;
+        S_GROUP_INFO SGroupInfo;
+        S_GROUP_INFO *s_group_info = &SGroupInfo;
+        INCHI_MODE    *pbTautFlags = t_group_info ? &t_group_info->bTautFlags : inpbTautFlags;
+        INCHI_MODE    *pbTautFlagsDone = t_group_info ? &t_group_info->bTautFlagsDone : inpbTautFlagsDone;
+
+        int nAtTypeTotals[ATTOT_ARRAY_LEN];
+        int nNumOrigTotAtoms;
+
+        BN_AATG  aatg;
+        BN_AATG *pAATG = &aatg;
+
+    #ifdef FIX_AROM_RADICAL        /* Added 2011-05-09 IPl */
+        int i, n_arom_radicals = 0, *stored_radicals = NULL;
+    #endif
+        int at_prot;  /* moved from below 2024-09-01 DT */
+
+        nChanges = 0;
+        bError = 0;
+
+        memset( c_group_info, 0, sizeof( *c_group_info ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+        memset( s_group_info, 0, sizeof( *s_group_info ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+        memset( pAATG, 0, sizeof( *pAATG ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+
+        /*(@nnuk : Nauman Ullah Khan) :: Variable for checking (De)protonation status */
+        LOG_NO_ARGS("\n############# Initial state before (De)Protonation (L5373:ichi_bns.c) ###############\n");
+        for (at_prot = 0; at_prot < num_atoms; at_prot++)
+        {
+            LOG_MULT_ARGS("Atom %d: Element: %s, Num_H: %d, Charge: %hhd, Radical: %d\n", at_prot, at[at_prot].elname, at[at_prot].num_H, at[at_prot].charge, at[at_prot].radical);
+        }
+        LOG_NO_ARGS("\n#####################################################################################\n");
+
+
+    #ifdef FIX_AROM_RADICAL        /* Added 2011-05-09 IPl */
+        for (i = 0; i < num_atoms; i++)
+        {
+            if (( at[i].radical == RADICAL_DOUBLET ) && ( at[i].valence == 2 ) &&
+                ( at[i].bond_type[0] == BOND_ALTERN ) && ( at[i].bond_type[1] == BOND_ALTERN ))
+            {
+                n_arom_radicals++;
+                if (!stored_radicals)
+                {
+                    stored_radicals = (int *) inchi_calloc( num_atoms, sizeof( int ) );
+                    /* 2011-08-05 explicit cast added due to Evan Bolton */
+                    if (!stored_radicals)
+                    {
+                        bError = BNS_OUT_OF_RAM;
+                        goto exit_function;
+                    }
+                    stored_radicals[i] = RADICAL_DOUBLET;
+                    at[i].radical = 0;
+                    at[i].num_H++;
+                }
+            }
+        }
+
+    #endif
+
+        if (( *pbTautFlags & TG_FLAG_MOVE_POS_CHARGES ) && num_atoms > 1)
+        {
+            /* Charge groups memory allocation */
+            c_group_info->c_group = (C_GROUP *) inchi_calloc( num_atoms / 2, sizeof( c_group_info->c_group[0] ) );
+            c_group_info->c_candidate = (C_CANDIDATE*) inchi_calloc( num_atoms, sizeof( c_group_info->c_candidate[0] ) );
+            if (c_group_info->c_group && c_group_info->c_candidate)
+            {
+                c_group_info->max_num_c_groups = num_atoms / 2;
+                c_group_info->max_num_candidates = num_atoms;
+            }
+            else
+            {
+                bError = BNS_OUT_OF_RAM; /* error: out of RAM */
+                                         /*printf("BNS_OUT_OF_RAM-1: num_at=%d, c_gr=%lx c_can=%lx\n", num_atoms, c_group_info->c_group, c_group_info->c_candidate);*/
+                goto exit_function;
+            }
+        }
+
+        if (*pbTautFlags & TG_FLAG_TEST_TAUT__SALTS)
+        {
+            if (t_group_info)
+            {
+                /* Salt groups memory allocation */
+                s_group_info->s_candidate =
+                    (S_CANDIDATE*) inchi_calloc( num_atoms,
+                                                 sizeof( s_group_info->s_candidate[0] ) );
+                if (s_group_info->s_candidate)
+                {
+                    s_group_info->max_num_candidates = num_atoms;
+                }
+                else
+                {
+                    bError = BNS_OUT_OF_RAM; /* error: out of RAM */
+                                             /*printf("BNS_OUT_OF_RAM-2\n");*/
+                    goto exit_function;
+                }
+            }
+        }
+
+        if (t_group_info)
+        {
+            if (t_group_info->tGroupNumber)
+            {
+                inchi_free( t_group_info->tGroupNumber );
+            }
+            t_group_info->tGroupNumber = (AT_NUMB *) inchi_calloc( 2 * (long long)num_atoms + 1, sizeof( t_group_info->tGroupNumber[0] ) ); /* djb-rwth: cast operator added */
+            if (!t_group_info->tGroupNumber)
+            {
+                /*printf("BNS_OUT_OF_RAM-9\n");*/
+                bError = BNS_OUT_OF_RAM; /* error: out of RAM */
+                goto exit_function;
+            }
+            num = t_group_info->tni.nNumRemovedExplicitH;
+            memset( &t_group_info->tni, 0, sizeof( t_group_info->tni ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+            t_group_info->tni.nNumRemovedExplicitH = num;
+        }
+
+        /*
+        again:
+        */
+
+        /* Allocate Balanced Network Data Strucures; replace Alternating bonds with Single */
+        if (( pBNS = AllocateAndInitBnStruct( at, num_atoms,
+                                              BNS_ADD_ATOMS, BNS_ADD_EDGES,
+                                              max_altp, &num_changed_bonds ) )
+             &&
+             ( pBD = AllocateAndInitBnData( pBNS->max_vertices ) ))
+        {
+
+
+            pBNS->pbTautFlags = pbTautFlags;     /* carry through all functions */
+            pBNS->pbTautFlagsDone = pbTautFlagsDone;  /* carry through all functions */
+
+            pBNS->ulTimeOutTime = ulTimeOutTime;    /* v. 1.05 */
+            pBNS->ic = ic;    /* v. 1.05 */
+
+    #if ( BNS_PROTECT_FROM_TAUT == 1 )
+                              /* Protect bonds to acetyl and nitro */
+            SetForbiddenEdges( pBNS, at, num_atoms, BNS_EDGE_FORBIDDEN_MASK, nebend, ebend );
+    #endif
+
+            /* Set bonds in case of input "aromatic" bonds or multiple radicals */
+    #ifdef FIX_AROM_RADICAL        /* Added 2011-05-09 IPl */
+            if (n_arom_radicals)
+            {
+                ret = BnsAdjustFlowBondsRad( pBNS, pBD, at, num_atoms );
+                if (stored_radicals)
+                {
+                    for (i = 0; i < num_atoms; i++)
+                    {
+                        if (stored_radicals[i])
+                        {
+                            at[i].radical = stored_radicals[i];
+                            at[i].num_H--;
+                        }
+                    }
+                }
+                if (IS_BNS_ERROR( ret ))
+                {
+                    bError = ret;
+                    goto exit_function;
+                }
+            }
+    #endif
+
+            ret = BnsAdjustFlowBondsRad( pBNS, pBD, at, num_atoms );
+
+            /* (here pair(s) of radicals could have disappeared from the atoms) */
+            if (IS_BNS_ERROR( ret ))
+            {
+                bError = ret;
+                goto exit_function;
+            }
+            pBNS->tot_st_flow += 2 * ret;
+
+            /*return 0;*/ /* debug */
+            /* djb-rwth: removing redundant code */
+
+            if (pBNS->tot_st_cap > pBNS->tot_st_flow)
+            {
+                /* has radical */
+                bChangeFlow |= BNS_EF_SET_NOSTEREO;
+            }
+
+            /********************************************************************
+            *  Remove protons from NH(+), but not PH(+)
+            *  Add protons to COO(-) etc.
+            *  or remove protons from COOH etc to make the organic part neutral
+            *  Note: for now (-) from N(-) can be only canceled or moved to -C=O
+            ********************************************************************/
+            if (( *pbTautFlags & TG_FLAG_VARIABLE_PROTONS ) &&
+                 t_group_info &&
+                 mark_at_type( at, num_atoms, nAtTypeTotals ) &&
+                 nAtTypeTotals[ATTOT_NUM_CHARGES])
+            {
+                /*
+                the structure is simple to neutralize if it yields exactly
+                num[H(+)]     = num[N,P H(+)]
+                num[N,S,O(-)] = num[=C-O(-)] + num[C-S(-)] + num[N(-)] + num[other O(-), S(-)]
+
+                and n(p) = num[H(+)] - num[N,S,O(-)] (no protons, no negative N,O,S condition)
+
+                Additional check is needed if:
+                min{num[N,PH], num[N,P(+), not onium]} > 0
+                => possibility to yield more H(+)
+
+                min_charge = orig_charge(P,N,O,S) - n(p) - n(OH,SH)
+                max_charge = orig_charge(P,N,O,S) - n(p) + n(O,S,N(-))
+                */
+
+                nNumOrigTotAtoms = t_group_info->tni.nNumRemovedExplicitH + num_atoms;
+                pAATG->nAtTypeTotals = nAtTypeTotals;
+                pAATG->t_group_info = t_group_info;
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                pBNS->edge_forbidden_mask |= BNS_EDGE_FORBIDDEN_TEMP;
+    #endif
+
+                /***********************************************************/
+                /*                                                         */
+                /*          ( D E ) P R O T O N A T I O N                  */
+                /*                                                         */
+                /***********************************************************/
+
+                ret = RemoveNPProtonsAndAcidCharges( pCG, at, num_atoms, pAATG, pBNS, pBD );
+
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                pBNS->edge_forbidden_mask &= ~BNS_EDGE_FORBIDDEN_TEMP;
+    #endif
+                if (IS_BNS_ERROR( ret ))
+                {
+                    bError = ret;
+                    goto exit_function;
+                }
+
+                if (t_group_info->tni.bNormalizationFlags)
+                {
+                    SetInitCapFlowToCurrent( pBNS );
+                    if (at_fixed_bonds_out)
+                    {
+                        /* Copy modified initial tautomeric structure for displaying
+                        Warning: implicit H counts in at_fixed_bonds_out include explicit Hs */
+
+                        memcpy(at_fixed_bonds_out, at, nNumOrigTotAtoms * sizeof(at_fixed_bonds_out[0]));
+
+                        /* -- will be done in FillOutInputInfAtom() --
+                        RemoveExcessiveImplicitH( num_atoms, t_group_info->tni.nNumRemovedExplicitH, at_fixed_bonds_out );
+                        */
+                    }
+                }
+            }
+
+            /****************** Initial bonds normalization ***************/
+
+            if (*pbTautFlags & TG_FLAG_MOVE_POS_CHARGES)
+            {
+                /******************* Find moveable positive charges **********************/
+                do
+                {
+                    /* Cycling while ret>0 added 2004-06-04 */
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                    pBNS->edge_forbidden_mask |= BNS_EDGE_FORBIDDEN_TEMP;
+                    CorrectFixing_NH_NH_Bonds( pBNS, at, num_atoms );
+    #endif
+                    ret = MarkChargeGroups( pCG, at, num_atoms,
+                                            c_group_info, t_group_info,
+                                            pBNS, pBD );
+
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                    pBNS->edge_forbidden_mask &= ~BNS_EDGE_FORBIDDEN_TEMP;
+    #endif
+                    if (IS_BNS_ERROR( ret ))
+                    {
+                        bError = ret;
+                        goto exit_function;
+                    }
+                    if (ret)
+                    {
+                        nChanges += ret;
+                        ret2 = AddCGroups2BnStruct( pCG, pBNS, at, num_atoms, c_group_info );
+                        if (IS_BNS_ERROR( ret2 ))
+                        {
+                            bError = ret2;
+                            goto exit_function;
+                        }
+                        *pbTautFlagsDone |= TG_FLAG_MOVE_POS_CHARGES_DONE;
+                    }
+                } while (ret > 0);
+
+
+    #if ( BNS_RAD_SEARCH == 1 )
+    #else
+                /* moveable charges may allow to cancel radicals -- check it */
+                if (pBNS->tot_st_cap > pBNS->tot_st_flow)
+                {
+                    ret = BnsAdjustFlowBondsRad( pBNS, pBD, at, num_atoms );
+                    if (IS_BNS_ERROR( ret ))
+                    {
+                        bError = ret;
+                        goto exit_function;
+                    }
+                    if (ret > 0)
+                    {
+                        /*
+                        pBNS->tot_st_flow += 2*ret;
+                        ret = ReInitBnStruct( pBNS, at, num_atoms, 1 );
+                        if ( IS_BNS_ERROR( ret ) ) {
+                        bError = ret;
+                        goto exit_function;
+                        }
+                        */
+                        bError = BNS_RADICAL_ERR;
+                        goto exit_function;
+                    }
+                }
+    #endif
+            }
+
+            /************************************************************************/
+            /********          Test bonds for bond tautomerism         **************/
+            /******** replace moveable bonds with "alternating" bonds  **************/
+            /************************************************************************/
+            ret = BnsTestAndMarkAltBonds( pBNS, pBD, at, num_atoms, fcd, bChangeFlow, 0 );
+
+            if (IS_BNS_ERROR( ret ))
+            {
+                bError = ret;
+                goto exit_function;
+            }
+            /* djb-rwth: removing redundant code */
+
+            /*********************** End of initial bonds normalization *************/
+
+            /* djb-rwth: removing redundant code */
+
+            /* Check for tautomerism */
+            /* find new tautomer groups */
+            salt_pass = 0;
+            salt_step = 0;
+            salt_found = 0;
+
+            /*************************************************************/
+            /*                                                           */
+            /*           M A I N   C Y C L E   B E G I N                 */
+            /*                                                           */
+            /*************************************************************/
+
+            do
+            {
+                /* djb-rwth: removing redundant code */
+                nChanges = 0;
+                /* djb-rwth: removing redundant code */
+
+                /**************** Regular bond/H/(-)/positive charges tautomerism cycle begin **************/
+                do
+                {
+                    /* djb-rwth: removing redundant code */
+                    for (taut_found = 0;
+                          0 < ( ret = MarkTautomerGroups( pCG, at, num_atoms,
+                                                          t_group_info, c_group_info,
+                                                          pBNS, pBD ) );
+                          taut_found++)
+                    {
+                        ;
+                    }
+                    if (ret < 0)
+                    {
+                        bError = ret;
+                    }
+                    if (taut_found && !salt_pass)
+                    {
+                        *pbTautFlagsDone |= TG_FLAG_TEST_TAUT__ATOMS_DONE;
+                    }
+
+                    if (taut_found || salt_found)
+                    {
+                        /****************** repeat bonds normalization ***************/
+                        ret = ReInitBnStructAddGroups( pCG, pBNS, at, num_atoms,
+                                                       t_group_info, c_group_info );
+                        if (IS_BNS_ERROR( ret ))
+                        {
+                            bError = ret;
+                            goto exit_function;
+                        }
+    #if ( BNS_RAD_SEARCH == 1 )
+    #else
+                        /* discovered moveable charges and H-atoms may allow to cancel radicals */
+                        if (pBNS->tot_st_cap > pBNS->tot_st_flow)
+                        {
+                            ret = BnsAdjustFlowBondsRad( pBNS, pBD, at, num_atoms );
+                            if (IS_BNS_ERROR( ret ))
+                            {
+                                bError = ret;
+                                goto exit_function;
+                            }
+                            if (ret > 0)
+                            {
+                                /*
+                                pBNS->tot_st_flow += 2*ret;
+                                ret = ReInitBnStruct( pBNS, at, num_atoms, 1 );
+                                if ( IS_BNS_ERROR( ret ) ) {
+                                bError = ret;
+                                goto exit_function;
+                                }
+                                */
+                                bError = BNS_RADICAL_ERR;
+                                goto exit_function;
+                            }
+                        }
+    #endif
+                        /****************** Update bonds normalization ***************/
+                        if (*pbTautFlags & TG_FLAG_MOVE_POS_CHARGES)
+                        {
+                            /******************* Find moveable charges ***************/
+                            do
+                            {
+                                /* Cycling while ret>0 added 2004-06-04 */
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                                pBNS->edge_forbidden_mask |= BNS_EDGE_FORBIDDEN_TEMP;
+                                CorrectFixing_NH_NH_Bonds( pBNS, at, num_atoms );
+    #endif
+
+                                ret = MarkChargeGroups( pCG, at, num_atoms,
+                                                        c_group_info, t_group_info,
+                                                        pBNS, pBD );
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                                pBNS->edge_forbidden_mask &= ~BNS_EDGE_FORBIDDEN_TEMP;
+    #endif
+                                if (IS_BNS_ERROR( ret ))
+                                {
+                                    bError = ret;
+                                    goto exit_function;
+                                }
+                                nChanges += ret;
+                                if (ret > 0)
+                                {
+                                    ret2 = ReInitBnStructAddGroups( pCG, pBNS,
+                                                                    at, num_atoms,
+                                                                    t_group_info,
+                                                                    c_group_info );
+                                    if (IS_BNS_ERROR( ret2 ))
+                                    {
+                                        bError = ret2;
+                                        goto exit_function;
+                                    }
+                                    *pbTautFlagsDone |= TG_FLAG_MOVE_POS_CHARGES_DONE;
+                                }
+                            } while (ret > 0);
+                        }
+
+                        /************************************************************************/
+                        /********             Find moveable bonds:                 **************/
+                        /********          test bonds for bond tautomerism         **************/
+                        /******** replace moveable bonds with "alternating" bonds  **************/
+                        /************************************************************************/
+                        ret = BnsTestAndMarkAltBonds( pBNS, pBD, at, num_atoms, fcd, bChangeFlow, 0 );
+                        if (IS_BNS_ERROR( ret ))
+                        {
+                            bError = ret;
+                            goto exit_function;
+                        }
+                        nChanges += ret;
+                        /****************** End of update bonds normalization ***************/
+
+                    }
+                    salt_found = 0;
+                } while (taut_found && !bError);
+
+
+                /**************** Regular bond/H/(-)/positive charges tautomerism cycle end **************/
+
+                if (bError)
+                {
+                    break;
+                }
+
+
+                /******************* 'Salt' tautomerism permitted *************************/
+                if (*pbTautFlags & TG_FLAG_TEST_TAUT__SALTS)
+                {
+
+                    if (*pbTautFlags & TG_FLAG_TEST_TAUT2_SALTS)
+                    {
+                        /*********** Requested one or more "salt" attachement migrartion test ********/
+                        if (!nChanges && salt_pass && salt_step)
+                        {
+                            break;  /* done */
+                        }
+                        if (!salt_step)
+                        {
+                            /* Salt step 0: process one attachment migrartion */
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                            pBNS->edge_forbidden_mask |= BNS_EDGE_FORBIDDEN_TEMP;
+                            CorrectFixing_NH_NH_Bonds( pBNS, at, num_atoms );
+    #endif
+                            salt_found = MarkSaltChargeGroups( pCG, at, num_atoms,
+                                                               s_group_info,
+                                                               t_group_info,
+                                                               c_group_info,
+                                                               pBNS, pBD );
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                            pBNS->edge_forbidden_mask &= ~BNS_EDGE_FORBIDDEN_TEMP;
+    #endif
+                            if (salt_found < 0)
+                            {
+                                bError = salt_found;
+                                break;
+                            }
+                            else
+                            {
+                                if (salt_found > 0)
+                                {
+                                    *pbTautFlagsDone |= TG_FLAG_TEST_TAUT__SALTS_DONE;
+                                }
+                            }
+                            salt_step = !salt_found;
+                            /* if new 'salt' atoms have been found then repeat regular taut. search
+                            *      MarkTautomerGroups() and do not perform salt step 1
+                            * if new 'salt' atoms have NOT been found then switch to salt step 1
+                            *      and never repeat salt step 0 for the current structure
+                            */
+                        }
+
+                        if (salt_step /*||
+                                      (t_group_info->tni.bNormalizationFlags & FLAG_NORM_CONSIDER_TAUT)*/)
+                        {
+                            /* Salt step 1: process more than one attachment migration */
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                            pBNS->edge_forbidden_mask |= BNS_EDGE_FORBIDDEN_TEMP;
+                            CorrectFixing_NH_NH_Bonds( pBNS, at, num_atoms );
+    #endif
+                            salt_found = MarkSaltChargeGroups2( pCG, at, num_atoms,
+                                                                s_group_info,
+                                                                t_group_info,
+                                                                c_group_info,
+                                                                pBNS, pBD );
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                            pBNS->edge_forbidden_mask &= ~BNS_EDGE_FORBIDDEN_TEMP;
+    #endif
+                            if (salt_found < 0)
+                            {
+                                bError = salt_found;
+                                break;
+                            }
+                            else
+                            {
+                                if (salt_found == 1 || salt_found == 5)
+                                {
+                                    *pbTautFlagsDone |= TG_FLAG_TEST_TAUT2_SALTS_DONE;
+                                    if (salt_found == 5)
+                                    {
+                                        *pbTautFlagsDone |= TG_FLAG_TEST_TAUT3_SALTS_DONE;
+                                    }
+                                    /* salt_found == 2 => only negative charges involved */
+                                }
+                            }
+                        }
+
+                        salt_pass++;
+                    }
+                    else
+                    {
+                        /* !( *pbTautFlags & TG_FLAG_TEST_TAUT2_SALTS ) */
+                        /*************** Requested only one attachement migration test **********/
+                        if (!nChanges && salt_pass)
+                        {
+                            /* One attachment migration */
+                            break;
+                        }
+                        /* Salt step 0: process one attachment migration */
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                        pBNS->edge_forbidden_mask |= BNS_EDGE_FORBIDDEN_TEMP;
+                        CorrectFixing_NH_NH_Bonds( pBNS, at, num_atoms );
+    #endif
+                        salt_found = MarkSaltChargeGroups( pCG, at, num_atoms,
+                                                           s_group_info,
+                                                           t_group_info,
+                                                           c_group_info,
+                                                           pBNS, pBD );
+    #if ( RESET_EDGE_FORBIDDEN_MASK == 0 )
+                        pBNS->edge_forbidden_mask &= ~BNS_EDGE_FORBIDDEN_TEMP;
+    #endif
+                        if (salt_found < 0)
+                        {
+                            bError = salt_found;
+                            break;
+                        }
+                        else
+                        {
+                            if (salt_found > 0)
+                            {
+                                *pbTautFlagsDone |= TG_FLAG_TEST_TAUT__SALTS_DONE;
+                            }
+                        }
+                        salt_pass++;
+                    } /* ( *pbTautFlags & TG_FLAG_TEST_TAUT2_SALTS ) */
+                } /* ( *pbTautFlags & TG_FLAG_TEST_TAUT__SALTS ) */
+            } while (salt_found && !bError);
+
+            /*************************************************************/
+            /*                                                           */
+            /*           M A I N   C Y C L E   E N D                     */
+            /*                                                           */
+            /*************************************************************/
+
+
+            if (*pbTautFlags & TG_FLAG_MERGE_TAUT_SALTS)
+            {
+                if (!bError && s_group_info /*&& s_group_info->num_candidates > 0*/)
+                {
+                    ret = MergeSaltTautGroups( pCG, at, num_atoms, s_group_info,
+                                               t_group_info, c_group_info, pBNS );
+                    if (ret < 0)
+                    {
+                        bError = ret;
+                    }
+                    else
+                    {
+                        if (ret > 0)
+                        {
+                            *pbTautFlagsDone |= TG_FLAG_MERGE_TAUT_SALTS_DONE;
+                        }
+                    }
+                }
+            }
+
+            if (!bError && t_group_info &&
+                ( t_group_info->bTautFlags & TG_FLAG_VARIABLE_PROTONS ) &&
+                 ( t_group_info->bTautFlagsDone & ( TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE | TG_FLAG_FOUND_ISOTOPIC_H_DONE ) ))
+            {
+                ret = MakeIsotopicHGroup( at, num_atoms, s_group_info, t_group_info );
+                if (ret < 0)
+                {
+                    bError = ret;
+                }
+            }
+
+            /* Success */
+
+            remove_alt_bond_marks( at, num_atoms );
+
+            /************************************************
+            *  Temporarily ignore all non-alternating bonds
+            *  and mark non-ring alt bonds non-stereogenic
+            ************************************************/
+
+            ReInitBnStructForAltBns( pBNS, at, num_atoms, 0 );
+            MarkRingSystemsAltBns( pBNS, 0 );
+            MarkNonStereoAltBns( pBNS, at, num_atoms, 0 );
+    #if ( FIX_EITHER_DB_AS_NONSTEREO == 1 )
+            /* second time unknown ("Either") alternating bonds are treated as non-stereogenic */
+            /* stereobonds bonds that lost stereo get "Either" stereo_type */
+            ReInitBnStructForAltBns( pBNS, at, num_atoms, 1 );
+            MarkRingSystemsAltBns( pBNS, 1 );
+            MarkNonStereoAltBns( pBNS, at, num_atoms, 1 );
+    #endif
+        }
+        else
+        {
+            bError = BNS_OUT_OF_RAM;
+            /*printf("BNS_OUT_OF_RAM-3\n");*/
+        }
+
+        /*(@nnuk : Nauman Ullah Khan) */
+        LOG_NO_ARGS("\n################# Modified state after (De)Protonation (L6014:ichi_bns.c) ################\n");
+        for (at_prot = 0; at_prot < num_atoms; at_prot++)
+        {
+            LOG_MULT_ARGS("Atom %d: Element: %s, Num_H: %d, Charge: %hhd, Radical: %d\n", at_prot, at[at_prot].elname, at[at_prot].num_H, at[at_prot].charge, at[at_prot].radical);
+        }
+        LOG_NO_ARGS("\n##########################################################################################\n");
+
+    exit_function:
+
+        /* djb-rwth: ignoring LLVM warning: variables used to store functions return values */
+        pBNS = DeAllocateBnStruct(pBNS);
+        pBD = DeAllocateBnData(pBD);
+        /*#if ( MOVE_CHARGES == 1 )*/
+        if (c_group_info)
+        {
+            if (c_group_info->c_group)
+            {
+                inchi_free( c_group_info->c_group );
+            }
+            if (c_group_info->c_candidate)
+            {
+                inchi_free( c_group_info->c_candidate );
+            }
+        }
+        /*#endif*/
+        if (s_group_info && s_group_info->s_candidate)
+        {
+            inchi_free( s_group_info->s_candidate );
+        }
+        if (pAATG && pAATG->nMarkedAtom)
+        {
+            inchi_free( pAATG->nMarkedAtom );
+            qzfree( pAATG->nEndPoint );
+            /*qzfree( pAATG->nAtTypeTotals );*/ /* nAtTypeTotals is a stack array */
+        }
+        if (t_group_info && t_group_info->tGroupNumber)
+        {
+            inchi_free( t_group_info->tGroupNumber );
+            t_group_info->tGroupNumber = NULL;
+        }
+
+        if (!bError && num_atoms == 1 && at[0].at_type == ATT_PROTON && t_group_info && !t_group_info->tni.nNumRemovedExplicitH)
+        {
+            /* remove single isolated proton */
+            t_group_info->tni.nNumRemovedProtons = 1;
+            t_group_info->tni.bNormalizationFlags |= FLAG_PROTON_SINGLE_REMOVED;
+            if (at[0].iso_atw_diff)
+            {
+    #if ( FIX_CURE53_ISSUE_NULL_DEREFERENCE_MAKE_A_COPY_OF_T_GROUP_INFO==1 || defined(FIX_IMPOSSIBLE_H_ISOTOPE_BUG) )
+                if (at[0].iso_atw_diff <= NUM_H_ISOTOPES)
+                {
+                    /* djb-rwth: possible false positive oss-fuzz issue #39064660 */
+                    t_group_info->tni.nNumRemovedProtonsIsotopic[at[0].iso_atw_diff - 1] ++;
+                }
+    #else
+                t_group_info->tni.nNumRemovedProtonsIsotopic[at[0].iso_atw_diff - 1] ++;
+    #endif
+            }
+            if (at_fixed_bonds_out)
+            {
+                memcpy(at_fixed_bonds_out, at, num_atoms * sizeof(at_fixed_bonds_out[0]));
+            }
+            /*num_atoms --;*/
+        }
+
+
+        /*
+        Additional currently unused info:
+
+        nOrigDelta > 0: original structure has been changed
+        due to fiund augmenting path(s)
+        nChanges   > 0: either alt. bonds or taut. groups have been found
+        */
+
+    #ifdef FIX_AROM_RADICAL        /* Added 2011-05-09 IPl */
+        if (stored_radicals)
+        {
+            inchi_free( stored_radicals );
+        }
+    #endif
+
+        return bError ? bError : num_atoms;  /* ret = 0 => success, any other => error */
     }
+        */
+    // END INCHI C FUNCTION: mark_alt_bonds_with_flag_storage
+    // SourceHeap preserves pointer identity, but checked map-backed accesses are slower than C.
 
     fn source_count(value: i64) -> Result<u64, SourceHeapError> {
         u64::try_from(value).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)
     }
 
-    fn load_tgi_flags(
-        heap: &SourceHeap,
-        flags_pointer: SourceMutPointer<u64>,
-        flags_done_pointer: SourceMutPointer<u64>,
-        tgi: &mut Option<T_GROUP_INFO>,
-    ) -> Result<(), SourceHeapError> {
-        if let Some(info) = tgi.as_mut() {
-            info.bTautFlags = work_get(heap, flags_pointer, 0)?;
-            info.bTautFlagsDone = work_get(heap, flags_done_pointer, 0)?;
-        }
-        Ok(())
-    }
-
-    fn store_tgi_flags(
-        heap: &mut SourceHeap,
-        flags_pointer: SourceMutPointer<u64>,
-        flags_done_pointer: SourceMutPointer<u64>,
-        tgi: &Option<T_GROUP_INFO>,
-    ) -> Result<(), SourceHeapError> {
-        if let Some(info) = tgi.as_ref() {
-            work_set(heap, flags_pointer, 0, info.bTautFlags)?;
-            work_set(heap, flags_done_pointer, 0, info.bTautFlagsDone)?;
-        }
-        Ok(())
-    }
-
-    let has_t_group_info = !t_group_info.is_null();
-    let mut tgi = if has_t_group_info {
-        Some(one(heap, t_group_info)?)
-    } else {
-        None
+    let has_t_group_info = t_group_info.is_some();
+    let mut flags_storage = SourceNormalizationState {
+        group: t_group_info,
+        external: external_flags,
     };
-    let flags_pointer = if let Some(info) = tgi.as_ref() {
-        heap.allocate_model_storage(vec![info.bTautFlags])?
-    } else {
-        inpbTautFlags
-    };
-    let flags_done_pointer = if let Some(info) = tgi.as_ref() {
-        heap.allocate_model_storage(vec![info.bTautFlagsDone])?
-    } else {
-        inpbTautFlagsDone
-    };
-    let fcd = heap.allocate_model_storage(vec![
-        BNS_FLOW_CHANGES::default();
-        BNS_MAX_NUM_FLOW_CHANGES as usize + 1
-    ])?;
-    let totals_pointer = heap.allocate_model_storage(vec![0_i32; ATTOT_ARRAY_LEN])?;
-    let tgi_work = if let Some(info) = tgi.as_ref() {
-        heap.allocate_model_storage(vec![info.clone()])?
-    } else {
-        SourceMutPointer::null()
-    };
+    // Source stack scratch, ichi_bns.c:5261:
+    //     BNS_FLOW_CHANGES fcd[BNS_MAX_NUM_FLOW_CHANGES + 1];
+    // INCHI✔️❌: Real fixed storage, no model allocation/ID/free; safe
+    // initialization adds zero stores versus C uninitialized storage.
+    // Projection/whole-call cost remains OPEN in performance_pending.md.
+    let mut fcd_storage: [BNS_FLOW_CHANGES; BNS_MAX_NUM_FLOW_CHANGES as usize + 1] =
+        std::array::from_fn(|_| BNS_FLOW_CHANGES::default());
+    let mut fcd = SourceFlowChanges::Borrowed(&mut fcd_storage);
+    // Native zeroes AATG before any graph work. Totals and the TGI view
+    // are needed only by the reached variable-proton branch below.
+    // INCHI✔️❗: No eager model/copy on NULL-TGI paths; C530 cost OPEN.
 
     let mut p_bns = SourceMutPointer::<BN_STRUCT>::null();
     let mut p_bd = SourceMutPointer::<BN_DATA>::null();
     let mut c_group_info = C_GROUP_INFO::default();
     let mut s_group_info = S_GROUP_INFO::default();
-    let mut p_aatg = BN_AATG {
-        nAtTypeTotals: totals_pointer,
-        t_group_info: tgi_work,
-        ..BN_AATG::default()
-    };
+    let mut p_aatg = BN_AATG::default();
     let mut stored_radicals = SourceMutPointer::<i32>::null();
 
     let result = (|| -> Result<i32, SourceHeapError> {
@@ -21002,8 +27263,10 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
             }
         }
 
-        let flags = work_get(heap, flags_pointer, 0)?;
-        if b_error == 0 && flags & TG_FLAG_MOVE_POS_CHARGES as u64 != 0 && num_atoms > 1 {
+        if b_error == 0
+            && flags_storage.flags(heap)? & TG_FLAG_MOVE_POS_CHARGES as u64 != 0
+            && num_atoms > 1
+        {
             c_group_info.c_group = match source_count(i64::from(num_atoms / 2)).and_then(|count| {
                 inchi_calloc::<C_GROUP>(heap, count, std::mem::size_of::<C_GROUP>() as u64)
             }) {
@@ -21024,7 +27287,10 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
             }
         }
 
-        if b_error == 0 && flags & TG_FLAG_TEST_TAUT__SALTS as u64 != 0 && has_t_group_info {
+        if b_error == 0
+            && flags_storage.flags(heap)? & TG_FLAG_TEST_TAUT__SALTS as u64 != 0
+            && has_t_group_info
+        {
             s_group_info.s_candidate = match source_count(i64::from(num_atoms)).and_then(|count| {
                 inchi_calloc::<S_CANDIDATE>(heap, count, std::mem::size_of::<S_CANDIDATE>() as u64)
             }) {
@@ -21039,7 +27305,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
         }
 
         if b_error == 0 {
-            if let Some(info) = tgi.as_mut() {
+            if let Some(info) = flags_storage.group.as_deref_mut() {
                 if !info.tGroupNumber.is_null() {
                     inchi_free(heap, info.tGroupNumber)?;
                     info.tGroupNumber = SourceMutPointer::null();
@@ -21057,7 +27323,6 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                     let removed_explicit_h = info.tni.nNumRemovedExplicitH;
                     info.tni = Default::default();
                     info.tni.nNumRemovedExplicitH = removed_explicit_h;
-                    store_one(heap, tgi_work, info.clone())?;
                 }
             }
         }
@@ -21074,472 +27339,523 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
                 &mut num_changed_bonds,
             )?;
             if !p_bns.is_null() {
-                let bns = one(heap, p_bns)?;
-                p_bd = AllocateAndInitBnData(heap, bns.max_vertices)?;
+                let max_vertices = heap.element_signed(p_bns.as_const(), 0)?.max_vertices;
+                p_bd = AllocateAndInitBnData(heap, max_vertices)?;
             }
 
             if p_bns.is_null() || p_bd.is_null() {
                 b_error = BNS_OUT_OF_RAM;
             } else {
-                let mut bns = one(heap, p_bns)?;
-                let mut bd = one(heap, p_bd)?;
-                bns.pbTautFlags = flags_pointer;
-                bns.pbTautFlagsDone = flags_done_pointer;
-                bns.ulTimeOutTime = ulTimeOutTime;
-                bns.ic = ic;
-
-                if BNS_PROTECT_FROM_TAUT == 1 {
-                    SetForbiddenEdges(
-                        heap,
-                        &mut bns,
-                        at,
-                        num_atoms,
-                        BNS_EDGE_FORBIDDEN_MASK as i32,
-                        nebend,
-                        ebend,
-                    )?;
-                }
-
-                if FIX_AROM_RADICAL == 1 && n_arom_radicals != 0 {
-                    let ret = BnsAdjustFlowBondsRad(
-                        heap,
-                        &mut bns,
-                        &mut bd,
-                        at,
-                        num_atoms,
-                        clock_result,
-                    )?;
-                    if !stored_radicals.is_null() {
-                        let atom_count = usize::try_from(num_atoms)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        for index in 0..atom_count {
-                            let radical = heap.slice(stored_radicals.as_const())?[index];
-                            if radical != 0 {
-                                let atom = heap
-                                    .slice_mut(at)?
-                                    .get_mut(index)
-                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                atom.radical = radical as i8;
-                                atom.num_H = atom.num_H.wrapping_sub(1);
+                // Native5378..5397 owns fresh, distinct graph records.
+                // Children use explicit references and separate child buffers;
+                // neither record contains a self pointer or escapes this call.
+                // INCHI✔️❗: No clones/writeback; O(1) safe extract/restore.
+                // Result restoration only, no panic-unwind claim; C530 OPEN.
+                heap.with_slice_mut_and_heap_mut(p_bns, |bns_values, heap| {
+                    let bns = bns_values
+                        .first_mut()
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    heap.with_slice_mut_and_heap_mut(p_bd, |bd_values, heap| {
+                        let bd = bd_values
+                            .first_mut()
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        // Native5391..5392 carries actual targets through BNS.
+                        // Explicit group origin covers endpoint/reinit and every
+                        // charge/salt/taut/DFS path flag reader. Only actual external
+                        // pointer mode binds physical fields. Unconsulted fields
+                        // never stand for semantic NULL. This BNS is freed here.
+                        // INCHI✔️❗: O(1), no model/copyback (C529 cost OPEN).
+                        if !has_t_group_info {
+                            if let SourceNormalizationFlags::Pointers { flags, done } =
+                                &flags_storage.external
+                            {
+                                bns.pbTautFlags = *flags;
+                                bns.pbTautFlagsDone = *done;
                             }
                         }
-                    }
-                    if is_bns_error(ret) {
-                        b_error = ret;
-                    }
-                }
+                        bns.ulTimeOutTime = ulTimeOutTime;
+                        bns.ic = ic;
 
-                if b_error == 0 {
-                    let ret = BnsAdjustFlowBondsRad(
-                        heap,
-                        &mut bns,
-                        &mut bd,
-                        at,
-                        num_atoms,
-                        clock_result,
-                    )?;
-                    if is_bns_error(ret) {
-                        b_error = ret;
-                    } else {
-                        bns.tot_st_flow = bns.tot_st_flow.wrapping_add(2_i32.wrapping_mul(ret));
-                    }
-                }
+                        // INCHI✔️❗: Native numeric errors bypass remaining chemistry.
+                        // Actual metadata mutations survive Result errors; both fresh
+                        // allocations are restored before common cleanup. C530 OPEN.
+                        if BNS_PROTECT_FROM_TAUT == 1 {
+                            SetForbiddenEdges(
+                                heap,
+                                bns,
+                                at,
+                                num_atoms,
+                                BNS_EDGE_FORBIDDEN_MASK as i32,
+                                nebend,
+                                ebend,
+                            )?;
+                        }
 
-                let mut b_change_flow = BNS_EF_CHNG_RSTR as i32 | BNS_EF_ALTR_BONDS as i32;
-                if b_error == 0 && bns.tot_st_cap > bns.tot_st_flow {
-                    b_change_flow |= BNS_EF_SET_NOSTEREO as i32;
-                }
-
-                if b_error == 0 && flags & TG_FLAG_VARIABLE_PROTONS as u64 != 0 && has_t_group_info
-                {
-                    let mut totals = vec![0_i32; ATTOT_ARRAY_LEN];
-                    let mark_result = {
-                        let atoms = heap.slice_mut(at)?;
-                        mark_at_type(atoms, num_atoms, Some(&mut totals))?
-                    };
-                    if mark_result != 0 && totals[ATTOT_NUM_CHARGES] != 0 {
-                        let info = tgi.as_mut().expect("t-group info exists");
-                        let n_num_orig_tot_atoms =
-                            i32::from(info.tni.nNumRemovedExplicitH).wrapping_add(num_atoms);
-                        heap.slice_mut(totals_pointer)?[..ATTOT_ARRAY_LEN].copy_from_slice(&totals);
-                        store_one(heap, tgi_work, info.clone())?;
-                        let ret = RemoveNPProtonsAndAcidCharges(
-                            heap,
-                            pCG,
-                            at,
-                            num_atoms,
-                            &mut p_aatg,
-                            &mut bns,
-                            &mut bd,
-                            clock_result,
-                        )?;
-                        *info = one(heap, tgi_work)?;
-                        work_set(heap, flags_pointer, 0, info.bTautFlags)?;
-                        work_set(heap, flags_done_pointer, 0, info.bTautFlagsDone)?;
-                        if is_bns_error(ret) {
-                            b_error = ret;
-                        } else if info.tni.bNormalizationFlags != 0 {
-                            SetInitCapFlowToCurrent(heap, &bns)?;
-                            if !at_fixed_bonds_out.is_null() {
-                                let count = usize::try_from(n_num_orig_tot_atoms)
+                        if FIX_AROM_RADICAL == 1 && n_arom_radicals != 0 {
+                            let ret =
+                                BnsAdjustFlowBondsRad(heap, bns, bd, at, num_atoms, clock_result)?;
+                            if !stored_radicals.is_null() {
+                                let atom_count = usize::try_from(num_atoms)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                                let source = heap.slice(at.as_const())?[..count].to_vec();
-                                let destination = heap.slice_mut(at_fixed_bonds_out)?;
-                                if destination.len() < count {
-                                    return Err(SourceHeapError::PointerOutOfBounds);
+                                for index in 0..atom_count {
+                                    let radical = heap.slice(stored_radicals.as_const())?[index];
+                                    if radical != 0 {
+                                        let atom = heap
+                                            .slice_mut(at)?
+                                            .get_mut(index)
+                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                        atom.radical = radical as i8;
+                                        atom.num_H = atom.num_H.wrapping_sub(1);
+                                    }
                                 }
-                                destination[..count].clone_from_slice(&source);
                             }
-                        }
-                    }
-                }
-
-                if b_error == 0 && flags & TG_FLAG_MOVE_POS_CHARGES as u64 != 0 {
-                    loop {
-                        let ret = MarkChargeGroups(
-                            heap,
-                            pCG,
-                            at,
-                            num_atoms,
-                            Some(&mut c_group_info),
-                            tgi.as_ref(),
-                            &mut bns,
-                            &mut bd,
-                            clock_result,
-                        )?;
-                        if is_bns_error(ret) {
-                            b_error = ret;
-                            break;
-                        }
-                        if ret != 0 {
-                            n_changes = n_changes.wrapping_add(ret);
-                            let atoms = heap.slice(at.as_const())?.to_vec();
-                            let ret2 = AddCGroups2BnStruct(
-                                heap,
-                                pCG,
-                                &mut bns,
-                                &atoms,
-                                num_atoms,
-                                Some(&mut c_group_info),
-                            )?;
-                            if is_bns_error(ret2) {
-                                b_error = ret2;
-                                break;
-                            }
-                            let done = work_get(heap, flags_done_pointer, 0)?
-                                | TG_FLAG_MOVE_POS_CHARGES_DONE as u64;
-                            work_set(heap, flags_done_pointer, 0, done)?;
-                        }
-                        if ret <= 0 {
-                            break;
-                        }
-                    }
-                }
-
-                if b_error == 0 {
-                    let ret = BnsTestAndMarkAltBonds(
-                        heap,
-                        &mut bns,
-                        &mut bd,
-                        at,
-                        num_atoms,
-                        fcd,
-                        b_change_flow,
-                        0,
-                        clock_result,
-                    )?;
-                    if is_bns_error(ret) {
-                        b_error = ret;
-                    }
-                }
-
-                let mut salt_pass = 0_i32;
-                let mut salt_step = 0_i32;
-                let mut salt_found = 0_i32;
-                while b_error == 0 {
-                    n_changes = 0;
-                    loop {
-                        let mut taut_found = 0_i32;
-                        let ret = loop {
-                            load_tgi_flags(heap, flags_pointer, flags_done_pointer, &mut tgi)?;
-                            let value = MarkTautomerGroups(
-                                heap,
-                                pCG,
-                                at,
-                                num_atoms,
-                                tgi.as_mut(),
-                                Some(&mut c_group_info),
-                                &mut bns,
-                                &mut bd,
-                                clock_result,
-                            )?;
-                            store_tgi_flags(heap, flags_pointer, flags_done_pointer, &tgi)?;
-                            if value <= 0 {
-                                break value;
-                            }
-                            taut_found = taut_found.wrapping_add(1);
-                        };
-                        if ret < 0 {
-                            b_error = ret;
-                        }
-                        if taut_found != 0 && salt_pass == 0 {
-                            let done = work_get(heap, flags_done_pointer, 0)?
-                                | TG_FLAG_TEST_TAUT__ATOMS_DONE as u64;
-                            work_set(heap, flags_done_pointer, 0, done)?;
-                        }
-
-                        if taut_found != 0 || salt_found != 0 {
-                            load_tgi_flags(heap, flags_pointer, flags_done_pointer, &mut tgi)?;
-                            let ret = ReInitBnStructAddGroups(
-                                heap,
-                                pCG,
-                                &mut bns,
-                                at,
-                                num_atoms,
-                                tgi.as_mut(),
-                                Some(&mut c_group_info),
-                            )?;
-                            store_tgi_flags(heap, flags_pointer, flags_done_pointer, &tgi)?;
                             if is_bns_error(ret) {
                                 b_error = ret;
-                                break;
+                                return Ok(b_error);
                             }
+                        }
 
-                            if work_get(heap, flags_pointer, 0)? & TG_FLAG_MOVE_POS_CHARGES as u64
-                                != 0
-                            {
-                                loop {
-                                    let ret = MarkChargeGroups(
-                                        heap,
-                                        pCG,
-                                        at,
-                                        num_atoms,
-                                        Some(&mut c_group_info),
-                                        tgi.as_ref(),
-                                        &mut bns,
-                                        &mut bd,
-                                        clock_result,
-                                    )?;
-                                    if is_bns_error(ret) {
-                                        b_error = ret;
-                                        break;
-                                    }
-                                    n_changes = n_changes.wrapping_add(ret);
-                                    if ret > 0 {
-                                        load_tgi_flags(
-                                            heap,
-                                            flags_pointer,
-                                            flags_done_pointer,
-                                            &mut tgi,
+                        if b_error == 0 {
+                            let ret =
+                                BnsAdjustFlowBondsRad(heap, bns, bd, at, num_atoms, clock_result)?;
+                            if is_bns_error(ret) {
+                                b_error = ret;
+                                return Ok(b_error);
+                            } else {
+                                bns.tot_st_flow =
+                                    bns.tot_st_flow.wrapping_add(2_i32.wrapping_mul(ret));
+                            }
+                        }
+
+                        let mut b_change_flow = BNS_EF_CHNG_RSTR as i32 | BNS_EF_ALTR_BONDS as i32;
+                        if b_error == 0 && bns.tot_st_cap > bns.tot_st_flow {
+                            b_change_flow |= BNS_EF_SET_NOSTEREO as i32;
+                        }
+
+                        if b_error == 0
+                            && flags_storage.flags(heap)? & TG_FLAG_VARIABLE_PROTONS as u64 != 0
+                            && has_t_group_info
+                        {
+                            // INCHI✔️❗: Native mark_at_type writes the same totals
+                            // consumed by deprotonation. Borrow both existing arrays;
+                            // no duplicate allocation, initialization or totals copy.
+                            // Nonpositive atom loops still clear totals without atoms.
+                            // O(N)/O(1) extra; checked-arena whole-call cost OPEN.
+                            // Native5270/5451 uses the same real fixed totals.
+                            // INCHI✔️❌: Safe initial33 zeros may precede the source
+                            // clear; C536 records that cost, no DSE claim.
+                            let mut totals = [0_i32; ATTOT_ARRAY_LEN];
+                            let mark_result = if num_atoms > 0 {
+                                heap.with_slice_mut_and_heap_mut(at, |atoms, _| {
+                                    mark_at_type(atoms, num_atoms, Some(&mut totals))
+                                })?
+                            } else {
+                                mark_at_type(&mut [], num_atoms, Some(&mut totals))?
+                            };
+                            if mark_result != 0 && totals[ATTOT_NUM_CHARGES] != 0 {
+                                let info = flags_storage
+                                    .group
+                                    .as_deref_mut()
+                                    .expect("t-group info exists");
+                                let n_num_orig_tot_atoms = i32::from(info.tni.nNumRemovedExplicitH)
+                                    .wrapping_add(num_atoms);
+                                // Native5472..5473 actual aliases; physical AATG fields
+                                // are unused in this complete borrowed closure.
+                                // Fresh root AATG is used once, never the legacy reset.
+                                // INCHI✔️❗: No model/clone/copyback, C536 cost OPEN.
+                                let mut targets = SourceAatgTargets::Borrowed {
+                                    totals: &mut totals,
+                                    group: info,
+                                };
+                                let ret = remove_np_with_targets(
+                                    heap,
+                                    pCG,
+                                    at,
+                                    num_atoms,
+                                    &mut p_aatg,
+                                    bns,
+                                    bd,
+                                    clock_result,
+                                    &mut targets,
+                                )?;
+                                if is_bns_error(ret) {
+                                    b_error = ret;
+                                    return Ok(b_error);
+                                } else if info.tni.bNormalizationFlags != 0 {
+                                    SetInitCapFlowToCurrent(heap, bns)?;
+                                    if !at_fixed_bonds_out.is_null() {
+                                        let count = usize::try_from(n_num_orig_tot_atoms)
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                                        // INCHI✔️❗: Native memcpy, O(count)/O(1)
+                                        // scratch, no atom snapshot. Preserve source
+                                        // admission before destination admission;
+                                        // native overlapping memcpy is undefined.
+                                        heap.slice(at.as_const())?
+                                            .get(..count)
+                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                        heap.copy_nonoverlapping_prefix(
+                                            at_fixed_bonds_out,
+                                            at.as_const(),
+                                            count,
+                                            false,
                                         )?;
-                                        let ret2 = ReInitBnStructAddGroups(
-                                            heap,
-                                            pCG,
-                                            &mut bns,
-                                            at,
-                                            num_atoms,
-                                            tgi.as_mut(),
-                                            Some(&mut c_group_info),
-                                        )?;
-                                        store_tgi_flags(
-                                            heap,
-                                            flags_pointer,
-                                            flags_done_pointer,
-                                            &tgi,
-                                        )?;
-                                        if is_bns_error(ret2) {
-                                            b_error = ret2;
-                                            break;
-                                        }
-                                        let done = work_get(heap, flags_done_pointer, 0)?
-                                            | TG_FLAG_MOVE_POS_CHARGES_DONE as u64;
-                                        work_set(heap, flags_done_pointer, 0, done)?;
-                                    }
-                                    if ret <= 0 {
-                                        break;
                                     }
                                 }
                             }
-                            if b_error != 0 {
-                                break;
+                        }
+
+                        if b_error == 0
+                            && flags_storage.flags(heap)? & TG_FLAG_MOVE_POS_CHARGES as u64 != 0
+                        {
+                            loop {
+                                let ret = mark_charge_groups_flags(
+                                    heap,
+                                    pCG,
+                                    at,
+                                    num_atoms,
+                                    Some(&mut c_group_info),
+                                    flags_storage.group.as_deref(),
+                                    bns,
+                                    bd,
+                                    clock_result,
+                                    Some(flags_storage.read_view()),
+                                )?;
+                                if is_bns_error(ret) {
+                                    b_error = ret;
+                                    return Ok(b_error);
+                                }
+                                if ret != 0 {
+                                    n_changes = n_changes.wrapping_add(ret);
+                                    // INCHI✔️❗: Reuse the sole charge builder with
+                                    // live atoms, no full-allocation snapshot. Its heap
+                                    // accesses are only C_GROUP/BNS_VERTEX/BNS_EDGE/i32,
+                                    // never this temporarily extracted atom allocation.
+                                    // Result success/error restores the allocation;
+                                    // no unwind-safety or whole-call cost claim.
+                                    let ret2 = if num_atoms > 0 {
+                                        heap.with_slice_mut_and_heap_mut(at, |atoms, heap| {
+                                            AddCGroups2BnStruct(
+                                                heap,
+                                                pCG,
+                                                bns,
+                                                atoms,
+                                                num_atoms,
+                                                Some(&mut c_group_info),
+                                            )
+                                        })?
+                                    } else {
+                                        AddCGroups2BnStruct(
+                                            heap,
+                                            pCG,
+                                            bns,
+                                            &[],
+                                            num_atoms,
+                                            Some(&mut c_group_info),
+                                        )?
+                                    };
+                                    if is_bns_error(ret2) {
+                                        b_error = ret2;
+                                        return Ok(b_error);
+                                    }
+                                    let done = flags_storage.done(heap)?
+                                        | TG_FLAG_MOVE_POS_CHARGES_DONE as u64;
+                                    flags_storage.set_done(heap, done)?;
+                                }
+                                if ret <= 0 {
+                                    break;
+                                }
                             }
-                            let ret = BnsTestAndMarkAltBonds(
+                        }
+
+                        if b_error == 0 {
+                            let ret = test_and_mark_alt_bonds_buffer(
                                 heap,
-                                &mut bns,
-                                &mut bd,
+                                bns,
+                                bd,
                                 at,
                                 num_atoms,
-                                fcd,
+                                &mut fcd,
                                 b_change_flow,
                                 0,
                                 clock_result,
                             )?;
                             if is_bns_error(ret) {
                                 b_error = ret;
-                                break;
+                                return Ok(b_error);
                             }
-                            n_changes = n_changes.wrapping_add(ret);
                         }
-                        salt_found = 0;
-                        if taut_found == 0 || b_error != 0 {
-                            break;
-                        }
-                    }
 
-                    if b_error != 0 {
-                        break;
-                    }
-
-                    let current_flags = work_get(heap, flags_pointer, 0)?;
-                    if current_flags & TG_FLAG_TEST_TAUT__SALTS as u64 != 0 {
-                        if current_flags & TG_FLAG_TEST_TAUT2_SALTS as u64 != 0 {
-                            if n_changes == 0 && salt_pass != 0 && salt_step != 0 {
-                                break;
-                            }
-                            if salt_step == 0 {
-                                load_tgi_flags(heap, flags_pointer, flags_done_pointer, &mut tgi)?;
-                                salt_found = MarkSaltChargeGroups(
-                                    heap,
-                                    pCG,
-                                    at,
-                                    num_atoms,
-                                    Some(&mut s_group_info),
-                                    tgi.as_mut(),
-                                    Some(&mut c_group_info),
-                                    &mut bns,
-                                    &mut bd,
-                                    clock_result,
-                                )?;
-                                store_tgi_flags(heap, flags_pointer, flags_done_pointer, &tgi)?;
-                                if salt_found < 0 {
-                                    b_error = salt_found;
-                                    break;
-                                }
-                                if salt_found > 0 {
-                                    let done = work_get(heap, flags_done_pointer, 0)?
-                                        | TG_FLAG_TEST_TAUT__SALTS_DONE as u64;
-                                    work_set(heap, flags_done_pointer, 0, done)?;
-                                }
-                                salt_step = i32::from(salt_found == 0);
-                            }
-                            if salt_step != 0 {
-                                load_tgi_flags(heap, flags_pointer, flags_done_pointer, &mut tgi)?;
-                                salt_found = MarkSaltChargeGroups2(
-                                    heap,
-                                    pCG,
-                                    at,
-                                    num_atoms,
-                                    Some(&mut s_group_info),
-                                    tgi.as_mut(),
-                                    Some(&mut c_group_info),
-                                    &mut bns,
-                                    &mut bd,
-                                    clock_result,
-                                )?;
-                                store_tgi_flags(heap, flags_pointer, flags_done_pointer, &tgi)?;
-                                if salt_found < 0 {
-                                    b_error = salt_found;
-                                    break;
-                                }
-                                if salt_found == 1 || salt_found == 5 {
-                                    let mut done = work_get(heap, flags_done_pointer, 0)?
-                                        | TG_FLAG_TEST_TAUT2_SALTS_DONE as u64;
-                                    if salt_found == 5 {
-                                        done |= TG_FLAG_TEST_TAUT3_SALTS_DONE as u64;
+                        let mut salt_pass = 0_i32;
+                        let mut salt_step = 0_i32;
+                        let mut salt_found = 0_i32;
+                        while b_error == 0 {
+                            n_changes = 0;
+                            loop {
+                                let mut taut_found = 0_i32;
+                                let ret = loop {
+                                    let value = MarkTautomerGroups_source_flags(
+                                        heap,
+                                        pCG,
+                                        at,
+                                        num_atoms,
+                                        flags_storage.group.as_deref_mut(),
+                                        Some(&mut c_group_info),
+                                        bns,
+                                        bd,
+                                        clock_result,
+                                        true,
+                                    )?;
+                                    if value <= 0 {
+                                        break value;
                                     }
-                                    work_set(heap, flags_done_pointer, 0, done)?;
+                                    taut_found = taut_found.wrapping_add(1);
+                                };
+                                if ret < 0 {
+                                    b_error = ret;
+                                }
+                                if taut_found != 0 && salt_pass == 0 {
+                                    let done = flags_storage.done(heap)?
+                                        | TG_FLAG_TEST_TAUT__ATOMS_DONE as u64;
+                                    flags_storage.set_done(heap, done)?;
+                                }
+
+                                if taut_found != 0 || salt_found != 0 {
+                                    let ret = reinit_bn_struct_add_groups_source_flags(
+                                        heap,
+                                        pCG,
+                                        bns,
+                                        at,
+                                        num_atoms,
+                                        flags_storage.group.as_deref_mut(),
+                                        Some(&mut c_group_info),
+                                        true,
+                                    )?;
+                                    if is_bns_error(ret) {
+                                        b_error = ret;
+                                        return Ok(b_error);
+                                    }
+
+                                    if flags_storage.flags(heap)? & TG_FLAG_MOVE_POS_CHARGES as u64
+                                        != 0
+                                    {
+                                        loop {
+                                            let ret = mark_charge_groups_flags(
+                                                heap,
+                                                pCG,
+                                                at,
+                                                num_atoms,
+                                                Some(&mut c_group_info),
+                                                flags_storage.group.as_deref(),
+                                                bns,
+                                                bd,
+                                                clock_result,
+                                                Some(flags_storage.read_view()),
+                                            )?;
+                                            if is_bns_error(ret) {
+                                                b_error = ret;
+                                                return Ok(b_error);
+                                            }
+                                            n_changes = n_changes.wrapping_add(ret);
+                                            if ret > 0 {
+                                                let ret2 =
+                                                    reinit_bn_struct_add_groups_source_flags(
+                                                        heap,
+                                                        pCG,
+                                                        bns,
+                                                        at,
+                                                        num_atoms,
+                                                        flags_storage.group.as_deref_mut(),
+                                                        Some(&mut c_group_info),
+                                                        true,
+                                                    )?;
+                                                if is_bns_error(ret2) {
+                                                    b_error = ret2;
+                                                    return Ok(b_error);
+                                                }
+                                                let done = flags_storage.done(heap)?
+                                                    | TG_FLAG_MOVE_POS_CHARGES_DONE as u64;
+                                                flags_storage.set_done(heap, done)?;
+                                            }
+                                            if ret <= 0 {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if b_error != 0 {
+                                        break;
+                                    }
+                                    let ret = test_and_mark_alt_bonds_buffer(
+                                        heap,
+                                        bns,
+                                        bd,
+                                        at,
+                                        num_atoms,
+                                        &mut fcd,
+                                        b_change_flow,
+                                        0,
+                                        clock_result,
+                                    )?;
+                                    if is_bns_error(ret) {
+                                        b_error = ret;
+                                        return Ok(b_error);
+                                    }
+                                    n_changes = n_changes.wrapping_add(ret);
+                                }
+                                salt_found = 0;
+                                if taut_found == 0 || b_error != 0 {
+                                    break;
                                 }
                             }
-                            salt_pass = salt_pass.wrapping_add(1);
-                        } else {
-                            if n_changes == 0 && salt_pass != 0 {
+
+                            if b_error != 0 {
                                 break;
                             }
-                            load_tgi_flags(heap, flags_pointer, flags_done_pointer, &mut tgi)?;
-                            salt_found = MarkSaltChargeGroups(
+
+                            let current_flags = flags_storage.flags(heap)?;
+                            if current_flags & TG_FLAG_TEST_TAUT__SALTS as u64 != 0 {
+                                if current_flags & TG_FLAG_TEST_TAUT2_SALTS as u64 != 0 {
+                                    if n_changes == 0 && salt_pass != 0 && salt_step != 0 {
+                                        break;
+                                    }
+                                    if salt_step == 0 {
+                                        salt_found = MarkSaltChargeGroups_source_flags(
+                                            heap,
+                                            pCG,
+                                            at,
+                                            num_atoms,
+                                            Some(&mut s_group_info),
+                                            flags_storage.group.as_deref_mut(),
+                                            Some(&mut c_group_info),
+                                            bns,
+                                            bd,
+                                            clock_result,
+                                            true,
+                                        )?;
+                                        if salt_found < 0 {
+                                            b_error = salt_found;
+                                            break;
+                                        }
+                                        if salt_found > 0 {
+                                            let done = flags_storage.done(heap)?
+                                                | TG_FLAG_TEST_TAUT__SALTS_DONE as u64;
+                                            flags_storage.set_done(heap, done)?;
+                                        }
+                                        salt_step = i32::from(salt_found == 0);
+                                    }
+                                    if salt_step != 0 {
+                                        salt_found = MarkSaltChargeGroups2_source_flags(
+                                            heap,
+                                            pCG,
+                                            at,
+                                            num_atoms,
+                                            Some(&mut s_group_info),
+                                            flags_storage.group.as_deref_mut(),
+                                            Some(&mut c_group_info),
+                                            bns,
+                                            bd,
+                                            clock_result,
+                                            true,
+                                        )?;
+                                        if salt_found < 0 {
+                                            b_error = salt_found;
+                                            break;
+                                        }
+                                        if salt_found == 1 || salt_found == 5 {
+                                            let mut done = flags_storage.done(heap)?
+                                                | TG_FLAG_TEST_TAUT2_SALTS_DONE as u64;
+                                            if salt_found == 5 {
+                                                done |= TG_FLAG_TEST_TAUT3_SALTS_DONE as u64;
+                                            }
+                                            flags_storage.set_done(heap, done)?;
+                                        }
+                                    }
+                                    salt_pass = salt_pass.wrapping_add(1);
+                                } else {
+                                    if n_changes == 0 && salt_pass != 0 {
+                                        break;
+                                    }
+                                    salt_found = MarkSaltChargeGroups_source_flags(
+                                        heap,
+                                        pCG,
+                                        at,
+                                        num_atoms,
+                                        Some(&mut s_group_info),
+                                        flags_storage.group.as_deref_mut(),
+                                        Some(&mut c_group_info),
+                                        bns,
+                                        bd,
+                                        clock_result,
+                                        true,
+                                    )?;
+                                    if salt_found < 0 {
+                                        b_error = salt_found;
+                                        break;
+                                    }
+                                    if salt_found > 0 {
+                                        let done = flags_storage.done(heap)?
+                                            | TG_FLAG_TEST_TAUT__SALTS_DONE as u64;
+                                        flags_storage.set_done(heap, done)?;
+                                    }
+                                    salt_pass = salt_pass.wrapping_add(1);
+                                }
+                            }
+                            if salt_found == 0 || b_error != 0 {
+                                break;
+                            }
+                        }
+
+                        let current_flags = flags_storage.flags(heap)?;
+                        if current_flags & TG_FLAG_MERGE_TAUT_SALTS as u64 != 0 && b_error == 0 {
+                            let ret = MergeSaltTautGroups_source_flags(
                                 heap,
                                 pCG,
                                 at,
                                 num_atoms,
                                 Some(&mut s_group_info),
-                                tgi.as_mut(),
+                                flags_storage.group.as_deref_mut(),
                                 Some(&mut c_group_info),
-                                &mut bns,
-                                &mut bd,
-                                clock_result,
+                                Some(&mut *bns),
+                                true,
                             )?;
-                            store_tgi_flags(heap, flags_pointer, flags_done_pointer, &tgi)?;
-                            if salt_found < 0 {
-                                b_error = salt_found;
-                                break;
-                            }
-                            if salt_found > 0 {
-                                let done = work_get(heap, flags_done_pointer, 0)?
-                                    | TG_FLAG_TEST_TAUT__SALTS_DONE as u64;
-                                work_set(heap, flags_done_pointer, 0, done)?;
-                            }
-                            salt_pass = salt_pass.wrapping_add(1);
-                        }
-                    }
-                    if salt_found == 0 || b_error != 0 {
-                        break;
-                    }
-                }
-
-                let current_flags = work_get(heap, flags_pointer, 0)?;
-                if current_flags & TG_FLAG_MERGE_TAUT_SALTS as u64 != 0 && b_error == 0 {
-                    load_tgi_flags(heap, flags_pointer, flags_done_pointer, &mut tgi)?;
-                    let ret = MergeSaltTautGroups(
-                        heap,
-                        pCG,
-                        at,
-                        num_atoms,
-                        Some(&mut s_group_info),
-                        tgi.as_mut(),
-                        Some(&mut c_group_info),
-                        Some(&mut bns),
-                    )?;
-                    store_tgi_flags(heap, flags_pointer, flags_done_pointer, &tgi)?;
-                    if ret < 0 {
-                        b_error = ret;
-                    } else if ret > 0 {
-                        let done = work_get(heap, flags_done_pointer, 0)?
-                            | TG_FLAG_MERGE_TAUT_SALTS_DONE as u64;
-                        work_set(heap, flags_done_pointer, 0, done)?;
-                    }
-                }
-
-                if b_error == 0 {
-                    load_tgi_flags(heap, flags_pointer, flags_done_pointer, &mut tgi)?;
-                    if let Some(info) = tgi.as_mut() {
-                        if info.bTautFlags & TG_FLAG_VARIABLE_PROTONS as u64 != 0
-                            && info.bTautFlagsDone
-                                & (TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE as u64
-                                    | TG_FLAG_FOUND_ISOTOPIC_H_DONE as u64)
-                                != 0
-                        {
-                            let ret = MakeIsotopicHGroup(
-                                heap,
-                                at,
-                                num_atoms,
-                                Some(&mut s_group_info),
-                                Some(info),
-                            )?;
-                            work_set(heap, flags_pointer, 0, info.bTautFlags)?;
-                            work_set(heap, flags_done_pointer, 0, info.bTautFlagsDone)?;
                             if ret < 0 {
                                 b_error = ret;
+                            } else if ret > 0 {
+                                let done = flags_storage.done(heap)?
+                                    | TG_FLAG_MERGE_TAUT_SALTS_DONE as u64;
+                                flags_storage.set_done(heap, done)?;
                             }
                         }
-                    }
-                }
 
-                remove_alt_bond_marks(heap, at, num_atoms)?;
-                ReInitBnStructForAltBns(heap, &mut bns, at, num_atoms, 0)?;
-                MarkRingSystemsAltBns(heap, &bns, 0)?;
-                MarkNonStereoAltBns(heap, &bns, at, num_atoms, 0)?;
-                store_one(heap, p_bns, bns)?;
-                store_one(heap, p_bd, bd)?;
+                        if b_error == 0 {
+                            if let Some(info) = flags_storage.group.as_deref_mut() {
+                                if info.bTautFlags & TG_FLAG_VARIABLE_PROTONS as u64 != 0
+                                    && info.bTautFlagsDone
+                                        & (TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE as u64
+                                            | TG_FLAG_FOUND_ISOTOPIC_H_DONE as u64)
+                                        != 0
+                                {
+                                    let ret = MakeIsotopicHGroup(
+                                        heap,
+                                        at,
+                                        num_atoms,
+                                        Some(&mut s_group_info),
+                                        Some(info),
+                                    )?;
+
+                                    if ret < 0 {
+                                        b_error = ret;
+                                    }
+                                }
+                            }
+                        }
+
+                        remove_alt_bond_marks(heap, at, num_atoms)?;
+                        ReInitBnStructForAltBns(heap, bns, at, num_atoms, 0)?;
+                        MarkRingSystemsAltBns(heap, bns, 0)?;
+                        MarkNonStereoAltBns(heap, bns, at, num_atoms, 0)?;
+                        Ok(b_error)
+                    })
+                })?;
             }
         }
         Ok(if b_error != 0 { b_error } else { num_atoms })
@@ -21566,7 +27882,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
         inchi_free(heap, p_aatg.nEndPoint)?;
     }
 
-    if let Some(info) = tgi.as_mut() {
+    if let Some(info) = flags_storage.group.as_deref_mut() {
         if !info.tGroupNumber.is_null() {
             inchi_free(heap, info.tGroupNumber)?;
             info.tGroupNumber = SourceMutPointer::null();
@@ -21582,7 +27898,7 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
             .at_type
             == ATT_PROTON as u16
     {
-        if let Some(info) = tgi.as_mut() {
+        if let Some(info) = flags_storage.group.as_deref_mut() {
             if info.tni.nNumRemovedExplicitH == 0 {
                 info.tni.nNumRemovedProtons = 1;
                 info.tni.bNormalizationFlags |= FLAG_PROTON_SINGLE_REMOVED as u64;
@@ -21608,18 +27924,6 @@ pub(crate) fn mark_alt_bonds_and_taut_groups(
         inchi_free(heap, stored_radicals)?;
     }
 
-    if let Some(info) = tgi.as_mut() {
-        info.bTautFlags = work_get(heap, flags_pointer, 0)?;
-        info.bTautFlagsDone = work_get(heap, flags_done_pointer, 0)?;
-        store_one(heap, t_group_info, info.clone())?;
-    }
-    if has_t_group_info {
-        heap.free(flags_pointer)?;
-        heap.free(flags_done_pointer)?;
-        heap.free(tgi_work)?;
-    }
-    heap.free(fcd)?;
-    heap.free(totals_pointer)?;
     result
 }
 
@@ -34002,5 +40306,635 @@ mod tests {
             bIgnoreVertexNonTACN_atom(&heap, &missing_vertices, 7, 2),
             Err(SourceHeapError::NullPointer)
         );
+    }
+}
+
+#[cfg(test)]
+mod flow_predicate_regression {
+    use super::bNeedToTestTheFlow;
+
+    // Fixed scalar controls from dev/plans/inchi_repair.md, independently
+    // verified by pinned InChI v1.07.5 before installation. Ordinary tests
+    // never compile/invoke an oracle or read source/reference output.
+    #[test]
+    fn inchi_repair_flow_scalar_branch_matrix() {
+        const MARKS: [i32; 8] = [0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70];
+        const TYPES: [i32; 7] = [0, 1, 2, 3, 4, 9, 15];
+        const FLOWS: [i32; 5] = [-1, 0, 1, 2, 3];
+        const FLAGS: [i32; 3] = [0, 1, -1];
+        const FALSE_MODE: [[i32; 3]; 8] = [
+            [1, 1, 1],
+            [0, 0, 1],
+            [0, 0, 0],
+            [0, 1, 0],
+            [1, 0, 0],
+            [0, 0, 1],
+            [1, 1, 1],
+            [1, 1, 1],
+        ];
+        const TRUE_MODE: [[i32; 3]; 8] = [
+            [1, 1, 1],
+            [1, 1, 1],
+            [0, 0, 0],
+            [0, 1, 0],
+            [1, 0, 0],
+            [0, 0, 1],
+            [1, 1, 1],
+            [1, 1, 1],
+        ];
+        const REGRESSIONS: [(i32, i32, i32, i32); 2] = [(0x34, 2, 0, 0), (0x14, 2, 0, 1)];
+        const HIGH_BITS: [(i32, i32, i32, i32); 8] = [
+            (i32::MIN + 0x34, 2, 0, 0),
+            (i32::MIN + 0x14, 2, 0, 1),
+            (-1, 2, 0, 1),
+            (-1, 0, 1, 1),
+            (0x134, 2, 0, 0),
+            (0x114, 2, 0, 1),
+            (0x154, 1, 0, 0),
+            (0x120, 0, -1, 0),
+        ];
+        let mut attempted = 0_usize;
+        let mut returned = 0_usize;
+        let mut panics = 0_usize;
+        let mut mismatches = 0_usize;
+        let mut groups = [0_usize; 3];
+        let mut check = |group: usize, bond: i32, flow: i32, flag: i32, expected: i32| {
+            let input = [bond, flow, flag];
+            let before = input;
+            attempted += 1;
+            match std::panic::catch_unwind(|| bNeedToTestTheFlow(input[0], input[1], input[2])) {
+                Ok(actual) => {
+                    returned += 1;
+                    groups[group] += 1;
+                    if !matches!(actual, 0 | 1) || actual != expected {
+                        mismatches += 1;
+                    }
+                    eprintln!(
+                        "flow control={attempted} group={group} input={input:?} expected={expected} actual={actual}"
+                    );
+                }
+                Err(_) => {
+                    // Collect every quarantined failure, then fail the test.
+                    // No panic is interpreted as a supported result or a pass.
+                    panics += 1;
+                    eprintln!("flow control={attempted} group={group} input={input:?} PANIC");
+                }
+            }
+            assert_eq!(input, before, "scalar inputs changed");
+        };
+        for (mark_index, mark) in MARKS.into_iter().enumerate() {
+            for bond_type in TYPES {
+                for flow in FLOWS {
+                    for flag in FLAGS {
+                        let expected = if matches!(flow, -1 | 3) {
+                            1
+                        } else if flag == 0 {
+                            FALSE_MODE[mark_index][flow as usize]
+                        } else {
+                            TRUE_MODE[mark_index][flow as usize]
+                        };
+                        check(0, mark | bond_type, flow, flag, expected);
+                    }
+                }
+            }
+        }
+        for (bond, flow, flag, expected) in REGRESSIONS {
+            check(1, bond, flow, flag, expected);
+        }
+        for (bond, flow, flag, expected) in HIGH_BITS {
+            check(2, bond, flow, flag, expected);
+        }
+        eprintln!(
+            "FLOW_CENSUS attempted={attempted} returned={returned} panics={panics} mismatches={mismatches} groups={groups:?}"
+        );
+        assert_eq!(attempted, 850, "actual invocation attempts");
+        assert_eq!(panics, 0, "every caught quarantine panic is a failure");
+        assert_eq!(returned, 850, "post-return census");
+        assert_eq!(groups, [840, 2, 8], "post-return group census");
+        assert_eq!(mismatches, 0, "exact literal source expectations");
+    }
+}
+
+#[cfg(test)]
+mod charged_neighbor_regressions {
+    use super::bHasChargedNeighbor;
+    use crate::source_types::{SourceHeapError, inp_ATOM};
+    const INPUTS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/charged_neighbor/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/charged_neighbor/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/charged_neighbor/manifest.json"
+    ));
+    fn dirty_atom(seed: u8, index: usize) -> inp_ATOM {
+        let mut a = inp_ATOM::default();
+        let word = u64::from(seed).wrapping_add((index as u64).wrapping_mul(0x9e3779b97f4a7c15));
+        a.elname = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(0) as _
+        });
+        a.el_number = word.rotate_left(1) as _;
+        a.neighbor = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(2) as _
+        });
+        a.orig_at_number = word.rotate_left(3) as _;
+        a.orig_compt_at_numb = word.rotate_left(4) as _;
+        a.bond_stereo = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(5) as _
+        });
+        a.bond_type = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(6) as _
+        });
+        a.valence = word.rotate_left(7) as _;
+        a.chem_bonds_valence = word.rotate_left(8) as _;
+        a.num_H = word.rotate_left(9) as _;
+        a.num_iso_H = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(10) as _
+        });
+        a.iso_atw_diff = word.rotate_left(11) as _;
+        a.charge = word.rotate_left(12) as _;
+        a.radical = word.rotate_left(13) as _;
+        a.bAmbiguousStereo = word.rotate_left(14) as _;
+        a.cFlags = word.rotate_left(15) as _;
+        a.at_type = word.rotate_left(16) as _;
+        a.component = word.rotate_left(17) as _;
+        a.endpoint = word.rotate_left(18) as _;
+        a.c_point = word.rotate_left(19) as _;
+        a.x = f64::from_bits(word.rotate_left(20) ^ 0x7ff8000000000001);
+        a.y = f64::from_bits(word.rotate_left(21) ^ 0x7ff8000000000001);
+        a.z = f64::from_bits(word.rotate_left(22) ^ 0x7ff8000000000001);
+        a.bUsed0DParity = word.rotate_left(23) as _;
+        a.p_parity = word.rotate_left(24) as _;
+        a.p_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(25) as _
+        });
+        a.sb_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(26) as _
+        });
+        a.sn_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(27) as _
+        });
+        a.sb_parity = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(28) as _
+        });
+        a.sn_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(29) as _
+        });
+        a.bCutVertex = word.rotate_left(30) as _;
+        a.nRingSystem = word.rotate_left(31) as _;
+        a.nNumAtInRingSystem = word.rotate_left(32) as _;
+        a.nBlockSystem = word.rotate_left(33) as _;
+        a.charge = 0;
+        a
+    }
+
+    fn unchanged(a: &[inp_ATOM], b: &[inp_ATOM]) -> bool {
+        a.len() == b.len()
+            && a.iter().zip(b).all(|(a, b)| {
+                let bits_equal = a.x.to_bits() == b.x.to_bits()
+                    && a.y.to_bits() == b.y.to_bits()
+                    && a.z.to_bits() == b.z.to_bits();
+                let (mut a, mut b) = (*a, *b);
+                a.x = 0.0;
+                a.y = 0.0;
+                a.z = 0.0;
+                b.x = 0.0;
+                b.y = 0.0;
+                b.z = 0.0;
+                bits_equal && a == b
+            })
+    }
+
+    fn fingerprint(value: &str) -> u64 {
+        value.bytes().fold(14695981039346656037, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(1099511628211)
+        })
+    }
+    #[inline(never)]
+    fn full_consumer(at: &[inp_ATOM], iat: i32) -> Result<i32, SourceHeapError> {
+        bHasChargedNeighbor(at, iat)
+    }
+    fn check(full: bool) {
+        assert_eq!(fingerprint(INPUTS), 0x4abc1327818bb91f);
+        assert_eq!(fingerprint(EXPECTED), 0xc7a5cc925a0bb032);
+        assert_eq!(fingerprint(MANIFEST), 0x4496b8331f7d6494);
+        assert_eq!(INPUTS.lines().count(), 120890);
+        assert_eq!(EXPECTED.lines().count(), 120890);
+        let (mut calls, mut ok, mut errors, mut panics, mut native_ids) = (0, 0, 0, 0, 0);
+        for (id, (line, reference)) in INPUTS.lines().zip(EXPECTED.lines()).enumerate() {
+            let w: Vec<_> = line.split_whitespace().collect();
+            let e: Vec<_> = reference.split_whitespace().collect();
+            assert_eq!(w.len(), 10);
+            assert_eq!(e.len(), 4);
+            assert_eq!(w[0].parse::<usize>().unwrap(), id);
+            assert_eq!(e[0], w[0]);
+            assert_eq!(e[3], "0");
+            native_ids += usize::from(w[1] == "1");
+            let n = w[2].parse::<usize>().unwrap();
+            let off = w[3].parse::<usize>().unwrap();
+            let iat = w[4].parse::<i32>().unwrap();
+            let valence = w[5].parse::<i8>().unwrap();
+            let charged = w[6].parse::<i32>().unwrap();
+            let charge = w[7].parse::<i8>().unwrap();
+            let seed = w[8].parse::<u8>().unwrap();
+            let neighbors: Vec<_> = w[9].split(',').map(|s| s.parse::<u16>().unwrap()).collect();
+            assert_eq!(neighbors.len(), 20);
+            assert!(off <= n);
+            let mut at: Vec<_> = (0..n).map(|j| dirty_atom(seed, j)).collect();
+            if let Ok(center) = usize::try_from(iat) {
+                if let Some(center) = at[off..].get_mut(center) {
+                    center.valence = valence;
+                    center.neighbor.copy_from_slice(&neighbors);
+                }
+            }
+            if let Ok(charged) = usize::try_from(charged) {
+                if let Some(target) = at.get_mut(charged) {
+                    target.charge = charge;
+                }
+            }
+            let original = at.clone();
+            let wanted = if e[1] == "O" {
+                assert_eq!(w[1], "1");
+                Ok(e[2].parse::<i32>().unwrap())
+            } else {
+                assert_eq!(w[1], "0");
+                assert_eq!(e[2], "PointerOutOfBounds");
+                Err(SourceHeapError::PointerOutOfBounds)
+            };
+
+            for repeat in 0..2 {
+                let actual = std::panic::catch_unwind(|| {
+                    if full {
+                        full_consumer(&at[off..], iat)
+                    } else {
+                        bHasChargedNeighbor(&at[off..], iat)
+                    }
+                });
+                calls += 1;
+                match actual {
+                    Ok(result) => {
+                        assert_eq!(result, wanted, "ID{id}/repeat{repeat}/full{full}");
+                        ok += usize::from(result.is_ok());
+                        errors += usize::from(result.is_err());
+                    }
+                    Err(payload) => {
+                        let text = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if text
+                            == Some(
+                                "INCHI-AUDIT-0030: suspected per-neighbor access cost regression; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            panics += 1;
+                        } else {
+                            std::panic::resume_unwind(payload);
+                        }
+                    }
+                }
+                assert!(
+                    unchanged(&at, &original),
+                    "whole field/coordinate bits ID{id}"
+                );
+            }
+        }
+        assert_eq!(native_ids, 120495);
+        assert_eq!(calls, 241780);
+        println!(
+            "charged_neighbor full={full} calls={calls} returned_ok={ok} typed_errors={errors} exact0030panics={panics} returned_value_differences=0 storage_changes=0"
+        );
+        assert_eq!((ok, errors, panics), (240990, 790, 0));
+    }
+    #[test]
+    fn signed_charge_first_hit_and_state() {
+        check(false);
+    }
+    #[test]
+    fn full_result_and_reached_bounds_errors() {
+        check(true);
+    }
+}
+
+#[cfg(test)]
+mod bond_valence_regressions {
+    use super::nBondsValenceInpAt;
+    use crate::source_types::inp_ATOM;
+    const INPUTS: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/bond_valence/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/bond_valence/expected.txt"
+    ));
+    const MANIFEST: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/bond_valence/manifest.json"
+    ));
+    fn dirty_atom(seed: u8, index: usize) -> inp_ATOM {
+        let mut a = inp_ATOM::default();
+        let word = u64::from(seed).wrapping_add((index as u64).wrapping_mul(0x9e3779b97f4a7c15));
+        a.elname = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(0) as _
+        });
+        a.el_number = word.rotate_left(1) as _;
+        a.neighbor = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(2) as _
+        });
+        a.orig_at_number = word.rotate_left(3) as _;
+        a.orig_compt_at_numb = word.rotate_left(4) as _;
+        a.bond_stereo = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(5) as _
+        });
+        a.bond_type = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(6) as _
+        });
+        a.valence = word.rotate_left(7) as _;
+        a.chem_bonds_valence = word.rotate_left(8) as _;
+        a.num_H = word.rotate_left(9) as _;
+        a.num_iso_H = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(10) as _
+        });
+        a.iso_atw_diff = word.rotate_left(11) as _;
+        a.charge = word.rotate_left(12) as _;
+        a.radical = word.rotate_left(13) as _;
+        a.bAmbiguousStereo = word.rotate_left(14) as _;
+        a.cFlags = word.rotate_left(15) as _;
+        a.at_type = word.rotate_left(16) as _;
+        a.component = word.rotate_left(17) as _;
+        a.endpoint = word.rotate_left(18) as _;
+        a.c_point = word.rotate_left(19) as _;
+        a.x = f64::from_bits(word.rotate_left(20) ^ 0x7ff8000000000001);
+        a.y = f64::from_bits(word.rotate_left(21) ^ 0x7ff8000000000001);
+        a.z = f64::from_bits(word.rotate_left(22) ^ 0x7ff8000000000001);
+        a.bUsed0DParity = word.rotate_left(23) as _;
+        a.p_parity = word.rotate_left(24) as _;
+        a.p_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(25) as _
+        });
+        a.sb_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(26) as _
+        });
+        a.sn_ord = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(27) as _
+        });
+        a.sb_parity = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(28) as _
+        });
+        a.sn_orig_at_num = std::array::from_fn(|j| {
+            word.wrapping_add((j as u64).wrapping_mul(37))
+                .rotate_left(29) as _
+        });
+        a.bCutVertex = word.rotate_left(30) as _;
+        a.nRingSystem = word.rotate_left(31) as _;
+        a.nNumAtInRingSystem = word.rotate_left(32) as _;
+        a.nBlockSystem = word.rotate_left(33) as _;
+        a.charge = 0;
+        a
+    }
+
+    fn unchanged(a: &[inp_ATOM], b: &[inp_ATOM]) -> bool {
+        a.len() == b.len()
+            && a.iter().zip(b).all(|(a, b)| {
+                let bits_equal = a.x.to_bits() == b.x.to_bits()
+                    && a.y.to_bits() == b.y.to_bits()
+                    && a.z.to_bits() == b.z.to_bits();
+                let (mut a, mut b) = (*a, *b);
+                a.x = 0.0;
+                a.y = 0.0;
+                a.z = 0.0;
+                b.x = 0.0;
+                b.y = 0.0;
+                b.z = 0.0;
+                bits_equal && a == b
+            })
+    }
+    fn fingerprint(value: &str) -> u64 {
+        value.bytes().fold(14695981039346656037, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(1099511628211)
+        })
+    }
+    #[inline(never)]
+    fn full_consumer(at: &inp_ATOM, a: Option<&mut i32>, b: Option<&mut i32>) -> i32 {
+        nBondsValenceInpAt(at, a, b)
+    }
+    fn check(full: bool) {
+        assert_eq!(fingerprint(INPUTS), 0xa65e0e87df265a29);
+        assert_eq!(fingerprint(EXPECTED), 0x940fd19ca55b7d1b);
+        assert_eq!(fingerprint(MANIFEST), 0xb739e480fe4cedff);
+        assert_eq!(INPUTS.lines().count(), 337732);
+        assert_eq!(EXPECTED.lines().count(), 337732);
+        let (inputs, expected) = (INPUTS, EXPECTED);
+        let (mut calls, mut bounds, mut ok, mut guards) = (0, 0, 0, 0);
+        for (id, (line, reference)) in inputs.lines().zip(expected.lines()).enumerate() {
+            let w: Vec<_> = line.split_whitespace().collect();
+            let e: Vec<_> = reference.split_whitespace().collect();
+            assert_eq!(w.len(), 7);
+            assert_eq!(e.len(), 6);
+            assert_eq!(w[0].parse::<usize>().unwrap(), id);
+            assert_eq!(e[0], w[0]);
+            assert_eq!(e[5], "0");
+            let center = w[2].parse::<usize>().unwrap();
+            let valence = w[3].parse::<i8>().unwrap();
+            let presence = w[4].parse::<u8>().unwrap();
+            let seed = w[5].parse::<u8>().unwrap();
+            assert!(center < 3 && presence < 4);
+            assert_eq!(w[6].len(), 40);
+            let mut at = std::array::from_fn::<_, 3, _>(|j| dirty_atom(seed, j));
+            at[center].valence = valence;
+            for j in 0..20 {
+                at[center].bond_type[j] = u8::from_str_radix(&w[6][j * 2..j * 2 + 2], 16).unwrap();
+            }
+            let original = at;
+            for _ in 0..2 {
+                let (mut alt, mut wrong) = (17011, -29017);
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let a = (presence & 1 != 0).then_some(&mut alt);
+                    let b = (presence & 2 != 0).then_some(&mut wrong);
+                    if full {
+                        full_consumer(&at[center], a, b)
+                    } else {
+                        nBondsValenceInpAt(&at[center], a, b)
+                    }
+                }));
+                match result {
+                    Ok(value) => {
+                        assert_eq!(e[1], "O", "ID{id}");
+                        assert_eq!(w[1], "1");
+                        assert_eq!(value, e[2].parse::<i32>().unwrap(), "ID{id}");
+                        assert_eq!(alt, e[3].parse::<i32>().unwrap(), "alt ID{id}");
+                        assert_eq!(wrong, e[4].parse::<i32>().unwrap(), "wrong ID{id}");
+                        ok += 1;
+                    }
+                    Err(payload) => {
+                        let text = payload
+                            .downcast_ref::<String>()
+                            .map(String::as_str)
+                            .or_else(|| payload.downcast_ref::<&str>().copied());
+                        if text
+                            == Some(
+                                "INCHI-AUDIT-0115: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            guards += 1;
+                        } else if text
+                            == Some("index out of bounds: the len is 20 but the index is 20")
+                        {
+                            assert_eq!(w[1], "0");
+                            assert_eq!(e[1], "P");
+                            assert_eq!(e[2], "Bounds");
+                            bounds += 1;
+                        } else {
+                            std::panic::resume_unwind(payload);
+                        }
+                        assert_eq!((alt, wrong), (17011, -29017), "panic output writes ID{id}");
+                    }
+                }
+                assert!(
+                    unchanged(&at, &original),
+                    "full field/coordinate bits ID{id}"
+                );
+                calls += 1;
+            }
+        }
+        assert_eq!(calls, 675464);
+        println!(
+            "bond_valence full={full} calls={calls} returned_ok={ok} bounds={bounds} exact0115panics={guards} returned_value_differences=0 output_differences=0 storage_changes=0"
+        );
+        assert_eq!((ok, bounds, guards), (456232, 219232, 0));
+    }
+    #[test]
+    fn complete_masked_counts_and_optional_outputs() {
+        check(false);
+    }
+    #[test]
+    fn complete_full_consumer_bounds_and_storage() {
+        check(true);
+    }
+}
+
+#[cfg(test)]
+mod atom_bond_type_regressions {
+    use super::SetAtomBondType;
+    use crate::source_types::BNS_EDGE;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    #[test]
+    fn complete_flags_flows_and_reciprocal_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/atom_bond_type");
+        let inputs = std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected = std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let mut expected = expected.lines();
+        let (
+            mut calls,
+            mut completed,
+            mut quarantine,
+            mut unexpected,
+            mut differences,
+            mut changed,
+        ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for (id, line) in inputs.lines().enumerate() {
+            let f: Vec<i64> = line
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            assert_eq!(f.len(), 11);
+            assert_eq!(f[0], id as i64);
+            let want: Vec<i64> = expected
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            assert_eq!(want.len(), 6);
+            assert_eq!(want[0], id as i64);
+            assert_eq!(&want[4..], &[1, 1]);
+            for _repeat in 0..2 {
+                let seed = f[9] as u8;
+                let edge = BNS_EDGE {
+                    neighbor1: seed as u16,
+                    neighbor12: seed as u16 * 37,
+                    neigh_ord: [seed as u16 * 79, seed as u16 * 103],
+                    cap: seed as i32 * 101,
+                    cap0: -(seed as i32) * 103,
+                    flow: f[2] as i32,
+                    flow0: f[1] as i32,
+                    pass: f[3] as i8,
+                    forbidden: if seed == 19 { -37 } else { 83 },
+                };
+                let before = edge.clone();
+                let mut a = [seed, f[4] as u8, seed ^ 0x5a];
+                let mut b = [seed ^ 0x33, f[5] as u8, seed ^ 0xa5];
+                calls += 1;
+                match catch_unwind(AssertUnwindSafe(|| {
+                    SetAtomBondType(
+                        &edge,
+                        &mut a[1],
+                        if f[8] != 0 { Some(&mut b[1]) } else { None },
+                        f[6] as i32,
+                        f[7] as i32,
+                    )
+                })) {
+                    Ok(v) => {
+                        completed += 1;
+                        differences +=
+                            usize::from([v as i64, a[1] as i64, b[1] as i64] != want[1..4]);
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0100: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            quarantine += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                    }
+                }
+                changed += usize::from(
+                    edge != before
+                        || a[0] != seed
+                        || a[2] != seed ^ 0x5a
+                        || b[0] != seed ^ 0x33
+                        || b[2] != seed ^ 0xa5,
+                );
+            }
+        }
+        assert!(expected.next().is_none());
+        eprintln!(
+            "ATOM_BOND_TYPE COUNTS calls={calls} completed={completed} audit100={quarantine} unexpected={unexpected} differences={differences} changed={changed}"
+        );
+        assert_eq!(calls, 760064);
+        assert_eq!((quarantine, unexpected, differences, changed), (0, 0, 0, 0));
+        assert_eq!(completed, 760064);
     }
 }

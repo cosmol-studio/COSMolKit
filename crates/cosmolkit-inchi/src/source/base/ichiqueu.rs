@@ -1,5 +1,6 @@
+use crate::source::base::runichi::CanonicalTarget;
 use crate::source::base::{
-    ichi_bns::bExistsAnyAltPath,
+    ichi_bns::{SourceBnsFlagRead, bExistsAnyAltPath, exists_any_alt_path_flags},
     ichitaut::{AddAtom2DA, AddAtom2num, is_centerpoint_elem_strict, nGetEndpointInfo},
     util::get_endpoint_valence,
 };
@@ -84,35 +85,38 @@ pub(crate) fn are_alt_bonds(bonds: &[u8], len: i32) -> Result<i32, SourceHeapErr
         return Ok(0);
     }
     let len = usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let bonds = bonds
-        .get(..len)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if bonds[0] == BOND_TRIPLE as u8 || bonds[0] == BOND_ALT_13 as u8 {
+    // INCHI✔️❗: source probes only the reached bond before any later extent.
+    // O(reached length), no scratch/allocation; checked-index cost remains OPEN.
+    let first = *bonds.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if first == BOND_TRIPLE as u8 || first == BOND_ALT_13 as u8 {
         return Ok(0);
     }
 
     let mut bTautBondPresent = BOND_ALTERN as i32;
-    let mut next_bond = if bonds[0] == BOND_SINGLE as u8 {
+    let mut next_bond = if first == BOND_SINGLE as u8 {
         BOND_DOUBLE as u8
-    } else if bonds[0] == BOND_DOUBLE as u8 {
+    } else if first == BOND_DOUBLE as u8 {
         BOND_SINGLE as u8
     } else {
         0
     };
-    if bonds[0] == BOND_TAUTOM as u8 {
+    if first == BOND_TAUTOM as u8 {
         bTautBondPresent = BOND_TAUTOM as i32;
         next_bond = 0;
     } else {
-        next_bond = if bonds[0] == BOND_SINGLE as u8 {
+        next_bond = if first == BOND_SINGLE as u8 {
             BOND_DOUBLE as u8
-        } else if bonds[0] == BOND_DOUBLE as u8 {
+        } else if first == BOND_DOUBLE as u8 {
             BOND_SINGLE as u8
         } else {
             0
         };
     }
 
-    for &bond in &bonds[1..] {
+    for index in 1..len {
+        let bond = *bonds
+            .get(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let bAnyBond = if bond == BOND_TAUTOM as u8 {
             bTautBondPresent = BOND_TAUTOM as i32;
             true
@@ -212,15 +216,13 @@ pub(crate) fn AddBondsPos(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: AddBondsPos
 
-    let temporary_count =
-        usize::try_from(nNumBondPosTmp).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if temporary_count > BondPosTmp.len() {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    let mut j = 0_usize;
-    while j < temporary_count {
+    // INCHI✔️❗: signed loop bounds and reached reads match native short circuits.
+    // O(temporary*valence + temporary*existing), O(1) scratch/no allocation;
+    // safe per-element index checks remain independently OPEN.
+    let mut j = 0_i32;
+    while j < nNumBondPosTmp {
         let first = BondPosTmp
-            .get(j)
+            .get(j as usize)
             .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let cur_at = usize::from(first.nAtomNumber);
@@ -237,19 +239,17 @@ pub(crate) fn AddBondsPos(
         let next = atom
             .get(nxt_at)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let valence =
-            usize::try_from(next.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        for k in 0..valence {
+        for k in 0..i32::from(next.valence) {
             if cur_at
                 == usize::from(
                     *next
                         .neighbor
-                        .get(k)
+                        .get(k as usize)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?,
                 )
             {
                 let opposite = BondPosTmp
-                    .get_mut(j + 1)
+                    .get_mut(j.wrapping_add(1) as usize)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 opposite.nAtomNumber = nxt_at as AT_RANK;
                 opposite.neighbor_index = k as AT_RANK;
@@ -259,45 +259,45 @@ pub(crate) fn AddBondsPos(
         j = j.wrapping_add(2);
     }
 
-    let mut j = 0_usize;
-    while j < temporary_count {
-        let existing_count =
-            usize::try_from(nNumBondPos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if existing_count > BondPos.len() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        let first = BondPosTmp
-            .get(j)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let opposite = BondPosTmp
-            .get(j + 1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let mut i = 0_usize;
-        while i < existing_count {
-            let existing = BondPos.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if (existing.nAtomNumber == first.nAtomNumber
-                && existing.neighbor_index == first.neighbor_index)
-                || (existing.nAtomNumber == opposite.nAtomNumber
-                    && existing.neighbor_index == opposite.neighbor_index)
+    let mut j = 0_i32;
+    while j < nNumBondPosTmp {
+        let mut i = 0_i32;
+        while i < nNumBondPos {
+            let existing = BondPos
+                .get(i as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let first = BondPosTmp
+                .get(j as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if existing.nAtomNumber == first.nAtomNumber
+                && existing.neighbor_index == first.neighbor_index
             {
                 break;
             }
-            i += 1;
-        }
-        if i == existing_count {
-            if i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-                > nMaxNumBondPos
+            let opposite = BondPosTmp
+                .get(j.wrapping_add(1) as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if existing.nAtomNumber == opposite.nAtomNumber
+                && existing.neighbor_index == opposite.neighbor_index
             {
+                break;
+            }
+            i = i.wrapping_add(1);
+        }
+        if i == nNumBondPos {
+            if i > nMaxNumBondPos {
                 return Ok(-1);
             }
+            let first = BondPosTmp
+                .get(j as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             *BondPos
-                .get_mut(existing_count)
+                .get_mut(nNumBondPos as usize)
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = first.clone();
             nNumBondPos = nNumBondPos.wrapping_add(1);
         }
         j = j.wrapping_add(2);
     }
-
     Ok(nNumBondPos)
 }
 
@@ -341,37 +341,31 @@ pub(crate) fn AddEndPoints(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: AddEndPoints
 
-    let new_count =
-        usize::try_from(nNumNewEndPoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let new_endpoints = EndPointTmp
-        .get(..new_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for candidate in new_endpoints {
-        let existing_count =
-            usize::try_from(nNumEndPoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if existing_count > EndPoint.len() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        let mut i = 0_usize;
-        while i < existing_count {
-            if EndPoint
-                .get(i)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .nAtomNumber
-                == candidate.nAtomNumber
-            {
+    // INCHI✔️❗: signed loops skip negative counts; candidate reads follow gates.
+    // O(new*existing), O(1) scratch/no allocation; safe access cost stays OPEN.
+    for j in 0..nNumNewEndPoint {
+        let mut i = 0_i32;
+        while i < nNumEndPoint {
+            let existing = EndPoint
+                .get(i as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let candidate = EndPointTmp
+                .get(j as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if existing.nAtomNumber == candidate.nAtomNumber {
                 break;
             }
-            i += 1;
+            i = i.wrapping_add(1);
         }
-        if i == existing_count {
-            if i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-                > nMaxNumEndPoint
-            {
+        if i == nNumEndPoint {
+            if i > nMaxNumEndPoint {
                 return Ok(-1);
             }
+            let candidate = EndPointTmp
+                .get(j as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             *EndPoint
-                .get_mut(existing_count)
+                .get_mut(nNumEndPoint as usize)
                 .ok_or(SourceHeapError::PointerOutOfBounds)? = candidate.clone();
             nNumEndPoint = nNumEndPoint.wrapping_add(1);
         }
@@ -398,7 +392,52 @@ pub(crate) fn Check7MembTautRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    Check7MembTautRing_flags(
+        heap,
+        pCG,
+        atom,
+        DfsPath,
+        nLenDfsPath,
+        nStartAtomNeighbor,
+        nStartAtomNeighbor2,
+        nStartAtomNeighborNeighbor,
+        EndPoint,
+        nMaxNumEndPoint,
+        BondPos,
+        nMaxNumBondPos,
+        pnNumEndPoint,
+        pnNumBondPos,
+        pBNS,
+        pBD,
+        num_atoms,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Check7MembTautRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    DfsPath: &[DFS_PATH],
+    nLenDfsPath: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighbor2: i32,
+    nStartAtomNeighborNeighbor: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:951 Check7MembTautRing
     // INCHI✔️❌: int Check7MembTautRing( struct tagCANON_GLOBALS *pCG,
@@ -793,7 +832,7 @@ pub(crate) fn Check7MembTautRing(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .endpoint;
         if o1_endpoint != o2_endpoint || o1_endpoint == 0 {
-            let nErr = bExistsAnyAltPath(
+            let nErr = exists_any_alt_path_flags(
                 heap,
                 pCG,
                 pBNS,
@@ -804,6 +843,7 @@ pub(crate) fn Check7MembTautRing(
                 o2_at,
                 ALT_PATH_MODE_TAUTOM as i32,
                 clock_result,
+                flag_storage,
             )?;
             if nErr <= 0 {
                 return Ok(nErr);
@@ -833,7 +873,52 @@ pub(crate) fn Check6MembTautRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    Check6MembTautRing_flags(
+        heap,
+        pCG,
+        atom,
+        DfsPath,
+        nLenDfsPath,
+        nStartAtomNeighbor,
+        nStartAtomNeighbor2,
+        nStartAtomNeighborNeighbor,
+        EndPoint,
+        nMaxNumEndPoint,
+        BondPos,
+        nMaxNumBondPos,
+        pnNumEndPoint,
+        pnNumBondPos,
+        pBNS,
+        pBD,
+        num_atoms,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Check6MembTautRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    DfsPath: &[DFS_PATH],
+    nLenDfsPath: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighbor2: i32,
+    nStartAtomNeighborNeighbor: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:1142 Check6MembTautRing
     // INCHI✔️❌: int Check6MembTautRing( struct tagCANON_GLOBALS *pCG,
@@ -1151,13 +1236,6 @@ pub(crate) fn Check6MembTautRing(
             )
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .at_no;
-        let next = DfsPath
-            .get(
-                usize::try_from(middle_pos.wrapping_add(1))
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-            )
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .at_no;
         let valence =
             usize::try_from(center.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut external = None;
@@ -1166,9 +1244,21 @@ pub(crate) fn Check6MembTautRing(
                 .neighbor
                 .get(i)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if neighbor != previous && neighbor != next {
-                external = Some((i, i32::from(neighbor)));
-                break;
+            // INCHI✔️❗: Native reads the next path atom only after the
+            // previous-neighbor rejection. O(1), no scratch/allocation;
+            // checked-access cost remains OPEN.
+            if neighbor != previous {
+                let next = DfsPath
+                    .get(
+                        usize::try_from(middle_pos.wrapping_add(1))
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    )
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .at_no;
+                if neighbor != next {
+                    external = Some((i, i32::from(neighbor)));
+                    break;
+                }
             }
         }
         let Some((external_bond_pos, o_at)) = external else {
@@ -1292,7 +1382,7 @@ pub(crate) fn Check6MembTautRing(
         (endpoint_o, endpoint_n)
     };
     if endpoint_o != endpoint_n || endpoint_o == 0 {
-        let nErr = bExistsAnyAltPath(
+        let nErr = exists_any_alt_path_flags(
             heap,
             pCG,
             pBNS,
@@ -1303,6 +1393,7 @@ pub(crate) fn Check6MembTautRing(
             o_at,
             ALT_PATH_MODE_TAUTOM as i32,
             clock_result,
+            flag_storage,
         )?;
         if nErr <= 0 {
             return Ok(nErr);
@@ -1386,7 +1477,52 @@ pub(crate) fn Check5MembTautRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    Check5MembTautRing_flags(
+        heap,
+        pCG,
+        atom,
+        DfsPath,
+        nLenDfsPath,
+        _nStartAtomNeighbor,
+        nStartAtomNeighbor2,
+        nStartAtomNeighborNeighbor,
+        EndPoint,
+        nMaxNumEndPoint,
+        BondPos,
+        nMaxNumBondPos,
+        pnNumEndPoint,
+        pnNumBondPos,
+        pBNS,
+        pBD,
+        num_atoms,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Check5MembTautRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    DfsPath: &[DFS_PATH],
+    nLenDfsPath: i32,
+    _nStartAtomNeighbor: i32,
+    nStartAtomNeighbor2: i32,
+    nStartAtomNeighborNeighbor: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:1666 Check5MembTautRing
     // INCHI✔️❌: int Check5MembTautRing( struct tagCANON_GLOBALS *pCG,
@@ -1593,7 +1729,7 @@ pub(crate) fn Check5MembTautRing(
     };
 
     if endpoint1 != endpoint2 || endpoint1 == 0 {
-        let nErr = bExistsAnyAltPath(
+        let nErr = exists_any_alt_path_flags(
             heap,
             pCG,
             pBNS,
@@ -1604,6 +1740,7 @@ pub(crate) fn Check5MembTautRing(
             n2_at,
             ALT_PATH_MODE_TAUTOM as i32,
             clock_result,
+            flag_storage,
         )?;
         if nErr <= 0 {
             return Ok(nErr);
@@ -1729,7 +1866,56 @@ pub(crate) fn nGet14TautIn7MembAltRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet14TautIn7MembAltRing_flags(
+        heap,
+        pCG,
+        atom,
+        nStartAtom,
+        nStartAtomNeighbor,
+        nStartAtomNeighborEndpoint,
+        nStartAtomNeighborNeighborEndpoint,
+        nDfsPathPos,
+        DfsPath,
+        nMaxLenDfsPath,
+        EndPoint,
+        nMaxNumEndPoint,
+        BondPos,
+        nMaxNumBondPos,
+        pnNumEndPoint,
+        pnNumBondPos,
+        pBNS,
+        pBD,
+        num_atoms,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet14TautIn7MembAltRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighborEndpoint: i32,
+    nStartAtomNeighborNeighborEndpoint: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:240 nGet14TautIn7MembAltRing
     // INCHI✔️❌: int nGet14TautIn7MembAltRing( struct tagCANON_GLOBALS *pCG,
@@ -1781,10 +1967,10 @@ pub(crate) fn nGet14TautIn7MembAltRing(
         return Ok(-1);
     }
 
-    let mut check_ring = |args: DfsRingCallbackArgs<'_>| {
+    let mut check_ring = |args: DfsRingCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check7MembTautRing(
+        Check7MembTautRing_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -1803,6 +1989,7 @@ pub(crate) fn nGet14TautIn7MembAltRing(
             pBD,
             args.num_atoms,
             clock_result,
+            flag_storage,
         )
     };
     let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
@@ -1855,7 +2042,56 @@ pub(crate) fn nGet14TautIn5MembAltRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet14TautIn5MembAltRing_flags(
+        heap,
+        pCG,
+        atom,
+        nStartAtom,
+        nStartAtomNeighbor,
+        nStartAtomNeighborEndpoint,
+        nStartAtomNeighborNeighborEndpoint,
+        nDfsPathPos,
+        DfsPath,
+        nMaxLenDfsPath,
+        EndPoint,
+        nMaxNumEndPoint,
+        BondPos,
+        nMaxNumBondPos,
+        pnNumEndPoint,
+        pnNumBondPos,
+        pBNS,
+        pBD,
+        num_atoms,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet14TautIn5MembAltRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighborEndpoint: i32,
+    nStartAtomNeighborNeighborEndpoint: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:283 nGet14TautIn5MembAltRing
     // INCHI✔️❌: int nGet14TautIn5MembAltRing( struct tagCANON_GLOBALS *pCG,
@@ -1904,10 +2140,10 @@ pub(crate) fn nGet14TautIn5MembAltRing(
         return Ok(-1);
     }
 
-    let mut check_ring = |args: DfsRingCallbackArgs<'_>| {
+    let mut check_ring = |args: DfsRingCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check7MembTautRing(
+        Check7MembTautRing_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -1926,6 +2162,7 @@ pub(crate) fn nGet14TautIn5MembAltRing(
             pBD,
             args.num_atoms,
             clock_result,
+            flag_storage,
         )
     };
     let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
@@ -1976,7 +2213,52 @@ pub(crate) fn nGet12TautIn5MembAltRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet12TautIn5MembAltRing_flags(
+        heap,
+        pCG,
+        atom,
+        nStartAtom,
+        nStartAtomNeighbor,
+        nDfsPathPos,
+        DfsPath,
+        nMaxLenDfsPath,
+        EndPoint,
+        nMaxNumEndPoint,
+        BondPos,
+        nMaxNumBondPos,
+        pnNumEndPoint,
+        pnNumBondPos,
+        pBNS,
+        pBD,
+        num_atoms,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet12TautIn5MembAltRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nStartAtomNeighbor: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:322 nGet12TautIn5MembAltRing
     // INCHI✔️❌: int nGet12TautIn5MembAltRing( struct tagCANON_GLOBALS *pCG,
@@ -2024,10 +2306,10 @@ pub(crate) fn nGet12TautIn5MembAltRing(
         return Ok(-1);
     }
 
-    let mut check_ring = |args: DfsRingCallbackArgs<'_>| {
+    let mut check_ring = |args: DfsRingCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check5MembTautRing(
+        Check5MembTautRing_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -2046,6 +2328,7 @@ pub(crate) fn nGet12TautIn5MembAltRing(
             pBD,
             args.num_atoms,
             clock_result,
+            flag_storage,
         )
     };
     let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
@@ -2095,7 +2378,50 @@ pub(crate) fn nGet15TautIn6MembAltRing(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet15TautIn6MembAltRing_flags(
+        heap,
+        pCG,
+        atom,
+        nStartAtom,
+        nDfsPathPos,
+        DfsPath,
+        nMaxLenDfsPath,
+        EndPoint,
+        nMaxNumEndPoint,
+        BondPos,
+        nMaxNumBondPos,
+        pnNumEndPoint,
+        pnNumBondPos,
+        pBNS,
+        pBD,
+        num_atoms,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet15TautIn6MembAltRing_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:361 nGet15TautIn6MembAltRing
     // INCHI✔️❌: int nGet15TautIn6MembAltRing( struct tagCANON_GLOBALS *pCG,
@@ -2146,10 +2472,10 @@ pub(crate) fn nGet15TautIn6MembAltRing(
     if nMaxLenDfsPath <= 7 {
         return Ok(-1);
     }
-    let mut check_ring = |args: DfsRingCallbackArgs<'_>| {
+    let mut check_ring = |args: DfsRingCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check6MembTautRing(
+        Check6MembTautRing_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -2168,6 +2494,7 @@ pub(crate) fn nGet15TautIn6MembAltRing(
             pBD,
             args.num_atoms,
             clock_result,
+            flag_storage,
         )
     };
     let mut check_center = |heap: &SourceHeap, atom: SourceMutPointer<inp_ATOM>, iat: i32| {
@@ -2216,7 +2543,50 @@ pub(crate) fn nGet15TautInAltPath(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    nGet15TautInAltPath_flags(
+        heap,
+        pCG,
+        atom,
+        nStartAtom,
+        nDfsPathPos,
+        DfsPath,
+        nMaxLenDfsPath,
+        EndPoint,
+        nMaxNumEndPoint,
+        BondPos,
+        nMaxNumBondPos,
+        pnNumEndPoint,
+        pnNumBondPos,
+        pBNS,
+        pBD,
+        num_atoms,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn nGet15TautInAltPath_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    nStartAtom: i32,
+    nDfsPathPos: SourceMutPointer<AT_RANK>,
+    DfsPath: &mut [DFS_PATH],
+    nMaxLenDfsPath: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:407 nGet15TautInAltPath
     // INCHI✔️❌: int nGet15TautInAltPath( struct tagCANON_GLOBALS *pCG,
@@ -2271,10 +2641,10 @@ pub(crate) fn nGet15TautInAltPath(
         return Ok(-1);
     }
 
-    let mut check_path = |args: DfsPathCallbackArgs<'_>| {
+    let mut check_path = |args: DfsPathCallbackArgs<'_, _>| {
         let pBNS = args.pBNS.ok_or(SourceHeapError::NullPointer)?;
         let pBD = args.pBD.ok_or(SourceHeapError::NullPointer)?;
-        Check15TautPath(
+        Check15TautPath_flags(
             args.heap,
             args.pCG,
             args.atom,
@@ -2294,6 +2664,7 @@ pub(crate) fn nGet15TautInAltPath(
             pBD,
             args.num_atoms,
             clock_result,
+            flag_storage,
         )
     };
     let mut check_center = |args: DfsPathCenterCallbackArgs<'_>| {
@@ -2472,7 +2843,54 @@ pub(crate) fn Check15TautPath(
     pBNS: &mut BalancedNetworkStructure,
     pBD: &mut BalancedNetworkData,
     num_atoms: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    Check15TautPath_flags(
+        heap,
+        pCG,
+        atom,
+        DfsPath,
+        nLenDfsPath,
+        jNxtNeigh,
+        nStartAtomNeighbor,
+        nStartAtomNeighbor2,
+        nStartAtomNeighborNeighbor,
+        EndPoint,
+        nMaxNumEndPoint,
+        BondPos,
+        nMaxNumBondPos,
+        pnNumEndPoint,
+        pnNumBondPos,
+        pBNS,
+        pBD,
+        num_atoms,
+        clock_result,
+        None,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(crate) fn Check15TautPath_flags(
+    heap: &mut SourceHeap,
+    pCG: &mut impl CanonicalTarget,
+    atom: SourceMutPointer<inp_ATOM>,
+    DfsPath: &mut [DFS_PATH],
+    mut nLenDfsPath: i32,
+    jNxtNeigh: i32,
+    nStartAtomNeighbor: i32,
+    nStartAtomNeighbor2: i32,
+    nStartAtomNeighborNeighbor: i32,
+    EndPoint: &mut [T_ENDPOINT],
+    nMaxNumEndPoint: i32,
+    BondPos: &mut [T_BONDPOS],
+    nMaxNumBondPos: i32,
+    pnNumEndPoint: &mut i32,
+    pnNumBondPos: &mut i32,
+    pBNS: &mut BalancedNetworkStructure,
+    pBD: &mut BalancedNetworkData,
+    num_atoms: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    flag_storage: Option<SourceBnsFlagRead<'_>>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:1434 Check15TautPath
     // INCHI✔️❌: int Check15TautPath( struct tagCANON_GLOBALS *pCG,
@@ -2780,11 +3198,15 @@ pub(crate) fn Check15TautPath(
             .get(at1_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .endpoint;
-        let endpoint2 = atoms
-            .get(at2_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .endpoint;
-        if endpoint1 != 0 && endpoint1 == endpoint2 {
+        // INCHI✔️❗: Zero first endpoint short-circuits the second read.
+        // No extra allocation/scan; checked whole-call cost remains OPEN.
+        if endpoint1 != 0
+            && endpoint1
+                == atoms
+                    .get(at2_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                    .endpoint
+        {
             return Ok(ret);
         }
     }
@@ -2829,23 +3251,15 @@ pub(crate) fn Check15TautPath(
         return Ok(ret);
     }
 
-    let (nMobile1, nMobile2, endpoint1, endpoint2, valence1, valence2) = {
-        let atoms = heap.slice(atom.as_const())?;
-        let atom1 = atoms
-            .get(at1_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let atom2 = atoms
-            .get(at2_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        (
-            i32::from(atom1.num_H) + i32::from(atom1.charge == -1),
-            i32::from(atom2.num_H) + i32::from(atom2.charge == -1),
-            atom1.endpoint,
-            atom2.endpoint,
-            i32::from(atom1.valence),
-            i32::from(atom2.valence),
-        )
-    };
+    // INCHI✔️❗: Both native endpoint-info calls remain unconditional above.
+    // Subsequent second mobile/record reads follow first donor/acceptor gates.
+    // O(1), borrowed records/no snapshots; checked whole-call cost OPEN.
+    let atoms = heap.slice(atom.as_const())?;
+    let atom1 = atoms
+        .get(at1_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let nMobile1 = i32::from(atom1.num_H) + i32::from(atom1.charge == -1);
+    let endpoint1 = atom1.endpoint;
     if endpoint1 == 0 {
         if (alt_bonds[0] & BOND_SINGLE as i32) != 0 && eif1.cDonor == 0 {
             return Ok(ret);
@@ -2854,6 +3268,11 @@ pub(crate) fn Check15TautPath(
             return Ok(ret);
         }
     }
+    let atom2 = atoms
+        .get(at2_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let nMobile2 = i32::from(atom2.num_H) + i32::from(atom2.charge == -1);
+    let endpoint2 = atom2.endpoint;
     if endpoint2 == 0 {
         if (alt_bonds[1] & BOND_SINGLE as i32) != 0 && eif2.cDonor == 0 {
             return Ok(ret);
@@ -2863,6 +3282,8 @@ pub(crate) fn Check15TautPath(
         }
     }
 
+    let valence1 = i32::from(atom1.valence);
+    let valence2 = i32::from(atom2.valence);
     let mut nMobile = 0_i32;
     nMobile += i32::from(
         (endpoint1 != 0 || eif1.cDonor != 0)
@@ -2879,7 +3300,7 @@ pub(crate) fn Check15TautPath(
     }
 
     if endpoint1 != endpoint2 || endpoint1 == 0 {
-        let nErr = bExistsAnyAltPath(
+        let nErr = exists_any_alt_path_flags(
             heap,
             pCG,
             pBNS,
@@ -2890,6 +3311,7 @@ pub(crate) fn Check15TautPath(
             at2,
             ALT_PATH_MODE_TAUTOM as i32,
             clock_result,
+            flag_storage,
         )?;
         if nErr <= 0 {
             return Ok(nErr);
@@ -2982,9 +3404,9 @@ pub(crate) fn Check15TautPath(
     Ok(ret)
 }
 
-pub(crate) struct DfsRingCallbackArgs<'a> {
+pub(crate) struct DfsRingCallbackArgs<'a, CG: CanonicalTarget = CANON_GLOBALS> {
     heap: &'a mut SourceHeap,
-    pCG: &'a mut CANON_GLOBALS,
+    pCG: &'a mut CG,
     atom: SourceMutPointer<inp_ATOM>,
     DfsPath: &'a mut [DFS_PATH],
     nLenDfsPath: i32,
@@ -3003,9 +3425,9 @@ pub(crate) struct DfsRingCallbackArgs<'a> {
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
-pub(crate) fn DFS_FindTautInARing<CheckRing, CheckCenter>(
+pub(crate) fn DFS_FindTautInARing<CG: CanonicalTarget, CheckRing, CheckCenter>(
     heap: &mut SourceHeap,
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut CG,
     atom: SourceMutPointer<inp_ATOM>,
     nStartAtom: i32,
     nStartAtomNeighbor: i32,
@@ -3027,7 +3449,7 @@ pub(crate) fn DFS_FindTautInARing<CheckRing, CheckCenter>(
     num_atoms: i32,
 ) -> Result<i32, SourceHeapError>
 where
-    CheckRing: for<'a> FnMut(DfsRingCallbackArgs<'a>) -> Result<i32, SourceHeapError>,
+    CheckRing: for<'a> FnMut(DfsRingCallbackArgs<'a, CG>) -> Result<i32, SourceHeapError>,
     CheckCenter:
         FnMut(&SourceHeap, SourceMutPointer<inp_ATOM>, i32) -> Result<i32, SourceHeapError>,
 {
@@ -3445,9 +3867,9 @@ where
     Ok(nNumFound)
 }
 
-pub(crate) struct DfsPathCallbackArgs<'a> {
+pub(crate) struct DfsPathCallbackArgs<'a, CG: CanonicalTarget = CANON_GLOBALS> {
     heap: &'a mut SourceHeap,
-    pCG: &'a mut CANON_GLOBALS,
+    pCG: &'a mut CG,
     atom: SourceMutPointer<inp_ATOM>,
     DfsPath: &'a mut [DFS_PATH],
     nLenDfsPath: i32,
@@ -3478,9 +3900,9 @@ pub(crate) struct DfsPathCenterCallbackArgs<'a> {
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
-pub(crate) fn DFS_FindTautAltPath<CheckPath, CheckCenter>(
+pub(crate) fn DFS_FindTautAltPath<CG: CanonicalTarget, CheckPath, CheckCenter>(
     heap: &mut SourceHeap,
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut CG,
     atom: SourceMutPointer<inp_ATOM>,
     nStartAtom: i32,
     nStartAtomNeighbor: i32,
@@ -3502,7 +3924,7 @@ pub(crate) fn DFS_FindTautAltPath<CheckPath, CheckCenter>(
     num_atoms: i32,
 ) -> Result<i32, SourceHeapError>
 where
-    CheckPath: for<'a> FnMut(DfsPathCallbackArgs<'a>) -> Result<i32, SourceHeapError>,
+    CheckPath: for<'a> FnMut(DfsPathCallbackArgs<'a, CG>) -> Result<i32, SourceHeapError>,
     CheckCenter: for<'a> FnMut(DfsPathCenterCallbackArgs<'a>) -> Result<i32, SourceHeapError>,
 {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiqueu.c:616 DFS_FindTautAltPath
@@ -3813,10 +4235,19 @@ where
 
             let next_index =
                 usize::try_from(nxt_at).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            // INCHI✔️❗: Preserve native forbidden -> visited -> previous
+            // path order. Skipped branches never admit later storage.
+            // O(1), no allocation/copy; checked-access cost remains OPEN.
+            if nxt_at == nDoNotTouchAtom1 || nxt_at == nDoNotTouchAtom2 {
+                continue;
+            }
             let next_path_position = *heap
                 .slice(nDfsPathPos.as_const())?
                 .get(next_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if next_path_position != 0 {
+                continue;
+            }
             let is_step_backwards = if nLenDfsPath != 0 {
                 let previous_path_index = usize::try_from(nLenDfsPath.wrapping_sub(1))
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -3830,15 +4261,13 @@ where
             } else {
                 false
             };
-            if nxt_at == nDoNotTouchAtom1
-                || nxt_at == nDoNotTouchAtom2
-                || next_path_position != 0
-                || is_step_backwards
-            {
+            if is_step_backwards {
                 continue;
             }
 
-            let endpoint_is_outside_ring = {
+            // INCHI✔️❗: Ring fields are reached only at requested length;
+            // keep the existing endpoint OR short-circuit and callbacks.
+            let endpoint_is_outside_ring = nLenDfsPath == nCycleLen && {
                 let atoms = heap.slice(atom.as_const())?;
                 atoms
                     .get(next_index)
@@ -3851,7 +4280,7 @@ where
                         .nNumAtInRingSystem
                         == 1
             };
-            let ret = if nLenDfsPath == nCycleLen && endpoint_is_outside_ring {
+            let ret = if endpoint_is_outside_ring {
                 CheckDfsPath(DfsPathCallbackArgs {
                     heap,
                     pCG,
@@ -6866,7 +7295,7 @@ mod tests {
         );
         assert_eq!(
             AddBondsPos(&atoms, &mut temporary, -1, &mut output, 3, 0),
-            Err(SourceHeapError::PointerOutOfBounds)
+            Ok(0)
         );
     }
 
@@ -6909,10 +7338,7 @@ mod tests {
         assert_eq!(partial_output[1], partial[0]);
         assert_eq!(partial_output[2], T_ENDPOINT::default());
 
-        assert_eq!(
-            AddEndPoints(&temporary, -1, &mut output, 3, 0),
-            Err(SourceHeapError::PointerOutOfBounds)
-        );
+        assert_eq!(AddEndPoints(&temporary, -1, &mut output, 3, 0), Ok(0));
         assert_eq!(
             AddEndPoints(&temporary[..1], 2, &mut output, 3, 0),
             Err(SourceHeapError::PointerOutOfBounds)

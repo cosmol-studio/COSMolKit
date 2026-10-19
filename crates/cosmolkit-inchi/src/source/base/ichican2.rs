@@ -1,3 +1,4 @@
+use crate::source::base::runichi::CanonicalTarget;
 use std::mem::{MaybeUninit, size_of};
 use std::sync::atomic::{AtomicU16, Ordering};
 
@@ -31,7 +32,7 @@ use crate::source_types::{
 };
 
 static RANK_MARK_BIT: AtomicU16 = AtomicU16::new(0);
-static RANK_MASK_BIT: AtomicU16 = AtomicU16::new(u16::MAX);
+static RANK_MASK_BIT: AtomicU16 = AtomicU16::new(0);
 const SOURCE_SIZEOF_POINTER: u64 = 8;
 const MAX_LAYERS_LEN: usize = MAX_LAYERS as usize;
 type KLeastLayers = [kLeast; MAX_LAYERS_LEN];
@@ -40,7 +41,23 @@ pub(crate) fn rank_mark_bit() -> AT_NUMB {
     RANK_MARK_BIT.load(Ordering::Relaxed)
 }
 
+#[inline(always)]
 pub(crate) fn rank_mask_bit() -> AT_NUMB {
+    // BEGIN INCHI SOURCE FRAGMENT: ichican2.c95,984,3242 / ichisize.h45
+    // INCHI✔️✔️: static AT_NUMB       rank_mask_bit;
+    // INCHI✔️✔️:         if (r != ( rank_mask_bit & p->Rank[p->AtNumber[i]] ))
+    // INCHI✔️✔️:     rank_mask_bit = ~n1;
+    // INCHI✔️✔️: typedef unsigned short AT_NUMB;
+    // END INCHI SOURCE FRAGMENT
+    // Behavior: C static storage starts at zero, not u16::MAX. Read the current
+    // sequential value without modifying it; preserve existing atomic safety.
+    // SetBitCreate's later successful store is unchanged and independently
+    // quarantined; this getter does not establish producer/caller acceptance.
+    // Cost: O(1) time/space; no heap, clone, scan, cache, lock, RMW or fence.
+    // Pinned x86_64 codegen is one aligned movzwl, matching the source read;
+    // the private inlined mask expression is movzwl/andl, also source-matched.
+    // An exported forced-noinline development consumer adds ABI save/call cost;
+    // retain that unfavorable diagnostic without claiming its equivalence.
     RANK_MASK_BIT.load(Ordering::Relaxed)
 }
 
@@ -66,6 +83,8 @@ pub(crate) fn NodeSetCreate(
         .wrapping_div(pCG.m_num_bit);
 
     // INCHI✔️✔️:     pSet->bitword = (bitWord**) inchi_calloc( L, sizeof( pSet->bitword[0] ) );
+    // INCHI✔️❗: Native size_t conversion and product overflow reach NULL.
+    // Same allocations/row loop, O(L) setup/O(1) scratch; arena cost OPEN.
     pSet.bitword = match crate::source::base::util::inchi_calloc::<SourceMutPointer<bitWord>>(
         heap,
         L as u64,
@@ -76,7 +95,7 @@ pub(crate) fn NodeSetCreate(
         // INCHI✔️✔️:     {
         // INCHI✔️✔️:         return 0;
         // INCHI✔️✔️:     }
-        Err(SourceHeapError::AllocationFailed) => {
+        Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
             pSet.bitword = SourceMutPointer::null();
             return Ok(0);
         }
@@ -88,15 +107,11 @@ pub(crate) fn NodeSetCreate(
         .ok_or(SourceHeapError::AllocationSizeOverflow)?;
     // INCHI✔️✔️:     pSet->bitword[0] = (bitWord*) inchi_calloc(
     // INCHI✔️✔️:         (long long)len * (long long)L, sizeof( pSet->bitword[0][0] ) );
-    let storage = match u64::try_from(storage_count)
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)
-        .and_then(|count| {
-            crate::source::base::util::inchi_calloc::<bitWord>(
-                heap,
-                count,
-                size_of::<bitWord>() as u64,
-            )
-        }) {
+    let storage = match crate::source::base::util::inchi_calloc::<bitWord>(
+        heap,
+        storage_count as u64,
+        size_of::<bitWord>() as u64,
+    ) {
         Ok(pointer) => pointer,
         // INCHI✔️✔️:     if (!pSet->bitword[0])
         // INCHI✔️✔️:     {
@@ -105,7 +120,7 @@ pub(crate) fn NodeSetCreate(
         // INCHI✔️✔️:         pSet->bitword = NULL;
         // INCHI✔️✔️:         return 0; /* failed */
         // INCHI✔️✔️:     }
-        Err(SourceHeapError::AllocationFailed) => {
+        Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
             inchi_free(heap, pSet.bitword)?;
             pSet.bitword = SourceMutPointer::null();
             return Ok(0);
@@ -162,6 +177,14 @@ pub(crate) fn NodeSetCreate(
 pub(crate) fn NodeSetFree(
     heap: &mut SourceHeap,
     _pCG: &CANON_GLOBALS,
+    pSet: &mut NodeSet,
+) -> Result<(), SourceHeapError> {
+    free_node_set(heap, pSet)
+}
+
+#[allow(non_snake_case)]
+pub(in crate::source) fn free_node_set(
+    heap: &mut SourceHeap,
     pSet: &mut NodeSet,
 ) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:754 NodeSetFree
@@ -340,11 +363,10 @@ fn pointer_array_get<T: 'static>(
     pointer: SourceMutPointer<SourceMutPointer<T>>,
     index: i32,
 ) -> Result<SourceMutPointer<T>, SourceHeapError> {
-    let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    heap.slice(pointer.as_const())?
-        .get(offset)
-        .copied()
-        .ok_or(SourceHeapError::PointerOutOfBounds)
+    // INCHI✔️❗:     bitWord *Bits = cur_nodes->bitword[l - 1];
+    // ichican2.c:1054: a signed relative index may address an earlier element
+    // of the same live allocation. Reuse the scalar source access contract.
+    source_get(heap, pointer, index)
 }
 
 #[inline(always)]
@@ -353,6 +375,23 @@ fn source_get<T: Copy + 'static>(
     pointer: SourceMutPointer<T>,
     index: i32,
 ) -> Result<T, SourceHeapError> {
+    // C array indexing is relative to the pointer, not the allocation origin.
+    // Preserve every nonnegative error in its original order. Previously every
+    // invalid negative index returned PointerOutOfBounds before any heap query;
+    // retain that error while admitting defined in-allocation negative reads.
+    // O(1) offset plus one view; no allocation/clone/scan. Whole-call checked
+    // signed-offset/hash lookup cost remains INCHI-PERF-SIGNED-LOOPS OPEN.
+    if index < 0 {
+        let selected = pointer
+            .offset(i64::from(index))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        return heap
+            .slice(selected.as_const())
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+            .first()
+            .copied()
+            .ok_or(SourceHeapError::PointerOutOfBounds);
+    }
     let offset = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice(pointer.as_const())?
         .get(offset)
@@ -396,26 +435,28 @@ pub(crate) fn NodeSetFromVertices(
     num_v: i32,
 ) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1052 NodeSetFromVertices
-    // INCHI✔️❌: void NodeSetFromVertices( CANON_GLOBALS *pCG, NodeSet *cur_nodes, int l, Node *v, int num_v )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     bitWord *Bits = cur_nodes->bitword[l - 1];
-    // INCHI✔️❌:     int      len = cur_nodes->len_set * sizeof( bitWord );
-    // INCHI✔️❌:     int      i, j;
-    // INCHI✔️❌:
-    // INCHI✔️❌:     memset( Bits, 0, len ); /* djb-rwth: memset_s C11/Annex K variant? */
-    // INCHI✔️❌:
-    // INCHI✔️❌:     for (i = 0; i < num_v; i++)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         j = (int) v[i] - 1;
-    // INCHI✔️❌:         Bits[j / pCG->m_num_bit] |= pCG->m_bBit[j % pCG->m_num_bit];
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     INCHI_HEAPCHK
-    // INCHI✔️❌: }
+    // INCHI✔️❗: void NodeSetFromVertices( CANON_GLOBALS *pCG, NodeSet *cur_nodes, int l, Node *v, int num_v )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     bitWord *Bits = cur_nodes->bitword[l - 1];
+    // INCHI✔️❗:     int      len = cur_nodes->len_set * sizeof( bitWord );
+    // INCHI✔️❗:     int      i, j;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     memset( Bits, 0, len ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // INCHI✔️❗:
+    // INCHI✔️❗:     for (i = 0; i < num_v; i++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         j = (int) v[i] - 1;
+    // INCHI✔️❗:         Bits[j / pCG->m_num_bit] |= pCG->m_bBit[j % pCG->m_num_bit];
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     INCHI_HEAPCHK
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: NodeSetFromVertices
+    // Cost: no added allocation/clone/scan; safe view/admission overhead
+    // remains INCHI-PERF-SIGNED-LOOPS OPEN; no native no-worse claim.
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: NodeSetFromVertices
-    // INCHI✔️❌: typedef AT_NUMB Node
-    // INCHI✔️❌: typedef U_SHORT bitWord
+    // INCHI✔️❗: typedef AT_NUMB Node
+    // INCHI✔️❗: typedef U_SHORT bitWord
     // END INCHI ACTIVE MACRO CONFIGURATION: NodeSetFromVertices
 
     let bits = pointer_array_get(heap, cur_nodes.bitword, l.wrapping_sub(1))?;
@@ -425,9 +466,14 @@ pub(crate) fn NodeSetFromVertices(
         .get_mut(..len_set)
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .fill(0);
+    // The native row clear precedes the loop; unused vertex/mask arrays do not.
+    if num_v <= 0 {
+        return Ok(());
+    }
 
     // SAFETY: CanonGraph owns the vertex array, global mask table, and NodeSet
     // row as independent fixed-size allocations for the complete source call.
+
     let vertices = unsafe { heap.stable_slice(v.as_const())? };
     let masks = unsafe { heap.stable_slice(pCG.m_bBit.as_const())? };
     let mut bit_words = unsafe { heap.stable_slice_mut(bits)? };
@@ -466,38 +512,45 @@ pub(crate) fn AllNodesAreInSet(
     lset: i32,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1071 AllNodesAreInSet
-    // INCHI✔️❌: int AllNodesAreInSet( NodeSet *cur_nodes, int lcur_nodes, NodeSet *set, int lset )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     int i;
-    // INCHI✔️❌:     int n = cur_nodes->len_set;
-    // INCHI✔️❌:
-    // INCHI✔️❌:     bitWord *BitsNode = cur_nodes->bitword[lcur_nodes - 1];
-    // INCHI✔️❌:     bitWord *BitsSet = set->bitword[lset - 1];
-    // INCHI✔️❌:
-    // INCHI✔️❌:     /* find any BitsNode[i] bit not in BitsSet[i] */
-    // INCHI✔️❌:     for (i = 0; i < n; i++)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         if (BitsNode[i] & ~BitsSet[i])
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:
-    // INCHI✔️❌:             INCHI_HEAPCHK
-    // INCHI✔️❌:
-    // INCHI✔️❌:                 return 0;
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     INCHI_HEAPCHK
-    // INCHI✔️❌:
-    // INCHI✔️❌:     return 1;
-    // INCHI✔️❌: }
+    // INCHI✔️❗: int AllNodesAreInSet( NodeSet *cur_nodes, int lcur_nodes, NodeSet *set, int lset )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     int i;
+    // INCHI✔️❗:     int n = cur_nodes->len_set;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     bitWord *BitsNode = cur_nodes->bitword[lcur_nodes - 1];
+    // INCHI✔️❗:     bitWord *BitsSet = set->bitword[lset - 1];
+    // INCHI✔️❗:
+    // INCHI✔️❗:     /* find any BitsNode[i] bit not in BitsSet[i] */
+    // INCHI✔️❗:     for (i = 0; i < n; i++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         if (BitsNode[i] & ~BitsSet[i])
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:
+    // INCHI✔️❗:             INCHI_HEAPCHK
+    // INCHI✔️❗:
+    // INCHI✔️❗:                 return 0;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     INCHI_HEAPCHK
+    // INCHI✔️❗:
+    // INCHI✔️❗:     return 1;
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: AllNodesAreInSet
+    // Cost: no added allocation/clone/scan; safe view/admission overhead
+    // remains INCHI-PERF-SIGNED-LOOPS OPEN; no native no-worse claim.
     // BEGIN INCHI ACTIVE MACRO CONFIGURATION: AllNodesAreInSet
-    // INCHI✔️❌: typedef U_SHORT bitWord
+    // INCHI✔️❗: typedef U_SHORT bitWord
     // END INCHI ACTIVE MACRO CONFIGURATION: AllNodesAreInSet
 
     let bits_node = pointer_array_get(heap, cur_nodes.bitword, lcur_nodes.wrapping_sub(1))?;
     let bits_set = pointer_array_get(heap, set.bitword, lset.wrapping_sub(1))?;
+    // Native row-pointer selections precede the loop, row reads do not.
+    if cur_nodes.len_set <= 0 {
+        return Ok(1);
+    }
     // SAFETY: both NodeSet rows remain live and immutable for this source loop.
+
     let node_words = unsafe { heap.stable_slice(bits_node.as_const())? };
     let set_words = unsafe { heap.stable_slice(bits_set.as_const())? };
     // INCHI✔️✔️:     for (i = 0; i < n; i++)
@@ -585,6 +638,79 @@ pub(crate) fn PartitionGetMcrAndFixSet(
     // SAFETY: CanonGraph allocates the atom order, ranks, mask table, Mcr row,
     // and Fix row independently and keeps all five fixed-size buffers live for
     // this call. No helper is invoked while the two writable views are live.
+    // INCHI✔️❗: source clears both rows before skipping its empty signed loop.
+    // O(1) gate, no extra storage/scan; stable positive loop cost stays OPEN.
+    if n <= 0 {
+        return Ok(());
+    }
+    // INCHI✔️❗: FixBits[j1 / pCG->m_num_bit] |= pCG->m_bBit[j1 % pCG->m_num_bit];
+    // INCHI✔️❗: McrBits[j1 / pCG->m_num_bit] |= pCG->m_bBit[j1 % pCG->m_num_bit];
+    // Native has no disjointness restriction. Keep the existing direct views
+    // only when neither writable row shares any input/output allocation.
+    // Aliased rows use sequential checked loads/stores, including reloading
+    // the mask after the Fix write. No references survive a heap mutation.
+    // O(n + len) time/O(1) scratch, zero allocations/clones; identity checks
+    // and alias lookup constants: INCHI-PERF-BIT-ROW-ALIAS OPEN.
+    let mcr_id = mcr_bits.allocation_identity();
+    let fix_id = fix_bits.allocation_identity();
+    let rows_are_distinct = mcr_id != fix_id
+        && mcr_id != p.AtNumber.allocation_identity()
+        && mcr_id != p.Rank.allocation_identity()
+        && mcr_id != pCG.m_bBit.allocation_identity()
+        && fix_id != p.AtNumber.allocation_identity()
+        && fix_id != p.Rank.allocation_identity()
+        && fix_id != pCG.m_bBit.allocation_identity();
+    if !rows_are_distinct {
+        // Retain the existing input-view admission order without retaining
+        // references to storage that the following source writes may change.
+        heap.slice(p.AtNumber.as_const())?;
+        heap.slice(p.Rank.as_const())?;
+        heap.slice(pCG.m_bBit.as_const())?;
+        let rank_mask = rank_mask_bit();
+        let mut i = 0_i32;
+        let mut r: AT_RANK = 1;
+        while i < n {
+            let mut j1 = i32::from(source_get(heap, p.AtNumber, i)?);
+            let r1 = rank_mask & source_get(heap, p.Rank, j1)?;
+            if r == r1 {
+                let word = j1
+                    .checked_div(pCG.m_num_bit)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let bit = j1
+                    .checked_rem(pCG.m_num_bit)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let mask = source_get(heap, pCG.m_bBit, bit)?;
+                *heap.element_signed_mut(fix_bits, word)? |= mask;
+                let mask = source_get(heap, pCG.m_bBit, bit)?;
+                *heap.element_signed_mut(mcr_bits, word)? |= mask;
+            } else {
+                r = r1;
+                while i.wrapping_add(1) < n {
+                    let j2 = i32::from(source_get(heap, p.AtNumber, i.wrapping_add(1))?);
+                    if r != rank_mask & source_get(heap, p.Rank, j2)? {
+                        break;
+                    }
+                    if j1 > j2 {
+                        j1 = j2;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                let word = j1
+                    .checked_div(pCG.m_num_bit)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let bit = j1
+                    .checked_rem(pCG.m_num_bit)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let mask = source_get(heap, pCG.m_bBit, bit)?;
+                *heap.element_signed_mut(mcr_bits, word)? |= mask;
+            }
+            i = i.wrapping_add(1);
+            r = r.wrapping_add(1);
+        }
+        return Ok(());
+    }
+    // SAFETY: rows_are_distinct proves writable rows are separate from each
+    // other and every read view below; all buffers remain live and fixed.
     let atoms = unsafe { heap.stable_slice(p.AtNumber.as_const())? };
     let ranks = unsafe { heap.stable_slice(p.Rank.as_const())? };
     let masks = unsafe { heap.stable_slice(pCG.m_bBit.as_const())? };
@@ -1237,67 +1363,104 @@ pub(crate) fn PartitionColorVertex(
         return Ok(CT_CANON_ERR);
     }
 
-    // SAFETY: PartitionCreate gives AtNumber and Rank distinct allocations of
-    // `n_max` elements, and this function neither frees nor resizes them. When
-    // PartitionCopy propagated the source permutation bound, every write below
-    // only moves an existing member inside that same prefix.
-    let atom_count = usize::try_from(n_tg).ok();
-    let atoms_are_bounded = atom_count.is_some_and(|count| {
-        heap.has_proven_index_bound(destination.AtNumber.as_const(), count, count)
-    });
-    let mut atoms = if atoms_are_bounded {
-        let count = atom_count.expect("a proved non-negative prefix has a valid count");
-        unsafe { heap.stable_index_bounded_slice_mut(destination.AtNumber, count, count)? }
+    // INCHI✔️❗: Native1464..1563 has no restrict on the two destination
+    // arrays. Sequential scalar access preserves shared-storage state;
+    // distinct storage retains the original fast loop. O(n)/O(1), no copies
+    // or allocations. Dispatch/checked-access cost: INCHI-PERF-PARTITION-CT-ALIAS.
+    if destination.AtNumber.allocation_identity() == destination.Rank.allocation_identity() {
+        let rv = source_get(heap, destination.Rank, i32::from(sv))?;
+        let mut s = n_max.wrapping_add(1) as AT_NUMB;
+        let mut j = i32::from(rv).wrapping_sub(1);
+        while j >= 0 {
+            s = source_get(heap, destination.AtNumber, j)?;
+            if rv != source_get(heap, destination.Rank, i32::from(s))? || s == sv {
+                break;
+            }
+            j = j.wrapping_sub(1);
+        }
+        if s != sv {
+            return Ok(CT_CANON_ERR);
+        }
+        let mut r = rv.wrapping_sub(1);
+        let mut i = j;
+        j = j.wrapping_sub(1);
+        while j >= 0 {
+            s = source_get(heap, destination.AtNumber, j)?;
+            r = source_get(heap, destination.Rank, i32::from(s))?;
+            if rv != r {
+                break;
+            }
+            source_set(heap, destination.AtNumber, i, s)?;
+            i = j;
+            j = j.wrapping_sub(1);
+        }
+        r = if i > 0 { r.wrapping_add(1) } else { 1 };
+        source_set(heap, destination.AtNumber, i, sv)?;
+        source_set(heap, destination.Rank, i32::from(sv), r)?;
     } else {
-        unsafe { heap.stable_slice_mut(destination.AtNumber)? }
-    };
-    // SAFETY: see above; Rank is the other independently owned partition array.
-    let mut ranks = unsafe { heap.stable_slice_mut(destination.Rank)? };
+        // SAFETY: the identity gate proves AtNumber and Rank distinct, and
+        // this function neither frees nor resizes them. When
+        // PartitionCopy propagated the source permutation bound, every write below
+        // only moves an existing member inside that same prefix.
+        let atom_count = usize::try_from(n_tg).ok();
+        let atoms_are_bounded = atom_count.is_some_and(|count| {
+            heap.has_proven_index_bound(destination.AtNumber.as_const(), count, count)
+        });
+        let mut atoms = if atoms_are_bounded {
+            let count = atom_count.expect("a proved non-negative prefix has a valid count");
+            unsafe { heap.stable_index_bounded_slice_mut(destination.AtNumber, count, count)? }
+        } else {
+            unsafe { heap.stable_slice_mut(destination.AtNumber)? }
+        };
+        // SAFETY: see above; Rank is the other independently owned partition array.
+        let mut ranks = unsafe { heap.stable_slice_mut(destination.Rank)? };
 
-    // INCHI✔️✔️:     rv = p[1].Rank[sv];
-    let rv = *ranks.get(usize::from(sv))?;
-    // INCHI✔️✔️:     for (s = n_max + 1, j = rv - 1;
-    let mut s = n_max.wrapping_add(1) as AT_NUMB;
-    let mut j = i32::from(rv).wrapping_sub(1);
-    // INCHI✔️✔️:          0 <= j && rv == p[1].Rank[(int)(s = p[1].AtNumber[j])] && s != sv;
-    // INCHI✔️✔️:          j--)
-    while j >= 0 {
-        s = *atoms.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
-        if rv != *ranks.get(usize::from(s))? || s == sv {
-            break;
+        // INCHI✔️✔️:     rv = p[1].Rank[sv];
+        let rv = *ranks.get(usize::from(sv))?;
+        // INCHI✔️✔️:     for (s = n_max + 1, j = rv - 1;
+        let mut s = n_max.wrapping_add(1) as AT_NUMB;
+        let mut j = i32::from(rv).wrapping_sub(1);
+        // INCHI✔️✔️:          0 <= j && rv == p[1].Rank[(int)(s = p[1].AtNumber[j])] && s != sv;
+        // INCHI✔️✔️:          j--)
+        while j >= 0 {
+            s = *atoms.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+            if rv != *ranks.get(usize::from(s))? || s == sv {
+                break;
+            }
+            j = j.wrapping_sub(1);
         }
-        j = j.wrapping_sub(1);
-    }
-    // INCHI✔️✔️:     if (s != sv)
-    if s != sv {
-        // INCHI✔️✔️:         return CT_CANON_ERR;
-        return Ok(CT_CANON_ERR);
-    }
+        // INCHI✔️✔️:     if (s != sv)
+        if s != sv {
+            // INCHI✔️✔️:         return CT_CANON_ERR;
+            return Ok(CT_CANON_ERR);
+        }
 
-    // INCHI✔️✔️:     r = rv - 1;
-    let mut r = rv.wrapping_sub(1);
-    // INCHI✔️✔️:     for (i = j--; 0 <= j && rv == (r = p[1].Rank[(int)(s = p[1].AtNumber[j])]); i = j, j--)
-    let mut i = j;
-    j = j.wrapping_sub(1);
-    while j >= 0 {
-        s = *atoms.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
-        r = *ranks.get(usize::from(s))?;
-        if rv != r {
-            break;
-        }
-        // INCHI✔️✔️:         p[1].AtNumber[i] = s;
-        *atoms.get_mut(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = s;
-        i = j;
+        // INCHI✔️✔️:     r = rv - 1;
+        let mut r = rv.wrapping_sub(1);
+        // INCHI✔️✔️:     for (i = j--; 0 <= j && rv == (r = p[1].Rank[(int)(s = p[1].AtNumber[j])]); i = j, j--)
+        let mut i = j;
         j = j.wrapping_sub(1);
+        while j >= 0 {
+            s = *atoms.get(usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
+            r = *ranks.get(usize::from(s))?;
+            if rv != r {
+                break;
+            }
+            // INCHI✔️✔️:         p[1].AtNumber[i] = s;
+            *atoms
+                .get_mut(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = s;
+            i = j;
+            j = j.wrapping_sub(1);
+        }
+        // INCHI✔️✔️:     r = (i > 0) ? (r + 1) : 1;
+        r = if i > 0 { r.wrapping_add(1) } else { 1 };
+        // INCHI✔️✔️:     p[1].AtNumber[i] = sv;
+        *atoms.get_mut(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = sv;
+        // INCHI✔️✔️:     p[1].Rank[(int)sv] = r;
+        *ranks.get_mut(usize::from(sv))? = r;
+        drop(atoms);
+        drop(ranks);
     }
-    // INCHI✔️✔️:     r = (i > 0) ? (r + 1) : 1;
-    r = if i > 0 { r.wrapping_add(1) } else { 1 };
-    // INCHI✔️✔️:     p[1].AtNumber[i] = sv;
-    *atoms.get_mut(usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?)? = sv;
-    // INCHI✔️✔️:     p[1].Rank[(int)sv] = r;
-    *ranks.get_mut(usize::from(sv))? = r;
-    drop(atoms);
-    drop(ranks);
 
     let mut lNumNeighListIter = 0_i64;
     if bDigraph != 0 {
@@ -1637,8 +1800,13 @@ pub(crate) fn CellGetNumberOfNodes(
     let mut i = W.first;
     let mut number = 0_i32;
     while i < W.next {
-        let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atom = usize::from(*atoms.get(index)?);
+        // INCHI✔️❗: Preserve the stable positive path; signed interior access
+        // reuses the existing checked primitive without another buffer.
+        let atom = usize::from(if i >= 0 {
+            *atoms.get(i as usize)?
+        } else {
+            source_get(heap, p.AtNumber, i)?
+        });
         // INCHI✔️✔️:         if (!( rank_mark_bit & p->Rank[(int) p->AtNumber[i]] ))
         if rank_mark_bit() & *ranks.get(atom)? == 0 {
             // INCHI✔️✔️:             num++;
@@ -1702,14 +1870,20 @@ pub(crate) fn CellIntersectWithSet(
     let atoms = unsafe { heap.stable_slice(p.AtNumber.as_const())? };
     let mcr_words = unsafe { heap.stable_slice(mcr_bits.as_const())? };
     let masks = unsafe { heap.stable_slice(pCG.m_bBit.as_const())? };
-    let mut ranks = unsafe { heap.stable_slice_mut(p.Rank)? };
+    // INCHI✔️❗: admit Rank only on its first reached mark, once per call.
+    // No new allocation/scan; lazy-view branch cost remains OPEN.
+    let mut ranks = None;
     // INCHI✔️✔️:     for (i = first, k = 0; i < next; i++)
     let mut i = first;
     let mut k = 0_i32;
     while i < next {
-        let atom_index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        // INCHI✔️✔️:         j = (int) p->AtNumber[i];
-        let j = i32::from(*atoms.get(atom_index)?);
+        // INCHI✔️❗: Signed cell position is relative to the live atom pointer.
+        // Keep ordinary stable reads and existing independent rank admission.
+        let j = i32::from(if i >= 0 {
+            *atoms.get(i as usize)?
+        } else {
+            source_get(heap, p.AtNumber, i)?
+        });
         let word_index = j
             .checked_div(pCG.m_num_bit)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -1723,6 +1897,14 @@ pub(crate) fn CellIntersectWithSet(
         let mask = *masks
             .get(usize::try_from(bit_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)?;
         if word & mask == 0 {
+            if ranks.is_none() {
+                // SAFETY: the unchanged fixed/live/disjoint rank obligation above
+                // applies at this reached access and through the remaining loop.
+                ranks = Some(unsafe { heap.stable_slice_mut(p.Rank)? });
+            }
+            let ranks = ranks
+                .as_mut()
+                .expect("rank view initialized at reached mark");
             let rank_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             // INCHI✔️✔️:             k += !( p->Rank[j] & rank_mark_bit );
             let rank = *ranks.get(rank_index)?;
@@ -1794,8 +1976,37 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS2(
     // INCHI✔️✔️:                                             AT_RANK max_rj )
     // INCHI✔️✔️: {
 
-    // SAFETY: every graph row is a fixed-size allocation distinct from the
-    // partition rank array and both remain live throughout canonicalization.
+    // INCHI✔️❗: Native1819..1843 permits rank/row storage aliasing. Do not
+    // retain a rank reference across a row write in that case. Keep the
+    // existing distinct-storage fast path. Same insertion steps/O(1) scratch;
+    // checked alias-path constants remain INCHI-PERF-PARTITION-CT-ALIAS OPEN.
+    if base.allocation_identity() == nRank.allocation_identity() {
+        let num = i32::from(source_get(heap, base, 0)?);
+        let mut k = 1_i32;
+        while k < num {
+            let mut i = k;
+            let mut j = i.wrapping_add(1);
+            let j_atom = source_get(heap, base, j)?;
+            let rj = rank_mask_bit() & source_get(heap, nRank, i32::from(j_atom))?;
+            if rj < max_rj {
+                while j > 1 {
+                    let i_atom = source_get(heap, base, i)?;
+                    if rj >= rank_mask_bit() & source_get(heap, nRank, i32::from(i_atom))? {
+                        break;
+                    }
+                    source_set(heap, base, i, j_atom)?;
+                    source_set(heap, base, j, i_atom)?;
+                    j = i;
+                    i = i.wrapping_sub(1);
+                }
+            }
+            k = k.wrapping_add(1);
+        }
+        return Ok(());
+    }
+
+    // SAFETY: the identity gate proves row and rank allocations distinct;
+    // neither allocation is freed or resized during this loop.
     let mut neighbors = unsafe { heap.stable_slice_mut(base)? };
     // INCHI✔️✔️:     int k, num = (int) *base++;
     let num = i32::from(*neighbors.get(0)?);
@@ -1841,67 +2052,6 @@ pub(crate) fn insertions_sort_NeighList_AT_NUMBERS2(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: insertions_sort_NeighList_AT_NUMBERS2
     Ok(())
-}
-
-/// Sorts one source-created graph row after proving the complete row and rank
-/// index domain once, and returns the same writable row for `CtPartFill`.
-fn try_sort_neighbor_row_source_layout(
-    heap: &mut SourceHeap,
-    base: NEIGH_LIST,
-    ranks: &[AT_RANK],
-    max_rj: AT_RANK,
-    rank_mask: AT_RANK,
-) -> Result<Option<StableSourceSlice<AT_NUMB>>, SourceHeapError> {
-    let mut neighbors = unsafe { heap.stable_slice_mut(base)? };
-    let Some(&num) = neighbors.get(0).ok() else {
-        return Ok(None);
-    };
-    let row_len = usize::from(num)
-        .checked_add(1)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let Ok(row) = neighbors.prefix_mut(row_len) else {
-        return Ok(None);
-    };
-    if row[1..]
-        .iter()
-        .any(|&atom| usize::from(atom) >= ranks.len())
-    {
-        return Ok(None);
-    }
-
-    // INCHI✔️✔️:     for (k = 1, pk = base; k < num; k++, pk++)
-    let mut k = 1_usize;
-    while k < usize::from(num) {
-        // INCHI✔️✔️:         i = pk;
-        let mut i = k;
-        // INCHI✔️✔️:         j = i + 1;
-        let mut j = i + 1;
-        // SAFETY: `row_len` proves every row index used by the source loop,
-        // and the domain scan above proves every rank index before mutation.
-        let j_atom = unsafe { *row.get_unchecked(j) };
-        // INCHI✔️✔️:         rj = ( rank_mask_bit & nRank[(int) *j] );
-        let rj = rank_mask & unsafe { *ranks.get_unchecked(usize::from(j_atom)) };
-        // INCHI✔️✔️:         if (rj < max_rj)
-        if rj < max_rj {
-            // INCHI✔️✔️:             while (j > base && rj < ( rank_mask_bit & nRank[(int) *i] ))
-            while j > 1 {
-                let i_atom = unsafe { *row.get_unchecked(i) };
-                if rj >= rank_mask & unsafe { *ranks.get_unchecked(usize::from(i_atom)) } {
-                    break;
-                }
-                // INCHI✔️✔️:                 tmp = *i;
-                // INCHI✔️✔️:                 *i = *j;
-                unsafe { *row.get_unchecked_mut(i) = j_atom };
-                // INCHI✔️✔️:                 *j = tmp;
-                unsafe { *row.get_unchecked_mut(j) = i_atom };
-                // INCHI✔️✔️:                 j = i--;
-                j = i;
-                i -= 1;
-            }
-        }
-        k += 1;
-    }
-    Ok(Some(neighbors))
 }
 
 #[allow(non_snake_case)]
@@ -2155,111 +2305,35 @@ pub(crate) fn CtPartFill(
         return Ok(());
     }
 
-    // SAFETY: CanonGraph constructs the connection table, graph pointer table,
-    // graph rows, atom order, and ranks as distinct fixed-size allocations.
-    // The nested sort only mutates one graph row and never frees or resizes it.
-    let graph_storage = unsafe { heap.stable_slice(G.as_const())? };
-    let graph = graph_storage.prefix(graph_storage.len())?;
-    let atom_number_storage = unsafe { heap.stable_slice(p.AtNumber.as_const())? };
-    let atom_numbers = atom_number_storage.prefix(atom_number_storage.len())?;
-    let rank_storage = unsafe { heap.stable_slice(p.Rank.as_const())? };
-    let ranks = rank_storage.prefix(rank_storage.len())?;
-    let mut connection_table_storage = unsafe { heap.stable_slice_mut(ct.Ctbl)? };
-    let connection_table_len = connection_table_storage.len();
-    let connection_table = connection_table_storage.prefix_mut(connection_table_len)?;
+    // INCHI✔️❗: Native1849..2059 performs each scalar read/write in order;
+    // table, order/ranks, graph rows and metadata pairs have no restrict.
+    // Retaining whole slices across these mutations breaks valid aliases.
+    // Use canonical safe accesses without snapshots or a preliminary domain
+    // scan; reuse the one native insertion-sort implementation. Same source
+    // traversals/O(1) scratch/no allocation. Repeated checked arena lookups
+    // have unfavorable constants: INCHI-PERF-PARTITION-CT-ALIAS remains OPEN.
     let rank_mask = rank_mask_bit();
-
-    // INCHI✔️✔️:         an_sao = (int)p->AtNumber[startAtOrd];
-    let first_atom_index = start_at_ord as usize;
-    if first_atom_index >= atom_numbers.len() {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    // SAFETY: `start_at_ord >= 0` above and the explicit length check prove
-    // the exact source access before it occurs.
-    let first_atom = i32::from(unsafe { *atom_numbers.get_unchecked(first_atom_index) });
-    // INCHI✔️✔️:         r = (rank_mask_bit & p->Rank[an_sao]);
-    let first_rank_index = first_atom as usize;
-    if first_rank_index >= ranks.len() {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    // SAFETY: atom numbers are unsigned and the rank length check proves the
-    // same indexed read as `p->Rank[an_sao]`.
-    let mut r = rank_mask & unsafe { *ranks.get_unchecked(first_rank_index) };
-    // INCHI✔️✔️:         for (i = startAtOrd; i < n_tg &&
-    // INCHI✔️✔️:              r == (rank_mask_bit & p->Rank[m = (int)p->AtNumber[i]]);
-    // INCHI✔️✔️:              i++, r++)
+    let first_atom = source_get(heap, p.AtNumber, start_at_ord)?;
+    let mut r = rank_mask & source_get(heap, p.Rank, i32::from(first_atom))?;
     let mut i = start_at_ord;
     while i < n_tg {
-        let index = i as usize;
-        if i < 0 || index >= atom_numbers.len() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        // SAFETY: the immediately preceding check proves this source access.
-        let m = unsafe { *atom_numbers.get_unchecked(index) };
-        let m_index = usize::from(m);
-        if m_index >= ranks.len() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        // SAFETY: `m_index` was checked against the stable rank allocation.
-        if r != rank_mask & unsafe { *ranks.get_unchecked(m_index) } {
+        let m = source_get(heap, p.AtNumber, i)?;
+        if r != rank_mask & source_get(heap, p.Rank, i32::from(m))? {
             break;
         }
-        // INCHI✔️✔️:             Ct->Ctbl[startCtbl++] = r;
-        let output_index = start_ctbl as usize;
-        if start_ctbl < 0 || output_index >= connection_table.len() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        // SAFETY: the output index is checked at the source write point.
-        unsafe { *connection_table.get_unchecked_mut(output_index) = r };
+        source_set(heap, ct.Ctbl, start_ctbl, r)?;
         start_ctbl = start_ctbl.wrapping_add(1);
-        if m_index >= graph.len() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        // SAFETY: graph and rank use the same checked unsigned atom index.
-        let neighbors = unsafe { *graph.get_unchecked(m_index) };
-        // INCHI✔️✔️:             insertions_sort_NeighList_AT_NUMBERS2(G[m], p->Rank, r);
-        let mut neighbor_storage =
-            match try_sort_neighbor_row_source_layout(heap, neighbors, ranks, r, rank_mask)? {
-                Some(storage) => storage,
-                None => {
-                    insertions_sort_NeighList_AT_NUMBERS2(heap, neighbors, p.Rank, r)?;
-                    unsafe { heap.stable_slice_mut(neighbors)? }
-                }
-            };
-        let neighbor_len = neighbor_storage.len();
-        let neighbors = neighbor_storage.prefix_mut(neighbor_len)?;
-        // INCHI✔️✔️:             nn = G[m][0];
-        if neighbors.is_empty() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        // SAFETY: the graph row was checked nonempty at the source read point.
-        let nn = unsafe { *neighbors.get_unchecked(0) };
-        // INCHI✔️✔️:             for (j = 1; j <= nn &&
-        // INCHI✔️✔️:                  (rj = (rank_mask_bit & p->Rank[(int)G[m][j]])) < r; j++)
+        let neighbors = pointer_array_get(heap, G, i32::from(m))?;
+        insertions_sort_NeighList_AT_NUMBERS2(heap, neighbors, p.Rank, r)?;
+        let nn = source_get(heap, neighbors, 0)?;
         let mut j: AT_RANK = 1;
         while j <= nn {
-            let neighbor_index = usize::from(j);
-            if neighbor_index >= neighbors.len() {
-                return Err(SourceHeapError::PointerOutOfBounds);
-            }
-            // SAFETY: the graph-row index is checked immediately above.
-            let neighbor = unsafe { *neighbors.get_unchecked(neighbor_index) };
-            let neighbor_rank_index = usize::from(neighbor);
-            if neighbor_rank_index >= ranks.len() {
-                return Err(SourceHeapError::PointerOutOfBounds);
-            }
-            // SAFETY: the neighbor atom index is checked against ranks.
-            let rj = rank_mask & unsafe { *ranks.get_unchecked(neighbor_rank_index) };
+            let neighbor = source_get(heap, neighbors, i32::from(j))?;
+            let rj = rank_mask & source_get(heap, p.Rank, i32::from(neighbor))?;
             if rj >= r {
                 break;
             }
-            // INCHI✔️✔️:                 Ct->Ctbl[startCtbl++] = rj;
-            let output_index = start_ctbl as usize;
-            if start_ctbl < 0 || output_index >= connection_table.len() {
-                return Err(SourceHeapError::PointerOutOfBounds);
-            }
-            // SAFETY: the output index is checked at the source write point.
-            unsafe { *connection_table.get_unchecked_mut(output_index) = rj };
+            source_set(heap, ct.Ctbl, start_ctbl, rj)?;
             start_ctbl = start_ctbl.wrapping_add(1);
             j = j.wrapping_add(1);
         }
@@ -2267,154 +2341,78 @@ pub(crate) fn CtPartFill(
         r = r.wrapping_add(1);
     }
 
-    // INCHI✔️✔️:         if (pCD->NumH && Ct->NumH)
     if !pCD.NumH.is_null() && !ct.NumH.is_null() {
-        // SAFETY: CTableCreate gives each output field its own fixed-size
-        // allocation; CANON_DATA owns distinct immutable source fields.
-        let source_h_storage = unsafe { heap.stable_slice(pCD.NumH.as_const())? };
-        let source_h = source_h_storage.prefix(source_h_storage.len())?;
-        let mut target_h_storage = unsafe { heap.stable_slice_mut(ct.NumH)? };
-        let target_h_len = target_h_storage.len();
-        let target_h = target_h_storage.prefix_mut(target_h_len)?;
-        // INCHI✔️✔️:             nn = inchi_min(n, i);
+        // Preserve existing typed pointer admission without retaining borrows.
+        let _ = heap.slice(pCD.NumH.as_const())?;
+        let _ = heap.slice_mut(ct.NumH)?;
         let mut nn = n.min(i) as AT_RANK;
-        // INCHI✔️✔️:             for (j = startAtOrd; j < nn; j++)
         let mut j = start_at_ord as AT_RANK;
         while j < nn {
-            let atom = atom_numbers
-                .get(usize::from(j))
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:                 Ct->NumH[j] = pCD->NumH[p->AtNumber[j]];
-            *target_h
-                .get_mut(usize::from(j))
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = source_h
-                .get(usize::from(atom))
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom = source_get(heap, p.AtNumber, i32::from(j))?;
+            let value = source_get(heap, pCD.NumH, i32::from(atom))?;
+            source_set(heap, ct.NumH, i32::from(j), value)?;
             j = j.wrapping_add(1);
         }
-        // INCHI✔️✔️:             for (; j < i; j++)
         while i32::from(j) < i {
-            let atom = i32::from(
-                atom_numbers
-                    .get(usize::from(j))
-                    .copied()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
-            // INCHI✔️✔️:                 int data_pos = n + T_NUM_NO_ISOTOPIC * ((int)p->AtNumber[j] - n);
+            let atom = i32::from(source_get(heap, p.AtNumber, i32::from(j))?);
             let mut data_pos = n.wrapping_add(
                 (crate::source_types::T_NUM_NO_ISOTOPIC as i32).wrapping_mul(atom.wrapping_sub(n)),
             );
-            // INCHI✔️✔️:                 for (m = 0; m < T_NUM_NO_ISOTOPIC; m++)
             let mut m = 0_i32;
             while m < crate::source_types::T_NUM_NO_ISOTOPIC as i32 {
-                let source_index =
-                    usize::try_from(data_pos).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                // INCHI✔️✔️:                     Ct->NumH[nn++] = pCD->NumH[data_pos++];
-                *target_h
-                    .get_mut(usize::from(nn))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? = source_h
-                    .get(source_index)
-                    .copied()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let value = source_get(heap, pCD.NumH, data_pos)?;
+                source_set(heap, ct.NumH, i32::from(nn), value)?;
                 nn = nn.wrapping_add(1);
                 data_pos = data_pos.wrapping_add(1);
                 m = m.wrapping_add(1);
             }
             j = j.wrapping_add(1);
         }
-        // INCHI✔️✔️:             Ct->lenNumH = nn;
         ct.lenNumH = i32::from(nn);
     } else {
-        // INCHI✔️✔️:             Ct->lenNumH = 0;
         ct.lenNumH = 0;
     }
 
-    // INCHI✔️✔️:             if (pCD->NumHfixed && Ct->NumHfixed)
     if !pCD.NumHfixed.is_null() && !ct.NumHfixed.is_null() {
-        let source_fixed_h_storage = unsafe { heap.stable_slice(pCD.NumHfixed.as_const())? };
-        let source_fixed_h = source_fixed_h_storage.prefix(source_fixed_h_storage.len())?;
-        let mut target_fixed_h_storage = unsafe { heap.stable_slice_mut(ct.NumHfixed)? };
-        let target_fixed_h_len = target_fixed_h_storage.len();
-        let target_fixed_h = target_fixed_h_storage.prefix_mut(target_fixed_h_len)?;
-        // INCHI✔️✔️:                 nn = inchi_min(n, i);
+        let _ = heap.slice(pCD.NumHfixed.as_const())?;
+        let _ = heap.slice_mut(ct.NumHfixed)?;
         let nn = n.min(i) as AT_RANK;
-        // INCHI✔️✔️:                 for (j = startAtOrd; j < nn; j++)
         let mut j = start_at_ord as AT_RANK;
         while j < nn {
-            let atom = atom_numbers
-                .get(usize::from(j))
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:                     Ct->NumHfixed[j] = pCD->NumHfixed[p->AtNumber[j]];
-            *target_fixed_h
-                .get_mut(usize::from(j))
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = source_fixed_h
-                .get(usize::from(atom))
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom = source_get(heap, p.AtNumber, i32::from(j))?;
+            let value = source_get(heap, pCD.NumHfixed, i32::from(atom))?;
+            source_set(heap, ct.NumHfixed, i32::from(j), value)?;
             j = j.wrapping_add(1);
         }
     }
 
-    // INCHI✔️✔️:             if (pCD->iso_sort_key && Ct->iso_sort_key)
     if !pCD.iso_sort_key.is_null() && !ct.iso_sort_key.is_null() {
-        let source_iso_storage = unsafe { heap.stable_slice(pCD.iso_sort_key.as_const())? };
-        let source_iso = source_iso_storage.prefix(source_iso_storage.len())?;
-        let mut target_iso_storage = unsafe { heap.stable_slice_mut(ct.iso_sort_key)? };
-        let target_iso_len = target_iso_storage.len();
-        let target_iso = target_iso_storage.prefix_mut(target_iso_len)?;
-        // INCHI✔️✔️:                 for (j = startAtOrd; j < i; j++)
+        let _ = heap.slice(pCD.iso_sort_key.as_const())?;
+        let _ = heap.slice_mut(ct.iso_sort_key)?;
         let mut j = start_at_ord as AT_RANK;
         while i32::from(j) < i {
-            let atom = atom_numbers
-                .get(usize::from(j))
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:                     Ct->iso_sort_key[j] = pCD->iso_sort_key[p->AtNumber[j]];
-            *target_iso
-                .get_mut(usize::from(j))
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = source_iso
-                .get(usize::from(atom))
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom = source_get(heap, p.AtNumber, i32::from(j))?;
+            let value = source_get(heap, pCD.iso_sort_key, i32::from(atom))?;
+            source_set(heap, ct.iso_sort_key, i32::from(j), value)?;
             j = j.wrapping_add(1);
         }
-        // INCHI✔️✔️:                 Ct->len_iso_sort_key = i;
         ct.len_iso_sort_key = i;
     } else {
-        // INCHI✔️✔️:                 Ct->len_iso_sort_key = 0;
         ct.len_iso_sort_key = 0;
     }
 
-    // INCHI✔️✔️:             if (pCD->iso_exchg_atnos && Ct->iso_exchg_atnos)
     if !pCD.iso_exchg_atnos.is_null() && !ct.iso_exchg_atnos.is_null() {
-        let source_exchange_storage = unsafe { heap.stable_slice(pCD.iso_exchg_atnos.as_const())? };
-        let source_exchange = source_exchange_storage.prefix(source_exchange_storage.len())?;
-        let mut target_exchange_storage = unsafe { heap.stable_slice_mut(ct.iso_exchg_atnos)? };
-        let target_exchange_len = target_exchange_storage.len();
-        let target_exchange = target_exchange_storage.prefix_mut(target_exchange_len)?;
-        // INCHI✔️✔️:                 for (j = startAtOrd; j < i; j++)
+        let _ = heap.slice(pCD.iso_exchg_atnos.as_const())?;
+        let _ = heap.slice_mut(ct.iso_exchg_atnos)?;
         let mut j = start_at_ord as AT_RANK;
         while i32::from(j) < i {
-            let atom = atom_numbers
-                .get(usize::from(j))
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:                     Ct->iso_exchg_atnos[j] = pCD->iso_exchg_atnos[p->AtNumber[j]];
-            *target_exchange
-                .get_mut(usize::from(j))
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = source_exchange
-                .get(usize::from(atom))
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let atom = source_get(heap, p.AtNumber, i32::from(j))?;
+            let value = source_get(heap, pCD.iso_exchg_atnos, i32::from(atom))?;
+            source_set(heap, ct.iso_exchg_atnos, i32::from(j), value)?;
             j = j.wrapping_add(1);
         }
-        // INCHI✔️✔️:                 Ct->len_iso_exchg_atnos = i;
         ct.len_iso_exchg_atnos = i;
     } else {
-        // INCHI✔️✔️:                 Ct->len_iso_exchg_atnos = 0;
         ct.len_iso_exchg_atnos = 0;
     }
 
@@ -3082,7 +3080,19 @@ pub(crate) fn CtPartCompare(
     let max_vert = Ct1.maxVert.min(Ct2.maxVert);
     let mut len_h = Ct1.lenNumH;
     let mut mid_h = 0_i32;
-    let mut table_views = None;
+    let mut table_views = (None, None);
+    // INCHI✔️❗: admit cached table views only inside a reached comparison range.
+    // One admission per call, stable indexed loops; no allocation/scan/clone.
+    // Entry/cache branch and typed-check costs remain OPEN.
+    let admit_tables = |views: &mut (Option<_>, Option<_>)| -> Result<(), SourceHeapError> {
+        if views.0.is_none() {
+            views.0 = Some(unsafe { heap.stable_slice(Ct1.Ctbl.as_const())? });
+        }
+        if views.1.is_none() {
+            views.1 = Some(unsafe { heap.stable_slice(Ct2.Ctbl.as_const())? });
+        }
+        Ok(())
+    };
 
     let (mut diff, done_i, done_layer) = 'compare: {
         // INCHI✔️✔️:     if ((diff = -( startCt1 - startCt2 )))
@@ -3093,18 +3103,21 @@ pub(crate) fn CtPartCompare(
             // INCHI✔️✔️:             Ct2->Ctbl[startCt2] == EMPTY_CT)
             if bOnlyCommon != 0 && sc1 >= Ct1.nLenCTAtOnly && sc2 >= Ct2.nLenCTAtOnly {
                 let tables1 = unsafe { heap.stable_slice(Ct1.Ctbl.as_const())? };
-                let tables2 = unsafe { heap.stable_slice(Ct2.Ctbl.as_const())? };
                 let start1 =
                     usize::try_from(sc1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let start2 =
-                    usize::try_from(sc2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *tables1.get(start1)? == EMPTY_CT as AT_RANK
-                    && *tables2.get(start2)? == EMPTY_CT as AT_RANK
-                {
-                    // INCHI✔️✔️:             return 0;
-                    return Ok(0);
+                // INCHI✔️❗: native && skips the second table unless the first is empty.
+                // O(1), no allocation/scan; typed admission cost remains OPEN.
+                if *tables1.get(start1)? == EMPTY_CT as AT_RANK {
+                    let tables2 = unsafe { heap.stable_slice(Ct2.Ctbl.as_const())? };
+                    let start2 =
+                        usize::try_from(sc2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *tables2.get(start2)? == EMPTY_CT as AT_RANK {
+                        // INCHI✔️✔️:             return 0;
+                        return Ok(0);
+                    }
+                    table_views.1 = Some(tables2);
                 }
-                table_views = Some((tables1, tables2));
+                table_views.0 = Some(tables1);
             }
             // INCHI✔️✔️:         if (bOnlyCommon)
             if bOnlyCommon != 0 {
@@ -3151,16 +3164,6 @@ pub(crate) fn CtPartCompare(
                 break 'compare (diff, i, layer);
             }
         }
-        if table_views.is_none() {
-            table_views = Some(
-                (unsafe { heap.stable_slice(Ct1.Ctbl.as_const())? }, unsafe {
-                    heap.stable_slice(Ct2.Ctbl.as_const())?
-                }),
-            );
-        }
-        let (tables1, tables2) = table_views
-            .as_ref()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let (mid_ct, mid_at) = if bSplitTautCompare != 0 {
             (
                 Ct1.nLenCTAtOnly.min(Ct2.nLenCTAtOnly).min(ec1),
@@ -3171,19 +3174,31 @@ pub(crate) fn CtPartCompare(
         };
         // INCHI✔️✔️:     for (i = startCt1; i < midCt && Ct1->Ctbl[i] == Ct2->Ctbl[i]; i++)
         i = sc1;
-        while i < mid_ct {
-            let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            if *tables1.get(index)? != *tables2.get(index)? {
-                break;
-            }
-            i = i.wrapping_add(1);
-        }
-        // INCHI✔️✔️:     if (i < midCt)
         if i < mid_ct {
-            let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:         diff = (int) Ct1->Ctbl[i] - (int) Ct2->Ctbl[i];
-            diff = i32::from(*tables1.get(index)?).wrapping_sub(i32::from(*tables2.get(index)?));
-            break 'compare (diff, i, layer);
+            admit_tables(&mut table_views)?;
+            let tables1 = table_views
+                .0
+                .as_ref()
+                .expect("reached first table initialized");
+            let tables2 = table_views
+                .1
+                .as_ref()
+                .expect("reached second table initialized");
+            while i < mid_ct {
+                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                if *tables1.get(index)? != *tables2.get(index)? {
+                    break;
+                }
+                i = i.wrapping_add(1);
+            }
+            // INCHI✔️✔️:     if (i < midCt)
+            if i < mid_ct {
+                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                // INCHI✔️✔️:         diff = (int) Ct1->Ctbl[i] - (int) Ct2->Ctbl[i];
+                diff =
+                    i32::from(*tables1.get(index)?).wrapping_sub(i32::from(*tables2.get(index)?));
+                break 'compare (diff, i, layer);
+            }
         }
         layer = layer.wrapping_add(1);
         diff = sa2.wrapping_sub(sa1);
@@ -3195,6 +3210,19 @@ pub(crate) fn CtPartCompare(
             break 'compare (diff, i, layer);
         }
         let mut hydrogen_views = None;
+        // INCHI✔️❗: each optional layer admits pointees at its first entered loop.
+        // Reuse the same stable pair across both H ranges, without per-item
+        // arena lookup/allocation/clone/scan; entry/cache cost remains OPEN.
+        let admit_hydrogens = |views: &mut Option<_>| -> Result<(), SourceHeapError> {
+            if views.is_none() {
+                *views = Some(
+                    (unsafe { heap.stable_slice(Ct1.NumH.as_const())? }, unsafe {
+                        heap.stable_slice(Ct2.NumH.as_const())?
+                    }),
+                );
+            }
+            Ok(())
+        };
         // INCHI✔️✔️:     if (Ct1->NumH && Ct2->NumH)
         if !Ct1.NumH.is_null() && !Ct2.NumH.is_null() {
             if ea1 < max_vert {
@@ -3205,137 +3233,174 @@ pub(crate) fn CtPartCompare(
             } else {
                 mid_h = len_h;
             }
-            let hydrogens1 = unsafe { heap.stable_slice(Ct1.NumH.as_const())? };
-            let hydrogens2 = unsafe { heap.stable_slice(Ct2.NumH.as_const())? };
             // INCHI✔️✔️:         for (i = startAt1; i < midNumH && Ct1->NumH[i] == Ct2->NumH[i]; i++)
             i = sa1;
-            while i < mid_h {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *hydrogens1.get(index)? != *hydrogens2.get(index)? {
-                    break;
-                }
-                i = i.wrapping_add(1);
-            }
-            // INCHI✔️✔️:         if (i < midNumH)
             if i < mid_h {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                // INCHI✔️✔️:             diff = (int) Ct1->NumH[i] - (int) Ct2->NumH[i];
-                diff = i32::from(*hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*hydrogens2.get(index)?));
-                break 'compare (diff, i, layer);
+                admit_hydrogens(&mut hydrogen_views)?;
+                let (hydrogens1, hydrogens2) = hydrogen_views
+                    .as_ref()
+                    .expect("reached hydrogen views initialized");
+                while i < mid_h {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *hydrogens1.get(index)? != *hydrogens2.get(index)? {
+                        break;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                // INCHI✔️✔️:         if (i < midNumH)
+                if i < mid_h {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️:             diff = (int) Ct1->NumH[i] - (int) Ct2->NumH[i];
+                    diff = i32::from(*hydrogens1.get(index)?)
+                        .wrapping_sub(i32::from(*hydrogens2.get(index)?));
+                    break 'compare (diff, i, layer);
+                }
             }
-            hydrogen_views = Some((hydrogens1, hydrogens2));
         }
         layer = layer.wrapping_add(1);
         // INCHI✔️✔️:     for (i = midCt; i < endCt1 && Ct1->Ctbl[i] == Ct2->Ctbl[i]; i++)
         i = mid_ct;
-        while i < ec1 {
-            let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            if *tables1.get(index)? != *tables2.get(index)? {
-                break;
-            }
-            i = i.wrapping_add(1);
-        }
-        // INCHI✔️✔️:     if (i < endCt1)
         if i < ec1 {
-            let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:         diff = (int) Ct1->Ctbl[i] - (int) Ct2->Ctbl[i];
-            diff = i32::from(*tables1.get(index)?).wrapping_sub(i32::from(*tables2.get(index)?));
-            break 'compare (diff, i, layer);
-        }
-        if let Some((hydrogens1, hydrogens2)) = &hydrogen_views {
-            // INCHI✔️✔️:         for (i = midNumH; i < lenNumH && Ct1->NumH[i] == Ct2->NumH[i]; i++)
-            i = mid_h;
-            while i < len_h {
+            admit_tables(&mut table_views)?;
+            let tables1 = table_views
+                .0
+                .as_ref()
+                .expect("reached first table initialized");
+            let tables2 = table_views
+                .1
+                .as_ref()
+                .expect("reached second table initialized");
+            while i < ec1 {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *hydrogens1.get(index)? != *hydrogens2.get(index)? {
+                if *tables1.get(index)? != *tables2.get(index)? {
                     break;
                 }
                 i = i.wrapping_add(1);
             }
-            // INCHI✔️✔️:         if (i < lenNumH)
-            if i < len_h {
+            // INCHI✔️✔️:     if (i < endCt1)
+            if i < ec1 {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                // INCHI✔️✔️:             diff = (int) Ct1->NumH[i] - (int) Ct2->NumH[i];
-                diff = i32::from(*hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*hydrogens2.get(index)?));
-                // INCHI✔️✔️:             i += endCt1 - midCt;
-                i = i.wrapping_add(ec1.wrapping_sub(mid_ct));
+                // INCHI✔️✔️:         diff = (int) Ct1->Ctbl[i] - (int) Ct2->Ctbl[i];
+                diff =
+                    i32::from(*tables1.get(index)?).wrapping_sub(i32::from(*tables2.get(index)?));
                 break 'compare (diff, i, layer);
+            }
+        }
+        if !Ct1.NumH.is_null() && !Ct2.NumH.is_null() {
+            // INCHI✔️✔️:         for (i = midNumH; i < lenNumH && Ct1->NumH[i] == Ct2->NumH[i]; i++)
+            i = mid_h;
+            if i < len_h {
+                admit_hydrogens(&mut hydrogen_views)?;
+                let (hydrogens1, hydrogens2) = hydrogen_views
+                    .as_ref()
+                    .expect("reached hydrogen views initialized");
+                while i < len_h {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *hydrogens1.get(index)? != *hydrogens2.get(index)? {
+                        break;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                // INCHI✔️✔️:         if (i < lenNumH)
+                if i < len_h {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️:             diff = (int) Ct1->NumH[i] - (int) Ct2->NumH[i];
+                    diff = i32::from(*hydrogens1.get(index)?)
+                        .wrapping_sub(i32::from(*hydrogens2.get(index)?));
+                    // INCHI✔️✔️:             i += endCt1 - midCt;
+                    i = i.wrapping_add(ec1.wrapping_sub(mid_ct));
+                    break 'compare (diff, i, layer);
+                }
             }
         }
         layer = layer.wrapping_add(1);
         // INCHI✔️✔️:     if (Ct1->NumHfixed && Ct2->NumHfixed)
         if !Ct1.NumHfixed.is_null() && !Ct2.NumHfixed.is_null() {
-            let fixed_hydrogens1 = unsafe { heap.stable_slice(Ct1.NumHfixed.as_const())? };
-            let fixed_hydrogens2 = unsafe { heap.stable_slice(Ct2.NumHfixed.as_const())? };
             // INCHI✔️✔️:         for (i = startAt1; i < midAt && Ct1->NumHfixed[i] == Ct2->NumHfixed[i]; i++)
             i = sa1;
-            while i < mid_at {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *fixed_hydrogens1.get(index)? != *fixed_hydrogens2.get(index)? {
-                    break;
-                }
-                i = i.wrapping_add(1);
-            }
-            // INCHI✔️✔️:         if (i < midAt)
             if i < mid_at {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                // INCHI✔️✔️:             diff = (int) Ct1->NumHfixed[i] - (int) Ct2->NumHfixed[i];
-                diff = i32::from(*fixed_hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*fixed_hydrogens2.get(index)?));
-                break 'compare (diff, i, layer);
+                let fixed_hydrogens1 = unsafe { heap.stable_slice(Ct1.NumHfixed.as_const())? };
+                let fixed_hydrogens2 = unsafe { heap.stable_slice(Ct2.NumHfixed.as_const())? };
+                while i < mid_at {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *fixed_hydrogens1.get(index)? != *fixed_hydrogens2.get(index)? {
+                        break;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                // INCHI✔️✔️:         if (i < midAt)
+                if i < mid_at {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️:             diff = (int) Ct1->NumHfixed[i] - (int) Ct2->NumHfixed[i];
+                    diff = i32::from(*fixed_hydrogens1.get(index)?)
+                        .wrapping_sub(i32::from(*fixed_hydrogens2.get(index)?));
+                    break 'compare (diff, i, layer);
+                }
             }
         }
         layer = layer.wrapping_add(1);
         // INCHI✔️✔️:     if (Ct1->iso_sort_key && Ct2->iso_sort_key)
         if !Ct1.iso_sort_key.is_null() && !Ct2.iso_sort_key.is_null() {
-            let isotope_keys1 = unsafe { heap.stable_slice(Ct1.iso_sort_key.as_const())? };
-            let isotope_keys2 = unsafe { heap.stable_slice(Ct2.iso_sort_key.as_const())? };
             // INCHI✔️✔️:         for (i = startAt1; i < endAt1 && Ct1->iso_sort_key[i] == Ct2->iso_sort_key[i]; i++)
             i = sa1;
-            while i < ea1 {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *isotope_keys1.get(index)? != *isotope_keys2.get(index)? {
-                    break;
-                }
-                i = i.wrapping_add(1);
-            }
-            // INCHI✔️✔️:         if (i < endAt1)
             if i < ea1 {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                // INCHI✔️✔️:             diff = Ct1->iso_sort_key[i] > Ct2->iso_sort_key[i] ? 1 : -1;
-                diff = if *isotope_keys1.get(index)? > *isotope_keys2.get(index)? {
-                    1
-                } else {
-                    -1
-                };
-                break 'compare (diff, i, layer);
+                let isotope_keys1 = unsafe { heap.stable_slice(Ct1.iso_sort_key.as_const())? };
+                let isotope_keys2 = unsafe { heap.stable_slice(Ct2.iso_sort_key.as_const())? };
+                while i < ea1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *isotope_keys1.get(index)? != *isotope_keys2.get(index)? {
+                        break;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                // INCHI✔️✔️:         if (i < endAt1)
+                if i < ea1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️:             diff = Ct1->iso_sort_key[i] > Ct2->iso_sort_key[i] ? 1 : -1;
+                    diff = if *isotope_keys1.get(index)? > *isotope_keys2.get(index)? {
+                        1
+                    } else {
+                        -1
+                    };
+                    break 'compare (diff, i, layer);
+                }
             }
         }
         // INCHI✔️✔️:     if (Ct1->iso_exchg_atnos && Ct2->len_iso_exchg_atnos)
         if !Ct1.iso_exchg_atnos.is_null() && Ct2.len_iso_exchg_atnos != 0 {
-            let exchange_atoms1 = unsafe { heap.stable_slice(Ct1.iso_exchg_atnos.as_const())? };
-            let exchange_atoms2 = unsafe { heap.stable_slice(Ct2.iso_exchg_atnos.as_const())? };
             // INCHI✔️✔️:         for (i = startAt1; i < endAt1 && Ct1->iso_exchg_atnos[i] == Ct2->iso_exchg_atnos[i]; i++)
             i = sa1;
-            while i < ea1 {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *exchange_atoms1.get(index)? != *exchange_atoms2.get(index)? {
-                    break;
-                }
-                i = i.wrapping_add(1);
-            }
-            // INCHI✔️✔️:         if (i < endAt1)
             if i < ea1 {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                // INCHI✔️✔️:             diff = Ct1->iso_exchg_atnos[i] > Ct2->iso_exchg_atnos[i] ? 1 : -1;
-                diff = if *exchange_atoms1.get(index)? > *exchange_atoms2.get(index)? {
-                    1
-                } else {
-                    -1
-                };
-                break 'compare (diff, i, layer);
+                let exchange_atoms1 = unsafe { heap.stable_slice(Ct1.iso_exchg_atnos.as_const())? };
+                let exchange_atoms2 = unsafe { heap.stable_slice(Ct2.iso_exchg_atnos.as_const())? };
+                while i < ea1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *exchange_atoms1.get(index)? != *exchange_atoms2.get(index)? {
+                        break;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                // INCHI✔️✔️:         if (i < endAt1)
+                if i < ea1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️:             diff = Ct1->iso_exchg_atnos[i] > Ct2->iso_exchg_atnos[i] ? 1 : -1;
+                    diff = if *exchange_atoms1.get(index)? > *exchange_atoms2.get(index)? {
+                        1
+                    } else {
+                        -1
+                    };
+                    break 'compare (diff, i, layer);
+                }
             }
         }
         (0, i, layer)
@@ -3679,7 +3744,15 @@ pub(crate) fn CtFullCompare(
     let max_vert = Ct1.maxVert.min(Ct2.maxVert);
 
     let table1 = unsafe { heap.stable_slice(Ct1.Ctbl.as_const())? };
-    let table2 = unsafe { heap.stable_slice(Ct2.Ctbl.as_const())? };
+    // INCHI✔️❗: second table admission follows native OR/loop reachability.
+    // One cached stable view; no allocation/scan/clone, entry cost remains OPEN.
+    let mut table2 = None;
+    let admit_table2 = |view: &mut Option<_>| -> Result<(), SourceHeapError> {
+        if view.is_none() {
+            *view = Some(unsafe { heap.stable_slice(Ct2.Ctbl.as_const())? });
+        }
+        Ok(())
+    };
     let (mut len_h1, len_h2, len_iso1, len_iso2);
     // INCHI✔️✔️:     if (bOnlyCommon)
     if bOnlyCommon != 0 {
@@ -3690,9 +3763,17 @@ pub(crate) fn CtFullCompare(
         let end_index =
             usize::try_from(end_ct1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         // INCHI✔️✔️:         if (Ct1->Ctbl[endCt1] == EMPTY_CT || Ct2->Ctbl[endCt1] == EMPTY_CT)
-        if *table1.get(end_index)? == EMPTY_CT as AT_RANK
-            || *table2.get(end_index)? == EMPTY_CT as AT_RANK
-        {
+        let empty = if *table1.get(end_index)? == EMPTY_CT as AT_RANK {
+            true
+        } else {
+            admit_table2(&mut table2)?;
+            *table2
+                .as_ref()
+                .expect("reached second table initialized")
+                .get(end_index)?
+                == EMPTY_CT as AT_RANK
+        };
+        if empty {
             end_ct1 = end_ct1.wrapping_sub(1);
             end_ct2 = end_ct1;
         }
@@ -3701,16 +3782,26 @@ pub(crate) fn CtFullCompare(
         len_iso1 = Ct1.len_iso_sort_key.min(Ct1.len_iso_sort_key);
         len_iso2 = len_iso1;
     } else {
-        let end_index1 = usize::try_from(end_ct1.wrapping_sub(1))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        // INCHI✔️✔️:         if (Ct1->Ctbl[endCt1 - 1] == EMPTY_CT)
-        if *table1.get(end_index1)? == EMPTY_CT as AT_RANK {
+        // INCHI✔️❗: The preceding terminator may lie before an interior base.
+        let end_index1 = end_ct1.wrapping_sub(1);
+        let ending1 = if end_index1 >= 0 {
+            *table1.get(end_index1 as usize)?
+        } else {
+            source_get(heap, Ct1.Ctbl, end_index1)?
+        };
+        if ending1 == EMPTY_CT as AT_RANK {
             end_ct1 = end_ct1.wrapping_sub(1);
         }
-        let end_index2 = usize::try_from(end_ct2.wrapping_sub(1))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        // INCHI✔️✔️:         if (Ct2->Ctbl[endCt2 - 1] == EMPTY_CT)
-        if *table2.get(end_index2)? == EMPTY_CT as AT_RANK {
+        // INCHI✔️❗: The preceding terminator may lie before an interior base.
+        let end_index2 = end_ct2.wrapping_sub(1);
+        admit_table2(&mut table2)?;
+        let table2 = table2.as_ref().expect("reached second table initialized");
+        let ending2 = if end_index2 >= 0 {
+            *table2.get(end_index2 as usize)?
+        } else {
+            source_get(heap, Ct2.Ctbl, end_index2)?
+        };
+        if ending2 == EMPTY_CT as AT_RANK {
             end_ct2 = end_ct2.wrapping_sub(1);
         }
         len_h1 = Ct1.lenNumH;
@@ -3737,22 +3828,39 @@ pub(crate) fn CtFullCompare(
         };
         // INCHI✔️✔️:     for (i = startCt1; i < midCt && Ct1->Ctbl[i] == Ct2->Ctbl[i]; i++)
         i = 0;
-        while i < mid_ct {
-            let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            if *table1.get(index)? != *table2.get(index)? {
-                break;
-            }
-            i = i.wrapping_add(1);
-        }
-        // INCHI✔️✔️:     if (i < midCt)
         if i < mid_ct {
-            let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:         diff = (int) Ct1->Ctbl[i] - (int) Ct2->Ctbl[i];
-            value = i32::from(*table1.get(index)?).wrapping_sub(i32::from(*table2.get(index)?));
-            break 'compare value;
+            admit_table2(&mut table2)?;
+            let table2 = table2.as_ref().expect("reached second table initialized");
+            while i < mid_ct {
+                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                if *table1.get(index)? != *table2.get(index)? {
+                    break;
+                }
+                i = i.wrapping_add(1);
+            }
+            // INCHI✔️✔️:     if (i < midCt)
+            if i < mid_ct {
+                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                // INCHI✔️✔️:         diff = (int) Ct1->Ctbl[i] - (int) Ct2->Ctbl[i];
+                value = i32::from(*table1.get(index)?).wrapping_sub(i32::from(*table2.get(index)?));
+                break 'compare value;
+            }
         }
         layer = layer.wrapping_add(1);
         let mut hydrogen_views = None;
+        // INCHI✔️❗: each optional layer admits pointees at its first entered loop.
+        // Reuse the same stable pair across both H ranges, without per-item
+        // arena lookup/allocation/clone/scan; entry/cache cost remains OPEN.
+        let admit_hydrogens = |views: &mut Option<_>| -> Result<(), SourceHeapError> {
+            if views.is_none() {
+                *views = Some(
+                    (unsafe { heap.stable_slice(Ct1.NumH.as_const())? }, unsafe {
+                        heap.stable_slice(Ct2.NumH.as_const())?
+                    }),
+                );
+            }
+            Ok(())
+        };
         // INCHI✔️✔️:     if (Ct1->NumH && Ct2->NumH)
         if !Ct1.NumH.is_null() && !Ct2.NumH.is_null() {
             // INCHI✔️✔️:         if ((diff = -( lenNumH1 - lenNumH2 )))
@@ -3768,76 +3876,97 @@ pub(crate) fn CtFullCompare(
             } else {
                 mid_h = len_h1;
             }
-            let hydrogens1 = unsafe { heap.stable_slice(Ct1.NumH.as_const())? };
-            let hydrogens2 = unsafe { heap.stable_slice(Ct2.NumH.as_const())? };
             // INCHI✔️✔️:         for (i = startAt1; i < midNumH && Ct1->NumH[i] == Ct2->NumH[i]; i++)
             i = 0;
-            while i < mid_h {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *hydrogens1.get(index)? != *hydrogens2.get(index)? {
-                    break;
-                }
-                i = i.wrapping_add(1);
-            }
             if i < mid_h {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                value = i32::from(*hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*hydrogens2.get(index)?));
-                break 'compare value;
+                admit_hydrogens(&mut hydrogen_views)?;
+                let (hydrogens1, hydrogens2) = hydrogen_views
+                    .as_ref()
+                    .expect("reached hydrogen views initialized");
+                while i < mid_h {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *hydrogens1.get(index)? != *hydrogens2.get(index)? {
+                        break;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                if i < mid_h {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    value = i32::from(*hydrogens1.get(index)?)
+                        .wrapping_sub(i32::from(*hydrogens2.get(index)?));
+                    break 'compare value;
+                }
             }
-            hydrogen_views = Some((hydrogens1, hydrogens2));
         }
         layer = layer.wrapping_add(1);
         // INCHI✔️✔️:     for (i = midCt; i < endCt1 && Ct1->Ctbl[i] == Ct2->Ctbl[i]; i++)
         i = mid_ct;
-        while i < end_ct1 {
-            let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            if *table1.get(index)? != *table2.get(index)? {
-                break;
-            }
-            i = i.wrapping_add(1);
-        }
         if i < end_ct1 {
-            let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            value = i32::from(*table1.get(index)?).wrapping_sub(i32::from(*table2.get(index)?));
-            break 'compare value;
-        }
-        if let Some((hydrogens1, hydrogens2)) = &hydrogen_views {
-            // INCHI✔️✔️:         for (i = midNumH; i < lenNumH1 && Ct1->NumH[i] == Ct2->NumH[i]; i++)
-            i = mid_h;
-            while i < len_h1 {
+            admit_table2(&mut table2)?;
+            let table2 = table2.as_ref().expect("reached second table initialized");
+            while i < end_ct1 {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *hydrogens1.get(index)? != *hydrogens2.get(index)? {
+                if *table1.get(index)? != *table2.get(index)? {
                     break;
                 }
                 i = i.wrapping_add(1);
             }
-            if i < len_h1 {
+            if i < end_ct1 {
                 let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                value = i32::from(*hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*hydrogens2.get(index)?));
+                value = i32::from(*table1.get(index)?).wrapping_sub(i32::from(*table2.get(index)?));
                 break 'compare value;
+            }
+        }
+        if !Ct1.NumH.is_null() && !Ct2.NumH.is_null() {
+            // INCHI✔️✔️:         for (i = midNumH; i < lenNumH1 && Ct1->NumH[i] == Ct2->NumH[i]; i++)
+            i = mid_h;
+            if i < len_h1 {
+                admit_hydrogens(&mut hydrogen_views)?;
+                let (hydrogens1, hydrogens2) = hydrogen_views
+                    .as_ref()
+                    .expect("reached hydrogen views initialized");
+                while i < len_h1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *hydrogens1.get(index)? != *hydrogens2.get(index)? {
+                        break;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                if i < len_h1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    value = i32::from(*hydrogens1.get(index)?)
+                        .wrapping_sub(i32::from(*hydrogens2.get(index)?));
+                    break 'compare value;
+                }
             }
         }
         layer = layer.wrapping_add(1);
         // INCHI✔️✔️:     if (Ct1->NumHfixed && Ct2->NumHfixed)
         if !Ct1.NumHfixed.is_null() && !Ct2.NumHfixed.is_null() {
-            let fixed_hydrogens1 = unsafe { heap.stable_slice(Ct1.NumHfixed.as_const())? };
-            let fixed_hydrogens2 = unsafe { heap.stable_slice(Ct2.NumHfixed.as_const())? };
             // INCHI✔️✔️:         for (i = startAt1; i < endAt1 && Ct1->NumHfixed[i] == Ct2->NumHfixed[i]; i++)
             i = 0;
-            while i < end_at1 {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *fixed_hydrogens1.get(index)? != *fixed_hydrogens2.get(index)? {
-                    break;
-                }
-                i = i.wrapping_add(1);
-            }
             if i < end_at1 {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                value = i32::from(*fixed_hydrogens1.get(index)?)
-                    .wrapping_sub(i32::from(*fixed_hydrogens2.get(index)?));
-                break 'compare value;
+                let fixed_hydrogens1 = unsafe { heap.stable_slice(Ct1.NumHfixed.as_const())? };
+                let fixed_hydrogens2 = unsafe { heap.stable_slice(Ct2.NumHfixed.as_const())? };
+                while i < end_at1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *fixed_hydrogens1.get(index)? != *fixed_hydrogens2.get(index)? {
+                        break;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                if i < end_at1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    value = i32::from(*fixed_hydrogens1.get(index)?)
+                        .wrapping_sub(i32::from(*fixed_hydrogens2.get(index)?));
+                    break 'compare value;
+                }
             }
         }
         layer = layer.wrapping_add(1);
@@ -3848,25 +3977,29 @@ pub(crate) fn CtFullCompare(
             if value != 0 {
                 break 'compare value;
             }
-            let isotope_keys1 = unsafe { heap.stable_slice(Ct1.iso_sort_key.as_const())? };
-            let isotope_keys2 = unsafe { heap.stable_slice(Ct2.iso_sort_key.as_const())? };
             // INCHI✔️✔️:         for (i = startAt1; i < endAt1 && Ct1->iso_sort_key[i] == Ct2->iso_sort_key[i]; i++)
             i = 0;
-            while i < end_at1 {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if *isotope_keys1.get(index)? != *isotope_keys2.get(index)? {
-                    break;
-                }
-                i = i.wrapping_add(1);
-            }
             if i < end_at1 {
-                let index = usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                value = if *isotope_keys1.get(index)? > *isotope_keys2.get(index)? {
-                    1
-                } else {
-                    -1
-                };
-                break 'compare value;
+                let isotope_keys1 = unsafe { heap.stable_slice(Ct1.iso_sort_key.as_const())? };
+                let isotope_keys2 = unsafe { heap.stable_slice(Ct2.iso_sort_key.as_const())? };
+                while i < end_at1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    if *isotope_keys1.get(index)? != *isotope_keys2.get(index)? {
+                        break;
+                    }
+                    i = i.wrapping_add(1);
+                }
+                if i < end_at1 {
+                    let index =
+                        usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    value = if *isotope_keys1.get(index)? > *isotope_keys2.get(index)? {
+                        1
+                    } else {
+                        -1
+                    };
+                    break 'compare value;
+                }
             }
         }
         0
@@ -4167,14 +4300,16 @@ pub(crate) fn TranspositionGetMcrAndFixSetAndUnorderedPartition(
     let fix_bits = pointer_array_get(heap, FixSet.bitword, l.wrapping_sub(1))?;
     let set_len =
         usize::try_from(McrSet.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    // SAFETY: CanonGraph creates the McrSet and FixSet rows as distinct,
-    // fixed-size allocations and keeps both live for this complete call.
-    let mut mcr_words = unsafe { heap.stable_slice_mut(mcr_bits)? };
     // INCHI✔️✔️:     memset( McrBits, 0, len );
-    mcr_words.prefix_mut(set_len)?.fill(0);
-    let mut fix_words = unsafe { heap.stable_slice_mut(fix_bits)? };
+    heap.slice_mut(mcr_bits)?
+        .get_mut(..set_len)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .fill(0);
     // INCHI✔️✔️:     memset( FixBits, 0, len );
-    fix_words.prefix_mut(set_len)?.fill(0);
+    heap.slice_mut(fix_bits)?
+        .get_mut(..set_len)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+        .fill(0);
 
     // The C loops do not dereference gamma, equ2, or the mask table when n is
     // non-positive; the two memset operations above still execute.
@@ -4182,9 +4317,93 @@ pub(crate) fn TranspositionGetMcrAndFixSetAndUnorderedPartition(
         return Ok(());
     }
 
-    // SAFETY: TranspositionCreate, UnorderedPartitionCreate, and CanonGraph
-    // own these three arrays independently from each other and from both set
-    // rows. No allocation is resized or freed while these views are live.
+    // INCHI✔️❗: gamma->nAtNumb[i] |= rank_mark_bit;
+    // INCHI✔️❗: p->equ2[j] = mcr;
+    // Source permits these arrays and either bit row to share storage.
+    // Both clears above are sequential even when n <= 0. For positive n,
+    // reserve the existing direct views for five distinct allocations;
+    // aliased storage follows every source load/write without a snapshot.
+    // O(n + cycle steps + set_len), O(1) scratch, no allocation/clone/pass.
+    // Identity/checked lookup costs: INCHI-PERF-BIT-ROW-ALIAS OPEN.
+    let mcr_id = mcr_bits.allocation_identity();
+    let fix_id = fix_bits.allocation_identity();
+    let permutation_id = gamma.nAtNumb.allocation_identity();
+    let equivalences_id = p.equ2.allocation_identity();
+    let masks_id = pCG.m_bBit.allocation_identity();
+    let rows_are_distinct = mcr_id != fix_id
+        && mcr_id != permutation_id
+        && mcr_id != equivalences_id
+        && mcr_id != masks_id
+        && fix_id != permutation_id
+        && fix_id != equivalences_id
+        && fix_id != masks_id
+        && permutation_id != equivalences_id
+        && permutation_id != masks_id
+        && equivalences_id != masks_id;
+    if !rows_are_distinct {
+        heap.slice(gamma.nAtNumb.as_const())?;
+        heap.slice(p.equ2.as_const())?;
+        heap.slice(pCG.m_bBit.as_const())?;
+        let mut i = 0_i32;
+        while i < n {
+            source_set(heap, p.equ2, i, INCHI_CANON_INFINITY as AT_NUMB)?;
+            i = i.wrapping_add(1);
+        }
+        i = 0;
+        while i < n {
+            let next = source_get(heap, gamma.nAtNumb, i)?;
+            let mut j = i32::from(next);
+            if j == i {
+                let word = i.wrapping_div(pCG.m_num_bit);
+                let bit = i.wrapping_rem(pCG.m_num_bit);
+                let mask = source_get(heap, pCG.m_bBit, bit)?;
+                *heap.element_signed_mut(fix_bits, word)? |= mask;
+                let mask = source_get(heap, pCG.m_bBit, bit)?;
+                *heap.element_signed_mut(mcr_bits, word)? |= mask;
+                source_set(heap, p.equ2, i, next)?;
+            } else if rank_mark_bit() & next == 0 {
+                source_set(heap, gamma.nAtNumb, i, next | rank_mark_bit())?;
+                let mut mcr = j.min(i);
+                loop {
+                    let cycle_next = source_get(heap, gamma.nAtNumb, j)?;
+                    if rank_mark_bit() & cycle_next != 0 {
+                        break;
+                    }
+                    source_set(heap, gamma.nAtNumb, j, cycle_next | rank_mark_bit())?;
+                    j = i32::from(cycle_next);
+                    if mcr > j {
+                        mcr = j;
+                    }
+                }
+                let word = mcr.wrapping_div(pCG.m_num_bit);
+                let bit = mcr.wrapping_rem(pCG.m_num_bit);
+                let mask = source_get(heap, pCG.m_bBit, bit)?;
+                *heap.element_signed_mut(mcr_bits, word)? |= mask;
+                source_set(heap, p.equ2, mcr, mcr as AT_NUMB)?;
+                let mut k = mcr;
+                loop {
+                    j = i32::from(rank_mask_bit() & source_get(heap, gamma.nAtNumb, k)?);
+                    if mcr == j {
+                        break;
+                    }
+                    source_set(heap, p.equ2, j, mcr as AT_NUMB)?;
+                    k = j;
+                }
+            }
+            i = i.wrapping_add(1);
+        }
+        i = 0;
+        while i < n {
+            let value = source_get(heap, gamma.nAtNumb, i)? & rank_mask_bit();
+            source_set(heap, gamma.nAtNumb, i, value)?;
+            i = i.wrapping_add(1);
+        }
+        return Ok(());
+    }
+    // SAFETY: rows_are_distinct proves all five views refer to independent,
+    // live fixed-size allocations; no allocation is resized or freed below.
+    let mut mcr_words = unsafe { heap.stable_slice_mut(mcr_bits)? };
+    let mut fix_words = unsafe { heap.stable_slice_mut(fix_bits)? };
     let mut permutation = unsafe { heap.stable_slice_mut(gamma.nAtNumb)? };
     let mut equivalences = unsafe { heap.stable_slice_mut(p.equ2)? };
     let masks = unsafe { heap.stable_slice(pCG.m_bBit.as_const())? };
@@ -4411,9 +4630,50 @@ enum CanonGraphLabel {
     ExitFunction,
 }
 
-fn partition_at(pi: &[Partition], k: i32) -> Result<&Partition, SourceHeapError> {
-    pi.get(usize::try_from(k.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-        .ok_or(SourceHeapError::PointerOutOfBounds)
+enum CanonPartitions<'a> {
+    Slice(&'a mut [Partition]),
+    Stored(SourceMutPointer<SourceMutPointer<AT_RANK>>),
+}
+
+fn partition_at<'a>(
+    heap: &SourceHeap,
+    pi: &'a CanonPartitions<'_>,
+    k: i32,
+) -> Result<std::borrow::Cow<'a, Partition>, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:5407..5417 C410 source pair stack
+    //     nMaxLenRankStack = 2 * ( num_at_tg - nNumCurrRanks ) + 8;  /* was 2*(...) + 6 */
+    //     pBCN->pRankStack = (AT_RANK **) inchi_calloc( nMaxLenRankStack, sizeof( pBCN->pRankStack[0] ) );
+    //     if (!pBCN->pRankStack)
+    //     {
+    //         pBCN->nMaxLenRankStack = 0; /* avoid memory leaks in case of error */
+    //         goto exit_error_alloc;
+    //     }
+    //     pBCN->nMaxLenRankStack = nMaxLenRankStack; /* avoid memory leaks in case of error */
+    //     /* init partition stack */
+    //     pBCN->pRankStack[0] = nRank;
+    //     pBCN->pRankStack[1] = nAtomNumber;
+    // END VERBATIM SOURCE FRAGMENT: C410 source pair stack
+    // INCHI✔️❌: ichicant.h143..146 stores Rank then AtNumber, both u16
+    // pointers. Slice retains borrow, stored reads only two reached handles.
+    // No allocation/whole-capacity scan, fixed pair transport cost deferred.
+    let index =
+        usize::try_from(k.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    match pi {
+        CanonPartitions::Slice(values) => values
+            .get(index)
+            .map(std::borrow::Cow::Borrowed)
+            .ok_or(SourceHeapError::PointerOutOfBounds),
+        CanonPartitions::Stored(pointer) => {
+            let pair = heap
+                .slice(pointer.offset((index as i64) * 2)?.as_const())?
+                .get(..2)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            Ok(std::borrow::Cow::Owned(Partition {
+                Rank: pair[0],
+                AtNumber: pair[1],
+            }))
+        }
+    }
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -4437,7 +4697,7 @@ pub(crate) fn CanonGraph(
     LargeMolecules: i32,
     user_action: Option<fn() -> u32>,
     console_quit: Option<fn() -> i32>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:3662 CanonGraph
     // INCHI✔️❌: int CanonGraph( INCHI_CLOCK *ic,
@@ -5451,6 +5711,1161 @@ pub(crate) fn CanonGraph(
     // INCHI✔️❌: #define FIX_ChCh_CONSTIT_CANON_BUG 1
     // INCHI❌❌: INCHI_CANON_USE_HASH is undefined
     // END INCHI ACTIVE MACRO CONFIGURATION: CanonGraph
+    canon_graph_stack(
+        heap,
+        ic,
+        pCG,
+        n,
+        n_tg,
+        n_max,
+        bDigraph,
+        G,
+        &mut CanonPartitions::Slice(pi),
+        nSymmRank,
+        nCanonRank,
+        nAtomNumberCanon,
+        pCD,
+        pCC,
+        pzb_rho_inp,
+        pp_zb_rho_out,
+        LargeMolecules,
+        user_action,
+        console_quit,
+        clock_result,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn partition_color_vertex_stack(
+    heap: &mut SourceHeap,
+    pCG: &mut CANON_GLOBALS,
+    G: SourceMutPointer<NEIGH_LIST>,
+    pi: &mut CanonPartitions<'_>,
+    begin: usize,
+    v: Node,
+    n: i32,
+    n_tg: i32,
+    n_max: i32,
+    bDigraph: i32,
+    nNumPrevRanks: i32,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1478..1498 C410 reached child fields
+    //
+    //     for (i = 1; i <= 2; i++)
+    //     {
+    //         if (!p[i].AtNumber)
+    //         {
+    //             p[i].AtNumber = (AT_NUMB *) inchi_malloc( n_max * sizeof( p[0].AtNumber[0] ) );
+    //         }
+    //         if (!p[i].Rank)
+    //         {
+    //             p[i].Rank = (AT_RANK *) inchi_malloc( n_max * sizeof( p[0].Rank[0] ) );
+    //         }
+    //         if (!p[i].AtNumber || !p[i].Rank)
+    //         {
+    //
+    //             INCHI_HEAPCHK
+    //
+    //             return CT_OUT_OF_RAM;
+    //         }
+    //     }
+    //
+    //     PartitionCopy( p + 1, p, n_tg );
+    // END VERBATIM SOURCE FRAGMENT: C410 reached child fields
+    // INCHI✔️❌: GetBase stored stack is fresh and distinct from the earlier
+    // internal graph/row/rank arrays; graph tables share its Rust type but
+    // never its ID. Child cannot read/free/reenter parent stack. Existing
+    // extraction restores on Result, not panic. Three fixed reached records
+    // and changed pointer stores replace whole-stack copies; fixed record
+    // transport/check cost remains explicitly deferred, no new allocation.
+    match pi {
+        CanonPartitions::Slice(values) => PartitionColorVertex(
+            heap,
+            pCG,
+            G,
+            values
+                .get_mut(begin..)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            v,
+            n,
+            n_tg,
+            n_max,
+            bDigraph,
+            nNumPrevRanks,
+        ),
+        CanonPartitions::Stored(pointer) => {
+            let selected = pointer.offset((begin as i64) * 2)?;
+            heap.with_slice_mut_and_heap_mut(selected, |slots, heap| {
+                let prefix = slots.get(..6).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let mut records = [
+                    Partition {
+                        Rank: prefix[0],
+                        AtNumber: prefix[1],
+                    },
+                    Partition {
+                        Rank: prefix[2],
+                        AtNumber: prefix[3],
+                    },
+                    Partition {
+                        Rank: prefix[4],
+                        AtNumber: prefix[5],
+                    },
+                ];
+                let result = PartitionColorVertex(
+                    heap,
+                    pCG,
+                    G,
+                    &mut records,
+                    v,
+                    n,
+                    n_tg,
+                    n_max,
+                    bDigraph,
+                    nNumPrevRanks,
+                );
+                for index in 1..=2 {
+                    if slots[index * 2 + 1] != records[index].AtNumber {
+                        slots[index * 2 + 1] = records[index].AtNumber;
+                    }
+                    if slots[index * 2] != records[index].Rank {
+                        slots[index * 2] = records[index].Rank;
+                    }
+                }
+                result
+            })
+        }
+    }
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn canon_graph_stack(
+    heap: &mut SourceHeap,
+    ic: &mut INCHI_CLOCK,
+    pCG: &mut CANON_GLOBALS,
+    n: i32,
+    n_tg: i32,
+    n_max: i32,
+    bDigraph: i32,
+    G: SourceMutPointer<NEIGH_LIST>,
+    pi: &mut CanonPartitions<'_>,
+    nSymmRank: SourceMutPointer<AT_RANK>,
+    nCanonRank: SourceMutPointer<AT_RANK>,
+    nAtomNumberCanon: SourceMutPointer<AT_NUMB>,
+    pCD: &mut CANON_DATA,
+    pCC: &mut CANON_COUNTS,
+    pzb_rho_inp: SourceMutPointer<ConTable>,
+    mut pp_zb_rho_out: Option<&mut SourceMutPointer<ConTable>>,
+    LargeMolecules: i32,
+    user_action: Option<fn() -> u32>,
+    console_quit: Option<fn() -> i32>,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:3662..4662 C410 sole graph kernel
+    // int CanonGraph( INCHI_CLOCK *ic,
+    //                 CANON_GLOBALS *pCG,
+    //                 int n,
+    //                 int n_tg,
+    //                 int n_max,
+    //                 int bDigraph,
+    //                 Graph *G,
+    //                 Partition pi[],
+    //                 AT_RANK *nSymmRank,
+    //                 AT_RANK *nCanonRank,
+    //                 AT_NUMB *nAtomNumberCanon,
+    //                 CANON_DATA *pCD,
+    //                 CANON_COUNTS *pCC,
+    //                 ConTable **pp_zb_rho_inp,
+    //                 ConTable **pp_zb_rho_out,
+    //                 int LargeMolecules )
+    // {
+    //
+    //     /* bDigraph != 0
+    //        means consider edges from atoms to t-groups
+    //        as directed, that is, do not include
+    //        t-group ranks in comparing neighbors
+    //        when refining partition
+    //     */
+    //
+    //     /* Always set
+    //        lab = true
+    //        dig = true
+    //     */
+    //
+    //     /* in the comments:
+    //         m = |zeta|
+    //         r = |rho|
+    //
+    //         m < n or r < n in case pi[k] in P (i.e. satisfies Lemma 2.25)
+    //
+    //         Just after passing point B:
+    //         ===========================
+    //         K = k-1
+    //         wi = v[i], i = 1..K
+    //         Gamma(0) = Gamma = Aut(G)pi
+    //         Gamma(i) = Gamma(w1,w2,...,wi) pointwise stabilizer for i=1..K
+    //         zeta is a terminal node =>
+    //           the coarsest equitable partition that fixes w1,...,wK is discrete =>
+    //             Gamma(K)=1
+    //         At point A only:
+    //             index = |Gamma(k-1)|/|Gamma(k)|
+    //         At points A and B:
+    //             size  = |Gamma(k-1)|
+    //             theta = theta(Gamma(k-1));
+    //             Gamma(k-1) = <Y>, where Y is the set of all automprhisms output up
+    //               to the present stage (in Step 10 = L10 )
+    //             |Y| <= n - |theta|
+    //     */
+    //
+    //     AT_RANK    *pCt = pCD->LinearCT;
+    //     /*int         nMaxLenCt        =  pCD->nMaxLenLinearCT;*/
+    //     int        *nLenCt = &pCD->nLenLinearCT;
+    //     CANON_DATA *pCD1 = pCD;
+    //
+    //     int i, k, k2, index, l, ok, ret = 0, res;
+    //     int t_Lemma;   /* hh: if pi[k-1] satisfies Lemma 2-25 then
+    //                           t_Lemma = min{i| i=1..k && pi[i-1] satisfies Lemma 2-25}*/
+    //                    /* otherwise t_Lemma = k --> here this is always the case */
+    //     int t_eq_zeta; /* ht: min{i|i=1..m && all terminal modes descended from or equal
+    //                       to zeta(i) have been shown to be equivalent}. */
+    //     int h_zeta;    /* h: the longest common ancestor of zeta and nu is nu(h_zeta) */
+    //     int h_rho;     /* hb: the longest common ancestor of rho and nu is nu(h_rho) */
+    //     int hz_rho;    /* hzb: max{i|i=1..min(k,r) && Lambda(G,pi,nu(i)) == Lambda(G,pi,rho(i))} */
+    //     int hz_zeta;   /* hzf: max{i|i=1..min(k,m) && Lambda(G,pi,nu(i)) == Lambda(G,pi,zeta(i))} */
+    //     int qzb_rho;   /* Ct(Lambda[k]) - Ct(rho[k]) */
+    //     double size;   /* |Aut(G)| */
+    //
+    //
+    //     int  nNumLayers = ( NULL != pCD->NumH ) + ( NULL != pCD->NumHfixed ) +
+    //                       /* (bDigraph && pCD->nLenLinearCT > pCD->nLenCTAtOnly)*/ /* ??? tautomeric */
+    //                       ( NULL != pCD->iso_sort_key )
+    // #if ( USE_ISO_SORT_KEY_HFIXED == 1 )
+    //                     + ( NULL != pCD->iso_sort_key_Hfixed )
+    // #endif
+    //                     ;
+    //
+    //
+    //     int  dig = ( bDigraph || nNumLayers );
+    //     int  bSplitTautCompare = ( bDigraph || nNumLayers ); /* compare taut. H and tgroups connections after H */
+    //                         /* digraph: 1=>do not use Lemma 2.25, 0 => use */
+    //     int  lab = 1;       /* label: 1=>find canonical numbering;
+    //                             0=>do not find canonical numbering, do not use rho */
+    //     int  r;             /* |rho| */
+    //     int  bZetaEqRho = lab;
+    //     int  bZetaIsomorph;
+    //
+    //     /*const int L = MAX_SET_SIZE;*/
+    //     int L_curr_max_set_size = MAX_SET_SIZE;
+    //
+    //     UnorderedPartition theta, theta_from_gamma;
+    //
+    //     Cell *W;  /* W[i] is the first non-trivial cell of pi[i+1] */
+    //     Node *v;  /* v[i] is in W[i] to create T(G,pi,nu[i+1]) */
+    //     Node tvc, tvh;
+    //     S_CHAR *e, *qzb = NULL;   /* qzb = NULL always */
+    //
+    //     /* current node CT */
+    //     ConTable Lambda;
+    //     /* first leaf CT */
+    //     ConTable zf_zeta; /* Ct for zeta,  the first discovered terminal node */
+    //     /* best leaf/node CT: find the greatest pzb_rho possibly subject to pzb_rho[k] <= pzb_rho_fix[k] condition */
+    //     ConTable *pzb_rho = NULL;  /* Ct for rho,   the best discovered terminal node */
+    //     /* fixed input CT: for all k pzb_rho[k] <= pzb_rho_fix[k]; at the end pzb_rho == pzb_rho_fix */
+    //     ConTable *pzb_rho_fix = ( pp_zb_rho_inp && *pp_zb_rho_inp ) ? *pp_zb_rho_inp : NULL;
+    //
+    //     NodeSet Omega; /* MAX_SET_SIZE */
+    //     NodeSet Phi;   /* MAX_SET_SIZE */
+    //     NodeSet cur_nodes;   /* 1 each */
+    //
+    //     Transposition gamma;
+    //
+    //     Partition zeta;      /* the first discovered terminal node */
+    //     Partition rho;       /* the best discovered terminal node */
+    //
+    //     int nNumFoundGenerators = 0;
+    //     int qzb_rho_fix = 0;
+    //     int hzb_rho_fix = 0;
+    //     int bRhoIsDiscrete = 1;
+    //     kLeast kLeast_rho[MAX_LAYERS];
+    //     kLeast kLeast_rho_fix[MAX_LAYERS];
+    //     int nOneAdditionalLayer;
+    //     int pzb_rho_fix_reached = 0;
+    //     int L_rho_fix_prev = 0, I_rho_fix_prev = -1, k_rho_fix_prev = 0;
+    //
+    //     if (!LargeMolecules)
+    //     {
+    //         L_curr_max_set_size = NORMALLY_ALLOWED_MAX_SET_SIZE;
+    //     }
+    //
+    //
+    //     /* Note: Layered comparison should be consistent, especially in layer numbers.
+    //              Layered comparison is implemented in:
+    //                      CtFullCompare()
+    //                      CtPartCompare()
+    //                      GetOneAdditionalLayer()
+    //
+    //              The partial comparison results in kLeast[] are used in
+    //                      CtFullCompareLayers()
+    //                      CtPartCompareLayers()
+    //                      CtCompareLayersGetFirstDiff()
+    //                      UpdateCompareLayers()
+    //      */
+    //
+    //
+    //     nOneAdditionalLayer = GetOneAdditionalLayer( pCD1, pzb_rho_fix );
+    //
+    //
+    //     /* next 2 lines for debug only */
+    //     /* num_g++;  */
+    //     /* WriteGraph( G, n_tg, num_g, "V:\\IChI_v10\\Gordon-Graphs\\hard\\k06g08v312-alt.dre", "a+" ); */
+    //
+    //     /* memory allocation */
+    //
+    //     if (0 > SetBitCreate( pCG ))
+    //     {
+    //         return -1;
+    //     }
+    //     if (pzb_rho_fix && pzb_rho_fix->nLenCTAtOnly != pCD->nLenCTAtOnly)
+    //     {
+    //         /* consistency check */
+    //         return -2;
+    //     }
+    //     ok = 1;
+    //
+    //     ok &= UnorderedPartitionCreate( &theta, n_tg );
+    //     ok &= UnorderedPartitionCreate( &theta_from_gamma, n_tg );
+    //
+    //     /* djb-rwth: fixing dereferencing NULL pointer and buffer overflows */
+    //     W = (Cell*) inchi_calloc( n_tg, sizeof( W[0] ) );
+    //     v = (Node*) inchi_calloc( n_tg, sizeof( v[0] ) );
+    //     e = (S_CHAR*) inchi_calloc( n_tg, sizeof( e[0] ) );
+    //
+    //     if (!W || !v || !e)
+    //     {
+    //         ok &= 0;
+    //     }
+    //
+    // /*
+    //     ok &= ( NULL != ( W = (Cell*) inchi_calloc( n_tg, sizeof( W[0] ) ) ) );
+    //     ok &= ( NULL != ( v = (Node*) inchi_calloc( n_tg, sizeof( v[0] ) ) ) );
+    //     ok &= ( NULL != ( e = (S_CHAR*) inchi_calloc( n_tg, sizeof( e[0] ) ) ) );
+    // */
+    //     /*
+    //     ok &= (NULL != (v   = (Node*)inchi_calloc( n_tg, sizeof(W[0]))));
+    //     ok &= (NULL != (e   = (S_CHAR*)inchi_calloc( n_tg, sizeof(W[0]))));
+    //     */
+    //
+    //     /*    ok &= (NULL != (qzb = (S_CHAR*)inchi_calloc( n_tg, sizeof(W[0])))); */
+    //     ok &= CTableCreate( &Lambda, n, pCD );
+    //     ok &= CTableCreate( &zf_zeta, n, pCD );
+    //     ok &= ( ( pzb_rho = (ConTable *) inchi_calloc( 1, sizeof( *pzb_rho ) ) ) &&
+    //             CTableCreate( pzb_rho, n, pCD ) );
+    //
+    //     ok &= NodeSetCreate( pCG, &Omega, n_tg, L_curr_max_set_size );
+    //     ok &= NodeSetCreate( pCG, &Phi, n_tg, L_curr_max_set_size );
+    //     ok &= NodeSetCreate( pCG, &cur_nodes, n_tg, 1 );
+    //
+    //     ok &= PartitionCreate( &zeta, n_tg );
+    //     ok &= PartitionCreate( &rho, n_tg );
+    //     ok &= TranspositionCreate( &gamma, n_tg );
+    //
+    //     INCHI_HEAPCHK
+    //
+    // /*L1:*/
+    //     k = 1;
+    //     size = 1.0;
+    //     hz_rho = index = l = 0; /* djb-rwth: removing redundant code */
+    //
+    //     if (!ok)
+    //     {
+    //         goto exit_function; /* initialization failed */
+    //     }
+    //
+    //     UnorderedPartitionMakeDiscrete( &theta, n_tg );
+    //     t_Lemma = 2;
+    //
+    //     pCC->lNumBreakTies = 0;
+    //     pCC->lNumDecreasedCT = 0;
+    //     pCC->lNumRejectedCT = 0;
+    //     pCC->lNumEqualCT = 1;
+    //     pCC->lNumTotCT = 0;
+    //     /* djb-rwth: removing redundant code */
+    //
+    //     hzb_rho_fix = 1;
+    //
+    //     memset( kLeast_rho, 0, sizeof( kLeast_rho ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //     memset( kLeast_rho_fix, 0, sizeof( kLeast_rho_fix ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //
+    //     if (PartitionIsDiscrete( &pi[k - 1], n_tg ))
+    //     {
+    //         /* added the following 3 lines to the original to create Ct */
+    //         PartitionCopy( &rho, &pi[k - 1], n_tg );
+    //         CtPartFill( G, pCD, &pi[k - 1], pzb_rho, 1, n, n_tg, n_max );
+    //         CtPartINCHI_CANON_INFINITY( pzb_rho, qzb, 2 );
+    //         pCC->lNumTotCT++;
+    //         /* djb-rwth: removing redundant code */
+    //         /* goto L18; */
+    //         goto exit_function;
+    //     }
+    //
+    //     if (!dig && PartitionSatisfiesLemma_2_25( &pi[0], n ))
+    //     {
+    //         t_Lemma = 1;
+    //     }
+    //
+    //     /*
+    //     PartitionGetFirstCell( &pi[k-1], &W[k-1], k, n );
+    //     v[k-1] = CellGetMinNode( &pi[k-1], &W[k-1], 0, pCD1 );
+    //     CtPartClear( &Lambda, 1 );
+    //     e[k-1] = 0;
+    //     */
+    //     CtPartClear( &Lambda, 1 );
+    //     INCHI_HEAPCHK
+    //
+    // /* L2: reach the first leaf and save it in zeta and rho */
+    //     while (k)
+    //     {
+    //         /* the two next lines intentionally switched */
+    //         /* Create equitable partition in pi[k]  */
+    //         PartitionGetFirstCell( &pi[k - 1], W, k, n );
+    //         v[k - 1] = CellGetMinNode( &pi[k - 1], &W[k - 1], 0, pCD1 );
+    //         e[k - 1] = 0;
+    //         if (dig || !PartitionSatisfiesLemma_2_25( &pi[k - 1], n ))
+    //         {
+    //             t_Lemma = k + 1;
+    //         }
+    //         /* e[k-1] = 0; */
+    //         {
+    //             Node vv = v[k - 1];
+    //             if (0 > ( ret = PartitionColorVertex( pCG, G, &pi[k - 1], vv /*v[k-1]*/, n, n_tg, n_max, bDigraph, 0 ) ))
+    //             {
+    //                 goto exit_error;
+    //             }
+    //         }
+    //         pCC->lNumBreakTies++;
+    //         k++;
+    //
+    //         CtPartFill( G, pCD, &pi[k - 1], &Lambda, k - 1, n, n_tg, n_max);
+    //
+    //         /* return -1; *//* debug only */
+    //         /* if(h_zeta==0)goto L5; L5: */
+    //         /* the first terminal node has not been reached yet */
+    //         /* search for the predefined numbering */
+    //         if (pzb_rho_fix && QZFIX_OK( qzb_rho_fix ))
+    //         {
+    //             qzb_rho_fix = CtPartCompare( &Lambda, pzb_rho_fix, qzb, kLeast_rho_fix, k - 1, 1, bSplitTautCompare );
+    //             if (QZFIX_OK( qzb_rho_fix ))
+    //             {
+    //                 hzb_rho_fix = k;
+    //             }
+    //         }
+    //
+    //         if (lab && QZFIX_OK( qzb_rho_fix ))  /* DCh */
+    //             CtPartCopy( pzb_rho, &Lambda, k - 1 );
+    //         CtPartCopy( &zf_zeta, &Lambda, k - 1 );
+    //         /*goto L4; L4:*/
+    //         if (PartitionIsDiscrete( &pi[k - 1], n ))
+    //         {
+    //             break;  /* goto L7; */
+    //         }
+    //         /* goto L2; */
+    //     }
+    //
+    //     pCC->lNumTotCT++;
+    //
+    //     /* L7; L7: */
+    //     /* if ( h_zeta == 0 ) goto L18; L18:*/
+    //     h_zeta = t_eq_zeta = hz_zeta = k;
+    //     CtPartINCHI_CANON_INFINITY( &zf_zeta, NULL, k );
+    //     /******************** <<<===== B **************************/
+    //     PartitionCopy( &zeta, &pi[k - 1], n_tg );
+    //     if (lab)
+    //     {
+    //         if (pzb_rho_fix)
+    //         {
+    //             if (0 == qzb_rho_fix)
+    //             {
+    //                 qzb_rho_fix = CtFullCompare( &Lambda, pzb_rho_fix, 1, bSplitTautCompare );
+    //                 if (qzb_rho_fix > 0)
+    //                 {
+    //                     hzb_rho_fix = 1;
+    //                 }
+    //             }
+    //             if (hzb_rho_fix > 1)
+    //             {
+    //                 PartitionCopy( &rho, &pi[hzb_rho_fix - 1], n_tg );
+    //                 /*CtPartINCHI_CANON_INFINITY( pzb_rho, qzb, k );*/
+    //             }
+    //             hz_rho = h_rho = hzb_rho_fix;
+    //             bRhoIsDiscrete = ( hzb_rho_fix == k );
+    //             if (bRhoIsDiscrete)
+    //             {
+    //                 CtPartINCHI_CANON_INFINITY( pzb_rho, qzb, k );
+    //                 pzb_rho_fix_reached = !qzb_rho_fix;
+    //                 CtCompareLayersGetFirstDiff( kLeast_rho_fix, nOneAdditionalLayer,
+    //                                  &L_rho_fix_prev, &I_rho_fix_prev, &k_rho_fix_prev );
+    //             }
+    //
+    // #if ( bRELEASE_VERSION != 1 && defined(_DEBUG) )
+    //             else
+    //             {
+    //                 int stop = 1;
+    //             }
+    // #endif
+    //         }
+    //         else
+    //         {
+    //             PartitionCopy( &rho, &pi[k - 1], n_tg );
+    //             hz_rho = h_rho = k;
+    //             CtPartINCHI_CANON_INFINITY( pzb_rho, qzb, k );
+    //         }
+    //         qzb_rho = 0;
+    //     }
+    //
+    //     r = k;
+    //     v[k - 1] = INCHI_CANON_INFINITY;     /* DCh */
+    //     CellMakeEmpty( W, k ); /* DCh */
+    //     k--;
+    //     goto L13;
+    //
+    //
+    // L2:
+    //     /* the two next lines intentionally switched */
+    //     /* Create equitable partition in pi[k]  */
+    //     if (0 > ( ret = PartitionColorVertex( pCG, G, &pi[k - 1], v[k - 1],
+    //         n, n_tg, n_max, bDigraph, 0 ) ))
+    //     {
+    //         goto exit_error;
+    //     }
+    //     pCC->lNumBreakTies++;
+    //     k++;
+    //     CtPartFill( G, pCD, &pi[k - 1], &Lambda, k - 1, n, n_tg, n_max );
+    //     e[k - 1] = 0;         /* moved  */
+    //     v[k - 1] = INCHI_CANON_INFINITY;  /* added by DCh. */
+    //     CellMakeEmpty( W, k ); /* DCh */
+    //
+    //     if (hz_zeta == k - 1 &&
+    //          0 == CtPartCompare( &Lambda, &zf_zeta, NULL, NULL, k - 1, 0, bSplitTautCompare ))
+    //     {
+    //         hz_zeta = k; /* max{k|Lambda(G,pi,nu(k))==Lambda(G,pi,zeta) }  */
+    //     } /* added */
+    //
+    //
+    //     /* -- old code ---
+    //     if ( pzb_rho_fix && QZFIX_OK(qzb_rho_fix) ) {
+    //         qzb_rho_fix = CtPartCompare( &Lambda, pzb_rho_fix, qzb, kLeast_rho_fix, k-1, 1, bSplitTautCompare );
+    //         if ( QZFIX_OK(qzb_rho_fix) ) {
+    //             hzb_rho_fix = k;
+    //         } else {
+    //             pCC->lNumRejectedCT ++;
+    //         }
+    //     }
+    //     */
+    //
+    //     /* --- new code ---*/
+    //     if (pzb_rho_fix && !qzb_rho_fix)
+    //     {
+    //         qzb_rho_fix = CtPartCompare( &Lambda, pzb_rho_fix, qzb, kLeast_rho_fix, k - 1, 1, bSplitTautCompare );
+    //         if (!qzb_rho_fix && bRhoIsDiscrete)
+    //         {
+    //             qzb_rho_fix = CtPartCompareLayers( kLeast_rho_fix, L_rho_fix_prev, nOneAdditionalLayer );
+    //
+    // #if ( FIX_ChCh_CONSTIT_CANON_BUG == 1 )
+    //             if (qzb_rho_fix)
+    //             {
+    //                 int L_rho_fix_diff = abs( qzb_rho_fix ) - 1;
+    //                 if (L_rho_fix_diff < L_rho_fix_prev ||
+    //                      (L_rho_fix_diff == (L_rho_fix_prev && kLeast_rho_fix[L_rho_fix_diff].i < I_rho_fix_prev))) /* djb-rwth: addressing LLVM warning */
+    //                 {
+    //                     qzb_rho_fix = L_rho_fix_diff + 1; /* positive difference will be rejected */
+    //                 }
+    //             }
+    // #endif
+    //
+    // #if ( bRELEASE_VERSION != 1 && defined(_DEBUG) )
+    //             if (qzb_rho_fix)
+    //             {
+    //                 int stop = 1; /* debug only */
+    //             }
+    // #endif
+    //         }
+    //         if (!QZFIX_OK( qzb_rho_fix ))
+    //         {
+    //             pCC->lNumRejectedCT++;
+    //         }
+    //     }
+    //     if (pzb_rho_fix && QZFIX_OK( qzb_rho_fix ))
+    //     {
+    //         hzb_rho_fix = k;
+    //     }
+    //     /* if (!lab) goto L3; */
+    //     if (lab && QZFIX_OK( qzb_rho_fix ))
+    //     {
+    //         /* once the difference has been found it is meaningful as long as k increments */
+    //         /* cur_qzb2 = CtPartCompare( &Lambda, pzb_rho, qzb, k-1 ); */ /* rho compare */
+    //         if (hz_rho == k - 1 && !qzb_rho && bRhoIsDiscrete)
+    //         {
+    //             int qzb_rho_temp = 0; /* djb-rwth: ignoring LLVM warning: variable used */
+    //             qzb_rho = CtPartCompare( &Lambda, pzb_rho, qzb, kLeast_rho, k - 1, 0, bSplitTautCompare );
+    //             /* old code */
+    //             if (!qzb_rho && pzb_rho_fix_reached &&
+    //                   nOneAdditionalLayer && 0 > kLeast_rho[nOneAdditionalLayer].k)
+    //             {
+    //                 qzb_rho_temp = -( nOneAdditionalLayer + 1 ); /* djb-rwth: ignoring LLVM warning: variable used */
+    //                 /* qzb_rho = -(nOneAdditionalLayer+1); *//* early rejection */
+    //             }
+    //             /* new code */
+    //             if (!qzb_rho && bRhoIsDiscrete)
+    //             {
+    //                 qzb_rho = CtPartCompareLayers( kLeast_rho, L_rho_fix_prev, 0 );
+    // #if ( FIX_ChCh_CONSTIT_CANON_BUG == 1 )
+    //                 if (qzb_rho)
+    //                 {
+    //                     int L_rho_diff = abs( qzb_rho ) - 1;
+    //                     if (L_rho_diff < L_rho_fix_prev ||
+    //                          (L_rho_diff == (L_rho_fix_prev && kLeast_rho[L_rho_diff].i < I_rho_fix_prev))) /* djb-rwth: addressing LLVM warning */
+    //                     {
+    //                         qzb_rho = -( L_rho_diff + 1 ); /* negative difference will be rejected */
+    //                     }
+    //                 }
+    // #endif
+    //             }
+    //             /* compare old results to new */
+    // #if ( bRELEASE_VERSION != 1 && defined(_DEBUG) )
+    //             if (qzb_rho_temp && qzb_rho_temp != qzb_rho)
+    //             {
+    //                 int stop = 1; /* <BRKPT> */
+    //             }
+    // #endif
+    //             if (!qzb_rho)
+    //             {
+    //                 hz_rho = k;
+    //             }
+    //             else
+    //             {
+    //                 if (qzb_rho < 0)
+    //                 {
+    //                     pCC->lNumRejectedCT++;
+    //                 }
+    //             }
+    //         }
+    //         if (qzb_rho > 0 || (!qzb_rho && !bRhoIsDiscrete)) /* djb-rwth: addressing LLVM warning */
+    //         {
+    //             /* found better rho */
+    //             if (!nNumLayers)
+    //             {
+    //                 CtPartCopy( pzb_rho, &Lambda, k - 1 );
+    //             }
+    //         }
+    //     }
+    //
+    //
+    // /*L3:*/
+    //     /*if ( hz_rho == k || (lab && qzb_rho >= 0 ) )*/
+    //     /*if ( hz_zeta == k || hz_rho == k || (lab && qzb_rho >= 0 ) ) goto L4; else goto L6;*/
+    //     if (hz_zeta == k || hz_rho == k ||
+    //         ( lab && qzb_rho >= 0 && QZFIX_OK( qzb_rho_fix ) ))
+    //     {
+    //         /*L4: check for possible isomorphism or found a better rho */
+    //         if (PartitionIsDiscrete( &pi[k - 1], n ))
+    //         {
+    //             pCC->lNumTotCT++;
+    //             goto L7;
+    //         }
+    //         PartitionGetFirstCell( &pi[k - 1], W, k, n );
+    //         v[k - 1] = CellGetMinNode( &pi[k - 1], &W[k - 1], 0, pCD1 );
+    //         if (!dig && PartitionSatisfiesLemma_2_25( &pi[k - 1], n ))
+    //         {
+    //             ; /* found additional isomprphism */
+    //         }
+    //         else
+    //         {
+    //             t_Lemma = k + 1;
+    //         }
+    //         e[k - 1] = 0;  /* created new cell W[k-1] */
+    //         goto L2;
+    //     }
+    //
+    //
+    // L6:
+    //     /* a better rho or no good node was found at this level; return to smaller k */
+    //     k2 = k;
+    //     k = inchi_min( t_Lemma - 1, inchi_max( t_eq_zeta - 1, hz_rho ) );
+    //     if (k2 == t_Lemma)
+    //     {
+    //         goto L13;
+    //     }
+    //
+    //     /* store isomorphism found from Lemma 2.25. should be dig=0 !!! */
+    //     if (dig)
+    //     {
+    // #if ( bRELEASE_VERSION != 1 && defined(_DEBUG) )
+    //         int stop = 1;
+    // #endif
+    //         goto L13;
+    //     }
+    //
+    //     l = inchi_min( l + 1, L_curr_max_set_size );
+    //     PartitionGetMcrAndFixSet( pCG, &pi[t_Lemma - 1], &Omega, &Phi, n_tg, l );
+    //     goto L12;
+    //
+    //
+    //
+    // L7:
+    //     /* from L4: pi[k-1] is discrete */
+    //     if (h_zeta == 0)
+    //     {
+    //         /*goto L18;*/  /* error. the first T(nu) leaf was found */
+    //         ret = CT_CANON_ERR;
+    //         goto exit_error;
+    //     }
+    //     if (k != hz_zeta)
+    //     {
+    //         goto L8;
+    //     }
+    //     /*  here zeta^gamma == nu */
+    //     /*  if ( G^gamma == G ) goto L10; */
+    //     if (0 == ( res = CtFullCompare( &Lambda, &zf_zeta, 0, bSplitTautCompare ) )) /* djb-rwth: ignoring LLVM warning: variable used to store function return value */
+    //     {
+    //         PartitionGetTransposition( &zeta, &pi[k - 1], n_tg, &gamma );
+    //         bZetaIsomorph = 1; /* for testing only */
+    //         /* djb-rwth: removing redundant code */
+    //         goto L10;
+    //     }
+    //     else
+    // #if ( bRELEASE_VERSION != 1 && defined(_DEBUG) )
+    //     {
+    //         int stop = 1;
+    //     }
+    // #endif
+    //     /* !!! we should never come here !!! */
+    //     if (!nNumLayers)
+    //     {
+    //         ret = -2;
+    //         goto exit_error;
+    //     }
+    //
+    //
+    // L8: /* here nu is discrete: check rho for being a bettere leaf or isomorphism */
+    //     /*if ( !lab || qzb_rho < 0 || !QZFIX_OK(qzb_rho_fix) )*/
+    //     if (!lab || (qzb_rho < 0 && ( !pzb_rho_fix || qzb_rho_fix > 0 ))) /* djb-rwth: addressing LLVM warning */
+    //     {
+    //         goto L6;
+    //     }
+    //     if (pzb_rho_fix && kLeast_rho_fix && 0 == qzb_rho_fix) /* djb-rwth: addressing of array kLeast_rho_fix will always evaluate to true? */
+    //     {
+    //         /* check for the rejection condition: Lambda > zb_rho_fix */
+    //         if (kLeast_rho_fix) /* djb-rwth: addressing of array kLeast_rho_fix will always evaluate to true? */
+    //         {
+    //             int qzb_rho_fix_alt;
+    //             qzb_rho_fix = CtFullCompareLayers( kLeast_rho_fix );
+    //             /* for debug only */
+    //             qzb_rho_fix_alt = CtFullCompare( &Lambda, pzb_rho_fix, 1, bSplitTautCompare );
+    //             if (qzb_rho_fix != qzb_rho_fix_alt)
+    //             {
+    // #if ( bRELEASE_VERSION != 1 && defined(_DEBUG) )
+    //                 int stop = 1;
+    // #endif
+    //                 qzb_rho_fix = qzb_rho_fix_alt;
+    //             }
+    //             /* end debug */
+    //         }
+    //         else
+    //         {
+    //             qzb_rho_fix = CtFullCompare( &Lambda, pzb_rho_fix, 1, bSplitTautCompare );
+    //         }
+    //         if (!pzb_rho_fix_reached)
+    //         {
+    //             pzb_rho_fix_reached = !qzb_rho_fix;
+    //         }
+    //         if (0 < qzb_rho_fix)
+    //         {
+    //             /* Lambda > pzb_rho_fix, ignore this node */
+    //             /* hzb_rho_fix = min( hzb_rho_fix, hz_rho ); */ /* ??? */
+    //             qzb_rho_fix = 0;
+    //             goto L6;
+    //         }
+    //         qzb_rho_fix = 0;
+    //     }
+    //
+    //     if (qzb_rho < 0)
+    //     {
+    //         goto L6;
+    //     }
+    //     if (qzb_rho > 0 || !bRhoIsDiscrete)
+    //     {
+    //         goto L9; /* note: p67 says k > PartitionSize( &rho, n ) */
+    //     }
+    //     if (k < r)
+    //     {
+    //         goto L9; /* cannot understand it... */
+    //     }
+    //
+    //     /* !!! we should never come here if G(nu) != G(rho): CtPartCompare must be enough !!! */
+    //
+    //     /* if ( G(nu) > G(rho) ) goto L9; */
+    //     if (kLeast_rho) /* djb-rwth: addressing of array kLeast_rho will always evaluate to true? */
+    //     {
+    //         int cur_qzb_alt;
+    //         qzb_rho = CtFullCompareLayers( kLeast_rho );
+    //         /* for debug only */
+    //         cur_qzb_alt = CtFullCompare( &Lambda, pzb_rho, 0, bSplitTautCompare );
+    //         if (qzb_rho != cur_qzb_alt)
+    //         {
+    // #if ( bRELEASE_VERSION != 1 && defined(_DEBUG) )
+    //             int stop = 1;
+    // #endif
+    //             qzb_rho = cur_qzb_alt;
+    //         }
+    //         /* end debug */
+    //     }
+    //     else
+    //     {
+    //         qzb_rho = CtFullCompare( &Lambda, pzb_rho, 0, bSplitTautCompare );
+    //     }
+    //     /* qzb_rho difference can be due to layers 1..MAX_LAYERS-1 only */
+    //     if (0 < qzb_rho)
+    //     {
+    //         /* CtFullCompare( &Lambda, pzb_rho, 0, bSplitTautCompare ); */
+    //         /* djb-rwth: removing redundant code */
+    //         goto L9;
+    //     }
+    //     /* if ( G(nu) < G(rho) ) goto L6; */
+    //     if (0 > qzb_rho)
+    //     {
+    //         qzb_rho = 0;
+    //         goto L6;
+    //     }
+    //     /* nu^gamma == rho */
+    //     if (r != k)
+    //     {  /* if() is for debug only */
+    //         r = k;
+    //     }
+    //
+    //     PartitionGetTransposition( &pi[k - 1], &rho, n_tg, &gamma );
+    //     bZetaIsomorph = 0; /* DCh */
+    //     pCC->lNumEqualCT++;
+    //     goto L10;
+    //
+    // L9:
+    //     /* rho := nu; */
+    //     PartitionCopy( &rho, &pi[k - 1], n_tg );
+    //     if (nNumLayers)
+    //     {
+    //         CtFullCopy( pzb_rho, &Lambda );
+    //     }
+    //     bZetaEqRho = 0;
+    //     qzb_rho = 0;
+    //     CtCompareLayersGetFirstDiff( kLeast_rho_fix, nOneAdditionalLayer,
+    //                                  &L_rho_fix_prev, &I_rho_fix_prev,
+    //                                  &k_rho_fix_prev );
+    //     memset( kLeast_rho, 0, sizeof( kLeast_rho ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //     h_rho = hz_rho = k;
+    //     CtPartINCHI_CANON_INFINITY( pzb_rho, qzb, k );
+    //     pCC->lNumDecreasedCT++;
+    //     pCC->lNumEqualCT = 1;
+    //     bRhoIsDiscrete = 1;
+    //     goto L6;
+    //
+    // L10: /* discrete pi[k-1] && G^gamma == G */
+    //     pCC->lNumEqualCT += bZetaEqRho || !( bZetaIsomorph || qzb_rho );
+    //     l = inchi_min( l + 1, L_curr_max_set_size );
+    //     /* Omega[l] := mcr(gamma);
+    //        Phi[l]   := fix(gamma);
+    //     */
+    //
+    //     TranspositionGetMcrAndFixSetAndUnorderedPartition( pCG, &gamma, &Omega, &Phi,
+    //                                                        n_tg, l, &theta_from_gamma );
+    //     /*
+    //     if ( theta(gamma) <= theta ) goto L11;
+    //     theta := theta v theta(gamma);
+    //     UnorderedPartitionJoin() returns 0 if theta_from_gamma is finer than theta,
+    //     which means no changes in theta: theta_from_gamma ^ theta == theta.
+    //     */
+    //     if (!UnorderedPartitionJoin( &theta_from_gamma, &theta, n_tg ))
+    //     {
+    //         goto L11; /* no new isomorphism found */
+    //     }
+    //
+    //     /*  Output gamma (it is the Aut(G) generator) -- omitted -- */
+    //     nNumFoundGenerators++;
+    //     /* if ( tvc in mcr(theta) ) goto L11; */
+    //     if (tvc == GetUnorderedPartitionMcrNode( &theta, tvc ))
+    //     {
+    //         goto L11;
+    //     }
+    //     k = h_zeta;
+    //     goto L13;
+    //
+    // L11:
+    //     k = lab ? h_rho : h_zeta; /***Changed*** originally was k = h_rho; */
+    //
+    // L12:
+    //     /* if ( e[k-1] == 1 ) */
+    // #if ( bRELEASE_VERSION != 1 && defined(_DEBUG) )
+    //     if (e[k - 1] == 1 && v[k - 1] == INCHI_CANON_INFINITY)
+    //     {
+    //         int stop = 1;          /* <BRKPT> testing only */
+    //     }
+    // #endif
+    //     if (e[k - 1] == 1 && v[k - 1] != INCHI_CANON_INFINITY)
+    //     {
+    //         /* INCHI_CANON_INFINITY for testing only */
+    //         CellIntersectWithSet( pCG, &pi[k - 1], &W[k - 1], &Omega, l );
+    //     }
+    //
+    // L13:
+    //
+    //     if ((UserAction && USER_ACTION_QUIT == ( *UserAction )( )) ||
+    //          (ConsoleQuit && ( *ConsoleQuit )( ))) /* djb-rwth: addressing LLVM warning */
+    //     {
+    //         ret = CT_USER_QUIT_ERR;
+    //         goto exit_error;
+    //     }
+    //
+    //     if (bInchiTimeIsOver( ic, pCD->ulTimeOutTime ))
+    //     {
+    //         ret = CT_TIMEOUT_ERR;
+    //         goto exit_error;
+    //     }
+    //
+    //     if (k == 0)
+    //     {
+    //         goto exit_function; /* stop */
+    //     }
+    //
+    //     if (lab && k < h_rho)
+    //     {
+    //         /***Added***/
+    //         h_rho = k;
+    //     }
+    //
+    //     if (k > h_zeta)
+    //     {
+    //         if (v[k - 1] == INCHI_CANON_INFINITY)
+    //         {
+    //             /*** Added by DCh for testing only ****/
+    //             k--;
+    //             goto L13;
+    //         }
+    //         goto L17;
+    //     }
+    //     if (k == h_zeta)
+    //     {
+    //         goto L14;
+    //     }
+    //     h_zeta = k;
+    //     tvc = tvh = CellGetMinNode( &pi[k - 1], &W[k - 1], 0, pCD1 );
+    //
+    // L14:
+    //     /* if v[k] and tvh are in the same cell of theta then index ++ */
+    //     if (GetUnorderedPartitionMcrNode( &theta, v[k - 1] ) ==
+    //          GetUnorderedPartitionMcrNode( &theta, tvh ))
+    //     {
+    //         index++;
+    //     }
+    //     v[k - 1] = CellGetMinNode( &pi[k - 1], &W[k - 1], v[k - 1], pCD1 );
+    //
+    //     if (v[k - 1] == INCHI_CANON_INFINITY)
+    //     {
+    //         goto L16;
+    //     }
+    //     if (v[k - 1] != GetUnorderedPartitionMcrNode( &theta, v[k - 1] ))
+    //     {
+    //         goto L14;
+    //     }
+    //
+    // L15:
+    //     t_Lemma = inchi_min( t_Lemma, k + 1 );
+    //     hz_zeta = inchi_min( hz_zeta, k );
+    //     /*
+    //     if ( lab && hz_rho >= k ) {
+    //         hz_rho = k;
+    //         qzb_rho = 0;
+    //     }
+    //     */
+    //     if (lab)
+    //     {
+    //         if (hz_rho >= k /*-1*/)
+    //         {
+    //             qzb_rho = 0;
+    //         }
+    //         if (hz_rho > k)
+    //         {
+    //             hz_rho = k;
+    //         }
+    //         UpdateCompareLayers( kLeast_rho, hz_rho );
+    //     }
+    //     if (pzb_rho_fix)
+    //     {
+    //         if (hzb_rho_fix >= k /*-1*/)
+    //         {
+    //             qzb_rho_fix = 0;
+    //         }
+    //         if (hzb_rho_fix > k)
+    //         {
+    //             hzb_rho_fix = k;
+    //         }
+    //         UpdateCompareLayers( kLeast_rho_fix, hzb_rho_fix );
+    //     }
+    //
+    //     goto L2;
+    //
+    // L16:
+    //     if (t_eq_zeta == k + 1 && index == CellGetNumberOfNodes( &pi[k - 1], &W[k - 1] ))
+    //     {
+    //         t_eq_zeta = k;
+    //     }
+    //
+    //     size *= (double) index;
+    //     /******************** <<<===== A **************************/
+    //     /* passed K times after passing point A. At these passes
+    //        k = K, K-1, ..., 1 in this order
+    //     */
+    //     index = 0;
+    //     k--;
+    //     goto L13;
+    //
+    // L17:
+    //     /* if ( e[k-1] == 0 ) */
+    // #if ( bRELEASE_VERSION != 1 && defined(_DEBUG) )
+    //     if (e[k - 1] == 0 && v[k - 1] == INCHI_CANON_INFINITY)
+    //     {
+    //         /* testing only */
+    //         int stop = 1;  /* <BRKPT> */
+    //     }
+    // #endif
+    //     /*
+    //     if ( e[k] == 0 set W[k] = Intersection(W[k], Omega[i]) for each i = 1..l,
+    //          such that {v[1]..v[k-1]} in Phi[i]
+    //     */
+    //     if (e[k - 1] == 0 && v[k - 1] != INCHI_CANON_INFINITY) /* Added v[k-1]!=... DCh */
+    //     {
+    //         NodeSetFromVertices( pCG, &cur_nodes, 1, v, k - 1 );
+    //         for (i = 1; i <= l; i++)
+    //         {
+    //             if (AllNodesAreInSet( &cur_nodes, 1, &Phi, i ))
+    //             {
+    //                 CellIntersectWithSet( pCG, &pi[k - 1], &W[k - 1], &Omega, i );
+    //             }
+    //         }
+    //     }
+    //
+    //     e[k - 1] = 1;
+    //     v[k - 1] = CellGetMinNode( &pi[k - 1], &W[k - 1], v[k - 1], pCD1 );
+    //     if (v[k - 1] != INCHI_CANON_INFINITY)
+    //     {
+    //         goto L15;
+    //     }
+    //     k--;
+    //     goto L13;
+    // /* L18: see above */
+    //
+    // exit_function:
+    //     /* CtPartFill( G, pCD, &rho, pzb_rho, 1, n, n_tg ); */
+    //     if (!bRhoIsDiscrete)
+    //     {
+    //         ret = CT_CANON_ERR;
+    //         goto exit_error;
+    //     }
+    //
+    //     if (pzb_rho_fix)
+    //     {
+    //         qzb_rho_fix = CtFullCompare( pzb_rho_fix, pzb_rho, 1, bSplitTautCompare );
+    //         if (qzb_rho_fix)
+    //         {
+    //             ret = CT_CANON_ERR;
+    //             goto exit_error;
+    //         }
+    //     }
+    //
+    //     /* SymmRank */
+    //     memset( nSymmRank, 0, n_tg * sizeof( nSymmRank[0] ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //     for (i = 0; i < n_tg; i++)
+    //     {
+    //         k = rho.AtNumber[i];
+    //         k2 = (int) GetUnorderedPartitionMcrNode( &theta, (AT_NUMB) ( k + 1 ) ) - 1;
+    //         if (!nSymmRank[k2] || nSymmRank[k2] > rho.Rank[k])
+    //         {
+    //             nSymmRank[k2] = rho.Rank[k];
+    //         }
+    //     }
+    //     for (i = 0; i < n_tg; i++)
+    //     {
+    //         k = rho.AtNumber[i];
+    //         k2 = (int) GetUnorderedPartitionMcrNode( &theta, (AT_NUMB) ( k + 1 ) ) - 1;
+    //         nSymmRank[k] = nSymmRank[k2];
+    //     }
+    //     /* CanonRank, nAtomNumberCanon */
+    //     memcpy(nCanonRank, rho.Rank, n_tg * sizeof(nCanonRank[0]));
+    //     memcpy(nAtomNumberCanon, rho.AtNumber, n_tg * sizeof(nAtomNumberCanon[0]));
+    //     /* LinearCT */
+    //     if (pzb_rho)
+    //     {
+    //         *nLenCt = pzb_rho->lenCt - 1;
+    //     }
+    //     if (pCt && pzb_rho && (*nLenCt > 0)) /* djb-rwth: GHI #164 fix */
+    //     {
+    //         memcpy(pCt, pzb_rho->Ctbl, *nLenCt * sizeof(pCt[0]));
+    //     }
+    //     pCC->lNumTotCT = pCC->lNumDecreasedCT + pCC->lNumRejectedCT + pCC->lNumEqualCT;
+    //     pCC->dGroupSize = size;
+    //     pCC->lNumGenerators = nNumFoundGenerators;
+    //     pCC->lNumStoredIsomorphisms = l;
+    //     /* Note: check nNumFoundGenerators */
+    //
+    //     if (pp_zb_rho_out && !*pp_zb_rho_out)
+    //     {
+    //         *pp_zb_rho_out = pzb_rho;
+    //         pzb_rho = NULL;
+    //     }
+    //
+    //
+    //
+    // exit_error:
+    //     INCHI_HEAPCHK
+    //
+    //     UnorderedPartitionFree( &theta );
+    //     UnorderedPartitionFree( &theta_from_gamma );
+    //     if (W)
+    //     {
+    //         inchi_free( W );
+    //     }
+    //     if (v)
+    //     {
+    //         inchi_free( v );
+    //     }
+    //     if (e)
+    //     {
+    //         inchi_free( e );
+    //     }
+    //     if (qzb)
+    //     {
+    //         inchi_free( qzb );
+    //     }
+    //     CTableFree( &Lambda );
+    //     CTableFree( &zf_zeta );
+    //     if (pzb_rho)
+    //     {
+    //         CTableFree( pzb_rho );
+    //         inchi_free( pzb_rho );
+    //         pzb_rho = NULL;
+    //     }
+    //     /* CTableFree( &zf_zeta2 ); */
+    //     NodeSetFree( pCG, &Omega );
+    //     NodeSetFree( pCG, &Phi );
+    //     /* NodeSetFree( &mcr_theta, n, 1 ); */
+    //     NodeSetFree( pCG, &cur_nodes );
+    //     PartitionFree( &zeta );
+    //     /* PartitionFree( &zeta2 ); */
+    //     PartitionFree( &rho );
+    //     TranspositionFree( &gamma );
+    //
+    //     return ret;
+    // }
+    // END VERBATIM SOURCE FRAGMENT: C410 sole graph kernel
+    // INCHI✔️❌: Sole source state machine, original slice or existing stored
+    // pairs. No duplicateP Vec/full-stack sync; fixed pair/check traffic
+    // remains deferred INCHI-PERF-PARTITION-STACK, no no-worse claim.
     let pzb_rho_fix_storage = if pzb_rho_inp.is_null() {
         None
     } else {
@@ -5527,17 +6942,35 @@ pub(crate) fn CanonGraph(
         ok &= CTableCreate(heap, storage.get_mut(0)?, n, pCD)?;
         Some(storage)
     };
-    let pzb_rho_is_usable = pzb_rho_storage.as_ref().is_some_and(|storage| {
-        storage
-            .get(0)
-            .is_ok_and(|table| con_table_is_usable(table, pCD))
-    });
-    if !con_table_is_usable(&Lambda, pCD)
-        || !con_table_is_usable(&zf_zeta, pCD)
-        || (!pzb_rho_pointer.is_null() && !pzb_rho_is_usable)
-    {
-        ok = 0;
-    }
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:3856..3864 C405 constructor flags
+    //     ok &= CTableCreate( &Lambda, n, pCD );
+    //     ok &= CTableCreate( &zf_zeta, n, pCD );
+    //     ok &= ( ( pzb_rho = (ConTable *) inchi_calloc( 1, sizeof( *pzb_rho ) ) ) &&
+    //             CTableCreate( pzb_rho, n, pCD ) );
+    //
+    //     ok &= NodeSetCreate( pCG, &Omega, n_tg, L_curr_max_set_size );
+    //     ok &= NodeSetCreate( pCG, &Phi, n_tg, L_curr_max_set_size );
+    //     ok &= NodeSetCreate( pCG, &cur_nodes, n_tg, 1 );
+    //
+    // END VERBATIM SOURCE FRAGMENT: C405 constructor flags
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:838..849 C405 sole constructor success
+    //
+    //     if (Ct->Ctbl && Ct->nextCtblPos &&
+    //         ( !maxlenNumH || Ct->NumH ) &&
+    //         ( !maxlenNumHfixed || Ct->NumHfixed ))
+    //     {
+    //         return 1;
+    //     }
+    //
+    //     return 0;
+    // }
+    //
+    //
+    // END VERBATIM SOURCE FRAGMENT: C405 sole constructor success
+    // INCHI✔️✔️: Source combines constructor flags only. No secondary
+    // nextAtRank/isotope/exchange capacity admission or swallowed get error.
+    // Removes three fixed seven-field probes, no allocation/clone/scan.
+    // Independent canonical/control/memory costs and quarantines remain.
     let max_set_size = if LargeMolecules == 0 {
         NORMALLY_ALLOWED_MAX_SET_SIZE as i32
     } else {
@@ -5579,7 +7012,9 @@ pub(crate) fn CanonGraph(
             .ok_or(SourceHeapError::NullPointer)?
             .get_mut(0)?;
         let W = W.as_mut().ok_or(SourceHeapError::NullPointer)?;
-        let W_len = W.len();
+        // W is raw stable-view metadata. All temporary Cell references from
+        // get() end with their call; native pointer writes below hold none.
+        // The allocation stays live/fixed until the same source cleanup.
         UnorderedPartitionMakeDiscrete(heap, &theta, n_tg)?;
         t_Lemma = 2;
         pCC.lNumBreakTies = 0;
@@ -5596,13 +7031,13 @@ pub(crate) fn CanonGraph(
         'machine: loop {
             match label {
                 CanonGraphLabel::InitialDescent => {
-                    if PartitionIsDiscrete(heap, partition_at(pi, k)?, n_tg)? != 0 {
-                        PartitionCopy(heap, &rho, partition_at(pi, k)?, n_tg)?;
+                    if PartitionIsDiscrete(heap, partition_at(heap, pi, k)?.as_ref(), n_tg)? != 0 {
+                        PartitionCopy(heap, &rho, partition_at(heap, pi, k)?.as_ref(), n_tg)?;
                         CtPartFill(
                             heap,
                             G,
                             pCD,
-                            partition_at(pi, k)?,
+                            partition_at(heap, pi, k)?.as_ref(),
                             Some(&mut *pzb_rho),
                             1,
                             n,
@@ -5619,7 +7054,12 @@ pub(crate) fn CanonGraph(
                         label = CanonGraphLabel::ExitFunction;
                         continue;
                     }
-                    if dig == 0 && PartitionSatisfiesLemma_2_25(heap, partition_at(pi, 1)?, n)? != 0
+                    if dig == 0
+                        && PartitionSatisfiesLemma_2_25(
+                            heap,
+                            partition_at(heap, pi, 1)?.as_ref(),
+                            n,
+                        )? != 0
                     {
                         t_Lemma = 1;
                     }
@@ -5627,38 +7067,43 @@ pub(crate) fn CanonGraph(
                     while k != 0 {
                         PartitionGetFirstCell(
                             heap,
-                            partition_at(pi, k)?,
-                            W.prefix_mut(W_len)?,
+                            partition_at(heap, pi, k)?.as_ref(),
+                            W_pointer,
                             k,
                             n,
                         )?;
                         let wi = usize::try_from(k - 1)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        let minimum =
-                            CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, 0, Some(pCD))?;
+                        let minimum = CellGetMinNode(
+                            heap,
+                            partition_at(heap, pi, k)?.as_ref(),
+                            W.get(wi)?,
+                            0,
+                            Some(pCD),
+                        )?;
                         source_set(heap, v, k - 1, minimum)?;
                         source_set(heap, e, k - 1, 0)?;
                         if dig != 0
-                            || PartitionSatisfiesLemma_2_25(heap, partition_at(pi, k)?, n)? == 0
+                            || PartitionSatisfiesLemma_2_25(
+                                heap,
+                                partition_at(heap, pi, k)?.as_ref(),
+                                n,
+                            )? == 0
                         {
                             t_Lemma = k + 1;
                         }
                         let vv = source_get(heap, v, k - 1)?;
-                        let result = PartitionColorVertex(
-                            heap,
-                            pCG,
-                            G,
-                            pi.get_mut(wi..)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                            vv,
-                            n,
-                            n_tg,
-                            n_max,
-                            bDigraph,
-                            0,
+                        let result = partition_color_vertex_stack(
+                            heap, pCG, G, pi, wi, vv, n, n_tg, n_max, bDigraph, 0,
                         )?;
-                        if result < 0 {
-                            ret = result;
+                        // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:3937..3938 C406 refinement status 3937
+                        //             if (0 > ( ret = PartitionColorVertex( pCG, G, &pi[k - 1], vv /*v[k-1]*/, n, n_tg, n_max, bDigraph, 0 ) ))
+                        //             {
+                        // END VERBATIM SOURCE FRAGMENT: C406 refinement status 3937
+                        // INCHI✔️✔️: Assign every source refinement result, including
+                        // positive rank count, before testing negativity; O(1).
+                        ret = result;
+                        if ret < 0 {
                             break 'machine;
                         }
                         pCC.lNumBreakTies += 1;
@@ -5667,7 +7112,7 @@ pub(crate) fn CanonGraph(
                             heap,
                             G,
                             pCD,
-                            partition_at(pi, k)?,
+                            partition_at(heap, pi, k)?.as_ref(),
                             Some(&mut Lambda),
                             k - 1,
                             n,
@@ -5693,7 +7138,7 @@ pub(crate) fn CanonGraph(
                             CtPartCopy(heap, &mut *pzb_rho, &Lambda, k - 1)?;
                         }
                         CtPartCopy(heap, &mut zf_zeta, &Lambda, k - 1)?;
-                        if PartitionIsDiscrete(heap, partition_at(pi, k)?, n)? != 0 {
+                        if PartitionIsDiscrete(heap, partition_at(heap, pi, k)?.as_ref(), n)? != 0 {
                             break;
                         }
                     }
@@ -5702,7 +7147,7 @@ pub(crate) fn CanonGraph(
                     t_eq_zeta = k;
                     hz_zeta = k;
                     CtPartINCHI_CANON_INFINITY(heap, &mut zf_zeta, SourceMutPointer::null(), k)?;
-                    PartitionCopy(heap, &zeta, partition_at(pi, k)?, n_tg)?;
+                    PartitionCopy(heap, &zeta, partition_at(heap, pi, k)?.as_ref(), n_tg)?;
                     if let Some(fixed) = pzb_rho_fix {
                         if qzb_rho_fix == 0 {
                             qzb_rho_fix =
@@ -5712,7 +7157,12 @@ pub(crate) fn CanonGraph(
                             }
                         }
                         if hzb_rho_fix > 1 {
-                            PartitionCopy(heap, &rho, partition_at(pi, hzb_rho_fix)?, n_tg)?;
+                            PartitionCopy(
+                                heap,
+                                &rho,
+                                partition_at(heap, pi, hzb_rho_fix)?.as_ref(),
+                                n_tg,
+                            )?;
                         }
                         hz_rho = hzb_rho_fix;
                         h_rho = hzb_rho_fix;
@@ -5734,7 +7184,7 @@ pub(crate) fn CanonGraph(
                             )?;
                         }
                     } else {
-                        PartitionCopy(heap, &rho, partition_at(pi, k)?, n_tg)?;
+                        PartitionCopy(heap, &rho, partition_at(heap, pi, k)?.as_ref(), n_tg)?;
                         hz_rho = k;
                         h_rho = k;
                         CtPartINCHI_CANON_INFINITY(
@@ -5747,7 +7197,7 @@ pub(crate) fn CanonGraph(
                     qzb_rho = 0;
                     r = k;
                     source_set(heap, v, k - 1, INCHI_CANON_INFINITY as Node)?;
-                    CellMakeEmpty(W.prefix_mut(W_len)?, k)?;
+                    CellMakeEmpty(heap, W_pointer, k)?;
                     k -= 1;
                     label = CanonGraphLabel::L13;
                 }
@@ -5755,21 +7205,17 @@ pub(crate) fn CanonGraph(
                     let vv = source_get(heap, v, k - 1)?;
                     let wi =
                         usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let result = PartitionColorVertex(
-                        heap,
-                        pCG,
-                        G,
-                        pi.get_mut(wi..)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                        vv,
-                        n,
-                        n_tg,
-                        n_max,
-                        bDigraph,
-                        0,
+                    let result = partition_color_vertex_stack(
+                        heap, pCG, G, pi, wi, vv, n, n_tg, n_max, bDigraph, 0,
                     )?;
-                    if result < 0 {
-                        ret = result;
+                    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:4032..4033 C406 refinement status 4032
+                    //     if (0 > ( ret = PartitionColorVertex( pCG, G, &pi[k - 1], v[k - 1],
+                    //         n, n_tg, n_max, bDigraph, 0 ) ))
+                    // END VERBATIM SOURCE FRAGMENT: C406 refinement status 4032
+                    // INCHI✔️✔️: Assign every source refinement result, including
+                    // positive rank count, before testing negativity; O(1).
+                    ret = result;
+                    if ret < 0 {
                         break 'machine;
                     }
                     pCC.lNumBreakTies += 1;
@@ -5778,7 +7224,7 @@ pub(crate) fn CanonGraph(
                         heap,
                         G,
                         pCD,
-                        partition_at(pi, k)?,
+                        partition_at(heap, pi, k)?.as_ref(),
                         Some(&mut Lambda),
                         k - 1,
                         n,
@@ -5787,7 +7233,7 @@ pub(crate) fn CanonGraph(
                     )?;
                     source_set(heap, e, k - 1, 0)?;
                     source_set(heap, v, k - 1, INCHI_CANON_INFINITY as Node)?;
-                    CellMakeEmpty(W.prefix_mut(W_len)?, k)?;
+                    CellMakeEmpty(heap, W_pointer, k)?;
                     if hz_zeta == k - 1
                         && CtPartCompare(
                             heap,
@@ -5888,14 +7334,14 @@ pub(crate) fn CanonGraph(
                         }
                     }
                     if hz_zeta == k || hz_rho == k || (qzb_rho >= 0 && qzb_rho_fix <= 0) {
-                        if PartitionIsDiscrete(heap, partition_at(pi, k)?, n)? != 0 {
+                        if PartitionIsDiscrete(heap, partition_at(heap, pi, k)?.as_ref(), n)? != 0 {
                             pCC.lNumTotCT += 1;
                             label = CanonGraphLabel::L7;
                         } else {
                             PartitionGetFirstCell(
                                 heap,
-                                partition_at(pi, k)?,
-                                W.prefix_mut(W_len)?,
+                                partition_at(heap, pi, k)?.as_ref(),
+                                W_pointer,
                                 k,
                                 n,
                             )?;
@@ -5903,14 +7349,18 @@ pub(crate) fn CanonGraph(
                                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                             let minimum = CellGetMinNode(
                                 heap,
-                                partition_at(pi, k)?,
+                                partition_at(heap, pi, k)?.as_ref(),
                                 W.get(wi)?,
                                 0,
                                 Some(pCD),
                             )?;
                             source_set(heap, v, k - 1, minimum)?;
                             if dig != 0
-                                || PartitionSatisfiesLemma_2_25(heap, partition_at(pi, k)?, n)? == 0
+                                || PartitionSatisfiesLemma_2_25(
+                                    heap,
+                                    partition_at(heap, pi, k)?.as_ref(),
+                                    n,
+                                )? == 0
                             {
                                 t_Lemma = k + 1;
                             }
@@ -5931,7 +7381,7 @@ pub(crate) fn CanonGraph(
                         PartitionGetMcrAndFixSet(
                             heap,
                             pCG,
-                            partition_at(pi, t_Lemma)?,
+                            partition_at(heap, pi, t_Lemma)?.as_ref(),
                             &Omega,
                             &Phi,
                             n_tg,
@@ -5950,7 +7400,13 @@ pub(crate) fn CanonGraph(
                         continue;
                     }
                     if CtFullCompare(heap, &Lambda, &zf_zeta, 0, bSplitTautCompare)? == 0 {
-                        PartitionGetTransposition(heap, &zeta, partition_at(pi, k)?, n_tg, &gamma)?;
+                        PartitionGetTransposition(
+                            heap,
+                            &zeta,
+                            partition_at(heap, pi, k)?.as_ref(),
+                            n_tg,
+                            &gamma,
+                        )?;
                         bZetaIsomorph = 1;
                         label = CanonGraphLabel::L10;
                     } else if nNumLayers == 0 {
@@ -6000,7 +7456,7 @@ pub(crate) fn CanonGraph(
                             r = k;
                             PartitionGetTransposition(
                                 heap,
-                                partition_at(pi, k)?,
+                                partition_at(heap, pi, k)?.as_ref(),
                                 &rho,
                                 n_tg,
                                 &gamma,
@@ -6012,7 +7468,7 @@ pub(crate) fn CanonGraph(
                     }
                 }
                 CanonGraphLabel::L9 => {
-                    PartitionCopy(heap, &rho, partition_at(pi, k)?, n_tg)?;
+                    PartitionCopy(heap, &rho, partition_at(heap, pi, k)?.as_ref(), n_tg)?;
                     if nNumLayers != 0 {
                         CtFullCopy(heap, &mut *pzb_rho, &Lambda)?;
                     }
@@ -6073,7 +7529,7 @@ pub(crate) fn CanonGraph(
                         CellIntersectWithSet(
                             heap,
                             pCG,
-                            partition_at(pi, k)?,
+                            partition_at(heap, pi, k)?.as_ref(),
                             W.get(wi)?,
                             &Omega,
                             l,
@@ -6093,6 +7549,16 @@ pub(crate) fn CanonGraph(
                     } else {
                         Some(source_clone(heap, pCD.ulTimeOutTime, 0)?)
                     };
+                    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichicano.c:292..295 C413 no clock for NULL deadline
+                    //         FillMaxMinClock( ic );
+                    //         if (!TickStart)
+                    //             return 0;
+                    //         clockCurrTime = InchiClock( );
+                    // END VERBATIM SOURCE FRAGMENT: C413 no clock for NULL deadline
+                    // INCHI✔️❌: NULL deadline returns before InchiClock. Keep
+                    // the callee call/cache initialization for signed clock_t;
+                    // nonNULL deadlines now sample the platform clock.
+                    // No fallback/status change; platform clock cost OPEN.
                     if crate::source::base::ichicano::bInchiTimeIsOver(
                         ic,
                         timeout.as_ref(),
@@ -6123,7 +7589,13 @@ pub(crate) fn CanonGraph(
                         h_zeta = k;
                         let wi = usize::try_from(k - 1)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        tvh = CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, 0, Some(pCD))?;
+                        tvh = CellGetMinNode(
+                            heap,
+                            partition_at(heap, pi, k)?.as_ref(),
+                            W.get(wi)?,
+                            0,
+                            Some(pCD),
+                        )?;
                         tvc = tvh;
                         label = CanonGraphLabel::L14;
                     }
@@ -6137,8 +7609,13 @@ pub(crate) fn CanonGraph(
                     }
                     let wi =
                         usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let minimum =
-                        CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, current, Some(pCD))?;
+                    let minimum = CellGetMinNode(
+                        heap,
+                        partition_at(heap, pi, k)?.as_ref(),
+                        W.get(wi)?,
+                        current,
+                        Some(pCD),
+                    )?;
                     source_set(heap, v, k - 1, minimum)?;
                     if minimum == INCHI_CANON_INFINITY as Node {
                         label = CanonGraphLabel::L16;
@@ -6173,7 +7650,12 @@ pub(crate) fn CanonGraph(
                     let wi =
                         usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     if t_eq_zeta == k + 1
-                        && index == CellGetNumberOfNodes(heap, partition_at(pi, k)?, W.get(wi)?)?
+                        && index
+                            == CellGetNumberOfNodes(
+                                heap,
+                                partition_at(heap, pi, k)?.as_ref(),
+                                W.get(wi)?,
+                            )?
                     {
                         t_eq_zeta = k;
                     }
@@ -6195,7 +7677,7 @@ pub(crate) fn CanonGraph(
                                 CellIntersectWithSet(
                                     heap,
                                     pCG,
-                                    partition_at(pi, k)?,
+                                    partition_at(heap, pi, k)?.as_ref(),
                                     W.get(wi)?,
                                     &Omega,
                                     set_index,
@@ -6208,8 +7690,13 @@ pub(crate) fn CanonGraph(
                     let wi =
                         usize::try_from(k - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let current = source_get(heap, v, k - 1)?;
-                    let minimum =
-                        CellGetMinNode(heap, partition_at(pi, k)?, W.get(wi)?, current, Some(pCD))?;
+                    let minimum = CellGetMinNode(
+                        heap,
+                        partition_at(heap, pi, k)?.as_ref(),
+                        W.get(wi)?,
+                        current,
+                        Some(pCD),
+                    )?;
                     source_set(heap, v, k - 1, minimum)?;
                     if minimum != INCHI_CANON_INFINITY as Node {
                         label = CanonGraphLabel::L15;
@@ -6266,16 +7753,30 @@ pub(crate) fn CanonGraph(
                         )?;
                         i += 1;
                     }
-                    i = 0;
-                    while i < n_tg {
-                        source_set(heap, nCanonRank, i, source_get(heap, rho.Rank, i)?)?;
-                        source_set(
-                            heap,
-                            nAtomNumberCanon,
-                            i,
-                            source_get(heap, rho.AtNumber, i)?,
+                    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:4597..4599 C406 ordered rank outputs
+                    //     memcpy(nCanonRank, rho.Rank, n_tg * sizeof(nCanonRank[0]));
+                    //     memcpy(nAtomNumberCanon, rho.AtNumber, n_tg * sizeof(nAtomNumberCanon[0]));
+                    //     /* LinearCT */
+                    // END VERBATIM SOURCE FRAGMENT: C406 ordered rank outputs
+                    // INCHI✔️❗: Two complete source memcpy operations, never
+                    // interleave destinations. Each source is fresh internal
+                    // storage; destinations may overlap each other. Canonical
+                    // copier releases the first borrow before the second copy.
+                    // O(n_tg)/O(1), no staging/alloc/clone buffer; checked copy
+                    // constants remain INCHI-PERF-CANONICAL-RESULTS OPEN.
+                    if count != 0 {
+                        heap.copy_nonoverlapping_prefix(
+                            nCanonRank,
+                            rho.Rank.as_const(),
+                            count,
+                            false,
                         )?;
-                        i += 1;
+                        heap.copy_nonoverlapping_prefix(
+                            nAtomNumberCanon,
+                            rho.AtNumber.as_const(),
+                            count,
+                            false,
+                        )?;
                     }
                     pCD.nLenLinearCT = pzb_rho.lenCt - 1;
                     if !pCD.LinearCT.is_null() && pCD.nLenLinearCT > 0 {
@@ -6849,14 +8350,15 @@ pub(crate) fn PartitionIsDiscrete(
     let atoms = unsafe { heap.stable_slice(p.AtNumber.as_const())? };
     let ranks = unsafe { heap.stable_slice(p.Rank.as_const())? };
     let count = usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms = atoms.prefix(count)?;
+    // INCHI✔️❗: admit only reached atoms before the first rank mismatch.
+    // O(reached atoms), O(1), no allocation; checked-load cost remains OPEN.
     let ranks = ranks.prefix(ranks.len())?;
     let rank_mask = rank_mask_bit();
     // INCHI✔️✔️:     for (i = 0, r = 1; i < n; i++, r++)
     let mut i = 0_usize;
     let mut rank = 1 as AT_RANK;
     while i < count {
-        let atom = usize::from(atoms[i]);
+        let atom = usize::from(*atoms.get(i)?);
         // INCHI✔️✔️:         if (r != ( rank_mask_bit & p->Rank[p->AtNumber[i]] ))
         let atom_rank = ranks
             .get(atom)
@@ -6875,9 +8377,9 @@ pub(crate) fn PartitionIsDiscrete(
 
 #[allow(non_snake_case)]
 pub(crate) fn PartitionGetFirstCell(
-    heap: &SourceHeap,
+    heap: &mut SourceHeap,
     p: &Partition,
-    baseW: &mut [Cell],
+    baseW: SourceMutPointer<Cell>,
     k: i32,
     n: i32,
 ) -> Result<i32, SourceHeapError> {
@@ -6923,17 +8425,15 @@ pub(crate) fn PartitionGetFirstCell(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: PartitionGetFirstCell
 
-    let target =
-        usize::try_from(k.wrapping_sub(1)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let _ = baseW
-        .get(target)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❌: Native baseW pointer retains its allocation origin, so
+    // k0/interior pointer can address the preceding Cell. Reuse canonical
+    // signed access; no slice-prefix loss/clone/registration/unsafe.
+    // Preserve early target admission and source first/next/prev write order.
+    // Cell borrows end before rank reads; checked map costs deferred.
+    let target = k.wrapping_sub(1);
+    heap.element_signed(baseW.as_const(), target)?;
     let mut i = if k > 1 {
-        let previous =
-            usize::try_from(k.wrapping_sub(2)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        baseW
-            .get(previous)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
+        heap.element_signed(baseW.as_const(), k.wrapping_sub(2))?
             .first
             .wrapping_add(1)
     } else {
@@ -6952,10 +8452,7 @@ pub(crate) fn PartitionGetFirstCell(
     }
     if i < n {
         let first = i;
-        baseW
-            .get_mut(target)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .first = first;
+        heap.element_signed_mut(baseW, target)?.first = first;
         let atom = source_get(heap, p.AtNumber, i)?;
         let rank = rank_mask_bit() & source_get(heap, p.Rank, i32::from(atom))?;
         i = i.wrapping_add(1);
@@ -6966,15 +8463,11 @@ pub(crate) fn PartitionGetFirstCell(
             }
             i = i.wrapping_add(1);
         }
-        let cell = baseW
-            .get_mut(target)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let cell = heap.element_signed_mut(baseW, target)?;
         cell.next = i;
         return Ok(cell.next.wrapping_sub(first));
     }
-    let cell = baseW
-        .get_mut(target)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let cell = heap.element_signed_mut(baseW, target)?;
     cell.first = INCHI_CANON_INFINITY as i32;
     cell.next = 0;
     Ok(0)
@@ -7034,12 +8527,8 @@ pub(crate) fn NodeSetFromRadEndpoints(
             .checked_rem(pCG.m_num_bit)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mask = source_get(heap, pCG.m_bBit, bit_index)?;
-        let word_offset =
-            usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let target = heap.slice_mut(bits)?;
-        let word = target
-            .get_mut(word_offset)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❗: Signed word offset, one checked arena access, no allocation.
+        let word = heap.element_signed_mut(bits, word_index)?;
         *word |= mask;
         i = i.wrapping_add(2);
     }
@@ -7078,13 +8567,53 @@ pub(crate) fn RemoveFromNodeSet(
     // INCHI✔️❌: typedef U_SHORT bitWord
     // END INCHI ACTIVE MACRO CONFIGURATION: RemoveFromNodeSet
 
+    remove_from_node_set_values(heap, pCG, cur_nodes, k, num_v, |heap, i| {
+        source_get(heap, v, i)
+    })
+}
+
+/// Canonical source bit-removal loop for heap-backed and fixed-stack values.
+/// The accessor is called only at the native reached v[i] read, never preflighted.
+#[inline]
+pub(crate) fn remove_from_node_set_values(
+    heap: &mut SourceHeap,
+    pCG: &CANON_GLOBALS,
+    cur_nodes: &NodeSet,
+    k: i32,
+    num_v: i32,
+    mut value_at: impl FnMut(&SourceHeap, i32) -> Result<Vertex, SourceHeapError>,
+) -> Result<(), SourceHeapError> {
+    // INCHI✔️❗: shared algorithm; source ichican2.c1159..1175 copied verbatim below.
+    /*
+    void RemoveFromNodeSet( CANON_GLOBALS *pCG,
+                            NodeSet *cur_nodes, int k, Vertex v[], int num_v )
+    {
+        if (cur_nodes->bitword)
+        {
+            bitWord *Bits = cur_nodes->bitword[k];
+            /*int      len  = cur_nodes->len_set*sizeof(bitWord);*/
+            int      i, j;
+
+            for (i = 0; i < num_v; i++)
+            {
+                j = (int) v[i];
+                Bits[j / pCG->m_num_bit] &= ~pCG->m_bBit[j % pCG->m_num_bit];
+            }
+        }
+    }
+
+    */
+    // Behavior: preserve null gate, row admission, each live value read, mask
+    // admission then bit mutation; pointer entry retains aliases/errors.
+    // Cost: O(num_v)/O(1), static accessor dispatch/no allocation or staging.
+    // Checked arena/Result whole-call cost remains independently unresolved.
     if cur_nodes.bitword.is_null() {
         return Ok(());
     }
     let bits = pointer_array_get(heap, cur_nodes.bitword, k)?;
     let mut i = 0_i32;
     while i < num_v {
-        let j = source_get(heap, v, i)?;
+        let j = value_at(heap, i)?;
         let word_index = j
             .checked_div(pCG.m_num_bit)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -7092,12 +8621,8 @@ pub(crate) fn RemoveFromNodeSet(
             .checked_rem(pCG.m_num_bit)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let mask = source_get(heap, pCG.m_bBit, bit_index)?;
-        let word_offset =
-            usize::try_from(word_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let target = heap.slice_mut(bits)?;
-        let word = target
-            .get_mut(word_offset)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❗: Signed word offset, one checked arena access, no allocation.
+        let word = heap.element_signed_mut(bits, word_index)?;
         *word &= !mask;
         i = i.wrapping_add(1);
     }
@@ -7113,36 +8638,45 @@ pub(crate) fn DoNodeSetsIntersect(
     k2: i32,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1178 DoNodeSetsIntersect
-    // INCHI✔️❌: int DoNodeSetsIntersect( NodeSet *cur_nodes, int k1, int k2 )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     if (cur_nodes->bitword)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         bitWord *Bits1 = cur_nodes->bitword[k1];
-    // INCHI✔️❌:         bitWord *Bits2 = cur_nodes->bitword[k2];
-    // INCHI✔️❌:         int      len = cur_nodes->len_set;
-    // INCHI✔️❌:         int      i;
-    // INCHI✔️❌:
-    // INCHI✔️❌:         for (i = 0; i < len; i++)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             if (Bits1[i] & Bits2[i])
-    // INCHI✔️❌:             {
-    // INCHI✔️❌:                 return 1;
-    // INCHI✔️❌:             }
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     return 0;
-    // INCHI✔️❌: }
+    // INCHI✔️❗: int DoNodeSetsIntersect( NodeSet *cur_nodes, int k1, int k2 )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     if (cur_nodes->bitword)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         bitWord *Bits1 = cur_nodes->bitword[k1];
+    // INCHI✔️❗:         bitWord *Bits2 = cur_nodes->bitword[k2];
+    // INCHI✔️❗:         int      len = cur_nodes->len_set;
+    // INCHI✔️❗:         int      i;
+    // INCHI✔️❗:
+    // INCHI✔️❗:         for (i = 0; i < len; i++)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             if (Bits1[i] & Bits2[i])
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 return 1;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     return 0;
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: DoNodeSetsIntersect
+    // Cost: no added allocation/clone/scan; safe view/admission overhead
+    // remains INCHI-PERF-SIGNED-LOOPS OPEN; no native no-worse claim.
 
     if cur_nodes.bitword.is_null() {
         return Ok(0);
     }
     let bits1 = pointer_array_get(heap, cur_nodes.bitword, k1)?;
     let bits2 = pointer_array_get(heap, cur_nodes.bitword, k2)?;
+
+    // Signed native loop skips nonpositive lengths without dereferencing rows.
+    if cur_nodes.len_set <= 0 {
+        return Ok(0);
+    }
     let len =
         usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+
     let slice1 = heap.slice(bits1.as_const())?;
+
     let slice2 = heap.slice(bits2.as_const())?;
     for i in 0..len {
         if slice1
@@ -7169,33 +8703,41 @@ pub(crate) fn IsNodeSetEmpty(
     k: i32,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1201 IsNodeSetEmpty
-    // INCHI✔️❌: int IsNodeSetEmpty( NodeSet *cur_nodes, int k )
-    // INCHI✔️❌: {
-    // INCHI✔️❌:     if (cur_nodes->bitword)
-    // INCHI✔️❌:     {
-    // INCHI✔️❌:         bitWord *Bits = cur_nodes->bitword[k];
-    // INCHI✔️❌:         int      len = cur_nodes->len_set;
-    // INCHI✔️❌:         int      i;
-    // INCHI✔️❌:
-    // INCHI✔️❌:         for (i = 0; i < len; i++)
-    // INCHI✔️❌:         {
-    // INCHI✔️❌:             if (Bits[i])
-    // INCHI✔️❌:             {
-    // INCHI✔️❌:                 return 0;
-    // INCHI✔️❌:             }
-    // INCHI✔️❌:         }
-    // INCHI✔️❌:     }
-    // INCHI✔️❌:
-    // INCHI✔️❌:     return 1;
-    // INCHI✔️❌: }
+    // INCHI✔️❗: int IsNodeSetEmpty( NodeSet *cur_nodes, int k )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     if (cur_nodes->bitword)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         bitWord *Bits = cur_nodes->bitword[k];
+    // INCHI✔️❗:         int      len = cur_nodes->len_set;
+    // INCHI✔️❗:         int      i;
+    // INCHI✔️❗:
+    // INCHI✔️❗:         for (i = 0; i < len; i++)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             if (Bits[i])
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 return 0;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     return 1;
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: IsNodeSetEmpty
+    // Cost: no added allocation/clone/scan; safe view/admission overhead
+    // remains INCHI-PERF-SIGNED-LOOPS OPEN; no native no-worse claim.
 
     if cur_nodes.bitword.is_null() {
         return Ok(1);
     }
     let bits = pointer_array_get(heap, cur_nodes.bitword, k)?;
+
+    // Signed native loop skips nonpositive lengths without dereferencing rows.
+    if cur_nodes.len_set <= 0 {
+        return Ok(1);
+    }
     let len =
         usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+
     let slice = heap.slice(bits.as_const())?;
     for i in 0..len {
         if slice
@@ -7334,19 +8876,11 @@ pub(crate) fn AddNodesToRadEndpoints(
                     if n >= nLen {
                         return Ok(-1);
                     }
-                    let first_offset =
-                        usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    heap.slice_mut(RadEndpoints)?
-                        .get_mut(first_offset)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)
-                        .map(|slot| *slot = vRad)?;
+                    // INCHI✔️❗: Preserve the two reached stores and increments,
+                    // including the first write before a failing second access.
+                    *heap.element_signed_mut(RadEndpoints, n)? = vRad;
                     n = n.wrapping_add(1);
-                    let second_offset =
-                        usize::try_from(n).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    heap.slice_mut(RadEndpoints)?
-                        .get_mut(second_offset)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)
-                        .map(|slot| *slot = v)?;
+                    *heap.element_signed_mut(RadEndpoints, n)? = v;
                     n = n.wrapping_add(1);
                 }
                 j = j.wrapping_add(1);
@@ -7545,21 +9079,26 @@ pub(crate) fn CtPartCopy(
     // SAFETY: CtPartCopy is called with two ConTables created independently by
     // CTableCreate. Corresponding source and destination fields are distinct,
     // fixed-size allocations that remain live for the complete field loop.
-    let source_ctbl = unsafe { heap.stable_slice(Ct2.Ctbl.as_const())? };
-    let mut target_ctbl = unsafe { heap.stable_slice_mut(Ct1.Ctbl)? };
-    // INCHI✔️✔️:     for (i = 0; i < len2; i++)
+    // INCHI✔️❗: native zero table length skips both Ctbl pointees.
+    // One entry gate; unchanged stable positive copy, no allocation/scan.
+    // Checked admission/branch costs remain OPEN.
     let mut i = 0_i32;
-    while i < len2 {
-        let source_index = usize::try_from(start_ct2.wrapping_add(i))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let target_index = usize::try_from(start_ct1.wrapping_add(i))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        // INCHI✔️✔️:         Ct1->Ctbl[startCt1 + i] = Ct2->Ctbl[startCt2 + i];
-        *target_ctbl.get_mut(target_index)? = *source_ctbl.get(source_index)?;
-        i = i.wrapping_add(1);
+    if len2 > 0 {
+        let source_ctbl = unsafe { heap.stable_slice(Ct2.Ctbl.as_const())? };
+        let mut target_ctbl = unsafe { heap.stable_slice_mut(Ct1.Ctbl)? };
+        // INCHI✔️✔️:     for (i = 0; i < len2; i++)
+        while i < len2 {
+            let source_index = usize::try_from(start_ct2.wrapping_add(i))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let target_index = usize::try_from(start_ct1.wrapping_add(i))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            // INCHI✔️✔️:         Ct1->Ctbl[startCt1 + i] = Ct2->Ctbl[startCt2 + i];
+            *target_ctbl.get_mut(target_index)? = *source_ctbl.get(source_index)?;
+            i = i.wrapping_add(1);
+        }
+        drop(source_ctbl);
+        drop(target_ctbl);
     }
-    drop(source_ctbl);
-    drop(target_ctbl);
 
     // INCHI✔️✔️:     len2H = 0;
     let mut len2_h = 0_i32;
@@ -7577,12 +9116,16 @@ pub(crate) fn CtPartCopy(
         // INCHI✔️✔️:         for (i = 0; i < len2H; i++)
         i = 0;
         while i < len2_h {
-            let source_index = usize::try_from(start_at2.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let target_index = usize::try_from(start_at1.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:             Ct1->NumH[startAt1 + i] = Ct2->NumH[startAt2 + i];
-            *target_h.get_mut(target_index)? = *source_h.get(source_index)?;
+            // INCHI✔️❗: Keep the ordinary stable loop; negative relative
+            // indices use existing safe accessors, with no snapshot or scan.
+            let source_index = start_at2.wrapping_add(i);
+            let target_index = start_at1.wrapping_add(i);
+            if source_index >= 0 && target_index >= 0 {
+                *target_h.get_mut(target_index as usize)? = *source_h.get(source_index as usize)?;
+            } else {
+                let value = source_get(heap, Ct2.NumH, source_index)?;
+                *heap.element_signed_mut(Ct1.NumH, target_index)? = value;
+            };
             i = i.wrapping_add(1);
         }
     }
@@ -7596,12 +9139,17 @@ pub(crate) fn CtPartCopy(
         // INCHI✔️✔️:         for (i = 0; i < len2Hfixed; i++)
         i = 0;
         while i < len2_h_fixed {
-            let source_index = usize::try_from(start_at2.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let target_index = usize::try_from(start_at1.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:             Ct1->NumHfixed[startAt1 + i] = Ct2->NumHfixed[startAt2 + i];
-            *target_fixed_h.get_mut(target_index)? = *source_fixed_h.get(source_index)?;
+            // INCHI✔️❗: Keep the ordinary stable loop; negative relative
+            // indices use existing safe accessors, with no snapshot or scan.
+            let source_index = start_at2.wrapping_add(i);
+            let target_index = start_at1.wrapping_add(i);
+            if source_index >= 0 && target_index >= 0 {
+                *target_fixed_h.get_mut(target_index as usize)? =
+                    *source_fixed_h.get(source_index as usize)?;
+            } else {
+                let value = source_get(heap, Ct2.NumHfixed, source_index)?;
+                *heap.element_signed_mut(Ct1.NumHfixed, target_index)? = value;
+            };
             i = i.wrapping_add(1);
         }
     }
@@ -7617,12 +9165,17 @@ pub(crate) fn CtPartCopy(
         // INCHI✔️✔️:         for (i = 0; i < len2iso_sort_key; i++)
         i = 0;
         while i < len2_iso_sort_key {
-            let source_index = usize::try_from(start_at2.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let target_index = usize::try_from(start_at1.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:             Ct1->iso_sort_key[startAt1 + i] = Ct2->iso_sort_key[startAt2 + i];
-            *target_iso.get_mut(target_index)? = *source_iso.get(source_index)?;
+            // INCHI✔️❗: Keep the ordinary stable loop; negative relative
+            // indices use existing safe accessors, with no snapshot or scan.
+            let source_index = start_at2.wrapping_add(i);
+            let target_index = start_at1.wrapping_add(i);
+            if source_index >= 0 && target_index >= 0 {
+                *target_iso.get_mut(target_index as usize)? =
+                    *source_iso.get(source_index as usize)?;
+            } else {
+                let value = source_get(heap, Ct2.iso_sort_key, source_index)?;
+                *heap.element_signed_mut(Ct1.iso_sort_key, target_index)? = value;
+            };
             i = i.wrapping_add(1);
         }
     }
@@ -7638,12 +9191,17 @@ pub(crate) fn CtPartCopy(
         // INCHI✔️✔️:         for (i = 0; i < len2iso_exchg_atnos; i++)
         i = 0;
         while i < len2_iso_exchg_atnos {
-            let source_index = usize::try_from(start_at2.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let target_index = usize::try_from(start_at1.wrapping_add(i))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            // INCHI✔️✔️:             Ct1->iso_exchg_atnos[startAt1 + i] = Ct2->iso_exchg_atnos[startAt2 + i];
-            *target_exchange.get_mut(target_index)? = *source_exchange.get(source_index)?;
+            // INCHI✔️❗: Keep the ordinary stable loop; negative relative
+            // indices use existing safe accessors, with no snapshot or scan.
+            let source_index = start_at2.wrapping_add(i);
+            let target_index = start_at1.wrapping_add(i);
+            if source_index >= 0 && target_index >= 0 {
+                *target_exchange.get_mut(target_index as usize)? =
+                    *source_exchange.get(source_index as usize)?;
+            } else {
+                let value = source_get(heap, Ct2.iso_exchg_atnos, source_index)?;
+                *heap.element_signed_mut(Ct1.iso_exchg_atnos, target_index)? = value;
+            };
             i = i.wrapping_add(1);
         }
     }
@@ -7651,10 +9209,11 @@ pub(crate) fn CtPartCopy(
     // INCHI✔️✔️:     Ct1->lenCt = startCt1 + len2;
     Ct1.lenCt = start_ct1.wrapping_add(len2);
     // INCHI✔️✔️:     Ct1->nextCtblPos[k] = startCt1 + len2;
-    source_set(heap, Ct1.nextCtblPos, k, Ct1.lenCt as AT_NUMB)?;
+    // INCHI✔️❗: The final metadata uses the same signed-relative contract.
+    *heap.element_signed_mut(Ct1.nextCtblPos, k)? = Ct1.lenCt as AT_NUMB;
     let next_at_rank = source_get(heap, Ct2.nextAtRank, k)?;
     // INCHI✔️✔️:     Ct1->nextAtRank[k] = Ct2->nextAtRank[k];
-    source_set(heap, Ct1.nextAtRank, k, next_at_rank)?;
+    *heap.element_signed_mut(Ct1.nextAtRank, k)? = next_at_rank;
     // INCHI✔️✔️:     if (len2H)
     if len2_h != 0 {
         // INCHI✔️✔️:         Ct1->lenNumH = startAt1 + len2H;
@@ -7702,7 +9261,11 @@ pub(crate) fn CtFullCopy(
 }
 
 #[allow(non_snake_case)]
-pub(crate) fn CellMakeEmpty(baseW: &mut [Cell], mut k: i32) -> Result<(), SourceHeapError> {
+pub(crate) fn CellMakeEmpty(
+    heap: &mut SourceHeap,
+    baseW: SourceMutPointer<Cell>,
+    mut k: i32,
+) -> Result<(), SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:1040 CellMakeEmpty
     // INCHI✔️✔️: void CellMakeEmpty( Cell *baseW, int k )
     // INCHI✔️✔️: {
@@ -7716,9 +9279,10 @@ pub(crate) fn CellMakeEmpty(baseW: &mut [Cell], mut k: i32) -> Result<(), Source
     // END INCHI C FUNCTION: CellMakeEmpty
 
     k = k.wrapping_sub(1);
-    let cell = baseW
-        .get_mut(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❌: Preserve full source pointer origin for signed k-1.
+    // One reached safe Cell borrow, then exactly three field stores; no
+    // allocation/clone/scan/unsafe. Checked heap cost remains deferred.
+    let cell = heap.element_signed_mut(baseW, k)?;
     cell.first = INCHI_CANON_INFINITY as i32;
     cell.next = 0;
     cell.prev = -1;
@@ -7770,52 +9334,54 @@ pub(crate) fn SetInitialRanks2(
     pAtomInvariant2: SourceMutPointer<ATOM_INVARIANT2>,
     nNewRank: SourceMutPointer<AT_RANK>,
     nAtomNumber: SourceMutPointer<AT_RANK>,
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut impl CanonicalTarget,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:4674 SetInitialRanks2
-    // INCHI✔️✔️: int SetInitialRanks2( int num_atoms,
-    // INCHI✔️✔️:                       ATOM_INVARIANT2* pAtomInvariant2,
-    // INCHI✔️✔️:                       AT_RANK *nNewRank,
-    // INCHI✔️✔️:                       AT_RANK *nAtomNumber,
-    // INCHI✔️✔️:                       CANON_GLOBALS *pCG )
-    // INCHI✔️✔️: {
-    // INCHI✔️✔️:     int i, nNumDiffRanks;
-    // INCHI✔️✔️:     AT_RANK nCurrentRank;
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     for (i = 0; i < num_atoms; i++)
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:         nAtomNumber[i] = (AT_RANK) i;
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     /* global for qsort */
-    // INCHI✔️✔️:     pCG->m_pAtomInvariant2ForSort = pAtomInvariant2;
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     inchi_qsort( pCG, nAtomNumber, num_atoms, sizeof( nAtomNumber[0] ), CompAtomInvariants2 );
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     /* nNewRank[i]: non-decreading order; do not increment nCurrentRank */
-    // INCHI✔️✔️:     /*           if consecutive sorted atom invariants are identical */
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     /* djb-rwth: fixing oss-fuzz issue #69315 */
-    // INCHI✔️✔️:     nNumDiffRanks = 1;
-    // INCHI✔️✔️:     if (num_atoms > 0)
-    // INCHI✔️✔️:     {
-    // INCHI✔️✔️:         nCurrentRank = (AT_RANK)num_atoms;
-    // INCHI✔️✔️:         nNewRank[nAtomNumber[num_atoms - 1]] = nCurrentRank;
-    // INCHI✔️✔️:         for (i = num_atoms - 1; i > 0; i--)
-    // INCHI✔️✔️:         {
-    // INCHI✔️✔️:             /* Note: CompAtomInvariants2Only() in following line implicitly reads pAtomInvariant2 pointed by pAtomInvariant2ForSort */
-    // INCHI✔️✔️:             if (CompAtomInvariants2Only(&nAtomNumber[i - 1], &nAtomNumber[i], pCG))
-    // INCHI✔️✔️:             {
-    // INCHI✔️✔️:                 nNumDiffRanks++;
-    // INCHI✔️✔️:                 nCurrentRank = (AT_RANK)i;
-    // INCHI✔️✔️:             }
-    // INCHI✔️✔️:             nNewRank[nAtomNumber[i - 1]] = nCurrentRank;
-    // INCHI✔️✔️:         }
-    // INCHI✔️✔️:     }
-    // INCHI✔️✔️:
-    // INCHI✔️✔️:     return nNumDiffRanks;
-    // INCHI✔️✔️: }
+    // INCHI✔️❗: int SetInitialRanks2( int num_atoms,
+    // INCHI✔️❗:                       ATOM_INVARIANT2* pAtomInvariant2,
+    // INCHI✔️❗:                       AT_RANK *nNewRank,
+    // INCHI✔️❗:                       AT_RANK *nAtomNumber,
+    // INCHI✔️❗:                       CANON_GLOBALS *pCG )
+    // INCHI✔️❗: {
+    // INCHI✔️❗:     int i, nNumDiffRanks;
+    // INCHI✔️❗:     AT_RANK nCurrentRank;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     for (i = 0; i < num_atoms; i++)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         nAtomNumber[i] = (AT_RANK) i;
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     /* global for qsort */
+    // INCHI✔️❗:     pCG->m_pAtomInvariant2ForSort = pAtomInvariant2;
+    // INCHI✔️❗:
+    // INCHI✔️❗:     inchi_qsort( pCG, nAtomNumber, num_atoms, sizeof( nAtomNumber[0] ), CompAtomInvariants2 );
+    // INCHI✔️❗:
+    // INCHI✔️❗:     /* nNewRank[i]: non-decreading order; do not increment nCurrentRank */
+    // INCHI✔️❗:     /*           if consecutive sorted atom invariants are identical */
+    // INCHI✔️❗:
+    // INCHI✔️❗:     /* djb-rwth: fixing oss-fuzz issue #69315 */
+    // INCHI✔️❗:     nNumDiffRanks = 1;
+    // INCHI✔️❗:     if (num_atoms > 0)
+    // INCHI✔️❗:     {
+    // INCHI✔️❗:         nCurrentRank = (AT_RANK)num_atoms;
+    // INCHI✔️❗:         nNewRank[nAtomNumber[num_atoms - 1]] = nCurrentRank;
+    // INCHI✔️❗:         for (i = num_atoms - 1; i > 0; i--)
+    // INCHI✔️❗:         {
+    // INCHI✔️❗:             /* Note: CompAtomInvariants2Only() in following line implicitly reads pAtomInvariant2 pointed by pAtomInvariant2ForSort */
+    // INCHI✔️❗:             if (CompAtomInvariants2Only(&nAtomNumber[i - 1], &nAtomNumber[i], pCG))
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 nNumDiffRanks++;
+    // INCHI✔️❗:                 nCurrentRank = (AT_RANK)i;
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:             nNewRank[nAtomNumber[i - 1]] = nCurrentRank;
+    // INCHI✔️❗:         }
+    // INCHI✔️❗:     }
+    // INCHI✔️❗:
+    // INCHI✔️❗:     return nNumDiffRanks;
+    // INCHI✔️❗: }
     // END INCHI C FUNCTION: SetInitialRanks2
+    // Cost: no allocation/clone/snapshot added; source rank pass stays O(n),
+    // but per-access checked arena lookup/comparator cost remains unresolved.
 
     let count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     if count > 0 {
@@ -7828,96 +9394,92 @@ pub(crate) fn SetInitialRanks2(
         }
     }
 
-    pCG.m_pAtomInvariant2ForSort = pAtomInvariant2.as_const();
+    // Native4674..4716 initializes atom numbers BEFORE the first CG store.
+    // INCHI✔️❌: Reached actual owner loan, no capture/clone; C588 OPEN.
+    pCG.reborrow_globals().with_mut(heap, |pCG, heap| {
+        pCG.m_pAtomInvariant2ForSort = pAtomInvariant2.as_const();
 
-    let invariant_storage = if count > 1 {
-        // SAFETY: ATOM_INVARIANT2 storage cannot alias either AT_RANK
-        // allocation by SourceHeap's allocation type invariant. This function
-        // neither resizes nor frees it while sorting atom numbers and writing
-        // ranks, so the source array remains stable for both comparator loops.
-        Some(unsafe { heap.stable_slice(pAtomInvariant2.as_const())? })
-    } else {
-        None
-    };
-    let invariant_workspace = invariant_storage
-        .as_ref()
-        .map(|invariants| AtomInvariant2SortWorkspace::new(invariants.prefix(count)?, count))
-        .transpose()?;
-
-    if count > 1 {
-        let invariant_workspace = invariant_workspace
+        let invariant_storage = if count > 1 {
+            // SAFETY: ATOM_INVARIANT2 storage cannot alias either AT_RANK
+            // allocation by SourceHeap's allocation type invariant. This function
+            // neither resizes nor frees it while sorting atom numbers and writing
+            // ranks, so the source array remains stable for both comparator loops.
+            Some(unsafe { heap.stable_slice(pAtomInvariant2.as_const())? })
+        } else {
+            None
+        };
+        let invariant_workspace = invariant_storage
             .as_ref()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        heap.with_slice_mut_and_heap(nAtomNumber, |atom_numbers, _heap| {
-            let atom_numbers = atom_numbers
-                .get_mut(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let byte_len = count
-                .checked_mul(size_of::<AT_RANK>())
-                .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-            // AT_RANK has no padding; this exposes the same contiguous records passed to C qsort.
-            let bytes = unsafe {
-                std::slice::from_raw_parts_mut(atom_numbers.as_mut_ptr().cast::<u8>(), byte_len)
-            };
-            inchi_qsort(bytes, count, size_of::<AT_RANK>(), &mut |first, second| {
-                let first = AT_RANK::from_ne_bytes(
-                    first
-                        .try_into()
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                );
-                let second = AT_RANK::from_ne_bytes(
-                    second
-                        .try_into()
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                );
-                // SAFETY: the source initialized every record to 0..count and
-                // inchi_qsort only permutes those records.
-                Ok(unsafe { invariant_workspace.compare_in_bounds(first, second) })
-            })
-        })?;
-    }
-    if count > 0 {
-        // The source initializes 0..num_atoms and qsort only permutes it.
-        heap.record_index_bound(nAtomNumber, count, count)?;
-    }
+            .map(|invariants| AtomInvariant2SortWorkspace::new(invariants.prefix(count)?, count))
+            .transpose()?;
 
-    let mut nNumDiffRanks = 1_i32;
-    if count > 0 {
-        heap.with_slice_mut_and_heap(nNewRank, |new_ranks, heap| {
-            let atom_numbers = heap.slice(nAtomNumber.as_const())?;
-            let atom_numbers = atom_numbers
+        if count > 1 {
+            let invariant_workspace = invariant_workspace
+                .as_ref()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            heap.with_slice_mut_and_heap(nAtomNumber, |atom_numbers, _heap| {
+                let atom_numbers = atom_numbers
+                    .get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let byte_len = count
+                    .checked_mul(size_of::<AT_RANK>())
+                    .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+                // AT_RANK has no padding; this exposes the same contiguous records passed to C qsort.
+                let bytes = unsafe {
+                    std::slice::from_raw_parts_mut(atom_numbers.as_mut_ptr().cast::<u8>(), byte_len)
+                };
+                inchi_qsort(bytes, count, size_of::<AT_RANK>(), &mut |first, second| {
+                    let first = AT_RANK::from_ne_bytes(
+                        first
+                            .try_into()
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    );
+                    let second = AT_RANK::from_ne_bytes(
+                        second
+                            .try_into()
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                    );
+                    // SAFETY: the source initialized every record to 0..count and
+                    // inchi_qsort only permutes those records.
+                    Ok(unsafe { invariant_workspace.compare_in_bounds(first, second) })
+                })
+            })?;
+        }
+        if count > 0 {
+            // The source initializes 0..num_atoms and qsort only permutes it.
+            heap.record_index_bound(nAtomNumber, count, count)?;
+        }
+
+        let mut nNumDiffRanks = 1_i32;
+        if count > 0 {
+            // Keep rank/order aliases live. Source writes may change later order
+            // indices, so read them afresh and use the checked source comparator.
+            // Preserve original destination-then-order validation precedence.
+            heap.slice_mut(nNewRank)?;
+            heap.slice(nAtomNumber.as_const())?
                 .get(..count)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let mut nCurrentRank = num_atoms as AT_RANK;
-            let last_atom = usize::from(atom_numbers[count - 1]);
-            *new_ranks
-                .get_mut(last_atom)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = nCurrentRank;
+            let last_atom = source_get(heap, nAtomNumber, (count - 1) as i32)?;
+            source_set(heap, nNewRank, i32::from(last_atom), nCurrentRank)?;
             let mut i = count - 1;
             while i > 0 {
-                // SAFETY: the source initialized 0..count and qsort only
-                // permuted that complete array above.
-                if unsafe {
-                    invariant_workspace
-                        .as_ref()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .compare_only_in_bounds(atom_numbers[i - 1], atom_numbers[i])
-                } != 0
+                let left = source_get(heap, nAtomNumber, (i - 1) as i32)?;
+                let right = source_get(heap, nAtomNumber, i as i32)?;
+                if crate::source::base::ichisort::CompAtomInvariants2Only(heap, left, right, pCG)?
+                    != 0
                 {
                     nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
                     nCurrentRank = i as AT_RANK;
                 }
-                let atom = usize::from(atom_numbers[i - 1]);
-                *new_ranks
-                    .get_mut(atom)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? = nCurrentRank;
+                let atom = source_get(heap, nAtomNumber, (i - 1) as i32)?;
+                source_set(heap, nNewRank, i32::from(atom), nCurrentRank)?;
                 i -= 1;
             }
-            Ok(())
-        })?;
-    }
+        }
 
-    Ok(nNumDiffRanks)
+        Ok(nNumDiffRanks)
+    })
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -8104,103 +9666,89 @@ pub(crate) fn FillOutAtomInvariant2(
     // END INCHI ACTIVE MACRO CONFIGURATION: FillOutAtomInvariant2
 
     const ELEM_NAME_LEN: usize = 2;
-    let atom_count = usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let total_count =
-        usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if total_count < atom_count {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-
-    heap.with_slice_mut_and_heap(pAtomInvariant, |invariants, heap| {
-        let invariants = invariants
-            .get_mut(..total_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let atoms = if atom_count == 0 {
-            &[][..]
-        } else {
-            heap.slice(at)?
-                .get(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-        };
-        let (t_group_pointer, num_t_groups, num_tautomer_iso) = if num_at_tg > num_atoms
-            && let Some(info) = t_group_info
-        {
-            (
-                Some(info.t_group),
-                info.num_t_groups,
-                if info.bIgnoreIsotopic != 0 {
-                    0
-                } else {
-                    T_NUM_ISOTOPIC as i32
-                },
-            )
-        } else {
-            (None, 0, 0)
-        };
-        let t_groups: Option<&[T_GROUP]> = match t_group_pointer {
-            Some(pointer) if !pointer.is_null() => Some(heap.slice(pointer.as_const())?),
-            _ => None,
-        };
-
-        let mut chem_elements = [0_u8; NUM_CHEM_ELEMENTS as usize * ELEM_NAME_LEN + ELEM_NAME_LEN];
-        let mut n_num_chem_elements = 0_usize;
-        let mut n_num_hydrogen_atoms = 0_i32;
-        let mut n_num_carbon_atoms = 0_i32;
-        let find_element = |elements: &[u8], pair: [u8; 2]| -> Option<usize> {
-            let end = elements
-                .iter()
-                .position(|byte| *byte == 0)
-                .unwrap_or(elements.len());
-            elements[..end].windows(2).position(|window| window == pair)
-        };
-
-        if bTautGroupsOnly == 0 {
-            for atom in atoms {
-                let first = atom.elname[0] as u8;
-                let second = atom.elname[1] as u8;
-                if first == b'C' && second == 0 {
-                    n_num_carbon_atoms = n_num_carbon_atoms.wrapping_add(1);
-                } else if matches!(first, b'H' | b'D' | b'T') && second == 0 {
-                    n_num_hydrogen_atoms = n_num_hydrogen_atoms.wrapping_add(1);
-                } else {
-                    let pair = [first, if second != 0 { second } else { b' ' }];
-                    if find_element(&chem_elements, pair).is_none() {
-                        let start = n_num_chem_elements
-                            .checked_mul(ELEM_NAME_LEN)
-                            .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-                        chem_elements
-                            .get_mut(start..start + ELEM_NAME_LEN)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                            .copy_from_slice(&pair);
-                        n_num_chem_elements += 1;
-                    }
+    // INCHI✔️❗: Native signed loops admit only reached atoms/groups/records.
+    // Preserve per-record zeroing before later reads/errors; no full prefix gate.
+    // INCHI-PERF-INVARIANT-REACHED-RECORDS: checked per-row costs remain OPEN.
+    let (t_group_pointer, num_t_groups, num_tautomer_iso) = if num_at_tg > num_atoms
+        && let Some(info) = t_group_info
+    {
+        (
+            info.t_group,
+            info.num_t_groups,
+            if info.bIgnoreIsotopic != 0 {
+                0
+            } else {
+                T_NUM_ISOTOPIC as i32
+            },
+        )
+    } else {
+        (SourceMutPointer::<T_GROUP>::null(), 0, 0)
+    };
+    let mut chem_elements = [0_u8; NUM_CHEM_ELEMENTS as usize * ELEM_NAME_LEN + ELEM_NAME_LEN];
+    let mut n_num_chem_elements = 0_usize;
+    let mut n_num_hydrogen_atoms = 0_i32;
+    let mut n_num_carbon_atoms = 0_i32;
+    let find_element = |elements: &[u8], pair: [u8; 2]| {
+        // Native strstr(ChemElements, CurElement): first NUL ends the needle,
+        // including an empty element name. Reuse the canonical byte query.
+        crate::source::base::ichierr::find_c_substring(bytemuck::cast_slice(elements), &pair)
+    };
+    if bTautGroupsOnly == 0 {
+        for index in 0..num_atoms {
+            let atom = heap.element_signed(at, index)?;
+            let first = atom.elname[0] as u8;
+            let second = atom.elname[1] as u8;
+            if first == b'C' && second == 0 {
+                n_num_carbon_atoms = n_num_carbon_atoms.wrapping_add(1);
+            } else if matches!(first, b'H' | b'D' | b'T') && second == 0 {
+                n_num_hydrogen_atoms = n_num_hydrogen_atoms.wrapping_add(1);
+            } else {
+                let pair = [first, if second != 0 { second } else { b' ' }];
+                if find_element(&chem_elements, pair)?.is_none() {
+                    let start = n_num_chem_elements
+                        .checked_mul(ELEM_NAME_LEN)
+                        .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+                    chem_elements
+                        .get_mut(start..start + ELEM_NAME_LEN)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        .copy_from_slice(&pair);
+                    n_num_chem_elements += 1;
                 }
             }
-            if n_num_chem_elements > 1 {
+        }
+        if n_num_chem_elements > 1 {
+            let byte_count = n_num_chem_elements * ELEM_NAME_LEN;
+            inchi_qsort(
+                &mut chem_elements[..byte_count],
+                n_num_chem_elements,
+                ELEM_NAME_LEN,
+                &mut CompChemElemLex,
+            )?;
+        }
+        if n_num_carbon_atoms != 0 {
+            if n_num_chem_elements != 0 {
                 let byte_count = n_num_chem_elements * ELEM_NAME_LEN;
-                inchi_qsort(
-                    &mut chem_elements[..byte_count],
-                    n_num_chem_elements,
-                    ELEM_NAME_LEN,
-                    &mut CompChemElemLex,
-                )?;
+                chem_elements.copy_within(0..byte_count, ELEM_NAME_LEN);
             }
-            if n_num_carbon_atoms != 0 {
-                if n_num_chem_elements != 0 {
-                    let byte_count = n_num_chem_elements * ELEM_NAME_LEN;
-                    chem_elements.copy_within(0..byte_count, ELEM_NAME_LEN);
-                }
-                chem_elements[..2].copy_from_slice(b"C ");
-                n_num_chem_elements += 1;
-            }
-            if n_num_hydrogen_atoms != 0 {
-                let start = ELEM_NAME_LEN * n_num_chem_elements;
-                chem_elements[start..start + 2].copy_from_slice(b"H ");
-                n_num_chem_elements += 1;
-            }
-
-            for (index, atom) in atoms.iter().enumerate() {
-                invariants[index] = ATOM_INVARIANT2::default();
+            chem_elements[..2].copy_from_slice(b"C ");
+            n_num_chem_elements += 1;
+        }
+        if n_num_hydrogen_atoms != 0 {
+            let start = ELEM_NAME_LEN * n_num_chem_elements;
+            chem_elements[start..start + 2].copy_from_slice(b"H ");
+            n_num_chem_elements += 1;
+        }
+        for index in 0..num_atoms {
+            let pointer = pAtomInvariant
+                .offset(i64::from(index))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            // Valid atom/group/output allocations have distinct canonical types.
+            heap.with_slice_mut_and_heap(pointer, |invariants, heap| {
+                let invariant = invariants
+                    .first_mut()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                *invariant = ATOM_INVARIANT2::default();
+                let atom = heap.element_signed(at, index)?;
                 let pair = [
                     atom.elname[0] as u8,
                     if atom.elname[1] != 0 {
@@ -8209,24 +9757,24 @@ pub(crate) fn FillOutAtomInvariant2(
                         b' '
                     },
                 ];
-                let hill_order = find_element(&chem_elements, pair)
+                let hill_order = find_element(&chem_elements, pair)?
                     .map(|offset| offset / ELEM_NAME_LEN + 1)
                     .unwrap_or(n_num_chem_elements);
-                invariants[index].val[tagAtInvariantIndexes_AT_INV_HILL_ORDER as usize] =
+                invariant.val[tagAtInvariantIndexes_AT_INV_HILL_ORDER as usize] =
                     hill_order as AT_NUMB;
-                invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS as usize] =
+                invariant.val[tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS as usize] =
                     atom.valence as AT_NUMB;
                 if bHydrogensInRanks != 0 {
-                    invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_H as usize] =
-                        if t_groups.is_some() && atom.endpoint > 0 {
+                    invariant.val[tagAtInvariantIndexes_AT_INV_NUM_H as usize] =
+                        if !t_group_pointer.is_null() && atom.endpoint > 0 {
                             0
                         } else {
                             atom.num_H as AT_NUMB
                         };
                 }
                 if bHydrogensFixedInRanks != 0 {
-                    invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_H_FIX as usize] =
-                        if t_groups.is_some() && atom.endpoint > 0 {
+                    invariant.val[tagAtInvariantIndexes_AT_INV_NUM_H_FIX as usize] =
+                        if !t_group_pointer.is_null() && atom.endpoint > 0 {
                             atom.num_H as AT_NUMB
                         } else {
                             0
@@ -8234,66 +9782,80 @@ pub(crate) fn FillOutAtomInvariant2(
                 }
                 let group_index = i32::from(atom.endpoint).wrapping_sub(1);
                 if bDigraph == 0
-                    && let Some(groups) = t_groups
+                    && !t_group_pointer.is_null()
                     && group_index >= 0
                     && group_index < num_t_groups
                 {
-                    let group = groups
-                        .get(group_index as usize)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_TG_ENDPOINTS as usize] =
+                    let group = heap.element_signed(t_group_pointer.as_const(), group_index)?;
+                    invariant.val[tagAtInvariantIndexes_AT_INV_NUM_TG_ENDPOINTS as usize] =
                         group.nNumEndpoints;
                     for j in 0..T_NUM_NO_ISOTOPIC as usize {
-                        invariants[index].val
-                            [tagAtInvariantIndexes_AT_INV_TG_NUMBERS as usize + j] = group.num[j];
+                        invariant.val[tagAtInvariantIndexes_AT_INV_TG_NUMBERS as usize + j] =
+                            group.num[j];
                     }
                     for j in 0..num_tautomer_iso as usize {
-                        invariants[index].val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] =
+                        invariant.val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] =
                             group.num[j + T_NUM_NO_ISOTOPIC as usize];
                     }
                 }
-                invariants[index].iso_sort_key = if bIgnoreIsotopic != 0 {
+                invariant.iso_sort_key = if bIgnoreIsotopic != 0 {
                     0
                 } else {
                     atom.iso_sort_key
                 };
-            }
-        } else {
-            invariants.fill(ATOM_INVARIANT2::default());
+                Ok(())
+            })?;
         }
-
-        for index in atom_count..total_count {
-            let group_index = index - atom_count;
-            invariants[index] = ATOM_INVARIANT2::default();
-            let Some(groups) = t_groups else {
-                continue;
-            };
-            invariants[index].val[tagAtInvariantIndexes_AT_INV_HILL_ORDER as usize] =
+    } else {
+        // This native memset uses num_at_tg, independently of num_atoms.
+        // Retain bounded memset errors (including negative counts/NULL views).
+        let total_count =
+            usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        heap.slice_mut(pAtomInvariant)?
+            .get_mut(..total_count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?
+            .fill(ATOM_INVARIANT2::default());
+    }
+    for index in num_atoms..num_at_tg {
+        let group_index = index
+            .checked_sub(num_atoms)
+            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+        let pointer = pAtomInvariant
+            .offset(i64::from(index))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        heap.with_slice_mut_and_heap(pointer, |invariants, heap| {
+            let invariant = invariants
+                .first_mut()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            *invariant = ATOM_INVARIANT2::default();
+            if t_group_pointer.is_null() {
+                return Ok(());
+            }
+            invariant.val[tagAtInvariantIndexes_AT_INV_HILL_ORDER as usize] =
                 if bTautGroupsOnly != 0 {
                     num_at_tg as AT_NUMB
                 } else {
                     (n_num_chem_elements + 1) as AT_NUMB
                 };
-            invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS as usize] =
+            invariant.val[tagAtInvariantIndexes_AT_INV_NUM_CONNECTIONS as usize] =
                 (MAXVAL + 1) as AT_NUMB;
-            if (group_index as i32) < num_t_groups {
-                let group = groups
-                    .get(group_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                invariants[index].val[tagAtInvariantIndexes_AT_INV_NUM_TG_ENDPOINTS as usize] =
+            if group_index < num_t_groups {
+                let group = heap.element_signed(t_group_pointer.as_const(), group_index)?;
+                invariant.val[tagAtInvariantIndexes_AT_INV_NUM_TG_ENDPOINTS as usize] =
                     group.nNumEndpoints;
                 for j in 0..T_NUM_NO_ISOTOPIC as usize {
-                    invariants[index].val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] =
+                    invariant.val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] =
                         group.num[j];
                 }
                 for j in 0..num_tautomer_iso as usize {
-                    invariants[index].val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] =
+                    invariant.val[tagAtInvariantIndexes_AT_INV_TAUT_ISO as usize + j] =
                         group.num[j + T_NUM_NO_ISOTOPIC as usize];
                 }
             }
-        }
-        Ok(())
-    })
+            Ok(())
+        })?;
+    }
+    Ok(())
 }
 
 #[allow(non_snake_case)]
@@ -8371,11 +9933,9 @@ pub(crate) fn CleanCt(
     if Ct.is_null() {
         return Ok(0);
     }
-    let index = usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let value = heap
-        .slice_mut(Ct)?
-        .get_mut(index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: The NULL short-circuit precedes the signed element access.
+    // One checked resolution, no allocation, clone or prefix traversal.
+    let value = heap.element_signed_mut(Ct, len)?;
     if *value == EMPTY_CT as AT_RANK {
         *value = 0;
         return Ok(1);
@@ -8559,16 +10119,6 @@ fn source_prefix_equal<T: PartialEq + 'static>(
     Ok(left == right)
 }
 
-fn con_table_is_usable(table: &ConTable, data: &CANON_DATA) -> bool {
-    !table.Ctbl.is_null()
-        && !table.nextCtblPos.is_null()
-        && !table.nextAtRank.is_null()
-        && (data.NumH.is_null() || !table.NumH.is_null())
-        && (data.NumHfixed.is_null() || !table.NumHfixed.is_null())
-        && (data.maxlen_iso_sort_key == 0 || !table.iso_sort_key.is_null())
-        && (data.iso_exchg_atnos.is_null() || !table.iso_exchg_atnos.is_null())
-}
-
 fn free_con_table(
     heap: &mut SourceHeap,
     pointer: SourceMutPointer<ConTable>,
@@ -8579,18 +10129,6 @@ fn free_con_table(
     let mut table = source_clone(heap, pointer, 0)?;
     CTableFree(heap, Some(&mut table))?;
     inchi_free(heap, pointer)
-}
-
-fn sync_partition_stack(
-    heap: &mut SourceHeap,
-    stack: SourceMutPointer<SourceMutPointer<AT_RANK>>,
-    partitions: &[Partition],
-) -> Result<(), SourceHeapError> {
-    for (index, partition) in partitions.iter().enumerate() {
-        source_set(heap, stack, (index * 2) as i32, partition.Rank)?;
-        source_set(heap, stack, (index * 2 + 1) as i32, partition.AtNumber)?;
-    }
-    Ok(())
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -8604,12 +10142,12 @@ pub(crate) fn GetBaseCanonRanking(
     sizes: &[ATOM_SIZES; TAUT_NUM as usize],
     pBCN: &mut BCN,
     ulTimeOutTime: SourceMutPointer<inchiTime>,
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut impl CanonicalTarget,
     bFixIsoFixedH: i32,
     LargeMolecules: i32,
     user_action: Option<fn() -> u32>,
     console_quit: Option<fn() -> i32>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:5105 GetBaseCanonRanking
     // INCHI✔️❌: int GetBaseCanonRanking( INCHI_CLOCK *ic,
@@ -10427,12 +11965,26 @@ pub(crate) fn GetBaseCanonRanking(
     // INCHI✔️❌: #define USE_ISO_SORT_KEY_HFIXED 0
     // END INCHI ACTIVE MACRO CONFIGURATION: GetBaseCanonRanking
 
-    // CTableCreate does not require nextAtRank, iso_sort_key, or
-    // iso_exchg_atnos for success, although CanonGraph later dereferences each
-    // requested field. Allocation failure at those ordinals has no defined C
-    // result. Rust returns CT_OUT_OF_RAM before dereference and runs the source
-    // cleanup order. The behavioral marker covers the source-defined state
-    // space; it does not claim a return-value match for undefined C execution.
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:5610..5611 C405 copied phase 5610
+    //         if (( Ct_Temp = (ConTable *) inchi_calloc( 1, sizeof( *Ct_Temp ) ) ) &&
+    //              CTableCreate( Ct_Temp, num_atoms, pCD + iOther ))
+    // END VERBATIM SOURCE FRAGMENT: C405 copied phase 5610
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:5784..5785 C405 copied phase 5784
+    //             if (( Ct_Temp = (ConTable *) inchi_calloc( 1, sizeof( *Ct_Temp ) ) ) &&
+    //                  CTableCreate( Ct_Temp, num_atoms, pCD + iOther ))
+    // END VERBATIM SOURCE FRAGMENT: C405 copied phase 5784
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:6193..6194 C405 copied phase 6193
+    //                     if (( Ct_Temp = (ConTable *) inchi_calloc( 1, sizeof( *Ct_Temp ) ) ) &&
+    //                          CTableCreate( Ct_Temp, num_atoms, pCD + iBase ))
+    // END VERBATIM SOURCE FRAGMENT: C405 copied phase 6193
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:6582..6583 C405 copied phase 6582
+    //                 if (( Ct_Temp = (ConTable *) inchi_calloc( 1, sizeof( *Ct_Temp ) ) ) &&
+    //                      CTableCreate( Ct_Temp, num_atoms, pCD + iOther ))
+    // END VERBATIM SOURCE FRAGMENT: C405 copied phase 6582
+    // INCHI✔️✔️: Every copied phase trusts CTableCreate status exactly as
+    // source. No stricter post-construction field validator; typed errors
+    // remain at reached dereferences. Fixed extra probes are eliminated.
+    // No output/cleanup/allocator/ranking/alias or independent guard change.
 
     let mut ret = 0_i32;
     let mut i_base = TAUT_NON as usize;
@@ -10502,7 +12054,7 @@ pub(crate) fn GetBaseCanonRanking(
     let mut ct_temp = SourceMutPointer::<ConTable>::null();
 
     macro_rules! alloc_or_exit {
-        ($ty:ty, $count:expr, $source_size:expr, $label:lifetime) => {{
+        ($heap:expr, $ty:ty, $count:expr, $source_size:expr, $label:lifetime) => {{
             let count = match u64::try_from($count) {
                 Ok(count) => count,
                 Err(_) => {
@@ -10510,7 +12062,7 @@ pub(crate) fn GetBaseCanonRanking(
                     break $label;
                 }
             };
-            match inchi_calloc::<$ty>(heap, count, $source_size) {
+            match inchi_calloc::<$ty>($heap, count, $source_size) {
                 Ok(pointer) => pointer,
                 Err(SourceHeapError::AllocationFailed) => {
                     ret = CT_OUT_OF_RAM;
@@ -10521,1356 +12073,326 @@ pub(crate) fn GetBaseCanonRanking(
         }};
     }
 
-    'source: {
-        let taut_yes = TAUT_YES as usize;
-        let taut_non = TAUT_NON as usize;
-        let has_taut_input = !at[taut_yes].is_null() && sizes[taut_yes].nLenCT != 0;
-        let taut_info_is_active = t_group_info.as_deref().is_some_and(|info| {
-            sizes[taut_yes].nLenLinearCTTautomer > 0
-                && ((!info.t_group.is_null() && info.num_t_groups > 0)
-                    || (info.tni.bNormalizationFlags & u64::from(FLAG_NORM_CONSIDER_TAUT)) != 0
-                    || (info.nNumIsotopicEndpoints > 1
-                        && (info.bTautFlagsDone
-                            & u64::from(
-                                TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
-                            ))
-                            != 0))
-        });
+    let execution = (|| -> Result<(), SourceHeapError> {
+        'before_cg: {
+            let taut_yes = TAUT_YES as usize;
+            let taut_non = TAUT_NON as usize;
+            let has_taut_input = !at[taut_yes].is_null() && sizes[taut_yes].nLenCT != 0;
+            let taut_info_is_active = t_group_info.as_deref().is_some_and(|info| {
+                sizes[taut_yes].nLenLinearCTTautomer > 0
+                    && ((!info.t_group.is_null() && info.num_t_groups > 0)
+                        || (info.tni.bNormalizationFlags & u64::from(FLAG_NORM_CONSIDER_TAUT)) != 0
+                        || (info.nNumIsotopicEndpoints > 1
+                            && (info.bTautFlagsDone
+                                & u64::from(
+                                    TG_FLAG_FOUND_ISOTOPIC_H_DONE
+                                        | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
+                                ))
+                                != 0))
+            });
 
-        if has_taut_input && taut_info_is_active {
-            i_base = taut_yes;
-            b_req_taut = 1;
-            let info = t_group_info
-                .as_deref()
-                .ok_or(SourceHeapError::NullPointer)?;
-            if !at[taut_non].is_null() && sizes[taut_non].nLenCT != 0 {
-                i_other = taut_non;
-                b_req_non_taut = 1;
-            } else {
+            if has_taut_input && taut_info_is_active {
+                i_base = taut_yes;
+                b_req_taut = 1;
+                let info = t_group_info
+                    .as_deref()
+                    .ok_or(SourceHeapError::NullPointer)?;
+                if !at[taut_non].is_null() && sizes[taut_non].nLenCT != 0 {
+                    i_other = taut_non;
+                    b_req_non_taut = 1;
+                } else {
+                    i_other = i_base;
+                }
+                let use_iso_aux = sizes[i_base].nLenIsotopicEndpoints > 1
+                    && (info.bTautFlagsDone
+                        & u64::from(
+                            TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE,
+                        ))
+                        != 0;
+                b_use_iso_aux_base[i_base] = use_iso_aux;
+            } else if !at[taut_non].is_null() && sizes[taut_non].nLenCT != 0 {
+                i_base = taut_non;
                 i_other = i_base;
-            }
-            let use_iso_aux = sizes[i_base].nLenIsotopicEndpoints > 1
-                && (info.bTautFlagsDone
-                    & u64::from(TG_FLAG_FOUND_ISOTOPIC_H_DONE | TG_FLAG_FOUND_ISOTOPIC_ATOM_DONE))
-                    != 0;
-            b_use_iso_aux_base[i_base] = use_iso_aux;
-        } else if !at[taut_non].is_null() && sizes[taut_non].nLenCT != 0 {
-            i_base = taut_non;
-            i_other = i_base;
-            b_req_non_taut = 1;
-            num_at_tg = num_atoms;
-        } else if has_taut_input {
-            i_base = taut_yes;
-            i_other = i_base;
-            b_req_non_taut = 1;
-            num_at_tg = num_atoms;
-            let use_iso_aux = sizes[i_base].nLenIsotopicEndpoints > 1;
-            b_use_iso_aux_base[i_base] = use_iso_aux;
-        } else {
-            ret = CT_UNKNOWN_ERR;
-            break 'source;
-        }
-
-        if b_req_taut != 0 {
-            let info = t_group_info
-                .as_deref_mut()
-                .ok_or(SourceHeapError::NullPointer)?;
-            b_taut_ignore_isotopic = info.bIgnoreIsotopic;
-            info.bIgnoreIsotopic = 1;
-        }
-
-        let at_base = at[i_base];
-        p_atom_invariant = alloc_or_exit!(ATOM_INVARIANT2, num_max, 40, 'source);
-        n_symm_rank_no_h = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-        n_canon_rank_no_h = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-        n_atom_number_canon_no_h = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
-        n_rank = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-        n_atom_number = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
-        n_temp_rank = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-        n_rank_aux = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-        n_atom_number_aux = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
-        p_atom_invariant_aux = alloc_or_exit!(ATOM_INVARIANT2, num_max, 40, 'source);
-
-        if b_req_taut != 0 {
-            neigh_list[taut_yes] = CreateNeighList(
-                heap,
-                num_atoms,
-                num_at_tg,
-                at_base.as_const(),
-                0,
-                t_group_info.as_deref(),
-            )?;
-            if neigh_list[taut_yes].is_null() {
-                ret = CT_OUT_OF_RAM;
-                break 'source;
-            }
-            neigh_list[taut_non] =
-                CreateNeighList(heap, num_atoms, num_atoms, at_base.as_const(), 0, None)?;
-        } else {
-            neigh_list[taut_non] =
-                CreateNeighList(heap, num_atoms, num_atoms, at_base.as_const(), 0, None)?;
-        }
-        if neigh_list[taut_non].is_null() {
-            ret = CT_OUT_OF_RAM;
-            break 'source;
-        }
-
-        pBCN.nMaxLenRankStack = 0;
-        pBCN.num_max = num_max;
-        pBCN.num_at_tg = num_at_tg;
-        pBCN.num_atoms = num_atoms;
-        pBCN.ulTimeOutTime = ulTimeOutTime;
-
-        FillOutAtomInvariant2(
-            heap,
-            at_base.as_const(),
-            num_atoms,
-            num_atoms,
-            p_atom_invariant,
-            1,
-            0,
-            0,
-            0,
-            0,
-            None,
-        )?;
-        let mut n_num_curr_ranks = SetInitialRanks2(
-            heap,
-            num_atoms,
-            p_atom_invariant,
-            n_rank,
-            n_atom_number,
-            pCG,
-        )?;
-        n_num_curr_ranks = DifferentiateRanks2(
-            heap,
-            pCG,
-            num_atoms,
-            neigh_list[taut_non],
-            n_num_curr_ranks,
-            n_rank,
-            n_temp_rank,
-            n_atom_number,
-            &mut l_count,
-            0,
-        )?;
-
-        let n_max_len_rank_stack = 2_i32
-            .wrapping_mul(num_at_tg.wrapping_sub(n_num_curr_ranks))
-            .wrapping_add(8);
-        pBCN.pRankStack = alloc_or_exit!(
-            SourceMutPointer<AT_RANK>,
-            n_max_len_rank_stack,
-            SOURCE_SIZEOF_POINTER,
-            'source
-        );
-        pBCN.nMaxLenRankStack = n_max_len_rank_stack;
-        source_set(heap, pBCN.pRankStack, 0, n_rank)?;
-        source_set(heap, pBCN.pRankStack, 1, n_atom_number)?;
-        let partition_count = usize::try_from(n_max_len_rank_stack / 2)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let mut partitions = vec![Partition::default(); partition_count];
-        partitions[0] = Partition {
-            Rank: n_rank,
-            AtNumber: n_atom_number,
-        };
-
-        let data = &mut canon_data[i_other];
-        data.ulTimeOutTime = pBCN.ulTimeOutTime;
-        data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
-        data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
-        data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
-        ret = CanonGraph(
-            heap,
-            ic,
-            pCG,
-            num_atoms,
-            num_atoms,
-            num_max,
-            0,
-            neigh_list[taut_non],
-            &mut partitions,
-            n_symm_rank_no_h,
-            n_canon_rank_no_h,
-            n_atom_number_canon_no_h,
-            data,
-            &mut canon_counts,
-            SourceMutPointer::null(),
-            Some(&mut ct_no_h),
-            LargeMolecules,
-            user_action,
-            console_quit,
-            clock_result,
-        )?;
-        sync_partition_stack(heap, pBCN.pRankStack, &partitions)?;
-        if ret < 0 {
-            if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
-                ret = CT_CANON_ERR;
-            }
-            break 'source;
-        }
-
-        let mut changed = 0_i32;
-        n_num_curr_ranks = FixCanonEquivalenceInfo(
-            heap,
-            pCG,
-            num_atoms,
-            n_symm_rank_no_h,
-            n_rank,
-            n_temp_rank,
-            n_atom_number,
-            Some(&mut changed),
-        )?;
-        if changed & 3 != 0 {
-            if !ct_no_h.is_null() {
-                let mut table = source_clone(heap, ct_no_h, 0)?;
-                CTableFree(heap, Some(&mut table))?;
-                inchi_free(heap, ct_no_h)?;
-                ct_no_h = SourceMutPointer::null();
-            }
-            canon_data[i_other].nCanonFlags |= CANON_FLAG_NO_H_RECANON as i32;
-            ret = CanonGraph(
-                heap,
-                ic,
-                pCG,
-                num_atoms,
-                num_atoms,
-                num_max,
-                0,
-                neigh_list[taut_non],
-                &mut partitions,
-                n_symm_rank_no_h,
-                n_canon_rank_no_h,
-                n_atom_number_canon_no_h,
-                &mut canon_data[i_other],
-                &mut canon_counts,
-                SourceMutPointer::null(),
-                Some(&mut ct_no_h),
-                LargeMolecules,
-                user_action,
-                console_quit,
-                clock_result,
-            )?;
-            sync_partition_stack(heap, pBCN.pRankStack, &partitions)?;
-            if ret < 0 {
-                if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
-                    ret = CT_CANON_ERR;
-                }
-                break 'source;
-            }
-        }
-
-        max_len_num_h_no_taut_h = num_atoms.wrapping_add(1);
-        n_symm_rank_no_taut_h = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-        n_canon_rank_no_taut_h = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-        n_atom_number_canon_no_taut_h = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
-        num_h_no_taut_h = alloc_or_exit!(NUM_H, max_len_num_h_no_taut_h, 2, 'source);
-        let atom_count =
-            usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        for index in 0..atom_count {
-            let atom = heap
-                .slice(at_base.as_const())?
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let value = if atom.endpoint == 0 && atom.num_H != 0 {
-                i32::from(atom.num_H).wrapping_add(BASE_H_NUMBER as i32) as NUM_H
+                b_req_non_taut = 1;
+                num_at_tg = num_atoms;
+            } else if has_taut_input {
+                i_base = taut_yes;
+                i_other = i_base;
+                b_req_non_taut = 1;
+                num_at_tg = num_atoms;
+                let use_iso_aux = sizes[i_base].nLenIsotopicEndpoints > 1;
+                b_use_iso_aux_base[i_base] = use_iso_aux;
             } else {
-                EMPTY_H_NUMBER as NUM_H
-            };
-            source_set(heap, num_h_no_taut_h, index as i32, value)?;
-        }
-
-        {
-            let data = &mut canon_data[i_other];
-            data.LinearCT = SourceMutPointer::null();
-            data.NumH = num_h_no_taut_h;
-            data.NumHfixed = SourceMutPointer::null();
-            data.iso_sort_key = SourceMutPointer::null();
-            data.iso_exchg_atnos = SourceMutPointer::null();
-            data.ulTimeOutTime = pBCN.ulTimeOutTime;
-            data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
-            data.maxlenNumH = max_len_num_h_no_taut_h;
-            data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
-            data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
-            len_num_h_no_taut_h = num_atoms;
-            data.lenNumH = len_num_h_no_taut_h;
-            data.lenNumHfixed = 0;
-            data.len_iso_sort_key = 0;
-            data.maxlen_iso_sort_key = 0;
-            data.len_iso_exchg_atnos = 0;
-            data.maxlen_iso_exchg_atnos = 0;
-            data.nAuxRank = SourceMutPointer::null();
-        }
-
-        for value in heap
-            .slice_mut(n_temp_rank)?
-            .get_mut(..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-        {
-            *value = 0;
-        }
-        for index in 0..atom_count {
-            let symmetry = source_get(heap, n_symm_rank_no_h, index as i32)?;
-            let class_index = usize::from(symmetry.wrapping_sub(1));
-            let representatives = heap.slice_mut(n_temp_rank)?;
-            if representatives
-                .get(class_index)
-                .copied()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                < index as AT_RANK
-            {
-                representatives[class_index] = index as AT_RANK;
-            }
-        }
-        let mut needs_no_taut_h_canon = false;
-        for index in 0..atom_count {
-            let symmetry = source_get(heap, n_symm_rank_no_h, index as i32)?;
-            let representative = source_get(heap, n_temp_rank, i32::from(symmetry) - 1)?;
-            if source_get(heap, num_h_no_taut_h, index as i32)?
-                != source_get(heap, num_h_no_taut_h, i32::from(representative))?
-            {
-                canon_data[i_other].nCanonFlags |= CANON_FLAG_NO_TAUT_H_DIFF as i32;
-                needs_no_taut_h_canon = true;
-                break;
-            }
-        }
-
-        if needs_no_taut_h_canon {
-            for value in heap
-                .slice_mut(p_atom_invariant_aux)?
-                .get_mut(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-            {
-                *value = ATOM_INVARIANT2::default();
-            }
-            for index in 0..atom_count {
-                let symmetry = source_get(heap, n_symm_rank_no_h, index as i32)?;
-                let hydrogen = source_get(heap, num_h_no_taut_h, index as i32)? as AT_NUMB;
-                let invariant = heap
-                    .slice_mut(p_atom_invariant_aux)?
-                    .get_mut(index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                invariant.val[0] = symmetry;
-                invariant.val[1] = hydrogen;
-            }
-            n_num_curr_ranks = SetInitialRanks2(
-                heap,
-                num_atoms,
-                p_atom_invariant_aux,
-                n_rank_aux,
-                n_atom_number_aux,
-                pCG,
-            )?;
-            n_num_curr_ranks = DifferentiateRanks2(
-                heap,
-                pCG,
-                num_atoms,
-                neigh_list[taut_non],
-                n_num_curr_ranks,
-                n_rank_aux,
-                n_temp_rank,
-                n_atom_number_aux,
-                &mut l_count,
-                0,
-            )?;
-            canon_data[i_other].nAuxRank = n_rank_aux;
-            ret = CanonGraph(
-                heap,
-                ic,
-                pCG,
-                num_atoms,
-                num_atoms,
-                num_max,
-                1,
-                neigh_list[taut_non],
-                &mut partitions,
-                n_symm_rank_no_taut_h,
-                n_canon_rank_no_taut_h,
-                n_atom_number_canon_no_taut_h,
-                &mut canon_data[i_other],
-                &mut canon_counts,
-                ct_no_h,
-                Some(&mut ct_no_taut_h),
-                LargeMolecules,
-                user_action,
-                console_quit,
-                clock_result,
-            )?;
-            sync_partition_stack(heap, pBCN.pRankStack, &partitions)?;
-            if ret < 0 {
-                if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
-                    ret = CT_CANON_ERR;
-                }
-                break 'source;
-            }
-        } else {
-            ct_temp = alloc_or_exit!(ConTable, 1, 104, 'source);
-            let mut temporary = ConTable::default();
-            if CTableCreate(heap, &mut temporary, num_atoms, &canon_data[i_other])? == 0
-                || !con_table_is_usable(&temporary, &canon_data[i_other])
-            {
-                ret = CT_OUT_OF_RAM;
-                heap.slice_mut(ct_temp)?[0] = temporary;
-                break 'source;
-            }
-            let no_h = source_clone(heap, ct_no_h, 0)?;
-            CtFullCopy(heap, &mut temporary, &no_h)?;
-            for index in 0..atom_count {
-                let rank = source_get(heap, n_canon_rank_no_h, index as i32)?;
-                source_set(
-                    heap,
-                    temporary.NumH,
-                    i32::from(rank) - 1,
-                    source_get(heap, num_h_no_taut_h, index as i32)?,
-                )?;
-            }
-            temporary.lenNumH = num_atoms;
-            heap.slice_mut(ct_temp)?[0] = temporary;
-            ct_no_taut_h = ct_temp;
-            ct_temp = SourceMutPointer::null();
-            for index in 0..atom_count {
-                source_set(
-                    heap,
-                    n_symm_rank_no_taut_h,
-                    index as i32,
-                    source_get(heap, n_symm_rank_no_h, index as i32)?,
-                )?;
-                source_set(
-                    heap,
-                    n_canon_rank_no_taut_h,
-                    index as i32,
-                    source_get(heap, n_canon_rank_no_h, index as i32)?,
-                )?;
-                source_set(
-                    heap,
-                    n_atom_number_canon_no_taut_h,
-                    index as i32,
-                    source_get(heap, n_atom_number_canon_no_h, index as i32)?,
-                )?;
-            }
-        }
-
-        if sizes[i_other].num_isotopic_atoms != 0
-            && sizes[i_other].bIgnoreIsotopic == 0
-            && b_req_taut == 0
-            && b_req_non_taut != 0
-        {
-            max_len_iso_sort_key_no_taut_h = num_atoms.wrapping_add(1);
-            n_symm_rank_no_taut_h_iso = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-            n_canon_rank_no_taut_h_iso = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-            n_atom_number_canon_no_taut_h_iso = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
-            iso_sort_key_no_taut_h = alloc_or_exit!(
-                AT_ISO_SORT_KEY,
-                max_len_iso_sort_key_no_taut_h,
-                8,
-                'source
-            );
-
-            let mut num_iso_no_taut_h = 0_i32;
-            for index in 0..atom_count {
-                let atom = heap
-                    .slice(at_base.as_const())?
-                    .get(index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let key = if atom.endpoint != 0 {
-                    make_iso_sort_key(i32::from(atom.iso_atw_diff), 0, 0, 0)
-                } else {
-                    make_iso_sort_key(
-                        i32::from(atom.iso_atw_diff),
-                        i32::from(atom.num_iso_H[0]),
-                        i32::from(atom.num_iso_H[1]),
-                        i32::from(atom.num_iso_H[2]),
-                    )
-                };
-                if key != 0 {
-                    num_iso_no_taut_h = num_iso_no_taut_h.wrapping_add(1);
-                    source_set(heap, iso_sort_key_no_taut_h, index as i32, key)?;
-                } else {
-                    source_set(
-                        heap,
-                        iso_sort_key_no_taut_h,
-                        index as i32,
-                        AT_ISO_SORT_KEY::MAX,
-                    )?;
-                }
+                ret = CT_UNKNOWN_ERR;
+                break 'before_cg;
             }
 
-            {
-                let data = &mut canon_data[i_other];
-                data.LinearCT = SourceMutPointer::null();
-                data.NumH = num_h_no_taut_h;
-                data.NumHfixed = SourceMutPointer::null();
-                data.iso_sort_key = iso_sort_key_no_taut_h;
-                data.iso_exchg_atnos = SourceMutPointer::null();
-                data.ulTimeOutTime = pBCN.ulTimeOutTime;
-                data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
-                data.maxlenNumH = max_len_num_h_no_taut_h;
-                data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
-                data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
-                data.lenNumH = len_num_h_no_taut_h;
-                data.lenNumHfixed = 0;
-                len_iso_sort_key_no_taut_h = num_atoms;
-                data.len_iso_sort_key = len_iso_sort_key_no_taut_h;
-                data.maxlen_iso_sort_key = max_len_iso_sort_key_no_taut_h;
-                data.len_iso_exchg_atnos = 0;
-                data.maxlen_iso_exchg_atnos = 0;
-                data.nAuxRank = SourceMutPointer::null();
+            if b_req_taut != 0 {
+                let info = t_group_info
+                    .as_deref_mut()
+                    .ok_or(SourceHeapError::NullPointer)?;
+                b_taut_ignore_isotopic = info.bIgnoreIsotopic;
+                info.bIgnoreIsotopic = 1;
             }
 
-            let mut needs_isotope_canon = false;
-            if num_iso_no_taut_h != 0 {
-                for value in heap
-                    .slice_mut(n_temp_rank)?
-                    .get_mut(
-                        ..usize::try_from(num_max)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                {
-                    *value = 0;
-                }
-                for index in 0..atom_count {
-                    let symmetry = source_get(heap, n_symm_rank_no_taut_h, index as i32)?;
-                    let class_index = i32::from(symmetry) - 1;
-                    if source_get(heap, n_temp_rank, class_index)? < index as AT_RANK {
-                        source_set(heap, n_temp_rank, class_index, index as AT_RANK)?;
-                    }
-                }
-                for index in 0..atom_count {
-                    let symmetry = source_get(heap, n_symm_rank_no_taut_h, index as i32)?;
-                    let representative = source_get(heap, n_temp_rank, i32::from(symmetry) - 1)?;
-                    if source_get(heap, iso_sort_key_no_taut_h, index as i32)?
-                        != source_get(heap, iso_sort_key_no_taut_h, i32::from(representative))?
-                    {
-                        canon_data[i_other].nCanonFlags |= CANON_FLAG_ISO_ONLY_NON_TAUT_DIFF as i32;
-                        needs_isotope_canon = true;
-                        break;
-                    }
-                }
-            }
+            let at_base = at[i_base];
+            p_atom_invariant = alloc_or_exit!(heap, ATOM_INVARIANT2, num_max, 40, 'before_cg);
+            n_symm_rank_no_h = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'before_cg);
+            n_canon_rank_no_h = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'before_cg);
+            n_atom_number_canon_no_h = alloc_or_exit!(heap, AT_NUMB, num_max, 2, 'before_cg);
+            n_rank = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'before_cg);
+            n_atom_number = alloc_or_exit!(heap, AT_NUMB, num_max, 2, 'before_cg);
+            n_temp_rank = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'before_cg);
+            n_rank_aux = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'before_cg);
+            n_atom_number_aux = alloc_or_exit!(heap, AT_NUMB, num_max, 2, 'before_cg);
+            p_atom_invariant_aux = alloc_or_exit!(heap, ATOM_INVARIANT2, num_max, 40, 'before_cg);
 
-            if needs_isotope_canon {
-                for value in heap
-                    .slice_mut(p_atom_invariant_aux)?
-                    .get_mut(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                {
-                    *value = ATOM_INVARIANT2::default();
-                }
-                for index in 0..atom_count {
-                    let symmetry = source_get(heap, n_symm_rank_no_taut_h, index as i32)?;
-                    let isotope = source_get(heap, iso_sort_key_no_taut_h, index as i32)?;
-                    let invariant = heap
-                        .slice_mut(p_atom_invariant_aux)?
-                        .get_mut(index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    invariant.val[0] = symmetry;
-                    invariant.iso_sort_key = isotope;
-                }
-                n_num_curr_ranks = SetInitialRanks2(
+            if b_req_taut != 0 {
+                neigh_list[taut_yes] = CreateNeighList(
                     heap,
                     num_atoms,
-                    p_atom_invariant_aux,
-                    n_rank_aux,
-                    n_atom_number_aux,
-                    pCG,
-                )?;
-                n_num_curr_ranks = DifferentiateRanks2(
-                    heap,
-                    pCG,
-                    num_atoms,
-                    neigh_list[taut_non],
-                    n_num_curr_ranks,
-                    n_rank_aux,
-                    n_temp_rank,
-                    n_atom_number_aux,
-                    &mut l_count,
+                    num_at_tg,
+                    at_base.as_const(),
                     0,
+                    t_group_info.as_deref(),
                 )?;
-                canon_data[i_other].nAuxRank = n_rank_aux;
-                ret = CanonGraph(
-                    heap,
-                    ic,
-                    pCG,
-                    num_atoms,
-                    num_atoms,
-                    num_max,
-                    1,
-                    neigh_list[taut_non],
-                    &mut partitions,
-                    n_symm_rank_no_taut_h_iso,
-                    n_canon_rank_no_taut_h_iso,
-                    n_atom_number_canon_no_taut_h_iso,
-                    &mut canon_data[i_other],
-                    &mut canon_counts,
-                    ct_no_taut_h,
-                    Some(&mut ct_no_taut_h_iso),
-                    LargeMolecules,
-                    user_action,
-                    console_quit,
-                    clock_result,
-                )?;
-                sync_partition_stack(heap, pBCN.pRankStack, &partitions)?;
-                if ret < 0 {
-                    if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
-                        ret = CT_CANON_ERR;
-                    }
-                    break 'source;
-                }
-            } else {
-                ct_temp = alloc_or_exit!(ConTable, 1, 104, 'source);
-                let mut temporary = ConTable::default();
-                if CTableCreate(heap, &mut temporary, num_atoms, &canon_data[i_other])? == 0
-                    || !con_table_is_usable(&temporary, &canon_data[i_other])
-                {
+                if neigh_list[taut_yes].is_null() {
                     ret = CT_OUT_OF_RAM;
-                    heap.slice_mut(ct_temp)?[0] = temporary;
-                    break 'source;
+                    break 'before_cg;
                 }
-                let no_taut_h = source_clone(heap, ct_no_taut_h, 0)?;
-                CtFullCopy(heap, &mut temporary, &no_taut_h)?;
-                for index in 0..atom_count {
-                    let rank = source_get(heap, n_canon_rank_no_taut_h, index as i32)?;
-                    source_set(
-                        heap,
-                        temporary.iso_sort_key,
-                        i32::from(rank) - 1,
-                        source_get(heap, iso_sort_key_no_taut_h, index as i32)?,
-                    )?;
-                }
-                temporary.len_iso_sort_key = num_atoms;
-                heap.slice_mut(ct_temp)?[0] = temporary;
-                ct_no_taut_h_iso = ct_temp;
-                ct_temp = SourceMutPointer::null();
-                for index in 0..atom_count {
-                    source_set(
-                        heap,
-                        n_symm_rank_no_taut_h_iso,
-                        index as i32,
-                        source_get(heap, n_symm_rank_no_taut_h, index as i32)?,
-                    )?;
-                    source_set(
-                        heap,
-                        n_canon_rank_no_taut_h_iso,
-                        index as i32,
-                        source_get(heap, n_canon_rank_no_taut_h, index as i32)?,
-                    )?;
-                    source_set(
-                        heap,
-                        n_atom_number_canon_no_taut_h_iso,
-                        index as i32,
-                        source_get(heap, n_atom_number_canon_no_taut_h, index as i32)?,
-                    )?;
-                }
+                neigh_list[taut_non] =
+                    CreateNeighList(heap, num_atoms, num_atoms, at_base.as_const(), 0, None)?;
+            } else {
+                neigh_list[taut_non] =
+                    CreateNeighList(heap, num_atoms, num_atoms, at_base.as_const(), 0, None)?;
             }
-        }
+            if neigh_list[taut_non].is_null() {
+                ret = CT_OUT_OF_RAM;
+                break 'before_cg;
+            }
 
-        if b_req_taut != 0 {
-            max_len_num_h = num_atoms
-                .wrapping_add(
-                    (T_NUM_NO_ISOTOPIC as i32).wrapping_mul(num_at_tg.wrapping_sub(num_atoms)),
-                )
-                .wrapping_add(1);
-            n_symm_rank_base = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-            n_canon_rank_base = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-            n_atom_number_canon_base = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
-            num_h = alloc_or_exit!(NUM_H, max_len_num_h, 2, 'source);
-
-            for index in 0..atom_count {
-                let atom = heap
-                    .slice(at_base.as_const())?
-                    .get(index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let value = if atom.endpoint == 0 && atom.num_H != 0 {
-                    i32::from(atom.num_H).wrapping_add(BASE_H_NUMBER as i32) as NUM_H
-                } else {
-                    EMPTY_H_NUMBER as NUM_H
-                };
-                source_set(heap, num_h, index as i32, value)?;
-            }
-            let info = t_group_info
-                .as_deref()
-                .ok_or(SourceHeapError::NullPointer)?;
-            let mut next_h = num_atoms;
-            let mut index = num_atoms;
-            while index < num_at_tg {
-                let group = source_clone(heap, info.t_group, index.wrapping_sub(num_atoms))?;
-                for value in group.num.iter().take(T_NUM_NO_ISOTOPIC as usize) {
-                    source_set(
-                        heap,
-                        num_h,
-                        next_h,
-                        if *value != 0 {
-                            i32::from(*value).wrapping_add(BASE_H_NUMBER as i32) as NUM_H
-                        } else {
-                            EMPTY_H_NUMBER as NUM_H
-                        },
-                    )?;
-                    next_h = next_h.wrapping_add(1);
-                }
-                index = index.wrapping_add(1);
-            }
-            len_num_h = next_h;
-
-            {
-                let data = &mut canon_data[i_base];
-                data.LinearCT = SourceMutPointer::null();
-                data.NumH = num_h;
-                data.NumHfixed = SourceMutPointer::null();
-                data.iso_sort_key = SourceMutPointer::null();
-                data.iso_exchg_atnos = SourceMutPointer::null();
-                data.ulTimeOutTime = pBCN.ulTimeOutTime;
-                data.nMaxLenLinearCT = sizes[i_base].nLenCT.wrapping_add(1);
-                data.maxlenNumH = max_len_num_h;
-                data.nLenLinearCT = sizes[i_base].nLenCT;
-                data.nLenCTAtOnly = sizes[i_base].nLenCTAtOnly;
-                data.lenNumH = len_num_h;
-                data.lenNumHfixed = 0;
-                data.len_iso_sort_key = 0;
-                data.maxlen_iso_sort_key = 0;
-                data.len_iso_exchg_atnos = 0;
-                data.maxlen_iso_exchg_atnos = 0;
-                data.nAuxRank = SourceMutPointer::null();
-            }
+            pBCN.nMaxLenRankStack = 0;
+            pBCN.num_max = num_max;
+            pBCN.num_at_tg = num_at_tg;
+            pBCN.num_atoms = num_atoms;
+            pBCN.ulTimeOutTime = ulTimeOutTime;
 
             FillOutAtomInvariant2(
                 heap,
                 at_base.as_const(),
                 num_atoms,
-                num_at_tg,
+                num_atoms,
                 p_atom_invariant,
                 1,
                 0,
                 0,
-                1,
-                1,
-                t_group_info.as_deref(),
+                0,
+                0,
+                None,
             )?;
-            for index in 0..atom_count {
-                let rank = source_get(heap, partitions[0].Rank, index as i32)?;
-                heap.slice_mut(p_atom_invariant)?[index].val[0] = rank;
-            }
-            n_num_curr_ranks = SetInitialRanks2(
+            let mut n_num_curr_ranks = SetInitialRanks2(
                 heap,
-                num_at_tg,
+                num_atoms,
                 p_atom_invariant,
                 n_rank,
                 n_atom_number,
                 pCG,
             )?;
-            n_num_curr_ranks = DifferentiateRanks4(
-                heap,
-                pCG,
-                num_at_tg,
-                neigh_list[taut_yes],
-                n_num_curr_ranks,
-                partitions[0].Rank,
-                n_temp_rank,
-                partitions[0].AtNumber,
-                num_atoms as AT_RANK,
-                &mut l_count,
-            )?;
+            // Native first initialization has now used CG. Its remaining callees
+            // all receive this SAME actual object; no child reads a CG arena ID.
+            // INCHI✔️❌: One phase loan, no metadata copies; C588 cost OPEN.
+            return pCG.reborrow_globals().with_mut(heap, |pCG, heap| {
+                'source: {
+                    n_num_curr_ranks = DifferentiateRanks2(
+                        heap,
+                        pCG,
+                        num_atoms,
+                        neigh_list[taut_non],
+                        n_num_curr_ranks,
+                        n_rank,
+                        n_temp_rank,
+                        n_atom_number,
+                        &mut l_count,
+                        0,
+                    )?;
 
-            for value in heap
-                .slice_mut(p_atom_invariant_aux)?
-                .get_mut(
-                    ..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-            {
-                *value = ATOM_INVARIANT2::default();
-            }
-            for index in 0..atom_count {
-                let symmetry = source_get(heap, n_symm_rank_no_taut_h, index as i32)?;
-                let hydrogen = source_get(heap, num_h, index as i32)? as AT_NUMB;
-                let invariant = &mut heap.slice_mut(p_atom_invariant_aux)?[index];
-                invariant.val[0] = symmetry;
-                invariant.val[1] = hydrogen;
-            }
-            let total_count =
-                usize::try_from(num_at_tg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            for index in atom_count..total_count {
-                heap.slice_mut(p_atom_invariant_aux)?[index].val[0] =
-                    source_get(heap, n_rank, index as i32)?;
-            }
-            n_num_curr_ranks = SetInitialRanks2(
-                heap,
-                num_at_tg,
-                p_atom_invariant_aux,
-                n_rank_aux,
-                n_atom_number_aux,
-                pCG,
-            )?;
-            n_num_curr_ranks = DifferentiateRanks4(
-                heap,
-                pCG,
-                num_at_tg,
-                neigh_list[taut_yes],
-                n_num_curr_ranks,
-                n_rank_aux,
-                n_temp_rank,
-                n_atom_number_aux,
-                num_atoms as AT_RANK,
-                &mut l_count,
-            )?;
-            canon_data[i_base].nAuxRank = n_rank_aux;
-            ret = CanonGraph(
-                heap,
-                ic,
-                pCG,
-                num_atoms,
-                num_at_tg,
-                num_max,
-                1,
-                neigh_list[taut_yes],
-                &mut partitions,
-                n_symm_rank_base,
-                n_canon_rank_base,
-                n_atom_number_canon_base,
-                &mut canon_data[i_base],
-                &mut canon_counts,
-                ct_no_taut_h,
-                Some(&mut ct_base),
-                LargeMolecules,
-                user_action,
-                console_quit,
-                clock_result,
-            )?;
-            sync_partition_stack(heap, pBCN.pRankStack, &partitions)?;
-            if ret < 0 {
-                if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
-                    ret = CT_CANON_ERR;
-                }
-                break 'source;
-            }
-
-            let needs_taut_isotope = (sizes[i_base].num_isotopic_atoms != 0
-                && sizes[i_base].bIgnoreIsotopic == 0)
-                || (sizes[i_base].bHasIsotopicTautGroups != 0 && b_taut_ignore_isotopic == 0)
-                || (b_use_iso_aux_base[i_base] && b_taut_ignore_isotopic == 0);
-            if needs_taut_isotope {
-                t_group_info
-                    .as_deref_mut()
-                    .ok_or(SourceHeapError::NullPointer)?
-                    .bIgnoreIsotopic = b_taut_ignore_isotopic;
-                n_symm_rank_base_iso = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-                n_canon_rank_base_iso = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-                n_atom_number_canon_base_iso = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
-                if b_use_iso_aux_base[i_base] {
-                    max_len_iso_exchg_atnos = num_max.wrapping_add(1);
-                    iso_exchg_atnos = alloc_or_exit!(i8, max_len_iso_exchg_atnos, 1, 'source);
-                }
-                max_len_iso_sort_key_base = num_max.wrapping_add(1);
-                iso_sort_key_base = alloc_or_exit!(
-                    AT_ISO_SORT_KEY,
-                    max_len_iso_sort_key_base,
-                    8,
-                    'source
-                );
-
-                let mut num_iso_no_taut_h = 0_i32;
-                let mut num_iso_no_aux_base = 0_i32;
-                if !iso_exchg_atnos.is_null() {
-                    len_iso_exchg_atnos = num_at_tg;
-                }
-                for index in 0..atom_count {
-                    let atom = heap.slice(at_base.as_const())?[index].clone();
-                    let key = if atom.endpoint != 0
-                        || (!iso_exchg_atnos.is_null()
-                            && (atom.cFlags & AT_FLAG_ISO_H_POINT as i8) != 0)
-                    {
-                        if !iso_exchg_atnos.is_null() && atom.endpoint == 0 {
-                            num_iso_no_aux_base = num_iso_no_aux_base.wrapping_add(1);
-                        }
-                        make_iso_sort_key(i32::from(atom.iso_atw_diff), 0, 0, 0)
-                    } else {
-                        if !iso_exchg_atnos.is_null() {
-                            source_set(heap, iso_exchg_atnos, index as i32, 1)?;
-                        }
-                        make_iso_sort_key(
-                            i32::from(atom.iso_atw_diff),
-                            i32::from(atom.num_iso_H[0]),
-                            i32::from(atom.num_iso_H[1]),
-                            i32::from(atom.num_iso_H[2]),
-                        )
-                    };
-                    if key != 0 {
-                        num_iso_no_taut_h = num_iso_no_taut_h.wrapping_add(1);
-                        source_set(heap, iso_sort_key_base, index as i32, key)?;
-                    } else {
-                        source_set(heap, iso_sort_key_base, index as i32, AT_ISO_SORT_KEY::MAX)?;
-                    }
-                }
-
-                if !iso_exchg_atnos.is_null() {
-                    let info = t_group_info
-                        .as_deref()
-                        .ok_or(SourceHeapError::NullPointer)?;
-                    if num_iso_no_aux_base
-                        != i32::from(source_get(heap, info.nIsotopicEndpointAtomNumber, 0)?)
-                    {
-                        ret = CT_ISOCOUNT_ERR;
-                        break 'source;
-                    }
-                    let mut endpoint = 1_i32;
-                    while endpoint <= num_iso_no_aux_base {
-                        let atom_index = i32::from(source_get(
-                            heap,
-                            info.nIsotopicEndpointAtomNumber,
-                            endpoint,
-                        )?);
-                        let atom = source_clone(heap, at_base, atom_index)?;
-                        if atom.endpoint != 0 || (atom.cFlags & AT_FLAG_ISO_H_POINT as i8) == 0 {
-                            ret = CT_ISOCOUNT_ERR;
+                    let n_max_len_rank_stack = 2_i32
+                        .wrapping_mul(num_at_tg.wrapping_sub(n_num_curr_ranks))
+                        .wrapping_add(8);
+                    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:5407..5415 C409 rank-stack failure publication
+                    //     nMaxLenRankStack = 2 * ( num_at_tg - nNumCurrRanks ) + 8;  /* was 2*(...) + 6 */
+                    //     pBCN->pRankStack = (AT_RANK **) inchi_calloc( nMaxLenRankStack, sizeof( pBCN->pRankStack[0] ) );
+                    //     if (!pBCN->pRankStack)
+                    //     {
+                    //         pBCN->nMaxLenRankStack = 0; /* avoid memory leaks in case of error */
+                    //         goto exit_error_alloc;
+                    //     }
+                    //     pBCN->nMaxLenRankStack = nMaxLenRankStack; /* avoid memory leaks in case of error */
+                    //     /* init partition stack */
+                    // END VERBATIM SOURCE FRAGMENT: C409 rank-stack failure publication
+                    // INCHI✔️❗: Publish calloc NULL before failure cleanup. Old stack
+                    // storage is neither freed nor cleared, exactly as native assignment.
+                    // Retain modeled invalid-count failure and other typed allocator errors.
+                    // Same one source allocation/count/size; no new scan/clone/buffer.
+                    // Checked/error dispatch costs remain INCHI-PERF-RANK-STACK-FAILURE OPEN.
+                    let stack_count = match u64::try_from(n_max_len_rank_stack) {
+                        Ok(count) => count,
+                        Err(_) => {
+                            pBCN.pRankStack = SourceMutPointer::null();
+                            pBCN.nMaxLenRankStack = 0;
+                            ret = CT_OUT_OF_RAM;
                             break 'source;
                         }
-                        endpoint = endpoint.wrapping_add(1);
+                    };
+                    pBCN.pRankStack = match inchi_calloc::<SourceMutPointer<AT_RANK>>(
+                        heap,
+                        stack_count,
+                        SOURCE_SIZEOF_POINTER,
+                    ) {
+                        Ok(pointer) => pointer,
+                        Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+                        Err(error) => return Err(error),
+                    };
+                    if pBCN.pRankStack.is_null() {
+                        pBCN.nMaxLenRankStack = 0;
+                        ret = CT_OUT_OF_RAM;
+                        break 'source;
                     }
-                }
+                    pBCN.nMaxLenRankStack = n_max_len_rank_stack;
+                    source_set(heap, pBCN.pRankStack, 0, n_rank)?;
+                    source_set(heap, pBCN.pRankStack, 1, n_atom_number)?;
+                    // INCHI✔️❌: Existing source pointer stack is the sole partition
+                    // representation. No duplicate Vec/default writes/full capacity sync.
+                    // Reached pair projection constant costs remain deferred.
+                    let mut partitions = CanonPartitions::Stored(pBCN.pRankStack);
 
-                let mut num_iso_base = 0_i32;
-                if !iso_exchg_atnos.is_null() {
-                    for index in num_atoms..num_at_tg {
-                        source_set(heap, iso_sort_key_base, index, AT_ISO_SORT_KEY::MAX)?;
-                    }
-                } else {
-                    let info = t_group_info
-                        .as_deref()
-                        .ok_or(SourceHeapError::NullPointer)?;
-                    for index in num_atoms..num_at_tg {
-                        let group =
-                            source_clone(heap, info.t_group, index.wrapping_sub(num_atoms))?;
-                        if group.iWeight != 0 {
-                            num_iso_base = num_iso_base.wrapping_add(1);
-                            source_set(heap, iso_sort_key_base, index, group.iWeight)?;
-                        } else {
-                            source_set(heap, iso_sort_key_base, index, AT_ISO_SORT_KEY::MAX)?;
+                    let data = &mut canon_data[i_other];
+                    data.ulTimeOutTime = pBCN.ulTimeOutTime;
+                    data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
+                    data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
+                    data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
+                    ret = canon_graph_stack(
+                        heap,
+                        ic,
+                        pCG,
+                        num_atoms,
+                        num_atoms,
+                        num_max,
+                        0,
+                        neigh_list[taut_non],
+                        &mut partitions,
+                        n_symm_rank_no_h,
+                        n_canon_rank_no_h,
+                        n_atom_number_canon_no_h,
+                        data,
+                        &mut canon_counts,
+                        SourceMutPointer::null(),
+                        Some(&mut ct_no_h),
+                        LargeMolecules,
+                        user_action,
+                        console_quit,
+                        clock_result,
+                    )?;
+                    if ret < 0 {
+                        if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
+                            ret = CT_CANON_ERR;
                         }
-                    }
-                }
-                if num_iso_no_aux_base == 0 && !iso_exchg_atnos.is_null() {
-                    inchi_free(heap, iso_exchg_atnos)?;
-                    iso_exchg_atnos = SourceMutPointer::null();
-                    len_iso_exchg_atnos = 0;
-                    max_len_iso_exchg_atnos = 0;
-                }
-                if num_iso_no_taut_h == 0 && num_iso_base == 0 {
-                    inchi_free(heap, iso_sort_key_base)?;
-                    iso_sort_key_base = SourceMutPointer::null();
-                    max_len_iso_sort_key_base = 0;
-                } else {
-                    len_iso_sort_key_base = num_at_tg;
-                }
-
-                if iso_exchg_atnos.is_null() && iso_sort_key_base.is_null() {
-                    inchi_free(heap, n_symm_rank_base_iso)?;
-                    inchi_free(heap, n_canon_rank_base_iso)?;
-                    inchi_free(heap, n_atom_number_canon_base_iso)?;
-                    n_symm_rank_base_iso = SourceMutPointer::null();
-                    n_canon_rank_base_iso = SourceMutPointer::null();
-                    n_atom_number_canon_base_iso = SourceMutPointer::null();
-                } else {
-                    {
-                        let data = &mut canon_data[i_base];
-                        data.LinearCT = SourceMutPointer::null();
-                        data.NumH = num_h;
-                        data.NumHfixed = SourceMutPointer::null();
-                        data.iso_sort_key = iso_sort_key_base;
-                        data.iso_exchg_atnos = iso_exchg_atnos;
-                        data.ulTimeOutTime = pBCN.ulTimeOutTime;
-                        data.nMaxLenLinearCT = sizes[i_base].nLenCT.wrapping_add(1);
-                        data.maxlenNumH = max_len_num_h;
-                        data.nLenLinearCT = sizes[i_base].nLenCT;
-                        data.nLenCTAtOnly = sizes[i_base].nLenCTAtOnly;
-                        data.lenNumH = len_num_h;
-                        data.lenNumHfixed = 0;
-                        data.len_iso_sort_key = len_iso_sort_key_base;
-                        data.maxlen_iso_sort_key = max_len_iso_sort_key_base;
-                        data.len_iso_exchg_atnos = len_iso_exchg_atnos;
-                        data.maxlen_iso_exchg_atnos = max_len_iso_exchg_atnos;
-                        data.nAuxRank = SourceMutPointer::null();
-                    }
-                    let mut needs_iso_canon = false;
-                    if num_iso_no_taut_h != 0 || num_iso_base != 0 || num_iso_no_aux_base != 0 {
-                        for value in heap
-                            .slice_mut(n_temp_rank)?
-                            .get_mut(
-                                ..usize::try_from(num_max)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        {
-                            *value = 0;
-                        }
-                        for index in 0..total_count {
-                            let rank = source_get(heap, n_symm_rank_base, index as i32)?;
-                            if source_get(heap, n_temp_rank, i32::from(rank) - 1)?
-                                < index as AT_RANK
-                            {
-                                source_set(
-                                    heap,
-                                    n_temp_rank,
-                                    i32::from(rank) - 1,
-                                    index as AT_RANK,
-                                )?;
-                            }
-                        }
-                        for index in 0..total_count {
-                            let rank = source_get(heap, n_symm_rank_base, index as i32)?;
-                            let representative =
-                                source_get(heap, n_temp_rank, i32::from(rank) - 1)?;
-                            let isotope_differs = !iso_sort_key_base.is_null()
-                                && source_get(heap, iso_sort_key_base, index as i32)?
-                                    != source_get(
-                                        heap,
-                                        iso_sort_key_base,
-                                        i32::from(representative),
-                                    )?;
-                            let exchange_differs = !iso_exchg_atnos.is_null()
-                                && source_get(heap, iso_exchg_atnos, index as i32)?
-                                    != source_get(
-                                        heap,
-                                        iso_exchg_atnos,
-                                        i32::from(representative),
-                                    )?;
-                            if isotope_differs || exchange_differs {
-                                canon_data[i_base].nCanonFlags |= CANON_FLAG_ISO_TAUT_DIFF as i32;
-                                needs_iso_canon = true;
-                                break;
-                            }
-                        }
+                        break 'source;
                     }
 
-                    if needs_iso_canon {
-                        for value in heap
-                            .slice_mut(p_atom_invariant_aux)?
-                            .get_mut(
-                                ..usize::try_from(num_max)
-                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                            )
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        {
-                            *value = ATOM_INVARIANT2::default();
+                    let mut changed = 0_i32;
+                    n_num_curr_ranks = FixCanonEquivalenceInfo(
+                        heap,
+                        pCG,
+                        num_atoms,
+                        n_symm_rank_no_h,
+                        n_rank,
+                        n_temp_rank,
+                        n_atom_number,
+                        Some(&mut changed),
+                    )?;
+                    if changed & 3 != 0 {
+                        if !ct_no_h.is_null() {
+                            let mut table = source_clone(heap, ct_no_h, 0)?;
+                            CTableFree(heap, Some(&mut table))?;
+                            inchi_free(heap, ct_no_h)?;
+                            ct_no_h = SourceMutPointer::null();
                         }
-                        for index in 0..total_count {
-                            let symmetry = source_get(heap, n_symm_rank_base, index as i32)?;
-                            let isotope = if iso_sort_key_base.is_null() {
-                                0
-                            } else {
-                                source_get(heap, iso_sort_key_base, index as i32)?
-                            };
-                            let auxiliary = if iso_exchg_atnos.is_null() {
-                                0
-                            } else {
-                                source_get(heap, iso_exchg_atnos, index as i32)?
-                            };
-                            let invariant = &mut heap.slice_mut(p_atom_invariant_aux)?[index];
-                            invariant.val[0] = symmetry;
-                            invariant.iso_sort_key = isotope;
-                            invariant.iso_aux_key = auxiliary;
-                        }
-                        n_num_curr_ranks = SetInitialRanks2(
-                            heap,
-                            num_at_tg,
-                            p_atom_invariant_aux,
-                            n_rank_aux,
-                            n_atom_number_aux,
-                            pCG,
-                        )?;
-                        n_num_curr_ranks = DifferentiateRanks2(
-                            heap,
-                            pCG,
-                            num_at_tg,
-                            neigh_list[taut_yes],
-                            n_num_curr_ranks,
-                            n_rank_aux,
-                            n_temp_rank,
-                            n_atom_number_aux,
-                            &mut l_count,
-                            0,
-                        )?;
-                        canon_data[i_base].nAuxRank = n_rank_aux;
-                        ret = CanonGraph(
+                        canon_data[i_other].nCanonFlags |= CANON_FLAG_NO_H_RECANON as i32;
+                        ret = canon_graph_stack(
                             heap,
                             ic,
                             pCG,
                             num_atoms,
-                            num_at_tg,
+                            num_atoms,
                             num_max,
-                            1,
-                            neigh_list[taut_yes],
+                            0,
+                            neigh_list[taut_non],
                             &mut partitions,
-                            n_symm_rank_base_iso,
-                            n_canon_rank_base_iso,
-                            n_atom_number_canon_base_iso,
-                            &mut canon_data[i_base],
+                            n_symm_rank_no_h,
+                            n_canon_rank_no_h,
+                            n_atom_number_canon_no_h,
+                            &mut canon_data[i_other],
                             &mut canon_counts,
-                            ct_base,
-                            Some(&mut ct_base_iso),
+                            SourceMutPointer::null(),
+                            Some(&mut ct_no_h),
                             LargeMolecules,
                             user_action,
                             console_quit,
                             clock_result,
                         )?;
-                        sync_partition_stack(heap, pBCN.pRankStack, &partitions)?;
                         if ret < 0 {
                             if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
                                 ret = CT_CANON_ERR;
                             }
                             break 'source;
                         }
-                    } else {
-                        ct_temp = alloc_or_exit!(ConTable, 1, 104, 'source);
-                        let mut temporary = ConTable::default();
-                        if CTableCreate(heap, &mut temporary, num_atoms, &canon_data[i_base])? == 0
-                            || !con_table_is_usable(&temporary, &canon_data[i_base])
-                        {
-                            ret = CT_OUT_OF_RAM;
-                            heap.slice_mut(ct_temp)?[0] = temporary;
-                            break 'source;
-                        }
-                        let base = source_clone(heap, ct_base, 0)?;
-                        CtFullCopy(heap, &mut temporary, &base)?;
-                        if !iso_sort_key_base.is_null() {
-                            for index in 0..total_count {
-                                let rank = source_get(heap, n_canon_rank_base, index as i32)?;
-                                source_set(
-                                    heap,
-                                    temporary.iso_sort_key,
-                                    i32::from(rank) - 1,
-                                    source_get(heap, iso_sort_key_base, index as i32)?,
-                                )?;
-                            }
-                            temporary.len_iso_sort_key = num_at_tg;
-                        } else {
-                            temporary.len_iso_sort_key = 0;
-                        }
-                        if !iso_exchg_atnos.is_null() {
-                            for index in 0..atom_count {
-                                let rank = source_get(heap, n_canon_rank_base, index as i32)?;
-                                source_set(
-                                    heap,
-                                    temporary.iso_exchg_atnos,
-                                    i32::from(rank) - 1,
-                                    source_get(heap, iso_exchg_atnos, index as i32)?,
-                                )?;
-                            }
-                            temporary.len_iso_exchg_atnos = num_at_tg;
-                        } else {
-                            temporary.len_iso_exchg_atnos = 0;
-                        }
-                        heap.slice_mut(ct_temp)?[0] = temporary;
-                        ct_base_iso = ct_temp;
-                        ct_temp = SourceMutPointer::null();
-                        for index in 0..total_count {
-                            source_set(
-                                heap,
-                                n_symm_rank_base_iso,
-                                index as i32,
-                                source_get(heap, n_symm_rank_base, index as i32)?,
-                            )?;
-                            source_set(
-                                heap,
-                                n_canon_rank_base_iso,
-                                index as i32,
-                                source_get(heap, n_canon_rank_base, index as i32)?,
-                            )?;
-                            source_set(
-                                heap,
-                                n_atom_number_canon_base_iso,
-                                index as i32,
-                                source_get(heap, n_atom_number_canon_base, index as i32)?,
-                            )?;
-                        }
                     }
-                    t_group_info
-                        .as_deref_mut()
-                        .ok_or(SourceHeapError::NullPointer)?
-                        .bIgnoreIsotopic = 1;
-                }
-            }
-        }
 
-        if b_req_taut != 0 && b_req_non_taut != 0 {
-            max_len_num_h_fixed = num_atoms.wrapping_add(1);
-            n_symm_rank_fix_h = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-            n_canon_rank_fix_h = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-            n_atom_number_canon_fix_h = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
-            num_h_fixed = alloc_or_exit!(NUM_H, max_len_num_h_fixed, 2, 'source);
-            let at_other = at[i_other];
-            for index in 0..atom_count {
-                let base_atom = heap.slice(at_base.as_const())?[index].clone();
-                let other_atom = heap.slice(at_other.as_const())?[index].clone();
-                let value = if base_atom.endpoint != 0 {
-                    if other_atom.num_H != 0 {
-                        i32::from(other_atom.num_H).wrapping_add(BASE_H_NUMBER as i32) as NUM_H
-                    } else {
-                        EMPTY_H_NUMBER as NUM_H
+                    max_len_num_h_no_taut_h = num_atoms.wrapping_add(1);
+                    n_symm_rank_no_taut_h = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                    n_canon_rank_no_taut_h = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                    n_atom_number_canon_no_taut_h =
+                        alloc_or_exit!(heap, AT_NUMB, num_max, 2, 'source);
+                    num_h_no_taut_h =
+                        alloc_or_exit!(heap, NUM_H, max_len_num_h_no_taut_h, 2, 'source);
+                    let atom_count = usize::try_from(num_atoms)
+                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    for index in 0..atom_count {
+                        let atom = heap
+                            .slice(at_base.as_const())?
+                            .get(index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let value = if atom.endpoint == 0 && atom.num_H != 0 {
+                            i32::from(atom.num_H).wrapping_add(BASE_H_NUMBER as i32) as NUM_H
+                        } else {
+                            EMPTY_H_NUMBER as NUM_H
+                        };
+                        source_set(heap, num_h_no_taut_h, index as i32, value)?;
                     }
-                } else if other_atom.num_H != base_atom.num_H {
-                    i32::from(other_atom.num_H)
-                        .wrapping_sub(i32::from(base_atom.num_H))
-                        .wrapping_add(BASE_H_NUMBER as i32) as NUM_H
-                } else {
-                    EMPTY_H_NUMBER as NUM_H
-                };
-                source_set(heap, num_h_fixed, index as i32, value)?;
-            }
-            {
-                let data = &mut canon_data[i_other];
-                data.LinearCT = SourceMutPointer::null();
-                data.NumH = num_h_no_taut_h;
-                data.NumHfixed = num_h_fixed;
-                data.iso_sort_key = SourceMutPointer::null();
-                data.iso_exchg_atnos = SourceMutPointer::null();
-                data.ulTimeOutTime = pBCN.ulTimeOutTime;
-                data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
-                data.maxlenNumH = max_len_num_h_no_taut_h;
-                data.maxlenNumHfixed = max_len_num_h_fixed;
-                data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
-                data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
-                data.lenNumH = num_atoms;
-                data.lenNumHfixed = num_atoms;
-                data.len_iso_sort_key = 0;
-                data.maxlen_iso_sort_key = 0;
-                data.len_iso_exchg_atnos = 0;
-                data.maxlen_iso_exchg_atnos = 0;
-                data.nAuxRank = SourceMutPointer::null();
-            }
-            for value in heap
-                .slice_mut(p_atom_invariant_aux)?
-                .get_mut(
-                    ..usize::try_from(num_max).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-            {
-                *value = ATOM_INVARIANT2::default();
-            }
-            for index in 0..atom_count {
-                let symmetry = source_get(heap, n_symm_rank_base, index as i32)?;
-                let hydrogen = source_get(heap, num_h_fixed, index as i32)? as AT_NUMB;
-                let invariant = &mut heap.slice_mut(p_atom_invariant_aux)?[index];
-                invariant.val[0] = symmetry;
-                invariant.val[1] = hydrogen;
-            }
-            n_num_curr_ranks = SetInitialRanks2(
-                heap,
-                num_atoms,
-                p_atom_invariant_aux,
-                n_rank_aux,
-                n_atom_number_aux,
-                pCG,
-            )?;
-            n_num_curr_ranks = DifferentiateRanks2(
-                heap,
-                pCG,
-                num_atoms,
-                neigh_list[taut_non],
-                n_num_curr_ranks,
-                n_rank_aux,
-                n_temp_rank,
-                n_atom_number_aux,
-                &mut l_count,
-                0,
-            )?;
-            canon_data[i_other].nAuxRank = n_rank_aux;
-            ret = CanonGraph(
-                heap,
-                ic,
-                pCG,
-                num_atoms,
-                num_atoms,
-                num_max,
-                0,
-                neigh_list[taut_non],
-                &mut partitions,
-                n_symm_rank_fix_h,
-                n_canon_rank_fix_h,
-                n_atom_number_canon_fix_h,
-                &mut canon_data[i_other],
-                &mut canon_counts,
-                ct_no_taut_h,
-                Some(&mut ct_fix_h),
-                LargeMolecules,
-                user_action,
-                console_quit,
-                clock_result,
-            )?;
-            sync_partition_stack(heap, pBCN.pRankStack, &partitions)?;
-            if ret < 0 {
-                if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
-                    ret = CT_CANON_ERR;
-                }
-                break 'source;
-            }
 
-            let mut isotopic_fixed_h = (sizes[i_base].num_isotopic_atoms != 0
-                && sizes[i_base].bIgnoreIsotopic == 0)
-                || (sizes[i_base].bHasIsotopicTautGroups != 0 && b_taut_ignore_isotopic == 0);
-            if bFixIsoFixedH != 0 {
-                isotopic_fixed_h |=
-                    sizes[i_other].num_isotopic_atoms != 0 && sizes[i_other].bIgnoreIsotopic == 0;
-            }
-            if isotopic_fixed_h {
-                max_len_iso_sort_key_no_taut_h = num_atoms.wrapping_add(1);
-                n_symm_rank_fix_h_iso = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-                n_canon_rank_fix_h_iso = alloc_or_exit!(AT_RANK, num_max, 2, 'source);
-                n_atom_number_canon_fix_h_iso = alloc_or_exit!(AT_NUMB, num_max, 2, 'source);
-                iso_sort_key_no_taut_h = alloc_or_exit!(
-                    AT_ISO_SORT_KEY,
-                    max_len_iso_sort_key_no_taut_h,
-                    8,
-                    'source
-                );
-                let mut num_iso_no_taut_h = 0_i32;
-                for index in 0..atom_count {
-                    let atom = if bFixIsoFixedH != 0 {
-                        heap.slice(at_other.as_const())?[index].clone()
-                    } else {
-                        heap.slice(at_base.as_const())?[index].clone()
-                    };
-                    let key = make_iso_sort_key(
-                        i32::from(atom.iso_atw_diff),
-                        i32::from(atom.num_iso_H[0]),
-                        i32::from(atom.num_iso_H[1]),
-                        i32::from(atom.num_iso_H[2]),
-                    );
-                    if key != 0 {
-                        num_iso_no_taut_h = num_iso_no_taut_h.wrapping_add(1);
-                        source_set(heap, iso_sort_key_no_taut_h, index as i32, key)?;
-                    } else {
-                        source_set(
-                            heap,
-                            iso_sort_key_no_taut_h,
-                            index as i32,
-                            AT_ISO_SORT_KEY::MAX,
-                        )?;
+                    {
+                        let data = &mut canon_data[i_other];
+                        data.LinearCT = SourceMutPointer::null();
+                        data.NumH = num_h_no_taut_h;
+                        data.NumHfixed = SourceMutPointer::null();
+                        data.iso_sort_key = SourceMutPointer::null();
+                        data.iso_exchg_atnos = SourceMutPointer::null();
+                        data.ulTimeOutTime = pBCN.ulTimeOutTime;
+                        data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
+                        data.maxlenNumH = max_len_num_h_no_taut_h;
+                        data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
+                        data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
+                        len_num_h_no_taut_h = num_atoms;
+                        data.lenNumH = len_num_h_no_taut_h;
+                        data.lenNumHfixed = 0;
+                        data.len_iso_sort_key = 0;
+                        data.maxlen_iso_sort_key = 0;
+                        data.len_iso_exchg_atnos = 0;
+                        data.maxlen_iso_exchg_atnos = 0;
+                        data.nAuxRank = SourceMutPointer::null();
                     }
-                }
-                len_iso_sort_key_no_taut_h = num_atoms;
-                {
-                    let data = &mut canon_data[i_other];
-                    data.LinearCT = SourceMutPointer::null();
-                    data.NumH = num_h_no_taut_h;
-                    data.NumHfixed = num_h_fixed;
-                    data.iso_sort_key = iso_sort_key_no_taut_h;
-                    data.iso_exchg_atnos = SourceMutPointer::null();
-                    data.ulTimeOutTime = pBCN.ulTimeOutTime;
-                    data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
-                    data.maxlenNumH = max_len_num_h_no_taut_h;
-                    data.maxlenNumHfixed = max_len_num_h_fixed;
-                    data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
-                    data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
-                    data.lenNumH = num_atoms;
-                    data.lenNumHfixed = num_atoms;
-                    data.len_iso_sort_key = len_iso_sort_key_no_taut_h;
-                    data.maxlen_iso_sort_key = max_len_iso_sort_key_no_taut_h;
-                    data.len_iso_exchg_atnos = 0;
-                    data.maxlen_iso_exchg_atnos = 0;
-                    data.nAuxRank = SourceMutPointer::null();
-                }
-                let mut needs_iso_canon = false;
-                if num_iso_no_taut_h != 0 {
+
                     for value in heap
                         .slice_mut(n_temp_rank)?
                         .get_mut(
@@ -11882,417 +12404,1887 @@ pub(crate) fn GetBaseCanonRanking(
                         *value = 0;
                     }
                     for index in 0..atom_count {
-                        let rank = source_get(heap, n_symm_rank_fix_h, index as i32)?;
-                        if source_get(heap, n_temp_rank, i32::from(rank) - 1)? < index as AT_RANK {
-                            source_set(heap, n_temp_rank, i32::from(rank) - 1, index as AT_RANK)?;
+                        let symmetry = source_get(heap, n_symm_rank_no_h, index as i32)?;
+                        let class_index = usize::from(symmetry.wrapping_sub(1));
+                        let representatives = heap.slice_mut(n_temp_rank)?;
+                        if representatives
+                            .get(class_index)
+                            .copied()
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            < index as AT_RANK
+                        {
+                            representatives[class_index] = index as AT_RANK;
                         }
                     }
+                    let mut needs_no_taut_h_canon = false;
                     for index in 0..atom_count {
-                        let rank = source_get(heap, n_symm_rank_fix_h, index as i32)?;
-                        let representative = source_get(heap, n_temp_rank, i32::from(rank) - 1)?;
-                        if source_get(heap, iso_sort_key_no_taut_h, index as i32)?
-                            != source_get(heap, iso_sort_key_no_taut_h, i32::from(representative))?
+                        let symmetry = source_get(heap, n_symm_rank_no_h, index as i32)?;
+                        let representative =
+                            source_get(heap, n_temp_rank, i32::from(symmetry) - 1)?;
+                        if source_get(heap, num_h_no_taut_h, index as i32)?
+                            != source_get(heap, num_h_no_taut_h, i32::from(representative))?
                         {
-                            needs_iso_canon = true;
+                            canon_data[i_other].nCanonFlags |= CANON_FLAG_NO_TAUT_H_DIFF as i32;
+                            needs_no_taut_h_canon = true;
                             break;
                         }
                     }
-                }
-                if needs_iso_canon {
-                    canon_data[i_other].nCanonFlags |= CANON_FLAG_ISO_FIXED_H_DIFF as i32;
-                    for value in heap
-                        .slice_mut(p_atom_invariant_aux)?
-                        .get_mut(
-                            ..usize::try_from(num_max)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    {
-                        *value = ATOM_INVARIANT2::default();
-                    }
-                    for index in 0..atom_count {
-                        let symmetry = source_get(heap, n_symm_rank_fix_h, index as i32)?;
-                        let isotope = source_get(heap, iso_sort_key_no_taut_h, index as i32)?;
-                        let invariant = &mut heap.slice_mut(p_atom_invariant_aux)?[index];
-                        invariant.val[0] = symmetry;
-                        invariant.iso_sort_key = isotope;
-                    }
-                    n_num_curr_ranks = SetInitialRanks2(
-                        heap,
-                        num_atoms,
-                        p_atom_invariant_aux,
-                        n_rank_aux,
-                        n_atom_number_aux,
-                        pCG,
-                    )?;
-                    n_num_curr_ranks = DifferentiateRanks2(
-                        heap,
-                        pCG,
-                        num_atoms,
-                        neigh_list[taut_non],
-                        n_num_curr_ranks,
-                        n_rank_aux,
-                        n_temp_rank,
-                        n_atom_number_aux,
-                        &mut l_count,
-                        0,
-                    )?;
-                    canon_data[i_other].nAuxRank = n_rank_aux;
-                    ret = CanonGraph(
-                        heap,
-                        ic,
-                        pCG,
-                        num_atoms,
-                        num_atoms,
-                        num_max,
-                        1,
-                        neigh_list[taut_non],
-                        &mut partitions,
-                        n_symm_rank_fix_h_iso,
-                        n_canon_rank_fix_h_iso,
-                        n_atom_number_canon_fix_h_iso,
-                        &mut canon_data[i_other],
-                        &mut canon_counts,
-                        ct_fix_h,
-                        Some(&mut ct_fix_h_iso),
-                        LargeMolecules,
-                        user_action,
-                        console_quit,
-                        clock_result,
-                    )?;
-                    sync_partition_stack(heap, pBCN.pRankStack, &partitions)?;
-                    if ret < 0 {
-                        if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
-                            ret = CT_CANON_ERR;
+
+                    if needs_no_taut_h_canon {
+                        for value in heap
+                            .slice_mut(p_atom_invariant_aux)?
+                            .get_mut(..atom_count)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        {
+                            *value = ATOM_INVARIANT2::default();
                         }
-                        break 'source;
+                        for index in 0..atom_count {
+                            let symmetry = source_get(heap, n_symm_rank_no_h, index as i32)?;
+                            let hydrogen =
+                                source_get(heap, num_h_no_taut_h, index as i32)? as AT_NUMB;
+                            let invariant = heap
+                                .slice_mut(p_atom_invariant_aux)?
+                                .get_mut(index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            invariant.val[0] = symmetry;
+                            invariant.val[1] = hydrogen;
+                        }
+                        n_num_curr_ranks = SetInitialRanks2(
+                            heap,
+                            num_atoms,
+                            p_atom_invariant_aux,
+                            n_rank_aux,
+                            n_atom_number_aux,
+                            pCG,
+                        )?;
+                        n_num_curr_ranks = DifferentiateRanks2(
+                            heap,
+                            pCG,
+                            num_atoms,
+                            neigh_list[taut_non],
+                            n_num_curr_ranks,
+                            n_rank_aux,
+                            n_temp_rank,
+                            n_atom_number_aux,
+                            &mut l_count,
+                            0,
+                        )?;
+                        canon_data[i_other].nAuxRank = n_rank_aux;
+                        ret = canon_graph_stack(
+                            heap,
+                            ic,
+                            pCG,
+                            num_atoms,
+                            num_atoms,
+                            num_max,
+                            1,
+                            neigh_list[taut_non],
+                            &mut partitions,
+                            n_symm_rank_no_taut_h,
+                            n_canon_rank_no_taut_h,
+                            n_atom_number_canon_no_taut_h,
+                            &mut canon_data[i_other],
+                            &mut canon_counts,
+                            ct_no_h,
+                            Some(&mut ct_no_taut_h),
+                            LargeMolecules,
+                            user_action,
+                            console_quit,
+                            clock_result,
+                        )?;
+                        if ret < 0 {
+                            if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
+                                ret = CT_CANON_ERR;
+                            }
+                            break 'source;
+                        }
+                    } else {
+                        ct_temp = alloc_or_exit!(heap, ConTable, 1, 104, 'source);
+                        // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:5610..5625 C408 direct table 5610
+                        //         if (( Ct_Temp = (ConTable *) inchi_calloc( 1, sizeof( *Ct_Temp ) ) ) &&
+                        //              CTableCreate( Ct_Temp, num_atoms, pCD + iOther ))
+                        //         {
+                        //             CtFullCopy( Ct_Temp, Ct_NoH );
+                        //             /* since Ct_NoH does not have Ct_NoH->NumH we have to fill out Ct_Temp->NumH separately */
+                        //             for (i = 0; i < num_atoms; i++)
+                        //             {
+                        //                 Ct_Temp->NumH[nCanonRankNoH[i] - 1] = numHNoTautH[i];
+                        //                 /*Ct_Temp->NumH[i] = numHNoTautH[nAtomNumberCanonNoH[i]]; -- alternative */
+                        //             }
+                        //             Ct_Temp->lenNumH = num_atoms;
+                        //         }
+                        //         else
+                        //         {
+                        //             goto exit_error_alloc;
+                        //         }
+                        // END VERBATIM SOURCE FRAGMENT: C408 direct table 5610
+                        // INCHI✔️❗: Mutate the sole fresh source ConTable record directly.
+                        // CTableCreate/Copy access only separately typed child arrays,
+                        // never this descriptor ID; internal old tables predate this
+                        // fresh allocation. Existing extraction restores on every Result,
+                        // not panic unwinding; independent child guards stay protected.
+                        // No detached descriptor/whole-record writeback or new allocation.
+                        // Map extraction constants remain INCHI-PERF-CANONICAL-TABLES OPEN.
+                        let constructed =
+                            heap.with_slice_mut_and_heap_mut(ct_temp, |tables, heap| {
+                                let temporary = tables
+                                    .first_mut()
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                if CTableCreate(heap, temporary, num_atoms, &canon_data[i_other])?
+                                    == 0
+                                {
+                                    return Ok(false);
+                                }
+                                let no_h = source_clone(heap, ct_no_h, 0)?;
+                                CtFullCopy(heap, temporary, &no_h)?;
+                                for index in 0..atom_count {
+                                    let rank = source_get(heap, n_canon_rank_no_h, index as i32)?;
+                                    source_set(
+                                        heap,
+                                        temporary.NumH,
+                                        i32::from(rank) - 1,
+                                        source_get(heap, num_h_no_taut_h, index as i32)?,
+                                    )?;
+                                }
+                                temporary.lenNumH = num_atoms;
+                                Ok(true)
+                            })?;
+                        if !constructed {
+                            ret = CT_OUT_OF_RAM;
+                            break 'source;
+                        }
+                        ct_no_taut_h = ct_temp;
+                        ct_temp = SourceMutPointer::null();
+                        // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:5630..5632 C407 bulk results 5630
+                        //         memcpy(nSymmRankNoTautH, nSymmRankNoH, num_atoms * sizeof(nSymmRankNoTautH[0]));
+                        //         memcpy(nCanonRankNoTautH, nCanonRankNoH, num_atoms * sizeof(nCanonRankNoTautH[0]));
+                        //         memcpy(nAtomNumberCanonNoTautH, nAtomNumberCanonNoH, num_atoms * sizeof(nAtomNumberCanonNoTautH[0]));
+                        // END VERBATIM SOURCE FRAGMENT: C407 bulk results 5630
+                        // INCHI✔️❗: Three complete source copies to fresh distinct arrays.
+                        // Canonical copier performs one admission per copy, O(n)/O(1),
+                        // no scalar-map loop/temporary buffer/new allocation/scan.
+                        // Checked constants remain INCHI-PERF-CANONICAL-BYPASS OPEN.
+                        if atom_count != 0 {
+                            heap.copy_nonoverlapping_prefix(
+                                n_symm_rank_no_taut_h,
+                                n_symm_rank_no_h.as_const(),
+                                atom_count,
+                                false,
+                            )?;
+                            heap.copy_nonoverlapping_prefix(
+                                n_canon_rank_no_taut_h,
+                                n_canon_rank_no_h.as_const(),
+                                atom_count,
+                                false,
+                            )?;
+                            heap.copy_nonoverlapping_prefix(
+                                n_atom_number_canon_no_taut_h,
+                                n_atom_number_canon_no_h.as_const(),
+                                atom_count,
+                                false,
+                            )?;
+                        }
                     }
-                } else {
-                    ct_temp = alloc_or_exit!(ConTable, 1, 104, 'source);
-                    let mut temporary = ConTable::default();
-                    if CTableCreate(heap, &mut temporary, num_atoms, &canon_data[i_other])? == 0
-                        || !con_table_is_usable(&temporary, &canon_data[i_other])
+
+                    if sizes[i_other].num_isotopic_atoms != 0
+                        && sizes[i_other].bIgnoreIsotopic == 0
+                        && b_req_taut == 0
+                        && b_req_non_taut != 0
                     {
-                        ret = CT_OUT_OF_RAM;
-                        heap.slice_mut(ct_temp)?[0] = temporary;
+                        max_len_iso_sort_key_no_taut_h = num_atoms.wrapping_add(1);
+                        n_symm_rank_no_taut_h_iso =
+                            alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                        n_canon_rank_no_taut_h_iso =
+                            alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                        n_atom_number_canon_no_taut_h_iso =
+                            alloc_or_exit!(heap, AT_NUMB, num_max, 2, 'source);
+                        iso_sort_key_no_taut_h = alloc_or_exit!(heap,
+                            AT_ISO_SORT_KEY,
+                            max_len_iso_sort_key_no_taut_h,
+                            8,
+                            'source
+                        );
+
+                        let mut num_iso_no_taut_h = 0_i32;
+                        for index in 0..atom_count {
+                            let atom = heap
+                                .slice(at_base.as_const())?
+                                .get(index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            let key = if atom.endpoint != 0 {
+                                make_iso_sort_key(i32::from(atom.iso_atw_diff), 0, 0, 0)
+                            } else {
+                                make_iso_sort_key(
+                                    i32::from(atom.iso_atw_diff),
+                                    i32::from(atom.num_iso_H[0]),
+                                    i32::from(atom.num_iso_H[1]),
+                                    i32::from(atom.num_iso_H[2]),
+                                )
+                            };
+                            if key != 0 {
+                                num_iso_no_taut_h = num_iso_no_taut_h.wrapping_add(1);
+                                source_set(heap, iso_sort_key_no_taut_h, index as i32, key)?;
+                            } else {
+                                source_set(
+                                    heap,
+                                    iso_sort_key_no_taut_h,
+                                    index as i32,
+                                    AT_ISO_SORT_KEY::MAX,
+                                )?;
+                            }
+                        }
+
+                        {
+                            let data = &mut canon_data[i_other];
+                            data.LinearCT = SourceMutPointer::null();
+                            data.NumH = num_h_no_taut_h;
+                            data.NumHfixed = SourceMutPointer::null();
+                            data.iso_sort_key = iso_sort_key_no_taut_h;
+                            data.iso_exchg_atnos = SourceMutPointer::null();
+                            data.ulTimeOutTime = pBCN.ulTimeOutTime;
+                            data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
+                            data.maxlenNumH = max_len_num_h_no_taut_h;
+                            data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
+                            data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
+                            data.lenNumH = len_num_h_no_taut_h;
+                            data.lenNumHfixed = 0;
+                            len_iso_sort_key_no_taut_h = num_atoms;
+                            data.len_iso_sort_key = len_iso_sort_key_no_taut_h;
+                            data.maxlen_iso_sort_key = max_len_iso_sort_key_no_taut_h;
+                            data.len_iso_exchg_atnos = 0;
+                            data.maxlen_iso_exchg_atnos = 0;
+                            data.nAuxRank = SourceMutPointer::null();
+                        }
+
+                        let mut needs_isotope_canon = false;
+                        if num_iso_no_taut_h != 0 {
+                            for value in heap
+                                .slice_mut(n_temp_rank)?
+                                .get_mut(
+                                    ..usize::try_from(num_max)
+                                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                )
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            {
+                                *value = 0;
+                            }
+                            for index in 0..atom_count {
+                                let symmetry =
+                                    source_get(heap, n_symm_rank_no_taut_h, index as i32)?;
+                                let class_index = i32::from(symmetry) - 1;
+                                if source_get(heap, n_temp_rank, class_index)? < index as AT_RANK {
+                                    source_set(heap, n_temp_rank, class_index, index as AT_RANK)?;
+                                }
+                            }
+                            for index in 0..atom_count {
+                                let symmetry =
+                                    source_get(heap, n_symm_rank_no_taut_h, index as i32)?;
+                                let representative =
+                                    source_get(heap, n_temp_rank, i32::from(symmetry) - 1)?;
+                                if source_get(heap, iso_sort_key_no_taut_h, index as i32)?
+                                    != source_get(
+                                        heap,
+                                        iso_sort_key_no_taut_h,
+                                        i32::from(representative),
+                                    )?
+                                {
+                                    canon_data[i_other].nCanonFlags |=
+                                        CANON_FLAG_ISO_ONLY_NON_TAUT_DIFF as i32;
+                                    needs_isotope_canon = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if needs_isotope_canon {
+                            for value in heap
+                                .slice_mut(p_atom_invariant_aux)?
+                                .get_mut(..atom_count)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            {
+                                *value = ATOM_INVARIANT2::default();
+                            }
+                            for index in 0..atom_count {
+                                let symmetry =
+                                    source_get(heap, n_symm_rank_no_taut_h, index as i32)?;
+                                let isotope =
+                                    source_get(heap, iso_sort_key_no_taut_h, index as i32)?;
+                                let invariant = heap
+                                    .slice_mut(p_atom_invariant_aux)?
+                                    .get_mut(index)
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                invariant.val[0] = symmetry;
+                                invariant.iso_sort_key = isotope;
+                            }
+                            n_num_curr_ranks = SetInitialRanks2(
+                                heap,
+                                num_atoms,
+                                p_atom_invariant_aux,
+                                n_rank_aux,
+                                n_atom_number_aux,
+                                pCG,
+                            )?;
+                            n_num_curr_ranks = DifferentiateRanks2(
+                                heap,
+                                pCG,
+                                num_atoms,
+                                neigh_list[taut_non],
+                                n_num_curr_ranks,
+                                n_rank_aux,
+                                n_temp_rank,
+                                n_atom_number_aux,
+                                &mut l_count,
+                                0,
+                            )?;
+                            canon_data[i_other].nAuxRank = n_rank_aux;
+                            ret = canon_graph_stack(
+                                heap,
+                                ic,
+                                pCG,
+                                num_atoms,
+                                num_atoms,
+                                num_max,
+                                1,
+                                neigh_list[taut_non],
+                                &mut partitions,
+                                n_symm_rank_no_taut_h_iso,
+                                n_canon_rank_no_taut_h_iso,
+                                n_atom_number_canon_no_taut_h_iso,
+                                &mut canon_data[i_other],
+                                &mut canon_counts,
+                                ct_no_taut_h,
+                                Some(&mut ct_no_taut_h_iso),
+                                LargeMolecules,
+                                user_action,
+                                console_quit,
+                                clock_result,
+                            )?;
+                            if ret < 0 {
+                                if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
+                                    ret = CT_CANON_ERR;
+                                }
+                                break 'source;
+                            }
+                        } else {
+                            ct_temp = alloc_or_exit!(heap, ConTable, 1, 104, 'source);
+                            // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:5784..5797 C408 direct table 5784
+                            //             if (( Ct_Temp = (ConTable *) inchi_calloc( 1, sizeof( *Ct_Temp ) ) ) &&
+                            //                  CTableCreate( Ct_Temp, num_atoms, pCD + iOther ))
+                            //             {
+                            //                 CtFullCopy( Ct_Temp, Ct_NoTautH );
+                            //                 /* since Ct_NoTautH does not have Ct_NoTautH->iso_sort_key we have to fill out Ct_Temp->iso_sort_key separately */
+                            //                 for (i = 0; i < num_atoms; i++)
+                            //                 {
+                            //                     Ct_Temp->iso_sort_key[nCanonRankNoTautH[i] - 1] = iso_sort_key_NoTautH[i];
+                            //                 }
+                            //                 Ct_Temp->len_iso_sort_key = num_atoms;
+                            //             }
+                            //             else
+                            //             {
+                            //                 goto exit_error_alloc;
+                            // END VERBATIM SOURCE FRAGMENT: C408 direct table 5784
+                            // INCHI✔️❗: Mutate the sole fresh source ConTable record directly.
+                            // CTableCreate/Copy access only separately typed child arrays,
+                            // never this descriptor ID; internal old tables predate this
+                            // fresh allocation. Existing extraction restores on every Result,
+                            // not panic unwinding; independent child guards stay protected.
+                            // No detached descriptor/whole-record writeback or new allocation.
+                            // Map extraction constants remain INCHI-PERF-CANONICAL-TABLES OPEN.
+                            let constructed =
+                                heap.with_slice_mut_and_heap_mut(ct_temp, |tables, heap| {
+                                    let temporary = tables
+                                        .first_mut()
+                                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                    if CTableCreate(
+                                        heap,
+                                        temporary,
+                                        num_atoms,
+                                        &canon_data[i_other],
+                                    )? == 0
+                                    {
+                                        return Ok(false);
+                                    }
+                                    let no_taut_h = source_clone(heap, ct_no_taut_h, 0)?;
+                                    CtFullCopy(heap, temporary, &no_taut_h)?;
+                                    for index in 0..atom_count {
+                                        let rank =
+                                            source_get(heap, n_canon_rank_no_taut_h, index as i32)?;
+                                        source_set(
+                                            heap,
+                                            temporary.iso_sort_key,
+                                            i32::from(rank) - 1,
+                                            source_get(heap, iso_sort_key_no_taut_h, index as i32)?,
+                                        )?;
+                                    }
+                                    temporary.len_iso_sort_key = num_atoms;
+                                    Ok(true)
+                                })?;
+                            if !constructed {
+                                ret = CT_OUT_OF_RAM;
+                                break 'source;
+                            }
+                            ct_no_taut_h_iso = ct_temp;
+                            ct_temp = SourceMutPointer::null();
+                            // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:5801..5803 C407 bulk results 5801
+                            //             memcpy(nSymmRankNoTautHIso, nSymmRankNoTautH, num_atoms * sizeof(nSymmRankNoTautHIso[0]));
+                            //             memcpy(nCanonRankNoTautHIso, nCanonRankNoTautH, num_atoms * sizeof(nCanonRankNoTautHIso[0]));
+                            //             memcpy(nAtomNumberCanonNoTautHIso, nAtomNumberCanonNoTautH, num_atoms * sizeof(nAtomNumberCanonNoTautHIso[0]));
+                            // END VERBATIM SOURCE FRAGMENT: C407 bulk results 5801
+                            // INCHI✔️❗: Three complete source copies to fresh distinct arrays.
+                            // Canonical copier performs one admission per copy, O(n)/O(1),
+                            // no scalar-map loop/temporary buffer/new allocation/scan.
+                            // Checked constants remain INCHI-PERF-CANONICAL-BYPASS OPEN.
+                            if atom_count != 0 {
+                                heap.copy_nonoverlapping_prefix(
+                                    n_symm_rank_no_taut_h_iso,
+                                    n_symm_rank_no_taut_h.as_const(),
+                                    atom_count,
+                                    false,
+                                )?;
+                                heap.copy_nonoverlapping_prefix(
+                                    n_canon_rank_no_taut_h_iso,
+                                    n_canon_rank_no_taut_h.as_const(),
+                                    atom_count,
+                                    false,
+                                )?;
+                                heap.copy_nonoverlapping_prefix(
+                                    n_atom_number_canon_no_taut_h_iso,
+                                    n_atom_number_canon_no_taut_h.as_const(),
+                                    atom_count,
+                                    false,
+                                )?;
+                            }
+                        }
+                    }
+
+                    if b_req_taut != 0 {
+                        max_len_num_h = num_atoms
+                            .wrapping_add(
+                                (T_NUM_NO_ISOTOPIC as i32)
+                                    .wrapping_mul(num_at_tg.wrapping_sub(num_atoms)),
+                            )
+                            .wrapping_add(1);
+                        n_symm_rank_base = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                        n_canon_rank_base = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                        n_atom_number_canon_base =
+                            alloc_or_exit!(heap, AT_NUMB, num_max, 2, 'source);
+                        num_h = alloc_or_exit!(heap, NUM_H, max_len_num_h, 2, 'source);
+
+                        for index in 0..atom_count {
+                            let atom = heap
+                                .slice(at_base.as_const())?
+                                .get(index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            let value = if atom.endpoint == 0 && atom.num_H != 0 {
+                                i32::from(atom.num_H).wrapping_add(BASE_H_NUMBER as i32) as NUM_H
+                            } else {
+                                EMPTY_H_NUMBER as NUM_H
+                            };
+                            source_set(heap, num_h, index as i32, value)?;
+                        }
+                        let info = t_group_info
+                            .as_deref()
+                            .ok_or(SourceHeapError::NullPointer)?;
+                        let mut next_h = num_atoms;
+                        let mut index = num_atoms;
+                        while index < num_at_tg {
+                            let group =
+                                source_clone(heap, info.t_group, index.wrapping_sub(num_atoms))?;
+                            for value in group.num.iter().take(T_NUM_NO_ISOTOPIC as usize) {
+                                source_set(
+                                    heap,
+                                    num_h,
+                                    next_h,
+                                    if *value != 0 {
+                                        i32::from(*value).wrapping_add(BASE_H_NUMBER as i32)
+                                            as NUM_H
+                                    } else {
+                                        EMPTY_H_NUMBER as NUM_H
+                                    },
+                                )?;
+                                next_h = next_h.wrapping_add(1);
+                            }
+                            index = index.wrapping_add(1);
+                        }
+                        len_num_h = next_h;
+
+                        {
+                            let data = &mut canon_data[i_base];
+                            data.LinearCT = SourceMutPointer::null();
+                            data.NumH = num_h;
+                            data.NumHfixed = SourceMutPointer::null();
+                            data.iso_sort_key = SourceMutPointer::null();
+                            data.iso_exchg_atnos = SourceMutPointer::null();
+                            data.ulTimeOutTime = pBCN.ulTimeOutTime;
+                            data.nMaxLenLinearCT = sizes[i_base].nLenCT.wrapping_add(1);
+                            data.maxlenNumH = max_len_num_h;
+                            data.nLenLinearCT = sizes[i_base].nLenCT;
+                            data.nLenCTAtOnly = sizes[i_base].nLenCTAtOnly;
+                            data.lenNumH = len_num_h;
+                            data.lenNumHfixed = 0;
+                            data.len_iso_sort_key = 0;
+                            data.maxlen_iso_sort_key = 0;
+                            data.len_iso_exchg_atnos = 0;
+                            data.maxlen_iso_exchg_atnos = 0;
+                            data.nAuxRank = SourceMutPointer::null();
+                        }
+
+                        FillOutAtomInvariant2(
+                            heap,
+                            at_base.as_const(),
+                            num_atoms,
+                            num_at_tg,
+                            p_atom_invariant,
+                            1,
+                            0,
+                            0,
+                            1,
+                            1,
+                            t_group_info.as_deref(),
+                        )?;
+                        // Source first stack pair is fixed: child individualization changes
+                        // only subsequent pairs, and this loop writes a differently typed
+                        // invariant buffer. Admit once, no new per-atom stack-map query.
+                        let base_partition_rank = source_get(heap, pBCN.pRankStack, 0)?;
+                        for index in 0..atom_count {
+                            let rank = source_get(heap, base_partition_rank, index as i32)?;
+                            heap.slice_mut(p_atom_invariant)?[index].val[0] = rank;
+                        }
+                        n_num_curr_ranks = SetInitialRanks2(
+                            heap,
+                            num_at_tg,
+                            p_atom_invariant,
+                            n_rank,
+                            n_atom_number,
+                            pCG,
+                        )?;
+                        n_num_curr_ranks = DifferentiateRanks4(
+                            heap,
+                            pCG,
+                            num_at_tg,
+                            neigh_list[taut_yes],
+                            n_num_curr_ranks,
+                            base_partition_rank,
+                            n_temp_rank,
+                            source_get(heap, pBCN.pRankStack, 1)?,
+                            num_atoms as AT_RANK,
+                            &mut l_count,
+                        )?;
+
+                        for value in heap
+                            .slice_mut(p_atom_invariant_aux)?
+                            .get_mut(
+                                ..usize::try_from(num_max)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                            )
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        {
+                            *value = ATOM_INVARIANT2::default();
+                        }
+                        for index in 0..atom_count {
+                            let symmetry = source_get(heap, n_symm_rank_no_taut_h, index as i32)?;
+                            let hydrogen = source_get(heap, num_h, index as i32)? as AT_NUMB;
+                            let invariant = &mut heap.slice_mut(p_atom_invariant_aux)?[index];
+                            invariant.val[0] = symmetry;
+                            invariant.val[1] = hydrogen;
+                        }
+                        let total_count = usize::try_from(num_at_tg)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        for index in atom_count..total_count {
+                            heap.slice_mut(p_atom_invariant_aux)?[index].val[0] =
+                                source_get(heap, n_rank, index as i32)?;
+                        }
+                        n_num_curr_ranks = SetInitialRanks2(
+                            heap,
+                            num_at_tg,
+                            p_atom_invariant_aux,
+                            n_rank_aux,
+                            n_atom_number_aux,
+                            pCG,
+                        )?;
+                        n_num_curr_ranks = DifferentiateRanks4(
+                            heap,
+                            pCG,
+                            num_at_tg,
+                            neigh_list[taut_yes],
+                            n_num_curr_ranks,
+                            n_rank_aux,
+                            n_temp_rank,
+                            n_atom_number_aux,
+                            num_atoms as AT_RANK,
+                            &mut l_count,
+                        )?;
+                        canon_data[i_base].nAuxRank = n_rank_aux;
+                        ret = canon_graph_stack(
+                            heap,
+                            ic,
+                            pCG,
+                            num_atoms,
+                            num_at_tg,
+                            num_max,
+                            1,
+                            neigh_list[taut_yes],
+                            &mut partitions,
+                            n_symm_rank_base,
+                            n_canon_rank_base,
+                            n_atom_number_canon_base,
+                            &mut canon_data[i_base],
+                            &mut canon_counts,
+                            ct_no_taut_h,
+                            Some(&mut ct_base),
+                            LargeMolecules,
+                            user_action,
+                            console_quit,
+                            clock_result,
+                        )?;
+                        if ret < 0 {
+                            if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
+                                ret = CT_CANON_ERR;
+                            }
+                            break 'source;
+                        }
+
+                        let needs_taut_isotope = (sizes[i_base].num_isotopic_atoms != 0
+                            && sizes[i_base].bIgnoreIsotopic == 0)
+                            || (sizes[i_base].bHasIsotopicTautGroups != 0
+                                && b_taut_ignore_isotopic == 0)
+                            || (b_use_iso_aux_base[i_base] && b_taut_ignore_isotopic == 0);
+                        if needs_taut_isotope {
+                            t_group_info
+                                .as_deref_mut()
+                                .ok_or(SourceHeapError::NullPointer)?
+                                .bIgnoreIsotopic = b_taut_ignore_isotopic;
+                            n_symm_rank_base_iso =
+                                alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                            n_canon_rank_base_iso =
+                                alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                            n_atom_number_canon_base_iso =
+                                alloc_or_exit!(heap, AT_NUMB, num_max, 2, 'source);
+                            if b_use_iso_aux_base[i_base] {
+                                max_len_iso_exchg_atnos = num_max.wrapping_add(1);
+                                iso_exchg_atnos =
+                                    alloc_or_exit!(heap, i8, max_len_iso_exchg_atnos, 1, 'source);
+                            }
+                            max_len_iso_sort_key_base = num_max.wrapping_add(1);
+                            iso_sort_key_base = alloc_or_exit!(heap,
+                                AT_ISO_SORT_KEY,
+                                max_len_iso_sort_key_base,
+                                8,
+                                'source
+                            );
+
+                            let mut num_iso_no_taut_h = 0_i32;
+                            let mut num_iso_no_aux_base = 0_i32;
+                            if !iso_exchg_atnos.is_null() {
+                                len_iso_exchg_atnos = num_at_tg;
+                            }
+                            for index in 0..atom_count {
+                                let atom = heap.slice(at_base.as_const())?[index].clone();
+                                let key = if atom.endpoint != 0
+                                    || (!iso_exchg_atnos.is_null()
+                                        && (atom.cFlags & AT_FLAG_ISO_H_POINT as i8) != 0)
+                                {
+                                    if !iso_exchg_atnos.is_null() && atom.endpoint == 0 {
+                                        num_iso_no_aux_base = num_iso_no_aux_base.wrapping_add(1);
+                                    }
+                                    make_iso_sort_key(i32::from(atom.iso_atw_diff), 0, 0, 0)
+                                } else {
+                                    if !iso_exchg_atnos.is_null() {
+                                        source_set(heap, iso_exchg_atnos, index as i32, 1)?;
+                                    }
+                                    make_iso_sort_key(
+                                        i32::from(atom.iso_atw_diff),
+                                        i32::from(atom.num_iso_H[0]),
+                                        i32::from(atom.num_iso_H[1]),
+                                        i32::from(atom.num_iso_H[2]),
+                                    )
+                                };
+                                if key != 0 {
+                                    num_iso_no_taut_h = num_iso_no_taut_h.wrapping_add(1);
+                                    source_set(heap, iso_sort_key_base, index as i32, key)?;
+                                } else {
+                                    source_set(
+                                        heap,
+                                        iso_sort_key_base,
+                                        index as i32,
+                                        AT_ISO_SORT_KEY::MAX,
+                                    )?;
+                                }
+                            }
+
+                            if !iso_exchg_atnos.is_null() {
+                                let info = t_group_info
+                                    .as_deref()
+                                    .ok_or(SourceHeapError::NullPointer)?;
+                                if num_iso_no_aux_base
+                                    != i32::from(source_get(
+                                        heap,
+                                        info.nIsotopicEndpointAtomNumber,
+                                        0,
+                                    )?)
+                                {
+                                    ret = CT_ISOCOUNT_ERR;
+                                    break 'source;
+                                }
+                                let mut endpoint = 1_i32;
+                                while endpoint <= num_iso_no_aux_base {
+                                    let atom_index = i32::from(source_get(
+                                        heap,
+                                        info.nIsotopicEndpointAtomNumber,
+                                        endpoint,
+                                    )?);
+                                    let atom = source_clone(heap, at_base, atom_index)?;
+                                    if atom.endpoint != 0
+                                        || (atom.cFlags & AT_FLAG_ISO_H_POINT as i8) == 0
+                                    {
+                                        ret = CT_ISOCOUNT_ERR;
+                                        break 'source;
+                                    }
+                                    endpoint = endpoint.wrapping_add(1);
+                                }
+                            }
+
+                            let mut num_iso_base = 0_i32;
+                            if !iso_exchg_atnos.is_null() {
+                                for index in num_atoms..num_at_tg {
+                                    source_set(
+                                        heap,
+                                        iso_sort_key_base,
+                                        index,
+                                        AT_ISO_SORT_KEY::MAX,
+                                    )?;
+                                }
+                            } else {
+                                let info = t_group_info
+                                    .as_deref()
+                                    .ok_or(SourceHeapError::NullPointer)?;
+                                for index in num_atoms..num_at_tg {
+                                    let group = source_clone(
+                                        heap,
+                                        info.t_group,
+                                        index.wrapping_sub(num_atoms),
+                                    )?;
+                                    if group.iWeight != 0 {
+                                        num_iso_base = num_iso_base.wrapping_add(1);
+                                        source_set(heap, iso_sort_key_base, index, group.iWeight)?;
+                                    } else {
+                                        source_set(
+                                            heap,
+                                            iso_sort_key_base,
+                                            index,
+                                            AT_ISO_SORT_KEY::MAX,
+                                        )?;
+                                    }
+                                }
+                            }
+                            if num_iso_no_aux_base == 0 && !iso_exchg_atnos.is_null() {
+                                inchi_free(heap, iso_exchg_atnos)?;
+                                iso_exchg_atnos = SourceMutPointer::null();
+                                len_iso_exchg_atnos = 0;
+                                max_len_iso_exchg_atnos = 0;
+                            }
+                            if num_iso_no_taut_h == 0 && num_iso_base == 0 {
+                                inchi_free(heap, iso_sort_key_base)?;
+                                iso_sort_key_base = SourceMutPointer::null();
+                                max_len_iso_sort_key_base = 0;
+                            } else {
+                                len_iso_sort_key_base = num_at_tg;
+                            }
+
+                            if iso_exchg_atnos.is_null() && iso_sort_key_base.is_null() {
+                                inchi_free(heap, n_symm_rank_base_iso)?;
+                                inchi_free(heap, n_canon_rank_base_iso)?;
+                                inchi_free(heap, n_atom_number_canon_base_iso)?;
+                                n_symm_rank_base_iso = SourceMutPointer::null();
+                                n_canon_rank_base_iso = SourceMutPointer::null();
+                                n_atom_number_canon_base_iso = SourceMutPointer::null();
+                            } else {
+                                {
+                                    let data = &mut canon_data[i_base];
+                                    data.LinearCT = SourceMutPointer::null();
+                                    data.NumH = num_h;
+                                    data.NumHfixed = SourceMutPointer::null();
+                                    data.iso_sort_key = iso_sort_key_base;
+                                    data.iso_exchg_atnos = iso_exchg_atnos;
+                                    data.ulTimeOutTime = pBCN.ulTimeOutTime;
+                                    data.nMaxLenLinearCT = sizes[i_base].nLenCT.wrapping_add(1);
+                                    data.maxlenNumH = max_len_num_h;
+                                    data.nLenLinearCT = sizes[i_base].nLenCT;
+                                    data.nLenCTAtOnly = sizes[i_base].nLenCTAtOnly;
+                                    data.lenNumH = len_num_h;
+                                    data.lenNumHfixed = 0;
+                                    data.len_iso_sort_key = len_iso_sort_key_base;
+                                    data.maxlen_iso_sort_key = max_len_iso_sort_key_base;
+                                    data.len_iso_exchg_atnos = len_iso_exchg_atnos;
+                                    data.maxlen_iso_exchg_atnos = max_len_iso_exchg_atnos;
+                                    data.nAuxRank = SourceMutPointer::null();
+                                }
+                                let mut needs_iso_canon = false;
+                                if num_iso_no_taut_h != 0
+                                    || num_iso_base != 0
+                                    || num_iso_no_aux_base != 0
+                                {
+                                    for value in heap
+                                        .slice_mut(n_temp_rank)?
+                                        .get_mut(
+                                            ..usize::try_from(num_max)
+                                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                        )
+                                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                                    {
+                                        *value = 0;
+                                    }
+                                    for index in 0..total_count {
+                                        let rank =
+                                            source_get(heap, n_symm_rank_base, index as i32)?;
+                                        if source_get(heap, n_temp_rank, i32::from(rank) - 1)?
+                                            < index as AT_RANK
+                                        {
+                                            source_set(
+                                                heap,
+                                                n_temp_rank,
+                                                i32::from(rank) - 1,
+                                                index as AT_RANK,
+                                            )?;
+                                        }
+                                    }
+                                    for index in 0..total_count {
+                                        let rank =
+                                            source_get(heap, n_symm_rank_base, index as i32)?;
+                                        let representative =
+                                            source_get(heap, n_temp_rank, i32::from(rank) - 1)?;
+                                        let isotope_differs = !iso_sort_key_base.is_null()
+                                            && source_get(heap, iso_sort_key_base, index as i32)?
+                                                != source_get(
+                                                    heap,
+                                                    iso_sort_key_base,
+                                                    i32::from(representative),
+                                                )?;
+                                        // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:6131..6132 C407 isotope OR
+                                        //                         if (( iso_sort_keyBase ? ( iso_sort_keyBase[i] != iso_sort_keyBase[nTempRank[nSymmRankBase[i] - 1]] ) : 0 ) ||
+                                        //                             ( iso_exchg_atnos ? ( iso_exchg_atnos[i] != iso_exchg_atnos[nTempRank[nSymmRankBase[i] - 1]] ) : 0 ))
+                                        // END VERBATIM SOURCE FRAGMENT: C407 isotope OR
+                                        // INCHI✔️✔️: Native OR skips both exchange reads
+                                        // when isotope pair differs, no extra traversal.
+                                        let exchange_differs = !isotope_differs
+                                            && !iso_exchg_atnos.is_null()
+                                            && source_get(heap, iso_exchg_atnos, index as i32)?
+                                                != source_get(
+                                                    heap,
+                                                    iso_exchg_atnos,
+                                                    i32::from(representative),
+                                                )?;
+                                        if isotope_differs || exchange_differs {
+                                            canon_data[i_base].nCanonFlags |=
+                                                CANON_FLAG_ISO_TAUT_DIFF as i32;
+                                            needs_iso_canon = true;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if needs_iso_canon {
+                                    for value in heap
+                                        .slice_mut(p_atom_invariant_aux)?
+                                        .get_mut(
+                                            ..usize::try_from(num_max)
+                                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                        )
+                                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                                    {
+                                        *value = ATOM_INVARIANT2::default();
+                                    }
+                                    for index in 0..total_count {
+                                        let symmetry =
+                                            source_get(heap, n_symm_rank_base, index as i32)?;
+                                        let isotope = if iso_sort_key_base.is_null() {
+                                            0
+                                        } else {
+                                            source_get(heap, iso_sort_key_base, index as i32)?
+                                        };
+                                        let auxiliary = if iso_exchg_atnos.is_null() {
+                                            0
+                                        } else {
+                                            source_get(heap, iso_exchg_atnos, index as i32)?
+                                        };
+                                        let invariant =
+                                            &mut heap.slice_mut(p_atom_invariant_aux)?[index];
+                                        invariant.val[0] = symmetry;
+                                        invariant.iso_sort_key = isotope;
+                                        invariant.iso_aux_key = auxiliary;
+                                    }
+                                    n_num_curr_ranks = SetInitialRanks2(
+                                        heap,
+                                        num_at_tg,
+                                        p_atom_invariant_aux,
+                                        n_rank_aux,
+                                        n_atom_number_aux,
+                                        pCG,
+                                    )?;
+                                    n_num_curr_ranks = DifferentiateRanks2(
+                                        heap,
+                                        pCG,
+                                        num_at_tg,
+                                        neigh_list[taut_yes],
+                                        n_num_curr_ranks,
+                                        n_rank_aux,
+                                        n_temp_rank,
+                                        n_atom_number_aux,
+                                        &mut l_count,
+                                        0,
+                                    )?;
+                                    canon_data[i_base].nAuxRank = n_rank_aux;
+                                    ret = canon_graph_stack(
+                                        heap,
+                                        ic,
+                                        pCG,
+                                        num_atoms,
+                                        num_at_tg,
+                                        num_max,
+                                        1,
+                                        neigh_list[taut_yes],
+                                        &mut partitions,
+                                        n_symm_rank_base_iso,
+                                        n_canon_rank_base_iso,
+                                        n_atom_number_canon_base_iso,
+                                        &mut canon_data[i_base],
+                                        &mut canon_counts,
+                                        ct_base,
+                                        Some(&mut ct_base_iso),
+                                        LargeMolecules,
+                                        user_action,
+                                        console_quit,
+                                        clock_result,
+                                    )?;
+                                    if ret < 0 {
+                                        if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
+                                            ret = CT_CANON_ERR;
+                                        }
+                                        break 'source;
+                                    }
+                                } else {
+                                    ct_temp = alloc_or_exit!(heap, ConTable, 1, 104, 'source);
+                                    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:6193..6226 C408 direct table 6193
+                                    //                     if (( Ct_Temp = (ConTable *) inchi_calloc( 1, sizeof( *Ct_Temp ) ) ) &&
+                                    //                          CTableCreate( Ct_Temp, num_atoms, pCD + iBase ))
+                                    //                     {
+                                    //                         CtFullCopy( Ct_Temp, Ct_Base );
+                                    //                         /* since Ct_Base does not have Ct_Base->iso_sort_key we
+                                    //                            have to fill out Ct_Temp->iso_sort_key separately */
+                                    //                         if (iso_sort_keyBase)
+                                    //                         {
+                                    //                             for (i = 0; i < num_at_tg; i++)
+                                    //                             {
+                                    //                                 Ct_Temp->iso_sort_key[nCanonRankBase[i] - 1] = iso_sort_keyBase[i];
+                                    //                             }
+                                    //                             Ct_Temp->len_iso_sort_key = num_at_tg;
+                                    //                         }
+                                    //                         else
+                                    //                         {
+                                    //                             Ct_Temp->len_iso_sort_key = 0;
+                                    //                         }
+                                    //                         if (iso_exchg_atnos)
+                                    //                         {
+                                    //                             for (i = 0; i < num_atoms; i++)
+                                    //                             {
+                                    //                                 Ct_Temp->iso_exchg_atnos[nCanonRankBase[i] - 1] = iso_exchg_atnos[i];
+                                    //                             }
+                                    //                             Ct_Temp->len_iso_exchg_atnos = num_at_tg;
+                                    //                         }
+                                    //                         else
+                                    //                         {
+                                    //                             Ct_Temp->len_iso_exchg_atnos = 0;
+                                    //                         }
+                                    //                     }
+                                    //                     else
+                                    //                     {
+                                    //                         goto exit_error_alloc;
+                                    // END VERBATIM SOURCE FRAGMENT: C408 direct table 6193
+                                    // INCHI✔️❗: Mutate the sole fresh source ConTable record directly.
+                                    // CTableCreate/Copy access only separately typed child arrays,
+                                    // never this descriptor ID; internal old tables predate this
+                                    // fresh allocation. Existing extraction restores on every Result,
+                                    // not panic unwinding; independent child guards stay protected.
+                                    // No detached descriptor/whole-record writeback or new allocation.
+                                    // Map extraction constants remain INCHI-PERF-CANONICAL-TABLES OPEN.
+                                    let constructed = heap.with_slice_mut_and_heap_mut(
+                                        ct_temp,
+                                        |tables, heap| {
+                                            let temporary = tables
+                                                .first_mut()
+                                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                            if CTableCreate(
+                                                heap,
+                                                temporary,
+                                                num_atoms,
+                                                &canon_data[i_base],
+                                            )? == 0
+                                            {
+                                                return Ok(false);
+                                            }
+                                            let base = source_clone(heap, ct_base, 0)?;
+                                            CtFullCopy(heap, temporary, &base)?;
+                                            if !iso_sort_key_base.is_null() {
+                                                for index in 0..total_count {
+                                                    let rank = source_get(
+                                                        heap,
+                                                        n_canon_rank_base,
+                                                        index as i32,
+                                                    )?;
+                                                    source_set(
+                                                        heap,
+                                                        temporary.iso_sort_key,
+                                                        i32::from(rank) - 1,
+                                                        source_get(
+                                                            heap,
+                                                            iso_sort_key_base,
+                                                            index as i32,
+                                                        )?,
+                                                    )?;
+                                                }
+                                                temporary.len_iso_sort_key = num_at_tg;
+                                            } else {
+                                                temporary.len_iso_sort_key = 0;
+                                            }
+                                            if !iso_exchg_atnos.is_null() {
+                                                for index in 0..atom_count {
+                                                    let rank = source_get(
+                                                        heap,
+                                                        n_canon_rank_base,
+                                                        index as i32,
+                                                    )?;
+                                                    source_set(
+                                                        heap,
+                                                        temporary.iso_exchg_atnos,
+                                                        i32::from(rank) - 1,
+                                                        source_get(
+                                                            heap,
+                                                            iso_exchg_atnos,
+                                                            index as i32,
+                                                        )?,
+                                                    )?;
+                                                }
+                                                temporary.len_iso_exchg_atnos = num_at_tg;
+                                            } else {
+                                                temporary.len_iso_exchg_atnos = 0;
+                                            }
+                                            Ok(true)
+                                        },
+                                    )?;
+                                    if !constructed {
+                                        ret = CT_OUT_OF_RAM;
+                                        break 'source;
+                                    }
+                                    ct_base_iso = ct_temp;
+                                    ct_temp = SourceMutPointer::null();
+                                    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:6230..6232 C407 bulk results 6230
+                                    //                     memcpy(nSymmRankBaseIso, nSymmRankBase, num_at_tg * sizeof(nSymmRankBaseIso[0]));
+                                    //                     memcpy(nCanonRankBaseIso, nCanonRankBase, num_at_tg * sizeof(nCanonRankBaseIso[0]));
+                                    //                     memcpy(nAtomNumberCanonBaseIso, nAtomNumberCanonBase, num_at_tg * sizeof(nAtomNumberCanonBaseIso[0]));
+                                    // END VERBATIM SOURCE FRAGMENT: C407 bulk results 6230
+                                    // INCHI✔️❗: Three complete source copies to fresh distinct arrays.
+                                    // Canonical copier performs one admission per copy, O(n)/O(1),
+                                    // no scalar-map loop/temporary buffer/new allocation/scan.
+                                    // Checked constants remain INCHI-PERF-CANONICAL-BYPASS OPEN.
+                                    if total_count != 0 {
+                                        heap.copy_nonoverlapping_prefix(
+                                            n_symm_rank_base_iso,
+                                            n_symm_rank_base.as_const(),
+                                            total_count,
+                                            false,
+                                        )?;
+                                        heap.copy_nonoverlapping_prefix(
+                                            n_canon_rank_base_iso,
+                                            n_canon_rank_base.as_const(),
+                                            total_count,
+                                            false,
+                                        )?;
+                                        heap.copy_nonoverlapping_prefix(
+                                            n_atom_number_canon_base_iso,
+                                            n_atom_number_canon_base.as_const(),
+                                            total_count,
+                                            false,
+                                        )?;
+                                    }
+                                }
+                                t_group_info
+                                    .as_deref_mut()
+                                    .ok_or(SourceHeapError::NullPointer)?
+                                    .bIgnoreIsotopic = 1;
+                            }
+                        }
+                    }
+
+                    if b_req_taut != 0 && b_req_non_taut != 0 {
+                        max_len_num_h_fixed = num_atoms.wrapping_add(1);
+                        n_symm_rank_fix_h = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                        n_canon_rank_fix_h = alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                        n_atom_number_canon_fix_h =
+                            alloc_or_exit!(heap, AT_NUMB, num_max, 2, 'source);
+                        num_h_fixed = alloc_or_exit!(heap, NUM_H, max_len_num_h_fixed, 2, 'source);
+                        let at_other = at[i_other];
+                        for index in 0..atom_count {
+                            let base_atom = heap.slice(at_base.as_const())?[index].clone();
+                            let other_atom = heap.slice(at_other.as_const())?[index].clone();
+                            let value = if base_atom.endpoint != 0 {
+                                if other_atom.num_H != 0 {
+                                    i32::from(other_atom.num_H).wrapping_add(BASE_H_NUMBER as i32)
+                                        as NUM_H
+                                } else {
+                                    EMPTY_H_NUMBER as NUM_H
+                                }
+                            } else if other_atom.num_H != base_atom.num_H {
+                                i32::from(other_atom.num_H)
+                                    .wrapping_sub(i32::from(base_atom.num_H))
+                                    .wrapping_add(BASE_H_NUMBER as i32)
+                                    as NUM_H
+                            } else {
+                                EMPTY_H_NUMBER as NUM_H
+                            };
+                            source_set(heap, num_h_fixed, index as i32, value)?;
+                        }
+                        {
+                            let data = &mut canon_data[i_other];
+                            data.LinearCT = SourceMutPointer::null();
+                            data.NumH = num_h_no_taut_h;
+                            data.NumHfixed = num_h_fixed;
+                            data.iso_sort_key = SourceMutPointer::null();
+                            data.iso_exchg_atnos = SourceMutPointer::null();
+                            data.ulTimeOutTime = pBCN.ulTimeOutTime;
+                            data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
+                            data.maxlenNumH = max_len_num_h_no_taut_h;
+                            data.maxlenNumHfixed = max_len_num_h_fixed;
+                            data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
+                            data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
+                            data.lenNumH = num_atoms;
+                            data.lenNumHfixed = num_atoms;
+                            data.len_iso_sort_key = 0;
+                            data.maxlen_iso_sort_key = 0;
+                            data.len_iso_exchg_atnos = 0;
+                            data.maxlen_iso_exchg_atnos = 0;
+                            data.nAuxRank = SourceMutPointer::null();
+                        }
+                        for value in heap
+                            .slice_mut(p_atom_invariant_aux)?
+                            .get_mut(
+                                ..usize::try_from(num_max)
+                                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                            )
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        {
+                            *value = ATOM_INVARIANT2::default();
+                        }
+                        for index in 0..atom_count {
+                            let symmetry = source_get(heap, n_symm_rank_base, index as i32)?;
+                            let hydrogen = source_get(heap, num_h_fixed, index as i32)? as AT_NUMB;
+                            let invariant = &mut heap.slice_mut(p_atom_invariant_aux)?[index];
+                            invariant.val[0] = symmetry;
+                            invariant.val[1] = hydrogen;
+                        }
+                        n_num_curr_ranks = SetInitialRanks2(
+                            heap,
+                            num_atoms,
+                            p_atom_invariant_aux,
+                            n_rank_aux,
+                            n_atom_number_aux,
+                            pCG,
+                        )?;
+                        n_num_curr_ranks = DifferentiateRanks2(
+                            heap,
+                            pCG,
+                            num_atoms,
+                            neigh_list[taut_non],
+                            n_num_curr_ranks,
+                            n_rank_aux,
+                            n_temp_rank,
+                            n_atom_number_aux,
+                            &mut l_count,
+                            0,
+                        )?;
+                        canon_data[i_other].nAuxRank = n_rank_aux;
+                        ret = canon_graph_stack(
+                            heap,
+                            ic,
+                            pCG,
+                            num_atoms,
+                            num_atoms,
+                            num_max,
+                            0,
+                            neigh_list[taut_non],
+                            &mut partitions,
+                            n_symm_rank_fix_h,
+                            n_canon_rank_fix_h,
+                            n_atom_number_canon_fix_h,
+                            &mut canon_data[i_other],
+                            &mut canon_counts,
+                            ct_no_taut_h,
+                            Some(&mut ct_fix_h),
+                            LargeMolecules,
+                            user_action,
+                            console_quit,
+                            clock_result,
+                        )?;
+                        if ret < 0 {
+                            if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
+                                ret = CT_CANON_ERR;
+                            }
+                            break 'source;
+                        }
+
+                        let mut isotopic_fixed_h = (sizes[i_base].num_isotopic_atoms != 0
+                            && sizes[i_base].bIgnoreIsotopic == 0)
+                            || (sizes[i_base].bHasIsotopicTautGroups != 0
+                                && b_taut_ignore_isotopic == 0);
+                        if bFixIsoFixedH != 0 {
+                            isotopic_fixed_h |= sizes[i_other].num_isotopic_atoms != 0
+                                && sizes[i_other].bIgnoreIsotopic == 0;
+                        }
+                        if isotopic_fixed_h {
+                            max_len_iso_sort_key_no_taut_h = num_atoms.wrapping_add(1);
+                            n_symm_rank_fix_h_iso =
+                                alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                            n_canon_rank_fix_h_iso =
+                                alloc_or_exit!(heap, AT_RANK, num_max, 2, 'source);
+                            n_atom_number_canon_fix_h_iso =
+                                alloc_or_exit!(heap, AT_NUMB, num_max, 2, 'source);
+                            iso_sort_key_no_taut_h = alloc_or_exit!(heap,
+                                AT_ISO_SORT_KEY,
+                                max_len_iso_sort_key_no_taut_h,
+                                8,
+                                'source
+                            );
+                            let mut num_iso_no_taut_h = 0_i32;
+                            for index in 0..atom_count {
+                                let atom = if bFixIsoFixedH != 0 {
+                                    heap.slice(at_other.as_const())?[index].clone()
+                                } else {
+                                    heap.slice(at_base.as_const())?[index].clone()
+                                };
+                                let key = make_iso_sort_key(
+                                    i32::from(atom.iso_atw_diff),
+                                    i32::from(atom.num_iso_H[0]),
+                                    i32::from(atom.num_iso_H[1]),
+                                    i32::from(atom.num_iso_H[2]),
+                                );
+                                if key != 0 {
+                                    num_iso_no_taut_h = num_iso_no_taut_h.wrapping_add(1);
+                                    source_set(heap, iso_sort_key_no_taut_h, index as i32, key)?;
+                                } else {
+                                    source_set(
+                                        heap,
+                                        iso_sort_key_no_taut_h,
+                                        index as i32,
+                                        AT_ISO_SORT_KEY::MAX,
+                                    )?;
+                                }
+                            }
+                            len_iso_sort_key_no_taut_h = num_atoms;
+                            {
+                                let data = &mut canon_data[i_other];
+                                data.LinearCT = SourceMutPointer::null();
+                                data.NumH = num_h_no_taut_h;
+                                data.NumHfixed = num_h_fixed;
+                                data.iso_sort_key = iso_sort_key_no_taut_h;
+                                data.iso_exchg_atnos = SourceMutPointer::null();
+                                data.ulTimeOutTime = pBCN.ulTimeOutTime;
+                                data.nMaxLenLinearCT = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
+                                data.maxlenNumH = max_len_num_h_no_taut_h;
+                                data.maxlenNumHfixed = max_len_num_h_fixed;
+                                data.nLenLinearCT = sizes[i_other].nLenCTAtOnly;
+                                data.nLenCTAtOnly = sizes[i_other].nLenCTAtOnly;
+                                data.lenNumH = num_atoms;
+                                data.lenNumHfixed = num_atoms;
+                                data.len_iso_sort_key = len_iso_sort_key_no_taut_h;
+                                data.maxlen_iso_sort_key = max_len_iso_sort_key_no_taut_h;
+                                data.len_iso_exchg_atnos = 0;
+                                data.maxlen_iso_exchg_atnos = 0;
+                                data.nAuxRank = SourceMutPointer::null();
+                            }
+                            let mut needs_iso_canon = false;
+                            if num_iso_no_taut_h != 0 {
+                                for value in heap
+                                    .slice_mut(n_temp_rank)?
+                                    .get_mut(
+                                        ..usize::try_from(num_max)
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    )
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                                {
+                                    *value = 0;
+                                }
+                                for index in 0..atom_count {
+                                    let rank = source_get(heap, n_symm_rank_fix_h, index as i32)?;
+                                    if source_get(heap, n_temp_rank, i32::from(rank) - 1)?
+                                        < index as AT_RANK
+                                    {
+                                        source_set(
+                                            heap,
+                                            n_temp_rank,
+                                            i32::from(rank) - 1,
+                                            index as AT_RANK,
+                                        )?;
+                                    }
+                                }
+                                for index in 0..atom_count {
+                                    let rank = source_get(heap, n_symm_rank_fix_h, index as i32)?;
+                                    let representative =
+                                        source_get(heap, n_temp_rank, i32::from(rank) - 1)?;
+                                    if source_get(heap, iso_sort_key_no_taut_h, index as i32)?
+                                        != source_get(
+                                            heap,
+                                            iso_sort_key_no_taut_h,
+                                            i32::from(representative),
+                                        )?
+                                    {
+                                        needs_iso_canon = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if needs_iso_canon {
+                                canon_data[i_other].nCanonFlags |=
+                                    CANON_FLAG_ISO_FIXED_H_DIFF as i32;
+                                for value in heap
+                                    .slice_mut(p_atom_invariant_aux)?
+                                    .get_mut(
+                                        ..usize::try_from(num_max)
+                                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+                                    )
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+                                {
+                                    *value = ATOM_INVARIANT2::default();
+                                }
+                                for index in 0..atom_count {
+                                    let symmetry =
+                                        source_get(heap, n_symm_rank_fix_h, index as i32)?;
+                                    let isotope =
+                                        source_get(heap, iso_sort_key_no_taut_h, index as i32)?;
+                                    let invariant =
+                                        &mut heap.slice_mut(p_atom_invariant_aux)?[index];
+                                    invariant.val[0] = symmetry;
+                                    invariant.iso_sort_key = isotope;
+                                }
+                                n_num_curr_ranks = SetInitialRanks2(
+                                    heap,
+                                    num_atoms,
+                                    p_atom_invariant_aux,
+                                    n_rank_aux,
+                                    n_atom_number_aux,
+                                    pCG,
+                                )?;
+                                n_num_curr_ranks = DifferentiateRanks2(
+                                    heap,
+                                    pCG,
+                                    num_atoms,
+                                    neigh_list[taut_non],
+                                    n_num_curr_ranks,
+                                    n_rank_aux,
+                                    n_temp_rank,
+                                    n_atom_number_aux,
+                                    &mut l_count,
+                                    0,
+                                )?;
+                                canon_data[i_other].nAuxRank = n_rank_aux;
+                                ret = canon_graph_stack(
+                                    heap,
+                                    ic,
+                                    pCG,
+                                    num_atoms,
+                                    num_atoms,
+                                    num_max,
+                                    1,
+                                    neigh_list[taut_non],
+                                    &mut partitions,
+                                    n_symm_rank_fix_h_iso,
+                                    n_canon_rank_fix_h_iso,
+                                    n_atom_number_canon_fix_h_iso,
+                                    &mut canon_data[i_other],
+                                    &mut canon_counts,
+                                    ct_fix_h,
+                                    Some(&mut ct_fix_h_iso),
+                                    LargeMolecules,
+                                    user_action,
+                                    console_quit,
+                                    clock_result,
+                                )?;
+                                if ret < 0 {
+                                    if !(CT_ERR_MIN..=CT_ERR_MAX).contains(&ret) {
+                                        ret = CT_CANON_ERR;
+                                    }
+                                    break 'source;
+                                }
+                            } else {
+                                ct_temp = alloc_or_exit!(heap, ConTable, 1, 104, 'source);
+                                // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:6582..6606 C408 direct table 6582
+                                //                 if (( Ct_Temp = (ConTable *) inchi_calloc( 1, sizeof( *Ct_Temp ) ) ) &&
+                                //                      CTableCreate( Ct_Temp, num_atoms, pCD + iOther ))
+                                //                 {
+                                //                     CtFullCopy( Ct_Temp, Ct_FixH );
+                                //                     /* since Ct_FixH does not have Ct_FixH->iso_sort_key and Ct_FixH->iso_sort_key_Hfixed we
+                                //                        have to fill out Ct_Temp->iso_sort_key and Ct_Temp->iso_sort_key_Hfixed separately */
+                                //                     for (i = 0; i < num_atoms; i++)
+                                //                     {
+                                //                         Ct_Temp->iso_sort_key[nCanonRankFixH[i] - 1] = iso_sort_key_NoTautH[i];
+                                //
+                                // #if ( USE_ISO_SORT_KEY_HFIXED == 1 )
+                                //                         Ct_Temp->iso_sort_key_Hfixed[nCanonRankFixH[i] - 1] = iso_sort_key_Hfixed[i];
+                                // #endif
+                                //                     }
+                                //                     Ct_Temp->len_iso_sort_key = num_atoms;
+                                //
+                                // #if ( USE_ISO_SORT_KEY_HFIXED == 1 )
+                                //                     Ct_Temp->len_iso_sort_key_Hfixed = num_atoms;
+                                // #endif
+                                //
+                                //                     /*Ct_Temp->lenNumH = num_atoms;*/
+                                //                 }
+                                //                 else
+                                //                 {
+                                //                     goto exit_error_alloc;
+                                // END VERBATIM SOURCE FRAGMENT: C408 direct table 6582
+                                // INCHI✔️❗: Mutate the sole fresh source ConTable record directly.
+                                // CTableCreate/Copy access only separately typed child arrays,
+                                // never this descriptor ID; internal old tables predate this
+                                // fresh allocation. Existing extraction restores on every Result,
+                                // not panic unwinding; independent child guards stay protected.
+                                // No detached descriptor/whole-record writeback or new allocation.
+                                // Map extraction constants remain INCHI-PERF-CANONICAL-TABLES OPEN.
+                                let constructed =
+                                    heap.with_slice_mut_and_heap_mut(ct_temp, |tables, heap| {
+                                        let temporary = tables
+                                            .first_mut()
+                                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                        if CTableCreate(
+                                            heap,
+                                            temporary,
+                                            num_atoms,
+                                            &canon_data[i_other],
+                                        )? == 0
+                                        {
+                                            return Ok(false);
+                                        }
+                                        let fixed = source_clone(heap, ct_fix_h, 0)?;
+                                        CtFullCopy(heap, temporary, &fixed)?;
+                                        for index in 0..atom_count {
+                                            let rank =
+                                                source_get(heap, n_canon_rank_fix_h, index as i32)?;
+                                            source_set(
+                                                heap,
+                                                temporary.iso_sort_key,
+                                                i32::from(rank) - 1,
+                                                source_get(
+                                                    heap,
+                                                    iso_sort_key_no_taut_h,
+                                                    index as i32,
+                                                )?,
+                                            )?;
+                                        }
+                                        temporary.len_iso_sort_key = num_atoms;
+                                        Ok(true)
+                                    })?;
+                                if !constructed {
+                                    ret = CT_OUT_OF_RAM;
+                                    break 'source;
+                                }
+                                ct_fix_h_iso = ct_temp;
+                                ct_temp = SourceMutPointer::null();
+                                // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:6610..6612 C407 bulk results 6610
+                                //                 memcpy(nSymmRankFixHIso, nSymmRankFixH, num_atoms * sizeof(nSymmRankFixHIso[0]));
+                                //                 memcpy(nCanonRankFixHIso, nCanonRankFixH, num_atoms * sizeof(nCanonRankFixHIso[0]));
+                                //                 memcpy(nAtomNumberCanonFixHIso, nAtomNumberCanonFixH, num_atoms * sizeof(nAtomNumberCanonFixHIso[0]));
+                                // END VERBATIM SOURCE FRAGMENT: C407 bulk results 6610
+                                // INCHI✔️❗: Three complete source copies to fresh distinct arrays.
+                                // Canonical copier performs one admission per copy, O(n)/O(1),
+                                // no scalar-map loop/temporary buffer/new allocation/scan.
+                                // Checked constants remain INCHI-PERF-CANONICAL-BYPASS OPEN.
+                                if atom_count != 0 {
+                                    heap.copy_nonoverlapping_prefix(
+                                        n_symm_rank_fix_h_iso,
+                                        n_symm_rank_fix_h.as_const(),
+                                        atom_count,
+                                        false,
+                                    )?;
+                                    heap.copy_nonoverlapping_prefix(
+                                        n_canon_rank_fix_h_iso,
+                                        n_canon_rank_fix_h.as_const(),
+                                        atom_count,
+                                        false,
+                                    )?;
+                                    heap.copy_nonoverlapping_prefix(
+                                        n_atom_number_canon_fix_h_iso,
+                                        n_atom_number_canon_fix_h.as_const(),
+                                        atom_count,
+                                        false,
+                                    )?;
+                                }
+                            }
+                        }
+                    }
+
+                    ret = 0;
+                    let no_h = source_clone(heap, ct_no_h, 0)?;
+                    let no_taut_h = source_clone(heap, ct_no_taut_h, 0)?;
+                    let mut inconsistent = no_h.lenCt != no_taut_h.lenCt
+                        || !source_prefix_equal(heap, no_h.Ctbl, no_taut_h.Ctbl, no_h.lenCt)?;
+                    if b_req_taut != 0 {
+                        if !ct_fix_h.is_null() {
+                            let fixed = source_clone(heap, ct_fix_h, 0)?;
+                            inconsistent |= no_taut_h.lenCt != fixed.lenCt
+                                || !source_prefix_equal(
+                                    heap,
+                                    no_taut_h.Ctbl,
+                                    fixed.Ctbl,
+                                    no_taut_h.lenCt,
+                                )?;
+                            inconsistent |= no_taut_h.lenNumH != fixed.lenNumH
+                                || !source_prefix_equal(
+                                    heap,
+                                    no_taut_h.NumH,
+                                    fixed.NumH,
+                                    no_taut_h.lenNumH,
+                                )?;
+                        }
+                        let base = source_clone(heap, ct_base, 0)?;
+                        inconsistent |= no_taut_h.lenCt > base.lenCt
+                            || !source_prefix_equal(
+                                heap,
+                                no_taut_h.Ctbl,
+                                base.Ctbl,
+                                no_taut_h.lenCt,
+                            )?;
+                        inconsistent |= no_taut_h.lenNumH > base.lenNumH
+                            || !source_prefix_equal(
+                                heap,
+                                no_taut_h.NumH,
+                                base.NumH,
+                                no_taut_h.lenNumH,
+                            )?;
+                    }
+                    if !ct_no_taut_h_iso.is_null() {
+                        let isotopic = source_clone(heap, ct_no_taut_h_iso, 0)?;
+                        inconsistent |= no_h.lenCt != isotopic.lenCt
+                            || !source_prefix_equal(heap, no_h.Ctbl, isotopic.Ctbl, no_h.lenCt)?;
+                        inconsistent |= no_taut_h.lenNumH != isotopic.lenNumH
+                            || !source_prefix_equal(
+                                heap,
+                                no_taut_h.NumH,
+                                isotopic.NumH,
+                                no_taut_h.lenNumH,
+                            )?;
+                    } else if !ct_base_iso.is_null() {
+                        let base = source_clone(heap, ct_base, 0)?;
+                        let base_iso = source_clone(heap, ct_base_iso, 0)?;
+                        inconsistent |= base_iso.lenCt != base.lenCt
+                            || !source_prefix_equal(
+                                heap,
+                                base_iso.Ctbl,
+                                base.Ctbl,
+                                base_iso.lenCt,
+                            )?;
+                        inconsistent |= base_iso.lenNumH != base.lenNumH
+                            || !source_prefix_equal(
+                                heap,
+                                base_iso.NumH,
+                                base.NumH,
+                                base_iso.lenNumH,
+                            )?;
+                        if !ct_fix_h_iso.is_null() {
+                            let fixed_iso = source_clone(heap, ct_fix_h_iso, 0)?;
+                            inconsistent |= fixed_iso.lenCt > base_iso.lenCt
+                                || !source_prefix_equal(
+                                    heap,
+                                    fixed_iso.Ctbl,
+                                    base_iso.Ctbl,
+                                    fixed_iso.lenCt,
+                                )?;
+                            inconsistent |= fixed_iso.lenNumH > base_iso.lenNumH
+                                || !source_prefix_equal(
+                                    heap,
+                                    fixed_iso.NumH,
+                                    base_iso.NumH,
+                                    fixed_iso.lenNumH,
+                                )?;
+                        }
+                    }
+                    if inconsistent {
+                        ret = CT_CANON_ERR;
                         break 'source;
                     }
-                    let fixed = source_clone(heap, ct_fix_h, 0)?;
-                    CtFullCopy(heap, &mut temporary, &fixed)?;
-                    for index in 0..atom_count {
-                        let rank = source_get(heap, n_canon_rank_fix_h, index as i32)?;
-                        source_set(
-                            heap,
-                            temporary.iso_sort_key,
-                            i32::from(rank) - 1,
-                            source_get(heap, iso_sort_key_no_taut_h, index as i32)?,
-                        )?;
+
+                    if b_req_taut != 0 {
+                        t_group_info
+                            .as_deref_mut()
+                            .ok_or(SourceHeapError::NullPointer)?
+                            .bIgnoreIsotopic = b_taut_ignore_isotopic;
                     }
-                    temporary.len_iso_sort_key = num_atoms;
-                    heap.slice_mut(ct_temp)?[0] = temporary;
-                    ct_fix_h_iso = ct_temp;
-                    ct_temp = SourceMutPointer::null();
-                    for index in 0..atom_count {
-                        source_set(
-                            heap,
-                            n_symm_rank_fix_h_iso,
-                            index as i32,
-                            source_get(heap, n_symm_rank_fix_h, index as i32)?,
-                        )?;
-                        source_set(
-                            heap,
-                            n_canon_rank_fix_h_iso,
-                            index as i32,
-                            source_get(heap, n_canon_rank_fix_h, index as i32)?,
-                        )?;
-                        source_set(
-                            heap,
-                            n_atom_number_canon_fix_h_iso,
-                            index as i32,
-                            source_get(heap, n_atom_number_canon_fix_h, index as i32)?,
-                        )?;
+                    pBCN.num_max = num_max;
+                    pBCN.num_at_tg = num_at_tg;
+                    pBCN.num_atoms = num_atoms;
+                    pBCN.ftcn[taut_non].NeighList = neigh_list[taut_non];
+                    neigh_list[taut_non] = SourceMutPointer::null();
+                    pBCN.ftcn[taut_yes].NeighList = neigh_list[taut_yes];
+                    neigh_list[taut_yes] = SourceMutPointer::null();
+
+                    if b_req_taut != 0 {
+                        let base = heap
+                            .slice_mut(ct_base)?
+                            .first_mut()
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let output = &mut pBCN.ftcn[taut_yes];
+                        output.num_at_tg = num_at_tg;
+                        output.num_atoms = num_atoms;
+                        output.LinearCt = base.Ctbl;
+                        base.Ctbl = SourceMutPointer::null();
+                        output.nLenLinearCtAtOnly = sizes[i_base].nLenCTAtOnly;
+                        output.nMaxLenLinearCt = sizes[i_base].nLenCT.wrapping_add(1);
+                        output.nLenLinearCt = sizes[i_base].nLenCT;
+                        output.PartitionCt.Rank = n_canon_rank_base;
+                        n_canon_rank_base = SourceMutPointer::null();
+                        output.PartitionCt.AtNumber = n_atom_number_canon_base;
+                        n_atom_number_canon_base = SourceMutPointer::null();
+                        output.nSymmRankCt = n_symm_rank_base;
+                        n_symm_rank_base = SourceMutPointer::null();
+                        output.nNumHOrig = num_h;
+                        num_h = SourceMutPointer::null();
+                        output.nNumH = base.NumH;
+                        base.NumH = SourceMutPointer::null();
+                        output.nLenNumH = max_len_num_h.min(base.maxlenNumH);
+                        output.nNumHOrigFixH = SourceMutPointer::null();
+                        output.nNumHFixH = SourceMutPointer::null();
+                        output.nLenNumHFixH = 0;
+                        output.nCanonFlags |= canon_data[i_base].nCanonFlags;
+                        CleanNumH(heap, output.nNumHOrig, output.nLenNumH)?;
+                        CleanNumH(heap, output.nNumH, output.nLenNumH)?;
+                        CleanCt(heap, output.LinearCt, output.nLenLinearCt)?;
+                        if !ct_base_iso.is_null() {
+                            let base_iso = heap
+                                .slice_mut(ct_base_iso)?
+                                .first_mut()
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            output.PartitionCtIso.Rank = n_canon_rank_base_iso;
+                            n_canon_rank_base_iso = SourceMutPointer::null();
+                            output.PartitionCtIso.AtNumber = n_atom_number_canon_base_iso;
+                            n_atom_number_canon_base_iso = SourceMutPointer::null();
+                            output.nSymmRankCtIso = n_symm_rank_base_iso;
+                            n_symm_rank_base_iso = SourceMutPointer::null();
+                            output.iso_sort_keys = base_iso.iso_sort_key;
+                            base_iso.iso_sort_key = SourceMutPointer::null();
+                            output.iso_sort_keysOrig = iso_sort_key_base;
+                            iso_sort_key_base = SourceMutPointer::null();
+                            output.len_iso_sort_keys = len_iso_sort_key_base;
+                            output.iso_exchg_atnos = base_iso.iso_exchg_atnos;
+                            base_iso.iso_exchg_atnos = SourceMutPointer::null();
+                            output.iso_exchg_atnosOrig = iso_exchg_atnos;
+                            iso_exchg_atnos = SourceMutPointer::null();
+                            CleanIsoSortKeys(heap, output.iso_sort_keys, output.len_iso_sort_keys)?;
+                            CleanIsoSortKeys(
+                                heap,
+                                output.iso_sort_keysOrig,
+                                output.len_iso_sort_keys,
+                            )?;
+                        }
+                    }
+
+                    if b_req_non_taut != 0 {
+                        if b_req_taut == 0 {
+                            n_symm_rank_fix_h = n_symm_rank_no_taut_h;
+                            n_symm_rank_no_taut_h = SourceMutPointer::null();
+                            n_canon_rank_fix_h = n_canon_rank_no_taut_h;
+                            n_canon_rank_no_taut_h = SourceMutPointer::null();
+                            n_atom_number_canon_fix_h = n_atom_number_canon_no_taut_h;
+                            n_atom_number_canon_no_taut_h = SourceMutPointer::null();
+                            ct_fix_h = ct_no_taut_h;
+                            ct_no_taut_h = SourceMutPointer::null();
+                            n_symm_rank_fix_h_iso = n_symm_rank_no_taut_h_iso;
+                            n_symm_rank_no_taut_h_iso = SourceMutPointer::null();
+                            n_canon_rank_fix_h_iso = n_canon_rank_no_taut_h_iso;
+                            n_canon_rank_no_taut_h_iso = SourceMutPointer::null();
+                            n_atom_number_canon_fix_h_iso = n_atom_number_canon_no_taut_h_iso;
+                            n_atom_number_canon_no_taut_h_iso = SourceMutPointer::null();
+                            ct_fix_h_iso = ct_no_taut_h_iso;
+                            ct_no_taut_h_iso = SourceMutPointer::null();
+                            if i_other == taut_yes
+                                && !pBCN.ftcn[taut_non].NeighList.is_null()
+                                && pBCN.ftcn[taut_yes].NeighList.is_null()
+                            {
+                                pBCN.ftcn[taut_yes].NeighList = pBCN.ftcn[taut_non].NeighList;
+                                pBCN.ftcn[taut_non].NeighList = SourceMutPointer::null();
+                            }
+                        }
+                        let fixed = heap
+                            .slice_mut(ct_fix_h)?
+                            .first_mut()
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let output = &mut pBCN.ftcn[i_other];
+                        output.num_at_tg = num_atoms;
+                        output.num_atoms = num_atoms;
+                        output.LinearCt = fixed.Ctbl;
+                        fixed.Ctbl = SourceMutPointer::null();
+                        output.nLenLinearCtAtOnly = sizes[i_other].nLenCTAtOnly;
+                        output.nMaxLenLinearCt = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
+                        output.nLenLinearCt = sizes[i_other].nLenCTAtOnly;
+                        output.PartitionCt.Rank = n_canon_rank_fix_h;
+                        n_canon_rank_fix_h = SourceMutPointer::null();
+                        output.PartitionCt.AtNumber = n_atom_number_canon_fix_h;
+                        n_atom_number_canon_fix_h = SourceMutPointer::null();
+                        output.nSymmRankCt = n_symm_rank_fix_h;
+                        n_symm_rank_fix_h = SourceMutPointer::null();
+                        output.nNumHOrig = num_h_no_taut_h;
+                        num_h_no_taut_h = SourceMutPointer::null();
+                        output.nNumH = fixed.NumH;
+                        fixed.NumH = SourceMutPointer::null();
+                        output.nLenNumH = max_len_num_h_no_taut_h.min(fixed.maxlenNumH);
+                        output.nNumHOrigFixH = num_h_fixed;
+                        num_h_fixed = SourceMutPointer::null();
+                        output.nNumHFixH = fixed.NumHfixed;
+                        fixed.NumHfixed = SourceMutPointer::null();
+                        output.nLenNumHFixH = num_atoms;
+                        output.nCanonFlags |= canon_data[i_other].nCanonFlags;
+                        CleanNumH(heap, output.nNumHOrig, output.nLenNumH)?;
+                        CleanNumH(heap, output.nNumHOrigFixH, output.nLenNumH)?;
+                        CleanNumH(heap, output.nNumH, output.nLenNumH)?;
+                        CleanNumH(heap, output.nNumHFixH, output.nLenNumH)?;
+                        CleanCt(heap, output.LinearCt, output.nLenLinearCt)?;
+                        if !ct_fix_h_iso.is_null() {
+                            let fixed_iso = heap
+                                .slice_mut(ct_fix_h_iso)?
+                                .first_mut()
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            output.PartitionCtIso.Rank = n_canon_rank_fix_h_iso;
+                            n_canon_rank_fix_h_iso = SourceMutPointer::null();
+                            output.PartitionCtIso.AtNumber = n_atom_number_canon_fix_h_iso;
+                            n_atom_number_canon_fix_h_iso = SourceMutPointer::null();
+                            output.nSymmRankCtIso = n_symm_rank_fix_h_iso;
+                            n_symm_rank_fix_h_iso = SourceMutPointer::null();
+                            output.iso_sort_keys = fixed_iso.iso_sort_key;
+                            fixed_iso.iso_sort_key = SourceMutPointer::null();
+                            output.iso_sort_keysOrig = iso_sort_key_no_taut_h;
+                            iso_sort_key_no_taut_h = SourceMutPointer::null();
+                            output.len_iso_sort_keys = len_iso_sort_key_no_taut_h;
+                            CleanIsoSortKeys(heap, output.iso_sort_keys, output.len_iso_sort_keys)?;
+                            CleanIsoSortKeys(
+                                heap,
+                                output.iso_sort_keysOrig,
+                                output.len_iso_sort_keys,
+                            )?;
+                        }
                     }
                 }
-            }
+                Ok(())
+            });
         }
 
-        ret = 0;
-        let no_h = source_clone(heap, ct_no_h, 0)?;
-        let no_taut_h = source_clone(heap, ct_no_taut_h, 0)?;
-        let mut inconsistent = no_h.lenCt != no_taut_h.lenCt
-            || !source_prefix_equal(heap, no_h.Ctbl, no_taut_h.Ctbl, no_h.lenCt)?;
-        if b_req_taut != 0 {
-            if !ct_fix_h.is_null() {
-                let fixed = source_clone(heap, ct_fix_h, 0)?;
-                inconsistent |= no_taut_h.lenCt != fixed.lenCt
-                    || !source_prefix_equal(heap, no_taut_h.Ctbl, fixed.Ctbl, no_taut_h.lenCt)?;
-                inconsistent |= no_taut_h.lenNumH != fixed.lenNumH
-                    || !source_prefix_equal(heap, no_taut_h.NumH, fixed.NumH, no_taut_h.lenNumH)?;
-            }
-            let base = source_clone(heap, ct_base, 0)?;
-            inconsistent |= no_taut_h.lenCt > base.lenCt
-                || !source_prefix_equal(heap, no_taut_h.Ctbl, base.Ctbl, no_taut_h.lenCt)?;
-            inconsistent |= no_taut_h.lenNumH > base.lenNumH
-                || !source_prefix_equal(heap, no_taut_h.NumH, base.NumH, no_taut_h.lenNumH)?;
+        Ok(())
+    })();
+
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichican2.c:6816..6835 C411 shared error cleanup
+    // exit_error_alloc:
+    //     ret = CT_OUT_OF_RAM;
+    //     goto exit_function;
+    //
+    // exit_error:
+    //     if (!RETURNED_ERROR( ret ))
+    //     {
+    //         ret = CT_CANON_ERR;
+    //     }
+    //     goto exit_function;
+    //
+    //
+    // exit_function:
+    //
+    // #define FREE_CONTABLE( X) if (X) {CTableFree( X);inchi_free( X);}
+    // #define FREE_ARRAY( X) if (X) inchi_free( X);
+    //
+    //     FreeNeighList( NeighList[TAUT_NON] );
+    //     FreeNeighList( NeighList[TAUT_YES] );
+    //
+    // END VERBATIM SOURCE FRAGMENT: C411 shared error cleanup
+    // INCHI✔️❗: Keep the one source cleanup order for every source status.
+    // Reached Rust-only pointer errors also release local ownership before
+    // propagating the original category; native NULL dereference is undefined
+    // and has no native return-value acceptance. No fallback chemistry/status.
+    // O(1) Result bookkeeping, no new allocation/clone/scan; cost OPEN.
+    let cleanup = (|| -> Result<(), SourceHeapError> {
+        FreeNeighList(heap, neigh_list[TAUT_NON as usize])?;
+        FreeNeighList(heap, neigh_list[TAUT_YES as usize])?;
+        for table in [
+            ct_no_h,
+            ct_no_taut_h,
+            ct_base,
+            ct_fix_h,
+            ct_temp,
+            ct_no_taut_h_iso,
+            ct_base_iso,
+            ct_fix_h_iso,
+        ] {
+            free_con_table(heap, table)?;
         }
-        if !ct_no_taut_h_iso.is_null() {
-            let isotopic = source_clone(heap, ct_no_taut_h_iso, 0)?;
-            inconsistent |= no_h.lenCt != isotopic.lenCt
-                || !source_prefix_equal(heap, no_h.Ctbl, isotopic.Ctbl, no_h.lenCt)?;
-            inconsistent |= no_taut_h.lenNumH != isotopic.lenNumH
-                || !source_prefix_equal(heap, no_taut_h.NumH, isotopic.NumH, no_taut_h.lenNumH)?;
-        } else if !ct_base_iso.is_null() {
-            let base = source_clone(heap, ct_base, 0)?;
-            let base_iso = source_clone(heap, ct_base_iso, 0)?;
-            inconsistent |= base_iso.lenCt != base.lenCt
-                || !source_prefix_equal(heap, base_iso.Ctbl, base.Ctbl, base_iso.lenCt)?;
-            inconsistent |= base_iso.lenNumH != base.lenNumH
-                || !source_prefix_equal(heap, base_iso.NumH, base.NumH, base_iso.lenNumH)?;
-            if !ct_fix_h_iso.is_null() {
-                let fixed_iso = source_clone(heap, ct_fix_h_iso, 0)?;
-                inconsistent |= fixed_iso.lenCt > base_iso.lenCt
-                    || !source_prefix_equal(heap, fixed_iso.Ctbl, base_iso.Ctbl, fixed_iso.lenCt)?;
-                inconsistent |= fixed_iso.lenNumH > base_iso.lenNumH
-                    || !source_prefix_equal(
-                        heap,
-                        fixed_iso.NumH,
-                        base_iso.NumH,
-                        fixed_iso.lenNumH,
-                    )?;
+        for pointer in [n_rank, n_atom_number] {
+            if !pointer.is_null() {
+                inchi_free(heap, pointer)?;
             }
         }
-        if inconsistent {
-            ret = CT_CANON_ERR;
-            break 'source;
+        if !pBCN.pRankStack.is_null() {
+            source_set(heap, pBCN.pRankStack, 0, SourceMutPointer::null())?;
+            source_set(heap, pBCN.pRankStack, 1, SourceMutPointer::null())?;
+        }
+        for pointer in [n_rank_aux, n_atom_number_aux] {
+            if !pointer.is_null() {
+                inchi_free(heap, pointer)?;
+            }
+        }
+        if !p_atom_invariant_aux.is_null() {
+            inchi_free(heap, p_atom_invariant_aux)?;
+        }
+        if !p_atom_invariant.is_null() {
+            inchi_free(heap, p_atom_invariant)?;
+        }
+        for pointer in [
+            n_canon_rank_no_h,
+            n_atom_number_canon_no_h,
+            n_symm_rank_no_h,
+            n_symm_rank_no_taut_h,
+            n_canon_rank_no_taut_h,
+            n_atom_number_canon_no_taut_h,
+            n_symm_rank_base,
+            n_canon_rank_base,
+            n_atom_number_canon_base,
+            n_symm_rank_fix_h,
+            n_canon_rank_fix_h,
+            n_atom_number_canon_fix_h,
+            n_symm_rank_no_taut_h_iso,
+            n_canon_rank_no_taut_h_iso,
+            n_atom_number_canon_no_taut_h_iso,
+            n_symm_rank_base_iso,
+            n_canon_rank_base_iso,
+            n_atom_number_canon_base_iso,
+            n_symm_rank_fix_h_iso,
+            n_canon_rank_fix_h_iso,
+            n_atom_number_canon_fix_h_iso,
+            n_temp_rank,
+        ] {
+            if !pointer.is_null() {
+                inchi_free(heap, pointer)?;
+            }
+        }
+        for pointer in [num_h_no_taut_h, num_h, num_h_fixed] {
+            if !pointer.is_null() {
+                inchi_free(heap, pointer)?;
+            }
+        }
+        for pointer in [iso_sort_key_no_taut_h, iso_sort_key_base] {
+            if !pointer.is_null() {
+                inchi_free(heap, pointer)?;
+            }
+        }
+        if !iso_exchg_atnos.is_null() {
+            inchi_free(heap, iso_exchg_atnos)?;
         }
 
-        if b_req_taut != 0 {
-            t_group_info
-                .as_deref_mut()
-                .ok_or(SourceHeapError::NullPointer)?
-                .bIgnoreIsotopic = b_taut_ignore_isotopic;
-        }
-        pBCN.num_max = num_max;
-        pBCN.num_at_tg = num_at_tg;
-        pBCN.num_atoms = num_atoms;
-        pBCN.ftcn[taut_non].NeighList = neigh_list[taut_non];
-        neigh_list[taut_non] = SourceMutPointer::null();
-        pBCN.ftcn[taut_yes].NeighList = neigh_list[taut_yes];
-        neigh_list[taut_yes] = SourceMutPointer::null();
-
-        if b_req_taut != 0 {
-            let base = heap
-                .slice_mut(ct_base)?
-                .first_mut()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let output = &mut pBCN.ftcn[taut_yes];
-            output.num_at_tg = num_at_tg;
-            output.num_atoms = num_atoms;
-            output.LinearCt = base.Ctbl;
-            base.Ctbl = SourceMutPointer::null();
-            output.nLenLinearCtAtOnly = sizes[i_base].nLenCTAtOnly;
-            output.nMaxLenLinearCt = sizes[i_base].nLenCT.wrapping_add(1);
-            output.nLenLinearCt = sizes[i_base].nLenCT;
-            output.PartitionCt.Rank = n_canon_rank_base;
-            n_canon_rank_base = SourceMutPointer::null();
-            output.PartitionCt.AtNumber = n_atom_number_canon_base;
-            n_atom_number_canon_base = SourceMutPointer::null();
-            output.nSymmRankCt = n_symm_rank_base;
-            n_symm_rank_base = SourceMutPointer::null();
-            output.nNumHOrig = num_h;
-            num_h = SourceMutPointer::null();
-            output.nNumH = base.NumH;
-            base.NumH = SourceMutPointer::null();
-            output.nLenNumH = max_len_num_h.min(base.maxlenNumH);
-            output.nNumHOrigFixH = SourceMutPointer::null();
-            output.nNumHFixH = SourceMutPointer::null();
-            output.nLenNumHFixH = 0;
-            output.nCanonFlags |= canon_data[i_base].nCanonFlags;
-            CleanNumH(heap, output.nNumHOrig, output.nLenNumH)?;
-            CleanNumH(heap, output.nNumH, output.nLenNumH)?;
-            CleanCt(heap, output.LinearCt, output.nLenLinearCt)?;
-            if !ct_base_iso.is_null() {
-                let base_iso = heap
-                    .slice_mut(ct_base_iso)?
-                    .first_mut()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                output.PartitionCtIso.Rank = n_canon_rank_base_iso;
-                n_canon_rank_base_iso = SourceMutPointer::null();
-                output.PartitionCtIso.AtNumber = n_atom_number_canon_base_iso;
-                n_atom_number_canon_base_iso = SourceMutPointer::null();
-                output.nSymmRankCtIso = n_symm_rank_base_iso;
-                n_symm_rank_base_iso = SourceMutPointer::null();
-                output.iso_sort_keys = base_iso.iso_sort_key;
-                base_iso.iso_sort_key = SourceMutPointer::null();
-                output.iso_sort_keysOrig = iso_sort_key_base;
-                iso_sort_key_base = SourceMutPointer::null();
-                output.len_iso_sort_keys = len_iso_sort_key_base;
-                output.iso_exchg_atnos = base_iso.iso_exchg_atnos;
-                base_iso.iso_exchg_atnos = SourceMutPointer::null();
-                output.iso_exchg_atnosOrig = iso_exchg_atnos;
-                iso_exchg_atnos = SourceMutPointer::null();
-                CleanIsoSortKeys(heap, output.iso_sort_keys, output.len_iso_sort_keys)?;
-                CleanIsoSortKeys(heap, output.iso_sort_keysOrig, output.len_iso_sort_keys)?;
-            }
-        }
-
-        if b_req_non_taut != 0 {
-            if b_req_taut == 0 {
-                n_symm_rank_fix_h = n_symm_rank_no_taut_h;
-                n_symm_rank_no_taut_h = SourceMutPointer::null();
-                n_canon_rank_fix_h = n_canon_rank_no_taut_h;
-                n_canon_rank_no_taut_h = SourceMutPointer::null();
-                n_atom_number_canon_fix_h = n_atom_number_canon_no_taut_h;
-                n_atom_number_canon_no_taut_h = SourceMutPointer::null();
-                ct_fix_h = ct_no_taut_h;
-                ct_no_taut_h = SourceMutPointer::null();
-                n_symm_rank_fix_h_iso = n_symm_rank_no_taut_h_iso;
-                n_symm_rank_no_taut_h_iso = SourceMutPointer::null();
-                n_canon_rank_fix_h_iso = n_canon_rank_no_taut_h_iso;
-                n_canon_rank_no_taut_h_iso = SourceMutPointer::null();
-                n_atom_number_canon_fix_h_iso = n_atom_number_canon_no_taut_h_iso;
-                n_atom_number_canon_no_taut_h_iso = SourceMutPointer::null();
-                ct_fix_h_iso = ct_no_taut_h_iso;
-                ct_no_taut_h_iso = SourceMutPointer::null();
-                if i_other == taut_yes
-                    && !pBCN.ftcn[taut_non].NeighList.is_null()
-                    && pBCN.ftcn[taut_yes].NeighList.is_null()
-                {
-                    pBCN.ftcn[taut_yes].NeighList = pBCN.ftcn[taut_non].NeighList;
-                    pBCN.ftcn[taut_non].NeighList = SourceMutPointer::null();
-                }
-            }
-            let fixed = heap
-                .slice_mut(ct_fix_h)?
-                .first_mut()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let output = &mut pBCN.ftcn[i_other];
-            output.num_at_tg = num_atoms;
-            output.num_atoms = num_atoms;
-            output.LinearCt = fixed.Ctbl;
-            fixed.Ctbl = SourceMutPointer::null();
-            output.nLenLinearCtAtOnly = sizes[i_other].nLenCTAtOnly;
-            output.nMaxLenLinearCt = sizes[i_other].nLenCTAtOnly.wrapping_add(1);
-            output.nLenLinearCt = sizes[i_other].nLenCTAtOnly;
-            output.PartitionCt.Rank = n_canon_rank_fix_h;
-            n_canon_rank_fix_h = SourceMutPointer::null();
-            output.PartitionCt.AtNumber = n_atom_number_canon_fix_h;
-            n_atom_number_canon_fix_h = SourceMutPointer::null();
-            output.nSymmRankCt = n_symm_rank_fix_h;
-            n_symm_rank_fix_h = SourceMutPointer::null();
-            output.nNumHOrig = num_h_no_taut_h;
-            num_h_no_taut_h = SourceMutPointer::null();
-            output.nNumH = fixed.NumH;
-            fixed.NumH = SourceMutPointer::null();
-            output.nLenNumH = max_len_num_h_no_taut_h.min(fixed.maxlenNumH);
-            output.nNumHOrigFixH = num_h_fixed;
-            num_h_fixed = SourceMutPointer::null();
-            output.nNumHFixH = fixed.NumHfixed;
-            fixed.NumHfixed = SourceMutPointer::null();
-            output.nLenNumHFixH = num_atoms;
-            output.nCanonFlags |= canon_data[i_other].nCanonFlags;
-            CleanNumH(heap, output.nNumHOrig, output.nLenNumH)?;
-            CleanNumH(heap, output.nNumHOrigFixH, output.nLenNumH)?;
-            CleanNumH(heap, output.nNumH, output.nLenNumH)?;
-            CleanNumH(heap, output.nNumHFixH, output.nLenNumH)?;
-            CleanCt(heap, output.LinearCt, output.nLenLinearCt)?;
-            if !ct_fix_h_iso.is_null() {
-                let fixed_iso = heap
-                    .slice_mut(ct_fix_h_iso)?
-                    .first_mut()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                output.PartitionCtIso.Rank = n_canon_rank_fix_h_iso;
-                n_canon_rank_fix_h_iso = SourceMutPointer::null();
-                output.PartitionCtIso.AtNumber = n_atom_number_canon_fix_h_iso;
-                n_atom_number_canon_fix_h_iso = SourceMutPointer::null();
-                output.nSymmRankCtIso = n_symm_rank_fix_h_iso;
-                n_symm_rank_fix_h_iso = SourceMutPointer::null();
-                output.iso_sort_keys = fixed_iso.iso_sort_key;
-                fixed_iso.iso_sort_key = SourceMutPointer::null();
-                output.iso_sort_keysOrig = iso_sort_key_no_taut_h;
-                iso_sort_key_no_taut_h = SourceMutPointer::null();
-                output.len_iso_sort_keys = len_iso_sort_key_no_taut_h;
-                CleanIsoSortKeys(heap, output.iso_sort_keys, output.len_iso_sort_keys)?;
-                CleanIsoSortKeys(heap, output.iso_sort_keysOrig, output.len_iso_sort_keys)?;
-            }
-        }
-    }
-
-    FreeNeighList(heap, neigh_list[TAUT_NON as usize])?;
-    FreeNeighList(heap, neigh_list[TAUT_YES as usize])?;
-    for table in [
-        ct_no_h,
-        ct_no_taut_h,
-        ct_base,
-        ct_fix_h,
-        ct_temp,
-        ct_no_taut_h_iso,
-        ct_base_iso,
-        ct_fix_h_iso,
-    ] {
-        free_con_table(heap, table)?;
-    }
-    for pointer in [n_rank, n_atom_number] {
-        if !pointer.is_null() {
-            inchi_free(heap, pointer)?;
-        }
-    }
-    if !pBCN.pRankStack.is_null() {
-        source_set(heap, pBCN.pRankStack, 0, SourceMutPointer::null())?;
-        source_set(heap, pBCN.pRankStack, 1, SourceMutPointer::null())?;
-    }
-    for pointer in [n_rank_aux, n_atom_number_aux] {
-        if !pointer.is_null() {
-            inchi_free(heap, pointer)?;
-        }
-    }
-    if !p_atom_invariant_aux.is_null() {
-        inchi_free(heap, p_atom_invariant_aux)?;
-    }
-    if !p_atom_invariant.is_null() {
-        inchi_free(heap, p_atom_invariant)?;
-    }
-    for pointer in [
-        n_canon_rank_no_h,
-        n_atom_number_canon_no_h,
-        n_symm_rank_no_h,
-        n_symm_rank_no_taut_h,
-        n_canon_rank_no_taut_h,
-        n_atom_number_canon_no_taut_h,
-        n_symm_rank_base,
-        n_canon_rank_base,
-        n_atom_number_canon_base,
-        n_symm_rank_fix_h,
-        n_canon_rank_fix_h,
-        n_atom_number_canon_fix_h,
-        n_symm_rank_no_taut_h_iso,
-        n_canon_rank_no_taut_h_iso,
-        n_atom_number_canon_no_taut_h_iso,
-        n_symm_rank_base_iso,
-        n_canon_rank_base_iso,
-        n_atom_number_canon_base_iso,
-        n_symm_rank_fix_h_iso,
-        n_canon_rank_fix_h_iso,
-        n_atom_number_canon_fix_h_iso,
-        n_temp_rank,
-    ] {
-        if !pointer.is_null() {
-            inchi_free(heap, pointer)?;
-        }
-    }
-    for pointer in [num_h_no_taut_h, num_h, num_h_fixed] {
-        if !pointer.is_null() {
-            inchi_free(heap, pointer)?;
-        }
-    }
-    for pointer in [iso_sort_key_no_taut_h, iso_sort_key_base] {
-        if !pointer.is_null() {
-            inchi_free(heap, pointer)?;
-        }
-    }
-    if !iso_exchg_atnos.is_null() {
-        inchi_free(heap, iso_exchg_atnos)?;
-    }
+        Ok(())
+    })();
+    execution?;
+    cleanup?;
 
     Ok(ret)
 }
@@ -12601,7 +14593,12 @@ mod tests {
                 None,
                 0,
             );
+            // Source optional Lambda/zeta nextAtRank is unused for this
+            // discrete fixture. Reached NULL in rho/temp is a Rust-only
+            // structured pointer error; no native result exists for it.
             match result {
+                Ok(0) if matches!(allocation_ordinal, 21 | 24) => {}
+                Err(SourceHeapError::NullPointer) if matches!(allocation_ordinal, 28 | 47) => {}
                 Ok(code) if code < 0 => {}
                 other => panic!(
                     "allocation ordinal {allocation_ordinal}, calls {}: {other:?}",
@@ -13257,6 +15254,7 @@ mod tests {
             );
         }
 
+        let mut allocation_status_failures = Vec::new();
         for (name, run_case) in [
             (
                 "taut_aux",
@@ -13274,13 +15272,49 @@ mod tests {
             assert_eq!(success_live, 0, "{name} success cleanup");
             for ordinal in 0..allocation_calls {
                 let (result, calls, live) = run_case(Some(ordinal));
-                assert!(
-                    matches!(result, Ok(code) if code < 0),
-                    "{name} allocation ordinal {ordinal}, calls {calls}: {result:?}"
-                );
+                // Native ichican2.c787..804 allocates nextAtRank/isotope
+                // arrays, omitted from the success predicate at c838..841.
+                // Exact positions for these unchanged inputs, not a blanket
+                // allowance for NullPointer on allocation failure:
+                // NoH graph nextAtRank: Lambda23/zf_zeta26/pzb_rho30;
+                // NoTautH copy53; base graph66/70/75. The graph allocates
+                // two partitions, W/v/e, then the three tables, including
+                // one descriptor before pzb_rho. NumH adds one array/table.
+                // Taut auxiliary copy nextAtRank96/exchange98: c6193..6220
+                // writes the exchange destination without a NULL check.
+                // Fixed-H graph99/104/110 has two H arrays/table; its
+                // isotope graph135/141/148 adds one isotope array/table.
+                // CtPartFill c2037 and CtPartCopy access nextAtRank directly;
+                // Rust reports those undefined native NULL accesses safely.
+                // In contrast, isotope allocations138/144/151 can be NULL:
+                // CtPartFill c1985..1997 skips them and resets the length;
+                // CtPartCompare c2530 also compares only nonNULL pairs.
+                let source_omission_status = match (name, ordinal) {
+                    (_, 23 | 26 | 30 | 53 | 66 | 70 | 75)
+                    | ("taut_aux", 96 | 98)
+                    | ("fixed_iso", 99 | 104 | 110 | 135 | 141 | 148) => {
+                        Some(Err(SourceHeapError::NullPointer))
+                    }
+                    ("fixed_iso", 138 | 144 | 151) => Some(Ok(0)),
+                    _ => None,
+                };
+                let status_matches = match source_omission_status {
+                    Some(expected) => result == expected,
+                    None => matches!(result, Ok(code) if code < 0),
+                };
+                if !status_matches {
+                    allocation_status_failures.push(format!(
+                        "{name} allocation ordinal {ordinal}, calls {calls}: {result:?}"
+                    ));
+                }
                 assert_eq!(live, 0, "{name} allocation ordinal {ordinal}");
             }
         }
+        assert!(
+            allocation_status_failures.is_empty(),
+            "{}",
+            allocation_status_failures.join("\n")
+        );
 
         let mut inactive_taut_heap = SourceHeap::default();
         let inactive_taut_atoms = inactive_taut_heap
@@ -14049,14 +16083,10 @@ mod tests {
     #[test]
     fn source_port__ichican2__partitiongetmcrandfixset__line_1098() {
         let mut heap = SourceHeap::default();
-        let masks = heap
-            .allocate((0..16).map(|bit| 1_u16 << bit).collect())
-            .unwrap();
-        let globals = CANON_GLOBALS {
-            m_bBit: masks,
-            m_num_bit: 16,
-            ..CANON_GLOBALS::default()
-        };
+        // Native SetBitCreate initializes both the mask table and static
+        // rank mark/mask (ichican2.c3205..3242); a manual table alone does not.
+        let mut globals = CANON_GLOBALS::default();
+        SetBitCreate(&mut heap, &mut globals).unwrap();
         let mark = !rank_mask_bit();
         let ranks = heap
             .allocate(vec![4 | mark, 5, 4, 1 | mark, 7, 4 | mark, 7 | mark])
@@ -14485,6 +16515,12 @@ mod tests {
 
     #[test]
     fn source_port__ichican2__partitioncolorvertex__line_1464() {
+        // Native SetBitCreate initializes the static rank mask used by PartitionCopy.
+        // Keep this producer in separate storage from allocation-failure cases.
+        let mut mask_heap = SourceHeap::default();
+        let mut mask_globals = CANON_GLOBALS::default();
+        SetBitCreate(&mut mask_heap, &mut mask_globals).unwrap();
+
         fn fixture(
             heap: &mut SourceHeap,
             atoms: Vec<AT_NUMB>,
@@ -16272,6 +18308,9 @@ mod tests {
     #[test]
     fn source_port__ichican2__partitionisdiscrete__line_978() {
         let mut heap = SourceHeap::default();
+        // Source SetBitCreate initializes the static rank mask before use.
+        let mut globals = CANON_GLOBALS::default();
+        assert_eq!(SetBitCreate(&mut heap, &mut globals), Ok(1));
         let atoms = heap.allocate(vec![2_u16, 0, 1]).unwrap();
         let ranks = heap.allocate(vec![2_u16, 3, 1]).unwrap();
         let partition = Partition {
@@ -16321,24 +18360,26 @@ mod tests {
             AtNumber: atoms,
             Rank: ranks,
         };
-        let mut cells = vec![
-            Cell {
-                first: 90,
-                next: 91,
-                prev: 77,
-            },
-            Cell {
-                first: 92,
-                next: 93,
-                prev: 78,
-            },
-        ];
+        let cells = heap
+            .allocate_model_storage(vec![
+                Cell {
+                    first: 90,
+                    next: 91,
+                    prev: 77,
+                },
+                Cell {
+                    first: 92,
+                    next: 93,
+                    prev: 78,
+                },
+            ])
+            .unwrap();
         assert_eq!(
-            PartitionGetFirstCell(&heap, &partition, &mut cells, 1, 6),
+            PartitionGetFirstCell(&mut heap, &partition, cells, 1, 6),
             Ok(2)
         );
         assert_eq!(
-            cells[0],
+            heap.slice(cells.as_const()).unwrap()[0],
             Cell {
                 first: 2,
                 next: 4,
@@ -16346,11 +18387,11 @@ mod tests {
             }
         );
         assert_eq!(
-            PartitionGetFirstCell(&heap, &partition, &mut cells, 2, 6),
+            PartitionGetFirstCell(&mut heap, &partition, cells, 2, 6),
             Ok(2)
         );
         assert_eq!(
-            cells[1],
+            heap.slice(cells.as_const()).unwrap()[1],
             Cell {
                 first: 4,
                 next: 6,
@@ -16361,32 +18402,34 @@ mod tests {
         heap.slice_mut(ranks).unwrap()[2] |= rank_mark_bit();
         heap.slice_mut(ranks).unwrap()[3] |= rank_mark_bit();
         assert_eq!(
-            PartitionGetFirstCell(&heap, &partition, &mut cells, 1, 6),
+            PartitionGetFirstCell(&mut heap, &partition, cells, 1, 6),
             Ok(2)
         );
 
         let discrete_ranks = heap.allocate(vec![1_u16, 2, 3]).unwrap();
         let discrete_atoms = heap.allocate(vec![0_u16, 1, 2]).unwrap();
-        let mut no_cell = [Cell {
-            first: 10,
-            next: 11,
-            prev: 12,
-        }];
+        let no_cell = heap
+            .allocate_model_storage(vec![Cell {
+                first: 10,
+                next: 11,
+                prev: 12,
+            }])
+            .unwrap();
         assert_eq!(
             PartitionGetFirstCell(
-                &heap,
+                &mut heap,
                 &Partition {
                     AtNumber: discrete_atoms,
                     Rank: discrete_ranks,
                 },
-                &mut no_cell,
+                no_cell,
                 1,
                 3,
             ),
             Ok(0)
         );
         assert_eq!(
-            no_cell[0],
+            heap.slice(no_cell.as_const()).unwrap()[0],
             Cell {
                 first: INCHI_CANON_INFINITY as i32,
                 next: 0,
@@ -16394,33 +18437,36 @@ mod tests {
             }
         );
 
+        let empty_cells = heap.allocate_model_storage(Vec::<Cell>::new()).unwrap();
         assert_eq!(
-            PartitionGetFirstCell(&heap, &partition, &mut [], 1, 6),
+            PartitionGetFirstCell(&mut heap, &partition, empty_cells, 1, 6),
             Err(SourceHeapError::PointerOutOfBounds)
         );
 
         let bad_atoms = heap.allocate(vec![0_u16, 9]).unwrap();
         let bad_ranks = heap.allocate(vec![2_u16]).unwrap();
-        let mut partial = [Cell {
-            first: 40,
-            next: 55,
-            prev: 60,
-        }];
+        let partial = heap
+            .allocate_model_storage(vec![Cell {
+                first: 40,
+                next: 55,
+                prev: 60,
+            }])
+            .unwrap();
         assert_eq!(
             PartitionGetFirstCell(
-                &heap,
+                &mut heap,
                 &Partition {
                     AtNumber: bad_atoms,
                     Rank: bad_ranks,
                 },
-                &mut partial,
+                partial,
                 1,
                 2,
             ),
             Err(SourceHeapError::PointerOutOfBounds)
         );
         assert_eq!(
-            partial[0],
+            heap.slice(partial.as_const()).unwrap()[0],
             Cell {
                 first: 0,
                 next: 55,
@@ -16651,7 +18697,7 @@ mod tests {
                 None,
                 0,
             ),
-            Ok(0)
+            Ok(2)
         );
         assert_eq!(
             search_heap.slice(search_symmetry.as_const()).unwrap(),
@@ -16776,6 +18822,8 @@ mod tests {
             );
             let expected = match failure_ordinal {
                 0 => Ok(-1),
+                8 | 11 => Ok(0), // unused Lambda/zeta nextAtRank
+                15 => Err(SourceHeapError::NullPointer), // reached rho NULL: Rust-only error
                 _ => Ok(CT_OUT_OF_RAM),
             };
             assert_eq!(result, expected, "allocation ordinal {failure_ordinal}");
@@ -17537,6 +19585,7 @@ mod tests {
 
     #[test]
     fn source_port__ichican2__cellmakeempty__line_1040() {
+        let mut heap = SourceHeap::default();
         let original = [
             Cell {
                 first: 10,
@@ -17555,34 +19604,40 @@ mod tests {
             },
         ];
 
-        let mut first = original.clone();
-        assert_eq!(CellMakeEmpty(&mut first, 1), Ok(()));
-        assert_eq!(first[0].first, INCHI_CANON_INFINITY as i32);
-        assert_eq!(first[0].next, 0);
-        assert_eq!(first[0].prev, -1);
-        assert_eq!(&first[1..], &original[1..]);
-
-        let mut middle = original.clone();
-        assert_eq!(CellMakeEmpty(&mut middle, 2), Ok(()));
-        assert_eq!(middle[0], original[0]);
-        assert_eq!(middle[1].first, INCHI_CANON_INFINITY as i32);
-        assert_eq!(middle[1].next, 0);
-        assert_eq!(middle[1].prev, -1);
-        assert_eq!(middle[2], original[2]);
-
-        let mut zero = original.clone();
+        let first = heap.allocate_model_storage(original.to_vec()).unwrap();
+        assert_eq!(CellMakeEmpty(&mut heap, first, 1), Ok(()));
         assert_eq!(
-            CellMakeEmpty(&mut zero, 0),
+            heap.slice(first.as_const()).unwrap()[0].first,
+            INCHI_CANON_INFINITY as i32
+        );
+        assert_eq!(heap.slice(first.as_const()).unwrap()[0].next, 0);
+        assert_eq!(heap.slice(first.as_const()).unwrap()[0].prev, -1);
+        assert_eq!(&heap.slice(first.as_const()).unwrap()[1..], &original[1..]);
+
+        let middle = heap.allocate_model_storage(original.to_vec()).unwrap();
+        assert_eq!(CellMakeEmpty(&mut heap, middle, 2), Ok(()));
+        assert_eq!(heap.slice(middle.as_const()).unwrap()[0], original[0]);
+        assert_eq!(
+            heap.slice(middle.as_const()).unwrap()[1].first,
+            INCHI_CANON_INFINITY as i32
+        );
+        assert_eq!(heap.slice(middle.as_const()).unwrap()[1].next, 0);
+        assert_eq!(heap.slice(middle.as_const()).unwrap()[1].prev, -1);
+        assert_eq!(heap.slice(middle.as_const()).unwrap()[2], original[2]);
+
+        let zero = heap.allocate_model_storage(original.to_vec()).unwrap();
+        assert_eq!(
+            CellMakeEmpty(&mut heap, zero, 0),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(zero, original);
+        assert_eq!(heap.slice(zero.as_const()).unwrap(), &original);
 
-        let mut past_end = original.clone();
+        let past_end = heap.allocate_model_storage(original.to_vec()).unwrap();
         assert_eq!(
-            CellMakeEmpty(&mut past_end, 4),
+            CellMakeEmpty(&mut heap, past_end, 4),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(past_end, original);
+        assert_eq!(heap.slice(past_end.as_const()).unwrap(), &original);
     }
 
     #[test]
@@ -17744,5 +19799,97 @@ mod tests {
             assert_freed(&heap, bcn.ftcn[k].iso_exchg_atnosOrig);
             assert_eq!(bcn.ftcn[k].num_atoms, 100 + k as i32);
         }
+    }
+}
+
+#[cfg(test)]
+mod rank_mask_regressions {
+    use super::{Ordering, RANK_MASK_BIT, rank_mask_bit};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    const VALUES: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/rank_mask/values.ranges.txt"
+    ));
+    const CHILD_KEY: &str = "COSMOLKIT_INCHI_RANK_MASK_REGRESSION_CHILD";
+    const SELECTOR: &str = "source::base::ichican2::rank_mask_regressions::complete_initial_and_sequential_read_states";
+    #[test]
+    fn complete_initial_and_sequential_read_states() {
+        if std::env::var_os(CHILD_KEY).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", SELECTOR, "--nocapture"])
+                .env(CHILD_KEY, "1")
+                .output()
+                .unwrap();
+            eprint!("{}", String::from_utf8_lossy(&output.stdout));
+            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("RANK-MASK SUMMARY calls=131076"),
+                "child must execute all controls"
+            );
+            assert!(
+                output.status.success(),
+                "isolated child actual exit {:?}",
+                output.status.code()
+            );
+            return;
+        }
+        let mut cases = Vec::new();
+        for line in VALUES.lines() {
+            let range: Vec<u32> = line
+                .split_whitespace()
+                .map(|v| v.parse().unwrap())
+                .collect();
+            assert_eq!(range.len(), 4);
+            for id in range[0]..=range[1] {
+                cases.push((id, (range[2] + (id - range[0]) * range[3]) as u16));
+            }
+        }
+        assert_eq!(cases.len(), 65538);
+        let (mut calls, mut oks, mut panics, mut unexpected, mut differences, mut changes) =
+            (0, 0, 0, 0, 0, 0);
+        for (id, expected) in cases {
+            if id != 0 {
+                RANK_MASK_BIT.store(expected, Ordering::Relaxed);
+            }
+            for _ in 0..2 {
+                let before = RANK_MASK_BIT.load(Ordering::Relaxed);
+                let result = catch_unwind(AssertUnwindSafe(rank_mask_bit));
+                calls += 1;
+                if RANK_MASK_BIT.load(Ordering::Relaxed) != before {
+                    changes += 1;
+                }
+                match result {
+                    Ok(value) => {
+                        oks += 1;
+                        if value != expected {
+                            differences += 1;
+                            eprintln!("rank-mask case {id}: {value} != {expected}");
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0157: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            panics += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "RANK-MASK SUMMARY calls={calls} ok={oks} quarantine_panics={panics} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(
+            (calls, oks, panics, unexpected, differences, changes),
+            (131076, 131076, 0, 0, 0, 0)
+        );
     }
 }

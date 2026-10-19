@@ -27,6 +27,23 @@ fn source_get<T: Clone + 'static>(
     pointer: SourceMutPointer<T>,
     index: i32,
 ) -> Result<T, SourceHeapError> {
+    // BEGIN INCHI SOURCE FRAGMENT: ichimap4.c map_stereo_bonds4
+    // INCHI✔️❗: prevBond = pCS->LinearCTStereoDble[nNumMappedBonds];
+    // END INCHI SOURCE FRAGMENT
+    // Signed indexing can reach preceding elements of the same allocation.
+    // Cost: no allocation/scan/clone added; checked lookups remain unresolved.
+    if index < 0 {
+        // Preserve the existing base-allocation validation before index errors.
+        heap.slice(pointer.as_const())?;
+        let selected = pointer
+            .offset(i64::from(index))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        return heap
+            .slice(selected.as_const())?
+            .first()
+            .cloned()
+            .ok_or(SourceHeapError::PointerOutOfBounds);
+    }
     heap.slice(pointer.as_const())?
         .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
         .cloned()
@@ -40,6 +57,23 @@ fn source_set<T: Clone + 'static>(
     index: i32,
     value: T,
 ) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI SOURCE FRAGMENT: ichimap4.c map_stereo_bonds4
+    // INCHI✔️❗: nSymmStereo[i] = i; /*  for union-join to keep track of stereo-equivalent atoms */
+    // END INCHI SOURCE FRAGMENT
+    // Signed indexing can reach preceding elements of the same allocation.
+    // Cost: no allocation/scan/clone added; checked lookups remain unresolved.
+    if index < 0 {
+        // Preserve base validation and mutable provenance invalidation first.
+        heap.slice_mut(pointer)?;
+        let selected = pointer
+            .offset(i64::from(index))
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        *heap
+            .slice_mut(selected)?
+            .first_mut()
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+        return Ok(());
+    }
     *heap
         .slice_mut(pointer)?
         .get_mut(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -51,7 +85,7 @@ fn source_set<T: Clone + 'static>(
 pub(crate) fn map_stereo_bonds4(
     heap: &mut SourceHeap,
     ic: &mut INCHI_CLOCK,
-    clock_result: i64,
+    clock_result: impl crate::source_types::SourceClock,
     user_action: Option<fn() -> i32>,
     console_quit: Option<fn() -> i32>,
     pCG: &mut CANON_GLOBALS,
@@ -1133,12 +1167,27 @@ pub(crate) fn map_stereo_bonds4(
     let parity_calculate = |value: i8| parity_value(value) == AB_PARITY_CALC as i32;
     let atom_parity_well_defined =
         |value: i32| (AB_MIN_KNOWN_PARITY as i32..=WORSE_PARITY as i32).contains(&value);
+    // VERBATIM SOURCE FRAGMENT: ichimap4.c105..115
+    //     int nTotSuccess = 0; /* 1=>full mapping has been completed;
+    //                           * 2=>obtained a better stereo;
+    //                           * 4=>restart (stereo bond or atom removed from the stereo CT)
+    //                           */
+    //     int tpos1 = 0;
+    //     AT_STEREO_DBLE prevBond;
+    //     memset( &prevBond, 0, sizeof( prevBond ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    //     tpos1 = CurTreeGetPos( cur_tree );
+    //
+    // total_restart:
+    //
+    // INCHI✔️❗: Invocation-lifetime state survives all total_restart
+    // edges. Phase arrays below deliberately have the shorter conditional
+    // lifetime. No re-zeroing of accumulated success/previous bond on retry;
+    // O(1) initialization/scratch, no allocation, whole-call cost OPEN.
+    let mut total_success = 0_i32;
+    let mut previous_bond = AT_STEREO_DBLE::default();
     let mut tpos1 = CurTreeGetPos(cur_tree.as_deref());
 
     'total_restart: loop {
-        let mut total_success = 0_i32;
-        let mut previous_bond = AT_STEREO_DBLE::default();
-
         if nNumMappedBonds == 0 {
             let count =
                 usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -1207,9 +1256,34 @@ pub(crate) fn map_stereo_bonds4(
                     total_success |= 2;
                 }
             }
+            // VERBATIM SOURCE FRAGMENT: ichimap4.c1115..1119
+            //     if (!nTotSuccess && pCS->nLenLinearCTStereoDble &&
+            //          nNumMappedBonds < pCS->nLenLinearCTStereoDble)
+            //     {
+            //         pCS->LinearCTStereoDble[nNumMappedBonds] = prevBond;
+            //     }
+            // INCHI✔️❗: Apply the source common exit after atom dispatch;
+            // inspect current post-callback lengths, without assuming they
+            // cannot change. Only the reached store admits its actual slot.
+            // O(1)/no allocation, checked whole-call cost remains OPEN.
+            if total_success == 0
+                && pCS.nLenLinearCTStereoDble != 0
+                && nNumMappedBonds < pCS.nLenLinearCTStereoDble
+            {
+                source_set(heap, pCS.LinearCTStereoDble, nNumMappedBonds, previous_bond)?;
+            }
             return Ok(total_success);
         }
 
+        // VERBATIM SOURCE FRAGMENT: ichimap4.c148
+        //         int nStackPtr[SB_DEPTH], nNumMappedRanks[SB_DEPTH], LastMappedTo1;
+        // INCHI✔️❗: SB_DEPTH=6 (native48). One array pair per remaining-bond
+        // conditional phase, inside total_restart but outside rank/parity/
+        // candidate loops. Cached first-atom mappings keep their initialized
+        // slots; restart and recursive calls create a new pair. No allocation,
+        // 48-byte constant scratch; fixed-zeroing/whole mapper cost stays OPEN.
+        let mut stack_ptr = [0_i32; 6];
+        let mut mapped_ranks = [0_i32; 6];
         previous_bond = source_get(heap, pCS.LinearCTStereoDble, nNumMappedBonds)?;
         let mut canon_rank1 = if nNumMappedBonds != 0 {
             source_get(
@@ -1330,14 +1404,21 @@ pub(crate) fn map_stereo_bonds4(
                 order2_pointer,
                 i32::from(mapping_rank1).wrapping_sub(1),
             )?;
-            let rank2_check_atom = source_get(
-                heap,
-                order2_pointer,
-                i32::from(mapping_rank2).wrapping_sub(1),
-            )?;
-            if mapping_rank1 != source_get(heap, rank2_pointer, i32::from(rank1_check_atom))?
-                || mapping_rank2 != source_get(heap, rank2_pointer, i32::from(rank2_check_atom))?
-            {
+            // VERBATIM SOURCE FRAGMENT: ichimap4.c261..262
+            //         if (at_rank1 != pRankStack2[0][pRankStack2[1][at_rank1 - 1]] ||
+            //              at_rank2 != pRankStack2[0][pRankStack2[1][at_rank2 - 1]])
+            // INCHI✔️❗: First mismatch returns the native stereo-count
+            // error without reading the second order index. Pure scalar
+            // getters preserve reached errors and alias state; no allocation,
+            // clone or scan. Checked getter/whole mapping cost stays OPEN.
+            if mapping_rank1 != source_get(heap, rank2_pointer, i32::from(rank1_check_atom))? || {
+                let rank2_check_atom = source_get(
+                    heap,
+                    order2_pointer,
+                    i32::from(mapping_rank2).wrapping_sub(1),
+                )?;
+                mapping_rank2 != source_get(heap, rank2_pointer, i32::from(rank2_check_atom))?
+            } {
                 return Ok(CT_STEREOCOUNT_ERR);
             }
 
@@ -1513,8 +1594,6 @@ pub(crate) fn map_stereo_bonds4(
                     }
                     let mut candidate_success = 0_i32;
                     let mut all_identical_after_first = false;
-                    let mut stack_ptr = [0_i32; 6];
-                    let mut mapped_ranks = [0_i32; 6];
 
                     for slot in 0..MAX_NUM_STEREO_BONDS as usize {
                         let neighbor = atom1.stereo_bond_neighbor[slot];
@@ -1540,6 +1619,10 @@ pub(crate) fn map_stereo_bonds4(
                             return Ok(CT_STEREOCOUNT_ERR);
                         }
 
+                        // VERBATIM SOURCE FRAGMENT: ichimap4.c450..451
+                        //                 nStackPtr[0] = 0;
+                        //                 nNumMappedRanks[0] = nNumMappedRanksInput;
+                        stack_ptr[0] = 0;
                         mapped_ranks[0] = nNumMappedRanksInput;
                         let mut stack_index = 0_usize;
                         let mut add_stack = 0_i32;
@@ -1770,33 +1853,46 @@ pub(crate) fn map_stereo_bonds4(
                                     parity: bond_parity as u8,
                                 },
                             )?;
+                            // VERBATIM SOURCE FRAGMENT: ichimap4.c636..643
+                            //                         pCS->bRankUsedForStereo[at_from1] ++;
+                            //                         pCS->bRankUsedForStereo[at_from2] ++;
+                            //                         if (!bAllParitiesIdentical)
+                            //                         {
+                            //                             pCS->bAtomUsedForStereo[at_to1] --;
+                            //                             pCS->bAtomUsedForStereo[at_to2] --;
+                            //                         }
+                            //                         ret2 = map_stereo_bonds4( ic, pCG, at, num_atoms, num_at_tg, num_max, bAllene, nCanonRankFrom, nAtomNumberCanonFrom, nCanonRankTo,
+                            // INCHI✔️❗: Each RHS follows the preceding store;
+                            // repeated indices/root aliases observe both updates.
+                            // Source-unused atom counters are not admitted. O(1),
+                            // no snapshot/allocation; checked whole-call cost OPEN.
                             let used_rank1 =
                                 source_get(heap, pCS.bRankUsedForStereo, i32::from(from1))?;
-                            let used_rank2 =
-                                source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
                             source_set(
                                 heap,
                                 pCS.bRankUsedForStereo,
                                 i32::from(from1),
                                 used_rank1.wrapping_add(1),
                             )?;
+                            let used_rank2 =
+                                source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
                             source_set(
                                 heap,
                                 pCS.bRankUsedForStereo,
                                 i32::from(from2),
                                 used_rank2.wrapping_add(1),
                             )?;
-                            let used_atom1 =
-                                source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
-                            let used_atom2 =
-                                source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
                             if !all_identical {
+                                let used_atom1 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
                                 source_set(
                                     heap,
                                     pCS.bAtomUsedForStereo,
                                     i32::from(to1),
                                     used_atom1.wrapping_sub(1),
                                 )?;
+                                let used_atom2 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
                                 source_set(
                                     heap,
                                     pCS.bAtomUsedForStereo,
@@ -1831,22 +1927,51 @@ pub(crate) fn map_stereo_bonds4(
                                 nNumMappedBonds.wrapping_add(1),
                                 vABParityUnknown,
                             )?;
+                            // VERBATIM SOURCE FRAGMENT: ichimap4.c647..654
+                            //                                                   vABParityUnknown );
+                            //                         if (!bAllParitiesIdentical)
+                            //                         {
+                            //                             pCS->bAtomUsedForStereo[at_to1] ++;
+                            //                             pCS->bAtomUsedForStereo[at_to2] ++;
+                            //                         }
+                            //                         pCS->bRankUsedForStereo[at_from1] --;
+                            //                         pCS->bRankUsedForStereo[at_from2] --;
+                            // Preserve current post-callback state; native does
+                            // not reinstall pre-call snapshots. Atom then rank.
                             if !all_identical {
+                                let current_atom1 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
                                 source_set(
                                     heap,
                                     pCS.bAtomUsedForStereo,
                                     i32::from(to1),
-                                    used_atom1,
+                                    current_atom1.wrapping_add(1),
                                 )?;
+                                let current_atom2 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
                                 source_set(
                                     heap,
                                     pCS.bAtomUsedForStereo,
                                     i32::from(to2),
-                                    used_atom2,
+                                    current_atom2.wrapping_add(1),
                                 )?;
                             }
-                            source_set(heap, pCS.bRankUsedForStereo, i32::from(from1), used_rank1)?;
-                            source_set(heap, pCS.bRankUsedForStereo, i32::from(from2), used_rank2)?;
+                            let current_rank1 =
+                                source_get(heap, pCS.bRankUsedForStereo, i32::from(from1))?;
+                            source_set(
+                                heap,
+                                pCS.bRankUsedForStereo,
+                                i32::from(from1),
+                                current_rank1.wrapping_sub(1),
+                            )?;
+                            let current_rank2 =
+                                source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
+                            source_set(
+                                heap,
+                                pCS.bRankUsedForStereo,
+                                i32::from(from2),
+                                current_rank2.wrapping_sub(1),
+                            )?;
                             if recursive == 4 {
                                 if nNumMappedBonds != 0 {
                                     return Ok(recursive);
@@ -2193,32 +2318,40 @@ pub(crate) fn map_stereo_bonds4(
                                         parity: bond_parity as u8,
                                     },
                                 )?;
+                                // VERBATIM SOURCE FRAGMENT: ichimap4.c934..937
+                                //                             pCS->bRankUsedForStereo[at_from1] ++;
+                                //                             pCS->bRankUsedForStereo[at_from2] ++;
+                                //                             pCS->bAtomUsedForStereo[at_to1] --;
+                                //                             pCS->bAtomUsedForStereo[at_to2] --;
+                                // INCHI✔️❗: Source-ordered current scalar reads,
+                                // no detached counter values. O(1)/no allocation;
+                                // checked arena/whole-recursion cost remains OPEN.
                                 let used_rank1 =
                                     source_get(heap, pCS.bRankUsedForStereo, i32::from(from1))?;
-                                let used_rank2 =
-                                    source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
-                                let used_atom1 =
-                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
-                                let used_atom2 =
-                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
                                 source_set(
                                     heap,
                                     pCS.bRankUsedForStereo,
                                     i32::from(from1),
                                     used_rank1.wrapping_add(1),
                                 )?;
+                                let used_rank2 =
+                                    source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
                                 source_set(
                                     heap,
                                     pCS.bRankUsedForStereo,
                                     i32::from(from2),
                                     used_rank2.wrapping_add(1),
                                 )?;
+                                let used_atom1 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
                                 source_set(
                                     heap,
                                     pCS.bAtomUsedForStereo,
                                     i32::from(to1),
                                     used_atom1.wrapping_sub(1),
                                 )?;
+                                let used_atom2 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
                                 source_set(
                                     heap,
                                     pCS.bAtomUsedForStereo,
@@ -2252,29 +2385,44 @@ pub(crate) fn map_stereo_bonds4(
                                     nNumMappedBonds.wrapping_add(1),
                                     vABParityUnknown,
                                 )?;
+                                // VERBATIM SOURCE FRAGMENT: ichimap4.c943..946
+                                //                             pCS->bRankUsedForStereo[at_from1] --;
+                                //                             pCS->bRankUsedForStereo[at_from2] --;
+                                //                             pCS->bAtomUsedForStereo[at_to1] ++;
+                                //                             pCS->bAtomUsedForStereo[at_to2] ++;
+                                // Native restores ranks first, then atoms, using
+                                // current values after the recursive callback.
+                                let current_rank1 =
+                                    source_get(heap, pCS.bRankUsedForStereo, i32::from(from1))?;
                                 source_set(
                                     heap,
                                     pCS.bRankUsedForStereo,
                                     i32::from(from1),
-                                    used_rank1,
+                                    current_rank1.wrapping_sub(1),
                                 )?;
+                                let current_rank2 =
+                                    source_get(heap, pCS.bRankUsedForStereo, i32::from(from2))?;
                                 source_set(
                                     heap,
                                     pCS.bRankUsedForStereo,
                                     i32::from(from2),
-                                    used_rank2,
+                                    current_rank2.wrapping_sub(1),
                                 )?;
+                                let current_atom1 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to1))?;
                                 source_set(
                                     heap,
                                     pCS.bAtomUsedForStereo,
                                     i32::from(to1),
-                                    used_atom1,
+                                    current_atom1.wrapping_add(1),
                                 )?;
+                                let current_atom2 =
+                                    source_get(heap, pCS.bAtomUsedForStereo, i32::from(to2))?;
                                 source_set(
                                     heap,
                                     pCS.bAtomUsedForStereo,
                                     i32::from(to2),
-                                    used_atom2,
+                                    current_atom2.wrapping_add(1),
                                 )?;
                                 if recursive == 4 {
                                     if nNumMappedBonds != 0 {
@@ -2391,7 +2539,7 @@ pub(crate) fn map_stereo_bonds4(
 pub(crate) fn map_stereo_atoms4(
     heap: &mut SourceHeap,
     ic: &mut INCHI_CLOCK,
-    clock_result: i64,
+    clock_result: impl crate::source_types::SourceClock,
     user_action: Option<fn() -> i32>,
     console_quit: Option<fn() -> i32>,
     pCG: &mut CANON_GLOBALS,
@@ -4010,11 +4158,23 @@ pub(crate) fn map_stereo_atoms4(
                                             i32::from(from_atom),
                                             0,
                                         )?;
+                                        // VERBATIM SOURCE FRAGMENT: ichimap4.c1729..1730
+                                        //                     pCS->bRankUsedForStereo[at_from1] = 0;
+                                        //                     pCS->bAtomUsedForStereo[at_to1] += STEREO_AT_MARK;
+                                        // INCHI✔️❗: The prior rank=0 store may
+                                        // alias this word. Read it now and apply
+                                        // MARK8, retaining callback changes; no
+                                        // snapshot/extra buffer, whole cost OPEN.
+                                        let current_used = source_get(
+                                            heap,
+                                            pCS.bAtomUsedForStereo,
+                                            i32::from(to_atom),
+                                        )?;
                                         source_set(
                                             heap,
                                             pCS.bAtomUsedForStereo,
                                             i32::from(to_atom),
-                                            used,
+                                            current_used.wrapping_add(STEREO_AT_MARK as i8),
                                         )?;
                                         if recursive == 4 {
                                             return Ok(4);
@@ -4290,6 +4450,15 @@ pub(crate) fn map_stereo_atoms4(
         } else {
             Some(source_get(heap, pCS.ulTimeOutTime, 0)?)
         };
+        // VERBATIM SOURCE FRAGMENT: ichicano.c292..295
+        //         FillMaxMinClock( ic );
+        //         if (!TickStart)
+        //             return 0;
+        //         clockCurrTime = InchiClock( );
+        // INCHI✔️❗: A NULL deadline never reads the process clock. Retain
+        // the helper call and its clock-limit initialization; nonNULL paths
+        // now sample the platform clock. O(1), no allocation/scan/clone;
+        // INCHI-PERF-STEREO-MAPPING-NO-DEADLINE records checked costs OPEN.
         if bInchiTimeIsOver(ic, timeout.as_ref(), clock_result) != 0 {
             return Ok(CT_TIMEOUT_ERR);
         }

@@ -1,5 +1,5 @@
 use crate::source::base::ichisort::insertions_sort_AT_RANK;
-use crate::source::base::ichister::get_opposite_sb_atom_slice;
+use crate::source::base::ichister::get_opposite_sb_atom_core;
 use crate::source::base::runichi2::bIsSameBond;
 use crate::source::base::util::{
     get_el_type, get_el_valence, get_periodic_table_number, has_other_ion_in_sphere_2,
@@ -16,6 +16,104 @@ use crate::source_types::{
     S_CHAR, SourceHeap, SourceHeapError, SourceMutPointer, TG_FLAG_CHECK_VALENCE_COORD_DONE,
     TG_FLAG_MOVE_CHARGE_COORD_DONE, U_CHAR, inp_ATOM, subgraf, subgraf_edge, subgraf_pathfinder,
 };
+
+// Native strutil.c indexes the same allocation relative to the passed base.
+// These temporary borrows retain its real prefix; they own no source identity.
+// INCHI✔️❗: O(1) checked translation/no copies, INCHI-PERF-SIGNED-ATOM-PREFIX OPEN.
+trait SourceRelativeIndex: Copy {
+    fn absolute(self, origin: usize) -> Option<usize>;
+}
+
+impl SourceRelativeIndex for usize {
+    #[inline]
+    fn absolute(self, origin: usize) -> Option<usize> {
+        origin.checked_add(self)
+    }
+}
+
+impl SourceRelativeIndex for i32 {
+    #[inline]
+    fn absolute(self, origin: usize) -> Option<usize> {
+        if self < 0 {
+            origin.checked_sub(self.unsigned_abs() as usize)
+        } else {
+            origin.checked_add(self as usize)
+        }
+    }
+}
+
+struct SourceRelativeSlice<'a, T> {
+    backing: &'a [T],
+    origin: usize,
+}
+impl<T> Copy for SourceRelativeSlice<'_, T> {}
+impl<T> Clone for SourceRelativeSlice<'_, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, T> SourceRelativeSlice<'a, T> {
+    fn new(backing: &'a [T]) -> Self {
+        Self { backing, origin: 0 }
+    }
+    #[inline]
+    fn get<I: SourceRelativeIndex>(self, index: I) -> Option<&'a T> {
+        self.backing.get(index.absolute(self.origin)?)
+    }
+}
+
+struct SourceRelativeSliceMut<'a, T> {
+    backing: &'a mut [T],
+    origin: usize,
+}
+
+impl<'a, T> SourceRelativeSliceMut<'a, T> {
+    fn new(backing: &'a mut [T]) -> Self {
+        Self { backing, origin: 0 }
+    }
+    #[inline]
+    fn read(&self) -> SourceRelativeSlice<'_, T> {
+        SourceRelativeSlice {
+            backing: self.backing,
+            origin: self.origin,
+        }
+    }
+    #[inline]
+    fn get<I: SourceRelativeIndex>(&self, index: I) -> Option<&T> {
+        self.backing.get(index.absolute(self.origin)?)
+    }
+    #[inline]
+    fn get_mut<I: SourceRelativeIndex>(&mut self, index: I) -> Option<&mut T> {
+        self.backing.get_mut(index.absolute(self.origin)?)
+    }
+}
+
+impl<T, I: SourceRelativeIndex> std::ops::Index<I> for SourceRelativeSlice<'_, T> {
+    type Output = T;
+    #[inline]
+    fn index(&self, index: I) -> &T {
+        self.get(index)
+            .expect("source relative index out of bounds")
+    }
+}
+
+impl<T, I: SourceRelativeIndex> std::ops::Index<I> for SourceRelativeSliceMut<'_, T> {
+    type Output = T;
+    #[inline]
+    fn index(&self, index: I) -> &T {
+        self.get(index)
+            .expect("source relative index out of bounds")
+    }
+}
+
+impl<T, I: SourceRelativeIndex> std::ops::IndexMut<I> for SourceRelativeSliceMut<'_, T> {
+    #[inline]
+    fn index_mut(&mut self, index: I) -> &mut T {
+        self.get_mut(index)
+            .expect("source relative index out of bounds")
+    }
+}
 
 #[allow(non_snake_case)]
 pub(crate) fn add_DT_to_num_H(
@@ -86,6 +184,16 @@ pub(crate) fn cmp_iso_atw_diff_component_no(first: &inp_ATOM, second: &inp_ATOM)
 #[allow(non_snake_case)]
 pub(crate) fn nFindOneOM(
     atoms: &[inp_ATOM],
+    atom_number: i32,
+    ord_om: &mut [i32],
+    mut num_om: i32,
+) -> Result<i32, SourceHeapError> {
+    nFindOneOM_signed(SourceRelativeSlice::new(atoms), atom_number, ord_om, num_om)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn nFindOneOM_signed(
+    atoms: SourceRelativeSlice<'_, inp_ATOM>,
     atom_number: i32,
     ord_om: &mut [i32],
     mut num_om: i32,
@@ -203,6 +311,8 @@ pub(crate) fn nFindOneOM(
     // INCHI✔️✔️:     return ord_OM[0];
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: nFindOneOM
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: nFindOneOM
     // INCHI✔️✔️: typedef unsigned short AT_NUMB;
     // INCHI✔️✔️: typedef unsigned char U_CHAR;
@@ -225,7 +335,7 @@ pub(crate) fn nFindOneOM(
         return Err(SourceHeapError::PointerOutOfBounds);
     }
     let center = atoms
-        .get(usize::try_from(atom_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+        .get(atom_number)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let neighbor = |ordinal: i32| -> Result<usize, SourceHeapError> {
         let ordinal = usize::try_from(ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -1320,9 +1430,9 @@ pub(crate) fn remove_ion_pairs(
 
     let atom_count =
         usize::try_from(num_atoms.max(0)).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let atoms = atoms
-        .get_mut(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: num_atoms limits candidate iteration, not the backing atom
+    // domain reached through neighbors. Preserve the complete borrowed storage.
+    // O(N * bounded degree), O(1) scratch; checked-access cost remains OPEN.
     let numh = |atom: &inp_ATOM| {
         i32::from(atom.num_H)
             + i32::from(atom.num_iso_H[0])
@@ -1350,7 +1460,10 @@ pub(crate) fn remove_ion_pairs(
     let mut num_o_minus = 0_i32;
     let mut num_p_iv_plus = 0_i32;
 
-    for atom in atoms.iter() {
+    for atom in atoms
+        .get(..atom_count)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?
+    {
         let charge = i32::from(atom.charge);
         if charge == 1 || charge == -1 {
             match ion_el_group(i32::from(atom.el_number)) {
@@ -1888,19 +2001,24 @@ pub(crate) fn remove_ion_pairs(
                         for i1 in 0..i32::from(atoms[i].valence) {
                             let i1 = i1 as usize;
                             let n = usize::from(atoms[i].neighbor[i1]);
+                            // Native charge and bond predicates gate the valence query.
+                            if atoms[n].charge != -1 {
+                                continue;
+                            }
                             let bonds = if pair_type == 15 {
                                 n_no_metal_num_bonds(Some(atoms), n as i32)?
                             } else {
                                 i32::from(atoms[n].valence)
                             };
+                            if bonds > max_bonds {
+                                continue;
+                            }
                             let valence = if pair_type == 15 {
                                 n_no_metal_bonds_valence(Some(atoms), n as i32)? + numh(&atoms[n])
                             } else {
                                 i32::from(atoms[n].chem_bonds_valence) + numh(&atoms[n])
                             };
-                            if atoms[n].charge == -1
-                                && bonds <= max_bonds
-                                && valence == target_valence
+                            if valence == target_valence
                                 && atoms[i].bond_type[i1] == expected_bond
                                 && ion_el_group(i32::from(atoms[n].el_number)) == target_group
                             {
@@ -1945,7 +2063,6 @@ pub(crate) fn remove_ion_pairs(
                     || n_no_metal_num_bonds(Some(atoms), i as i32)? != 2
                     || n_no_metal_bonds_valence(Some(atoms), i as i32)? != 2
                     || num_of_H(atoms, i as i32)? != 0
-                    || ion_el_group(i32::from(atoms[i].el_number)) != 8
                 {
                     continue;
                 }
@@ -1966,16 +2083,19 @@ pub(crate) fn remove_ion_pairs(
                     || n_no_metal_bonds_valence(Some(atoms), m0 as i32)?
                         + n_no_metal_bonds_valence(Some(atoms), m1 as i32)?
                         > 5
+                    || ion_el_group(i32::from(atoms[i].el_number)) != 8
                 {
                     continue;
                 }
-                let members = [m0, m1];
-                let positions = [j0 as usize, j1 as usize];
+                // Native int m/j scratch: u16 atom numbers and nonnegative
+                // neighbor ordinals fit i32; widen only when indexing slices.
+                let members = [m0 as i32, m1 as i32];
+                let positions = [j0, j1];
                 let mut n_n = None;
                 let mut n_c = None;
                 let mut i_c = 0_usize;
                 for k in 0..2 {
-                    let n = members[k];
+                    let n = members[k] as usize;
                     if atoms[n].charge == -1
                         && n_no_metal_num_bonds(Some(atoms), n as i32)? + numh(&atoms[n]) == 2
                         && ion_el_group(i32::from(atoms[n].el_number)) == 7
@@ -2000,9 +2120,9 @@ pub(crate) fn remove_ion_pairs(
                 for k in 0..2 {
                     let n = if k == 1 { n_c } else { n_n };
                     let i1 = if k == 1 {
-                        positions[i_c]
+                        positions[i_c] as usize
                     } else {
-                        positions[1 - i_c]
+                        positions[1 - i_c] as usize
                     };
                     let i2 = reciprocal(atoms, n, i)?;
                     atoms[i].bond_type[i1] = atoms[i].bond_type[i1].wrapping_add(1);
@@ -2028,7 +2148,6 @@ pub(crate) fn remove_ion_pairs(
                     || n_no_metal_num_bonds(Some(atoms), i as i32)? != 3
                     || n_no_metal_bonds_valence(Some(atoms), i as i32)? != 3
                     || num_of_H(atoms, i as i32)? != 0
-                    || ion_el_group(i32::from(atoms[i].el_number)) != 7
                 {
                     continue;
                 }
@@ -2048,19 +2167,22 @@ pub(crate) fn remove_ion_pairs(
                     continue;
                 }
                 let m2 = usize::from(atoms[i].neighbor[j2 as usize]);
-                let members = [m0, m1, m2];
-                let positions = [j0 as usize, j1 as usize, j2 as usize];
-                let charges = members.map(|n| i32::from(atoms[n].charge));
+                let members = [m0 as i32, m1 as i32, m2 as i32];
+                let positions = [j0, j1, j2];
+                let charges = members.map(|n| i32::from(atoms[n as usize].charge));
                 if charges.iter().filter(|&&charge| charge == 0).count() != 1
                     || charges.iter().sum::<i32>() != 0
                     || members
                         .iter()
                         .filter(|&&n| {
-                            atoms[n].charge != 0
-                                && i32::from(atoms[n].chem_bonds_valence) + numh(&atoms[n]) == 3
+                            atoms[n as usize].charge != 0
+                                && i32::from(atoms[n as usize].chem_bonds_valence)
+                                    + numh(&atoms[n as usize])
+                                    == 3
                         })
                         .count()
                         != 2
+                    || ion_el_group(i32::from(atoms[i].el_number)) != 7
                 {
                     continue;
                 }
@@ -2069,7 +2191,7 @@ pub(crate) fn remove_ion_pairs(
                 let mut i_cp = 0_usize;
                 let mut i_cm = 0_usize;
                 for k in 0..3 {
-                    let n = members[k];
+                    let n = members[k] as usize;
                     if charges[k] == -1 && ion_el_group(i32::from(atoms[n].el_number)) == 6 {
                         n_cm = Some(n);
                         i_cm = k;
@@ -2088,9 +2210,9 @@ pub(crate) fn remove_ion_pairs(
                 }
                 for k in 0..2 {
                     let (n, i1) = if k == 1 {
-                        (n_cp, positions[i_cp])
+                        (n_cp, positions[i_cp] as usize)
                     } else {
-                        (n_cm, positions[i_cm])
+                        (n_cm, positions[i_cm] as usize)
                     };
                     let i2 = reciprocal(atoms, n, i)?;
                     atoms[i].bond_type[i1] = atoms[i].bond_type[i1].wrapping_add(1);
@@ -2116,7 +2238,6 @@ pub(crate) fn remove_ion_pairs(
                     || n_no_metal_num_bonds(Some(atoms), i as i32)? != 2
                     || n_no_metal_bonds_valence(Some(atoms), i as i32)? != 3
                     || num_of_H(atoms, i as i32)? != 0
-                    || ion_el_group(i32::from(atoms[i].el_number)) != 7
                 {
                     continue;
                 }
@@ -2130,17 +2251,20 @@ pub(crate) fn remove_ion_pairs(
                     continue;
                 }
                 let m1 = usize::from(atoms[i].neighbor[j1 as usize]);
-                if i32::from(atoms[m0].charge) + i32::from(atoms[m1].charge) != 0
+                if i32::from(atoms[m0].charge) + i32::from(atoms[m1].charge) != 0 {
+                    continue;
+                }
+                let members = [m0 as i32, m1 as i32];
+                let positions = [j0, j1];
+                let values = members.map(|n| {
+                    i32::from(atoms[n as usize].chem_bonds_valence) + numh(&atoms[n as usize])
+                });
+                if values[0] + values[1] != 6
+                    || (values[0] - values[1]).abs() > 2
+                    || ion_el_group(i32::from(atoms[i].el_number)) != 7
                     || ion_el_group(i32::from(atoms[m0].el_number)) != 6
                     || ion_el_group(i32::from(atoms[m1].el_number)) != 6
                 {
-                    continue;
-                }
-                let members = [m0, m1];
-                let positions = [j0 as usize, j1 as usize];
-                let values =
-                    members.map(|n| i32::from(atoms[n].chem_bonds_valence) + numh(&atoms[n]));
-                if values[0] + values[1] != 6 || (values[0] - values[1]).abs() > 2 {
                     continue;
                 }
                 let mut n_cp = None;
@@ -2150,15 +2274,15 @@ pub(crate) fn remove_ion_pairs(
                 for k in 0..2 {
                     if values[k] == 4
                         || (values[k] == 3
-                            && atoms[i].bond_type[positions[k]] == BOND_TYPE_SINGLE as u8)
+                            && atoms[i].bond_type[positions[k] as usize] == BOND_TYPE_SINGLE as u8)
                     {
-                        n_cm = Some(members[k]);
+                        n_cm = Some(members[k] as usize);
                         i_cm = k;
                     } else if values[k] == 2
                         || (values[k] == 3
-                            && atoms[i].bond_type[positions[k]] == BOND_TYPE_DOUBLE as u8)
+                            && atoms[i].bond_type[positions[k] as usize] == BOND_TYPE_DOUBLE as u8)
                     {
-                        n_cp = Some(members[k]);
+                        n_cp = Some(members[k] as usize);
                         i_cp = k;
                     }
                 }
@@ -2196,7 +2320,7 @@ pub(crate) fn remove_ion_pairs(
                 }
                 for k in 0..2 {
                     let (n, member_index) = if k == 1 { (n_cp, i_cp) } else { (n_cm, i_cm) };
-                    let i1 = positions[member_index];
+                    let i1 = positions[member_index] as usize;
                     if values[member_index] < 4 {
                         let delta = 4 - values[member_index];
                         let i2 = reciprocal(atoms, n, i)?;
@@ -2226,6 +2350,23 @@ pub(crate) fn bIsAmmoniumSalt(
     oxygen_index: &mut i32,
     neighbor_position: &mut i32,
     num_explicit_h: &mut [S_CHAR; NUM_H_ISOTOPES as usize + 1],
+) -> Result<i32, SourceHeapError> {
+    bIsAmmoniumSalt_signed(
+        SourceRelativeSlice::new(atoms),
+        atom_index,
+        oxygen_index,
+        neighbor_position,
+        &mut SourceRelativeSliceMut::new(num_explicit_h),
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn bIsAmmoniumSalt_signed(
+    atoms: SourceRelativeSlice<'_, inp_ATOM>,
+    atom_index: i32,
+    oxygen_index: &mut i32,
+    neighbor_position: &mut i32,
+    num_explicit_h: &mut SourceRelativeSliceMut<'_, S_CHAR>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:2300 bIsAmmoniumSalt
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: bIsAmmoniumSalt
@@ -2326,6 +2467,8 @@ pub(crate) fn bIsAmmoniumSalt(
     // INCHI✔️✔️: }
     // END COMPLETE VERBATIM SOURCE FRAME: bIsAmmoniumSalt
     // END INCHI C FUNCTION: bIsAmmoniumSalt
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: bIsAmmoniumSalt
     // INCHI✔️✔️: #define EL_NUMBER_H  ((U_CHAR)1)
     // INCHI✔️✔️: #define EL_NUMBER_C  ((U_CHAR)6)
@@ -2341,7 +2484,7 @@ pub(crate) fn bIsAmmoniumSalt(
     // INCHI✔️✔️: #define NUMH(AT,N) (AT[N].num_H+NUM_ISO_H(AT,N))
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: bIsAmmoniumSalt
 
-    let i = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let i = atom_index;
     let atom = atoms.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
     if atom.el_number != 7 {
         return Ok(0);
@@ -2353,7 +2496,11 @@ pub(crate) fn bIsAmmoniumSalt(
         return Ok(0);
     }
 
-    num_explicit_h.fill(0);
+    for slot in 0..=NUM_H_ISOTOPES as usize {
+        *num_explicit_h
+            .get_mut(slot)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+    }
     let mut num_oxygen = 0_i32;
     let mut found_oxygen = -1_i32;
     let mut found_position = -1_i32;
@@ -2378,8 +2525,7 @@ pub(crate) fn bIsAmmoniumSalt(
             && neighbor.radical == 0
         {
             num_h += 1;
-            let isotope = usize::try_from(neighbor.iso_atw_diff)
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            let isotope = i32::from(neighbor.iso_atw_diff);
             let explicit = num_explicit_h
                 .get_mut(isotope)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2388,7 +2534,9 @@ pub(crate) fn bIsAmmoniumSalt(
             num_oxygen += 1;
             found_oxygen = neighbor_index as i32;
             found_position = j as i32;
-            let opposite_position = usize::from(neighbor.neighbor[0] == i as AT_NUMB);
+            // INCHI✔️❗: Native promotes the short for this comparison;
+            // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
+            let opposite_position = usize::from(i32::from(neighbor.neighbor[0]) == i);
             let carbon_index = usize::from(neighbor.neighbor[opposite_position]);
             let carbon = atoms
                 .get(carbon_index)
@@ -2404,8 +2552,13 @@ pub(crate) fn bIsAmmoniumSalt(
             && neighbor.valence == 1
             && neighbor.chem_bonds_valence == 1
             && neighbor.charge == 0
-            && neighbor.num_H == 0
-            && neighbor.num_iso_H.into_iter().all(|count| count == 0)
+            // INCHI✔️❗: !NUMH is a promoted signed sum, not all fields zero.
+            // Three scalar additions, no array copy; checked-call cost OPEN.
+            && i32::from(neighbor.num_H)
+                + i32::from(neighbor.num_iso_H[0])
+                + i32::from(neighbor.num_iso_H[1])
+                + i32::from(neighbor.num_iso_H[2])
+                == 0
             && num_oxygen == 0
         {
             num_oxygen += 1;
@@ -2431,6 +2584,23 @@ pub(crate) fn bIsAmmoniumSalt(
 #[allow(non_snake_case)]
 pub(crate) fn DisconnectAmmoniumSalt(
     atoms: &mut [inp_ATOM],
+    nitrogen_index: i32,
+    oxygen_index: i32,
+    nitrogen_bond_position: i32,
+    num_explicit_h: &[S_CHAR; NUM_H_ISOTOPES as usize + 1],
+) -> Result<i32, SourceHeapError> {
+    DisconnectAmmoniumSalt_signed(
+        &mut SourceRelativeSliceMut::new(atoms),
+        nitrogen_index,
+        oxygen_index,
+        nitrogen_bond_position,
+        num_explicit_h,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn DisconnectAmmoniumSalt_signed(
+    atoms: &mut SourceRelativeSliceMut<'_, inp_ATOM>,
     nitrogen_index: i32,
     oxygen_index: i32,
     nitrogen_bond_position: i32,
@@ -2550,14 +2720,15 @@ pub(crate) fn DisconnectAmmoniumSalt(
     // INCHI✔️✔️: }
     // END COMPLETE VERBATIM SOURCE FRAME: DisconnectAmmoniumSalt
     // END INCHI C FUNCTION: DisconnectAmmoniumSalt
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisconnectAmmoniumSalt
     // INCHI✔️✔️: #define EL_NUMBER_H  ((U_CHAR)1)
     // INCHI✔️✔️: #define NUM_H_ISOTOPES 3
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisconnectAmmoniumSalt
 
-    let nitrogen =
-        usize::try_from(nitrogen_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let oxygen = usize::try_from(oxygen_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let nitrogen = nitrogen_index;
+    let oxygen = oxygen_index;
     let mut k = nitrogen_bond_position;
     let mut val = i32::from(
         atoms
@@ -2575,13 +2746,15 @@ pub(crate) fn DisconnectAmmoniumSalt(
         atoms[oxygen].charge = 0;
     }
 
+    // INCHI✔️❗: Native promotes the short for this comparison;
+    // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
     let oxygen_neighbor_position = if atoms[oxygen].valence == 2 {
-        i32::from(atoms[oxygen].neighbor[1] == nitrogen as AT_NUMB)
+        i32::from(i32::from(atoms[oxygen].neighbor[1]) == nitrogen)
     } else {
         0
     };
-    RemoveInpAtBond(atoms, oxygen_index, oxygen_neighbor_position)?;
-    RemoveInpAtBond(atoms, nitrogen_index, k)?;
+    RemoveInpAtBond_signed(atoms, oxygen_index, oxygen_neighbor_position)?;
+    RemoveInpAtBond_signed(atoms, nitrogen_index, k)?;
     val -= 1;
 
     let mut move_explicit_isotope = -1_i32;
@@ -2607,8 +2780,8 @@ pub(crate) fn DisconnectAmmoniumSalt(
 
     if move_explicit_isotope >= 0 {
         let mut minimum_distance = -1.0_f64;
-        let mut hydrogen = None;
-        let mut hydrogen_position = None;
+        let mut hydrogen = -1_i32;
+        let mut hydrogen_position = -1_i32;
         for j in 0..val.max(0) as usize {
             let neighbor = usize::from(atoms[nitrogen].neighbor[j]);
             let candidate = atoms
@@ -2623,13 +2796,17 @@ pub(crate) fn DisconnectAmmoniumSalt(
                 let distance = dx * dx + dy * dy + dz * dz;
                 if minimum_distance < 0.0 || minimum_distance > distance {
                     minimum_distance = distance;
-                    hydrogen = Some(neighbor);
-                    hydrogen_position = Some(j);
+                    hydrogen = neighbor as i32;
+                    hydrogen_position = j as i32;
                 }
             }
         }
-        let hydrogen = hydrogen.ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let hydrogen_position = hydrogen_position.ok_or(SourceHeapError::PointerOutOfBounds)?;
+        // Native iH/jH remain -1 when the search finds no H.
+        // A real atom prefix permits iH=-1; origin-zero entries retain
+        // their previous typed error before any reconnection stores.
+        atoms
+            .get(hydrogen)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let oxygen_position = usize::try_from(atoms[oxygen].valence)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if oxygen_position >= MAXVAL as usize {
@@ -2645,7 +2822,7 @@ pub(crate) fn DisconnectAmmoniumSalt(
         atoms[oxygen].valence = atoms[oxygen].valence.wrapping_add(1);
         atoms[hydrogen].neighbor[0] = oxygen as AT_NUMB;
         atoms[hydrogen].bond_stereo[0] = 0;
-        RemoveInpAtBond(atoms, nitrogen_index, hydrogen_position as i32)?;
+        RemoveInpAtBond_signed(atoms, nitrogen_index, hydrogen_position as i32)?;
         val -= 1;
         if k > hydrogen_position as i32 {
             k -= 1;
@@ -2657,6 +2834,14 @@ pub(crate) fn DisconnectAmmoniumSalt(
 
 #[allow(non_snake_case)]
 pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, SourceHeapError> {
+    bIsMetalSalt_signed(SourceRelativeSlice::new(atoms), atom_index)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn bIsMetalSalt_signed(
+    atoms: SourceRelativeSlice<'_, inp_ATOM>,
+    atom_index: i32,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:2511 bIsMetalSalt
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: bIsMetalSalt
     // INCHI✔️✔️: int bIsMetalSalt( inp_ATOM *at, int i )
@@ -2759,6 +2944,8 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
     // INCHI✔️✔️: }
     // END COMPLETE VERBATIM SOURCE FRAME: bIsMetalSalt
     // END INCHI C FUNCTION: bIsMetalSalt
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: bIsMetalSalt
     // INCHI✔️✔️: #define IS_METAL (METAL | METAL2)
     // INCHI✔️✔️: #define METAL 1
@@ -2767,11 +2954,16 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
     // INCHI✔️✔️: #define NUMH(AT,N) (AT[N].num_H+NUM_ISO_H(AT,N))
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: bIsMetalSalt
 
-    let i = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let i = atom_index;
     let metal = atoms.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
     let valence = i32::from(metal.valence);
+    // INCHI✔️❗: Native zero valence skips the element query entirely.
+    // Reached checked reads retain O(1) storage; whole-call cost remains OPEN.
+    if valence == 0 {
+        return Ok(0);
+    }
     let element_type = get_el_type(i32::from(metal.el_number))?;
-    if valence == 0 || element_type == 0 || element_type & 3 == 0 || metal.num_H != 0 {
+    if element_type == 0 || element_type & 3 == 0 || metal.num_H != 0 {
         return Ok(0);
     }
 
@@ -2788,8 +2980,13 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
         return Ok(0);
     }
 
-    for position in 0..valence.max(0) as usize {
-        let ligand_index = usize::from(metal.neighbor[position]);
+    for position in 0..valence {
+        let ligand_index = usize::from(
+            *metal
+                .neighbor
+                .get(position as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        );
         let ligand = atoms
             .get(ligand_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -2813,7 +3010,9 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
         {
             return Ok(0);
         }
-        let carbon_position = usize::from(ligand.neighbor[0] == i as AT_NUMB);
+        // INCHI✔️❗: Native promotes the short for this comparison;
+        // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
+        let carbon_position = usize::from(i32::from(ligand.neighbor[0]) == i);
         let carbon_index = usize::from(ligand.neighbor[carbon_position]);
         let carbon = atoms
             .get(carbon_index)
@@ -2827,16 +3026,27 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
         {
             return Ok(0);
         }
-        for carbon_position in 0..i32::from(carbon.valence).max(0) as usize {
-            let neighbor = usize::from(carbon.neighbor[carbon_position]);
+        let mut carbon_position = 0_i32;
+        while carbon_position < i32::from(carbon.valence) {
+            let neighbor = usize::from(
+                *carbon
+                    .neighbor
+                    .get(carbon_position as usize)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            );
             if atoms
                 .get(neighbor)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .el_number
                 == 1
             {
-                return Ok(0);
+                break;
             }
+            carbon_position += 1;
+        }
+        // Native compares j after the loop, including a negative degree.
+        if carbon_position != i32::from(carbon.valence) {
+            return Ok(0);
         }
     }
     Ok(1)
@@ -2845,6 +3055,14 @@ pub(crate) fn bIsMetalSalt(atoms: &[inp_ATOM], atom_index: i32) -> Result<i32, S
 #[allow(non_snake_case)]
 pub(crate) fn DisconnectMetalSalt(
     atoms: &mut [inp_ATOM],
+    atom_index: i32,
+) -> Result<i32, SourceHeapError> {
+    DisconnectMetalSalt_signed(&mut SourceRelativeSliceMut::new(atoms), atom_index)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn DisconnectMetalSalt_signed(
+    atoms: &mut SourceRelativeSliceMut<'_, inp_ATOM>,
     atom_index: i32,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:2612 DisconnectMetalSalt
@@ -2904,20 +3122,22 @@ pub(crate) fn DisconnectMetalSalt(
     // INCHI✔️✔️: }
     // END COMPLETE VERBATIM SOURCE FRAME: DisconnectMetalSalt
     // END INCHI C FUNCTION: DisconnectMetalSalt
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisconnectMetalSalt
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // INCHI✔️✔️: typedef signed char S_CHAR;
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisconnectMetalSalt
 
-    let metal_index =
-        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let metal_valence = i32::from(
-        atoms
-            .get(metal_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .valence,
-    );
-    for position in 0..metal_valence.max(0) as usize {
+    let metal_index = atom_index;
+    atoms
+        .get(metal_index)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: Native rereads at[i].valence every iteration; a self-neighbor
+    // changes the loop bound. O(reached degree), O(1), no allocation/clone.
+    // Checked access and whole-call cost remain OPEN.
+    let mut position = 0_usize;
+    while position < i32::from(atoms[metal_index].valence).max(0) as usize {
         let ligand_index = usize::from(
             *atoms[metal_index]
                 .neighbor
@@ -2929,7 +3149,9 @@ pub(crate) fn DisconnectMetalSalt(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .valence;
         if ligand_valence == 2 {
-            if atoms[ligand_index].neighbor[0] == atom_index as AT_NUMB {
+            // INCHI✔️❗: Native promotes the short for this comparison;
+            // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
+            if i32::from(atoms[ligand_index].neighbor[0]) == atom_index {
                 atoms[ligand_index].neighbor[0] = atoms[ligand_index].neighbor[1];
                 atoms[ligand_index].bond_stereo[0] = atoms[ligand_index].bond_stereo[1];
                 atoms[ligand_index].bond_type[0] = atoms[ligand_index].bond_type[1];
@@ -2950,10 +3172,11 @@ pub(crate) fn DisconnectMetalSalt(
         atoms[metal_index].bond_stereo[position] = 0;
         atoms[metal_index].bond_type[position] = 0;
         atoms[metal_index].charge = atoms[metal_index].charge.wrapping_add(1);
+        position += 1;
     }
     atoms[metal_index].valence = 0;
     atoms[metal_index].chem_bonds_valence = 0;
-    Ok(metal_valence.max(0))
+    Ok(position as i32)
 }
 
 #[allow(non_snake_case)]
@@ -3020,7 +3243,8 @@ pub(crate) fn DisconnectSalts(
     if number_of_atoms <= 0 {
         return Ok(0);
     }
-    let atoms = heap.slice_mut(atom_pointer)?;
+    let (backing, origin) = heap.slice_mut_with_origin(atom_pointer)?;
+    let mut atoms = SourceRelativeSliceMut { backing, origin };
     let mut number_of_changes = 0_i32;
     for atom_index in 0..number_of_atoms.max(0) as usize {
         let atom = atoms
@@ -3038,17 +3262,17 @@ pub(crate) fn DisconnectSalts(
         let mut ligand_index = 0_i32;
         let mut neighbor_position = 0_i32;
         let mut explicit_hydrogens = [0_i8; NUM_H_ISOTOPES as usize + 1];
-        if bIsAmmoniumSalt(
-            atoms,
+        if bIsAmmoniumSalt_signed(
+            atoms.read(),
             source_index,
             &mut ligand_index,
             &mut neighbor_position,
-            &mut explicit_hydrogens,
+            &mut SourceRelativeSliceMut::new(&mut explicit_hydrogens),
         )? != 0
         {
             if disconnect != 0 {
-                DisconnectAmmoniumSalt(
-                    atoms,
+                DisconnectAmmoniumSalt_signed(
+                    &mut atoms,
                     source_index,
                     ligand_index,
                     neighbor_position,
@@ -3057,9 +3281,9 @@ pub(crate) fn DisconnectSalts(
                 original.num_inp_bonds = original.num_inp_bonds.wrapping_sub(1);
             }
             number_of_changes = number_of_changes.wrapping_add(1);
-        } else if bIsMetalSalt(atoms, source_index)? != 0 {
+        } else if bIsMetalSalt_signed(atoms.read(), source_index)? != 0 {
             if disconnect != 0 {
-                let disconnected_bonds = DisconnectMetalSalt(atoms, source_index)?;
+                let disconnected_bonds = DisconnectMetalSalt_signed(&mut atoms, source_index)?;
                 original.num_inp_bonds = original.num_inp_bonds.wrapping_sub(disconnected_bonds);
             }
             number_of_changes = number_of_changes.wrapping_add(1);
@@ -3071,6 +3295,19 @@ pub(crate) fn DisconnectSalts(
 #[allow(non_snake_case)]
 pub(crate) fn bIsMetalToDisconnect(
     atoms: &[inp_ATOM],
+    atom_index: i32,
+    check_metal_valence: i32,
+) -> Result<i32, SourceHeapError> {
+    bIsMetalToDisconnect_signed(
+        SourceRelativeSlice::new(atoms),
+        atom_index,
+        check_metal_valence,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn bIsMetalToDisconnect_signed(
+    atoms: SourceRelativeSlice<'_, inp_ATOM>,
     atom_index: i32,
     check_metal_valence: i32,
 ) -> Result<i32, SourceHeapError> {
@@ -3118,6 +3355,8 @@ pub(crate) fn bIsMetalToDisconnect(
     // INCHI✔️✔️: }
     // END COMPLETE VERBATIM SOURCE FRAME: bIsMetalToDisconnect
     // END INCHI C FUNCTION: bIsMetalToDisconnect
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: bIsMetalToDisconnect
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // INCHI✔️✔️: #define IS_METAL (METAL | METAL2)
@@ -3125,7 +3364,7 @@ pub(crate) fn bIsMetalToDisconnect(
     // INCHI✔️✔️: int abs(int);
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: bIsMetalToDisconnect
 
-    let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let index = atom_index;
     let atom = atoms
         .get(index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3235,7 +3474,8 @@ pub(crate) fn bMayDisconnectMetals(
         original.bDisconnectCoord = 0;
         return Ok(0);
     }
-    let atoms = heap.slice(original.at.as_const())?;
+    let (backing, origin) = heap.slice_with_origin(original.at.as_const())?;
+    let atoms = SourceRelativeSlice { backing, origin };
     let mut number_of_changes = 0_i32;
     let mut number_of_implicit_hydrogens = 0_i32;
     for atom_index in 0..number_of_atoms as usize {
@@ -3256,20 +3496,20 @@ pub(crate) fn bMayDisconnectMetals(
         let mut neighbor_position = 0_i32;
         let mut explicit_hydrogens = [0_i8; NUM_H_ISOTOPES as usize + 1];
         if !radical_or_multiple_bonds
-            && bIsAmmoniumSalt(
+            && bIsAmmoniumSalt_signed(
                 atoms,
                 source_index,
                 &mut ligand_index,
                 &mut neighbor_position,
-                &mut explicit_hydrogens,
+                &mut SourceRelativeSliceMut::new(&mut explicit_hydrogens),
             )? != 0
         {
             continue;
         }
-        if !radical_or_multiple_bonds && bIsMetalSalt(atoms, source_index)? != 0 {
+        if !radical_or_multiple_bonds && bIsMetalSalt_signed(atoms, source_index)? != 0 {
             continue;
         }
-        let metal_status = bIsMetalToDisconnect(atoms, source_index, check_metal_valence)?;
+        let metal_status = bIsMetalToDisconnect_signed(atoms, source_index, check_metal_valence)?;
         if metal_status == 1 {
             number_of_implicit_hydrogens =
                 number_of_implicit_hydrogens.wrapping_add(number_of_hydrogens);
@@ -3829,91 +4069,101 @@ pub(crate) fn bHeteroAtomMayHaveXchgIsoH(
     atoms: &[inp_ATOM],
     atom_index: i32,
 ) -> Result<i32, SourceHeapError> {
+    bHeteroAtomMayHaveXchgIsoH_signed(SourceRelativeSlice::new(atoms), atom_index)
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn bHeteroAtomMayHaveXchgIsoH_signed(
+    atoms: SourceRelativeSlice<'_, inp_ATOM>,
+    atom_index: i32,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:4047 bHeteroAtomMayHaveXchgIsoH
     // INCHI✔️✔️: complete source frame follows verbatim.
     /*
-int bHeteroAtomMayHaveXchgIsoH( inp_ATOM *atom, int iat )
-{
-    inp_ATOM *at = atom + iat, *at2;
-    int j, val, is_H = 0, num_H, iat_numb, bAccept; /* djb-rwth: removing redundant variables */
+    int bHeteroAtomMayHaveXchgIsoH( inp_ATOM *atom, int iat )
+    {
+        inp_ATOM *at = atom + iat, *at2;
+        int j, val, is_H = 0, num_H, iat_numb, bAccept; /* djb-rwth: removing redundant variables */
 
-    if (0 > ( iat_numb = get_iat_number( at->el_number ) ))
-    {
-        return 0;
-    }
-
-    if (abs( at->charge ) > 1 || (at->radical && RADICAL_SINGLET != at->radical)) /* djb-rwth: addressing LLVM warning */
-    {
-        return 0;
-    }
-
-    val = -1;
-    switch (iat_numb)
-    {
-        case IAT_N:
-        case IAT_P:
-            /* djb-rwth: removing redundant code */
-            val = 3 + at->charge;
-            break;
-
-        case IAT_O:
-        case IAT_S:
-        case IAT_Se:
-        case IAT_Te:
-            /* djb-rwth: removing redundant code */
-            val = 2 + at->charge;
-            break;
-
-        case IAT_F:
-        case IAT_Cl:
-        case IAT_Br:
-        case IAT_I:
-            if (at->charge == 0)
-            {
-                /* djb-rwth: removing redundant code */
-                val = 1;
-            }
-            break;
-
-        case IAT_H:
-            if (at->valence == 0 &&
-                 at->charge == 1)
-            {
-                is_H = 1; /* isolated proton */
-                val = 0;
-            }
-    }
-    if (val < 0)
-    {
-        return 0;
-    }
-    num_H = NUMH( at, 0 );
-    if (val != at->chem_bonds_valence + num_H)
-    {
-        return 0;
-    }
-    if (is_H)
-    {
-        return 2; /* H atom */
-    }
-    else
-    {
-        /* djb-rwth: removing redundant code */
-        for (j = 0, bAccept = 1; j < at->valence && bAccept; j++)
+        if (0 > ( iat_numb = get_iat_number( at->el_number ) ))
         {
-            at2 = atom + (int) at->neighbor[j];
-            if ((at2->charge && at->charge) ||
-                ( at2->radical && RADICAL_SINGLET != at2->radical )) /* djb-rwth: addressing LLVM warning */
+            return 0;
+        }
+
+        if (abs( at->charge ) > 1 || (at->radical && RADICAL_SINGLET != at->radical)) /* djb-rwth: addressing LLVM warning */
+        {
+            return 0;
+        }
+
+        val = -1;
+        switch (iat_numb)
+        {
+            case IAT_N:
+            case IAT_P:
+                /* djb-rwth: removing redundant code */
+                val = 3 + at->charge;
+                break;
+
+            case IAT_O:
+            case IAT_S:
+            case IAT_Se:
+            case IAT_Te:
+                /* djb-rwth: removing redundant code */
+                val = 2 + at->charge;
+                break;
+
+            case IAT_F:
+            case IAT_Cl:
+            case IAT_Br:
+            case IAT_I:
+                if (at->charge == 0)
+                {
+                    /* djb-rwth: removing redundant code */
+                    val = 1;
+                }
+                break;
+
+            case IAT_H:
+                if (at->valence == 0 &&
+                     at->charge == 1)
+                {
+                    is_H = 1; /* isolated proton */
+                    val = 0;
+                }
+        }
+        if (val < 0)
+        {
+            return 0;
+        }
+        num_H = NUMH( at, 0 );
+        if (val != at->chem_bonds_valence + num_H)
+        {
+            return 0;
+        }
+        if (is_H)
+        {
+            return 2; /* H atom */
+        }
+        else
+        {
+            /* djb-rwth: removing redundant code */
+            for (j = 0, bAccept = 1; j < at->valence && bAccept; j++)
             {
-                return 0; /* adjacent charged/radical atoms: do not neutralizate */
+                at2 = atom + (int) at->neighbor[j];
+                if ((at2->charge && at->charge) ||
+                    ( at2->radical && RADICAL_SINGLET != at2->radical )) /* djb-rwth: addressing LLVM warning */
+                {
+                    return 0; /* adjacent charged/radical atoms: do not neutralizate */
+                }
             }
         }
-    }
 
-    return 1;
-}
-    */
+        return 1;
+    }
+        */
     // END INCHI C FUNCTION: bHeteroAtomMayHaveXchgIsoH
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: bHeteroAtomMayHaveXchgIsoH
     // INCHI✔️✔️: READ_INCHI_STRING=1 includes this function for the selected production target.
     // INCHI✔️✔️: #define NUM_ISO_H(AT,N) (AT[N].num_iso_H[0]+AT[N].num_iso_H[1]+AT[N].num_iso_H[2])
@@ -3921,8 +4171,6 @@ int bHeteroAtomMayHaveXchgIsoH( inp_ATOM *atom, int iat )
     // INCHI✔️✔️: #define RADICAL_SINGLET 1
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: bHeteroAtomMayHaveXchgIsoH
 
-    let atom_index =
-        usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atom = atoms
         .get(atom_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -3957,9 +4205,12 @@ int bHeteroAtomMayHaveXchgIsoH( inp_ATOM *atom, int iat )
     if valence < 0 {
         return Ok(0);
     }
-    let number_of_hydrogens = atom.num_iso_H.into_iter().fold(i32::from(atom.num_H), |sum, value| {
-        sum.wrapping_add(i32::from(value))
-    });
+    let number_of_hydrogens = atom
+        .num_iso_H
+        .into_iter()
+        .fold(i32::from(atom.num_H), |sum, value| {
+            sum.wrapping_add(i32::from(value))
+        });
     if valence != i32::from(atom.chem_bonds_valence).wrapping_add(number_of_hydrogens) {
         return Ok(0);
     }
@@ -3967,13 +4218,14 @@ int bHeteroAtomMayHaveXchgIsoH( inp_ATOM *atom, int iat )
         return Ok(2);
     }
 
-    let neighbor_count = usize::try_from(i32::from(atom.valence).max(0))
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    for &neighbor in atom
-        .neighbor
-        .get(..neighbor_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-    {
+    // INCHI✔️❗: for (j = 0, bAccept = 1; j < at->valence && bAccept; j++)
+    // Behavior: each ordinal is read only if prior neighbors were accepted.
+    // Cost: one reached indexed read/iteration, no scan/allocation.
+    for j in 0..i32::from(atom.valence) {
+        let neighbor = *atom
+            .neighbor
+            .get(j as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let neighbor = atoms
             .get(usize::from(neighbor))
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4109,16 +4361,16 @@ pub(crate) fn bNumHeterAtomHasIsotopicH(
     // INCHI✔️✔️: #define NUMH(AT,N) (AT[N].num_H+NUM_ISO_H(AT,N))
     // INCHI✔️✔️: #define RADICAL_SINGLET 1
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: bNumHeterAtomHasIsotopicH
-    let atom_count =
-        usize::try_from(number_of_atoms.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms = atoms
-        .get(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let mut is_hydrogen = false;
     let mut number_of_isotopic_hydrogen_atoms = 0_i32;
     let mut number_of_isotopic_atoms = 0_i32;
 
-    for atom in atoms {
+    // INCHI✔️❗: for (i = 0, at = atom; i < num_atoms; i++, at++)
+    // Cost: reached scalar admissions/O(1) storage, no whole-prefix preflight.
+    for i in 0..number_of_atoms {
+        let atom = atoms
+            .get(i as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let implicit_isotopic_hydrogens = atom.num_iso_H.into_iter().map(i32::from).sum::<i32>();
         number_of_isotopic_atoms = number_of_isotopic_atoms.wrapping_add(i32::from(
             atom.iso_atw_diff != 0 || implicit_isotopic_hydrogens != 0,
@@ -4168,13 +4420,14 @@ pub(crate) fn bNumHeterAtomHasIsotopicH(
         } else {
             current_isotopic_hydrogens = 0_i32;
             accept = true;
-            let neighbor_count = usize::try_from(i32::from(atom.valence).max(0))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            for &neighbor in atom
-                .neighbor
-                .get(..neighbor_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-            {
+            // INCHI✔️❗: for (j = 0, bAccept = 1; j < at->valence && bAccept; j++)
+            // Behavior: each ordinal is read only if prior neighbors were accepted.
+            // Cost: one reached indexed read/iteration, no scan/allocation.
+            for j in 0..i32::from(atom.valence) {
+                let neighbor = *atom
+                    .neighbor
+                    .get(j as usize)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let neighbor = atoms
                     .get(usize::from(neighbor))
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4207,6 +4460,21 @@ pub(crate) fn bNumHeterAtomHasIsotopicH(
 
 pub(crate) fn the_only_doublet_neigh(
     atoms: &[inp_ATOM],
+    first_atom: i32,
+    first_neighbor_ordinal: &mut i32,
+    second_neighbor_ordinal: &mut i32,
+) -> Result<i32, SourceHeapError> {
+    the_only_doublet_neigh_signed(
+        SourceRelativeSlice::new(atoms),
+        first_atom,
+        first_neighbor_ordinal,
+        second_neighbor_ordinal,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn the_only_doublet_neigh_signed(
+    atoms: SourceRelativeSlice<'_, inp_ATOM>,
     first_atom: i32,
     first_neighbor_ordinal: &mut i32,
     second_neighbor_ordinal: &mut i32,
@@ -4258,12 +4526,13 @@ pub(crate) fn the_only_doublet_neigh(
     // INCHI✔️✔️: }
     // END COMPLETE VERBATIM SOURCE FRAME: the_only_doublet_neigh
     // END INCHI C FUNCTION: the_only_doublet_neigh
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: the_only_doublet_neigh
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // INCHI✔️✔️: #define RADICAL_DOUBLET 2
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: the_only_doublet_neigh
-    let first_index =
-        usize::try_from(first_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let first_index = first_atom;
     let first = atoms
         .get(first_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -4899,7 +5168,9 @@ pub(crate) fn fix_non_uniform_drawn_amidiniums(
                     .neighbor
                     .get(reciprocal_ordinal as usize)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if neighbor_number == center_index as AT_NUMB {
+                // INCHI✔️❗: Native promotes the short for this comparison;
+                // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
+                if usize::from(neighbor_number) == center_index {
                     break;
                 }
                 reciprocal_ordinal = reciprocal_ordinal.wrapping_add(1);
@@ -5337,9 +5608,11 @@ pub(crate) fn fix_odd_things(
                         == i32::from(second.chem_bonds_valence).wrapping_add(num_h(second))
                 {
                     let mut first_ordinal = 0_i32;
+                    // INCHI✔️❗: Native promotes the short for this comparison;
+                    // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
                     while first_ordinal < center_valence
-                        && atoms[center_index].neighbor[first_ordinal as usize]
-                            != first_index as AT_NUMB
+                        && usize::from(atoms[center_index].neighbor[first_ordinal as usize])
+                            != first_index
                     {
                         first_ordinal = first_ordinal.wrapping_add(1);
                     }
@@ -5452,8 +5725,8 @@ pub(crate) fn fix_odd_things(
 
                     let mut center_first_ordinal = 0_i32;
                     while center_first_ordinal < center_valence
-                        && atoms[center_index].neighbor[center_first_ordinal as usize]
-                            != first_index as AT_NUMB
+                        && usize::from(atoms[center_index].neighbor[center_first_ordinal as usize])
+                            != first_index
                     {
                         center_first_ordinal = center_first_ordinal.wrapping_add(1);
                     }
@@ -5531,8 +5804,8 @@ pub(crate) fn fix_odd_things(
             {
                 let mut first_ordinal = 0_i32;
                 while first_ordinal < center_valence
-                    && atoms[center_index].neighbor[first_ordinal as usize]
-                        != first_index as AT_NUMB
+                    && usize::from(atoms[center_index].neighbor[first_ordinal as usize])
+                        != first_index
                 {
                     first_ordinal = first_ordinal.wrapping_add(1);
                 }
@@ -5622,6 +5895,31 @@ pub(crate) fn post_fix_odd_things(_number_of_atoms: i32, _atoms: &mut [inp_ATOM]
 #[allow(non_snake_case)]
 pub(crate) fn DisconnectOneLigand(
     atoms: &mut [inp_ATOM],
+    mut old_component_numbers: Option<&mut [AT_NUMB]>,
+    metal_marks: &[S_CHAR],
+    heteroatom_elements: &[i8],
+    number_of_halogens: i32,
+    number_of_atoms: i32,
+    metal_index: i32,
+    ligand_ordinal: i32,
+    mut taut_flags_done: Option<&mut INCHI_MODE>,
+) -> Result<i32, SourceHeapError> {
+    DisconnectOneLigand_signed(
+        &mut SourceRelativeSliceMut::new(atoms),
+        old_component_numbers,
+        metal_marks,
+        heteroatom_elements,
+        number_of_halogens,
+        number_of_atoms,
+        metal_index,
+        ligand_ordinal,
+        taut_flags_done,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn DisconnectOneLigand_signed(
+    atoms: &mut SourceRelativeSliceMut<'_, inp_ATOM>,
     mut old_component_numbers: Option<&mut [AT_NUMB]>,
     metal_marks: &[S_CHAR],
     heteroatom_elements: &[i8],
@@ -5765,6 +6063,8 @@ pub(crate) fn DisconnectOneLigand(
     // INCHI✔️✔️: }
     // END COMPLETE VERBATIM SOURCE FRAME: DisconnectOneLigand
     // END INCHI C FUNCTION: DisconnectOneLigand
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisconnectOneLigand
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // INCHI✔️✔️: #define MAXVAL 20
@@ -5775,15 +6075,14 @@ pub(crate) fn DisconnectOneLigand(
     // INCHI✔️✔️: #define TG_FLAG_MOVE_CHARGE_COORD_DONE 0x00000400
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: DisconnectOneLigand
 
-    let metal = usize::try_from(metal_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let metal = metal_index;
     let ordinal =
         usize::try_from(ligand_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let metal_atom = atoms
         .get(metal)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if ligand_ordinal < 0 || ligand_ordinal >= i32::from(metal_atom.valence) {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
+    // INCHI✔️❗: Native neighbor[jLigand] uses the physical MAXVAL array;
+    // no logical-valence gate. Existing signed/physical extent errors remain.
     let ligand = usize::from(
         *metal_atom
             .neighbor
@@ -5859,12 +6158,13 @@ pub(crate) fn DisconnectOneLigand(
     }
 
     for source_index in (0..number_of_metal_neighbors).rev() {
-        number_of_disconnections = number_of_disconnections.wrapping_add(DisconnectInpAtBond(
-            atoms,
-            old_component_numbers.as_deref_mut(),
-            ligand as i32,
-            metal_neighbor_ordinals[source_index],
-        )?);
+        number_of_disconnections =
+            number_of_disconnections.wrapping_add(DisconnectInpAtBond_signed(
+                atoms,
+                old_component_numbers.as_deref_mut(),
+                ligand as i32,
+                metal_neighbor_ordinals[source_index],
+            )?);
     }
 
     let remaining_aromatic_bonds =
@@ -5880,15 +6180,26 @@ pub(crate) fn DisconnectOneLigand(
         return Ok(number_of_disconnections);
     }
 
-    let nul_position = heteroatom_elements
-        .iter()
-        .position(|&element| element == 0)
-        .ok_or(SourceHeapError::MissingNulTerminator)?;
+    // INCHI✔️❌: Native strchr returns the first target (including NUL).
+    // Fuse target capture with required safe-buffer NUL admission; retain all
+    // existing MissingNulTerminator errors, even when a target precedes the end.
+    // INCHI-PERF-LIGAND-ADMISSION: extra tail validation versus native OPEN/UNFAVORABLE.
     let ligand_element = atoms[ligand].el_number;
-    let Some(element_position) = heteroatom_elements[..=nul_position]
-        .iter()
-        .position(|&element| element as U_CHAR == ligand_element)
-    else {
+    let mut element_position = None;
+    let mut found_nul = false;
+    for (index, &element) in heteroatom_elements.iter().enumerate() {
+        if element_position.is_none() && element as U_CHAR == ligand_element {
+            element_position = Some(index);
+        }
+        if element == 0 {
+            found_nul = true;
+            break;
+        }
+    }
+    if !found_nul {
+        return Err(SourceHeapError::MissingNulTerminator);
+    }
+    let Some(element_position) = element_position else {
         return Ok(number_of_disconnections);
     };
 
@@ -5965,6 +6276,27 @@ pub(crate) fn dist3D(first: &inp_ATOM, second: &inp_ATOM) -> f64 {
 #[allow(non_snake_case)]
 pub(crate) fn GetMinDistDistribution(
     atoms: &[inp_ATOM],
+    number_of_atoms: i32,
+    atom_index: i32,
+    hydrogen_index: i32,
+    in_all_components: i32,
+    minimum_distances: &mut [f64],
+    number_of_segments: i32,
+) -> Result<f64, SourceHeapError> {
+    GetMinDistDistribution_signed(
+        SourceRelativeSlice::new(atoms),
+        number_of_atoms,
+        atom_index,
+        hydrogen_index,
+        in_all_components,
+        minimum_distances,
+        number_of_segments,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn GetMinDistDistribution_signed(
+    atoms: SourceRelativeSlice<'_, inp_ATOM>,
     number_of_atoms: i32,
     atom_index: i32,
     hydrogen_index: i32,
@@ -6189,6 +6521,8 @@ pub(crate) fn GetMinDistDistribution(
     // INCHI✔️✔️: }
     // END COMPLETE VERBATIM SOURCE FRAME: GetMinDistDistribution
     // END INCHI C FUNCTION: GetMinDistDistribution
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: GetMinDistDistribution
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // INCHI✔️✔️: #define MIN_BOND_LENGTH (1.0e-6)
@@ -6197,26 +6531,6 @@ pub(crate) fn GetMinDistDistribution(
     // INCHI✔️✔️: #define MAX_BOND_LENGTH (1.0e30)
     // INCHI✔️✔️: bRELEASE_VERSION == 1, therefore the _DEBUG-only breakpoint block is inactive.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: GetMinDistDistribution
-
-    if number_of_segments <= 0 {
-        return Err(SourceHeapError::SourceIntegerOverflow);
-    }
-    let segment_count = number_of_segments as usize;
-    if minimum_distances.len() < segment_count {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    minimum_distances[..segment_count].fill(1.0e30);
-    if number_of_atoms <= 0 {
-        return Ok(0.0);
-    }
-    let atom_count = number_of_atoms as usize;
-    if atoms.len() < atom_count {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    let target = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if target >= atom_count {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
 
     const ONE_PI: f64 = 3.14159265358979323846;
     const TWO_PI: f64 = 2.0 * ONE_PI;
@@ -6227,30 +6541,58 @@ pub(crate) fn GetMinDistDistribution(
     let mut number_of_bonds = 0_i32;
     let mut average_bond_length = 0.0_f64;
 
-    for source_index in 0..atom_count {
-        if source_index as i32 == atom_index || source_index as i32 == hydrogen_index {
+    // INCHI✔️❗: Match reached accesses, signed loop bounds and partial stores.
+    // O(segments + reached bonds/segments), O(1), no allocations or copies.
+    // Checked access/Result whole-call cost remains OPEN: geometry_metal_c134.
+    let segment_number = |value: f64| -> Result<i32, SourceHeapError> {
+        let value = value.floor();
+        if !value.is_finite() || value < f64::from(i32::MIN) || value > f64::from(i32::MAX) {
+            return Err(SourceHeapError::SourceIntegerOverflow);
+        }
+        Ok(value as i32)
+    };
+    for segment in 0..number_of_segments {
+        *minimum_distances
+            .get_mut(segment as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)? = 1.0e30;
+    }
+    for source_index in 0..number_of_atoms {
+        if source_index == atom_index || source_index == hydrogen_index {
             continue;
         }
-        if in_all_components == 0 && atoms[source_index].component != atoms[target].component {
-            continue;
-        }
-        let source_valence = i32::from(atoms[source_index].valence);
-        for neighbor_ordinal in 0..source_valence.max(0) as usize {
-            let neighbor = i32::from(atoms[source_index].neighbor[neighbor_ordinal]);
-            if (neighbor > source_index as i32 && neighbor != atom_index)
-                || neighbor == hydrogen_index
-            {
+        let source_atom = atoms
+            .get(source_index as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if in_all_components == 0 {
+            let target_atom = atoms
+                .get(atom_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if source_atom.component != target_atom.component {
                 continue;
             }
+        }
+        for neighbor_ordinal in 0..i32::from(source_atom.valence) {
+            let neighbor = i32::from(
+                *source_atom
+                    .neighbor
+                    .get(neighbor_ordinal as usize)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            );
+            if (neighbor > source_index && neighbor != atom_index) || neighbor == hydrogen_index {
+                continue;
+            }
+            let target_atom = atoms
+                .get(atom_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let neighbor_index =
                 usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let neighbor_atom = atoms
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mut xi = atoms[source_index].x - atoms[target].x;
-            let mut yi = atoms[source_index].y - atoms[target].y;
-            let mut xn = neighbor_atom.x - atoms[target].x;
-            let mut yn = neighbor_atom.y - atoms[target].y;
+            let mut xi = source_atom.x - target_atom.x;
+            let mut yi = source_atom.y - target_atom.y;
+            let mut xn = neighbor_atom.x - target_atom.x;
+            let mut yn = neighbor_atom.y - target_atom.y;
             let cross_product = xi * yn - xn * yi;
             if cross_product < -0.01 * MIN_BOND_LENGTH_SQUARED {
                 std::mem::swap(&mut xi, &mut xn);
@@ -6293,13 +6635,19 @@ pub(crate) fn GetMinDistDistribution(
                     fi += TWO_PI;
                     fn_angle += TWO_PI;
                 }
-                let first_segment = ((fi + half_step) / full_step).floor() as i32;
-                let last_segment = ((fn_angle + half_step) / full_step).floor() as i32;
+                let first_segment = segment_number((fi + half_step) / full_step)?;
+                let last_segment = segment_number((fn_angle + half_step) / full_step)?;
                 let mut projection_angle = 0.0_f64;
                 let mut projection_distance = 0.0_f64;
                 for source_segment in first_segment..=last_segment {
-                    let segment = (source_segment % number_of_segments) as usize;
-                    if minimum_distances[segment] < minimum_distance {
+                    let segment = source_segment
+                        .checked_rem(number_of_segments)
+                        .ok_or(SourceHeapError::SourceIntegerOverflow)?
+                        as usize;
+                    let distance = minimum_distances
+                        .get_mut(segment)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if *distance < minimum_distance {
                         continue;
                     }
                     if calculate_projection {
@@ -6320,8 +6668,8 @@ pub(crate) fn GetMinDistDistribution(
                         cosine = MIN_COSINE;
                     }
                     let radial_distance = projection_distance / cosine;
-                    if minimum_distances[segment] > radial_distance {
-                        minimum_distances[segment] = radial_distance;
+                    if *distance > radial_distance {
+                        *distance = radial_distance;
                     }
                 }
             } else {
@@ -6336,27 +6684,41 @@ pub(crate) fn GetMinDistDistribution(
                         if angle < 0.0 {
                             angle += TWO_PI;
                         }
-                        let segment = (((angle + half_step) / full_step).floor() as i32
-                            % number_of_segments) as usize;
-                        if minimum_distances[segment] > minimum_distance {
-                            minimum_distances[segment] = minimum_distance;
+                        let segment = segment_number((angle + half_step) / full_step)?
+                            .checked_rem(number_of_segments)
+                            .ok_or(SourceHeapError::SourceIntegerOverflow)?
+                            as usize;
+                        let distance = minimum_distances
+                            .get_mut(segment)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if *distance > minimum_distance {
+                            *distance = minimum_distance;
                         }
                     } else if dot_product < -0.01 * MIN_BOND_LENGTH_SQUARED {
                         let mut angle = yi.atan2(xi);
                         if angle < 0.0 {
                             angle += TWO_PI;
                         }
-                        let segment = (((angle + half_step) / full_step).floor() as i32
-                            % number_of_segments) as usize;
-                        if minimum_distances[segment] > minimum_distance {
-                            minimum_distances[segment] = minimum_distance;
+                        let segment = segment_number((angle + half_step) / full_step)?
+                            .checked_rem(number_of_segments)
+                            .ok_or(SourceHeapError::SourceIntegerOverflow)?
+                            as usize;
+                        let distance = minimum_distances
+                            .get_mut(segment)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if *distance > minimum_distance {
+                            *distance = minimum_distance;
                         }
                         angle += ONE_PI;
-                        let opposite_segment = (((angle + half_step) / full_step).floor() as i32
-                            % number_of_segments)
+                        let opposite_segment = segment_number((angle + half_step) / full_step)?
+                            .checked_rem(number_of_segments)
+                            .ok_or(SourceHeapError::SourceIntegerOverflow)?
                             as usize;
-                        if minimum_distances[opposite_segment] > minimum_distance {
-                            minimum_distances[opposite_segment] = minimum_distance;
+                        let opposite_distance = minimum_distances
+                            .get_mut(opposite_segment)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if *opposite_distance > minimum_distance {
+                            *opposite_distance = minimum_distance;
                         }
                     }
                 } else if source_radius <= MIN_BOND_LENGTH_SQUARED
@@ -6371,10 +6733,15 @@ pub(crate) fn GetMinDistDistribution(
                     if angle < 0.0 {
                         angle += TWO_PI;
                     }
-                    let segment = (((angle + half_step) / full_step).floor() as i32
-                        % number_of_segments) as usize;
-                    if minimum_distances[segment] > minimum_distance {
-                        minimum_distances[segment] = minimum_distance;
+                    let segment = segment_number((angle + half_step) / full_step)?
+                        .checked_rem(number_of_segments)
+                        .ok_or(SourceHeapError::SourceIntegerOverflow)?
+                        as usize;
+                    let distance = minimum_distances
+                        .get_mut(segment)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    if *distance > minimum_distance {
+                        *distance = minimum_distance;
                     }
                 }
             }
@@ -6391,6 +6758,23 @@ pub(crate) fn GetMinDistDistribution(
 #[allow(non_snake_case)]
 pub(crate) fn move_explicit_Hcation(
     atoms: &mut [inp_ATOM],
+    number_of_atoms: i32,
+    atom_index: i32,
+    hydrogen_index: i32,
+    in_all_components: i32,
+) -> Result<i32, SourceHeapError> {
+    move_explicit_Hcation_signed(
+        &mut SourceRelativeSliceMut::new(atoms),
+        number_of_atoms,
+        atom_index,
+        hydrogen_index,
+        in_all_components,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn move_explicit_Hcation_signed(
+    atoms: &mut SourceRelativeSliceMut<'_, inp_ATOM>,
     number_of_atoms: i32,
     atom_index: i32,
     hydrogen_index: i32,
@@ -6622,6 +7006,8 @@ pub(crate) fn move_explicit_Hcation(
     // INCHI✔️✔️: }
     // END COMPLETE VERBATIM SOURCE FRAME: move_explicit_Hcation
     // END INCHI C FUNCTION: move_explicit_Hcation
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
     // BEGIN INCHI ACTIVE HEADER/MACRO CONFIGURATION: move_explicit_Hcation
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux
     // INCHI✔️✔️: #define NUM_SEGM 20
@@ -6637,10 +7023,9 @@ pub(crate) fn move_explicit_Hcation(
     const MINIMUM_BOND_LENGTH: f64 = 1.0e-6;
     let full_step = TWO_PI / NUMBER_OF_SEGMENTS as f64;
     let half_step = full_step / 2.0;
-    let target = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let hydrogen =
-        usize::try_from(hydrogen_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if target >= atoms.len() || hydrogen >= atoms.len() {
+    let target = atom_index;
+    let hydrogen = hydrogen_index;
+    if atoms.get(target).is_none() || atoms.get(hydrogen).is_none() {
         return Err(SourceHeapError::PointerOutOfBounds);
     }
 
@@ -6687,8 +7072,8 @@ pub(crate) fn move_explicit_Hcation(
     }
 
     let mut minimum_distances = [0.0_f64; NUMBER_OF_SEGMENTS];
-    let average_bond_length = GetMinDistDistribution(
-        atoms,
+    let average_bond_length = GetMinDistDistribution_signed(
+        atoms.read(),
         number_of_atoms,
         atom_index,
         hydrogen_index,
@@ -6772,7 +7157,7 @@ pub(crate) fn move_explicit_Hcation(
     let next;
     let removal_index;
     if atoms[hydrogen].valence != 0 {
-        next = usize::from(atoms[hydrogen].neighbor[0]);
+        next = i32::from(atoms[hydrogen].neighbor[0]);
         let next_valence = i32::from(
             atoms
                 .get(next)
@@ -6781,8 +7166,10 @@ pub(crate) fn move_explicit_Hcation(
         );
         let mut found = next_valence <= 0;
         for ordinal in 0..next_valence.max(0) as usize {
-            if atoms[next].neighbor[ordinal] == hydrogen as AT_NUMB {
-                RemoveInpAtBond(atoms, next as i32, ordinal as i32)?;
+            // INCHI✔️❗: Native promotes the short for this comparison;
+            // preserve the full index. C-INTEGER-CONVERSIONS cost remains OPEN.
+            if i32::from(atoms[next].neighbor[ordinal]) == hydrogen {
+                RemoveInpAtBond_signed(atoms, next as i32, ordinal as i32)?;
                 found = true;
                 break;
             }
@@ -7124,23 +7511,22 @@ pub(crate) fn remove_terminal_HDT(
     // INCHI✔️❌: typedef signed char S_CHAR;
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: remove_terminal_HDT
 
-    let count = usize::try_from(num_atoms)
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-    let source_atoms = heap
-        .slice(at.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-
-    let new_ord_pointer =
-        match inchi_calloc::<AT_NUMB>(heap, count as u64, std::mem::size_of::<AT_NUMB>() as u64) {
-            Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
-            Err(error) => return Err(error),
-        };
-    let new_at_pointer = match heap.allocate(vec![inp_ATOM::default(); count]) {
+    // INCHI✔️❌: Native attempts both allocations before inspecting atoms.
+    // The source malloc buffer still uses safe initialization; cost deferred.
+    let new_ord_pointer = match inchi_calloc::<AT_NUMB>(heap, num_atoms as u64, 2) {
         Ok(pointer) => pointer,
-        Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+        Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+            SourceMutPointer::null()
+        }
+        Err(error) => return Err(error),
+    };
+    // INCHI✔️❌: Source malloc remains fallible after the new_ord attempt.
+    // Safe default initialization is a recorded extra cost, not source calloc.
+    let new_at_pointer = match inchi_calloc::<inp_ATOM>(heap, num_atoms as u64, 176) {
+        Ok(pointer) => pointer,
+        Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+            SourceMutPointer::null()
+        }
         Err(error) => {
             inchi_free(heap, new_ord_pointer)?;
             return Err(error);
@@ -7152,238 +7538,278 @@ pub(crate) fn remove_terminal_HDT(
             return Ok(-1);
         }
 
-        let mut atoms = source_atoms;
-        let mut new_ord = vec![AT_NUMB::default(); count];
-        let mut new_at = vec![inp_ATOM::default(); count];
-        let mut num_hydrogens = 0_usize;
-        let mut num_h = 0_i32;
-        const K_MAX: i32 = 4;
-
-        let total_hydrogens = |atom: &inp_ATOM| {
-            i32::from(atom.num_H) + atom.num_iso_H.iter().copied().map(i32::from).sum::<i32>()
-        };
-
-        for (index, atom) in atoms.iter_mut().enumerate() {
-            atom.component = index as AT_NUMB;
-            let mut kind = if atom.elname[1] != 0 {
-                K_MAX
-            } else {
-                [b'H', b'D', b'T']
-                    .iter()
-                    .position(|symbol| atom.elname[0] == *symbol as i8)
-                    .map_or(K_MAX, |value| value as i32)
-            };
-            if kind == ATW_H as i32 || kind == ATW_H as i32 + 1 {
-                atom.elname[0] = b'H' as i8;
-                kind += 1;
-                atom.iso_atw_diff = kind as S_CHAR;
-            }
-            num_h += i32::from(
-                kind != K_MAX
-                    && atom.valence == 1
-                    && atom.chem_bonds_valence == 1
-                    && total_hydrogens(atom) == 0,
-            );
+        let count = usize::try_from(num_atoms)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        if count == 0 {
+            return Ok(0);
         }
+        // INCHI✔️❌: Fresh scratch buffers cannot alias source atoms. Borrow
+        // all three original arrays; source mutations are immediately visible.
+        // O(N + H log H + reached neighbors), O(N) native buffers/O(1) carrier;
+        // safe initialization/sort/arena constants remain independently OPEN.
+        heap.with_two_slices_mut_and_optional_third(
+            at,
+            new_ord_pointer,
+            Some(new_at_pointer),
+            |atoms, new_ord, new_at| {
+                let atoms = atoms
+                    .get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let new_ord = new_ord
+                    .get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let new_at = new_at
+                    .ok_or(SourceHeapError::NullPointer)?
+                    .get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let mut num_hydrogens = 0_usize;
+                let mut num_h = 0_i32;
+                const K_MAX: i32 = 4;
 
-        if num_h == 2
-            && count == 2
-            && total_hydrogens(&atoms[0]) == 0
-            && total_hydrogens(&atoms[1]) == 0
-        {
-            if atoms[0].iso_atw_diff >= atoms[1].iso_atw_diff {
-                new_ord[0] = 0;
-                new_ord[1] = 1;
-            } else {
-                new_ord[0] = 1;
-                new_ord[1] = 0;
-            }
-            let removed = usize::from(new_ord[1]);
-            let retained = usize::from(new_ord[0]);
-            if atoms[removed].charge != 0 {
-                atoms[retained].charge = atoms[retained].charge.wrapping_add(atoms[removed].charge);
-                atoms[removed].charge = 0;
-            }
-            new_at[usize::from(new_ord[0])] = atoms[0].clone();
-            new_at[usize::from(new_ord[1])] = atoms[1].clone();
-            num_hydrogens = 1;
-        } else {
-            for index in 0..count {
-                let mut kind = if atoms[index].elname[1] != 0 || total_hydrogens(&atoms[index]) != 0
-                {
-                    K_MAX
-                } else if atoms[index].elname[0] == b'H' as i8 {
-                    i32::from(atoms[index].iso_atw_diff)
-                } else {
-                    K_MAX
+                let total_hydrogens = |atom: &inp_ATOM| {
+                    i32::from(atom.num_H)
+                        + atom.num_iso_H.iter().copied().map(i32::from).sum::<i32>()
                 };
-                let neighbor = usize::from(atoms[index].neighbor[0]);
-                let removable = kind < K_MAX
-                    && atoms[index].valence == 1
-                    && atoms[index].chem_bonds_valence == 1
-                    && (neighbor > index
-                        || usize::from(
-                            *new_ord
-                                .get(neighbor)
-                                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                        ) < count - num_hydrogens);
-                if removable {
-                    num_hydrogens += 1;
-                    if kind == 0
-                        && ATW_H as i32 <= i32::from(atoms[index].iso_atw_diff)
-                        && i32::from(atoms[index].iso_atw_diff) < (ATW_H + NUM_H_ISOTOPES) as i32
-                    {
-                        kind = i32::from(atoms[index].iso_atw_diff);
-                    }
-                    let _ = kind;
-                    if atoms[index].charge != 0 {
-                        let charge = atoms[index].charge;
-                        atoms[neighbor].charge = atoms[neighbor].charge.wrapping_add(charge);
-                        atoms[index].charge = 0;
-                        if b_fix_term_h_charge != 0 && index > neighbor {
-                            new_at[usize::from(new_ord[neighbor])].charge = atoms[neighbor].charge;
-                        }
-                    }
-                    new_ord[index] = (count - num_hydrogens) as AT_NUMB;
-                } else {
-                    new_ord[index] = (index - num_hydrogens) as AT_NUMB;
-                }
-                new_at[usize::from(new_ord[index])] = atoms[index].clone();
-            }
-        }
 
-        let result = if num_hydrogens != 0 {
-            let num_others = count - num_hydrogens;
-            if num_hydrogens > 1 {
-                new_at[num_others..]
-                    .sort_by(|first, second| cmp_iso_atw_diff_component_no(first, second).cmp(&0));
-            }
-            for (index, atom) in new_at.iter().enumerate().skip(num_others) {
-                new_ord[usize::from(atom.component)] = index as AT_NUMB;
-            }
+                for (index, atom) in atoms.iter_mut().enumerate() {
+                    atom.component = index as AT_NUMB;
 
-            for index in 0..num_others {
-                let mut hydrogen_order = [AT_RANK::default(); NUM_H_ISOTOPES as usize + 1];
-                let mut other_order = [AT_RANK::default(); MAXVAL as usize];
-                let mut old_trans = [S_CHAR::default(); MAX_NUM_STEREO_BONDS as usize];
-                let mut num_other_neighbors = 0_usize;
-                let mut num_hydrogen_atoms = 0_usize;
-                let mut ordinary_h_count = 0_i32;
-
-                for (stereo_index, old) in old_trans.iter_mut().enumerate() {
-                    if new_at[index].sb_parity[stereo_index] == 0 {
-                        break;
-                    }
-                    let sn = new_at[index].sn_ord[stereo_index];
-                    let sb = new_at[index].sb_ord[stereo_index];
-                    *old = 2 - (sn + sb + S_CHAR::from(sn > sb)) % 2;
-                }
-
-                let old_valence = usize::try_from(new_at[index].valence)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let mut val = 0_usize;
-                for ordinal in 0..old_valence {
-                    let original_neighbor = usize::from(new_at[index].neighbor[ordinal]);
-                    let neighbor = usize::from(
-                        *new_ord
-                            .get(original_neighbor)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    );
-                    if num_others <= neighbor {
-                        let isotope = i32::from(new_at[neighbor].iso_atw_diff);
-                        if isotope > 0 && isotope < (ATW_H + NUM_H_ISOTOPES) as i32 {
-                            let isotope_index = (isotope - 1) as usize;
-                            new_at[index].num_iso_H[isotope_index] =
-                                new_at[index].num_iso_H[isotope_index].wrapping_add(1);
-                            let order_index = isotope as usize;
-                            num_hydrogen_atoms += usize::from(hydrogen_order[order_index] == 0);
-                            hydrogen_order[order_index] = (ordinal + 1) as AT_RANK;
-                        } else {
-                            new_at[index].num_H = new_at[index].num_H.wrapping_add(1);
-                            num_hydrogen_atoms += usize::from(ordinary_h_count == 0);
-                            ordinary_h_count += 1;
-                            hydrogen_order[0] = (ordinal + 1) as AT_RANK;
-                        }
-                        new_at[index].chem_bonds_valence =
-                            0.max(new_at[index].chem_bonds_valence - 1);
-                        new_at[neighbor].neighbor[0] = index as AT_NUMB;
-                        if new_at[index].sb_parity[0] != 0 {
-                            for stereo_index in 0..MAX_NUM_STEREO_BONDS as usize {
-                                if new_at[index].sb_parity[stereo_index] == 0 {
-                                    break;
-                                }
-                                if ordinal == new_at[index].sn_ord[stereo_index] as usize {
-                                    new_at[index].sn_ord[stereo_index] =
-                                        -(new_at[neighbor].iso_atw_diff + 1);
-                                }
-                            }
-                        }
+                    let mut kind = if atom.elname[1] != 0 {
+                        K_MAX
                     } else {
-                        if new_at[index].sb_parity[0] != 0 {
-                            if num_other_neighbors < MAX_NUM_STEREO_BONDS as usize {
-                                other_order[num_other_neighbors] = (ordinal + 1) as AT_RANK;
+                        [b'H', b'D', b'T', 0]
+                            .iter()
+                            .position(|symbol| atom.elname[0] == *symbol as i8)
+                            .map_or(K_MAX, |value| value as i32)
+                    };
+                    if kind == ATW_H as i32 || kind == ATW_H as i32 + 1 {
+                        atom.elname[0] = b'H' as i8;
+                        kind += 1;
+                        atom.iso_atw_diff = kind as S_CHAR;
+                    }
+                    num_h += i32::from(
+                        kind != K_MAX
+                            && atom.valence == 1
+                            && atom.chem_bonds_valence == 1
+                            && total_hydrogens(atom) == 0,
+                    );
+                }
+
+                if num_h == 2
+                    && count == 2
+                    && total_hydrogens(&atoms[0]) == 0
+                    && total_hydrogens(&atoms[1]) == 0
+                {
+                    if atoms[0].iso_atw_diff >= atoms[1].iso_atw_diff {
+                        new_ord[0] = 0;
+                        new_ord[1] = 1;
+                    } else {
+                        new_ord[0] = 1;
+                        new_ord[1] = 0;
+                    }
+                    let removed = usize::from(new_ord[1]);
+                    let retained = usize::from(new_ord[0]);
+                    if atoms[removed].charge != 0 {
+                        atoms[retained].charge =
+                            atoms[retained].charge.wrapping_add(atoms[removed].charge);
+                        atoms[removed].charge = 0;
+                    }
+                    new_at[usize::from(new_ord[0])] = atoms[0].clone();
+                    new_at[usize::from(new_ord[1])] = atoms[1].clone();
+                    num_hydrogens = 1;
+                } else {
+                    for index in 0..count {
+                        let mut kind =
+                            if atoms[index].elname[1] != 0 || total_hydrogens(&atoms[index]) != 0 {
+                                K_MAX
+                            } else if atoms[index].elname[0] == b'H' as i8 {
+                                i32::from(atoms[index].iso_atw_diff)
+                            } else {
+                                K_MAX
+                            };
+                        let neighbor = usize::from(atoms[index].neighbor[0]);
+                        let removable = kind < K_MAX
+                            && atoms[index].valence == 1
+                            && atoms[index].chem_bonds_valence == 1
+                            && (neighbor > index
+                                || usize::from(
+                                    *new_ord
+                                        .get(neighbor)
+                                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                                ) < count - num_hydrogens);
+                        if removable {
+                            num_hydrogens += 1;
+                            if kind == 0
+                                && ATW_H as i32 <= i32::from(atoms[index].iso_atw_diff)
+                                && i32::from(atoms[index].iso_atw_diff)
+                                    < (ATW_H + NUM_H_ISOTOPES) as i32
+                            {
+                                kind = i32::from(atoms[index].iso_atw_diff);
                             }
-                            num_other_neighbors += 1;
-                            if val != ordinal {
-                                for stereo_index in 0..MAX_NUM_STEREO_BONDS as usize {
-                                    if new_at[index].sb_parity[stereo_index] == 0 {
-                                        break;
-                                    }
-                                    if ordinal == new_at[index].sb_ord[stereo_index] as usize {
-                                        new_at[index].sb_ord[stereo_index] = val as S_CHAR;
-                                    } else if ordinal == new_at[index].sn_ord[stereo_index] as usize
-                                    {
-                                        new_at[index].sn_ord[stereo_index] = val as S_CHAR;
-                                    }
+                            let _ = kind;
+                            if atoms[index].charge != 0 {
+                                let charge = atoms[index].charge;
+
+                                atoms[neighbor].charge =
+                                    atoms[neighbor].charge.wrapping_add(charge);
+                                atoms[index].charge = 0;
+                                if b_fix_term_h_charge != 0 && index > neighbor {
+                                    new_at[usize::from(new_ord[neighbor])].charge =
+                                        atoms[neighbor].charge;
                                 }
                             }
+                            new_ord[index] = (count - num_hydrogens) as AT_NUMB;
+                        } else {
+                            new_ord[index] = (index - num_hydrogens) as AT_NUMB;
                         }
-                        new_at[index].neighbor[val] = new_ord[original_neighbor];
-                        new_at[index].bond_type[val] = new_at[index].bond_type[ordinal];
-                        new_at[index].bond_stereo[val] = new_at[index].bond_stereo[ordinal];
-                        val += 1;
+                        new_at[usize::from(new_ord[index])] = atoms[index].clone();
                     }
                 }
 
-                if old_valence > val && new_at[index].sb_parity[0] != 0 {
-                    if num_hydrogen_atoms == old_valence - val
-                        && num_hydrogen_atoms + num_other_neighbors <= MAXVAL as usize
-                    {
-                        other_order.copy_within(0..num_other_neighbors, num_hydrogen_atoms);
-                        let mut contiguous = 1_i32;
-                        for (isotope, source_order) in hydrogen_order.iter().copied().enumerate() {
-                            let target = num_hydrogen_atoms as i32 - contiguous;
-                            if source_order != 0 && target < MAXVAL as i32 && target >= 0 {
-                                other_order[target as usize] = source_order;
-                                for stereo_index in 0..MAX_NUM_STEREO_BONDS as usize {
-                                    if new_at[index].sb_parity[stereo_index] == 0 {
-                                        break;
-                                    }
-                                    if i32::from(new_at[index].sn_ord[stereo_index])
-                                        == -(isotope as i32 + 1)
-                                    {
-                                        new_at[index].sn_ord[stereo_index] = -contiguous as S_CHAR;
+                let result = if num_hydrogens != 0 {
+                    let num_others = count - num_hydrogens;
+                    if num_hydrogens > 1 {
+                        new_at[num_others..].sort_by(|first, second| {
+                            cmp_iso_atw_diff_component_no(first, second).cmp(&0)
+                        });
+                    }
+                    for (index, atom) in new_at.iter().enumerate().skip(num_others) {
+                        new_ord[usize::from(atom.component)] = index as AT_NUMB;
+                    }
+
+                    for index in 0..num_others {
+                        let mut hydrogen_order = [AT_RANK::default(); NUM_H_ISOTOPES as usize + 1];
+                        let mut other_order = [AT_RANK::default(); MAXVAL as usize];
+                        let mut old_trans = [S_CHAR::default(); MAX_NUM_STEREO_BONDS as usize];
+                        let mut num_other_neighbors = 0_usize;
+                        let mut num_hydrogen_atoms = 0_usize;
+                        let mut ordinary_h_count = 0_i32;
+
+                        for (stereo_index, old) in old_trans.iter_mut().enumerate() {
+                            if new_at[index].sb_parity[stereo_index] == 0 {
+                                break;
+                            }
+                            let sn = new_at[index].sn_ord[stereo_index];
+                            let sb = new_at[index].sb_ord[stereo_index];
+
+                            *old = (2 - (i32::from(sn) + i32::from(sb) + i32::from(sn > sb)) % 2)
+                                as S_CHAR;
+                        }
+
+                        let old_valence = i32::from(new_at[index].valence);
+                        let mut val = 0_usize;
+                        for ordinal in 0..old_valence.max(0) as usize {
+                            let original_neighbor = usize::from(new_at[index].neighbor[ordinal]);
+                            let neighbor = usize::from(
+                                *new_ord
+                                    .get(original_neighbor)
+                                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                            );
+                            if num_others <= neighbor {
+                                let isotope = i32::from(new_at[neighbor].iso_atw_diff);
+                                if isotope > 0 && isotope < (ATW_H + NUM_H_ISOTOPES) as i32 {
+                                    let isotope_index = (isotope - 1) as usize;
+                                    new_at[index].num_iso_H[isotope_index] =
+                                        new_at[index].num_iso_H[isotope_index].wrapping_add(1);
+                                    let order_index = isotope as usize;
+                                    num_hydrogen_atoms +=
+                                        usize::from(hydrogen_order[order_index] == 0);
+                                    hydrogen_order[order_index] = (ordinal + 1) as AT_RANK;
+                                } else {
+                                    new_at[index].num_H = new_at[index].num_H.wrapping_add(1);
+                                    num_hydrogen_atoms += usize::from(ordinary_h_count == 0);
+                                    ordinary_h_count += 1;
+                                    hydrogen_order[0] = (ordinal + 1) as AT_RANK;
+                                }
+
+                                new_at[index].chem_bonds_valence = 0
+                                    .max(i32::from(new_at[index].chem_bonds_valence) - 1)
+                                    as S_CHAR;
+                                new_at[neighbor].neighbor[0] = index as AT_NUMB;
+                                if new_at[index].sb_parity[0] != 0 {
+                                    for stereo_index in 0..MAX_NUM_STEREO_BONDS as usize {
+                                        if new_at[index].sb_parity[stereo_index] == 0 {
+                                            break;
+                                        }
+                                        if ordinal == new_at[index].sn_ord[stereo_index] as usize {
+                                            new_at[index].sn_ord[stereo_index] =
+                                                (-(i32::from(new_at[neighbor].iso_atw_diff) + 1))
+                                                    as S_CHAR;
+                                        }
                                     }
                                 }
-                                contiguous += 1;
+                            } else {
+                                if new_at[index].sb_parity[0] != 0 {
+                                    if num_other_neighbors < MAX_NUM_STEREO_BONDS as usize {
+                                        other_order[num_other_neighbors] = (ordinal + 1) as AT_RANK;
+                                    }
+                                    num_other_neighbors += 1;
+                                    if val != ordinal {
+                                        for stereo_index in 0..MAX_NUM_STEREO_BONDS as usize {
+                                            if new_at[index].sb_parity[stereo_index] == 0 {
+                                                break;
+                                            }
+                                            if ordinal
+                                                == new_at[index].sb_ord[stereo_index] as usize
+                                            {
+                                                new_at[index].sb_ord[stereo_index] = val as S_CHAR;
+                                            } else if ordinal
+                                                == new_at[index].sn_ord[stereo_index] as usize
+                                            {
+                                                new_at[index].sn_ord[stereo_index] = val as S_CHAR;
+                                            }
+                                        }
+                                    }
+                                }
+                                new_at[index].neighbor[val] = new_ord[original_neighbor];
+                                new_at[index].bond_type[val] = new_at[index].bond_type[ordinal];
+                                new_at[index].bond_stereo[val] = new_at[index].bond_stereo[ordinal];
+                                val += 1;
                             }
                         }
-                        let sort_count = num_hydrogen_atoms + num_other_neighbors;
-                        let _ = insertions_sort_AT_RANK(&mut other_order, sort_count as i32)?;
-                    }
-                }
-                new_at[index].valence = val as S_CHAR;
-            }
-            heap.slice_mut(at)?[..count].clone_from_slice(&new_at);
-            num_others as i32
-        } else {
-            heap.slice_mut(at)?[..count].clone_from_slice(&atoms);
-            num_atoms
-        };
 
-        heap.slice_mut(new_ord_pointer)?.copy_from_slice(&new_ord);
-        heap.slice_mut(new_at_pointer)?.clone_from_slice(&new_at);
-        Ok(result)
+                        if old_valence > val as i32 && new_at[index].sb_parity[0] != 0 {
+                            if num_hydrogen_atoms == old_valence as usize - val
+                                && num_hydrogen_atoms + num_other_neighbors <= MAXVAL as usize
+                            {
+                                other_order.copy_within(0..num_other_neighbors, num_hydrogen_atoms);
+                                let mut contiguous = 1_i32;
+                                for (isotope, source_order) in
+                                    hydrogen_order.iter().copied().enumerate()
+                                {
+                                    let target = num_hydrogen_atoms as i32 - contiguous;
+                                    if source_order != 0 && target < MAXVAL as i32 && target >= 0 {
+                                        other_order[target as usize] = source_order;
+                                        for stereo_index in 0..MAX_NUM_STEREO_BONDS as usize {
+                                            if new_at[index].sb_parity[stereo_index] == 0 {
+                                                break;
+                                            }
+                                            if i32::from(new_at[index].sn_ord[stereo_index])
+                                                == -(isotope as i32 + 1)
+                                            {
+                                                new_at[index].sn_ord[stereo_index] =
+                                                    -contiguous as S_CHAR;
+                                            }
+                                        }
+                                        contiguous += 1;
+                                    }
+                                }
+                                let sort_count = num_hydrogen_atoms + num_other_neighbors;
+                                let _ =
+                                    insertions_sort_AT_RANK(&mut other_order, sort_count as i32)?;
+                            }
+                        }
+                        new_at[index].valence = val as S_CHAR;
+                    }
+                    atoms.clone_from_slice(new_at);
+                    num_others as i32
+                } else {
+                    num_atoms
+                };
+
+                Ok(result)
+            },
+        )
     })();
 
     inchi_free(heap, new_ord_pointer)?;
@@ -7394,6 +7820,19 @@ pub(crate) fn remove_terminal_HDT(
 #[allow(non_snake_case)]
 pub(crate) fn RemoveInpAtBond(
     atoms: &mut [inp_ATOM],
+    atom_index: i32,
+    bond_ordinal: i32,
+) -> Result<i32, SourceHeapError> {
+    RemoveInpAtBond_signed(
+        &mut SourceRelativeSliceMut::new(atoms),
+        atom_index,
+        bond_ordinal,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn RemoveInpAtBond_signed(
+    atoms: &mut SourceRelativeSliceMut<'_, inp_ATOM>,
     atom_index: i32,
     bond_ordinal: i32,
 ) -> Result<i32, SourceHeapError> {
@@ -7610,6 +8049,8 @@ pub(crate) fn RemoveInpAtBond(
     // INCHI✔️❌:     return 0;
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: RemoveInpAtBond
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
 
     fn well_defined(parity: i8) -> bool {
         parity >= AB_MIN_WELL_DEFINED_PARITY as i8 && parity <= AB_MAX_WELL_DEFINED_PARITY as i8
@@ -7629,7 +8070,7 @@ pub(crate) fn RemoveInpAtBond(
         atom.sn_orig_at_num[count - 1] = 0;
     }
 
-    let iat = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let iat = atom_index;
     let val = i32::from(
         atoms
             .get(iat)
@@ -7691,8 +8132,8 @@ pub(crate) fn RemoveInpAtBond(
             let mut next_atom = 0_i32;
             let mut next_to_current = 0_i32;
             let mut next_parity_ordinal = 0_i32;
-            let len = get_opposite_sb_atom_slice(
-                atoms,
+            let len = get_opposite_sb_atom_core(
+                |index| atoms.get(index).ok_or(SourceHeapError::PointerOutOfBounds),
                 atom_index,
                 sb_ord,
                 Some(&mut next_atom),
@@ -7735,8 +8176,8 @@ pub(crate) fn RemoveInpAtBond(
                     let mut next_atom = 0_i32;
                     let mut next_to_current = 0_i32;
                     let mut next_parity_ordinal = 0_i32;
-                    let len = get_opposite_sb_atom_slice(
-                        atoms,
+                    let len = get_opposite_sb_atom_core(
+                        |index| atoms.get(index).ok_or(SourceHeapError::PointerOutOfBounds),
                         atom_index,
                         sb_ord,
                         Some(&mut next_atom),
@@ -7812,6 +8253,21 @@ pub(crate) fn DisconnectInpAtBond(
     atom_index: i32,
     neighbor_ordinal: i32,
 ) -> Result<i32, SourceHeapError> {
+    DisconnectInpAtBond_signed(
+        &mut SourceRelativeSliceMut::new(atoms),
+        old_component_numbers,
+        atom_index,
+        neighbor_ordinal,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn DisconnectInpAtBond_signed(
+    atoms: &mut SourceRelativeSliceMut<'_, inp_ATOM>,
+    mut old_component_numbers: Option<&mut [u16]>,
+    atom_index: i32,
+    neighbor_ordinal: i32,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:2261 DisconnectInpAtBond
     // INCHI✔️❌: int DisconnectInpAtBond( inp_ATOM *at,
     // INCHI✔️❌:                          AT_NUMB *nOldCompNumber,
@@ -7850,8 +8306,14 @@ pub(crate) fn DisconnectInpAtBond(
     // INCHI✔️❌:     return ( ret == 2 );
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: DisconnectInpAtBond
+    // INCHI✔️❗: Signed relative atom/counter access retains the real backing
+    // prefix. No source-loop/allocation/copy changes; C537 cost remains OPEN.
+    // INCHI✔️❗: Native int i compares with promoted signed S_CHAR valence.
+    // A negative degree skips both search and removal without an error/write.
+    // Keep the signed scalar loop, no new allocation/scan or asymptotic cost;
+    // actual bounds-check constants remain OPEN (C537).
 
-    let iat = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let iat = atom_index;
     let ordinal =
         usize::try_from(neighbor_ordinal).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let neighbor = usize::from(
@@ -7863,14 +8325,13 @@ pub(crate) fn DisconnectInpAtBond(
     let opposite = atoms
         .get(neighbor)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let opposite_valence = usize::try_from(i32::from(opposite.valence))
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let mut reverse_ordinal = 0_usize;
+    let opposite_valence = i32::from(opposite.valence);
+    let mut reverse_ordinal = 0_i32;
     while reverse_ordinal < opposite_valence {
         if i32::from(
             *opposite
                 .neighbor
-                .get(reverse_ordinal)
+                .get(reverse_ordinal as usize)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         ) == atom_index
         {
@@ -7882,8 +8343,8 @@ pub(crate) fn DisconnectInpAtBond(
         return Ok(0);
     }
 
-    let mut result = RemoveInpAtBond(atoms, atom_index, neighbor_ordinal)?;
-    result += RemoveInpAtBond(atoms, neighbor as i32, reverse_ordinal as i32)?;
+    let mut result = RemoveInpAtBond_signed(atoms, atom_index, neighbor_ordinal)?;
+    result += RemoveInpAtBond_signed(atoms, neighbor as i32, reverse_ordinal)?;
     if result != 0 {
         if let Some(numbers) = old_component_numbers.as_deref_mut() {
             let first_component = atoms[iat].component;
@@ -8910,14 +9371,11 @@ pub(crate) fn subgraf_free(
     inchi_free(heap, graph_value.degrees)?;
     inchi_free(heap, graph_value.orig2node)?;
     if !graph_value.adj.is_null() {
-        let row_count = usize::try_from(graph_value.nnodes.max(0))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let rows = heap.slice(graph_value.adj.as_const())?;
-        if rows.len() < row_count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        let rows = rows[..row_count].to_vec();
-        for row in rows {
+        // Behavior: load each child only after earlier frees, as in C.
+        // Cost: no O(n) pointer snapshot; O(n) time and O(1) extra space.
+        // Safe arena checks/whole-call costs remain OPEN.
+        for index in 0..graph_value.nnodes.max(0) {
+            let row = *heap.element_signed(graph_value.adj.as_const(), index)?;
             inchi_free(heap, row)?;
         }
         inchi_free(heap, graph_value.adj)?;
@@ -9027,6 +9485,112 @@ pub(crate) fn subgraf_new(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; sizeof(int)=4, sizeof(void*)=8, sizeof(subgraf)=40, sizeof(subgraf_edge)=8.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: subgraf_new
 
+    subgraf_new_with_nodes(heap, original_input, node_count, |_, index| {
+        input_nodes
+            .get(index)
+            .copied()
+            .ok_or(SourceHeapError::PointerOutOfBounds)
+    })
+}
+
+pub(crate) fn subgraf_new_with_nodes(
+    heap: &mut SourceHeap,
+    original_input: &ORIG_ATOM_DATA,
+    node_count: i32,
+    mut input_node: impl FnMut(&SourceHeap, usize) -> Result<i32, SourceHeapError>,
+) -> Result<SourceMutPointer<subgraf>, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: strutil.c:5064..5151 subgraf_new indexed kernel
+    // INCHI✔️❗: Shared source kernel, reached live node access; checked costs OPEN.
+    // subgraf *subgraf_new( ORIG_ATOM_DATA *orig_inp_data,
+    //                       int nnodes,
+    //                       int *nodes )
+    // {
+    //     int i, j, iat, nbr, jat, nj, degree, nat, err = 0;
+    //
+    //     subgraf *sg = (subgraf *) inchi_calloc( 1, sizeof( subgraf ) );
+    //     if (!sg)
+    //     {
+    //         return NULL;
+    //     }
+    //
+    //     nat = orig_inp_data->num_inp_atoms;
+    //
+    //     /* orig2node is mapping of original at numbers --> subgraph node numbers */
+    //     err = 1;
+    //     if (!( sg->orig2node = (int *) inchi_calloc( (long long)nat + 1, sizeof( int ) ) )) /* djb-rwth: cast operator added */
+    //     {
+    //         goto exit_function;
+    //     }
+    //     if (!( sg->nodes = (int *) inchi_calloc( nnodes, sizeof( int ) ) ))
+    //     {
+    //         goto exit_function;
+    //     }
+    //     if (!( sg->degrees = (int *) inchi_calloc( nnodes, sizeof( int ) ) ))
+    //     {
+    //         goto exit_function;
+    //     }
+    //     /* NB:    input list of 'nodes' is assumed to be in 'original_atom_numbering domain' which starts from 1.
+    //     Now it is mapped to current atom numbers which starts from 0/connections using at[j].orig_at_number    */
+    //     sg->nnodes = 0;
+    //     for (i = 0; i < nnodes; i++)
+    //     {
+    //         sg->nodes[sg->nnodes++] = nodes[i];
+    //     }
+    //
+    //     for (i = 0; i <= nat; i++)
+    //     {
+    //         sg->orig2node[i] = -1;
+    //     }
+    //     for (i = 0; i < nnodes; i++)
+    //     {
+    //         sg->orig2node[sg->nodes[i]] = i;
+    //     }
+    //
+    //     /* Create and fill subgraph adjacency matrix based on nodes/orig atom numbers
+    //        and connections stored in orig_inp_data */
+    //     sg->adj = (subgraf_edge **) inchi_calloc( nnodes, sizeof( subgraf_edge * ) );
+    //     if (!sg->adj)
+    //     {
+    //         goto exit_function;
+    //     }
+    //
+    //     for (i = 0; i < sg->nnodes; i++)
+    //     {
+    //         iat = nodes[i] - 1;    /* current atom  number for this node */
+    //         degree = orig_inp_data->at[iat].valence;
+    //         nj = -1;
+    //         sg->adj[i] = (subgraf_edge *) inchi_calloc( degree, sizeof( subgraf_edge ) );
+    //         if (!sg->adj[i])
+    //         {
+    //             goto exit_function;
+    //         }
+    //         for (j = 0; j < degree; j++)
+    //         {
+    //             jat = orig_inp_data->at[iat].neighbor[j]; /* for curr num jat, a (jat+1) would be an orig num */
+    //             nbr = sg->orig2node[jat + 1];
+    //             if (nbr < 0)
+    //                 continue;
+    //             nj++;
+    //             sg->adj[i][nj].nbr = nbr;
+    //             sg->adj[i][nj].etype = orig_inp_data->at[iat].bond_type[j];
+    //         }
+    //         sg->degrees[i] = nj + 1;
+    //     }
+    //     err = 0;
+    //
+    //     /* subgraf_debug_trace( sg ); */
+    //
+    // exit_function:
+    //     if (err)
+    //     {
+    //         subgraf_free( sg );
+    //         return NULL; /* djb-rwth: avoiding reading from freed memory */
+    //     }
+    //
+    //     return sg;
+    // }
+    // END VERBATIM SOURCE FRAGMENT: subgraf_new indexed kernel
+
     fn is_allocation_error(error: SourceHeapError) -> bool {
         matches!(
             error,
@@ -9053,53 +9617,67 @@ pub(crate) fn subgraf_new(
         let degrees = inchi_calloc::<i32>(heap, source_node_count, 4)?;
         heap.slice_mut(graph)?[0].degrees = degrees;
 
-        let count =
-            usize::try_from(node_count.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if input_nodes.len() < count {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        for (index, node) in input_nodes[..count].iter().copied().enumerate() {
-            heap.slice_mut(nodes)?[index] = node;
-            heap.slice_mut(graph)?[0].nnodes = (index as i32).wrapping_add(1);
+        // INCHI✔️❗: Read/store nodes incrementally, then initialize the map.
+        // Preserve source signed loop bounds, allocations and cleanup order.
+        heap.slice_mut(graph)?[0].nnodes = 0;
+        for index in 0..node_count {
+            let node = input_node(&*heap, index as usize)?;
+            heap.slice_mut(nodes)?[index as usize] = node;
+            heap.slice_mut(graph)?[0].nnodes = index + 1;
         }
 
-        let map_length = usize::try_from(atom_count.max(0))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?
-            .checked_add(1)
-            .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-        let map = heap.slice_mut(orig2node)?;
-        if map.len() < map_length {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        map[..map_length].fill(-1);
-        for (index, node) in input_nodes[..count].iter().copied().enumerate() {
-            let node = usize::try_from(node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            *map.get_mut(node)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = index as i32;
-        }
+        let map_length = if atom_count < 0 {
+            0
+        } else {
+            atom_count as usize + 1
+        };
+        // Fresh source calloc arrays are disjoint. Borrow the map once and
+        // read the already-copied graph nodes, matching native map construction.
+        heap.with_slice_mut_and_heap(orig2node, |map, heap| {
+            map.get_mut(..map_length)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .fill(-1);
+            if node_count > 0 {
+                let graph_nodes = heap.slice(nodes.as_const())?;
+                for index in 0..node_count {
+                    let node = *graph_nodes
+                        .get(index as usize)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let node =
+                        usize::try_from(node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    *map.get_mut(node)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)? = index;
+                }
+            }
+            Ok(())
+        })?;
 
         let adjacency = inchi_calloc::<SourceMutPointer<subgraf_edge>>(heap, source_node_count, 8)?;
         heap.slice_mut(graph)?[0].adj = adjacency;
-        let atoms = if original_input.at.is_null() {
-            Vec::new()
-        } else {
-            heap.slice(original_input.at.as_const())?.to_vec()
-        };
-        for index in 0..count {
-            let atom_index = usize::try_from(input_nodes[index].wrapping_sub(1))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let atom = atoms
-                .get(atom_index)
-                .cloned()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let source_degree = i32::from(atom.valence);
+        // INCHI✔️❗: No O(all atoms) snapshot or per-node record clone.
+        // Read only reached valence/neighbor/type fields around native row
+        // allocations. O(map + nodes + reached degrees), O(1) extra storage;
+        // safe arena/Result whole-call cost remains OPEN.
+        for index in 0..node_count {
+            let atom_index = input_node(&*heap, index as usize)?.wrapping_sub(1);
+            if original_input.at.is_null() {
+                return Err(SourceHeapError::PointerOutOfBounds);
+            }
+            let source_degree = i32::from(
+                heap.element_signed(original_input.at.as_const(), atom_index)?
+                    .valence,
+            );
             let row = inchi_calloc::<subgraf_edge>(heap, source_degree as u64, 8)?;
-            heap.slice_mut(adjacency)?[index] = row;
-            let degree = usize::try_from(source_degree.max(0))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            heap.slice_mut(adjacency)?[index as usize] = row;
             let mut included = 0_usize;
-            for neighbor_index in 0..degree {
-                let original_neighbor = usize::from(atom.neighbor[neighbor_index]) + 1;
+            for neighbor_index in 0..source_degree {
+                let atom = heap.element_signed(original_input.at.as_const(), atom_index)?;
+                let original_neighbor = usize::from(
+                    *atom
+                        .neighbor
+                        .get(neighbor_index as usize)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                ) + 1;
                 let neighbor = *heap
                     .slice(orig2node.as_const())?
                     .get(original_neighbor)
@@ -9107,13 +9685,18 @@ pub(crate) fn subgraf_new(
                 if neighbor < 0 {
                     continue;
                 }
-                heap.slice_mut(row)?[included] = subgraf_edge {
-                    nbr: neighbor,
-                    etype: i32::from(atom.bond_type[neighbor_index]),
-                };
+                heap.slice_mut(row)?[included].nbr = neighbor;
+                let atom = heap.element_signed(original_input.at.as_const(), atom_index)?;
+                let edge_type = i32::from(
+                    *atom
+                        .bond_type
+                        .get(neighbor_index as usize)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                );
+                heap.slice_mut(row)?[included].etype = edge_type;
                 included += 1;
             }
-            heap.slice_mut(degrees)?[index] = included as i32;
+            heap.slice_mut(degrees)?[index as usize] = included as i32;
         }
         Ok(())
     })();
@@ -9313,21 +9896,30 @@ pub(crate) fn add_bond_if_unseen(
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .nodes;
-    let node0 = usize::try_from(node0).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let node = usize::try_from(node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let source_nodes = heap.slice(nodes.as_const())?;
-    let atom1 = *source_nodes
-        .get(node0)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let atom2 = *source_nodes
-        .get(node)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: signed source node subscripts may precede an interior base.
+    // Keep one shared positive slice; no allocation/clone/scan, check cost OPEN.
+    let (atom1, atom2) = if node0 >= 0 && node >= 0 {
+        let source_nodes = heap.slice(nodes.as_const())?;
+        let atom1 = *source_nodes
+            .get(node0 as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom2 = *source_nodes
+            .get(node as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        (atom1, atom2)
+    } else {
+        let atom1 = *heap.element_signed(nodes.as_const(), node0)?;
+        let atom2 = *heap.element_signed(nodes.as_const(), node)?;
+        (atom1, atom2)
+    };
 
-    let count = usize::try_from(*bond_count).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    for index in 0..count {
+    // INCHI✔️❗: negative count skips the scan; insertion uses the signed slot.
+    // O(reached bonds), O(1) scratch; safe signed-access cost remains OPEN.
+    let count = *bond_count;
+    for index in 0..count.max(0) {
         let row = *heap
             .slice(bonds.as_const())?
-            .get(index)
+            .get(index as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let values = heap.slice(row.as_const())?;
         let existing1 = *values.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -9337,14 +9929,19 @@ pub(crate) fn add_bond_if_unseen(
         }
     }
 
-    let row = *heap
-        .slice(bonds.as_const())?
-        .get(count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: bonds[*nbonds][0] = at1;
+    // Each source statement reads its own count and row; no cached insertion index.
+    // The existing safe borrowed counter remains disjoint from heap-owned rows.
+    // Native count/row alias transport is not modeled or claimed here.
+    // O(reached bonds) time/O(1) space, no added buffers; checked access cost
+    // remains INCHI-PERF-BOND-INSERTION-ORDER OPEN in performance_pending.md.
+    let row = *heap.element_signed(bonds.as_const(), *bond_count)?;
     *heap
         .slice_mut(row)?
         .first_mut()
         .ok_or(SourceHeapError::PointerOutOfBounds)? = atom1;
+    // INCHI✔️❗: bonds[*nbonds][1] = at2;
+    let row = *heap.element_signed(bonds.as_const(), *bond_count)?;
     *heap
         .slice_mut(row)?
         .get_mut(1)
@@ -9500,12 +10097,10 @@ pub(crate) fn subgraf_pathfinder_run(
         node: i32,
         edge: i32,
     ) -> Result<i32, SourceHeapError> {
-        let node = usize::try_from(node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❗: adj[node] uses the signed source base; edge is a native
+        // nonnegative loop ordinal. O(1), no allocation; admission cost OPEN.
+        let row = *heap.element_signed(graph.adj.as_const(), node)?;
         let edge = usize::try_from(edge).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let row = *heap
-            .slice(graph.adj.as_const())?
-            .get(node)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         Ok(heap
             .slice(row.as_const())?
             .get(edge)
@@ -9519,7 +10114,7 @@ pub(crate) fn subgraf_pathfinder_run(
         first: i32,
         second: i32,
     ) -> Result<bool, SourceHeapError> {
-        if count == 0 || forbidden.is_null() {
+        if count <= 0 || forbidden.is_null() {
             return Ok(false);
         }
         let values = heap.slice(forbidden.as_const())?;
@@ -9552,13 +10147,18 @@ pub(crate) fn subgraf_pathfinder_run(
         .get(seen_index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let graph = graph_value(heap, initial.sg)?;
-    let node0_index = usize::try_from(node0).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let degree = *heap
-        .slice(graph.degrees.as_const())?
-        .get(node0_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-
-    for edge in 0..degree.max(0) {
+    // INCHI✔️❗: source rereads degree on every condition, including after
+    // atom/seen writes or recursion through legal aliases. No cached degree;
+    // O(reached edges), O(1) scratch; repeated typed admission cost is OPEN.
+    let mut next_edge = 0_i32;
+    loop {
+        let edge = next_edge;
+        if edge >= *heap.element_signed(graph.degrees.as_const(), node0)? {
+            break;
+        }
+        // Only a private ordinal advances early; no source state observes it.
+        // This preserves the for-loop increment across every continue path.
+        next_edge = next_edge.wrapping_add(1);
         let node = neighbor_at(heap, &graph, node0, edge)?;
         let current = pathfinder_value(heap, pathfinder)?;
         if is_in_the_ilist(
@@ -9590,12 +10190,7 @@ pub(crate) fn subgraf_pathfinder_run(
                     .slice(found.seen.as_const())?
                     .get(path_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let graph_node =
-                    usize::try_from(graph_node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let original_atom = *heap
-                    .slice(graph.nodes.as_const())?
-                    .get(graph_node)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let original_atom = *heap.element_signed(graph.nodes.as_const(), graph_node)?;
                 if !atoms.is_null()
                     && is_in_the_ilist(
                         Some(heap.slice(atoms.as_const())?),
@@ -9604,12 +10199,7 @@ pub(crate) fn subgraf_pathfinder_run(
                     )?
                     .is_none()
                 {
-                    let output_index = usize::try_from(*atom_count)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    *heap
-                        .slice_mut(atoms)?
-                        .get_mut(output_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)? = original_atom;
+                    *heap.element_signed_mut(atoms, *atom_count)? = original_atom;
                     *atom_count = atom_count.wrapping_add(1);
                 }
             }
@@ -9638,7 +10228,15 @@ pub(crate) fn subgraf_pathfinder_run(
         }
     }
 
-    for edge in 0..degree.max(0) {
+    let mut next_edge = 0_i32;
+    loop {
+        let edge = next_edge;
+        if edge >= *heap.element_signed(graph.degrees.as_const(), node0)? {
+            break;
+        }
+        // Only a private ordinal advances early; no source state observes it.
+        // This preserves the for-loop increment across every continue path.
+        next_edge = next_edge.wrapping_add(1);
         let node = neighbor_at(heap, &graph, node0, edge)?;
         let current = pathfinder_value(heap, pathfinder)?;
         if node == current.end
@@ -9745,6 +10343,75 @@ int subgraf_pathfinder_collect_all(subgraf_pathfinder *spf,
     // INCHI✔️✔️: Rust preserves recursive DFS order, permanent seen entries, and the final start value.
     // END INCHI ACTIVE MACRO CONFIGURATION: subgraf_pathfinder_collect_all
 
+    let mut read_forbidden = |heap: &mut SourceHeap, index: usize| {
+        Ok(*heap.slice(forbidden.as_const())?
+            .get(index).ok_or(SourceHeapError::PointerOutOfBounds)?)
+    };
+    collect_all_with_forbidden(
+        heap, pathfinder, forbidden_count, !forbidden.is_null(),
+        atom_numbers, &mut read_forbidden,
+    )
+}
+
+#[rustfmt::skip]
+pub(super) fn collect_all_with_forbidden<F>(
+    heap: &mut SourceHeap,
+    pathfinder: SourceMutPointer<subgraf_pathfinder>,
+    forbidden_count: i32,
+    forbidden_present: bool,
+    atom_numbers: SourceMutPointer<i32>,
+    read_forbidden: &mut F,
+) -> Result<i32, SourceHeapError>
+where
+    F: FnMut(&mut SourceHeap, usize) -> Result<i32, SourceHeapError>,
+{
+    // VERBATIM SOURCE FRAGMENT: strutil.c5422..5463 subgraf_pathfinder_collect_all canonical recursion
+    // int subgraf_pathfinder_collect_all(subgraf_pathfinder *spf,
+    //                                    int nforbidden,		/* number of edges forbidden for traversal	*/
+    //                                    int *forbidden,		/* nodes of forbidden edges: [edge1node1,edge1node2, edge2node1, edge2node2, ... ] */
+    //                                    int *atnums          /* 1-based origs# */
+    //                                     )
+    // {
+    //     int j, f, node, next_node, skip;
+    //
+    //     node = spf->start;
+    //     spf->seen[spf->nseen] = node;
+    //     atnums[spf->nseen] = spf->sg->nodes[node];
+    //     spf->nseen++;
+    //
+    //     for (j = 0; j < spf->sg->degrees[node]; j++)
+    //     {
+    //         next_node = spf->sg->adj[node][j].nbr;
+    //         if (is_in_the_ilist(spf->seen, next_node, spf->nseen))
+    //         {
+    //             continue;
+    //         }
+    //         if (nforbidden && forbidden)
+    //         {
+    //             skip = 0;
+    //             for (f = 0; f < nforbidden; f++)
+    //             {
+    //                 if (bIsSameBond(node, next_node, forbidden[2 * f], forbidden[2 * f + 1]))
+    //                 {
+    //                     skip = 1;
+    //                     break;
+    //                 }
+    //             }
+    //             if (skip)
+    //             {
+    //                 continue;
+    //             }
+    //         }
+    //         spf->start = next_node;
+    //         subgraf_pathfinder_collect_all(spf, nforbidden, forbidden, atnums);
+    //     }
+    //
+    //     return spf->nseen;
+    // }
+    // INCHI✔️❗: ONE recursive DFS for stored or local forbidden rows.
+    // Each reached read stays live around seen/atnums/degree aliases, no view
+    // crosses recursive writes; native state/error order retained. No new
+    // allocation, O(original DFS/depth), callback/checked whole costs OPEN.
     fn pointed_value<T: Clone + 'static>(
         heap: &SourceHeap,
         pointer: SourceMutPointer<T>,
@@ -9758,35 +10425,36 @@ int subgraf_pathfinder_collect_all(subgraf_pathfinder *spf,
     let state = pointed_value(heap, pathfinder)?;
     let graph: subgraf = pointed_value(heap, state.sg)?;
     let node = state.start;
-    let node_index = usize::try_from(node).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let seen_index = usize::try_from(state.nseen).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let original_atom_number = *heap
-        .slice(graph.nodes.as_const())?
-        .get(node_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    *heap
-        .slice_mut(state.seen)?
-        .get_mut(seen_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = node;
-    *heap
-        .slice_mut(atom_numbers)?
-        .get_mut(seen_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = original_atom_number;
+    // INCHI✔️❗: retain the Rust-only invalid-negative-start rejection before
+    // state changes, but allow valid relative prefixes. Validation does not
+    // copy the node value: the actual load follows the source seen store.
+    // Positive calls have no added arena lookup; negative admission cost OPEN.
+    if node < 0 {
+        let _ = heap.element_signed(graph.nodes.as_const(), node)?;
+    }
+    // INCHI✔️❗:     spf->seen[spf->nseen] = node;
+    *heap.element_signed_mut(state.seen, state.nseen)? = node;
+    // INCHI✔️❗:     atnums[spf->nseen] = spf->sg->nodes[node];
+    let original_atom_number = *heap.element_signed(graph.nodes.as_const(), node)?;
+    *heap.element_signed_mut(atom_numbers, state.nseen)? = original_atom_number;
     let next_seen = state
         .nseen
         .checked_add(1)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
     heap.slice_mut(pathfinder)?[0].nseen = next_seen;
 
-    let degree = *heap
-        .slice(graph.degrees.as_const())?
-        .get(node_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for edge_index in 0..degree.max(0) {
-        let row = *heap
-            .slice(graph.adj.as_const())?
-            .get(node_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: source rereads degree after each recursive child; atnums/seen
+    // may share its int allocation. No snapshot/allocation/clone is added;
+    // O(visited edges), O(depth) existing recursion, arena/check cost OPEN.
+    let mut next_edge = 0_i32;
+    loop {
+        let edge_index = next_edge;
+        if edge_index >= *heap.element_signed(graph.degrees.as_const(), node)? {
+            break;
+        }
+        // Private next ordinal, advanced once even when this iteration continues.
+        next_edge = next_edge.wrapping_add(1);
+        let row = *heap.element_signed(graph.adj.as_const(), node)?;
         let next_node = heap
             .slice(row.as_const())?
             .get(usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
@@ -9803,20 +10471,15 @@ int subgraf_pathfinder_collect_all(subgraf_pathfinder *spf,
         {
             continue;
         }
-        if forbidden_count != 0 && !forbidden.is_null() {
-            let forbidden_values = heap.slice(forbidden.as_const())?;
+        if forbidden_count > 0 && forbidden_present {
             let mut skip = false;
             for forbidden_index in 0..forbidden_count.max(0) {
                 let offset = usize::try_from(forbidden_index)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?
                     .checked_mul(2)
                     .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-                let first = *forbidden_values
-                    .get(offset)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let second = *forbidden_values
-                    .get(offset + 1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let first = read_forbidden(heap, offset)?;
+                let second = read_forbidden(heap, offset + 1)?;
                 if bIsSameBond(node, next_node, first, second) != 0 {
                     skip = true;
                     break;
@@ -9827,12 +10490,9 @@ int subgraf_pathfinder_collect_all(subgraf_pathfinder *spf,
             }
         }
         heap.slice_mut(pathfinder)?[0].start = next_node;
-        subgraf_pathfinder_collect_all(
-            heap,
-            pathfinder,
-            forbidden_count,
-            forbidden,
-            atom_numbers,
+        collect_all_with_forbidden(
+            heap, pathfinder, forbidden_count, forbidden_present,
+            atom_numbers, read_forbidden,
         )?;
     }
 
@@ -9868,39 +10528,25 @@ pub(crate) fn CompAtomData_GetNumMapping(
     // INCHI✔️✔️: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; orig_at_number is AT_NUMB/unsigned short and int is 32-bit.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: CompAtomData_GetNumMapping
 
+    // INCHI✔️❗: Native4986..4999 loads orig, then writes orig_num[i],
+    // then curr_num[orig]. The two int arrays may share storage, including
+    // overlapping positions; no simultaneous mutable views or identity gate.
+    // O(num_at), O(1) space, no allocation/clone/staging. Checked per-access
+    // arena/Result cost remains OPEN in performance_pending.md.
     if original_numbers.is_null() || current_numbers.is_null() {
         return Ok(());
     }
-    let count = usize::try_from(atom_data.num_at.max(0))
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    if count == 0 {
-        return Ok(());
+    let mut index = 0_i32;
+    while index < atom_data.num_at {
+        let original = i32::from(
+            heap.element_signed(atom_data.at.as_const(), index)?
+                .orig_at_number,
+        );
+        *heap.element_signed_mut(original_numbers, index)? = original;
+        *heap.element_signed_mut(current_numbers, original)? = index;
+        index += 1;
     }
-    heap.with_two_slices_mut_and_optional_third(
-        original_numbers,
-        current_numbers,
-        Some(atom_data.at),
-        |original_numbers, current_numbers, atoms| {
-            let atoms = atoms.ok_or(SourceHeapError::NullPointer)?;
-            for index in 0..count {
-                let original = i32::from(
-                    atoms
-                        .get(index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .orig_at_number,
-                );
-                *original_numbers
-                    .get_mut(index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? = original;
-                let original_index =
-                    usize::try_from(original).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                *current_numbers
-                    .get_mut(original_index)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? = index as i32;
-            }
-            Ok(())
-        },
-    )
+    Ok(())
 }
 
 #[allow(non_snake_case)]
@@ -9948,22 +10594,24 @@ pub(crate) fn imat_new(
         *a = SourceMutPointer::null();
     }
 
-    let outer = match inchi_calloc::<SourceMutPointer<i32>>(
-        heap,
-        u64::try_from(m).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
-        1,
-    ) {
+    // INCHI✔️❗: LP64 calloc converts signed m/n to size_t. A negative
+    // count times the source element size overflows, hence allocation fails.
+    // Preserve the source failure arm and outer-before-row publication.
+    let outer = match inchi_calloc::<SourceMutPointer<i32>>(heap, m as u64, 8) {
         Ok(pointer) => pointer,
-        Err(SourceHeapError::AllocationFailed) => return Ok(1),
+        Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+            return Ok(1);
+        }
         Err(error) => return Err(error),
     };
     *a = outer;
-    let row_count =
-        u64::try_from(n).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+    let row_count = n as u64;
     for row_index in 0..m {
         let row = match inchi_calloc::<i32>(heap, row_count, 4) {
             Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => return Ok(1),
+            Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+                return Ok(1);
+            }
             Err(error) => return Err(error),
         };
         *heap
@@ -10383,27 +11031,15 @@ pub(crate) fn MarkDisconnectedComponents(
         neighbor_indices = SourceMutPointer::null();
 
         let old_capacity = num_components.max(original.num_components);
-        current_lengths = inchi_calloc::<u16>(
-            heap,
-            u64::try_from(num_components.wrapping_add(1))
-                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
-            2,
-        )
-        .unwrap_or_else(|_| SourceMutPointer::null());
-        old_component_numbers = inchi_calloc::<u16>(
-            heap,
-            u64::try_from(old_capacity.wrapping_add(1))
-                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
-            2,
-        )
-        .unwrap_or_else(|_| SourceMutPointer::null());
-        component_rows = inchi_calloc::<[u16; 3]>(
-            heap,
-            u64::try_from(num_components.wrapping_add(1))
-                .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?,
-            6,
-        )
-        .unwrap_or_else(|_| SourceMutPointer::null());
+        // INCHI✔️❗: source casts to long long before +1, including an INT_MAX
+        // previous capacity. Traversal gives positive component counts here.
+        // O(1), no staging/extra allocation; allocator/arena cost remains OPEN.
+        current_lengths = inchi_calloc::<u16>(heap, (i64::from(num_components) + 1) as u64, 2)
+            .unwrap_or_else(|_| SourceMutPointer::null());
+        old_component_numbers = inchi_calloc::<u16>(heap, (i64::from(old_capacity) + 1) as u64, 2)
+            .unwrap_or_else(|_| SourceMutPointer::null());
+        component_rows = inchi_calloc::<[u16; 3]>(heap, (i64::from(num_components) + 1) as u64, 6)
+            .unwrap_or_else(|_| SourceMutPointer::null());
         if current_lengths.is_null() || old_component_numbers.is_null() || component_rows.is_null()
         {
             return Ok(false);
@@ -10580,50 +11216,192 @@ pub(crate) fn ExtractConnectedComponent(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: ExtractConnectedComponent
 
-    let Ok(allocation_count) = u64::try_from(num_atoms) else {
-        return Ok(CT_OUT_OF_RAM);
-    };
-    let number = match inchi_calloc::<u16>(heap, allocation_count, 2) {
+    extract_connected_component_atoms(
+        heap,
+        ConnectedComponentAtoms::Slices {
+            source: atoms,
+            destination: component_atoms,
+        },
+        num_atoms,
+        component_number,
+    )
+}
+
+// Concrete views of the same source atom arrays, not another extraction algorithm.
+enum ConnectedComponentAtoms<'a> {
+    Slices {
+        source: &'a [inp_ATOM],
+        destination: &'a mut [inp_ATOM],
+    },
+    Stored {
+        source: crate::source_types::SourceConstPointer<inp_ATOM>,
+        destination: SourceMutPointer<inp_ATOM>,
+    },
+}
+
+impl ConnectedComponentAtoms<'_> {
+    fn source<'a>(
+        &'a self,
+        heap: &'a SourceHeap,
+        index: usize,
+    ) -> Result<&'a inp_ATOM, SourceHeapError> {
+        // INCHI source strutil.c:4574:
+        //         if (at[i].component == component_number)
+        // INCHI✔️❗: Reached O(1) checked view; no allocation or snapshot.
+        let values = match self {
+            Self::Slices { source, .. } => *source,
+            Self::Stored { source, .. } => heap.slice(*source)?,
+        };
+        values.get(index).ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+
+    fn destination<'a>(
+        &'a self,
+        heap: &'a SourceHeap,
+        index: usize,
+    ) -> Result<&'a inp_ATOM, SourceHeapError> {
+        // INCHI source strutil.c:4585:
+        //         for (j = 0; j < component_at[i].valence; j++)
+        // INCHI✔️❗: Read the live destination, including preceding copies.
+        let values: &[inp_ATOM] = match self {
+            Self::Slices { destination, .. } => destination,
+            Self::Stored { destination, .. } => heap.slice(destination.as_const())?,
+        };
+        values.get(index).ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+
+    fn destination_mut<'a>(
+        &'a mut self,
+        heap: &'a mut SourceHeap,
+        index: usize,
+    ) -> Result<&'a mut inp_ATOM, SourceHeapError> {
+        // INCHI source strutil.c:4584:
+        //         component_at[i].orig_compt_at_numb = (AT_NUMB) ( i + 1 );
+        // INCHI✔️❗: Reached O(1) mutable view; no delayed writeback.
+        let values = match self {
+            Self::Slices { destination, .. } => &mut **destination,
+            Self::Stored { destination, .. } => heap.slice_mut(*destination)?,
+        };
+        values
+            .get_mut(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)
+    }
+}
+
+pub(crate) fn extract_connected_component_stored(
+    heap: &mut SourceHeap,
+    atoms: crate::source_types::SourceConstPointer<inp_ATOM>,
+    num_atoms: i32,
+    component_number: i32,
+    component_atoms: SourceMutPointer<inp_ATOM>,
+) -> Result<i32, SourceHeapError> {
+    // INCHI source runichi2.c:361:
+    //     inp_cur_data->num_at = ExtractConnectedComponent( orig_inp_data->at, orig_inp_data->num_inp_atoms, i + 1, inp_cur_data->at );
+    // INCHI✔️❗: Preserve live source/destination storage through the sole
+    // complete kernel. O(1) carrier; no snapshot, writeback or extra allocation.
+    extract_connected_component_atoms(
+        heap,
+        ConnectedComponentAtoms::Stored {
+            source: atoms,
+            destination: component_atoms,
+        },
+        num_atoms,
+        component_number,
+    )
+}
+
+fn extract_connected_component_atoms(
+    heap: &mut SourceHeap,
+    mut atoms: ConnectedComponentAtoms<'_>,
+    num_atoms: i32,
+    component_number: i32,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/strutil.c:4558 ExtractConnectedComponent
+    // INCHI✔️❌: int ExtractConnectedComponent( inp_ATOM *at,
+    // INCHI✔️❌:                                int num_at,
+    // INCHI✔️❌:                                int component_number,
+    // INCHI✔️❌:                                inp_ATOM *component_at )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     int i, j, num_component_at;
+    // INCHI✔️❌:     AT_NUMB *number;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (NULL == ( number = (AT_NUMB*) inchi_calloc( num_at, sizeof( AT_NUMB ) ) ))
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         return CT_OUT_OF_RAM; /* out of memory */  /*   <BRKPT> */
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* copy atoms */
+    // INCHI✔️❌:     for (i = 0, num_component_at = 0; i < num_at; i++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         if (at[i].component == component_number)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             number[i] = num_component_at;
+    // INCHI✔️❌:             component_at[num_component_at++] = at[i];
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* renumber neighbors */
+    // INCHI✔️❌:     for (i = 0; i < num_component_at; i++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         component_at[i].orig_compt_at_numb = (AT_NUMB) ( i + 1 );
+    // INCHI✔️❌:         for (j = 0; j < component_at[i].valence; j++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             component_at[i].neighbor[j] = number[(int) component_at[i].neighbor[j]];
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     inchi_free( number );
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return num_component_at;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: ExtractConnectedComponent
+    // INCHI✔️❗: One native allocation and two ordered live passes. Admit only
+    // reached atoms/destinations, copying one fixed Copy record per match;
+    // destination aliases remain visible to subsequent source reads. No atom
+    // prefix snapshot or whole destination writeback. O(N + reached neighbors),
+    // O(N) native number storage/O(1) additional scratch. Safe arena/view cost
+    // remains OPEN INCHI-PERF-COMPONENT-LIVE, not a whole-call cost acceptance.
+    let number = match inchi_calloc::<u16>(heap, num_atoms as u64, 2) {
         Ok(pointer) => pointer,
-        Err(SourceHeapError::AllocationFailed) => return Ok(CT_OUT_OF_RAM),
+        Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+            return Ok(CT_OUT_OF_RAM);
+        }
         Err(error) => return Err(error),
     };
     let processing = (|| -> Result<i32, SourceHeapError> {
-        let atom_count =
-            usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let mut component_count = 0_usize;
-        for (atom_index, atom) in atoms
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .iter()
-            .enumerate()
-        {
-            if i32::from(atom.component) == component_number {
+        for atom_index in 0..num_atoms {
+            let atom_index = atom_index as usize;
+            if i32::from(atoms.source(heap, atom_index)?.component) == component_number {
                 heap.slice_mut(number)?[atom_index] = component_count as u16;
-                *component_atoms
-                    .get_mut(component_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? = atom.clone();
+                let atom = *atoms.source(heap, atom_index)?;
+                *atoms.destination_mut(heap, component_count)? = atom;
                 component_count += 1;
             }
         }
-        for (component_index, atom) in component_atoms
-            .get_mut(..component_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .iter_mut()
-            .enumerate()
-        {
-            atom.orig_compt_at_numb = component_index.wrapping_add(1) as u16;
-            let valence = usize::try_from(i32::from(atom.valence).max(0))
-                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            for neighbor in atom
-                .neighbor
-                .get_mut(..valence)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        for component_index in 0..component_count {
+            atoms
+                .destination_mut(heap, component_index)?
+                .orig_compt_at_numb = component_index.wrapping_add(1) as u16;
+            let mut neighbor_index = 0_usize;
+            while (neighbor_index as i32)
+                < i32::from(atoms.destination(heap, component_index)?.valence)
             {
-                *neighbor = *heap
-                    .slice(number.as_const())?
-                    .get(usize::from(*neighbor))
+                let old_neighbor = *atoms
+                    .destination(heap, component_index)?
+                    .neighbor
+                    .get(neighbor_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let neighbor = *heap
+                    .slice(number.as_const())?
+                    .get(usize::from(old_neighbor))
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                *atoms
+                    .destination_mut(heap, component_index)?
+                    .neighbor
+                    .get_mut(neighbor_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)? = neighbor;
+                neighbor_index += 1;
             }
         }
         i32::try_from(component_count).map_err(|_| SourceHeapError::SourceIntegerOverflow)
@@ -12307,7 +13085,7 @@ mod tests {
         let mut invalid = [];
         assert_eq!(
             GetMinDistDistribution(&[], 0, 0, -1, 0, &mut invalid, 0),
-            Err(SourceHeapError::SourceIntegerOverflow)
+            Ok(0.0)
         );
         let mut too_short = [0.0; 1];
         assert_eq!(
@@ -12322,7 +13100,7 @@ mod tests {
         assert_eq!(empty_output, [1.0e30; 4]);
         assert_eq!(
             GetMinDistDistribution(&[inp_ATOM::default()], 1, -1, -1, 1, &mut empty_output, 4,),
-            Err(SourceHeapError::PointerOutOfBounds)
+            Ok(0.0)
         );
 
         let (average, ordinary) = distribution((-1.0, 1.0), (1.0, 1.0), (1, 1, 1), 0);
@@ -13699,7 +14477,7 @@ mod tests {
         let mut no_ligand = vec![ion_atom(11, 0)];
         assert_eq!(
             DisconnectOneLigand(&mut no_ligand, None, &[1], &[0], 0, 1, 0, 0, None),
-            Err(SourceHeapError::PointerOutOfBounds)
+            Ok(0)
         );
 
         let mut halogen = vec![ion_atom(11, 0), ion_atom(9, 0)];
@@ -16193,5 +16971,577 @@ mod tests {
         );
         assert_eq!(heap.slice(partial_original.as_const()).unwrap(), &[2]);
         assert_eq!(heap.slice(short_current.as_const()).unwrap(), &[-2, -2]);
+    }
+}
+
+#[cfg(test)]
+mod ammonium_salt_regressions {
+    use super::{SourceHeapError, bIsAmmoniumSalt, inp_ATOM};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/ammonium_salt/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/ammonium_salt/values.txt"
+    ));
+    #[test]
+    fn complete_source_controls_errors_and_output_prefixes() {
+        let input: Vec<i32> = INPUT
+            .split_whitespace()
+            .map(|v| v.parse().unwrap())
+            .collect();
+        let expected: Vec<Vec<i32>> = EXPECTED
+            .lines()
+            .map(|l| l.split_whitespace().map(|v| v.parse().unwrap()).collect())
+            .collect();
+        assert_eq!(expected.len(), 810);
+        let (
+            mut calls,
+            mut oks,
+            mut errors,
+            mut panics,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (0, 0, 0, 0, 0, 0, 0);
+        for _repeat in 0..2 {
+            let mut cursor = 0;
+            for expected in &expected {
+                let (id, n, index, records) = (
+                    input[cursor],
+                    input[cursor + 1],
+                    input[cursor + 2],
+                    input[cursor + 3],
+                );
+                cursor += 4;
+                assert_eq!(id, expected[0]);
+                let mut atoms = vec![inp_ATOM::default(); n as usize];
+                for _ in 0..records {
+                    let f = &input[cursor..cursor + 31];
+                    cursor += 31;
+                    let a = &mut atoms[f[0] as usize];
+                    a.el_number = f[1] as u8;
+                    a.valence = f[2] as i8;
+                    a.chem_bonds_valence = f[3] as i8;
+                    a.num_H = f[4] as i8;
+                    for k in 0..3 {
+                        a.num_iso_H[k] = f[5 + k] as i8;
+                    }
+                    a.iso_atw_diff = f[8] as i8;
+                    a.charge = f[9] as i8;
+                    a.radical = f[10] as i8;
+                    for k in 0..20 {
+                        a.neighbor[k] = f[11 + k] as u16;
+                    }
+                }
+                let before = atoms.clone();
+                let (mut o, mut k, mut e) = (71, 72, [1, 2, 3, 4]);
+                let actual = catch_unwind(AssertUnwindSafe(|| {
+                    bIsAmmoniumSalt(&atoms, index, &mut o, &mut k, &mut e)
+                }));
+                calls += 1;
+                if atoms != before {
+                    changes += 1;
+                }
+                match actual {
+                    Ok(result) => {
+                        let value = match result {
+                            Ok(v) => {
+                                oks += 1;
+                                v
+                            }
+                            Err(SourceHeapError::PointerOutOfBounds) => {
+                                errors += 1;
+                                -14
+                            }
+                            Err(_) => {
+                                unexpected += 1;
+                                -999
+                            }
+                        };
+                        let row = [
+                            id,
+                            value,
+                            o,
+                            k,
+                            i32::from(e[0]),
+                            i32::from(e[1]),
+                            i32::from(e[2]),
+                            i32::from(e[3]),
+                            i32::from(atoms != before),
+                        ];
+                        if row.as_slice() != expected {
+                            differences += 1;
+                            eprintln!("ammonium case {id}: {row:?} != {expected:?}");
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0160: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            panics += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                        if (o, k, e) != (71, 72, [1, 2, 3, 4]) {
+                            differences += 1;
+                        }
+                    }
+                }
+            }
+            assert_eq!(cursor, input.len());
+        }
+        eprintln!(
+            "AMMONIUM SUMMARY calls={calls} ok={oks} errors={errors} quarantine_panics={panics} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(
+            (calls, oks, errors, panics, unexpected, differences, changes),
+            (1620, 1600, 20, 0, 0, 0, 0)
+        );
+    }
+}
+
+#[cfg(test)]
+mod add_dt_regressions {
+    use super::{SourceHeapError, add_DT_to_num_H, inp_ATOM};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/add_dt/inputs.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/add_dt/values.txt"
+    ));
+    #[test]
+    fn complete_signed_narrowing_counts_errors_and_state() {
+        let input: Vec<i32> = INPUT
+            .split_whitespace()
+            .map(|v| v.parse().unwrap())
+            .collect();
+        let expected: Vec<Vec<i32>> = EXPECTED
+            .lines()
+            .map(|l| l.split_whitespace().map(|v| v.parse().unwrap()).collect())
+            .collect();
+        assert_eq!(expected.len(), 2412);
+        let (
+            mut calls,
+            mut oks,
+            mut errors,
+            mut panics,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (0, 0, 0, 0, 0, 0, 0);
+        for _repeat in 0..2 {
+            let mut cursor = 0;
+            for expected in &expected {
+                let (id, count, len) = (input[cursor], input[cursor + 1], input[cursor + 2]);
+                cursor += 3;
+                assert_eq!(id, expected[0]);
+                assert!(matches!(len, 0 | 3));
+                let mut atoms = vec![inp_ATOM::default(); len as usize];
+                for (i, atom) in atoms.iter_mut().enumerate() {
+                    atom.num_H = input[cursor] as i8;
+                    for k in 0..3 {
+                        atom.num_iso_H[k] = input[cursor + 1 + k] as i8;
+                    }
+                    cursor += 4;
+                    atom.el_number = 37;
+                    atom.charge = -17;
+                    atom.valence = 127;
+                    atom.radical = -128;
+                    atom.component = i as u16 + 123;
+                    atom.orig_at_number = 65535;
+                    atom.bond_stereo = [-3; 20];
+                    atom.bond_type = [7; 20];
+                    atom.x = i as f64 + 0.25;
+                }
+                let before = atoms.clone();
+                let actual = catch_unwind(AssertUnwindSafe(|| add_DT_to_num_H(count, &mut atoms)));
+                calls += 1;
+                match actual {
+                    Ok(result) => {
+                        let value = match result {
+                            Ok(v) => {
+                                oks += 1;
+                                v
+                            }
+                            Err(SourceHeapError::PointerOutOfBounds) => {
+                                errors += 1;
+                                -14
+                            }
+                            Err(_) => {
+                                unexpected += 1;
+                                -999
+                            }
+                        };
+                        let mut h = [37; 3];
+                        for (i, atom) in atoms.iter().enumerate() {
+                            h[i] = i32::from(atom.num_H);
+                        }
+                        let mut restored = atoms.clone();
+                        if value == 0 {
+                            for (i, atom) in restored.iter_mut().enumerate() {
+                                if (i as i32) < count {
+                                    atom.num_H = before[i].num_H;
+                                }
+                            }
+                        }
+                        let changed = i32::from(restored != before);
+                        changes += changed;
+                        let row = [id, value, h[0], h[1], h[2], changed];
+                        if row.as_slice() != expected {
+                            differences += 1;
+                            eprintln!("add-DT case {id}: {row:?} != {expected:?}");
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            panics += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                        if atoms != before {
+                            changes += 1;
+                        }
+                    }
+                }
+            }
+            assert_eq!(cursor, input.len());
+        }
+        eprintln!(
+            "ADD-DT SUMMARY calls={calls} ok={oks} errors={errors} quarantine_panics={panics} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(
+            (calls, oks, errors, panics, unexpected, differences, changes),
+            (4824, 4818, 6, 0, 0, 0, 0)
+        );
+    }
+}
+
+#[cfg(test)]
+mod find_om_regressions {
+    use super::{SourceHeapError, inp_ATOM, nFindOneOM};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    const INPUT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/find_om/inputs.columns.txt"
+    ));
+    const EXPECTED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/inchi/expected/official/find_om/expected.columns.txt"
+    ));
+    fn decode<const WIDTH: usize>(text: &str) -> Vec<[i32; WIDTH]> {
+        let mut rows = vec![[0; WIDTH]; 396306];
+        let mut heads = [[0_usize; 2]; WIDTH];
+        for line in text.lines() {
+            let v: Vec<i64> = line
+                .split_whitespace()
+                .map(|v| v.parse().unwrap())
+                .collect();
+            assert_eq!(v.len(), 6);
+            let (column, parity, start, count) =
+                (v[0] as usize, v[1] as usize, v[2] as usize, v[3] as usize);
+            assert_eq!(start, heads[column][parity]);
+            for offset in 0..count {
+                rows[parity + 2 * (start + offset)][column] =
+                    i32::try_from(v[4] + offset as i64 * v[5]).unwrap();
+            }
+            heads[column][parity] += count;
+        }
+        assert_eq!(heads, [[198153; 2]; WIDTH]);
+        rows
+    }
+    #[test]
+    fn complete_three_pass_selection_prefix_errors_and_state() {
+        let inputs = decode::<76>(INPUT);
+        let expected = decode::<35>(EXPECTED);
+        let (
+            mut calls,
+            mut oks,
+            mut errors,
+            mut panics,
+            mut unexpected,
+            mut differences,
+            mut changes,
+            mut prefix_errors,
+        ) = (0, 0, 0, 0, 0, 0, 0, 0);
+        for _ in 0..2 {
+            for (id, (row, expected)) in inputs.iter().zip(&expected).enumerate() {
+                assert_eq!(row[0], id as i32);
+                let mut atoms = [inp_ATOM::default(); 6];
+                for (index, atom) in atoms.iter_mut().enumerate() {
+                    atom.valence = row[26 + index * 3] as i8;
+                    atom.el_number = row[27 + index * 3] as u8;
+                    atom.iso_atw_diff = row[28 + index * 3] as i8;
+                    atom.charge = -17;
+                    atom.radical = -128;
+                    atom.component = index as u16 + 123;
+                    atom.orig_at_number = 65535;
+                    atom.bond_stereo = [-3; 20];
+                    atom.bond_type = [7; 20];
+                    atom.x = index as f64 + 0.25;
+                }
+                if row[2] >= 0 && row[2] < row[3] {
+                    for index in 0..20 {
+                        atoms[row[2] as usize].neighbor[index] = row[6 + index] as u16;
+                    }
+                }
+                let before_atoms = atoms;
+                let mut ord = [0_i32; 32];
+                ord.copy_from_slice(&row[44..]);
+                let before = ord;
+                let actual = catch_unwind(AssertUnwindSafe(|| {
+                    nFindOneOM(
+                        &atoms[..row[3] as usize],
+                        row[2],
+                        &mut ord[..row[4] as usize],
+                        row[1],
+                    )
+                }));
+                calls += 1;
+                if atoms != before_atoms {
+                    changes += 1;
+                }
+                match actual {
+                    Ok(result) => {
+                        let (status, value) = match result {
+                            Ok(value) => {
+                                oks += 1;
+                                (0, value)
+                            }
+                            Err(SourceHeapError::PointerOutOfBounds) => {
+                                errors += 1;
+                                (-14, 0)
+                            }
+                            Err(_) => {
+                                unexpected += 1;
+                                (-999, 0)
+                            }
+                        };
+                        let mut wanted = before;
+                        for index in 0..32 {
+                            wanted[index] = i32::try_from(
+                                i64::from(before[index]) + i64::from(expected[2 + index]),
+                            )
+                            .unwrap();
+                        }
+                        if status != expected[0]
+                            || value != expected[1]
+                            || ord != wanted
+                            || expected[34] != 0
+                        {
+                            differences += 1;
+                            eprintln!(
+                                "find-OM case {id}: status={status} value={value} ord={ord:?} expected={expected:?}"
+                            );
+                        }
+                        if status != 0 && ord != before {
+                            prefix_errors += 1;
+                        }
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            panics += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                        if ord != before {
+                            changes += 1;
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "FIND-OM SUMMARY calls={calls} ok={oks} errors={errors} quarantine_panics={panics} unexpected={unexpected} differences={differences} changes={changes} prefix_errors={prefix_errors}"
+        );
+        assert_eq!(
+            (
+                calls,
+                oks,
+                errors,
+                panics,
+                unexpected,
+                differences,
+                changes,
+                prefix_errors
+            ),
+            (792612, 792092, 520, 0, 0, 0, 0, 72)
+        );
+    }
+}
+
+#[cfg(test)]
+mod component_number_regressions {
+    use super::SetConnectedComponentNumber;
+    use crate::source_types::{SourceHeapError, inp_ATOM};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    fn dirty_atom(seed: u8, index: usize, typ: u16, flags: u16) -> inp_ATOM {
+        let byte = seed.wrapping_add((index as u8).wrapping_mul(37));
+        let word = u16::from(byte) * 257;
+        inp_ATOM {
+            elname: [byte as i8; 6],
+            el_number: byte,
+            neighbor: [word; 20],
+            orig_at_number: word,
+            orig_compt_at_numb: typ.wrapping_add((index as u16).wrapping_mul(257)),
+            bond_stereo: [byte as i8; 20],
+            bond_type: [byte; 20],
+            valence: byte as i8,
+            chem_bonds_valence: !byte as i8,
+            num_H: byte as i8,
+            num_iso_H: [byte as i8; 3],
+            iso_atw_diff: !byte as i8,
+            charge: byte as i8,
+            radical: !byte as i8,
+            bAmbiguousStereo: byte as i8,
+            cFlags: byte as i8,
+            at_type: word,
+            component: flags.wrapping_add((index as u16).wrapping_mul(37)),
+            endpoint: !word,
+            c_point: word,
+            x: f64::from_bits(0x7ff8000000000000 | u64::from(word)),
+            y: f64::from_bits(0x8000000000000000 | u64::from(word)),
+            z: f64::from_bits(0x7ff0000000000000 | u64::from(word)),
+            bUsed0DParity: byte as i8,
+            p_parity: !byte as i8,
+            p_orig_at_num: [word; 4],
+            sb_ord: [byte as i8; 3],
+            sn_ord: [!byte as i8; 3],
+            sb_parity: [byte as i8; 3],
+            sn_orig_at_num: [word; 3],
+            bCutVertex: byte as i8,
+            nRingSystem: word,
+            nNumAtInRingSystem: !word,
+            nBlockSystem: word,
+        }
+    }
+
+    fn same_bits(mut a: inp_ATOM, mut b: inp_ATOM) -> bool {
+        let floats = a.x.to_bits() == b.x.to_bits()
+            && a.y.to_bits() == b.y.to_bits()
+            && a.z.to_bits() == b.z.to_bits();
+        a.x = 0.0;
+        a.y = 0.0;
+        a.z = 0.0;
+        b.x = 0.0;
+        b.y = 0.0;
+        b.z = 0.0;
+        floats && a == b
+    }
+
+    #[test]
+    fn complete_component_labels_prefix_errors_and_preservation() {
+        let inputs = include_str!(
+            "../../../../../testdata/inchi/expected/official/component_number/inputs.txt"
+        );
+        let expected = include_str!(
+            "../../../../../testdata/inchi/expected/official/component_number/expected.txt"
+        );
+        assert_eq!(inputs.lines().count(), 140596);
+        assert_eq!(expected.lines().count(), 140596);
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut audit159,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for (ident, (input, output)) in inputs.lines().zip(expected.lines()).enumerate() {
+            let cells: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(cells.len(), 7);
+            assert_eq!(cells[0].parse::<usize>().unwrap(), ident);
+            let n: usize = cells[1].parse().unwrap();
+            let count: i32 = cells[2].parse().unwrap();
+            let typ: u16 = cells[3].parse().unwrap();
+            let flags: i32 = cells[4].parse().unwrap();
+            let seed: u8 = cells[5].parse().unwrap();
+            assert!(n <= 8);
+            assert_eq!(cells[6] == "N", count <= 0 || count as usize <= n);
+            let wanted: Vec<_> = output.split_whitespace().collect();
+            assert_eq!(wanted.len(), 11);
+            let before: [inp_ATOM; 10] =
+                std::array::from_fn(|i| dirty_atom(seed, i, typ, flags as u16));
+            for _repeat in 0..2 {
+                calls += 1;
+                let mut atoms = before;
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    SetConnectedComponentNumber(&mut atoms[..n], count, flags)
+                }));
+                let mut quarantined = false;
+                match result {
+                    Ok(Ok(value)) => {
+                        completed += 1;
+                        differences += usize::from(value != 0 || wanted[0] != "0");
+                    }
+                    Ok(Err(SourceHeapError::PointerOutOfBounds)) => {
+                        bounds += 1;
+                        differences += usize::from(wanted[0] != "E");
+                    }
+                    Ok(Err(_)) => {
+                        unexpected += 1;
+                    }
+                    Err(payload) => {
+                        quarantined = true;
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if message
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            audit159 += 1;
+                        } else {
+                            unexpected += 1;
+                        }
+                    }
+                }
+                for i in 0..10 {
+                    let mut state = before[i];
+                    if !quarantined {
+                        let pair = u32::from_str_radix(wanted[i + 1], 16).unwrap();
+                        state.orig_compt_at_numb = (pair >> 16) as u16;
+                        state.component = pair as u16;
+                    }
+                    changes += usize::from(!same_bits(atoms[i], state));
+                }
+            }
+        }
+        eprintln!(
+            "COMPONENT_NUMBER COUNTS calls={calls} completed={completed} bounds={bounds} audit159={audit159} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 281192);
+        assert_eq!((audit159, unexpected, differences, changes), (0, 0, 0, 0));
+        assert_eq!(completed + bounds, calls);
     }
 }

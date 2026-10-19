@@ -1,13 +1,16 @@
+use crate::source::base::util::SourceInputArray;
 use std::cmp::Ordering;
 
 use crate::source::base::ichi_io::inchi_ios_print;
 use crate::source::base::ichierr::{AddErrorMessage, ErrMsg};
 use crate::source::base::ichimake::{CompINChINonTaut2, CompINChITaut2};
-use crate::source::base::ichiprt1::OutputINChI2;
+use crate::source::base::ichiprt1::{
+    OriginalStructure, OutputSortTable, SourceSortFlags, output_inchi2_sort_table,
+};
 use crate::source::base::mol_fmt2::MolfileSaveCopy;
-use crate::source::base::runichi2::{eprint_bytes, sdf_label_value, source_array_c_bytes};
+use crate::source::base::runichi2::{eprint_bytes, source_array_c_bytes};
 use crate::source::base::strutil::{Free_INChI, Free_INChI_Aux};
-use crate::source::base::util::inchi_free;
+use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
     _IS_ERROR, _IS_FATAL, _IS_WARNING, AMBIGUOUS_STEREO_ATOM, AMBIGUOUS_STEREO_ATOM_ISO,
     AMBIGUOUS_STEREO_BOND, AMBIGUOUS_STEREO_BOND_ISO, CANON_GLOBALS, COMP_ATOM_DATA, CT_OUT_OF_RAM,
@@ -148,6 +151,54 @@ pub(crate) fn bIsStructChiral(
         }
     }
     Ok(0)
+}
+
+// A pair of actual source row arrays, independently mutable from every
+// pointed-to INChI/Aux owner. Borrowed local arrays never enter the heap.
+pub(crate) enum SourceComponentRowPair<'a> {
+    Pointers {
+        inchi: SourceMutPointer<PINChI2>,
+        aux: SourceMutPointer<PINChI_Aux2>,
+    },
+    Borrowed {
+        inchi: &'a mut [PINChI2],
+        aux: &'a mut [PINChI_Aux2],
+    },
+}
+
+impl SourceComponentRowPair<'_> {
+    fn prefix<'a>(
+        &'a self,
+        heap: &'a SourceHeap,
+        count: usize,
+    ) -> Result<(&'a [PINChI2], &'a [PINChI_Aux2]), SourceHeapError> {
+        // Native runichi4.c223..224:
+        //                     pINChISort[j][k1][i].pINChI[k] = pINChI[j][i][k];
+        //                     pINChISort[j][k1][i].pINChI_Aux[k] = pINChI_Aux[j][i][k];
+        // INCHI✔️❗: Original pointer admission order; actual local arrays
+        // borrow without a snapshot. O(1) bounds/dispatch; C522 cost OPEN.
+        let (inchi, aux) = match self {
+            Self::Pointers { inchi, aux } => {
+                let inchi = heap
+                    .slice(inchi.as_const())?
+                    .get(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let aux = heap
+                    .slice(aux.as_const())?
+                    .get(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                return Ok((inchi, aux));
+            }
+            Self::Borrowed { inchi, aux } => (&**inchi, &**aux),
+        };
+        let inchi = inchi
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let aux = aux
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        Ok((inchi, aux))
+    }
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -494,6 +545,387 @@ pub(crate) fn SortAndPrintINChI(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: SortAndPrintINChI
 
+    sort_and_print_inchi_rows(
+        heap,
+        out_file,
+        string_buffer,
+        log_file,
+        input_parameters,
+        SourceInputArray::Pointer(original_atom_data.as_mut()),
+        _composite_normalized_data,
+        OriginalStructure::Pointer(original_structure),
+        component_counts,
+        non_tautomeric_counts,
+        tautomeric_counts,
+        taut_flags,
+        taut_flags_done,
+        normalization_flags,
+        input_structure_number,
+        std::array::from_fn(|index| SourceComponentRowPair::Pointers {
+            inchi: inchi_components[index],
+            aux: aux_components[index],
+        }),
+        &mut SourceSortFlags::Pointer(sort_print_flags),
+        save_option_bits,
+        stdout,
+    )
+}
+
+#[rustfmt::skip]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn sort_and_print_inchi_rows(
+    heap: &mut SourceHeap,
+    out_file: &mut INCHI_IOSTREAM,
+    mut string_buffer: Option<&mut INCHI_IOS_STRING>,
+    log_file: &mut INCHI_IOSTREAM,
+    input_parameters: &INPUT_PARMS,
+    original_atom_data: SourceInputArray<'_, ORIG_ATOM_DATA>,
+    _composite_normalized_data: Option<
+        &mut [[COMP_ATOM_DATA; TAUT_NUM as usize + 1]; INCHI_NUM as usize],
+    >,
+    original_structure: OriginalStructure<'_>,
+    component_counts: &[i32; INCHI_NUM as usize],
+    non_tautomeric_counts: &[i32; INCHI_NUM as usize],
+    tautomeric_counts: &[i32; INCHI_NUM as usize],
+    taut_flags: &mut [INCHI_MODE; INCHI_NUM as usize],
+    taut_flags_done: &mut [INCHI_MODE; INCHI_NUM as usize],
+    normalization_flags: &NORM_CANON_FLAGS,
+    input_structure_number: i64,
+    mut component_rows: [SourceComponentRowPair<'_>; INCHI_NUM as usize],
+    sort_print_flags: &mut SourceSortFlags<'_>,
+    save_option_bits: u8,
+    stdout: SourceMutPointer<FILE>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi4.c:102 SortAndPrintINChI
+    // INCHI✔️❌: int SortAndPrintINChI( CANON_GLOBALS            *pCG,
+    // INCHI✔️❌:                        INCHI_IOSTREAM           *out_file,
+    // INCHI✔️❌:                        INCHI_IOS_STRING         *strbuf,
+    // INCHI✔️❌:                        INCHI_IOSTREAM           *log_file,
+    // INCHI✔️❌:                        INPUT_PARMS              *ip,
+    // INCHI✔️❌:                        ORIG_ATOM_DATA           *orig_inp_data,
+    // INCHI✔️❌:                        ORIG_ATOM_DATA           *prep_inp_data,
+    // INCHI✔️❌:                        COMP_ATOM_DATA           composite_norm_data[INCHI_NUM][TAUT_NUM + 1],
+    // INCHI✔️❌:                        ORIG_STRUCT              *pOrigStruct,
+    // INCHI✔️❌:                        int                      num_components[INCHI_NUM],
+    // INCHI✔️❌:                        int                      num_non_taut[INCHI_NUM],
+    // INCHI✔️❌:                        int                      num_taut[INCHI_NUM],
+    // INCHI✔️❌:                        INCHI_MODE               bTautFlags[INCHI_NUM],
+    // INCHI✔️❌:                        INCHI_MODE               bTautFlagsDone[INCHI_NUM],
+    // INCHI✔️❌:                        NORM_CANON_FLAGS         *pncFlags,
+    // INCHI✔️❌:                        long                     num_inp,
+    // INCHI✔️❌:                        PINChI2                  *pINChI[INCHI_NUM],
+    // INCHI✔️❌:                        PINChI_Aux2              *pINChI_Aux[INCHI_NUM],
+    // INCHI✔️❌:                        int                      *pSortPrintINChIFlags,
+    // INCHI✔️❌:                        unsigned char            save_opt_bits )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     INCHI_SORT *pINChISort[INCHI_NUM][TAUT_NUM];
+    // INCHI✔️❌:     int j, i, k, k1, ret, ret2, iINChI, max_num_components; /* djb-rwth: ignoring LLVM warning: variable used */
+    // INCHI✔️❌:     int INCHI_basic_or_INCHI_reconnected;
+    // INCHI✔️❌:     /* djb-rwth: removing redundant variables */
+    // INCHI✔️❌:     int bDisconnectedCoord = ( 0 != ( bTautFlagsDone[0] & TG_FLAG_DISCONNECT_COORD_DONE ) );
+    // INCHI✔️❌:     int bINChIOutputOptions0, bCurOption, bINChIOutputOptionsCur, bEmbedReconnected;
+    // INCHI✔️❌:     static const char szAnnHdr[] = "InChI ANNOTATED CONTENTS";
+    // INCHI✔️❌: #ifdef TARGET_LIB_FOR_WINCHI
+    // INCHI✔️❌:     int ikflag = 0;
+    // INCHI✔️❌:     out_file->type = INCHI_IOS_TYPE_STRING;
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /*
+    // INCHI✔️❌:         Note:
+    // INCHI✔️❌:
+    // INCHI✔️❌:         pINChI[INCHI_BAS] refers to either disconnected or original structure;
+    // INCHI✔️❌:             num_components[INCHI_BAS] > 0 if there was input structure
+    // INCHI✔️❌:         pINChI[INCHI_REC] refers to the reconnected structure,
+    // INCHI✔️❌:             and only if the input structure has been disconnected, that is,
+    // INCHI✔️❌:             num_components[INCHI_REC] > 0
+    // INCHI✔️❌:     */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     ret = 1;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (i = 0; i < INCHI_NUM; i++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         for (k = 0; k < TAUT_NUM; k++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             bTautFlags[i] |= pncFlags->bTautFlags[i][k];
+    // INCHI✔️❌:             bTautFlagsDone[i] |= pncFlags->bTautFlagsDone[i][k];
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     max_num_components = 0;
+    // INCHI✔️❌:     for (j = 0; j < INCHI_NUM; j++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         if (max_num_components < num_components[j])
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             max_num_components = num_components[j];
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     if (max_num_components <= 0)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         max_num_components = 1;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (j = 0, i = 0; j < INCHI_NUM; j++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         if (num_components[j])
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             for (k1 = 0; k1 < TAUT_NUM; k1++)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 pINChISort[j][k1] =
+    // INCHI✔️❌:                     (INCHI_SORT *) inchi_calloc( max_num_components,
+    // INCHI✔️❌:                                                sizeof( pINChISort[0][0][0] ) );
+    // INCHI✔️❌:                 i += !pINChISort[j][k1]; /* number of failed allocatons */
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         else
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             for (k1 = 0; k1 < TAUT_NUM; k1++)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 pINChISort[j][k1] = NULL; /* keep BC happy */
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (i)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         ret = CT_OUT_OF_RAM;
+    // INCHI✔️❌:         goto exit_function;
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (j = 0; j < INCHI_NUM; j++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         if (!num_components[j])
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             continue;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         iINChI = j;
+    // INCHI✔️❌:
+    // INCHI✔️❌: #if ( OUTPUT_CONNECTED_METAL_ONLY == 1 ) /* test: output connected as the only one INChI */
+    // INCHI✔️❌:         if (INCHI_BAS == j && num_components[INCHI_REC])
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             j = INCHI_REC;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* j = INCHI_BAS; <- for debug only */
+    // INCHI✔️❌:         /* for only normal or disconnected coord compounds */
+    // INCHI✔️❌:         /* (j=0=INCHI_BAS => normal or disconnected, j=1=INCHI_REC => reconnected */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         for (k1 = 0; k1 < TAUT_NUM; k1++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             for (i = 0; i < num_components[j]; i++)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 for (k = 0; k < TAUT_NUM; k++)
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     pINChISort[j][k1][i].pINChI[k] = pINChI[j][i][k];
+    // INCHI✔️❌:                     pINChISort[j][k1][i].pINChI_Aux[k] = pINChI_Aux[j][i][k];
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 pINChISort[j][k1][i].ord_number = i;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌:         /* Sort component INChIs */
+    // INCHI✔️❌:         for (k1 = 0; k1 < TAUT_NUM; k1++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             switch (k1)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 case TAUT_NON:
+    // INCHI✔️❌:                     qsort( pINChISort[j][k1],
+    // INCHI✔️❌:                            num_components[j],
+    // INCHI✔️❌:                            sizeof( pINChISort[0][0][0] ),
+    // INCHI✔️❌:                            CompINChINonTaut2 );
+    // INCHI✔️❌:                     break;
+    // INCHI✔️❌:                 case TAUT_YES:
+    // INCHI✔️❌:                     qsort( pINChISort[j][k1],
+    // INCHI✔️❌:                            num_components[j],
+    // INCHI✔️❌:                            sizeof( pINChISort[0][0][0] ),
+    // INCHI✔️❌:                            CompINChITaut2 );
+    // INCHI✔️❌:                     break;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:
+    // INCHI✔️❌: #ifndef COMPILE_ANSI_ONLY
+    // INCHI✔️❌:         /* Find equivalent and wINChI display order;
+    // INCHI✔️❌:         use requested in ip->bCompareComponents comparison */
+    // INCHI✔️❌:
+    // INCHI✔️❌:         ret = SaveEquComponentsInfoAndSortOrder( iINChI, pINChISort[j],
+    // INCHI✔️❌:                                                   num_components,
+    // INCHI✔️❌:                                                   orig_inp_data, prep_inp_data,
+    // INCHI✔️❌: #if ( FIX_DALKE_BUGS == 1 )
+    // INCHI✔️❌:                                                   composite_norm_data ? composite_norm_data[j] : NULL,
+    // INCHI✔️❌: #else
+    // INCHI✔️❌:                                                   composite_norm_data[j],
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:                                                   ip->bCompareComponents );
+    // INCHI✔️❌:         if (RETURNED_ERROR( ret ))
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             ret = 0;
+    // INCHI✔️❌:             goto exit_function;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         else
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             ret = 1;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:     } /* j */
+    // INCHI✔️❌:
+    // INCHI✔️❌:     if (!( ip->bINChIOutputOptions & INCHI_OUT_PRINT_OPTIONS ))
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* Prepare InChI from the structures obtained by
+    // INCHI✔️❌:            reversing InChI for returning to the caller */
+    // INCHI✔️❌:         for (j = 0; j < INCHI_NUM; j++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (!num_components[j])
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 continue;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:
+    // INCHI✔️❌:             /* pINChI[iINCHI][iComponent][bTaut] */
+    // INCHI✔️❌:             /* j  = disconnected/connected */
+    // INCHI✔️❌:             /* k1 = sort order for Mobile or Fixed H */
+    // INCHI✔️❌:
+    // INCHI✔️❌:             k1 = TAUT_YES; /* in Mobile H order */
+    // INCHI✔️❌:             /* store components in Mobile H order */
+    // INCHI✔️❌:
+    // INCHI✔️❌:             for (i = 0; i < num_components[j] && i < max_num_components; i++) /* djb-rwth: fixing undefined index value / buffer overflow */
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:
+    // INCHI✔️❌:                 if (pINChISort[j][k1][i].pINChI[TAUT_NON] &&
+    // INCHI✔️❌:                     !pINChISort[j][k1][i].pINChI[TAUT_YES])
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     /* make sure Mobile-H is always present */
+    // INCHI✔️❌:                     for (k = 0; k < TAUT_NUM; k++)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         pINChI[j][i][k] = pINChISort[j][k1][i].pINChI[ALT_TAUT( k )];
+    // INCHI✔️❌:                         pINChI_Aux[j][i][k] = pINChISort[j][k1][i].pINChI_Aux[ALT_TAUT( k )];
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:                 else
+    // INCHI✔️❌:                 {
+    // INCHI✔️❌:                     for (k = 0; k < TAUT_NUM; k++)
+    // INCHI✔️❌:                     {
+    // INCHI✔️❌:                         pINChI[j][i][k] = pINChISort[j][k1][i].pINChI[k];
+    // INCHI✔️❌:                         pINChI_Aux[j][i][k] = pINChISort[j][k1][i].pINChI_Aux[k];
+    // INCHI✔️❌:                     }
+    // INCHI✔️❌:                 }
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:     else
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* Print InChI string(s) */
+    // INCHI✔️❌:         bINChIOutputOptions0 = ip->bINChIOutputOptions & ~INCHI_OUT_PRINT_OPTIONS;
+    // INCHI✔️❌:         bEmbedReconnected = ip->bINChIOutputOptions & INCHI_OUT_EMBED_REC;
+    // INCHI✔️❌:
+    // INCHI✔️❌:         for (i = 1; i <= 2; i++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             bCurOption = INCHI_OUT_PLAIN_TEXT;
+    // INCHI✔️❌:             if (i == 2)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 bCurOption = INCHI_OUT_PLAIN_TEXT_COMMENTS;
+    // INCHI✔️❌:                 /* continue; */
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             if (!( ip->bINChIOutputOptions & bCurOption ))
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 continue;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:
+    // INCHI✔️❌:             bINChIOutputOptionsCur = bINChIOutputOptions0 | bCurOption;
+    // INCHI✔️❌:             if (i == 1)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /* output INChI */
+    // INCHI✔️❌:                 bINChIOutputOptionsCur |= bEmbedReconnected;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             else if (i == 2)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /* output annotation */
+    // INCHI✔️❌:                 inchi_ios_print( out_file, "\n==== %s ====\n", szAnnHdr );
+    // INCHI✔️❌:                 ITRACE_( "\n==== %s ====\n", szAnnHdr );
+    // INCHI✔️❌:                 bINChIOutputOptionsCur |= bEmbedReconnected;
+    // INCHI✔️❌:                 bINChIOutputOptionsCur &= ~INCHI_OUT_TABBED_OUTPUT;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:             else
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 continue;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:
+    // INCHI✔️❌: #if 0 /*^^^#ifdef TARGET_LIB_FOR_WINCHI*/
+    // INCHI✔️❌:             inchi_ios_free_str( out_file );
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:             INCHI_basic_or_INCHI_reconnected = INCHI_BAS;
+    // INCHI✔️❌:
+    // INCHI✔️❌:             ret2 = OutputINChI2( pCG,
+    // INCHI✔️❌:                                  strbuf,
+    // INCHI✔️❌:                                  pINChISort,
+    // INCHI✔️❌:                                  INCHI_basic_or_INCHI_reconnected,
+    // INCHI✔️❌:                                  orig_inp_data,
+    // INCHI✔️❌:                                  pOrigStruct,
+    // INCHI✔️❌:                                  ip,
+    // INCHI✔️❌:                                  bDisconnectedCoord,
+    // INCHI✔️❌:                                  OUT_TN,
+    // INCHI✔️❌:                                  bINChIOutputOptionsCur,
+    // INCHI✔️❌:                                  num_components,
+    // INCHI✔️❌:                                  num_non_taut,
+    // INCHI✔️❌:                                  num_taut,
+    // INCHI✔️❌:                                  out_file,
+    // INCHI✔️❌:                                  log_file,
+    // INCHI✔️❌:                                  num_inp,
+    // INCHI✔️❌:                                  pSortPrintINChIFlags,
+    // INCHI✔️❌:                                  save_opt_bits );
+    // INCHI✔️❌:
+    // INCHI✔️❌:             ret &= ret2;
+    // INCHI✔️❌:
+    // INCHI✔️❌: #ifdef TARGET_LIB_FOR_WINCHI
+    // INCHI✔️❌:             /* always calculate InChIKey */
+    // INCHI✔️❌:             winchi_calc_inchikey( ret, &ikflag, ip, out_file, log_file );
+    // INCHI✔️❌:             /*push_to_winchi_text_window( out_file );
+    // INCHI✔️❌:             inchi_ios_flush( out_file );*/
+    // INCHI✔️❌:
+    // INCHI✔️❌: #endif
+    // INCHI✔️❌:
+    // INCHI✔️❌:             if (!ret)
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 break;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         } /* i */
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌: exit_function:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     for (j = 0; j < INCHI_NUM; j++)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         for (k1 = 0; k1 < TAUT_NUM; k1++) /* djb-rwth: removing redundant code */
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (pINChISort[j][k1])
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 inchi_free( pINChISort[j][k1] );
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:
+    // INCHI✔️❌:     ret = ret ? 0 : _IS_FATAL;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return ret;
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: SortAndPrintINChI
+
+    // VERBATIM SOURCE FRAGMENT: runichi4.c251..256
+    // #ifndef COMPILE_ANSI_ONLY
+    //         /* Find equivalent and wINChI display order;
+    //         use requested in ip->bCompareComponents comparison */
+    //
+    //         ret = SaveEquComponentsInfoAndSortOrder( iINChI, pINChISort[j],
+    //                                                   num_components,
+    //                                                   orig_inp_data, prep_inp_data,
+    // INCHI✔️✔️: The active ANSI body never reads prepared data. The old
+    // source-shaped entry retains its ignored argument; this private kernel
+    // needs none. No admission/model/copy/fake pointer or algorithm fork.
+    // O(1) dead transport, no allocation; whole output cost stays OPEN in
+    // INCHI-PERF-INACTIVE-PREPARED-OUTPUT.
     let disconnected_coordinates =
         i32::from(taut_flags_done[0] & u64::from(TG_FLAG_DISCONNECT_COORD_DONE) != 0);
     for representation in 0..INCHI_NUM as usize {
@@ -516,7 +948,12 @@ pub(crate) fn SortAndPrintINChI(
         if component_counts[representation] != 0 {
             for tautomer in 0..TAUT_NUM as usize {
                 let index = representation * TAUT_NUM as usize + tautomer;
-                match heap.allocate(vec![INCHI_SORT::default(); allocation_len]) {
+                // INCHI✔️❗: Fallible source calloc; every failed row still counts.
+                match inchi_calloc::<INCHI_SORT>(
+                    heap,
+                    allocation_len as u64,
+                    std::mem::size_of::<INCHI_SORT>() as u64,
+                ) {
                     Ok(pointer) => sort_rows[index] = pointer,
                     Err(SourceHeapError::AllocationFailed) => {
                         allocation_failures = allocation_failures.wrapping_add(1);
@@ -534,7 +971,6 @@ pub(crate) fn SortAndPrintINChI(
         }
     }
 
-    let mut sort_table = SourceMutPointer::<SourceMutPointer<INCHI_SORT>>::null();
     let execution = if allocation_failures != 0 {
         Ok(CT_OUT_OF_RAM)
     } else {
@@ -547,46 +983,38 @@ pub(crate) fn SortAndPrintINChI(
                 }
                 let count = usize::try_from(component_count)
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let source_inchi = heap
-                    .slice(inchi_components[representation].as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                let source_aux = heap
-                    .slice(aux_components[representation].as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-
+                // INCHI✔️❗: Native runichi4.c227..259 fills/sorts fresh rows directly.
+                // Preserve prior typed input-prefix errors before row admission.
+                // INCHI-PERF-SORT-ROW-VIEWS: no staging Vecs/copyback; costs OPEN.
+                let _ = component_rows[representation].prefix(heap, count)?;
                 for tautomer_order in 0..TAUT_NUM as usize {
                     let row_pointer =
                         sort_rows[representation * TAUT_NUM as usize + tautomer_order];
-                    let row = heap
-                        .slice_mut(row_pointer)?
-                        .get_mut(..count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    for component in 0..count {
-                        for tautomer in 0..TAUT_NUM as usize {
-                            row[component].pINChI[tautomer] = source_inchi[component][tautomer];
-                            row[component].pINChI_Aux[tautomer] = source_aux[component][tautomer];
+                    heap.with_slice_mut_and_heap(row_pointer, |row, heap| {
+                        let row = row.get_mut(..count)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        let (source_inchi, source_aux) =
+                            component_rows[representation].prefix(heap, count)?;
+                        for component in 0..count {
+                            for tautomer in 0..TAUT_NUM as usize {
+                                row[component].pINChI[tautomer] = source_inchi[component][tautomer];
+                                row[component].pINChI_Aux[tautomer] = source_aux[component][tautomer];
+                            }
+                            row[component].ord_number = component as i16;
                         }
-                        row[component].ord_number = component as i16;
-                    }
+                        Ok(())
+                    })?;
                 }
-
                 for tautomer_order in 0..TAUT_NUM as usize {
                     let row_pointer =
                         sort_rows[representation * TAUT_NUM as usize + tautomer_order];
-                    let mut row = heap
-                        .slice(row_pointer.as_const())?
-                        .get(..count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec();
-                    sort_inchi_rows(heap, &mut row, tautomer_order == TAUT_YES as usize)?;
-                    heap.slice_mut(row_pointer)?
-                        .get_mut(..count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .clone_from_slice(&row);
+                    // Fresh rows are disjoint from all preexisting comparator inputs.
+                    // The canonical comparator never heap-reads the held row ID.
+                    heap.with_slice_mut_and_heap_mut(row_pointer, |row, heap| {
+                        let row = row.get_mut(..count)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        sort_inchi_rows(heap, row, tautomer_order == TAUT_YES as usize)
+                    })?;
                 }
             }
 
@@ -600,52 +1028,63 @@ pub(crate) fn SortAndPrintINChI(
                         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
                     let mobile_pointer =
                         sort_rows[representation * TAUT_NUM as usize + TAUT_YES as usize];
-                    let mobile_rows = heap
-                        .slice(mobile_pointer.as_const())?
-                        .get(..count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec();
-                    let mut reordered_inchi = heap
-                        .slice(inchi_components[representation].as_const())?
-                        .get(..count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec();
-                    let mut reordered_aux = heap
-                        .slice(aux_components[representation].as_const())?
-                        .get(..count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec();
-                    for component in 0..count {
-                        let swap_tautomer_slots = !mobile_rows[component].pINChI[TAUT_NON as usize]
-                            .is_null()
-                            && mobile_rows[component].pINChI[TAUT_YES as usize].is_null();
-                        for tautomer in 0..TAUT_NUM as usize {
-                            let source_tautomer = if swap_tautomer_slots {
-                                TAUT_NUM as usize - 1 - tautomer
-                            } else {
-                                tautomer
-                            };
-                            reordered_inchi[component][tautomer] =
-                                mobile_rows[component].pINChI[source_tautomer];
-                            reordered_aux[component][tautomer] =
-                                mobile_rows[component].pINChI_Aux[source_tautomer];
+                    // Native runichi4.c291..314 publishes each pointer pair directly.
+                    // Preserve previous mobile/input/aux typed prefix error ordering.
+                    let _ = heap.slice(mobile_pointer.as_const())?
+                        .get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let _ = component_rows[representation].prefix(heap, count)?;
+                    // Native writes the supplied row slots. One publication
+                    // loop serves both original pointers and actual local
+                    // arrays; no copyback, allocation or fake row identity.
+                    // INCHI✔️❗: Same O(count) writes; C522 constants OPEN.
+                    let publish = |reordered_inchi: &mut [PINChI2],
+                                   reordered_aux: &mut [PINChI_Aux2],
+                                   mobile_rows: Option<&mut [INCHI_SORT]>| {
+                            let mobile_rows = mobile_rows.ok_or(SourceHeapError::NullPointer)?
+                                .get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            let reordered_inchi = reordered_inchi.get_mut(..count)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            let reordered_aux = reordered_aux.get_mut(..count)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            for component in 0..count {
+                                let swap_tautomer_slots = !mobile_rows[component].pINChI[TAUT_NON as usize]
+                                    .is_null()
+                                    && mobile_rows[component].pINChI[TAUT_YES as usize].is_null();
+                                for tautomer in 0..TAUT_NUM as usize {
+                                    let source_tautomer = if swap_tautomer_slots {
+                                        TAUT_NUM as usize - 1 - tautomer
+                                    } else {
+                                        tautomer
+                                    };
+                                    reordered_inchi[component][tautomer] =
+                                        mobile_rows[component].pINChI[source_tautomer];
+                                    reordered_aux[component][tautomer] =
+                                        mobile_rows[component].pINChI_Aux[source_tautomer];
+                                }
+                            }
+                            Ok(())
+                        };
+                    match &mut component_rows[representation] {
+                        SourceComponentRowPair::Pointers { inchi, aux } => {
+                            heap.with_two_slices_mut_and_optional_third(
+                                *inchi, *aux, Some(mobile_pointer), publish,
+                            )?;
+                        }
+                        SourceComponentRowPair::Borrowed { inchi, aux } => {
+                            publish(inchi, aux, Some(heap.slice_mut(mobile_pointer)?))?;
                         }
                     }
-                    heap.slice_mut(inchi_components[representation])?
-                        .get_mut(..count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .clone_from_slice(&reordered_inchi);
-                    heap.slice_mut(aux_components[representation])?
-                        .get_mut(..count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .clone_from_slice(&reordered_aux);
                 }
             } else {
                 let base_options =
                     input_parameters.bINChIOutputOptions & !(INCHI_OUT_PRINT_OPTIONS as i32);
                 let embed_reconnected =
                     input_parameters.bINChIOutputOptions & INCHI_OUT_EMBED_REC as i32;
-                sort_table = heap.allocate_model_storage(sort_rows.to_vec())?;
+                // Native runichi4.c123:
+                //     INCHI_SORT *pINChISort[INCHI_NUM][TAUT_NUM];
+                // INCHI✔️❗: Borrow the actual four handles through output and
+                // both recursive passes. No Vec/root/extra allocation/free.
+                // O(1) scratch; whole formatter/arena costs remain OPEN.
                 for pass in 1..=2 {
                     let current_option = if pass == 1 {
                         INCHI_OUT_PLAIN_TEXT as i32
@@ -657,42 +1096,35 @@ pub(crate) fn SortAndPrintINChI(
                     }
                     let mut current_options = base_options | current_option | embed_reconnected;
                     if pass == 2 {
-                        let format = heap.allocate_model_storage(
-                            b"\n==== %s ====\n\0"
-                                .iter()
-                                .map(|byte| *byte as i8)
-                                .collect(),
-                        )?;
-                        let header = heap.allocate_model_storage(
-                            b"InChI ANNOTATED CONTENTS\0"
-                                .iter()
-                                .map(|byte| *byte as i8)
-                                .collect(),
-                        )?;
-                        let print_result = inchi_ios_print(
+                        let format = crate::source::base::ichi_io::SourceFormat::Bytes(bytemuck::cast_slice(b"\n==== %s ====\n\0"));
+                        // VERBATIM SOURCE FRAGMENT: runichi4.c129
+                        //     static const char szAnnHdr[] = "InChI ANNOTATED CONTENTS";
+                        // VERBATIM SOURCE FRAGMENT: runichi4.c345
+                        //                 inchi_ios_print( out_file, "\n==== %s ====\n", szAnnHdr );
+                        // INCHI✔️❗: Static header feeds the existing borrowed-string
+                        // cursor and ONE canonical printer; no caller allocation/copy/free.
+                        // O(header length), O(1) transport; formatter/whole-call cost OPEN.
+                        crate::source::base::ichi_io::inchi_ios_print_format_strings(
                             heap,
                             Some(out_file),
                             stdout,
-                            format.as_const(),
-                            &SourceVaList {
-                                arguments: vec![SourceFormatArgument::Bytes(header.as_const())],
-                                ..SourceVaList::default()
+                            format,
+                            &crate::source::base::ichi_io::SourcePrintArguments {
+                                arguments: &[],
+                                position: 0,
                             },
-                        );
-                        let format_free = heap.free(format);
-                        let header_free = heap.free(header);
-                        print_result?;
-                        format_free?;
-                        header_free?;
+                            &[Some(crate::source::base::ichi_io::SourceFormat::Bytes(
+                                bytemuck::cast_slice(b"InChI ANNOTATED CONTENTS\0"),
+                            ))],
+                        )?;
                         current_options &= !(INCHI_OUT_TABBED_OUTPUT as i32);
                     }
-                    let output_result = OutputINChI2(
+                    let output_result = output_inchi2_sort_table(
                         heap,
-                        canonical_globals,
                         string_buffer.as_deref_mut(),
-                        sort_table,
+                        OutputSortTable::Borrowed(&sort_rows),
                         INCHI_BAS as i32,
-                        original_atom_data,
+                        &original_atom_data,
                         original_structure,
                         input_parameters,
                         disconnected_coordinates,
@@ -719,11 +1151,6 @@ pub(crate) fn SortAndPrintINChI(
     };
 
     let mut cleanup_error = None;
-    if !sort_table.is_null() {
-        if let Err(error) = heap.free(sort_table) {
-            cleanup_error = Some(error);
-        }
-    }
     for pointer in sort_rows {
         if !pointer.is_null() {
             if let Err(error) = heap.free(pointer) {
@@ -840,36 +1267,40 @@ pub(crate) fn FreeINChIArrays(
         0
     };
     if !p_inchi.is_null() {
-        let mut rows = heap
-            .slice(p_inchi.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        for row in &mut rows {
-            for owner in row.iter_mut().take(TAUT_NUM as usize) {
-                Free_INChI(heap, owner)?;
+        // INCHI✔️❗: release and commit each source slot before the next call.
+        // O(count) time/O(1) scratch, no snapshot allocation; arena cost OPEN.
+        for component in 0..count {
+            for representation in 0..TAUT_NUM as usize {
+                let original = heap
+                    .slice(p_inchi.as_const())?
+                    .get(component)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?[representation];
+                let mut owner = original;
+                Free_INChI(heap, &mut owner)?;
+                if owner != original {
+                    heap.slice_mut(p_inchi)?
+                        .get_mut(component)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?[representation] = owner;
+                }
             }
         }
-        heap.slice_mut(p_inchi)?
-            .get_mut(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&rows);
     }
     if !p_inchi_aux.is_null() {
-        let mut rows = heap
-            .slice(p_inchi_aux.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        for row in &mut rows {
-            for owner in row.iter_mut().take(TAUT_NUM as usize) {
-                Free_INChI_Aux(heap, owner)?;
+        for component in 0..count {
+            for representation in 0..TAUT_NUM as usize {
+                let original = heap
+                    .slice(p_inchi_aux.as_const())?
+                    .get(component)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?[representation];
+                let mut owner = original;
+                Free_INChI_Aux(heap, &mut owner)?;
+                if owner != original {
+                    heap.slice_mut(p_inchi_aux)?
+                        .get_mut(component)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?[representation] = owner;
+                }
             }
         }
-        heap.slice_mut(p_inchi_aux)?
-            .get_mut(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&rows);
     }
     Ok(())
 }
@@ -930,18 +1361,15 @@ pub(crate) fn GetProcessingWarningsOneInChI(
 
     let mut ambiguous_stereo_atoms = 0_i32;
     let mut ambiguous_stereo_bonds = 0_i32;
-    if !input_normalized_data.at.is_null() {
-        let count = if p_inchi.nNumberOfAtoms > 0 {
-            usize::try_from(p_inchi.nNumberOfAtoms)
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-        } else {
-            0
-        };
-        let atoms = heap
-            .slice(input_normalized_data.at.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        for atom in atoms {
+    if !input_normalized_data.at.is_null() && p_inchi.nNumberOfAtoms > 0 {
+        // INCHI✔️❗: Nonpositive source bounds skip even nonnull storage.
+        // O(atoms + unchanged warning work), O(1), no allocation/copy.
+        // Necessary checked access/Result whole-call cost remains OPEN.
+        let atoms = heap.slice(input_normalized_data.at.as_const())?;
+        for index in 0..p_inchi.nNumberOfAtoms {
+            let atom = atoms
+                .get(index as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let ambiguity = i32::from(atom.bAmbiguousStereo);
             if ambiguity & (AMBIGUOUS_STEREO_ATOM as i32 | AMBIGUOUS_STEREO_ATOM_ISO as i32) != 0 {
                 ambiguous_stereo_atoms += 1;
@@ -1104,31 +1532,52 @@ pub(crate) fn TreatErrorsInCreateOneComponentINChI(
     // INCHI✔️❌: Both problem-file branches and the !TARGET_API_LIB timing record are inactive.
     // INCHI✔️❌: SourceHeap-backed formatting adds temporary allocations versus direct C varargs formatting.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: TreatErrorsInCreateOneComponentINChI
+    // INCHI✔️❗: Append source ErrMsg through existing byte-message kernel,
+    // then pass original varargs slots to the canonical eprint formatter.
+    // Error text admission occurs only when the selected printer reads it.
+    // No message Vec/String/arena or decimal staging; whole-call cost OPEN.
+    use crate::source::base::ichi_io::{SourceFormat, SourcePrintArguments};
     if structure_data.nErrorCode != 0 {
-        let error_message = ErrMsg(structure_data.nErrorCode);
-        let mut c_error_message = error_message
-            .bytes()
-            .map(|byte| byte as i8)
-            .collect::<Vec<_>>();
-        c_error_message.push(0);
-        AddErrorMessage(
+        let mut scratch = [0_u8; 64];
+        let error_message =
+            crate::source::base::ichierr::err_msg_text(structure_data.nErrorCode, &mut scratch);
+        crate::source::base::ichierr::add_error_message_bytes(
             Some(&mut structure_data.pStrErrStruct),
-            Some(&c_error_message),
+            error_message.as_bytes(),
         )?;
-
-        let error_text = source_array_c_bytes(&structure_data.pStrErrStruct)?;
-        let mut log = b"Error ".to_vec();
-        log.extend_from_slice(structure_data.nErrorCode.to_string().as_bytes());
-        log.extend_from_slice(b" (");
-        log.extend_from_slice(&error_text);
-        log.extend_from_slice(b") structure #");
-        log.extend_from_slice(input_structure_number.to_string().as_bytes());
-        log.extend_from_slice(b" component ");
-        log.extend_from_slice(component_index.wrapping_add(1).to_string().as_bytes());
-        log.push(b'.');
-        log.extend_from_slice(&sdf_label_value(heap, input_parameters)?);
-        log.push(b'\n');
-        eprint_bytes(heap, log_file, &log)?;
+        let suffix =
+            crate::source::base::runichi2::sdf_label_value_formats(heap, input_parameters)?;
+        let null = || SourceFormatArgument::Bytes(SourceConstPointer::null());
+        let _ = crate::source::base::ichi_io::inchi_ios_eprint_format_strings(
+            heap,
+            log_file,
+            SourceFormat::Bytes(bytemuck::cast_slice(
+                b"Error %d (%s) structure #%ld component %d.%s%s%s%s\n\0",
+            )),
+            &SourcePrintArguments {
+                arguments: &[
+                    SourceFormatArgument::Signed(i64::from(structure_data.nErrorCode)),
+                    null(),
+                    SourceFormatArgument::Signed(input_structure_number),
+                    SourceFormatArgument::Signed(i64::from(component_index.wrapping_add(1))),
+                    null(),
+                    null(),
+                    null(),
+                    null(),
+                ],
+                position: 0,
+            },
+            &[
+                None,
+                Some(SourceFormat::Bytes(&structure_data.pStrErrStruct)),
+                None,
+                None,
+                Some(suffix[0]),
+                Some(suffix[1]),
+                Some(suffix[2]),
+                Some(suffix[3]),
+            ],
+        )?;
 
         structure_data.nErrorType = if structure_data.nErrorCode == CT_OUT_OF_RAM
             || structure_data.nErrorCode == CT_USER_QUIT_ERR
@@ -1147,6 +1596,29 @@ pub(crate) fn TreatCreateINChIWarning(
     structure_data: &mut STRUCT_DATA,
     input_parameters: &INPUT_PARMS,
     _original_atom_data: &ORIG_ATOM_DATA,
+    input_structure_number: i64,
+    input_file: Option<&mut INCHI_IOSTREAM>,
+    log_file: Option<&mut INCHI_IOSTREAM>,
+    _output_file: Option<&mut INCHI_IOSTREAM>,
+    problem_file: Option<&mut INCHI_IOSTREAM>,
+) -> Result<i32, SourceHeapError> {
+    treat_create_inchi_warning(
+        heap,
+        structure_data,
+        input_parameters,
+        input_structure_number,
+        input_file,
+        log_file,
+        _output_file,
+        problem_file,
+    )
+}
+
+#[rustfmt::skip]
+pub(super) fn treat_create_inchi_warning(
+    heap: &mut SourceHeap,
+    structure_data: &mut STRUCT_DATA,
+    input_parameters: &INPUT_PARMS,
     input_structure_number: i64,
     input_file: Option<&mut INCHI_IOSTREAM>,
     log_file: Option<&mut INCHI_IOSTREAM>,
@@ -1256,16 +1728,30 @@ pub(crate) fn TreatCreateINChIWarning(
     // INCHI✔️❌: SourceHeap-backed formatting adds temporary allocations versus direct C varargs formatting.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: TreatCreateINChIWarning
 
+    // INCHI✔️❗: Original-data is never read in the selected release/API
+    // configuration; no default object or pointer admission replaces it.
+    // Same source gate/format/slots and state publication order;
+    // existing canonical formatter borrows error array and live SDF pointers.
+    // No warning/suffix/message staging; checked/formatter cost remains OPEN.
+    use crate::source::base::ichi_io::{SourceFormat, SourcePrintArguments};
     if structure_data.nErrorCode == 0 && structure_data.pStrErrStruct[0] != 0 {
-        let warning_text = source_array_c_bytes(&structure_data.pStrErrStruct)?;
-        let mut log = b"Warning (".to_vec();
-        log.extend_from_slice(&warning_text);
-        log.extend_from_slice(b") structure #");
-        log.extend_from_slice(input_structure_number.to_string().as_bytes());
-        log.push(b'.');
-        log.extend_from_slice(&sdf_label_value(heap, input_parameters)?);
-        log.push(b'\n');
-        eprint_bytes(heap, log_file, &log)?;
+        let suffix = crate::source::base::runichi2::sdf_label_value_formats(heap, input_parameters)?;
+        let null = || SourceFormatArgument::Bytes(SourceConstPointer::null());
+        let _ = crate::source::base::ichi_io::inchi_ios_eprint_format_strings(
+            heap, log_file,
+            SourceFormat::Bytes(bytemuck::cast_slice(b"Warning (%s) structure #%ld.%s%s%s%s\n\0")),
+            &SourcePrintArguments {
+                arguments: &[
+                    null(), SourceFormatArgument::Signed(input_structure_number),
+                    null(), null(), null(), null(),
+                ],
+                position: 0,
+            },
+            &[
+                Some(SourceFormat::Bytes(&structure_data.pStrErrStruct)), None,
+                Some(suffix[0]), Some(suffix[1]), Some(suffix[2]), Some(suffix[3]),
+            ],
+        )?;
         structure_data.nErrorType = _IS_WARNING as i32;
 
         let problem_output = problem_file

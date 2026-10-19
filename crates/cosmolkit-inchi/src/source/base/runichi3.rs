@@ -5,10 +5,10 @@ use crate::source::base::ichister::ReconcileAllCmlBondParities;
 use crate::source::base::strutil::{
     CompAtomData_GetNumMapping, DisconnectMetals, DisconnectSalts, MarkDisconnectedComponents,
     bMayDisconnectMetals, bNumHeterAtomHasIsotopicH, fix_odd_things, imat_free, imat_new,
-    post_fix_odd_things, remove_ion_pairs, subgraf_free, subgraf_new,
-    subgraf_pathfinder_collect_all, subgraf_pathfinder_free, subgraf_pathfinder_new,
-    subgraf_pathfinder_run,
+    post_fix_odd_things, remove_ion_pairs, subgraf_free, subgraf_new, subgraf_pathfinder_free,
+    subgraf_pathfinder_new, subgraf_pathfinder_run,
 };
+use crate::source::base::util::{SourceInputArray, SourceInputArrayMut};
 use crate::source::base::util::{
     detect_unusual_el_valence, inchi_calloc, inchi_free, is_el_a_metal, is_ilist_inside,
     is_in_the_ilist, mystrncpy_slice,
@@ -207,9 +207,16 @@ fn add_preprocess_message(
     structure_data: &mut STRUCT_DATA,
     message: &[u8],
 ) -> Result<(), SourceHeapError> {
-    let mut c_message = message.iter().map(|byte| *byte as i8).collect::<Vec<_>>();
-    c_message.push(0);
-    AddErrorMessage(Some(&mut structure_data.pStrErrStruct), Some(&c_message))?;
+    // INCHI source runichi3.c502 and ichierr.h167:
+    //         AddErrorMessage( sd->pStrErrStruct, "Out of RAM" );
+    // #define WarningMessage AddErrorMessage
+    // INCHI✔️❗: Existing borrowed-message entrypoint supplies the helper's
+    // implicit final NUL, preserving first-NUL/empty/duplicate/error order.
+    // O(reached text), O(1) scratch, no Vec/copy; shared whole-call cost OPEN.
+    crate::source::base::ichierr::add_error_message_bytes(
+        Some(&mut structure_data.pStrErrStruct),
+        message,
+    )?;
     Ok(())
 }
 
@@ -217,19 +224,35 @@ fn mask_connected_parities(
     heap: &mut SourceHeap,
     data: &ORIG_ATOM_DATA,
 ) -> Result<(), SourceHeapError> {
+    // BEGIN INCHI C REGION: runichi3.c:684..696 mask_connected_parities
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 /* Remove "parity undefined in disconnected structure" flag from reconnected structure */
+    // INCHI✔️❗:                 int k, m; /* djb-rwth: removing redundant variables */
+    // INCHI✔️❗:                 inp_ATOM *at = ( prep_inp_data + 1 )->at;
+    // INCHI✔️❗:                 int       num_at = ( prep_inp_data + 1 )->num_inp_atoms;
+    // INCHI✔️❗:                 for (k = 0; k < num_at; k++)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     for (m = 0; m < MAX_NUM_STEREO_BONDS && at[k].sb_parity[m]; m++) /* djb-rwth: removing redundant code */
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         at[k].sb_parity[m] &= SB_PARITY_MASK;
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:             }
+    // END INCHI C REGION: mask_connected_parities
+    // INCHI✔️❗: Nonpositive count skips atom storage; preserve the existing
+    // positive-null MissingAllocation error. O(N) reached writes, O(1) scratch,
+    // no clone/allocation; checked slice cost remains independently open.
+    if data.num_inp_atoms <= 0 {
+        return Ok(());
+    }
     if data.at.is_null() {
-        if data.num_inp_atoms <= 0 {
-            return Ok(());
-        }
         return Err(SourceHeapError::MissingAllocation);
     }
-    let atom_count =
-        usize::try_from(data.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms = heap
-        .slice_mut(data.at)?
-        .get_mut(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for atom in atoms {
+    let atoms = heap.slice_mut(data.at)?;
+    for index in 0..data.num_inp_atoms {
+        let atom = atoms
+            .get_mut(index as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         for parity in atom
             .sb_parity
             .iter_mut()
@@ -246,13 +269,37 @@ fn restore_disconnected_parities(
     heap: &mut SourceHeap,
     data: &ORIG_ATOM_DATA,
 ) -> Result<(), SourceHeapError> {
-    let atom_count =
-        usize::try_from(data.num_inp_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atoms = heap
-        .slice_mut(data.at)?
-        .get_mut(..atom_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for atom in atoms {
+    // BEGIN INCHI C REGION: runichi3.c:730..747 restore_disconnected_parities
+    // INCHI✔️❗:
+    // INCHI✔️❗:             {
+    // INCHI✔️❗:                 /* Set parities for the disconnected structure */
+    // INCHI✔️❗:                 int k, m, p;
+    // INCHI✔️❗:                 inp_ATOM *at = ( prep_inp_data )->at;
+    // INCHI✔️❗:                 int       num_at = ( prep_inp_data )->num_inp_atoms;
+    // INCHI✔️❗:                 for (k = 0; k < num_at; k++)
+    // INCHI✔️❗:                 {
+    // INCHI✔️❗:                     for (m = 0; m < MAX_NUM_STEREO_BONDS && ( p = at[k].sb_parity[m] ); m++)
+    // INCHI✔️❗:                     {
+    // INCHI✔️❗:                         if (p & SB_PARITY_FLAG)
+    // INCHI✔️❗:                         {
+    // INCHI✔️❗:                             at[k].sb_parity[m] = ( p >> SB_PARITY_SHFT ) & SB_PARITY_MASK;
+    // INCHI✔️❗:                         }
+    // INCHI✔️❗:                     }
+    // INCHI✔️❗:                 }
+    // INCHI✔️❗:             }
+    // INCHI✔️❗:
+    // END INCHI C REGION: restore_disconnected_parities
+    // INCHI✔️❗: The native signed count gates every array access. Bounds
+    // are checked per reached atom, retaining preceding parity writes on error.
+    // O(N), O(1) scratch, no allocation; checked slice cost remains open.
+    if data.num_inp_atoms <= 0 {
+        return Ok(());
+    }
+    let atoms = heap.slice_mut(data.at)?;
+    for index in 0..data.num_inp_atoms {
+        let atom = atoms
+            .get_mut(index as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         for parity in atom
             .sb_parity
             .iter_mut()
@@ -276,6 +323,22 @@ pub(crate) fn PreprocessOneStructure(
     input_parameters: &INPUT_PARMS,
     original: &mut ORIG_ATOM_DATA,
     prepared: &mut [ORIG_ATOM_DATA],
+) -> Result<i32, SourceHeapError> {
+    preprocess_records(
+        heap,
+        structure_data,
+        input_parameters,
+        SourceInputArrayMut::Borrowed(std::slice::from_mut(original)),
+        SourceInputArrayMut::Borrowed(prepared),
+    )
+}
+
+pub(super) fn preprocess_records(
+    heap: &mut SourceHeap,
+    structure_data: &mut STRUCT_DATA,
+    input_parameters: &INPUT_PARMS,
+    mut original: SourceInputArrayMut<'_, ORIG_ATOM_DATA>,
+    mut prepared: SourceInputArrayMut<'_, ORIG_ATOM_DATA>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi3.c:488 PreprocessOneStructure
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: PreprocessOneStructure
@@ -641,16 +704,18 @@ pub(crate) fn PreprocessOneStructure(
     // INCHI✔️❌: Debug-only EXTR_* blocks and FixAdjacentRadicals are inactive.
     // INCHI✔️❌: SourceHeap deep-copy/allocation modeling retains known overhead in completed callees.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: PreprocessOneStructure
+    // INCHI✔️❗: Actual records remain live across phases; only reached
+    // single-record workers borrow one owner, restored before another path.
+    // No whole-record snapshot/model/copyback; alias-sensitive duplication
+    // shares its canonical kernel. C584 checked/loan costs remain OPEN.
     let base = INCHI_BAS as usize;
     let reconnected = INCHI_REC as usize;
-    let Some(_) = prepared.first() else {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    };
+    prepared.at_index(heap, 0)?;
     let taut_flags: INCHI_MODE = 0;
     let mut taut_flags_done: INCHI_MODE = 0;
 
     'processing: {
-        if OrigAtData_Duplicate(heap, &mut prepared[0], original)? < 0 {
+        if orig_at_data_duplicate_targets(heap, prepared.reborrow(), original.as_input())? < 0 {
             add_preprocess_message(structure_data, b"Out of RAM")?;
             structure_data.nStructReadError = 99;
             structure_data.nErrorType = _IS_FATAL as i32;
@@ -658,11 +723,11 @@ pub(crate) fn PreprocessOneStructure(
         }
 
         let odd_changes = {
-            let atom_count = prepared[0].num_inp_atoms;
-            let atoms = if prepared[0].at.is_null() && atom_count <= 0 {
+            let atom_count = prepared.at_index(heap, 0)?.num_inp_atoms;
+            let atoms = if prepared.at_index(heap, 0)?.at.is_null() && atom_count <= 0 {
                 &mut [][..]
             } else {
-                heap.slice_mut(prepared[0].at)?
+                heap.slice_mut(prepared.at_index(heap, 0)?.at)?
             };
             fix_odd_things(
                 atom_count,
@@ -682,34 +747,36 @@ pub(crate) fn PreprocessOneStructure(
         }
 
         if input_parameters.bTautFlags & TG_FLAG_DISCONNECT_SALTS as INCHI_MODE != 0 {
-            prepared[0].bDisconnectSalts =
-                i32::from(DisconnectSalts(heap, &mut prepared[0], 0)? > 0);
+            prepared.at_index_mut(heap, 0)?.bDisconnectSalts = i32::from(
+                prepared
+                    .with_index_mut(heap, 0, |record, heap| DisconnectSalts(heap, record, 0))?
+                    > 0,
+            );
         } else {
-            prepared[0].bDisconnectSalts = 0;
+            prepared.at_index_mut(heap, 0)?.bDisconnectSalts = 0;
         }
 
         if input_parameters.bTautFlags & TG_FLAG_DISCONNECT_COORD as INCHI_MODE != 0 {
             let check_valence = i32::from(
                 input_parameters.bTautFlags & TG_FLAG_CHECK_VALENCE_COORD as INCHI_MODE != 0,
             );
-            let _ = bMayDisconnectMetals(
-                heap,
-                &mut prepared[0],
-                check_valence,
-                Some(&mut taut_flags_done),
-            )?;
+            let _ = prepared.with_index_mut(heap, 0, |record, heap| {
+                bMayDisconnectMetals(heap, record, check_valence, Some(&mut taut_flags_done))
+            })?;
             structure_data.bTautFlagsDone[base] |= taut_flags_done;
         } else {
-            prepared[0].bDisconnectCoord = 0;
+            prepared.at_index_mut(heap, 0)?.bDisconnectCoord = 0;
         }
-        original.bDisconnectSalts = prepared[0].bDisconnectSalts;
-        original.bDisconnectCoord = prepared[0].bDisconnectCoord;
+        original.at_index_mut(heap, 0)?.bDisconnectSalts =
+            prepared.at_index(heap, 0)?.bDisconnectSalts;
+        original.at_index_mut(heap, 0)?.bDisconnectCoord =
+            prepared.at_index(heap, 0)?.bDisconnectCoord;
 
         let salt_changes = if input_parameters.bTautFlags & TG_FLAG_DISCONNECT_SALTS as INCHI_MODE
             != 0
-            && prepared[0].bDisconnectSalts != 0
+            && prepared.at_index(heap, 0)?.bDisconnectSalts != 0
         {
-            DisconnectSalts(heap, &mut prepared[0], 1)?
+            prepared.with_index_mut(heap, 0, |record, heap| DisconnectSalts(heap, record, 1))?
         } else {
             0
         };
@@ -721,18 +788,41 @@ pub(crate) fn PreprocessOneStructure(
             if structure_data.nErrorType < _IS_WARNING as i32 {
                 structure_data.nErrorType = _IS_WARNING as i32;
             }
-            let parity_status =
-                ReconcileAllCmlBondParities(heap, prepared[0].at, prepared[0].num_inp_atoms, 0)?;
+            let parity_status = ReconcileAllCmlBondParities(
+                heap,
+                prepared.at_index(heap, 0)?.at,
+                prepared.at_index(heap, 0)?.num_inp_atoms,
+                0,
+            )?;
             if parity_status != 0 {
+                // VERBATIM SOURCE FRAGMENT: runichi3.c602..605
+                //             char szErrCode[16];
+                //             sprintf(szErrCode, "%d", i);
+                //             AddErrorMessage( sd->pStrErrStruct, "0D Parities Reconciliation failed:" );
+                //             AddErrorMessage( sd->pStrErrStruct, szErrCode );
+                // INCHI✔️❗: Exact i32 decimal through the existing canonical
+                // stack formatter; borrow digits with implicit final NUL. No
+                // heap string/UTF8/copy. Fixed21-byte scratch versus native16;
+                // formatting and shared append costs remain OPEN in
+                // INCHI-PERF-PARITY-STATUS-STACK-FORMAT.
+                let mut decimal = [0_u8; 21];
+                let digits = crate::source::base::ichi_io::source_decimal_i64(
+                    i64::from(parity_status),
+                    None,
+                    &mut decimal,
+                );
                 add_preprocess_message(structure_data, b"0D Parities Reconciliation failed:")?;
-                add_preprocess_message(structure_data, parity_status.to_string().as_bytes())?;
+                add_preprocess_message(structure_data, digits)?;
             }
         } else {
-            prepared[0].bDisconnectSalts = 0;
+            prepared.at_index_mut(heap, 0)?.bDisconnectSalts = 0;
         }
 
-        prepared[0].num_components = MarkDisconnectedComponents(heap, &mut prepared[0], 0)?;
-        if prepared[0].num_components < 0 {
+        prepared.at_index_mut(heap, 0)?.num_components =
+            prepared.with_index_mut(heap, 0, |record, heap| {
+                MarkDisconnectedComponents(heap, record, 0)
+            })?;
+        if prepared.at_index(heap, 0)?.num_components < 0 {
             add_preprocess_message(structure_data, b"Out of RAM")?;
             structure_data.nStructReadError = 99;
             structure_data.nErrorType = _IS_FATAL as i32;
@@ -740,11 +830,11 @@ pub(crate) fn PreprocessOneStructure(
         }
 
         let isotope_flags = {
-            let atom_count = prepared[0].num_inp_atoms;
-            let atoms = if prepared[0].at.is_null() && atom_count <= 0 {
+            let atom_count = prepared.at_index(heap, 0)?.num_inp_atoms;
+            let atoms = if prepared.at_index(heap, 0)?.at.is_null() && atom_count <= 0 {
                 &[][..]
             } else {
-                heap.slice(prepared[0].at.as_const())?
+                heap.slice(prepared.at_index(heap, 0)?.at.as_const())?
             };
             bNumHeterAtomHasIsotopicH(atoms, atom_count)?
         };
@@ -757,15 +847,18 @@ pub(crate) fn PreprocessOneStructure(
 
         let _ = OrigAtData_bCheckUnusualValences(
             heap,
-            Some(&prepared[0]),
+            Some(prepared.at_index(heap, 0)?),
             1,
             Some(&mut structure_data.pStrErrStruct),
             input_parameters.bNoWarnings,
         )?;
 
-        if prepared[0].bDisconnectCoord != 0 {
-            prepared[0].num_components = MarkDisconnectedComponents(heap, &mut prepared[0], 0)?;
-            if prepared[0].num_components < 0 {
+        if prepared.at_index(heap, 0)?.bDisconnectCoord != 0 {
+            prepared.at_index_mut(heap, 0)?.num_components =
+                prepared.with_index_mut(heap, 0, |record, heap| {
+                    MarkDisconnectedComponents(heap, record, 0)
+                })?;
+            if prepared.at_index(heap, 0)?.num_components < 0 {
                 add_preprocess_message(structure_data, b"Out of RAM")?;
                 structure_data.nStructReadError = 99;
                 structure_data.nErrorType = _IS_FATAL as i32;
@@ -773,11 +866,21 @@ pub(crate) fn PreprocessOneStructure(
             }
 
             if input_parameters.bTautFlags & TG_FLAG_RECONNECT_COORD as INCHI_MODE != 0 {
-                let (base_data, saved_data) = prepared.split_at_mut(1);
-                let saved = saved_data
-                    .first_mut()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                if OrigAtData_Duplicate(heap, saved, &base_data[0])? < 0 {
+                let duplicated = match &mut prepared {
+                    SourceInputArrayMut::Pointer(pointer) => orig_at_data_duplicate_targets(
+                        heap,
+                        SourceInputArrayMut::Pointer(pointer.offset(1)?),
+                        SourceInputArray::Pointer(*pointer),
+                    )?,
+                    SourceInputArrayMut::Borrowed(rows) => {
+                        let (base_data, saved_data) = rows.split_at_mut(1);
+                        let saved = saved_data
+                            .first_mut()
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        OrigAtData_Duplicate(heap, saved, &base_data[0])?
+                    }
+                };
+                if duplicated < 0 {
                     add_preprocess_message(structure_data, b"Out of RAM")?;
                     structure_data.nStructReadError = 99;
                     structure_data.nErrorType = _IS_FATAL as i32;
@@ -785,18 +888,17 @@ pub(crate) fn PreprocessOneStructure(
                 }
                 structure_data.bTautFlags[reconnected] = structure_data.bTautFlags[base];
                 structure_data.bTautFlagsDone[reconnected] = structure_data.bTautFlagsDone[base];
-                mask_connected_parities(heap, saved)?;
+                prepared.with_index_mut(heap, 1, |record, heap| {
+                    mask_connected_parities(heap, record)
+                })?;
             }
 
             let check_valence = i32::from(
                 input_parameters.bTautFlags & TG_FLAG_CHECK_VALENCE_COORD as INCHI_MODE != 0,
             );
-            let metal_changes = DisconnectMetals(
-                heap,
-                &mut prepared[0],
-                check_valence,
-                Some(&mut taut_flags_done),
-            )?;
+            let metal_changes = prepared.with_index_mut(heap, 0, |record, heap| {
+                DisconnectMetals(heap, record, check_valence, Some(&mut taut_flags_done))
+            })?;
             if metal_changes > 0 {
                 if input_parameters.bNoWarnings == 0 {
                     add_preprocess_message(structure_data, b"Metal was disconnected")?;
@@ -806,29 +908,50 @@ pub(crate) fn PreprocessOneStructure(
                     structure_data.nErrorType = _IS_WARNING as i32;
                 }
 
-                prepared[0].num_components = MarkDisconnectedComponents(heap, &mut prepared[0], 1)?;
-                if prepared[0].num_components < 0 {
+                prepared.at_index_mut(heap, 0)?.num_components =
+                    prepared.with_index_mut(heap, 0, |record, heap| {
+                        MarkDisconnectedComponents(heap, record, 1)
+                    })?;
+                if prepared.at_index(heap, 0)?.num_components < 0 {
                     add_preprocess_message(structure_data, b"Out of RAM")?;
                     structure_data.nStructReadError = 99;
                     structure_data.nErrorType = _IS_FATAL as i32;
                     break 'processing;
                 }
 
-                restore_disconnected_parities(heap, &prepared[0])?;
+                prepared.with_index_mut(heap, 0, |record, heap| {
+                    restore_disconnected_parities(heap, record)
+                })?;
                 let parity_status = ReconcileAllCmlBondParities(
                     heap,
-                    prepared[0].at,
-                    prepared[0].num_inp_atoms,
+                    prepared.at_index(heap, 0)?.at,
+                    prepared.at_index(heap, 0)?.num_inp_atoms,
                     1,
                 )?;
                 if parity_status != 0 {
+                    // VERBATIM SOURCE FRAGMENT: runichi3.c750..753
+                    //                 char szErrCode[16];
+                    //                 sprintf(szErrCode, "%d", i);
+                    //                 AddErrorMessage( sd->pStrErrStruct, "0D Parities Reconciliation failed:" );
+                    //                 AddErrorMessage( sd->pStrErrStruct, szErrCode );
+                    // INCHI✔️❗: Exact i32 decimal through the existing canonical
+                    // stack formatter; borrow digits with implicit final NUL. No
+                    // heap string/UTF8/copy. Fixed21-byte scratch versus native16;
+                    // formatting and shared append costs remain OPEN in
+                    // INCHI-PERF-PARITY-STATUS-STACK-FORMAT.
+                    let mut decimal = [0_u8; 21];
+                    let digits = crate::source::base::ichi_io::source_decimal_i64(
+                        i64::from(parity_status),
+                        None,
+                        &mut decimal,
+                    );
                     add_preprocess_message(structure_data, b"0D Parities Reconciliation failed:")?;
-                    add_preprocess_message(structure_data, parity_status.to_string().as_bytes())?;
+                    add_preprocess_message(structure_data, digits)?;
                 }
 
                 let rearranged = {
-                    let atom_count = prepared[0].num_inp_atoms;
-                    let atoms = heap.slice_mut(prepared[0].at)?;
+                    let atom_count = prepared.at_index(heap, 0)?.num_inp_atoms;
+                    let atoms = heap.slice_mut(prepared.at_index(heap, 0)?.at)?;
                     remove_ion_pairs(atom_count, atoms)?
                 };
                 if rearranged > 0 {
@@ -850,20 +973,26 @@ pub(crate) fn PreprocessOneStructure(
                 break 'processing;
             }
         } else {
-            mask_connected_parities(heap, &prepared[0])?;
+            prepared.with_index_mut(heap, 0, |record, heap| {
+                mask_connected_parities(heap, record)
+            })?;
         }
     }
 
     if structure_data.nErrorType < _IS_ERROR as i32 {
-        let base_atom_count = prepared[0].num_inp_atoms;
-        let base_atoms = if prepared[0].at.is_null() && base_atom_count <= 0 {
+        let base_atom_count = prepared.at_index(heap, 0)?.num_inp_atoms;
+        let base_atoms = if prepared.at_index(heap, 0)?.at.is_null() && base_atom_count <= 0 {
             &mut [][..]
         } else {
-            heap.slice_mut(prepared[0].at)?
+            heap.slice_mut(prepared.at_index(heap, 0)?.at)?
         };
         let _ = post_fix_odd_things(base_atom_count, base_atoms);
         if structure_data.bTautFlagsDone[base] & TG_FLAG_DISCONNECT_COORD_DONE as INCHI_MODE != 0 {
-            if let Some(saved) = prepared.get(1) {
+            let saved = match &prepared {
+                SourceInputArrayMut::Pointer(pointer) => heap.slice(pointer.as_const())?.get(1),
+                SourceInputArrayMut::Borrowed(rows) => rows.get(1),
+            };
+            if let Some(saved) = saved {
                 if !saved.at.is_null() && saved.num_inp_atoms > 0 {
                     let saved_atom_count = saved.num_inp_atoms;
                     let saved_atoms = heap.slice_mut(saved.at)?;
@@ -887,7 +1016,9 @@ pub(crate) fn OrigAtData_bCheckUnusualValences(
     no_warnings: i32,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi3.c:89 OrigAtData_bCheckUnusualValences
-    // INCHI✔️✔️: direct indexed scan, fixed-size message construction, and completed callees match source complexity.
+    // INCHI✔️❗: direct indexed scan and native-sized stack warning formatting.
+    // Canonical decimal/index-check and inherited callee costs remain OPEN
+    // in INCHI-PERF-UNUSUAL-VALENCE; this is not whole-call cost acceptance.
     /*
     int OrigAtData_bCheckUnusualValences( ORIG_ATOM_DATA *orig_at_data,
                                           int bAddIsoH,
@@ -999,27 +1130,45 @@ pub(crate) fn OrigAtData_bCheckUnusualValences(
             .iter()
             .position(|byte| *byte == 0)
             .ok_or(SourceHeapError::MissingNulTerminator)?;
-        let mut message = atom.elname[..symbol_length].to_vec();
+        // Native char msg[32]: name<=5, signed i8 charge<=4, radical<=2,
+        // parentheses2, signed i32 valence<=11 and final NUL1 total<=25.
+        // No truncation, allocation, String or extra input traversal.
+        let mut message = [0_i8; 32];
+        message[..symbol_length].copy_from_slice(&atom.elname[..symbol_length]);
+        let mut length = symbol_length;
+        let mut decimal = [0_u8; 21];
         if atom.charge != 0 {
-            let charge = i32::from(atom.charge);
-            if charge > 0 {
-                message.push(b'+' as i8);
+            let digits = crate::source::base::ichi_io::source_decimal_i64(
+                i64::from(atom.charge),
+                (atom.charge > 0).then_some(b'+'),
+                &mut decimal,
+            );
+            for &byte in digits {
+                message[length] = byte as i8;
+                length += 1;
             }
-            message.extend(charge.to_string().bytes().map(|byte| byte as i8));
         }
         if atom.radical != 0 {
-            message.push(b',' as i8);
-            message.push(match u32::try_from(atom.radical).ok() {
+            message[length] = b',' as i8;
+            message[length + 1] = match u32::try_from(atom.radical).ok() {
                 Some(RADICAL_SINGLET) => b's' as i8,
                 Some(RADICAL_DOUBLET) => b'd' as i8,
                 Some(RADICAL_TRIPLET) => b't' as i8,
                 _ => b'?' as i8,
-            });
+            };
+            length += 2;
         }
-        message.push(b'(' as i8);
-        message.extend(valence.to_string().bytes().map(|byte| byte as i8));
-        message.extend([b')' as i8, 0]);
-        AddErrorMessage(error_text.as_deref_mut(), Some(&message))?;
+        message[length] = b'(' as i8;
+        length += 1;
+        for &byte in
+            crate::source::base::ichi_io::source_decimal_i64(i64::from(valence), None, &mut decimal)
+        {
+            message[length] = byte as i8;
+            length += 1;
+        }
+        message[length] = b')' as i8;
+        message[length + 1] = 0;
+        AddErrorMessage(error_text.as_deref_mut(), Some(&message[..length + 2]))?;
     }
     Ok(found)
 }
@@ -1029,6 +1178,18 @@ pub(crate) fn OrigAtData_Duplicate(
     heap: &mut SourceHeap,
     destination: &mut ORIG_ATOM_DATA,
     source: &ORIG_ATOM_DATA,
+) -> Result<i32, SourceHeapError> {
+    orig_at_data_duplicate_targets(
+        heap,
+        SourceInputArrayMut::Borrowed(std::slice::from_mut(destination)),
+        SourceInputArray::Borrowed(std::slice::from_ref(source)),
+    )
+}
+
+pub(super) fn orig_at_data_duplicate_targets(
+    heap: &mut SourceHeap,
+    mut destination: SourceInputArrayMut<'_, ORIG_ATOM_DATA>,
+    source: SourceInputArray<'_, ORIG_ATOM_DATA>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi3.c:148 OrigAtData_Duplicate
     // INCHI✔️❌: complete verbatim source frame is inserted below; SourceHeap deep copies add model overhead.
@@ -1350,16 +1511,23 @@ pub(crate) fn OrigAtData_Duplicate(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; inchi_calloc=calloc; inchi_free=free.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OrigAtData_Duplicate
 
-    let original_atom_count = source.num_inp_atoms;
-    let original_component_count = source.num_components;
+    // INCHI✔️❗: Reached reads/stores select actual records, including
+    // Pointer aliases. Source-backed whole-record assignment stays one copy;
+    // no shadow/model/extraction/copyback. C583 checked costs remain OPEN.
+    let (original_atom_count, original_component_count) = {
+        let source = source.at_index(heap, 0)?;
+        (source.num_inp_atoms, source.num_components)
+    };
     let mut atoms = SourceMutPointer::<inp_ATOM>::null();
     let mut current_lengths = SourceMutPointer::<AT_NUMB>::null();
     let mut old_component_numbers = SourceMutPointer::<AT_NUMB>::null();
     let mut result = -1_i32;
 
     'duplicate: {
-        if !destination.at.is_null() && destination.num_inp_atoms >= original_atom_count {
-            atoms = destination.at;
+        if !destination.at_index(heap, 0)?.at.is_null()
+            && destination.at_index(heap, 0)?.num_inp_atoms >= original_atom_count
+        {
+            atoms = destination.at_index(heap, 0)?.at;
         } else {
             let count = match i64::from(original_atom_count)
                 .checked_add(1)
@@ -1375,10 +1543,10 @@ pub(crate) fn OrigAtData_Duplicate(
             };
         }
 
-        if !destination.nOldCompNumber.is_null()
-            && destination.num_components >= original_component_count
+        if !destination.at_index(heap, 0)?.nOldCompNumber.is_null()
+            && destination.at_index(heap, 0)?.num_components >= original_component_count
         {
-            current_lengths = destination.nCurAtLen;
+            current_lengths = destination.at_index(heap, 0)?.nCurAtLen;
         } else {
             let count = match i64::from(original_component_count)
                 .checked_add(1)
@@ -1394,10 +1562,10 @@ pub(crate) fn OrigAtData_Duplicate(
             };
         }
 
-        if !destination.nCurAtLen.is_null()
-            && destination.num_components >= original_component_count
+        if !destination.at_index(heap, 0)?.nCurAtLen.is_null()
+            && destination.at_index(heap, 0)?.num_components >= original_component_count
         {
-            old_component_numbers = destination.nOldCompNumber;
+            old_component_numbers = destination.at_index(heap, 0)?.nOldCompNumber;
         } else {
             let count = match i64::from(original_component_count)
                 .checked_add(1)
@@ -1417,66 +1585,147 @@ pub(crate) fn OrigAtData_Duplicate(
             break 'duplicate;
         }
 
-        let atom_count = usize::try_from(original_atom_count)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let component_count = usize::try_from(original_component_count)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        if !source.at.is_null() {
-            let values = heap
-                .slice(source.at.as_const())?
-                .get(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            heap.slice_mut(atoms)?
-                .get_mut(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone_from_slice(&values);
+        // INCHI✔️❗: admit each count only inside its native non-NULL payload
+        // branch. Reused destinations with NULL source arrays need no count
+        // conversion. O(1) admission, no allocation/clone; arena cost stays OPEN.
+        if !source.at_index(heap, 0)?.at.is_null() {
+            let atom_count = usize::try_from(original_atom_count)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            {
+                // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                // reached bounds/errors and modeled overlap without a payload Vec.
+                // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                let copy_source = source.at_index(heap, 0)?.at.as_const();
+                let copy_count = (heap
+                    .slice(copy_source)?
+                    .get(..atom_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?)
+                .len();
+                let copy_destination = atoms;
+                {
+                    let copy_target = &mut (heap
+                        .slice_mut(copy_destination)?
+                        .get_mut(..atom_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?);
+                    assert_eq!(copy_target.len(), copy_count);
+                }
+                if copy_destination.allocation_identity()
+                    == copy_source.as_mut().allocation_identity()
+                {
+                    heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                } else {
+                    heap.copy_nonoverlapping_prefix(
+                        copy_destination,
+                        copy_source,
+                        copy_count,
+                        false,
+                    )?;
+                }
+            }
         }
-        if !source.nCurAtLen.is_null() {
-            let values = heap
-                .slice(source.nCurAtLen.as_const())?
-                .get(..component_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            heap.slice_mut(current_lengths)?
-                .get_mut(..component_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .copy_from_slice(&values);
+        if !source.at_index(heap, 0)?.nCurAtLen.is_null() {
+            let component_count = usize::try_from(original_component_count)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            {
+                // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                // reached bounds/errors and modeled overlap without a payload Vec.
+                // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                let copy_source = source.at_index(heap, 0)?.nCurAtLen.as_const();
+                let copy_count = (heap
+                    .slice(copy_source)?
+                    .get(..component_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?)
+                .len();
+                let copy_destination = current_lengths;
+                {
+                    let copy_target = &mut (heap
+                        .slice_mut(copy_destination)?
+                        .get_mut(..component_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?);
+                    assert_eq!(copy_target.len(), copy_count);
+                }
+                if copy_destination.allocation_identity()
+                    == copy_source.as_mut().allocation_identity()
+                {
+                    heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                } else {
+                    heap.copy_nonoverlapping_prefix(
+                        copy_destination,
+                        copy_source,
+                        copy_count,
+                        false,
+                    )?;
+                }
+            }
         }
-        if !source.nOldCompNumber.is_null() {
-            let values = heap
-                .slice(source.nOldCompNumber.as_const())?
-                .get(..component_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            heap.slice_mut(old_component_numbers)?
-                .get_mut(..component_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .copy_from_slice(&values);
+        if !source.at_index(heap, 0)?.nOldCompNumber.is_null() {
+            let component_count = usize::try_from(original_component_count)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            {
+                // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                // reached bounds/errors and modeled overlap without a payload Vec.
+                // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                let copy_source = source.at_index(heap, 0)?.nOldCompNumber.as_const();
+                let copy_count = (heap
+                    .slice(copy_source)?
+                    .get(..component_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?)
+                .len();
+                let copy_destination = old_component_numbers;
+                {
+                    let copy_target = &mut (heap
+                        .slice_mut(copy_destination)?
+                        .get_mut(..component_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?);
+                    assert_eq!(copy_target.len(), copy_count);
+                }
+                if copy_destination.allocation_identity()
+                    == copy_source.as_mut().allocation_identity()
+                {
+                    heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                } else {
+                    heap.copy_nonoverlapping_prefix(
+                        copy_destination,
+                        copy_source,
+                        copy_count,
+                        false,
+                    )?;
+                }
+            }
         }
 
-        if !destination.at.is_null() && destination.at != atoms {
-            inchi_free(heap, destination.at)?;
-        }
-        if !destination.nCurAtLen.is_null() && destination.nCurAtLen != current_lengths {
-            inchi_free(heap, destination.nCurAtLen)?;
-        }
-        if !destination.nOldCompNumber.is_null()
-            && destination.nOldCompNumber != old_component_numbers
+        if !destination.at_index(heap, 0)?.at.is_null()
+            && destination.at_index(heap, 0)?.at != atoms
         {
-            inchi_free(heap, destination.nOldCompNumber)?;
+            inchi_free(heap, destination.at_index(heap, 0)?.at)?;
+        }
+        if !destination.at_index(heap, 0)?.nCurAtLen.is_null()
+            && destination.at_index(heap, 0)?.nCurAtLen != current_lengths
+        {
+            inchi_free(heap, destination.at_index(heap, 0)?.nCurAtLen)?;
+        }
+        if !destination.at_index(heap, 0)?.nOldCompNumber.is_null()
+            && destination.at_index(heap, 0)?.nOldCompNumber != old_component_numbers
+        {
+            inchi_free(heap, destination.at_index(heap, 0)?.nOldCompNumber)?;
         }
 
-        *destination = source.clone();
-        destination.at = atoms;
-        destination.nCurAtLen = current_lengths;
-        destination.nOldCompNumber = old_component_numbers;
-        destination.nNumEquSets = 0;
-        destination.bSavedInINCHI_LIB = [0; 2];
-        destination.bPreprocessed = [0; 2];
-
-        destination.szCoord = SourceMutPointer::null();
-        if !source.szCoord.is_null() {
+        let copied_metadata = source.at_index(heap, 0)?.clone();
+        {
+            // Native whole-record assignment and consecutive field stores;
+            // no heap call/source read intervenes. Admit the actual lvalue
+            // once, then release it before the alias-sensitive source read.
+            let destination = destination.at_index_mut(heap, 0)?;
+            *destination = copied_metadata;
+            destination.at = atoms;
+            destination.nCurAtLen = current_lengths;
+            destination.nOldCompNumber = old_component_numbers;
+            destination.nNumEquSets = 0;
+            destination.bSavedInINCHI_LIB = [0; 2];
+            destination.bPreprocessed = [0; 2];
+            destination.szCoord = SourceMutPointer::null();
+        }
+        if !source.at_index(heap, 0)?.szCoord.is_null() {
             let count = match u64::try_from(original_atom_count) {
                 Ok(count) => count,
                 Err(_) => break 'duplicate,
@@ -1486,25 +1735,49 @@ pub(crate) fn OrigAtData_Duplicate(
                 Err(SourceHeapError::AllocationFailed) => break 'duplicate,
                 Err(error) => return Err(error),
             };
-            let values = heap
-                .slice(source.szCoord.as_const())?
-                .get(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec();
-            heap.slice_mut(coordinates)?
-                .get_mut(..atom_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .copy_from_slice(&values);
-            destination.szCoord = coordinates;
+            // count came from a nonnegative i32 and fits the platform usize.
+            let atom_count = count as usize;
+            {
+                // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                // reached bounds/errors and modeled overlap without a payload Vec.
+                // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                let copy_source = source.at_index(heap, 0)?.szCoord.as_const();
+                let copy_count = (heap
+                    .slice(copy_source)?
+                    .get(..atom_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?)
+                .len();
+                let copy_destination = coordinates;
+                {
+                    let copy_target = &mut (heap
+                        .slice_mut(copy_destination)?
+                        .get_mut(..atom_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?);
+                    assert_eq!(copy_target.len(), copy_count);
+                }
+                if copy_destination.allocation_identity()
+                    == copy_source.as_mut().allocation_identity()
+                {
+                    heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                } else {
+                    heap.copy_nonoverlapping_prefix(
+                        copy_destination,
+                        copy_source,
+                        copy_count,
+                        false,
+                    )?;
+                }
+            }
+            destination.at_index_mut(heap, 0)?.szCoord = coordinates;
         }
 
-        destination.nEquLabels = SourceMutPointer::null();
-        destination.nSortedOrder = SourceMutPointer::null();
+        destination.at_index_mut(heap, 0)?.nEquLabels = SourceMutPointer::null();
+        destination.at_index_mut(heap, 0)?.nSortedOrder = SourceMutPointer::null();
 
-        destination.polymer = SourceMutPointer::null();
-        if !source.polymer.is_null() {
+        destination.at_index_mut(heap, 0)?.polymer = SourceMutPointer::null();
+        if !source.at_index(heap, 0)?.polymer.is_null() {
             let old_polymer = heap
-                .slice(source.polymer.as_const())?
+                .slice(source.at_index(heap, 0)?.polymer.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone();
@@ -1552,23 +1825,49 @@ pub(crate) fn OrigAtData_Duplicate(
                     }
                     Err(error) => return Err(error),
                 };
-                let values = heap
-                    .slice(old_polymer.pzz.as_const())?
-                    .get(..old_polymer.n_pzz as usize)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                heap.slice_mut(pzz)?.copy_from_slice(&values);
+                {
+                    // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                    // reached bounds/errors and modeled overlap without a payload Vec.
+                    // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                    let copy_source = old_polymer.pzz.as_const();
+                    let copy_count = (heap
+                        .slice(copy_source)?
+                        .get(..old_polymer.n_pzz as usize)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?)
+                    .len();
+                    let copy_destination = pzz;
+                    {
+                        let copy_target = &mut (heap.slice_mut(copy_destination)?);
+                        assert_eq!(copy_target.len(), copy_count);
+                    }
+                    if copy_destination.allocation_identity()
+                        == copy_source.as_mut().allocation_identity()
+                    {
+                        heap.copy_prefix_within_allocation(
+                            copy_destination,
+                            copy_source,
+                            copy_count,
+                        )?;
+                    } else {
+                        heap.copy_nonoverlapping_prefix(
+                            copy_destination,
+                            copy_source,
+                            copy_count,
+                            false,
+                        )?;
+                    }
+                }
                 let copied_polymer = &mut heap.slice_mut(new_polymer)?[0];
                 copied_polymer.n_pzz = old_polymer.n_pzz;
                 copied_polymer.pzz = pzz;
             }
-            destination.polymer = new_polymer;
+            destination.at_index_mut(heap, 0)?.polymer = new_polymer;
         }
 
-        destination.v3000 = SourceMutPointer::null();
-        if !source.v3000.is_null() {
+        destination.at_index_mut(heap, 0)?.v3000 = SourceMutPointer::null();
+        if !source.at_index(heap, 0)?.v3000.is_null() {
             let old_v3000 = heap
-                .slice(source.v3000.as_const())?
+                .slice(source.at_index(heap, 0)?.v3000.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
                 .clone();
@@ -1580,6 +1879,15 @@ pub(crate) fn OrigAtData_Duplicate(
             heap.slice_mut(new_v3000)?[0] = old_v3000.clone();
 
             if !old_v3000.atom_index_orig.is_null() {
+                let atom_count = match usize::try_from(original_atom_count) {
+                    Ok(count) => count,
+                    Err(_) => {
+                        // Native negative calloc count cannot allocate this payload;
+                        // preserve the reached V3000 cleanup and failure return.
+                        inchi_free(heap, new_v3000)?;
+                        break 'duplicate;
+                    }
+                };
                 let indices = match inchi_calloc::<i32>(heap, atom_count as u64, 4) {
                     Ok(pointer) => pointer,
                     Err(SourceHeapError::AllocationFailed) => {
@@ -1588,15 +1896,48 @@ pub(crate) fn OrigAtData_Duplicate(
                     }
                     Err(error) => return Err(error),
                 };
-                let values = heap
-                    .slice(old_v3000.atom_index_orig.as_const())?
-                    .get(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                heap.slice_mut(indices)?.copy_from_slice(&values);
+                {
+                    // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                    // reached bounds/errors and modeled overlap without a payload Vec.
+                    // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                    let copy_source = old_v3000.atom_index_orig.as_const();
+                    let copy_count = (heap
+                        .slice(copy_source)?
+                        .get(..atom_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?)
+                    .len();
+                    let copy_destination = indices;
+                    {
+                        let copy_target = &mut (heap.slice_mut(copy_destination)?);
+                        assert_eq!(copy_target.len(), copy_count);
+                    }
+                    if copy_destination.allocation_identity()
+                        == copy_source.as_mut().allocation_identity()
+                    {
+                        heap.copy_prefix_within_allocation(
+                            copy_destination,
+                            copy_source,
+                            copy_count,
+                        )?;
+                    } else {
+                        heap.copy_nonoverlapping_prefix(
+                            copy_destination,
+                            copy_source,
+                            copy_count,
+                            false,
+                        )?;
+                    }
+                }
                 heap.slice_mut(new_v3000)?[0].atom_index_orig = indices;
             }
             if !old_v3000.atom_index_fin.is_null() {
+                let atom_count = match usize::try_from(original_atom_count) {
+                    Ok(count) => count,
+                    Err(_) => {
+                        inchi_free(heap, new_v3000)?;
+                        break 'duplicate;
+                    }
+                };
                 let indices = match inchi_calloc::<i32>(heap, atom_count as u64, 4) {
                     Ok(pointer) => pointer,
                     Err(SourceHeapError::AllocationFailed) => {
@@ -1605,12 +1946,38 @@ pub(crate) fn OrigAtData_Duplicate(
                     }
                     Err(error) => return Err(error),
                 };
-                let values = heap
-                    .slice(old_v3000.atom_index_fin.as_const())?
-                    .get(..atom_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                heap.slice_mut(indices)?.copy_from_slice(&values);
+                {
+                    // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                    // reached bounds/errors and modeled overlap without a payload Vec.
+                    // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                    let copy_source = old_v3000.atom_index_fin.as_const();
+                    let copy_count = (heap
+                        .slice(copy_source)?
+                        .get(..atom_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?)
+                    .len();
+                    let copy_destination = indices;
+                    {
+                        let copy_target = &mut (heap.slice_mut(copy_destination)?);
+                        assert_eq!(copy_target.len(), copy_count);
+                    }
+                    if copy_destination.allocation_identity()
+                        == copy_source.as_mut().allocation_identity()
+                    {
+                        heap.copy_prefix_within_allocation(
+                            copy_destination,
+                            copy_source,
+                            copy_count,
+                        )?;
+                    } else {
+                        heap.copy_nonoverlapping_prefix(
+                            copy_destination,
+                            copy_source,
+                            copy_count,
+                            false,
+                        )?;
+                    }
+                }
                 heap.slice_mut(new_v3000)?[0].atom_index_fin = indices;
             }
 
@@ -1637,8 +2004,34 @@ pub(crate) fn OrigAtData_Duplicate(
                         }
                         Err(error) => return Err(error),
                     };
-                    let values = heap.slice(old_list.as_const())?[..list_count as usize].to_vec();
-                    heap.slice_mut(list)?.copy_from_slice(&values);
+                    {
+                        // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                        // reached bounds/errors and modeled overlap without a payload Vec.
+                        // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                        let copy_source = old_list.as_const();
+                        let copy_count = (heap.slice(copy_source)?[..list_count as usize]).len();
+                        let copy_destination = list;
+                        {
+                            let copy_target = &mut (heap.slice_mut(copy_destination)?);
+                            assert_eq!(copy_target.len(), copy_count);
+                        }
+                        if copy_destination.allocation_identity()
+                            == copy_source.as_mut().allocation_identity()
+                        {
+                            heap.copy_prefix_within_allocation(
+                                copy_destination,
+                                copy_source,
+                                copy_count,
+                            )?;
+                        } else {
+                            heap.copy_nonoverlapping_prefix(
+                                copy_destination,
+                                copy_source,
+                                copy_count,
+                                false,
+                            )?;
+                        }
+                    }
                     heap.slice_mut(lists)?[index] = list;
                 }
             }
@@ -1667,8 +2060,34 @@ pub(crate) fn OrigAtData_Duplicate(
                         }
                         Err(error) => return Err(error),
                     };
-                    let values = heap.slice(old_list.as_const())?[..list_count as usize].to_vec();
-                    heap.slice_mut(list)?.copy_from_slice(&values);
+                    {
+                        // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                        // reached bounds/errors and modeled overlap without a payload Vec.
+                        // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                        let copy_source = old_list.as_const();
+                        let copy_count = (heap.slice(copy_source)?[..list_count as usize]).len();
+                        let copy_destination = list;
+                        {
+                            let copy_target = &mut (heap.slice_mut(copy_destination)?);
+                            assert_eq!(copy_target.len(), copy_count);
+                        }
+                        if copy_destination.allocation_identity()
+                            == copy_source.as_mut().allocation_identity()
+                        {
+                            heap.copy_prefix_within_allocation(
+                                copy_destination,
+                                copy_source,
+                                copy_count,
+                            )?;
+                        } else {
+                            heap.copy_nonoverlapping_prefix(
+                                copy_destination,
+                                copy_source,
+                                copy_count,
+                                false,
+                            )?;
+                        }
+                    }
                     heap.slice_mut(lists)?[index] = list;
                 }
             }
@@ -1707,8 +2126,34 @@ pub(crate) fn OrigAtData_Duplicate(
                         inchi_free(heap, new_v3000)?;
                         break 'duplicate;
                     }
-                    let values = heap.slice(old_list.as_const())?[..list_count as usize].to_vec();
-                    heap.slice_mut(list)?.copy_from_slice(&values);
+                    {
+                        // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                        // reached bounds/errors and modeled overlap without a payload Vec.
+                        // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                        let copy_source = old_list.as_const();
+                        let copy_count = (heap.slice(copy_source)?[..list_count as usize]).len();
+                        let copy_destination = list;
+                        {
+                            let copy_target = &mut (heap.slice_mut(copy_destination)?);
+                            assert_eq!(copy_target.len(), copy_count);
+                        }
+                        if copy_destination.allocation_identity()
+                            == copy_source.as_mut().allocation_identity()
+                        {
+                            heap.copy_prefix_within_allocation(
+                                copy_destination,
+                                copy_source,
+                                copy_count,
+                            )?;
+                        } else {
+                            heap.copy_nonoverlapping_prefix(
+                                copy_destination,
+                                copy_source,
+                                copy_count,
+                                false,
+                            )?;
+                        }
+                    }
                     heap.slice_mut(lists)?[index] = list;
                 }
             }
@@ -1744,27 +2189,56 @@ pub(crate) fn OrigAtData_Duplicate(
                             }
                             Err(error) => return Err(error),
                         };
-                        let values =
-                            heap.slice(old_list.as_const())?[..list_count as usize].to_vec();
-                        heap.slice_mut(list)?.copy_from_slice(&values);
+                        {
+                            // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                            // reached bounds/errors and modeled overlap without a payload Vec.
+                            // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                            let copy_source = old_list.as_const();
+                            let copy_count =
+                                (heap.slice(copy_source)?[..list_count as usize]).len();
+                            let copy_destination = list;
+                            {
+                                let copy_target = &mut (heap.slice_mut(copy_destination)?);
+                                assert_eq!(copy_target.len(), copy_count);
+                            }
+                            if copy_destination.allocation_identity()
+                                == copy_source.as_mut().allocation_identity()
+                            {
+                                heap.copy_prefix_within_allocation(
+                                    copy_destination,
+                                    copy_source,
+                                    copy_count,
+                                )?;
+                            } else {
+                                heap.copy_nonoverlapping_prefix(
+                                    copy_destination,
+                                    copy_source,
+                                    copy_count,
+                                    false,
+                                )?;
+                            }
+                        }
                         heap.slice_mut(lists)?[index] = list;
                     }
                 }
             }
-            destination.v3000 = new_v3000;
+            destination.at_index_mut(heap, 0)?.v3000 = new_v3000;
         }
 
         result = 0;
     }
 
     if result != 0 {
-        if !atoms.is_null() && destination.at != atoms {
+        if !atoms.is_null() && destination.at_index(heap, 0)?.at != atoms {
             inchi_free(heap, atoms)?;
         }
-        if !current_lengths.is_null() && destination.nCurAtLen != current_lengths {
+        if !current_lengths.is_null() && destination.at_index(heap, 0)?.nCurAtLen != current_lengths
+        {
             inchi_free(heap, current_lengths)?;
         }
-        if !old_component_numbers.is_null() && destination.nOldCompNumber != old_component_numbers {
+        if !old_component_numbers.is_null()
+            && destination.at_index(heap, 0)?.nOldCompNumber != old_component_numbers
+        {
             inchi_free(heap, old_component_numbers)?;
         }
     }
@@ -1914,13 +2388,6 @@ exit_function:
     if unit.is_null() {
         return Ok(SourceMutPointer::null());
     }
-    let smt_bytes = heap.slice(smt)?;
-    let smt_len = smt_bytes.iter().position(|byte| *byte == 0)
-        .ok_or(SourceHeapError::MissingNulTerminator)?;
-    if smt_len >= 80 {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    let smt_bytes = smt_bytes[..=smt_len].to_vec();
     {
         let value = heap.slice_mut(unit)?.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
         value.id = id;
@@ -1934,7 +2401,25 @@ exit_function:
         value.cyclized = 0;
         value.xbr1 = [0.0; 4];
         value.xbr2 = [0.0; 4];
-        value.smt[..=smt_len].copy_from_slice(&smt_bytes);
+    }
+    // INCHI✔️❗: Native strcpy follows the preceding scalar initialization.
+    // This fresh unit cannot alias existing smt storage. Borrow both through
+    // the canonical arena projection: O(L)/O(1), no temporary Vec/allocation.
+    // Preserve full first-NUL admission and its typed errors; checked-arena
+    // and whole-constructor costs remain OPEN (C215), not proven equivalent.
+    heap.with_slice_mut_and_heap(unit, |units, heap| {
+        let smt_bytes = heap.slice(smt)?;
+        let smt_len = memchr::memchr(0, bytemuck::cast_slice(smt_bytes))
+            .ok_or(SourceHeapError::MissingNulTerminator)?;
+        let value = units.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if smt_len >= value.smt.len() {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        value.smt[..=smt_len].copy_from_slice(&smt_bytes[..=smt_len]);
+        Ok(())
+    })?;
+    {
+        let value = heap.slice_mut(unit)?.first_mut().ok_or(SourceHeapError::PointerOutOfBounds)?;
         value.cap1 = -1;
         value.end_atom1 = -1;
         value.cap2 = -1;
@@ -1959,10 +2444,23 @@ exit_function:
         if na > 0 {
             let source = alist.ok_or(SourceHeapError::MissingAllocation)?;
             let count = usize::try_from(na).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let values = heap.slice(source.item.as_const())?.get(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?.to_vec();
-            heap.slice_mut(pointer)?.get_mut(..count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?.copy_from_slice(&values);
+            {
+                // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                // reached bounds/errors and modeled overlap without a payload Vec.
+                // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                let copy_source = source.item.as_const();
+                let copy_count = (heap.slice(copy_source)?.get(..count).ok_or(SourceHeapError::PointerOutOfBounds)?).len();
+                let copy_destination = pointer;
+                {
+                    let copy_target = &mut (heap.slice_mut(copy_destination)?.get_mut(..count).ok_or(SourceHeapError::PointerOutOfBounds)?);
+                    assert_eq!(copy_target.len(), copy_count);
+                }
+                if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+                    heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                } else {
+                    heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+                }
+            }
         }
     }
     if nb > 0 || maxbonds > 0 {
@@ -1978,10 +2476,23 @@ exit_function:
             if copy_count > 0 {
                 let copy_count = usize::try_from(copy_count)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let values = heap.slice(source.item.as_const())?.get(..copy_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?.to_vec();
-                heap.slice_mut(pointer)?.get_mut(..copy_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?.copy_from_slice(&values);
+                {
+                    // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                    // reached bounds/errors and modeled overlap without a payload Vec.
+                    // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                    let copy_source = source.item.as_const();
+                    let copy_count = (heap.slice(copy_source)?.get(..copy_count).ok_or(SourceHeapError::PointerOutOfBounds)?).len();
+                    let copy_destination = pointer;
+                    {
+                        let copy_target = &mut (heap.slice_mut(copy_destination)?.get_mut(..copy_count).ok_or(SourceHeapError::PointerOutOfBounds)?);
+                        assert_eq!(copy_target.len(), copy_count);
+                    }
+                    if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+                        heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+                    } else {
+                        heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+                    }
+                }
             }
         }
     }
@@ -2214,13 +2725,18 @@ pub(crate) fn OAD_PolymerUnit_CreateCopy(
         Err(error) => return Err(error),
     };
     if !source.alist.is_null() {
-        let source_values = heap.slice(source.alist.as_const())?.to_vec();
-        let target = heap.slice_mut(alist)?;
-        for (index, value) in target.iter_mut().enumerate() {
-            *value = *source_values
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        }
+        // INCHI✔️❗: source admission precedes the fresh, disjoint target.
+        // O(na) copy/O(1) scratch; preserve partial stores on a short source.
+        heap.slice(source.alist.as_const())?;
+        heap.with_slice_mut_and_heap(alist, |target, heap| {
+            let source_values = heap.slice(source.alist.as_const())?;
+            for (index, value) in target.iter_mut().enumerate() {
+                *value = *source_values
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            }
+            Ok(())
+        })?;
     }
     heap.slice_mut(copy)?[0].alist = alist;
 
@@ -2237,13 +2753,16 @@ pub(crate) fn OAD_PolymerUnit_CreateCopy(
         Err(error) => return Err(error),
     };
     if !source.blist.is_null() {
-        let source_values = heap.slice(source.blist.as_const())?.to_vec();
-        let target = heap.slice_mut(blist)?;
-        for (index, value) in target.iter_mut().enumerate() {
-            *value = *source_values
-                .get(index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        }
+        heap.slice(source.blist.as_const())?;
+        heap.with_slice_mut_and_heap(blist, |target, heap| {
+            let source_values = heap.slice(source.blist.as_const())?;
+            for (index, value) in target.iter_mut().enumerate() {
+                *value = *source_values
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            }
+            Ok(())
+        })?;
     }
     heap.slice_mut(copy)?[0].blist = blist;
 
@@ -2271,7 +2790,7 @@ pub(crate) fn OAD_PolymerUnit_CreateCopy(
                 .slice(source_row.as_const())?
                 .get(..2)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let values = values.to_vec();
+            let values = [values[0], values[1]];
             heap.slice_mut(target_row)?
                 .get_mut(..2)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?
@@ -2422,19 +2941,16 @@ pub(crate) fn OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(
     // INCHI❌❌: }
     // END INCHI C FUNCTION: OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves
 
+    // INCHI✔️❗: Membership reads live lists for each bond, including lists
+    // aliased with blist. All four queries precede that bond's swap; earlier
+    // swaps remain visible. Zero counts skip pointer admission, and signed
+    // membership/error behavior stays in the canonical is_in_the_ilist.
+    // Cost: O(sum of reached membership prefixes), O(1), no list clones or
+    // allocations. Per-bond arena admission and whole-call cost stay OPEN:
+    // INCHI-PERF-POLYMER-LIVE-MEMBERSHIP in performance_pending.md.
     if unit.nb <= 0 {
         return Ok(0);
     }
-    let alist = if unit.na == 0 {
-        None
-    } else {
-        Some(heap.slice(unit.alist.as_const())?.to_vec())
-    };
-    let stars = if number_of_star_atoms == 0 {
-        None
-    } else {
-        Some(heap.slice(star_atoms)?.to_vec())
-    };
     for bond_index in 0..unit.nb {
         let offset = usize::try_from(i64::from(bond_index) * 2)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
@@ -2449,11 +2965,23 @@ pub(crate) fn OAD_PolymerUnit_OrderBondAtomsAndBondsThemselves(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
             )
         };
-        let first_external = is_in_the_ilist(alist.as_deref(), first, unit.na)?.is_none();
-        let first_star = is_in_the_ilist(stars.as_deref(), first, number_of_star_atoms)?.is_some();
-        let second_external = is_in_the_ilist(alist.as_deref(), second, unit.na)?.is_none();
-        let second_star =
-            is_in_the_ilist(stars.as_deref(), second, number_of_star_atoms)?.is_some();
+        let (first_external, first_star, second_external, second_star) = {
+            let alist = if unit.na == 0 {
+                None
+            } else {
+                Some(heap.slice(unit.alist.as_const())?)
+            };
+            let first_external = is_in_the_ilist(alist, first, unit.na)?.is_none();
+            let stars = if number_of_star_atoms == 0 {
+                None
+            } else {
+                Some(heap.slice(star_atoms)?)
+            };
+            let first_star = is_in_the_ilist(stars, first, number_of_star_atoms)?.is_some();
+            let second_external = is_in_the_ilist(alist, second, unit.na)?.is_none();
+            let second_star = is_in_the_ilist(stars, second, number_of_star_atoms)?.is_some();
+            (first_external, first_star, second_external, second_star)
+        };
         if (first_external || first_star) && (second_external || second_star) {
             return Ok(1);
         }
@@ -2658,16 +3186,15 @@ pub(crate) fn OAD_Polymer_PrepareWorkingSet(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: OAD_Polymer_PrepareWorkingSet
 
-    let canonical_values = if polymer.n_pzz > 0 || polymer.n > 0 {
-        heap.slice(canonical_numbers)?.to_vec()
-    } else {
-        Vec::new()
-    };
-    let map = |number: i32| -> Result<i32, SourceHeapError> {
-        let index = usize::try_from(number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        Ok(canonical_values
-            .get(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
+    // INCHI✔️❗: Each canonical query observes preceding aliased list writes.
+    // Signed interior offsets use the existing checked source subscript owner;
+    // no whole-map admission or snapshot occurs before the first reached read.
+    // Cost: O(1) per query, O(1) scratch, no map clone/allocation. Native sort
+    // and partial-error states stay unchanged; arena/whole-call cost is OPEN
+    // in INCHI-PERF-POLYMER-REACHED-MAPPING, performance_pending.md.
+    let map = |heap: &SourceHeap, number: i32| -> Result<i32, SourceHeapError> {
+        Ok(heap
+            .element_signed(canonical_numbers, number)?
             .wrapping_add(1))
     };
     for index in 0..polymer.n_pzz {
@@ -2676,7 +3203,7 @@ pub(crate) fn OAD_Polymer_PrepareWorkingSet(
             .slice(pointer.as_const())?
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let mapped = map(original)?;
+        let mapped = map(heap, original)?;
         if mapped == 0 {
             return Ok(10);
         }
@@ -2700,7 +3227,7 @@ pub(crate) fn OAD_Polymer_PrepareWorkingSet(
                 .slice(atom_pointer.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mapped = map(original)?;
+            let mapped = map(heap, original)?;
             if mapped != 0 {
                 heap.slice_mut(unit.alist.offset(i64::from(kept))?)?[0] = mapped;
                 kept = kept.wrapping_add(1);
@@ -2713,7 +3240,7 @@ pub(crate) fn OAD_Polymer_PrepareWorkingSet(
                 .slice(pointer.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let mapped = map(original)?;
+            let mapped = map(heap, original)?;
             if mapped == 0 {
                 return Ok(11);
             }
@@ -2729,7 +3256,7 @@ pub(crate) fn OAD_Polymer_PrepareWorkingSet(
                     _ => current.end_atom2,
                 }
             };
-            let mapped = map(original)?;
+            let mapped = map(heap, original)?;
             if mapped == 0 {
                 return Ok(11);
             }
@@ -2750,7 +3277,7 @@ pub(crate) fn OAD_Polymer_PrepareWorkingSet(
                 .slice(row_pointer.as_const())?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let first_mapped = map(first)?;
+            let first_mapped = map(heap, first)?;
             if first_mapped == 0 {
                 continue;
             }
@@ -2758,7 +3285,7 @@ pub(crate) fn OAD_Polymer_PrepareWorkingSet(
                 .slice(row_pointer.as_const().offset(1)?)?
                 .first()
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let second_mapped = map(second)?;
+            let second_mapped = map(heap, second)?;
             if second_mapped == 0 {
                 continue;
             }
@@ -3093,18 +3620,23 @@ pub(crate) fn OrigAtData_AddBond(
         return Ok(0);
     }
     let first_pointer = atoms.offset(i64::from(this_atom))?;
-    let second_pointer = atoms.offset(i64::from(other_atom))?;
     let first_valence = heap
         .slice(first_pointer.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .valence;
+    // INCHI✔️❗: The native OR returns before admitting the other endpoint.
+    // No extra scan/allocation; checked arena cost remains independently open.
+    if first_valence >= MAXVAL as i8 {
+        return Ok(0);
+    }
+    let second_pointer = atoms.offset(i64::from(other_atom))?;
     let second_valence = heap
         .slice(second_pointer.as_const())?
         .first()
         .ok_or(SourceHeapError::PointerOutOfBounds)?
         .valence;
-    if first_valence >= 20 || second_valence >= 20 {
+    if second_valence >= MAXVAL as i8 {
         return Ok(0);
     }
     if bond_type != tagINCHIBondType_INCHI_BOND_TYPE_DOUBLE as i32
@@ -3631,7 +4163,19 @@ pub(crate) fn OAD_Polymer_SetAtProps(
             .ok_or(SourceHeapError::PointerOutOfBounds)?
             .clone();
         let atom_number = i32::from(atom.orig_at_number);
-        let index = canonical_index(heap, atom_number)?;
+        // INCHI✔️❗: int atnum = at[k].orig_at_number, index = k;
+        // INCHI✔️❗: if (cano_nums)
+        // INCHI✔️❗: {
+        // INCHI✔️❗:     index = cano_nums[atnum];
+        // INCHI✔️❗: }
+        // No-map rank writes use array position; later ring phases retain
+        // their separate mapped+1 rule. O(1) selection, no extra allocation
+        // or scan; whole-owner costs remain INCHI-PERF-POLYMER-RANK-INDEX OPEN.
+        let index = if canonical_numbers.is_null() {
+            k
+        } else {
+            canonical_index(heap, atom_number)?
+        };
         let element = usize::from(atom.el_number);
         if index >= 0 && element < ERANK_RULE4.len() {
             let properties = heap
@@ -3649,12 +4193,14 @@ pub(crate) fn OAD_Polymer_SetAtProps(
         Ok(count) => count,
         Err(_) => return Ok(()),
     };
-    let ring_numbers = match heap.allocate(vec![0_i32; allocation_count]) {
+    // INCHI✔️❗: Fallible source calloc; preserve sequential NULL/cleanup gates.
+    let ring_numbers = match inchi_calloc::<i32>(heap, allocation_count as u64, 4) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => return Ok(()),
         Err(error) => return Err(error),
     };
-    let ring_sizes = match heap.allocate(vec![0_i32; allocation_count]) {
+    // INCHI✔️❗: Fallible source calloc; preserve sequential NULL/cleanup gates.
+    let ring_sizes = match inchi_calloc::<i32>(heap, allocation_count as u64, 4) {
         Ok(pointer) => pointer,
         Err(SourceHeapError::AllocationFailed) => {
             inchi_free(heap, ring_numbers)?;
@@ -4028,8 +4574,12 @@ int OAD_PolymerUnit_HasMetal( OAD_PolymerUnit *u, inp_ATOM *at )
     if unit.na <= 0 {
         return Ok(0);
     }
+    // INCHI✔️❗: at[u->alist[i] - 1].el_number is reached only after the
+    // current list entry; a negative subscript may name a valid interior
+    // allocation predecessor. No eager atom admission or whole-record copy.
+    // O(reached list entries), O(1) space, no allocation; checked arena
+    // lookup/Result and whole-call cost remain OPEN in performance_pending.md.
     let atom_list = heap.slice(unit.alist.as_const())?;
-    let atoms = heap.slice(atoms)?;
     for index in 0..unit.na {
         let index = usize::try_from(index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let atom_number = *atom_list
@@ -4037,14 +4587,8 @@ int OAD_PolymerUnit_HasMetal( OAD_PolymerUnit *u, inp_ATOM *at )
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let atom_index = atom_number
             .checked_sub(1)
-            .and_then(|value| usize::try_from(value).ok())
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let periodic_number = i32::from(
-            atoms
-                .get(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .el_number,
-        );
+        let periodic_number = i32::from(heap.element_signed(atoms, atom_index)?.el_number);
         if is_el_a_metal(periodic_number)? != 0 {
             return Ok(1);
         }
@@ -4212,22 +4756,25 @@ void OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms( OAD_PolymerUnit *unit,
     // END INCHI ACTIVE MACRO CONFIGURATION: OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms
 
     *error = 0;
-    let initial = heap
-        .slice(unit.as_const())?
-        .first()
-        .cloned()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if initial.cyclizable == 0 {
+    // INCHI✔️❗: Callees mutate atoms/bond counts, never the separately
+    // typed unit fields. Keep only the five consumed scalars, no record clone.
+    // Native branch/call/write order retained; checked arena cost remains OPEN.
+    let (cyclizable, cap1, cap2, end_atom1, end_atom2) = {
+        let initial = heap.slice(unit.as_const())?.first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        (initial.cyclizable, initial.cap1, initial.cap2, initial.end_atom1, initial.end_atom2)
+    };
+    if cyclizable == 0 {
         return Ok(());
     }
 
     let mut bond_type = 0_i32;
     let mut bond_stereo = 0_i32;
-    if initial.cyclizable == CLOSING_SRU_RING as i32 {
+    if cyclizable == CLOSING_SRU_RING as i32 {
         let _ = OrigAtData_RemoveBond(
             heap,
-            initial.cap1.wrapping_sub(1),
-            initial.end_atom1.wrapping_sub(1),
+            cap1.wrapping_sub(1),
+            end_atom1.wrapping_sub(1),
             original_atom_data.at,
             &mut bond_type,
             &mut bond_stereo,
@@ -4235,8 +4782,8 @@ void OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms( OAD_PolymerUnit *unit,
         )?;
         let _ = OrigAtData_RemoveBond(
             heap,
-            initial.cap2.wrapping_sub(1),
-            initial.end_atom2.wrapping_sub(1),
+            cap2.wrapping_sub(1),
+            end_atom2.wrapping_sub(1),
             original_atom_data.at,
             &mut bond_type,
             &mut bond_stereo,
@@ -4244,22 +4791,22 @@ void OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms( OAD_PolymerUnit *unit,
         )?;
         let _ = OrigAtData_AddSingleStereolessBond(
             heap,
-            initial.end_atom1.wrapping_sub(1),
-            initial.end_atom2.wrapping_sub(1),
+            end_atom1.wrapping_sub(1),
+            end_atom2.wrapping_sub(1),
             original_atom_data.at,
             &mut original_atom_data.num_inp_bonds,
         )?;
-    } else if initial.cyclizable == CLOSING_SRU_HIGHER_ORDER_BOND as i32 {
+    } else if cyclizable == CLOSING_SRU_HIGHER_ORDER_BOND as i32 {
         let _elevated = OrigAtData_IncreaseBondOrder(
             heap,
-            initial.end_atom1.wrapping_sub(1),
-            initial.end_atom2.wrapping_sub(1),
+            end_atom1.wrapping_sub(1),
+            end_atom2.wrapping_sub(1),
             original_atom_data.at,
         )?;
         let _ = OrigAtData_RemoveBond(
             heap,
-            initial.cap1.wrapping_sub(1),
-            initial.end_atom1.wrapping_sub(1),
+            cap1.wrapping_sub(1),
+            end_atom1.wrapping_sub(1),
             original_atom_data.at,
             &mut bond_type,
             &mut bond_stereo,
@@ -4267,27 +4814,22 @@ void OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms( OAD_PolymerUnit *unit,
         )?;
         let _ = OrigAtData_RemoveBond(
             heap,
-            initial.cap2.wrapping_sub(1),
-            initial.end_atom2.wrapping_sub(1),
+            cap2.wrapping_sub(1),
+            end_atom2.wrapping_sub(1),
             original_atom_data.at,
             &mut bond_type,
             &mut bond_stereo,
             &mut original_atom_data.num_inp_bonds,
         )?;
-    } else if initial.cyclizable == CLOSING_SRU_DIRADICAL as i32 {
-        let end_index = initial
-            .end_atom1
-            .checked_sub(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        heap.slice_mut(original_atom_data.at)?
-            .get_mut(end_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
+    } else if cyclizable == CLOSING_SRU_DIRADICAL as i32 {
+        // Native at[end_atom1 - 1] permits a negative relative offset
+        // when the input pointer is interior to its live atom allocation.
+        heap.element_signed_mut(original_atom_data.at, end_atom1.wrapping_sub(1))?
             .radical = RADICAL_TRIPLET as i8;
         let _ = OrigAtData_RemoveBond(
             heap,
-            initial.cap1.wrapping_sub(1),
-            initial.end_atom1.wrapping_sub(1),
+            cap1.wrapping_sub(1),
+            end_atom1.wrapping_sub(1),
             original_atom_data.at,
             &mut bond_type,
             &mut bond_stereo,
@@ -4295,8 +4837,8 @@ void OAD_PolymerUnit_UnlinkCapsAndConnectEndAtoms( OAD_PolymerUnit *unit,
         )?;
         let _ = OrigAtData_RemoveBond(
             heap,
-            initial.cap2.wrapping_sub(1),
-            initial.end_atom2.wrapping_sub(1),
+            cap2.wrapping_sub(1),
+            end_atom2.wrapping_sub(1),
             original_atom_data.at,
             &mut bond_type,
             &mut bond_stereo,
@@ -4447,12 +4989,10 @@ void OAD_PolymerUnit_FindEndsAndCaps( OAD_PolymerUnit *unit,
     }
 
     fn is_star(atom: &inp_ATOM) -> Result<bool, SourceHeapError> {
-        let nul = atom
-            .elname
-            .iter()
-            .position(|byte| *byte == 0)
-            .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-        Ok(atom.elname[..nul] == [b'Z' as i8, b'z' as i8])
+        // INCHI✔️❗: runichi3.c:2208:
+        //     if (!strcmp(orig_at_data->at[*cap1 - 1].elname, "Zz"))
+        // O(1), no preflight/allocation; whole-call cost OPEN C074.
+        Ok(crate::source::base::util::source_c_string_eq(&atom.elname, b"Zz"))
     }
 
     *end1 = 0;
@@ -4498,12 +5038,22 @@ void OAD_PolymerUnit_FindEndsAndCaps( OAD_PolymerUnit *unit,
     }
     let cap1_index = cap1
         .checked_sub(1)
-        .and_then(|value| usize::try_from(value).ok())
         .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-    let atoms = heap.slice(original_atom_data.at.as_const())?;
-    let first_cap_atom = atoms
-        .get(cap1_index)
-        .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+    // INCHI✔️❗: Native cap subscripts may precede an interior at pointer.
+    // Keep old UnsupportedSourceBehavior for invalid negative/bounds inputs
+    // and retain heap/type errors for nonnegative admission. No copy/scan;
+    // the checked arena cost remains deferred independently.
+    let cap_atom = |index: i32| -> Result<&inp_ATOM, SourceHeapError> {
+        if index < 0 {
+            heap.element_signed(original_atom_data.at.as_const(), index)
+                .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)
+        } else {
+            heap.slice(original_atom_data.at.as_const())?
+                .get(index as usize)
+                .ok_or(SourceHeapError::UnsupportedSourceBehavior)
+        }
+    };
+    let first_cap_atom = cap_atom(cap1_index)?;
     if is_star(first_cap_atom)? {
         *cap1_is_star = 1;
     }
@@ -4533,11 +5083,8 @@ void OAD_PolymerUnit_FindEndsAndCaps( OAD_PolymerUnit *unit,
     }
     let cap2_index = cap2
         .checked_sub(1)
-        .and_then(|value| usize::try_from(value).ok())
         .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-    let second_cap_atom = atoms
-        .get(cap2_index)
-        .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+    let second_cap_atom = cap_atom(cap2_index)?;
     if is_star(second_cap_atom)? {
         *cap2_is_star = 1;
     }
@@ -4709,26 +5256,26 @@ exit_function:
         return Ok(());
     }
 
-    let first_end_index = unit
-        .end_atom1
-        .checked_sub(1)
-        .and_then(|value| usize::try_from(value).ok())
+    let first_end_index = unit.end_atom1.checked_sub(1)
         .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-    let atoms = heap.slice(original_atom_data.at.as_const())?;
-    let first_end = atoms
-        .get(first_end_index)
-        .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-    let valence = usize::try_from(first_end.valence)
-        .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?;
-    if valence > first_end.neighbor.len() {
-        return Err(SourceHeapError::UnsupportedSourceBehavior);
-    }
-    let second_end_index = unit
-        .end_atom2
-        .checked_sub(1)
-        .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-    for neighbor in &first_end.neighbor[..valence] {
-        if i32::from(*neighbor) == second_end_index {
+    let first_end = if first_end_index < 0 {
+        heap.element_signed(original_atom_data.at.as_const(), first_end_index)
+            .map_err(|_| SourceHeapError::UnsupportedSourceBehavior)?
+    } else {
+        heap.slice(original_atom_data.at.as_const())?
+            .get(first_end_index as usize)
+            .ok_or(SourceHeapError::UnsupportedSourceBehavior)?
+    };
+    // INCHI✔️❗: A nonpositive signed degree skips all neighbor comparisons.
+    // Bounds and second endpoint subtraction are admitted only when reached;
+    // an early match precedes any unread malformed tail. No copy/allocation.
+    // Checked arena/field costs remain deferred in performance_pending.md.
+    for index in 0..i32::from(first_end.valence) {
+        let neighbor = *first_end.neighbor.get(index as usize)
+            .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+        let second_end_index = unit.end_atom2.checked_sub(1)
+            .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+        if i32::from(neighbor) == second_end_index {
             unit.cyclizable = CLOSING_SRU_HIGHER_ORDER_BOND as i32;
             return Ok(());
         }
@@ -4846,6 +5393,124 @@ exit_function:
     // INCHI✔️❌: Rust preserves DFS order and cleanup order, but SourceHeap lookups and the node-list clone are materially more expensive than native pointers.
     // END INCHI ACTIVE MACRO CONFIGURATION: OAD_CollectReachableAtoms
 
+    collect_reachable_with_forbidden(
+        heap, original_atom_data, start_atom, forbidden_bond_count,
+        !forbidden_bond_atoms.is_null(), reachable_count, reachable,
+        |heap, index, value| {
+            if let Some(value) = value {
+                *heap.slice_mut(forbidden_bond_atoms)?
+                    .get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+                Ok(value)
+            } else {
+                Ok(*heap.slice(forbidden_bond_atoms.as_const())?
+                    .get(index).ok_or(SourceHeapError::PointerOutOfBounds)?)
+            }
+        },
+    )
+}
+
+#[rustfmt::skip]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn collect_reachable_with_forbidden(
+    heap: &mut SourceHeap,
+    original_atom_data: &ORIG_ATOM_DATA,
+    start_atom: i32,
+    forbidden_bond_count: i32,
+    forbidden_present: bool,
+    reachable_count: &mut i32,
+    reachable: SourceMutPointer<i32>,
+    mut forbidden_access: impl FnMut(&mut SourceHeap, usize, Option<i32>) -> Result<i32, SourceHeapError>,
+) -> Result<i32, SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: runichi3.c3019..3102 OAD_CollectReachableAtoms canonical storage kernel
+    // int OAD_CollectReachableAtoms( ORIG_ATOM_DATA  *orig_at_data,
+    //                                int start_atom,
+    //                                int nforbidden_bonds,
+    //                                int *forbidden_bond_atoms,
+    //                                int *n_reachable,
+    //                                int *reachable,
+    //                                int *err,
+    //                                char *pStrErr)
+    // {
+    //     int iatom, natnums, max_atoms, j, ret = _IS_OKAY;
+    //     int max_n_reachable = *n_reachable;
+    //     int *atnums = NULL;
+    //     subgraf *sg = NULL;
+    //     subgraf_pathfinder *spf = NULL;
+    //
+    //     /* djb-rwth: removing redundant code */
+    //     max_atoms = orig_at_data->num_inp_atoms;
+    //     iatom = start_atom - 1;
+    //     *n_reachable = 0;
+    //
+    //     atnums = (int *)inchi_calloc(max_atoms, sizeof(int));
+    //     if (!atnums)
+    //     {
+    //         ret = _IS_ERROR;
+    //         goto exit_function;
+    //     }
+    //     for (j = 0; j < max_atoms; j++)
+    //     {
+    //         atnums[j] = orig_at_data->at[j].orig_at_number;
+    //     }
+    //     sg = subgraf_new(orig_at_data, max_atoms, atnums);
+    //     if (!sg)
+    //     {
+    //         ret = _IS_ERROR;
+    //         goto exit_function;
+    //     }
+    //     spf = subgraf_pathfinder_new(sg, orig_at_data, iatom, iatom);
+    //     if (!spf)
+    //     {
+    //         ret = _IS_ERROR;
+    //         goto exit_function;
+    //     }
+    //
+    //     /* move from orig# to node# */
+    //     spf->start = iatom;
+    //     for (j = 0; j < nforbidden_bonds; j++)
+    //     {
+    //         forbidden_bond_atoms[2 * j]      = sg->orig2node[forbidden_bond_atoms[2 * j] ];
+    //         forbidden_bond_atoms[2 * j + 1]  = sg->orig2node[forbidden_bond_atoms[2 * j + 1] ];
+    //     }
+    //
+    //     /*memset(atnums, -1, max_atoms * sizeof(int));*/
+    //     for (j = 0; j < max_atoms; j++)
+    //     {
+    //         atnums[j] = -1;
+    //     }
+    //
+    //     spf->nseen = 0;
+    //     natnums = subgraf_pathfinder_collect_all(spf, nforbidden_bonds, forbidden_bond_atoms, atnums);
+    //
+    //     if (natnums)
+    //     {
+    //         if (natnums > max_n_reachable)
+    //         {
+    //             ret = _IS_ERROR;
+    //             goto exit_function;
+    //         }
+    //
+    //         for (j = 0; j < natnums && j < max_atoms; j++) /* djb-rwth: fixing buffer overruns */
+    //         {
+    //             reachable[(*n_reachable)++ ] = atnums[j];
+    //         }
+    //     }
+    //
+    // exit_function:
+    //     subgraf_free(sg);
+    //     subgraf_pathfinder_free(spf);
+    //     if (atnums)
+    //     {
+    //         inchi_free(atnums);
+    //     }
+    //
+    //     return ret;
+    // }
+    // INCHI✔️❗: ONE reachable program; only forbidden scalar storage
+    // projects the source pointer or caller's fixed stack. First map/store
+    // precedes second map/store; no borrowed heap view spans mutation.
+    // All source allocations/DFS/partial counts/errors/cleanup retained,
+    // no new heap storage; callback/checked whole-call costs remain OPEN.
     fn is_allocation_error(error: SourceHeapError) -> bool {
         matches!(
             error,
@@ -4875,19 +5540,30 @@ exit_function:
 
         let atom_count = usize::try_from(max_atoms.max(0))
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let original_numbers = heap
-            .slice(original_atom_data.at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .iter()
-            .map(|atom| i32::from(atom.orig_at_number))
-            .collect::<Vec<_>>();
-        for index in 0..atom_count {
-            heap.slice_mut(atom_numbers)?[index] = original_numbers[index];
+        // INCHI✔️❗: Fill the fresh native scratch directly. Zero atoms skip
+        // all input admission; later bounds errors follow earlier writes.
+        // O(N)/O(1) added storage, no original-number Vec or extra scan.
+        // Arena extraction/check constants remain INCHI-PERF-REACHABLE-VIEWS OPEN.
+        if atom_count != 0 {
+            heap.with_slice_mut_and_heap(atom_numbers, |numbers, heap| {
+                let atoms = heap.slice(original_atom_data.at.as_const())?;
+                for index in 0..atom_count {
+                    let number = i32::from(
+                        atoms.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?.orig_at_number,
+                    );
+                    *numbers.get_mut(index).ok_or(SourceHeapError::PointerOutOfBounds)? = number;
+                }
+                Ok(())
+            })?;
         }
 
-        let nodes = heap.slice(atom_numbers.as_const())?.to_vec();
-        graph = subgraf_new(heap, original_atom_data, max_atoms, &nodes)?;
+        // This fresh scratch cannot alias preexisting live input storage.
+        // subgraf_new only reads its nodes argument; its own allocations are
+        // distinct and it has no live quarantine in this borrowed call. Both
+        // success and typed-error returns restore the scratch before cleanup.
+        graph = heap.with_slice_mut_and_heap_mut(atom_numbers, |nodes, heap| {
+            subgraf_new(heap, original_atom_data, max_atoms, nodes)
+        })?;
         if graph.is_null() {
             return Ok(_IS_ERROR as i32);
         }
@@ -4903,41 +5579,26 @@ exit_function:
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
                 .checked_mul(2)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-            let first_original = *heap
-                .slice(forbidden_bond_atoms.as_const())?
-                .get(offset)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let first_original = forbidden_access(heap, offset, None)?;
             let first_node = *heap
                 .slice(map_pointer.as_const())?
                 .get(usize::try_from(first_original).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            *heap
-                .slice_mut(forbidden_bond_atoms)?
-                .get_mut(offset)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = first_node;
+            let _ = forbidden_access(heap, offset, Some(first_node))?;
 
-            let second_original = *heap
-                .slice(forbidden_bond_atoms.as_const())?
-                .get(offset + 1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let second_original = forbidden_access(heap, offset + 1, None)?;
             let second_node = *heap
                 .slice(map_pointer.as_const())?
                 .get(usize::try_from(second_original).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            *heap
-                .slice_mut(forbidden_bond_atoms)?
-                .get_mut(offset + 1)
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = second_node;
+            let _ = forbidden_access(heap, offset + 1, Some(second_node))?;
         }
 
         heap.slice_mut(atom_numbers)?.fill(-1);
         heap.slice_mut(pathfinder)?[0].nseen = 0;
-        let collected = subgraf_pathfinder_collect_all(
-            heap,
-            pathfinder,
-            forbidden_bond_count,
-            forbidden_bond_atoms,
-            atom_numbers,
+        let collected = crate::source::base::strutil::collect_all_with_forbidden(
+            heap, pathfinder, forbidden_bond_count, forbidden_present,
+            atom_numbers, &mut |heap, index| forbidden_access(heap, index, None),
         )?;
 
         if collected != 0 {
@@ -5052,6 +5713,92 @@ pub(crate) fn OAD_CollectBackboneBonds(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; #if 0 endpoint sorting is inactive; TREAT_ERR retains a pre-existing nonzero error and always calls AddErrorMessage.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OAD_CollectBackboneBonds
 
+    collect_backbone_bonds_with_graph(
+        heap,
+        atom_data,
+        end_atom1,
+        end_atom2,
+        backbone_bond_count,
+        backbone_bonds,
+        error,
+        error_text,
+        |heap| subgraf_new(heap, atom_data, atom_count, atom_list),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn collect_backbone_bonds_with_graph(
+    heap: &mut SourceHeap,
+    atom_data: &ORIG_ATOM_DATA,
+    end_atom1: i32,
+    end_atom2: i32,
+    backbone_bond_count: &mut i32,
+    backbone_bonds: SourceMutPointer<SourceMutPointer<i32>>,
+    error: &mut i32,
+    error_text: Option<&mut [i8]>,
+    make_graph: impl FnOnce(
+        &mut SourceHeap,
+    )
+        -> Result<SourceMutPointer<crate::source_types::subgraf>, SourceHeapError>,
+) -> Result<(), SourceHeapError> {
+    // VERBATIM SOURCE FRAGMENT: runichi3.c:3109..3162 OAD_CollectBackboneBonds indexed kernel
+    // INCHI✔️❗: Shared source kernel, reached live node access; checked costs OPEN.
+    // void OAD_CollectBackboneBonds(ORIG_ATOM_DATA  *at_data,
+    //                               int na,
+    //                               int *alist,
+    //                               int end_atom1,
+    //                               int end_atom2,
+    //                               int *nbkbonds,
+    //                               int **bkbonds,
+    //                               int *err,
+    //                               char *pStrErr )
+    // {
+    //     int start = 0, end = 0, dummy;
+    //     subgraf *sg = NULL;
+    //     subgraf_pathfinder *spf = NULL;
+    //     /* Establish subgraph for na atoms of the alist */
+    //     *nbkbonds = 0;
+    //     sg = subgraf_new( at_data, na, alist );
+    //     if (!sg)
+    //     {
+    //         TREAT_ERR( *err, 9037, "Not enough memory (polymers)" );
+    //         /* unit->cyclizable = CLOSING_SRU_NOT_APPLICABLE; */
+    //         return;
+    //     }
+    //     start = sg->orig2node[end_atom1];
+    //     end = sg->orig2node[end_atom2];
+    // #if 0
+    //     if (start > end)
+    //     {
+    //         int tmp = end;
+    //         end = start;
+    //         start = tmp;
+    //     }
+    // #endif
+    //     spf = subgraf_pathfinder_new( sg, at_data, start, end );
+    //     if (!spf)
+    //     {
+    //         TREAT_ERR( *err, 9039, "Not enough memory (polymers)" ); /* djb-rwth: addressing coverity ID #499539 -- TREAT_ERR properly used */
+    //         /*unit->cyclizable = CLOSING_SRU_NOT_APPLICABLE;*/
+    //         return;
+    //     }
+    //     spf->seen[0] = spf->start;
+    //     spf->nseen = 1;
+    //     *nbkbonds = 0;
+    //     subgraf_pathfinder_run( spf, 0, NULL,
+    //                             nbkbonds,
+    //                             bkbonds, /* we will collect backbone CRU bonds here */
+    //                             &dummy,
+    //                             NULL );
+    //
+    //     subgraf_free( sg );
+    //     subgraf_pathfinder_free( spf );
+    //     *err = 0;
+    //
+    //     return;
+    // }
+    // END VERBATIM SOURCE FRAGMENT: OAD_CollectBackboneBonds indexed kernel
+
     fn treat_error(
         error: &mut i32,
         code: i32,
@@ -5072,7 +5819,7 @@ pub(crate) fn OAD_CollectBackboneBonds(
     }
 
     *backbone_bond_count = 0;
-    let graph = subgraf_new(heap, atom_data, atom_count, atom_list)?;
+    let graph = make_graph(heap)?;
     if graph.is_null() {
         treat_error(error, 9037, error_text)?;
         return Ok(());
@@ -5180,8 +5927,8 @@ pub(crate) fn OAD_PolymerUnit_RemoveLinkFromCRUChain(
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let values = heap.slice(row.as_const())?;
         let first = *values.first().ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let second = *values.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if first == atom1 && second == atom2 {
+        // INCHI✔️❗: Native && skips the second cell on a first-cell mismatch.
+        if first == atom1 && *values.get(1).ok_or(SourceHeapError::PointerOutOfBounds)? == atom2 {
             for source_position in position + 1..count {
                 let source_row = *heap
                     .slice(bonds.as_const())?
@@ -5191,9 +5938,6 @@ pub(crate) fn OAD_PolymerUnit_RemoveLinkFromCRUChain(
                 let source_first = *source_values
                     .first()
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let source_second = *source_values
-                    .get(1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let target_row = *heap
                     .slice(bonds.as_const())?
                     .get(source_position - 1)
@@ -5202,6 +5946,12 @@ pub(crate) fn OAD_PolymerUnit_RemoveLinkFromCRUChain(
                     .slice_mut(target_row)?
                     .first_mut()
                     .ok_or(SourceHeapError::PointerOutOfBounds)? = source_first;
+                // INCHI✔️❗: Re-read after the first store: source and target
+                // rows may overlap. No allocation; checked arena cost is open.
+                let source_second = *heap
+                    .slice(source_row.as_const())?
+                    .get(1)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 *heap
                     .slice_mut(target_row)?
                     .get_mut(1)
@@ -5552,14 +6302,9 @@ pub(crate) fn OAD_PolymerUnit_DelistHighOrderBackboneBonds(
                 if !composite.at.is_null() && !current_numbers.is_null() {
                     let atom1_index =
                         usize::try_from(atom1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                    let atom2_index =
-                        usize::try_from(atom2).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let mapping = heap.slice(current_numbers.as_const())?;
                     let current1 = *mapping
                         .get(atom1_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let current2 = *mapping
-                        .get(atom2_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let current1_index = usize::try_from(current1)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -5571,7 +6316,16 @@ pub(crate) fn OAD_PolymerUnit_DelistHighOrderBackboneBonds(
                     for neighbor_index in 0..i32::from(normalized_atom.valence).max(0) {
                         let neighbor_index = usize::try_from(neighbor_index)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                        if i32::from(normalized_atom.neighbor[neighbor_index]) != current2 {
+                        let neighbor = i32::from(normalized_atom.neighbor[neighbor_index]);
+                        // INCHI✔️❗: curr_num[at2] is reached only after the
+                        // positive valence loop and this neighbor access.
+                        // O(1), no staging; safe-check cost remains OPEN.
+                        let atom2_index = usize::try_from(atom2)
+                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                        let current2 = *mapping
+                            .get(atom2_index)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        if neighbor != current2 {
                             continue;
                         }
                         untouchable =
@@ -5709,30 +6463,31 @@ pub(crate) fn OAD_Polymer_FindBackbones(
         if unit.cyclizable == 0 {
             continue;
         }
-        let listed_count =
-            usize::try_from(unit.na.max(0)).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atom_list = if listed_count == 0 {
-            Vec::new()
-        } else {
-            heap.slice(unit.alist.as_const())?
-                .get(..listed_count)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .to_vec()
-        };
+        // INCHI✔️❗: The source passes alist without eager admission. The
+        // graph kernel reads each reached node after native allocations; no
+        // list borrow spans DFS output writes, preserving legal row aliases.
         let mut backbone_count = unit.nbkbonds;
-        OAD_CollectBackboneBonds(
+        let collect_result = collect_backbone_bonds_with_graph(
             heap,
             atom_data,
-            unit.na,
-            &atom_list,
             unit.end_atom1,
             unit.end_atom2,
             &mut backbone_count,
             unit.bkbonds,
             error,
             error_text.as_deref_mut(),
-        )?;
+            |heap| {
+                crate::source::base::strutil::subgraf_new_with_nodes(
+                    heap,
+                    atom_data,
+                    unit.na,
+                    |heap, index| Ok(*heap.element_signed(unit.alist.as_const(), index as i32)?),
+                )
+            },
+        );
+        // The native output counter is live even when a later typed read fails.
         heap.slice_mut(unit_pointer)?[0].nbkbonds = backbone_count;
+        collect_result?;
         if *error != 0 {
             heap.slice_mut(unit_pointer)?[0].cyclizable = CLOSING_SRU_NOT_APPLICABLE as i32;
             continue;
@@ -6005,30 +6760,17 @@ int  OrigAtData_IncreaseBondOrder( int this_atom, int other_atom, inp_ATOM *at )
     // INCHI✔️❌: Performance is materially worse because modeled pointer dereference requires SourceHeap allocation-table lookup.
     // END INCHI ACTIVE MACRO CONFIGURATION: OrigAtData_IncreaseBondOrder
 
-    let this_index =
-        usize::try_from(this_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let other_index =
-        usize::try_from(other_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let values = heap.slice_mut(atoms)?;
-    let this_valence = values
-        .get(this_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .valence;
-    let other_valence = values
-        .get(other_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .valence;
-    if i32::from(this_valence) >= MAXVAL as i32
-        || i32::from(other_valence) >= MAXVAL as i32
+    // INCHI✔️❌: Preserve native short-circuit admission and signed interior
+    // offsets. No allocation or clone; checked arena cost remains deferred.
+    if i32::from(heap.element_signed(atoms.as_const(), this_atom)?.valence) >= MAXVAL as i32
+        || i32::from(heap.element_signed(atoms.as_const(), other_atom)?.valence) >= MAXVAL as i32
     {
         return Ok(0);
     }
 
     let mut increased = 0_i32;
     {
-        let atom = values
-            .get_mut(this_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = heap.element_signed_mut(atoms, this_atom)?;
         if i32::from(atom.chem_bonds_valence) > MAXVAL as i32 - 1 {
             return Ok(0);
         }
@@ -6049,9 +6791,7 @@ int  OrigAtData_IncreaseBondOrder( int this_atom, int other_atom, inp_ATOM *at )
     }
 
     {
-        let atom = values
-            .get_mut(other_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let atom = heap.element_signed_mut(atoms, other_atom)?;
         if i32::from(atom.chem_bonds_valence) > MAXVAL as i32 - 1 {
             return Ok(0);
         }
@@ -6138,60 +6878,60 @@ pub(crate) fn OrigAtData_DecreaseBondOrder(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; MAXVAL is source-defined; neighbor is AT_NUMB/unsigned short and bond_type is U_CHAR.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OrigAtData_DecreaseBondOrder
 
-    let first_index =
-        usize::try_from(this_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let second_index =
-        usize::try_from(other_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let first = heap
-        .slice(atoms.as_const())?
-        .get(first_index)
-        .cloned()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if i32::from(first.chem_bonds_valence) > MAXVAL as i32 - 1 {
-        return Ok(0);
-    }
+    // INCHI✔️❌: Borrow each endpoint only when reached; the second sees
+    // the first stores on self-bonds. Source checks only the first chemical
+    // valence. No atom copies, allocation or extra scans; arena cost is open.
     let mut decreased = 0_i32;
-    for neighbor_index in 0..i32::from(first.valence).max(0) {
-        let neighbor_index =
-            usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if i32::from(first.neighbor[neighbor_index]) != other_atom {
-            continue;
-        }
-        if first.bond_type[neighbor_index] < 2 {
+    {
+        let atom = heap.element_signed_mut(atoms, this_atom)?;
+        if i32::from(atom.chem_bonds_valence) > MAXVAL as i32 - 1 {
             return Ok(0);
         }
-        let atom = heap
-            .slice_mut(atoms)?
-            .get_mut(first_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        atom.bond_type[neighbor_index] = atom.bond_type[neighbor_index].wrapping_sub(1);
-        atom.chem_bonds_valence = atom.chem_bonds_valence.wrapping_sub(1);
-        decreased = decreased.wrapping_add(1);
-        break;
+        for neighbor_index in 0..i32::from(atom.valence) {
+            let neighbor_index = neighbor_index as usize;
+            let neighbor = *atom
+                .neighbor
+                .get(neighbor_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if i32::from(neighbor) != other_atom {
+                continue;
+            }
+            let bond = atom
+                .bond_type
+                .get_mut(neighbor_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if *bond < 2 {
+                return Ok(0);
+            }
+            *bond = bond.wrapping_sub(1);
+            atom.chem_bonds_valence = atom.chem_bonds_valence.wrapping_sub(1);
+            decreased = decreased.wrapping_add(1);
+            break;
+        }
     }
-
-    let second = heap
-        .slice(atoms.as_const())?
-        .get(second_index)
-        .cloned()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    for neighbor_index in 0..i32::from(second.valence).max(0) {
-        let neighbor_index =
-            usize::try_from(neighbor_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        if i32::from(second.neighbor[neighbor_index]) != this_atom {
-            continue;
+    {
+        let atom = heap.element_signed_mut(atoms, other_atom)?;
+        for neighbor_index in 0..i32::from(atom.valence) {
+            let neighbor_index = neighbor_index as usize;
+            let neighbor = *atom
+                .neighbor
+                .get(neighbor_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if i32::from(neighbor) != this_atom {
+                continue;
+            }
+            let bond = atom
+                .bond_type
+                .get_mut(neighbor_index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            if *bond < 2 {
+                return Ok(0);
+            }
+            *bond = bond.wrapping_sub(1);
+            atom.chem_bonds_valence = atom.chem_bonds_valence.wrapping_sub(1);
+            decreased = decreased.wrapping_add(1);
+            break;
         }
-        if second.bond_type[neighbor_index] < 2 {
-            return Ok(0);
-        }
-        let atom = heap
-            .slice_mut(atoms)?
-            .get_mut(second_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        atom.bond_type[neighbor_index] = atom.bond_type[neighbor_index].wrapping_sub(1);
-        atom.chem_bonds_valence = atom.chem_bonds_valence.wrapping_sub(1);
-        decreased = decreased.wrapping_add(1);
-        break;
     }
     Ok(decreased)
 }
@@ -6264,52 +7004,58 @@ pub(crate) fn OAD_PolymerUnit_ReopenCyclized(
     // INCHI✔️❌: COMPILE_ANSI_ONLY; TARGET_API_LIB; GCC/Linux; sizeof(int)=4; RADICAL_TRIPLET and CLOSING_SRU_* use generated source constants.
     // END INCHI ACTIVE HEADER/MACRO CONFIGURATION: OAD_PolymerUnit_ReopenCyclized
 
-    let initial = heap
-        .slice(unit.as_const())?
-        .first()
-        .cloned()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if initial.cyclizable == CLOSING_SRU_RING as i32 {
+    // INCHI✔️❌: Keep five scalar fields rather than cloning the whole unit.
+    // Signed atom admission permits interior offsets; source allocation and
+    // failure/state order remain intact. Checked arena cost stays deferred.
+    let (cyclizable, end_atom1, end_atom2, cap1, cap2) = {
+        let initial = heap
+            .slice(unit.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        (
+            initial.cyclizable,
+            initial.end_atom1,
+            initial.end_atom2,
+            initial.cap1,
+            initial.cap2,
+        )
+    };
+    if cyclizable == CLOSING_SRU_RING as i32 {
         let mut bond_type = 0_i32;
         let mut bond_stereo = 0_i32;
         let _ = OrigAtData_RemoveBond(
             heap,
-            initial.end_atom1.wrapping_sub(1),
-            initial.end_atom2.wrapping_sub(1),
+            end_atom1.wrapping_sub(1),
+            end_atom2.wrapping_sub(1),
             atoms,
             &mut bond_type,
             &mut bond_stereo,
             input_bond_count,
         )?;
-    } else if initial.cyclizable == CLOSING_SRU_HIGHER_ORDER_BOND as i32 {
+    } else if cyclizable == CLOSING_SRU_HIGHER_ORDER_BOND as i32 {
         let _ = OrigAtData_DecreaseBondOrder(
             heap,
-            initial.end_atom1.wrapping_sub(1),
-            initial.end_atom2.wrapping_sub(1),
+            end_atom1.wrapping_sub(1),
+            end_atom2.wrapping_sub(1),
             atoms,
         )?;
-    } else if initial.cyclizable == CLOSING_SRU_DIRADICAL as i32 {
-        let end = usize::try_from(initial.end_atom1.wrapping_sub(1))
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let atom = heap
-            .slice_mut(atoms)?
-            .get_mut(end)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    } else if cyclizable == CLOSING_SRU_DIRADICAL as i32 {
+        let atom = heap.element_signed_mut(atoms, end_atom1.wrapping_sub(1))?;
         if i32::from(atom.radical) == RADICAL_TRIPLET as i32 {
             atom.radical = 0;
         }
     }
     let _ = OrigAtData_AddSingleStereolessBond(
         heap,
-        initial.cap1.wrapping_sub(1),
-        initial.end_atom1.wrapping_sub(1),
+        cap1.wrapping_sub(1),
+        end_atom1.wrapping_sub(1),
         atoms,
         input_bond_count,
     )?;
     let _ = OrigAtData_AddSingleStereolessBond(
         heap,
-        initial.cap2.wrapping_sub(1),
-        initial.end_atom2.wrapping_sub(1),
+        cap2.wrapping_sub(1),
+        end_atom2.wrapping_sub(1),
         atoms,
         input_bond_count,
     )?;
@@ -6337,16 +7083,16 @@ pub(crate) fn OAD_PolymerUnit_ReopenCyclized(
     let values = heap.slice_mut(bond_list)?;
     *values
         .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = initial.cap1;
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = cap1;
     *values
         .get_mut(1)
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = initial.end_atom1;
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = end_atom1;
     *values
         .get_mut(2)
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = initial.cap2;
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = cap2;
     *values
         .get_mut(3)
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = initial.end_atom2;
+        .ok_or(SourceHeapError::PointerOutOfBounds)? = end_atom2;
     Ok(())
 }
 
@@ -6503,15 +7249,22 @@ pub(crate) fn OAD_Polymer_SmartReopenCyclizedUnits(
         let reopening =
             OAD_PolymerUnit_SetReopeningDetails(heap, &mut unit, heap.slice(atoms.as_const())?)?;
         if reopening != 0 {
-            let properties = heap.slice(atom_properties.as_const())?.to_vec();
             let mut senior_bond = 0_i32;
-            OAD_PolymerUnit_SortBackboneBondsAndSetSeniors(
-                heap,
-                &mut unit,
-                atoms,
-                &properties,
-                &mut senior_bond,
-            )?;
+            // INCHI✔️❗: Reuse the fresh native aprops allocation, read-only
+            // throughout sorting. No per-unit allocation or full-array copy.
+            // The callback only allocates/frees bnum and accesses other typed
+            // rows; it never resolves this private fresh properties handle.
+            // The canonical borrow restores storage on every Result outcome.
+            // O(native sorting work)/O(1) extra; arena/helper cost remains OPEN.
+            heap.with_slice_mut_and_heap_mut(atom_properties, |properties, heap| {
+                OAD_PolymerUnit_SortBackboneBondsAndSetSeniors(
+                    heap,
+                    &mut unit,
+                    atoms,
+                    properties,
+                    &mut senior_bond,
+                )
+            })?;
         }
         heap.slice_mut(unit_pointer)?[0] = unit;
         OAD_PolymerUnit_ReopenCyclized(
@@ -6582,6 +7335,82 @@ pub(crate) fn OAD_PolymerUnit_SetReopeningDetails(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: OAD_PolymerUnit_SetReopeningDetails
 
+    source_reopening_details(heap, unit, |offset| {
+        let index = usize::try_from(offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        atoms.get(index).ok_or(SourceHeapError::PointerOutOfBounds)
+    })
+}
+
+pub(crate) fn polymer_reopening_details_pointer(
+    heap: &SourceHeap,
+    unit: &mut OAD_PolymerUnit,
+    atoms: SourceMutPointer<inp_ATOM>,
+) -> Result<i32, SourceHeapError> {
+    // INCHI source runichi3.c:4034:
+    //             for (k = 0; k < at[u->end_atom1 - 1].valence; k++)
+    // INCHI✔️❗: Only the reached source atom read admits the pointer, including
+    // negative offsets within an allocation. No copy/allocation; arena cost OPEN.
+    source_reopening_details(heap, unit, |offset| {
+        heap.element_signed(atoms.as_const(), offset)
+    })
+}
+
+fn source_reopening_details<'a>(
+    heap: &SourceHeap,
+    unit: &mut OAD_PolymerUnit,
+    mut atom_at: impl FnMut(i32) -> Result<&'a inp_ATOM, SourceHeapError>,
+) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/runichi3.c:4007 OAD_PolymerUnit_SetReopeningDetails
+    // INCHI✔️✔️: int OAD_PolymerUnit_SetReopeningDetails( OAD_PolymerUnit *u, inp_ATOM *at )
+    // INCHI✔️✔️: {
+    // INCHI✔️✔️:     int k;
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     /* Check reopening  type */
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     /* Caps are separated by one atom - that's not error but do nothing */
+    // INCHI✔️✔️:     if (u->nbkbonds == 0)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         ;
+    // INCHI✔️✔️:     }
+    // INCHI✔️✔️:     else if (u->nbkbonds == 1)
+    // INCHI✔️✔️:     {
+    // INCHI✔️✔️:         u->end_atom1 = u->bkbonds[0][0];
+    // INCHI✔️✔️:         u->end_atom2 = u->bkbonds[0][1];
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:         if (u->end_atom1 == u->end_atom2)
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️: #ifdef ALLOW_CLOSING_SRU_VIA_DIRADICAL
+    // INCHI✔️✔️:             u->cyclizable = CLOSING_SRU_DIRADICAL;
+    // INCHI✔️✔️: #else
+    // INCHI✔️✔️:             u->cyclizable = CLOSING_SRU_NOT_APPLICABLE;
+    // INCHI✔️✔️: #endif
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:         else
+    // INCHI✔️✔️:         {
+    // INCHI✔️✔️:             /* If caps are separated by two atoms - that's not error but do nothing */
+    // INCHI✔️✔️:             for (k = 0; k < at[u->end_atom1 - 1].valence; k++)
+    // INCHI✔️✔️:             {
+    // INCHI✔️✔️:                 if (at[u->end_atom1 - 1].neighbor[k] == u->end_atom2 - 1)
+    // INCHI✔️✔️:                 {
+    // INCHI✔️✔️:                     if (at[u->end_atom1 - 1].bond_type[k] > 1)
+    // INCHI✔️✔️: #ifdef ALLOW_CLOSING_SRU_VIA_HIGHER_ORDER_BOND
+    // INCHI✔️✔️:                         u->cyclizable = CLOSING_SRU_HIGHER_ORDER_BOND;
+    // INCHI✔️✔️: #else
+    // INCHI✔️✔️: /*                  u->cyclizable = CLOSING_SRU_NOT_APPLICABLE;*/
+    // INCHI✔️✔️: #endif
+    // INCHI✔️✔️: break;
+    // INCHI✔️✔️:                 }
+    // INCHI✔️✔️:             }
+    // INCHI✔️✔️:         }
+    // INCHI✔️✔️:     } /*    */
+    // INCHI✔️✔️:
+    // INCHI✔️✔️:     return u->nbkbonds;
+    // INCHI✔️✔️: }
+    // END INCHI C FUNCTION: OAD_PolymerUnit_SetReopeningDetails
+    // INCHI✔️❗: One source algorithm with lazy atom admission after the native
+    // endpoint writes; nbkbonds != 1 and equal endpoints never read atoms.
+    // O(reached valence), O(1) space, no snapshots/allocations; checked cost OPEN.
+
     if unit.nbkbonds == 0 {
         return Ok(0);
     }
@@ -6596,24 +7425,32 @@ pub(crate) fn OAD_PolymerUnit_SetReopeningDetails(
         if unit.end_atom1 == unit.end_atom2 {
             unit.cyclizable = CLOSING_SRU_DIRADICAL as i32;
         } else {
-            let atom_index = usize::try_from(
-                unit.end_atom1
-                    .checked_sub(1)
-                    .ok_or(SourceHeapError::SourceIntegerOverflow)?,
-            )
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let atom = atoms
-                .get(atom_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let target = unit
-                .end_atom2
+            let atom_offset = unit
+                .end_atom1
                 .checked_sub(1)
                 .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+            let atom = atom_at(atom_offset)?;
             let valence = usize::try_from(i32::from(atom.valence).max(0))
                 .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            // INCHI✔️❗: inpdef.h51..57 enables both closing branches. Only
+            // a reached comparison evaluates end_atom2 - 1. No allocation;
+            // independent checked-access cost remains open.
             for index in 0..valence {
-                if i32::from(atom.neighbor[index]) == target {
-                    if atom.bond_type[index] > 1 {
+                let neighbor = *atom
+                    .neighbor
+                    .get(index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let target = unit
+                    .end_atom2
+                    .checked_sub(1)
+                    .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                if i32::from(neighbor) == target {
+                    if *atom
+                        .bond_type
+                        .get(index)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                        > 1
+                    {
                         unit.cyclizable = CLOSING_SRU_HIGHER_ORDER_BOND as i32;
                     }
                     break;
@@ -6763,11 +7600,10 @@ pub(crate) fn OAD_PolymerUnit_SortBackboneBonds(
         return Ok(());
     }
     let bond_at = |heap: &SourceHeap, number: i32| -> Result<[i32; 2], SourceHeapError> {
-        let index = usize::try_from(number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let row_pointer = *heap
-            .slice(unit.bkbonds.as_const())?
-            .get(index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❌: bnum values are signed source subscripts, including
+        // negative offsets into an interior row table. No allocation/clone;
+        // comparator/order remain unchanged; checked arena cost stays open.
+        let row_pointer = *heap.element_signed(unit.bkbonds.as_const(), number)?;
         let row = heap.slice(row_pointer.as_const())?;
         Ok([
             *row.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
@@ -7689,11 +8525,17 @@ exit_function:
         error_text: &mut Option<&mut [i8]>,
         message: &'static [u8],
     ) -> Result<(), SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichierr.h:172..173 C381 TREAT_ERR
+        // #define TREAT_ERR(err, new_err, msg) \
+        //         if ( !(err) && (new_err) ) { (err) = (new_err);} AddErrorMessage(pStrErr, (msg))
+        // END VERBATIM SOURCE FRAGMENT: C381 TREAT_ERR
+        // INCHI✔️❗: borrow the same static message bytes; preserve first error,
+        // NUL/extent and synchronous consumer behavior. No conversion Vec or
+        // O(message length) copy; existing whole-message consumer cost OPEN.
         if *error == 0 && code != 0 {
             *error = code;
         }
-        let message = message.iter().map(|byte| *byte as i8).collect::<Vec<_>>();
-        AddErrorMessage(error_text.as_deref_mut(), Some(&message))?;
+        AddErrorMessage(error_text.as_deref_mut(), Some(bytemuck::cast_slice(message)))?;
         Ok(())
     }
 
@@ -7702,9 +8544,13 @@ exit_function:
         no_warnings: i32,
         message: &'static [u8],
     ) -> Result<(), SourceHeapError> {
+        // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichierr.h:167 C381 WarningMessage
+        // #define WarningMessage AddErrorMessage
+        // END VERBATIM SOURCE FRAGMENT: C381 WarningMessage
+        // INCHI✔️❗: same gated synchronous literal consumer, no message Vec or
+        // conversion pass; consumer/whole-call machine costs remain OPEN.
         if no_warnings == 0 {
-            let message = message.iter().map(|byte| *byte as i8).collect::<Vec<_>>();
-            AddErrorMessage(error_text.as_deref_mut(), Some(&message))?;
+            AddErrorMessage(error_text.as_deref_mut(), Some(bytemuck::cast_slice(message)))?;
         }
         Ok(())
     }
@@ -7726,15 +8572,14 @@ exit_function:
     }
 
     fn atom_name_is(atom: &inp_ATOM, expected: &[u8]) -> Result<bool, SourceHeapError> {
-        let length = atom
-            .elname
-            .iter()
-            .position(|byte| *byte == 0)
-            .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-        Ok(atom.elname[..length]
-            .iter()
-            .map(|byte| *byte as u8)
-            .eq(expected.iter().copied()))
+        // INCHI✔️❗: runichi3.c:1664,1828..1830:
+        //             if (!strcmp( orig_at_data->at[k].elname, "Zz" ))
+        //                 if (!strcmp( orig_at_data->at[a1 - 1].elname, "H" ) ||
+        //                      !strcmp( orig_at_data->at[a1 - 1].elname, "D" ) ||
+        //                      !strcmp( orig_at_data->at[a1 - 1].elname, "T" ))
+        // Every caller's expected length <=2, within the six-byte field.
+        // O(1), no suffix scan/allocation; whole-call cost OPEN C074.
+        Ok(crate::source::base::util::source_c_string_eq(&atom.elname, expected))
     }
 
     let mut error = 0_i32;
@@ -8451,15 +9296,17 @@ void OAD_ValidateAndSortOutPseudoElementAtoms( ORIG_ATOM_DATA *orig_at_data,
             let atom = atoms
                 .get_mut(atom_index)
                 .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-            let name_length = atom
-                .elname
-                .iter()
-                .position(|byte| *byte == 0)
-                .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
-            let name = &atom.elname[..name_length];
-            let is_zy = name == [b'Z' as i8, b'y' as i8];
-            let is_star = name == [b'*' as i8];
-            let is_zz = !is_star && name == [b'Z' as i8, b'z' as i8];
+            // INCHI✔️❗: runichi3.c:4418,4428..4431, source comparison order:
+            //         if (!strcmp( orig_at_data->at[k].elname, "Zy" ))
+            //         is_star = !strcmp( orig_at_data->at[k].elname, "*" );
+            //         if (!is_star)
+            //         {
+            //             is_zz = !strcmp( orig_at_data->at[k].elname, "Zz" );
+            // O(1), no full field preflight; machine cost OPEN C074.
+            let is_zy = crate::source::base::util::source_c_string_eq(&atom.elname, b"Zy");
+            let is_star = crate::source::base::util::source_c_string_eq(&atom.elname, b"*");
+            let is_zz = !is_star
+                && crate::source::base::util::source_c_string_eq(&atom.elname, b"Zz");
 
             if is_star || is_zz || is_zy {
                 pseudo_count = pseudo_count
@@ -8529,25 +9376,34 @@ void OAD_ValidateAndSortOutPseudoElementAtoms( ORIG_ATOM_DATA *orig_at_data,
                     )
                 };
                 if both_caps_undefined {
+                    // INCHI✔️❗: native4479..4480 writes cap1 then cap2 using
+                    // signed relative indices; valid interior atom pointers may
+                    // reach their prefix. Keep existing bounds-error category
+                    // and first-write publication before a later cap2 error.
+                    // O(1), no extra pass/copy/allocation; arena cost OPEN.
                     let cap1_index = cap1
                         .checked_sub(1)
-                        .and_then(|value| usize::try_from(value).ok())
                         .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
                     let first_cap = heap
-                        .slice_mut(original_atom_data.at)?
-                        .get_mut(cap1_index)
-                        .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+                        .element_signed_mut(original_atom_data.at, cap1_index)
+                        .map_err(|error| match error {
+                            SourceHeapError::PointerOutOfBounds =>
+                                SourceHeapError::UnsupportedSourceBehavior,
+                            other => other,
+                        })?;
                     first_cap.elname[..3]
                         .copy_from_slice(&[b'Z' as i8, b'z' as i8, 0]);
 
                     let cap2_index = cap2
                         .checked_sub(1)
-                        .and_then(|value| usize::try_from(value).ok())
                         .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
                     let second_cap = heap
-                        .slice_mut(original_atom_data.at)?
-                        .get_mut(cap2_index)
-                        .ok_or(SourceHeapError::UnsupportedSourceBehavior)?;
+                        .element_signed_mut(original_atom_data.at, cap2_index)
+                        .map_err(|error| match error {
+                            SourceHeapError::PointerOutOfBounds =>
+                                SourceHeapError::UnsupportedSourceBehavior,
+                            other => other,
+                        })?;
                     second_cap.elname[..3]
                         .copy_from_slice(&[b'Z' as i8, b'z' as i8, 0]);
                     zz_count = zz_count
@@ -8757,22 +9613,21 @@ int Inp_Atom_GetBondType(inp_ATOM *at, int iatom1, int iatom2)
     // INCHI✔️❌: Performance is materially worse because the modeled pointer access performs a SourceHeap allocation-table lookup.
     // END INCHI ACTIVE MACRO CONFIGURATION: Inp_Atom_GetBondType
 
-    let atom_index = usize::try_from(iatom1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let atom = heap
-        .slice(at)?
-        .get(atom_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: preserve signed interior-pointer offsets and source first-match
+    // return before later neighbor admission. O(valence), O(1), no allocation;
+    // checked heap/index cost remains independently unresolved.
+    let atom = heap.element_signed(at, iatom1)?;
     if atom.valence <= 0 {
         return Ok(-1);
     }
     let valence = usize::try_from(atom.valence)
         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    if valence > atom.neighbor.len() {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
     for i in 0..valence {
-        if i32::from(atom.neighbor[i]) == iatom2 {
-            return Ok(i32::from(atom.bond_type[i]));
+        let neighbor = *atom.neighbor.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?;
+        if i32::from(neighbor) == iatom2 {
+            return Ok(i32::from(
+                *atom.bond_type.get(i).ok_or(SourceHeapError::PointerOutOfBounds)?,
+            ));
         }
     }
     Ok(-1)
@@ -8895,7 +9750,9 @@ mod tests {
             .unwrap();
         assert_eq!(
             Inp_Atom_GetBondType(&heap, overfull.as_const(), 0, 0),
-            Err(SourceHeapError::PointerOutOfBounds)
+            // Native runichi3.c:4513..4515 returns the first matched bond;
+            // neighbor[0] and bond_type[0] are valid despite valence21.
+            Ok(0)
         );
         assert_eq!(
             Inp_Atom_GetBondType(&heap, atoms.as_const(), -1, 0),
@@ -9116,7 +9973,7 @@ mod tests {
         let mut message = [0_i8; 256];
         assert_eq!(
             invoke(&heap, &mut malformed, &malformed_original, &mut message,).0,
-            Err(SourceHeapError::UnsupportedSourceBehavior)
+            Ok(())
         );
     }
 
@@ -14440,9 +15297,9 @@ mod tests {
                 &mut error,
                 Some(&mut message),
             ),
-            Err(SourceHeapError::UnsupportedSourceBehavior)
+            Ok(())
         );
-        assert_eq!(unterminated.n_zy, 101);
+        assert_eq!(unterminated.n_zy, 0);
 
         let partial_atoms = heap
             .allocate_model_storage(vec![atom(b"*\0", 102)])

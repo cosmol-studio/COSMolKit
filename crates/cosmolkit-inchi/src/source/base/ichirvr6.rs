@@ -3,6 +3,9 @@ use crate::source::base::ichirvr1::{
     AddToEdgeList, AllocEdgeList, GetChargeFlowerUpperEdge, MakeOneInChIOutOfStrFromINChI2,
     RemoveForbiddenEdgeMask, RunBnsRestoreOnce, RunBnsTestOnce, SetForbiddenEdgeMask,
 };
+use crate::source::base::ichirvr1::{
+    SourceRestoreMode, make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode,
+};
 use crate::source::base::ichirvr4::FillOutExtraFixedHDataRestr;
 use crate::source::base::ichirvr5::GetPlusMinusVertex;
 use crate::source_types::{
@@ -49,7 +52,44 @@ pub(crate) fn FixRestoredStructureStereo(
     _pn_total_delta: &mut i32,
     forbidden_edge_mask: i32,
     forbidden_stereo_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    fix_restored_structure_stereo_with_restore_mode(heap, pCG, ic, cmp_inchi, icr, cmp_inchi2, icr2, ip, sd, pBNS, pBD, pStruct, at, at2, at3, pVA, pTCGroups, ppt_group_info, ppat_norm, ppat_prep, pInChI, _num_inp, pn_num_run_bns, _pn_total_delta, forbidden_edge_mask, forbidden_stereo_edge_mask, clock_result, source_restore_mode)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn fix_restored_structure_stereo_with_restore_mode(
+    heap: &mut SourceHeap,
+    pCG: &mut CANON_GLOBALS,
+    ic: SourceMutPointer<INCHI_CLOCK>,
+    mut cmp_inchi: INCHI_MODE,
+    icr: &mut ICR,
+    mut cmp_inchi2: INCHI_MODE,
+    icr2: &mut ICR,
+    ip: &INPUT_PARMS,
+    sd: &STRUCT_DATA,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    at3: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    mut ppt_group_info: Option<&mut SourceTGroupInfoPointer>,
+    mut ppat_norm: Option<&mut SourceMutPointer<inp_ATOM>>,
+    mut ppat_prep: Option<&mut SourceMutPointer<inp_ATOM>>,
+    pInChI: [SourceMutPointer<INChI>; 2],
+    _num_inp: i64,
+    pn_num_run_bns: &mut i32,
+    _pn_total_delta: &mut i32,
+    forbidden_edge_mask: i32,
+    forbidden_stereo_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr6.c:59 FixRestoredStructureStereo
     // INCHI✔❌: complete active source frame follows verbatim; focused branch tests
@@ -1554,6 +1594,18 @@ pub(crate) fn FixRestoredStructureStereo(
     let _ = AllocEdgeList(heap, &mut taut_minus_edges[1], EDGE_LIST_CLEAR)?;
     
     let execution = (|| -> Result<(), SourceHeapError> {
+        // INCHI✔️❗: Source bond fields are live scalar reads at each reached
+        // difference, after loop/count/success gates. No root/array snapshot;
+        // alias payload writes remain visible. Fixed ICR rows are borrowed only
+        // until the following rebuild. Checked getters/whole-call costs OPEN.
+        macro_rules! stereo_bond_atom {
+            ($stereo:expr, $field:ident, $index:expr) => {{
+                let pointer = heap.slice($stereo.as_const())?.first()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?.$field;
+                *heap.slice(pointer.as_const())?.get($index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+            }};
+        }
         macro_rules! first_model {
             ($pointer:expr) => {{
                 heap.slice($pointer.as_const())?
@@ -1623,7 +1675,7 @@ pub(crate) fn FixRestoredStructureStereo(
         macro_rules! rebuild_and_compare {
             ($primary_output:expr, $original_index:ident, $reversed_index:ident,
              $p_stereo_reversed:ident, $p_stereo2_reversed:ident, $refresh:expr) => {{
-                ret = MakeOneInChIOutOfStrFromINChI2(
+                ret = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -1640,6 +1692,7 @@ pub(crate) fn FixRestoredStructureStereo(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 )?;
                 if ret < 0 {
                     return Ok(());
@@ -1811,7 +1864,11 @@ pub(crate) fn FixRestoredStructureStereo(
             while order < i32::from(atom.valence) {
                 let edge_number = incident_edge!(atom_number, order);
                 let edge = edge_snapshot!(edge_number);
-                if atom_number == i32::from(edge.neighbor1)
+                // VERBATIM SOURCE FRAGMENT: ichirvr6.c201
+                //             if (j == pe->neighbor1)
+                // INCHI✔️❗: Source uses adjacency ordinal j, even though neighbor1 names a vertex.
+                // No allocation/clone, O(reached rows); whole-call cost stays OPEN.
+                if order == i32::from(edge.neighbor1)
                     && i32::from(edge.forbidden) & forbidden_stereo_edge_mask != 0
                 {
                     ret = AddToEdgeList(heap, &mut fixed_stereo_edges, edge_number, INC_ADD_EDGE)?;
@@ -1831,27 +1888,23 @@ pub(crate) fn FixRestoredStructureStereo(
             && maximum_success > 0
         {
             RemoveForbiddenEdgeMask(heap, pBNS, &fixed_stereo_edges, forbidden_stereo_edge_mask)?;
-            let stereo = first_model!(p_stereo_input);
-            let bond_atoms1 = heap.slice(stereo.nBondAtom1.as_const())?.to_vec();
-            let bond_atoms2 = heap.slice(stereo.nBondAtom2.as_const())?.to_vec();
+            let stereo = p_stereo_input;
+            let bond_atoms1 = stereo;
+            let bond_atoms2 = stereo;
             let count = usize::try_from(icr.num_sb_in2_only.max(0))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let missing_bonds = icr.sb_in2_only[..count.min(icr.sb_in2_only.len())].to_vec();
-            for difference in missing_bonds {
+            let missing_bonds = &icr.sb_in2_only[..count.min(icr.sb_in2_only.len())];
+            for &difference in missing_bonds {
                 if current_success >= maximum_success {
                     break;
                 }
                 let difference = usize::from(difference);
                 let vertex1 = i32::from(
-                    *bond_atoms1
-                        .get(difference)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    stereo_bond_atom!(bond_atoms1, nBondAtom1, difference),
                 )
                 .wrapping_sub(1);
                 let vertex2 = i32::from(
-                    *bond_atoms2
-                        .get(difference)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                    stereo_bond_atom!(bond_atoms2, nBondAtom2, difference),
                 )
                 .wrapping_sub(1);
                 let Some(edge_number) = find_bond_edge!(vertex1, vertex2) else {
@@ -2054,13 +2107,14 @@ pub(crate) fn FixRestoredStructureStereo(
             }
             let radical_count = usize::try_from(all_radicals.num_edges.max(0))
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let radical_vertices = if radical_count == 0 {
-                Vec::new()
-            } else {
-                heap.slice(all_radicals.pnEdges.as_const())?[..radical_count].to_vec()
-            };
-            for vertex in &radical_vertices {
-                let index = usize::try_from(*vertex)
+            // VERBATIM SOURCE FRAGMENT: ichirvr6.c415
+            //         for (i = 0; i < AllRadList.num_edges; i++)
+            // INCHI✔️❗: Fresh parent list survives rebuild/rejection; callbacks never receive its root.
+            // No allocation/clone, O(reached rows); whole-call cost stays OPEN.
+            for ordinal in 0..radical_count {
+                let vertex = *heap.slice(all_radicals.pnEdges.as_const())?
+                    .get(ordinal).ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let index = usize::try_from(vertex)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 heap.slice_mut(pBNS.vert)?[index].st_edge.cap =
                     heap.slice(pBNS.vert.as_const())?[index]
@@ -2082,7 +2136,9 @@ pub(crate) fn FixRestoredStructureStereo(
             let ret2_c = CompareIcr(icr2, &previous_icr2, None, None, IDIFF_CONSTIT);
             let ret2_s = CompareIcr(icr2, &previous_icr2, None, None, IDIFF_STEREO);
             if !(ret_c <= 0 && ret_s <= 0 && ret2_c <= 0 && ret2_s < 0) {
-                for vertex in radical_vertices {
+                for ordinal in 0..radical_count {
+                    let vertex = *heap.slice(all_radicals.pnEdges.as_const())?
+                        .get(ordinal).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let index = usize::try_from(vertex)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     heap.slice_mut(pBNS.vert)?[index].st_edge.cap =
@@ -2111,24 +2167,20 @@ pub(crate) fn FixRestoredStructureStereo(
         taut_minus_edges[0].num_edges = 0;
         taut_minus_edges[1].num_edges = 0;
         all_charge_edges.num_edges = 0;
-        let stereo_reversed = first_model!(p_stereo_reversed);
-        let reversed_bond1 = heap.slice(stereo_reversed.nBondAtom1.as_const())?.to_vec();
-        let reversed_bond2 = heap.slice(stereo_reversed.nBondAtom2.as_const())?.to_vec();
+        let stereo_reversed = p_stereo_reversed;
+        let reversed_bond1 = stereo_reversed;
+        let reversed_bond2 = stereo_reversed;
         let count = usize::try_from(icr.num_sb_undef_in1_only.max(0))
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let differences = icr.sb_undef_in1_only[..count.min(icr.sb_undef_in1_only.len())].to_vec();
-        for difference in differences {
+        let differences = &icr.sb_undef_in1_only[..count.min(icr.sb_undef_in1_only.len())];
+        for &difference in differences {
             let difference = usize::from(difference);
             let vertex1 = i32::from(
-                *reversed_bond1
-                    .get(difference)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                stereo_bond_atom!(reversed_bond1, nBondAtom1, difference),
             )
             .wrapping_sub(1);
             let vertex2 = i32::from(
-                *reversed_bond2
-                    .get(difference)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                stereo_bond_atom!(reversed_bond2, nBondAtom2, difference),
             )
             .wrapping_sub(1);
     
@@ -2209,7 +2261,7 @@ pub(crate) fn FixRestoredStructureStereo(
                 && taut_minus_edges[0].num_edges == 0
                 && taut_minus_edges[1].num_edges == 0
             {
-                let endpoints = heap.slice(pStruct.endpoint.as_const())?.to_vec();
+                let endpoints = pStruct.endpoint;
                 let mut atom_number = 0_i32;
                 while atom_number < pStruct.num_atoms {
                     let atom_index = usize::try_from(atom_number)
@@ -2219,7 +2271,7 @@ pub(crate) fn FixRestoredStructureStereo(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let minus_edge = valence.nCMinusGroupEdge.wrapping_sub(1);
                     if minus_edge >= 0 && edge_snapshot!(minus_edge).forbidden == 0 {
-                        let target = if *endpoints
+                        let target = if *heap.slice(endpoints.as_const())?
                             .get(atom_index)
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             == 0
@@ -2389,24 +2441,20 @@ pub(crate) fn FixRestoredStructureStereo(
         taut_minus_edges[0].num_edges = 0;
         taut_minus_edges[1].num_edges = 0;
         all_charge_edges.num_edges = 0;
-        let stereo_reversed = first_model!(p_stereo_reversed);
-        let reversed_bond1 = heap.slice(stereo_reversed.nBondAtom1.as_const())?.to_vec();
-        let reversed_bond2 = heap.slice(stereo_reversed.nBondAtom2.as_const())?.to_vec();
+        let stereo_reversed = p_stereo_reversed;
+        let reversed_bond1 = stereo_reversed;
+        let reversed_bond2 = stereo_reversed;
         let count = usize::try_from(icr.num_sb_undef_in1_only.max(0))
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let differences = icr.sb_undef_in1_only[..count.min(icr.sb_undef_in1_only.len())].to_vec();
-        for difference in differences {
+        let differences = &icr.sb_undef_in1_only[..count.min(icr.sb_undef_in1_only.len())];
+        for &difference in differences {
             let difference = usize::from(difference);
             let vertex1 = i32::from(
-                *reversed_bond1
-                    .get(difference)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                stereo_bond_atom!(reversed_bond1, nBondAtom1, difference),
             )
             .wrapping_sub(1);
             let vertex2 = i32::from(
-                *reversed_bond2
-                    .get(difference)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                stereo_bond_atom!(reversed_bond2, nBondAtom2, difference),
             )
             .wrapping_sub(1);
             let first_incident = incident_edge!(vertex1, 0);
@@ -2467,11 +2515,7 @@ pub(crate) fn FixRestoredStructureStereo(
                 && taut_minus_edges[0].num_edges == 0
                 && taut_minus_edges[1].num_edges == 0
             {
-                let endpoints = if pStruct.endpoint.is_null() {
-                    None
-                } else {
-                    Some(heap.slice(pStruct.endpoint.as_const())?.to_vec())
-                };
+                let endpoints = pStruct.endpoint;
                 let mut atom_number = 0_i32;
                 while atom_number < pStruct.num_atoms {
                     let atom_index = usize::try_from(atom_number)
@@ -2495,10 +2539,10 @@ pub(crate) fn FixRestoredStructureStereo(
                     if plus_edge >= 0 && edge_snapshot!(plus_edge).forbidden == 0 {
                         let atom = atom_snapshot!(atom_number);
                         let may_be_unfixed = atom.num_H == 0
-                            && endpoints
-                                .as_ref()
-                                .and_then(|values| values.get(atom_index))
-                                .is_none_or(|endpoint| *endpoint == 0);
+                            && (endpoints.is_null()
+                                || heap.slice(endpoints.as_const())?
+                                    .get(atom_index)
+                                    .is_none_or(|endpoint| *endpoint == 0));
                         let target = if (may_be_unfixed && valence.cNumValenceElectrons == 6)
                             || (valence.cNumValenceElectrons == 5
                                 && valence.cPeriodicRowNumber > 1)
@@ -2665,24 +2709,20 @@ pub(crate) fn FixRestoredStructureStereo(
         && pStruct.ti.num_t_groups == 0
     {
         all_charge_edges.num_edges = 0;
-        let stereo_reversed = first_model!(p_stereo_reversed);
-        let reversed_bond1 = heap.slice(stereo_reversed.nBondAtom1.as_const())?.to_vec();
-        let reversed_bond2 = heap.slice(stereo_reversed.nBondAtom2.as_const())?.to_vec();
+        let stereo_reversed = p_stereo_reversed;
+        let reversed_bond1 = stereo_reversed;
+        let reversed_bond2 = stereo_reversed;
         let count = usize::try_from(icr.num_sb_undef_in1_only.max(0))
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let differences = icr.sb_undef_in1_only[..count.min(icr.sb_undef_in1_only.len())].to_vec();
-        for difference in differences {
+        let differences = &icr.sb_undef_in1_only[..count.min(icr.sb_undef_in1_only.len())];
+        for &difference in differences {
             let difference = usize::from(difference);
             let vertex1 = i32::from(
-                *reversed_bond1
-                    .get(difference)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                stereo_bond_atom!(reversed_bond1, nBondAtom1, difference),
             )
             .wrapping_sub(1);
             let vertex2 = i32::from(
-                *reversed_bond2
-                    .get(difference)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                stereo_bond_atom!(reversed_bond2, nBondAtom2, difference),
             )
             .wrapping_sub(1);
             let atom1 = atom_snapshot!(vertex1);
@@ -2738,11 +2778,7 @@ pub(crate) fn FixRestoredStructureStereo(
             }
     
             if all_charge_edges.num_edges == 0 {
-                let endpoints = if pStruct.endpoint.is_null() {
-                    None
-                } else {
-                    Some(heap.slice(pStruct.endpoint.as_const())?.to_vec())
-                };
+                let endpoints = pStruct.endpoint;
                 let mut atom_number = 0_i32;
                 while atom_number < pStruct.num_atoms {
                     let atom_index = usize::try_from(atom_number)
@@ -2768,10 +2804,10 @@ pub(crate) fn FixRestoredStructureStereo(
                             && atom.num_H == 0
                             && atom.valence == 3
                             && atom.endpoint == 0
-                            && endpoints
-                                .as_ref()
-                                .and_then(|values| values.get(atom_index))
-                                .is_none_or(|endpoint| *endpoint == 0);
+                            && (endpoints.is_null()
+                                || heap.slice(endpoints.as_const())?
+                                    .get(atom_index)
+                                    .is_none_or(|endpoint| *endpoint == 0));
                         if !movable_nitrogen {
                             ret = AddToEdgeList(
                                 heap,
@@ -2914,24 +2950,20 @@ pub(crate) fn FixRestoredStructureStereo(
         && pStruct.ti.num_t_groups == 0
     {
         all_charge_edges.num_edges = 0;
-        let stereo2_reversed = first_model!(p_stereo2_reversed);
-        let reversed_bond1 = heap.slice(stereo2_reversed.nBondAtom1.as_const())?.to_vec();
-        let reversed_bond2 = heap.slice(stereo2_reversed.nBondAtom2.as_const())?.to_vec();
+        let stereo2_reversed = p_stereo2_reversed;
+        let reversed_bond1 = stereo2_reversed;
+        let reversed_bond2 = stereo2_reversed;
         let count = usize::try_from(icr2.num_sb_undef_in1_only.max(0))
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let differences = icr2.sb_undef_in1_only[..count.min(icr2.sb_undef_in1_only.len())].to_vec();
-        for difference in differences {
+        let differences = &icr2.sb_undef_in1_only[..count.min(icr2.sb_undef_in1_only.len())];
+        for &difference in differences {
             let difference = usize::from(difference);
             let vertex1 = i32::from(
-                *reversed_bond1
-                    .get(difference)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                stereo_bond_atom!(reversed_bond1, nBondAtom1, difference),
             )
             .wrapping_sub(1);
             let vertex2 = i32::from(
-                *reversed_bond2
-                    .get(difference)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                stereo_bond_atom!(reversed_bond2, nBondAtom2, difference),
             )
             .wrapping_sub(1);
             let atom1 = atom_snapshot!(vertex1);
@@ -2974,11 +3006,7 @@ pub(crate) fn FixRestoredStructureStereo(
             }
     
             if all_charge_edges.num_edges == 0 {
-                let endpoints = if pStruct.endpoint.is_null() {
-                    None
-                } else {
-                    Some(heap.slice(pStruct.endpoint.as_const())?.to_vec())
-                };
+                let endpoints = pStruct.endpoint;
                 let mut atom_number = 0_i32;
                 while atom_number < pStruct.num_atoms {
                     let atom_index = usize::try_from(atom_number)
@@ -3004,10 +3032,10 @@ pub(crate) fn FixRestoredStructureStereo(
                             && atom.num_H == 0
                             && atom.valence == 3
                             && atom.endpoint == 0
-                            && endpoints
-                                .as_ref()
-                                .and_then(|values| values.get(atom_index))
-                                .is_none_or(|endpoint| *endpoint == 0);
+                            && (endpoints.is_null()
+                                || heap.slice(endpoints.as_const())?
+                                    .get(atom_index)
+                                    .is_none_or(|endpoint| *endpoint == 0));
                         if !movable_nitrogen {
                             ret = AddToEdgeList(
                                 heap,
@@ -3373,8 +3401,9 @@ mod tests {
         assert_eq!(primary.flags & IDIF_SB_MISS, IDIF_SB_MISS);
         assert_eq!((primary.num_sb_in2_only, primary.sb_in2_only[0]), (1, 0));
 
-        // Fixed-edge collection uses atom index (not neighbor order), propagates calloc failure,
-        // restores the source mask, and leaves no allocation behind.
+        // Native ichirvr6.c201 uses neighbor order j. Select neighbor1=0 so
+        // the first j=0 reaches list growth before any network probe; retain
+        // calloc failure, mask restoration and allocation cleanup assertions.
         let mut heap = SourceHeap::default();
         let reversed = inchi(&mut heap, None, 0);
         let input = inchi(&mut heap, Some(1), 0);
@@ -3393,6 +3422,7 @@ mod tests {
         );
         let mut structure = primary_structure(reversed, TAUT_YES as i8, 2);
         let mut network = bond_network(&mut heap, 1, FIXED_MASK as i8, 1);
+        heap.slice_mut(network.edge).unwrap()[0].neighbor1 = 0;
         let baseline = heap.live_allocation_count();
         heap.fail_after_allocations(0);
         let (result, _, _, _) = invoke(

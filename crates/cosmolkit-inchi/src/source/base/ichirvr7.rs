@@ -4,11 +4,15 @@ use crate::source::base::ichiread::{
     bInpInchiComponentDeleted, bInpInchiComponentExists, bRevInchiComponentDeleted,
     bRevInchiComponentExists, insertions_sort_AT_NUMB,
 };
+use crate::source::base::ichirvr1::SourceRestoreMode;
+use crate::source::base::ichirvr4::one_in_ch_i2_atom_with_restore_mode;
 use crate::source::base::ichirvr4::{
-    AddRemIsoProtonsInRestrStruct, AddRemProtonsInRestrStruct, OneInChI2Atom,
+    OneInChI2Atom, add_rem_iso_protons_in_restr_struct_linked,
+    add_rem_protons_in_restr_struct_linked, with_linked_structures,
 };
 use crate::source::base::ichitaut::free_t_group_info;
 use crate::source::base::mol2atom::FreeExtOrigAtData;
+use crate::source::base::runichi::SourceCanonicalGlobals;
 use crate::source::base::runichi4::FreeAllINChIArrays;
 use crate::source::base::strutil::Free_INChI_Members;
 use crate::source::base::util::{inchi_calloc, inchi_free, inchi_malloc};
@@ -448,9 +452,11 @@ int AddOneMsg(char* szMsg,
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         i32::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)
     };
-    let copy_c_string = |target: &mut [i8], offset: i32, value: &[i8]| -> Result<(), SourceHeapError> {
+    // INCHI✔️❗: reuse the source-required strlen results on immutable inputs.
+    // Each copy validates its destination before writing, retaining partial writes.
+    let copy_c_string = |target: &mut [i8], offset: i32, value: &[i8], length: i32| -> Result<(), SourceHeapError> {
         let start = usize::try_from(offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let length = usize::try_from(c_len(value)?)
+        let length = usize::try_from(length)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
         let end = start
             .checked_add(length)
@@ -476,10 +482,11 @@ int AddOneMsg(char* szMsg,
                 szMsg,
                 used_len,
                 szDelim.ok_or(SourceHeapError::NullPointer)?,
+                len_delim,
             )?;
             used_len = used_len.wrapping_add(len_delim);
         }
-        copy_c_string(szMsg, used_len, szAddMsg)?;
+        copy_c_string(szMsg, used_len, szAddMsg, len)?;
         used_len = used_len.wrapping_add(len);
     } else {
         let len_to_copy = tot_len
@@ -492,6 +499,7 @@ int AddOneMsg(char* szMsg,
                     szMsg,
                     used_len,
                     szDelim.ok_or(SourceHeapError::NullPointer)?,
+                    len_delim,
                 )?;
                 used_len = used_len.wrapping_add(len_delim);
             }
@@ -515,7 +523,7 @@ int AddOneMsg(char* szMsg,
                 };
             }
             used_len = used_len.wrapping_add(len_to_copy);
-            copy_c_string(szMsg, used_len, &[b'.' as i8, b'.' as i8, b'.' as i8, 0])?;
+            copy_c_string(szMsg, used_len, &[b'.' as i8, b'.' as i8, b'.' as i8, 0], 3)?;
             used_len = used_len.wrapping_add(3);
         }
     }
@@ -588,224 +596,227 @@ const CMP_INCHI_MSG  CompareInchiMsgs[] =
 };
 */
 // END INCHI C DATA FRAME: CompareInchiMsgsGroup/CompareInchiMsgs
-const COMPARE_INCHI_MESSAGE_GROUPS: &[(u32, &str)] = &[
-    (tagtagCompareInchiMsgGroupID_IDGRP_ERR, " Error:"),
-    (tagtagCompareInchiMsgGroupID_IDGRP_H, " Hydrogens:"),
+const COMPARE_INCHI_MESSAGE_GROUPS: &[(u32, &[u8])] = &[
+    (tagtagCompareInchiMsgGroupID_IDGRP_ERR, b" Error:\0"),
+    (tagtagCompareInchiMsgGroupID_IDGRP_H, b" Hydrogens:\0"),
     (
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " Mobile-H groups:",
+        b" Mobile-H groups:\0",
     ),
-    (tagtagCompareInchiMsgGroupID_IDGRP_ISO_AT, " Isotopic:"),
-    (tagtagCompareInchiMsgGroupID_IDGRP_CHARGE, " Charge(s):"),
+    (tagtagCompareInchiMsgGroupID_IDGRP_ISO_AT, b" Isotopic:\0"),
+    (tagtagCompareInchiMsgGroupID_IDGRP_CHARGE, b" Charge(s):\0"),
     (
         tagtagCompareInchiMsgGroupID_IDGRP_PROTONS,
-        " Proton balance:",
+        b" Proton balance:\0",
     ),
     (
         tagtagCompareInchiMsgGroupID_IDGRP_ISO_H,
-        " Exchangeable isotopic H:",
+        b" Exchangeable isotopic H:\0",
     ),
     (
         tagtagCompareInchiMsgGroupID_IDGRP_SC,
-        " Stereo centers/allenes:",
+        b" Stereo centers/allenes:\0",
     ),
     (
         tagtagCompareInchiMsgGroupID_IDGRP_SB,
-        " Stereobonds/cumulenes:",
+        b" Stereobonds/cumulenes:\0",
     ),
-    (tagtagCompareInchiMsgGroupID_IDGRP_HLAYER, " Fixed-H layer:"),
+    (
+        tagtagCompareInchiMsgGroupID_IDGRP_HLAYER,
+        b" Fixed-H layer:\0",
+    ),
     (
         tagtagCompareInchiMsgGroupID_IDGRP_COMP,
-        " Number of components:",
+        b" Number of components:\0",
     ),
     (
         tagtagCompareInchiMsgGroupID_IDGRP_CONV_ERR,
-        " Conversion encountered:",
+        b" Conversion encountered:\0",
     ),
-    (tagtagCompareInchiMsgGroupID_IDGRP_ZERO, ""),
+    (tagtagCompareInchiMsgGroupID_IDGRP_ZERO, b"\0"),
 ];
-const COMPARE_INCHI_MESSAGES: &[(u32, u32, &str)] = &[
+const COMPARE_INCHI_MESSAGES: &[(u32, u32, &[u8])] = &[
     (
         tagInchiCompareDiffBits_INCHIDIFF_PROBLEM,
         tagtagCompareInchiMsgGroupID_IDGRP_ERR,
-        " Wrong result",
+        b" Wrong result\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_POSITION_H,
         tagtagCompareInchiMsgGroupID_IDGRP_H,
-        " Locations or number",
+        b" Locations or number\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_MORE_FH,
         tagtagCompareInchiMsgGroupID_IDGRP_H,
-        " Fixed-H",
+        b" Fixed-H\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_LESS_FH,
         tagtagCompareInchiMsgGroupID_IDGRP_H,
-        " Fixed-H",
+        b" Fixed-H\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_MORE_H,
         tagtagCompareInchiMsgGroupID_IDGRP_H,
-        " Number",
+        b" Number\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_LESS_H,
         tagtagCompareInchiMsgGroupID_IDGRP_H,
-        " Number",
+        b" Number\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_NO_TAUT,
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " Missing",
+        b" Missing\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_WRONG_TAUT,
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " Falsely present",
+        b" Falsely present\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SINGLE_TG,
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " One instead of multiple",
+        b" One instead of multiple\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_MULTIPLE_TG,
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " Multiple instead of one",
+        b" Multiple instead of one\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_EXTRA_TG_ENDP,
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " Attachment points",
+        b" Attachment points\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_MISS_TG_ENDP,
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " Attachment points",
+        b" Attachment points\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_DIFF_TG_ENDP,
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " Attachment points",
+        b" Attachment points\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_NUM_TG,
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " Number",
+        b" Number\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_TG,
         tagtagCompareInchiMsgGroupID_IDGRP_MOB_GRP,
-        " Do not match",
+        b" Do not match\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_NUM_ISO_AT,
         tagtagCompareInchiMsgGroupID_IDGRP_ISO_AT,
-        " Atoms do not match",
+        b" Atoms do not match\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_ISO_AT,
         tagtagCompareInchiMsgGroupID_IDGRP_ISO_AT,
-        " Atoms do not match",
+        b" Atoms do not match\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_REM_ISO_H,
         tagtagCompareInchiMsgGroupID_IDGRP_ISO_H,
-        " Does not match for a component",
+        b" Does not match for a component\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_MOB_ISO_H,
         tagtagCompareInchiMsgGroupID_IDGRP_ISO_H,
-        " Do not match",
+        b" Do not match\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_CHARGE,
         tagtagCompareInchiMsgGroupID_IDGRP_CHARGE,
-        " Do not match",
+        b" Do not match\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_REM_PROT,
         tagtagCompareInchiMsgGroupID_IDGRP_PROTONS,
-        " Does not match for a component",
+        b" Does not match for a component\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_MOBH_PROTONS,
         tagtagCompareInchiMsgGroupID_IDGRP_PROTONS,
-        " Does not match",
+        b" Does not match\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SC_INV,
         tagtagCompareInchiMsgGroupID_IDGRP_SC,
-        " Falsely inverted",
+        b" Falsely inverted\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SC_PARITY,
         tagtagCompareInchiMsgGroupID_IDGRP_SC,
-        " Wrong parity",
+        b" Wrong parity\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SC_EXTRA_UNDF,
         tagtagCompareInchiMsgGroupID_IDGRP_SC,
-        " Extra undefined",
+        b" Extra undefined\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SC_EXTRA,
         tagtagCompareInchiMsgGroupID_IDGRP_SC,
-        " Extra known",
+        b" Extra known\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SC_MISS_UNDF,
         tagtagCompareInchiMsgGroupID_IDGRP_SC,
-        " Missing undefined",
+        b" Missing undefined\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SC_MISS,
         tagtagCompareInchiMsgGroupID_IDGRP_SC,
-        " Missing known",
+        b" Missing known\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SB_PARITY,
         tagtagCompareInchiMsgGroupID_IDGRP_SB,
-        " Wrong parity",
+        b" Wrong parity\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SB_EXTRA_UNDF,
         tagtagCompareInchiMsgGroupID_IDGRP_SB,
-        " Extra undefined",
+        b" Extra undefined\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SB_EXTRA,
         tagtagCompareInchiMsgGroupID_IDGRP_SB,
-        " Missing known",
+        b" Missing known\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SB_MISS_UNDF,
         tagtagCompareInchiMsgGroupID_IDGRP_SB,
-        " Missing undefined",
+        b" Missing undefined\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_SB_MISS,
         tagtagCompareInchiMsgGroupID_IDGRP_SB,
-        " Missing known",
+        b" Missing known\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_COMP_HLAYER,
         tagtagCompareInchiMsgGroupID_IDGRP_HLAYER,
-        " Missing or extra",
+        b" Missing or extra\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_COMP_NUMBER,
         tagtagCompareInchiMsgGroupID_IDGRP_COMP,
-        " Does not match",
+        b" Does not match\0",
     ),
     (
         tagInchiCompareDiffBits_INCHIDIFF_STR2INCHI_ERR,
         tagtagCompareInchiMsgGroupID_IDGRP_CONV_ERR,
-        " Error",
+        b" Error\0",
     ),
-    (0, tagtagCompareInchiMsgGroupID_IDGRP_ZERO, ""),
+    (0, tagtagCompareInchiMsgGroupID_IDGRP_ZERO, b"\0"),
 ];
 
 #[rustfmt::skip]
@@ -912,35 +923,27 @@ int FillOutCompareMessage(char* szMsg, int nLenMsg, INCHI_MODE bits[])
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     )
     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let c_text = |text: &str| -> Result<[i8; 256], SourceHeapError> {
-        if text.len() >= 256 {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        let mut value = [0_i8; 256];
-        for (target, source) in value.iter_mut().zip(text.bytes()) {
-            *target = source as i8;
-        }
-        Ok(value)
-    };
-    let header = " Problems/mismatches:";
+    // INCHI✔️❗: native literal/table strings are immutable and NUL-terminated.
+    // Borrow their bytes directly; no 256-byte conversion/zeroing is needed.
+    // Static fat-reference table width remains OPEN in INCHI-PERF-FIXED-MESSAGES.
+    let header: &[i8] = bytemuck::cast_slice(b" Problems/mismatches:\0");
     if bits[TAUT_YES as usize] != 0 || bits[TAUT_NON as usize] != 0 {
         let initial_length = usize::try_from(len)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let header_c = c_text(header)?;
         if !szMsg[..initial_length]
-            .windows(header.len())
-            .any(|window| window == &header_c[..header.len()])
+            .windows(header.len() - 1)
+            .any(|window| window == &header[..header.len() - 1])
         {
-            len = AddOneMsg(szMsg, len, nLenMsg, &header_c, None)?;
+            len = AddOneMsg(szMsg, len, nLenMsg, header, None)?;
         }
         for mobile_h in [TAUT_YES as usize, TAUT_NON as usize] {
             if bits[mobile_h] != 0 {
-                let layer = c_text(if mobile_h == TAUT_YES as usize {
-                    " Mobile-H("
+                let layer: &[u8] = if mobile_h == TAUT_YES as usize {
+                    b" Mobile-H(\0"
                 } else {
-                    " Fixed-H("
-                })?;
-                len = AddOneMsg(szMsg, len, nLenMsg, &layer, None)?;
+                    b" Fixed-H(\0"
+                };
+                len = AddOneMsg(szMsg, len, nLenMsg, bytemuck::cast_slice(layer), None)?;
             }
             let mut bit = 1 as INCHI_MODE;
             let mut previous_group = None;
@@ -959,15 +962,12 @@ int FillOutCompareMessage(char* szMsg, int nLenMsg, INCHI_MODE bits[])
                         {
                             if previous_group != Some(group_index) {
                                 if previous_group.is_some() {
-                                    let semicolon = c_text(";")?;
-                                    len = AddOneMsg(szMsg, len, nLenMsg, &semicolon, None)?;
+                                    len = AddOneMsg(szMsg, len, nLenMsg, bytemuck::cast_slice(b";\0"), None)?;
                                 }
-                                let group = c_text(group_name)?;
-                                len = AddOneMsg(szMsg, len, nLenMsg, &group, None)?;
+                                len = AddOneMsg(szMsg, len, nLenMsg, bytemuck::cast_slice(group_name), None)?;
                             }
-                            let message = c_text(message)?;
                             let delimiter = if previous_group == Some(group_index) {
-                                Some(c_text(",")?)
+                                Some(bytemuck::cast_slice(b",\0"))
                             } else {
                                 None
                             };
@@ -975,8 +975,8 @@ int FillOutCompareMessage(char* szMsg, int nLenMsg, INCHI_MODE bits[])
                                 szMsg,
                                 len,
                                 nLenMsg,
-                                &message,
-                                delimiter.as_ref().map(|value| value.as_slice()),
+                                bytemuck::cast_slice(message),
+                                delimiter,
                             )?;
                             previous_group = Some(group_index);
                         }
@@ -988,8 +988,7 @@ int FillOutCompareMessage(char* szMsg, int nLenMsg, INCHI_MODE bits[])
                 }
             }
             if bits[mobile_h] != 0 {
-                let close = c_text(")")?;
-                len = AddOneMsg(szMsg, len, nLenMsg, &close, None)?;
+                len = AddOneMsg(szMsg, len, nLenMsg, bytemuck::cast_slice(b")\0"), None)?;
             }
         }
         Ok(-1)
@@ -1609,7 +1608,47 @@ pub(crate) fn InChI2Atom(
     bI2A_Flag: i32,
     bHasSomeFixedH: i32,
     one_input: &mut InpInChI,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    in_ch_i2_atom_with_restore_mode(
+        heap,
+        ic,
+        pCG,
+        ip,
+        sd,
+        szCurHdr,
+        num_inp,
+        pStruct,
+        iComponent,
+        iAtNoOffset,
+        bI2A_Flag,
+        bHasSomeFixedH,
+        one_input,
+        clock_result,
+        source_restore_mode,
+    )
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn in_ch_i2_atom_with_restore_mode(
+    heap: &mut SourceHeap,
+    ic: SourceMutPointer<INCHI_CLOCK>,
+    pCG: &mut CANON_GLOBALS,
+    ip: &INPUT_PARMS,
+    sd: &mut STRUCT_DATA,
+    szCurHdr: SourceConstPointer<i8>,
+    num_inp: i64,
+    pStruct: &mut StrFromINChI,
+    iComponent: i32,
+    iAtNoOffset: i32,
+    bI2A_Flag: i32,
+    bHasSomeFixedH: i32,
+    one_input: &mut InpInChI,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr7.c:101 InChI2Atom
     // INCHI✔❌: complete source frame follows verbatim.
@@ -1909,7 +1948,7 @@ pub(crate) fn InChI2Atom(
         }
     }
 
-    let result = OneInChI2Atom(
+    let result = one_in_ch_i2_atom_with_restore_mode(
         heap,
         ic,
         pCG,
@@ -1923,6 +1962,7 @@ pub(crate) fn InChI2Atom(
         bHasSomeFixedH,
         selected,
         clock_result,
+        source_restore_mode,
     );
     if !pStruct.at.is_null() && !pStruct.at2.is_null() {
         for atom_index in 0..selected_value.nNumberOfAtoms {
@@ -1974,7 +2014,40 @@ pub(crate) fn AllInchiToStructure(
     bHasSomeFixedH: i32,
     pStruct: &mut [[SourceMutPointer<StrFromINChI>; 2]; 2],
     pOneInput: &mut InpInChI,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    all_inchi_to_structure_with_restore_mode(
+        heap,
+        ic,
+        pCG,
+        ip_inp,
+        sd_inp,
+        num_inp,
+        szCurHdr,
+        SourceRestoreMode::Pointer(pSrm),
+        bHasSomeFixedH,
+        pStruct,
+        pOneInput,
+        clock_result,
+    )
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn all_inchi_to_structure_with_restore_mode(
+    heap: &mut SourceHeap,
+    ic: SourceMutPointer<INCHI_CLOCK>,
+    pCG: &mut CANON_GLOBALS,
+    ip_inp: &INPUT_PARMS,
+    sd_inp: &STRUCT_DATA,
+    num_inp: i64,
+    szCurHdr: SourceConstPointer<i8>,
+    source_restore_mode: SourceRestoreMode<'_>,
+    bHasSomeFixedH: i32,
+    pStruct: &mut [[SourceMutPointer<StrFromINChI>; 2]; 2],
+    pOneInput: &mut InpInChI,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr7.c:1042 AllInchiToStructure
     // INCHI✔❌: complete source frame follows verbatim.
@@ -2146,6 +2219,10 @@ pub(crate) fn AllInchiToStructure(
             ) {
                 Ok(pointer) => pointer,
                 Err(_) => {
+                    // INCHI✔️❗: C329; native1080..1085 assigns calloc's
+                    // NULL result before the failure exit. O(1) owner store;
+                    // no new allocation/clone/scan, inherited costs OPEN.
+                    pStruct[i_inchi_rec][i_mobile_h] = SourceMutPointer::null();
                     ret = RI_ERR_ALLOC;
                     break 'all_layers;
                 }
@@ -2215,7 +2292,11 @@ pub(crate) fn AllInchiToStructure(
                             .first_mut()
                             .ok_or(SourceHeapError::PointerOutOfBounds)?;
                         // INCHI✔️✔️: pStruct[iInchiRec][iMobileH][k].pSrm = pSrm;
-                        structure.pSrm = pSrm;
+                        // Native1136: actual private target travels with this
+                        // call; unused physical storage is never semantic NULL.
+                        if let SourceRestoreMode::Pointer(pointer) = source_restore_mode {
+                            structure.pSrm = pointer;
+                        }
                         // INCHI✔️✔️: pStruct[iInchiRec][iMobileH][k].iInchiRec = iInchiRec;
                         structure.iInchiRec = i_inchi_rec as i8;
                         // INCHI✔️✔️: pStruct[iInchiRec][iMobileH][k].iMobileH = iMobileH;
@@ -2223,7 +2304,7 @@ pub(crate) fn AllInchiToStructure(
                         // INCHI✔️✔️: ret = InChI2Atom(ic, pCG, ip, sd, szCurHdr, num_inp,
                         // INCHI✔️✔️:     pStruct[iInchiRec][iMobileH] + k, k,
                         // INCHI✔️✔️:     iAtNoOffset, bCurI2A_Flag, bHasSomeFixedH, pOneInput);
-                        let conversion = InChI2Atom(
+                        let conversion = in_ch_i2_atom_with_restore_mode(
                             heap,
                             ic,
                             pCG,
@@ -2238,6 +2319,7 @@ pub(crate) fn AllInchiToStructure(
                             bHasSomeFixedH,
                             pOneInput,
                             clock_result,
+                            source_restore_mode,
                         )?;
                         // INCHI✔️✔️: pStruct[iInchiRec][iMobileH][k].nLink =
                         // INCHI✔️✔️:     pOneInput->pInpInChI[iInchiRec][iMobileH][k].nLink;
@@ -2293,7 +2375,27 @@ pub(crate) fn AddProtonAndIsoHBalanceToMobHStruct(
     szCurHdr: SourceMutPointer<i8>,
     pStruct: &[[SourceMutPointer<StrFromINChI>; TAUT_NUM as usize]; INCHI_NUM as usize],
     pOneInput: &InpInChI,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // Complete Native frame and sole algorithm remain in the shared body below.
+    // INCHI✔️❗: Preserve legacy pointer arguments; O(1), C557 costs OPEN.
+    add_proton_and_isoh_balance(heap, ic, SourceCanonicalGlobals::Pointer(pCG), ip, sd, num_inp, bHasSomeFixedH, szCurHdr, pStruct, pOneInput, clock_result)
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn add_proton_and_isoh_balance(
+    heap: &mut SourceHeap,
+    ic: SourceMutPointer<INCHI_CLOCK>,
+    mut pCG: SourceCanonicalGlobals<'_>,
+    ip: &INPUT_PARMS,
+    sd: &mut STRUCT_DATA,
+    num_inp: i64,
+    bHasSomeFixedH: i32,
+    szCurHdr: SourceMutPointer<i8>,
+    pStruct: &[[SourceMutPointer<StrFromINChI>; TAUT_NUM as usize]; INCHI_NUM as usize],
+    pOneInput: &InpInChI,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr7.c:1180 AddProtonAndIsoHBalanceToMobHStruct
     // INCHI✔️❌: complete source frame follows verbatim.
@@ -2646,76 +2748,34 @@ exit_function:
             ret = 0;
             continue;
         }
-        let rec_snapshot = if bHasRecMobH {
-            let count = usize::try_from(
-                pOneInput.nNumComponents[INCHI_REC as usize][TAUT_YES as usize],
-            )
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            Some(
-                heap.slice(pStruct[INCHI_REC as usize][TAUT_YES as usize].as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec(),
-            )
+        // INCHI✔️❗: Native passes live reconnected storage; only a reached
+        // child nLink is read. No whole-record snapshot/allocation/clone.
+        // Signed nonpositive reconnected counts do not admit unused pointers.
+        let rec_count = if bHasRecMobH {
+            pOneInput.nNumComponents[INCHI_REC as usize][TAUT_YES as usize]
         } else {
-            None
+            0
+        };
+        let rec_pointer = if rec_count > 0 {
+            pStruct[INCHI_REC as usize][TAUT_YES as usize]
+        } else {
+            SourceMutPointer::null()
         };
         let structure_pointer = pStruct[iInchiRec][TAUT_YES as usize];
         let component_count = pOneInput.nNumComponents[iInchiRec][TAUT_YES as usize];
         let balance = &mut nToBeRemovedByNormFromRevrs[iInchiRec].nNumRemovedProtons;
-        ret = if structure_pointer.is_null() {
-            AddRemProtonsInRestrStruct(
-                heap,
-                ic,
-                pCG,
-                ip,
-                sd,
-                num_inp,
-                bHasSomeFixedH,
-                &mut [],
-                component_count,
-                rec_snapshot.as_deref(),
-                if bHasRecMobH {
-                    pOneInput.nNumComponents[INCHI_REC as usize][TAUT_YES as usize]
-                } else {
-                    0
-                },
-                balance,
+        ret = with_linked_structures(heap, structure_pointer, rec_pointer, |heap, structures| {
+            add_rem_protons_in_restr_struct_linked(
+                heap, ic, pCG.reborrow(), ip, sd, num_inp, bHasSomeFixedH, structures,
+                component_count, rec_count, balance,
                 if iInchiRec == INCHI_REC as usize {
                     Some(&mut nDeltaFromDisconnected)
                 } else {
                     None
                 },
                 clock_result,
-            )?
-        } else {
-            heap.with_slice_mut_and_heap_mut(structure_pointer, |structures, heap| {
-                AddRemProtonsInRestrStruct(
-                    heap,
-                    ic,
-                    pCG,
-                    ip,
-                    sd,
-                    num_inp,
-                    bHasSomeFixedH,
-                    structures,
-                    component_count,
-                    rec_snapshot.as_deref(),
-                    if bHasRecMobH {
-                        pOneInput.nNumComponents[INCHI_REC as usize][TAUT_YES as usize]
-                    } else {
-                        0
-                    },
-                    balance,
-                    if iInchiRec == INCHI_REC as usize {
-                        Some(&mut nDeltaFromDisconnected)
-                    } else {
-                        None
-                    },
-                    clock_result,
-                )
-            })?
-        };
+            )
+        })?;
         if ret < 0 {
             return Ok(ret);
         }
@@ -2733,83 +2793,44 @@ exit_function:
             }
         }
         let mut isotopic_balance_present = 0_i32;
-        for balance in nToBeRemovedByNormFromRevrs[iInchiRec].nNumRemovedIsotopicH {
-            isotopic_balance_present |= i32::from(balance);
+        // INCHI✔️❗: This fold substitutes for the source child's admission;
+        // zero leaves all child outputs untouched, nonzero calls the shared
+        // already-admitted kernel so the same three entries are scanned once.
+        for balance in &nToBeRemovedByNormFromRevrs[iInchiRec].nNumRemovedIsotopicH {
+            isotopic_balance_present |= i32::from(*balance);
         }
         if isotopic_balance_present == 0 {
             ret = 0;
             continue;
         }
-        let rec_snapshot = if bHasRecMobH {
-            let count = usize::try_from(
-                pOneInput.nNumComponents[INCHI_REC as usize][TAUT_YES as usize],
-            )
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            Some(
-                heap.slice(pStruct[INCHI_REC as usize][TAUT_YES as usize].as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec(),
-            )
+        // INCHI✔️❗: Native passes live reconnected storage; only a reached
+        // child nLink is read. No whole-record snapshot/allocation/clone.
+        // Signed nonpositive reconnected counts do not admit unused pointers.
+        let rec_count = if bHasRecMobH {
+            pOneInput.nNumComponents[INCHI_REC as usize][TAUT_YES as usize]
         } else {
-            None
+            0
+        };
+        let rec_pointer = if rec_count > 0 {
+            pStruct[INCHI_REC as usize][TAUT_YES as usize]
+        } else {
+            SourceMutPointer::null()
         };
         let structure_pointer = pStruct[iInchiRec][TAUT_YES as usize];
         let component_count = pOneInput.nNumComponents[iInchiRec][TAUT_YES as usize];
         let balance = &mut nToBeRemovedByNormFromRevrs[iInchiRec].nNumRemovedIsotopicH;
-        ret = if structure_pointer.is_null() {
-            AddRemIsoProtonsInRestrStruct(
-                heap,
-                ic,
-                pCG,
-                ip,
-                sd,
-                num_inp,
-                bHasSomeFixedH,
-                &mut [],
-                component_count,
-                rec_snapshot.as_deref(),
-                if bHasRecMobH {
-                    pOneInput.nNumComponents[INCHI_REC as usize][TAUT_YES as usize]
-                } else {
-                    0
-                },
-                balance,
+        ret = with_linked_structures(heap, structure_pointer, rec_pointer, |heap, structures| {
+            add_rem_iso_protons_in_restr_struct_linked(
+                heap, ic, pCG.reborrow(), ip, sd, num_inp, bHasSomeFixedH, structures,
+                component_count, rec_count, balance,
                 if iInchiRec == INCHI_REC as usize {
                     Some(&mut nIsoDeltaFromDisconnected)
                 } else {
                     None
                 },
                 clock_result,
-            )?
-        } else {
-            heap.with_slice_mut_and_heap_mut(structure_pointer, |structures, heap| {
-                AddRemIsoProtonsInRestrStruct(
-                    heap,
-                    ic,
-                    pCG,
-                    ip,
-                    sd,
-                    num_inp,
-                    bHasSomeFixedH,
-                    structures,
-                    component_count,
-                    rec_snapshot.as_deref(),
-                    if bHasRecMobH {
-                        pOneInput.nNumComponents[INCHI_REC as usize][TAUT_YES as usize]
-                    } else {
-                        0
-                    },
-                    balance,
-                    if iInchiRec == INCHI_REC as usize {
-                        Some(&mut nIsoDeltaFromDisconnected)
-                    } else {
-                        None
-                    },
-                    clock_result,
-                )
-            })?
-        };
+            )
+        })?;
         if ret < 0 {
             return Ok(ret);
         }
@@ -2925,55 +2946,59 @@ void FreeStrFromINChI(StrFromINChI* pStruct[INCHI_NUM][TAUT_NUM],
             if cur_num_comp == 0 || structures.is_null() {
                 continue;
             }
-            let components = if cur_num_comp > 0 {
-                let count = usize::try_from(cur_num_comp)
-                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                heap.slice(structures.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec()
-            } else {
-                Vec::new()
-            };
-            for mut structure in components {
-                for pointer in [structure.at, structure.at2] {
-                    if !pointer.is_null() {
-                        inchi_free(heap, pointer)?;
+            // INCHI✔️❗: owned children have separate typed allocations;
+            // no active deep-free operation reads StrFromINChI storage.
+            // Borrow the actual records so ti/RevInChI writes survive a
+            // later Result error. Source-negative counts skip all records.
+            // O(reached records/children), O(1) scratch; no snapshot/clone,
+            // allocation or prefix validation; arena extraction cost OPEN.
+            if cur_num_comp > 0 {
+                heap.with_slice_mut_and_heap_mut(structures, |components, heap| {
+                    for index in 0..cur_num_comp {
+                        let structure = components
+                            .get_mut(index as usize)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                        for pointer in [structure.at, structure.at2] {
+                            if !pointer.is_null() {
+                                inchi_free(heap, pointer)?;
+                            }
+                        }
+                        if !structure.st.is_null() {
+                            inchi_free(heap, structure.st)?;
+                        }
+                        if !structure.pVA.is_null() {
+                            inchi_free(heap, structure.pVA)?;
+                        }
+                        if !structure.One_ti.t_group.is_null() {
+                            inchi_free(heap, structure.One_ti.t_group)?;
+                        }
+                        if !structure.pXYZ.is_null() {
+                            inchi_free(heap, structure.pXYZ)?;
+                        }
+                        free_t_group_info(heap, Some(&mut structure.ti))?;
+                        if !structure.endpoint.is_null() {
+                            inchi_free(heap, structure.endpoint)?;
+                        }
+                        if !structure.fixed_H.is_null() {
+                            inchi_free(heap, structure.fixed_H)?;
+                        }
+                        for j in 0..TAUT_NUM as usize {
+                            if !structure.nAtno2Canon[j].is_null() {
+                                inchi_free(heap, structure.nAtno2Canon[j])?;
+                            }
+                            if !structure.nCanon2Atno[j].is_null() {
+                                inchi_free(heap, structure.nCanon2Atno[j])?;
+                            }
+                        }
+                        FreeAllINChIArrays(
+                            heap,
+                            &mut structure.RevInChI.pINChI,
+                            &mut structure.RevInChI.pINChI_Aux,
+                            &mut structure.RevInChI.num_components,
+                        )?;
                     }
-                }
-                if !structure.st.is_null() {
-                    inchi_free(heap, structure.st)?;
-                }
-                if !structure.pVA.is_null() {
-                    inchi_free(heap, structure.pVA)?;
-                }
-                if !structure.One_ti.t_group.is_null() {
-                    inchi_free(heap, structure.One_ti.t_group)?;
-                }
-                if !structure.pXYZ.is_null() {
-                    inchi_free(heap, structure.pXYZ)?;
-                }
-                free_t_group_info(heap, Some(&mut structure.ti))?;
-                if !structure.endpoint.is_null() {
-                    inchi_free(heap, structure.endpoint)?;
-                }
-                if !structure.fixed_H.is_null() {
-                    inchi_free(heap, structure.fixed_H)?;
-                }
-                for j in 0..TAUT_NUM as usize {
-                    if !structure.nAtno2Canon[j].is_null() {
-                        inchi_free(heap, structure.nAtno2Canon[j])?;
-                    }
-                    if !structure.nCanon2Atno[j].is_null() {
-                        inchi_free(heap, structure.nCanon2Atno[j])?;
-                    }
-                }
-                FreeAllINChIArrays(
-                    heap,
-                    &mut structure.RevInChI.pINChI,
-                    &mut structure.RevInChI.pINChI_Aux,
-                    &mut structure.RevInChI.num_components,
-                )?;
+                    Ok(())
+                })?;
             }
             inchi_free(heap, structures)?;
             pStruct[iInchiRec][iMobileH] = SourceMutPointer::null();
@@ -4293,11 +4318,6 @@ exit_function:
     }
 
     let last_component = num_components_r.wrapping_sub(1);
-    let last_structure = structure_value(
-        heap,
-        pStruct[INCHI_REC as usize][input_mobile_r as usize],
-        last_component,
-    )?;
     if input_mobile_r == TAUT_YES as i32
         && bHasSomeFixedH == 0
         && bInpInchiComponentDeleted(
@@ -4308,12 +4328,27 @@ exit_function:
             last_component,
         )? != 0
     {
+        // VERBATIM SOURCE FRAGMENT: ichirvr7.c1883..1885
+        //     if (iMobileH == TAUT_YES && !bHasSomeFixedH &&
+        //         bInpInchiComponentDeleted(pOneInput, iInChI, iMobileH, k) &&
+        //         (num_fragments = pStruct1->RevInChI.num_components[INCHI_BAS]))
+        // INCHI✔️❗: Source dereferences last structure only after these
+        // gates. Borrow the reached immutable record, no full record clone;
+        // keep original NULL/type/range errors. Whole checked-call cost OPEN.
+        let pointer = pStruct[INCHI_REC as usize][input_mobile_r as usize];
+        if pointer.is_null() {
+            return Err(SourceHeapError::NullPointer);
+        }
+        let last_structure = heap
+            .slice(pointer.offset(i64::from(last_component))?.as_const())?
+            .first()
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let fragments = last_structure.RevInChI.num_components[INCHI_BAS as usize];
         if fragments != 0 {
             for fragment in 0..fragments.max(0) {
                 if bRevInchiComponentDeleted(
                     heap,
-                    Some(&last_structure),
+                    Some(last_structure),
                     INCHI_BAS as i32,
                     TAUT_YES as i32,
                     fragment,
@@ -4323,7 +4358,7 @@ exit_function:
                 }
                 let aux = rev_aux_pointer(
                     heap,
-                    &last_structure,
+                    last_structure,
                     INCHI_BAS as usize,
                     fragment,
                     TAUT_YES as usize,
@@ -4605,53 +4640,62 @@ exit_function:
 
         let count = usize::try_from(num_fragments)
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let mut rows1 = heap
-            .slice(sort1.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        let mut rows2 = heap
-            .slice(sort2.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        let mut sort_error = None;
-        rows1.sort_unstable_by(|left, right| {
-            if sort_error.is_some() {
-                return std::cmp::Ordering::Equal;
-            }
-            match CompINChITaut2(heap, left, right) {
-                Ok(value) => value.cmp(&0),
-                Err(error) => {
-                    sort_error = Some(error);
-                    std::cmp::Ordering::Equal
+        fn sort_rows(
+            heap: &mut SourceHeap,
+            pointer: SourceMutPointer<INCHI_SORT>,
+            count: usize,
+        ) -> Result<(), SourceHeapError> {
+            // Native ichirvr7.c2043..2044:
+            //     qsort(pINChISort1, num_fragments_D, sizeof(pINChISort1[0]), CompINChITaut2);
+            //     qsort(pINChISort2, num_fragments_R, sizeof(pINChISort2[0]), CompINChITaut2);
+            // INCHI✔️❗: Sort the actual private fresh array, one at a time.
+            // Counts are equal before both calloc calls. Explicit comparator
+            // rows query older typed INChI roots/errno, never this new root.
+            // Keep existing sort/error program; no mirrors/new source allocs.
+            // Algorithm/libc ties/checked extraction whole-cost remain OPEN.
+            heap.with_slice_mut_and_heap_mut(pointer, |rows, heap| {
+                let rows = rows.get_mut(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let mut sort_error = None;
+                rows.sort_unstable_by(|left, right| {
+                    if sort_error.is_some() {
+                        return std::cmp::Ordering::Equal;
+                    }
+                    match CompINChITaut2(heap, left, right) {
+                        Ok(value) => value.cmp(&0),
+                        Err(error) => {
+                            sort_error = Some(error);
+                            std::cmp::Ordering::Equal
+                        }
+                    }
+                });
+                match sort_error {
+                    Some(error) => Err(error),
+                    None => Ok(()),
                 }
-            }
-        });
-        if let Some(error) = sort_error.take() {
-            return Err(error);
+            })
         }
-        rows2.sort_unstable_by(|left, right| {
-            if sort_error.is_some() {
-                return std::cmp::Ordering::Equal;
-            }
-            match CompINChITaut2(heap, left, right) {
-                Ok(value) => value.cmp(&0),
-                Err(error) => {
-                    sort_error = Some(error);
-                    std::cmp::Ordering::Equal
-                }
-            }
-        });
-        if let Some(error) = sort_error {
-            return Err(error);
+        fn sort_row(
+            heap: &SourceHeap,
+            pointer: SourceMutPointer<INCHI_SORT>,
+            index: usize,
+        ) -> Result<&INCHI_SORT, SourceHeapError> {
+            // Native pINChISort1[iComponent]/pINChISort2[iComponent].
+            // INCHI✔️❗: Reached actual row, no full-copy/scan; safe cost OPEN.
+            heap.slice(pointer.as_const())?.get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)
         }
+        sort_rows(heap, sort1, count)?;
+        sort_rows(heap, sort2, count)?;
 
         for component in 0..count {
+            // Native copies two local pointer pairs before its child call.
+            let pair1 = sort_row(heap, sort1, component)?.pINChI;
+            let pair2 = sort_row(heap, sort2, component)?.pINChI;
             let _ = CompareTwoPairsOfInChI(
                 heap,
-                rows1[component].pINChI,
-                rows2[component].pINChI,
+                pair1,
+                pair2,
                 i32::from(bHasSomeFixedH == 0),
                 &mut compare_flags,
             )?;
@@ -4660,13 +4704,17 @@ exit_function:
         if bHasSomeFixedH != 0 {
             if separate_d != 0 || separate_r != 0 {
                 for component in 0..count {
+                    // This entire proton comparison phase is readonly in heap.
+                    // Borrow each reached row once; field reads keep source order.
+                    let row1 = sort_row(heap, sort1, component)?;
+                    let row2 = sort_row(heap, sort2, component)?;
                     let mut isotopic1 = [0_i16; NUM_H_ISOTOPES as usize];
                     let mut isotopic2 = [0_i16; NUM_H_ISOTOPES as usize];
-                    if rows1[component].ord_number != rows2[component].ord_number {
+                    if row1.ord_number != row2.ord_number {
                         compare_flags[TAUT_YES as usize] |=
                             tagInchiCompareDiffBits_INCHIDIFF_MOBH_PROTONS as INCHI_MODE;
                     }
-                    let input_component = i32::from(rows2[component].n1);
+                    let input_component = i32::from(row2.n1);
                     let protons = pOneInput.nNumProtons[INCHI_BAS as usize]
                         [TAUT_YES as usize]
                         .pNumProtons;
@@ -4680,8 +4728,8 @@ exit_function:
                             .ok_or(SourceHeapError::PointerOutOfBounds)?
                             .nNumRemovedIsotopicH;
                     }
-                    let restored_component = i32::from(rows1[component].n1);
-                    let fragment = i32::from(rows1[component].n2);
+                    let restored_component = i32::from(row1.n1);
+                    let fragment = i32::from(row1.n2);
                     let mut mobile_h = input_mobile_r;
                     if bInpInchiComponentExists(
                         heap,
@@ -5051,27 +5099,29 @@ int CompareOneOrigInchiToRevInChI(StrFromINChI* pStruct,
     // INCHI✔️❌: READ_INCHI_STRING=1 includes this production helper.
     // INCHI✔️❌: COMPILE_ANSI_ONLY and TARGET_API_LIB do not alter this function body.
     // INCHI✔️❌: Shallow structure clones avoid holding SourceHeap borrows across mutable callee calls.
+    // Reached admissions/row lookup costs remain independently OPEN in
+    // INCHI-PERF-REVERSE-ADMISSION; no whole-call performance acceptance.
     // END INCHI ACTIVE MACRO CONFIGURATION: CompareOneOrigInchiToRevInChI
 
     let mobile_index = usize::try_from(bMobileH)
         .ok()
         .filter(|index| *index < TAUT_NUM as usize)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let input = pInChI.map(|pointer| -> Result<Option<INChI>, SourceHeapError> {
+    // Read input records only in reached source predicates/comparison calls.
+    let input_snapshot = |heap: &SourceHeap, pointer: SourceMutPointer<INChI>|
+        -> Result<Option<INChI>, SourceHeapError> {
         if pointer.is_null() {
             Ok(None)
         } else {
-            Ok(Some(
-                heap.slice(pointer.as_const())?
-                    .first()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone(),
-            ))
+            Ok(Some(heap.slice(pointer.as_const())?
+                .first().ok_or(SourceHeapError::PointerOutOfBounds)?.clone()))
         }
-    });
-    let [input0, input1] = input;
-    let input0 = input0?;
-    let input1 = input1?;
+    };
+    let input_deleted = |heap: &SourceHeap, pointer: SourceMutPointer<INChI>|
+        -> Result<bool, SourceHeapError> {
+        Ok(pointer.is_null() || heap.slice(pointer.as_const())?
+            .first().ok_or(SourceHeapError::PointerOutOfBounds)?.bDeleted != 0)
+    };
     let ret = pStruct.map_or(-1, |structure| structure.RevInChI.nRetVal);
     let mut err = 0_i32;
     if (ret == _IS_OKAY as i32 || ret == _IS_WARNING as i32) && pStruct.is_some() {
@@ -5121,12 +5171,12 @@ int CompareOneOrigInchiToRevInChI(StrFromINChI* pStruct,
             .ok()
             .filter(|index| *index < TAUT_NUM as usize)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if structure.bDeleted != 0 && input0.as_ref().is_none_or(|inchi| inchi.bDeleted != 0) {
+        if structure.bDeleted != 0 && input_deleted(heap, pInChI[0])? {
             return Ok(0);
         }
         if !rows_pointer.is_null() {
-            let rows = heap.slice(rows_pointer.as_const())?;
             if structure.RevInChI.num_components[i_index] > 1 {
+                let rows = heap.slice(rows_pointer.as_const())?;
                 let row = rows.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?;
                 let pointer = row[b_index];
                 let second = if pointer.is_null() {
@@ -5165,8 +5215,9 @@ int CompareOneOrigInchiToRevInChI(StrFromINChI* pStruct,
             };
             let skip_deleted_mobile = b == TAUT_YES as i32
                 && generated.bDeleted != 0
-                && input0.as_ref().is_none_or(|inchi| inchi.bDeleted != 0);
+                && input_deleted(heap, pInChI[0])?;
             if !skip_deleted_mobile {
+                let input0 = input_snapshot(heap, pInChI[0])?;
                 let cmp = CompareReversedINChI3(
                     heap,
                     Some(&generated),
@@ -5181,20 +5232,14 @@ int CompareOneOrigInchiToRevInChI(StrFromINChI* pStruct,
             }
             if b == b0 && b == TAUT_NON as i32 {
                 let generated_mobile_pointer = first_row[TAUT_YES as usize];
-                let generated_mobile = if generated_mobile_pointer.is_null() {
-                    return Err(SourceHeapError::NullPointer);
-                } else {
-                    heap.slice(generated_mobile_pointer.as_const())?
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .clone()
-                };
-                if generated_mobile.bDeleted == 0
-                    || input1.as_ref().is_some_and(|inchi| inchi.bDeleted == 0)
+                let generated_mobile = input_snapshot(heap, generated_mobile_pointer)?;
+                if generated_mobile.as_ref().is_some_and(|inchi| inchi.bDeleted == 0)
+                    || !input_deleted(heap, pInChI[1])?
                 {
+                    let input1 = input_snapshot(heap, pInChI[1])?;
                     let cmp = CompareReversedINChI3(
                         heap,
-                        Some(&generated_mobile),
+                        generated_mobile.as_ref(),
                         input1.as_ref(),
                         None,
                         None,
@@ -5230,31 +5275,28 @@ int CompareOneOrigInchiToRevInChI(StrFromINChI* pStruct,
             if component_count > 0 {
                 let count = usize::try_from(component_count)
                     .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let inchi_rows = heap
-                    .slice(rows_pointer.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                let aux_rows_pointer = structure.RevInChI.pINChI_Aux[i_index];
-                if aux_rows_pointer.is_null() {
-                    return Err(SourceHeapError::NullPointer);
-                }
-                let aux_rows = heap
-                    .slice(aux_rows_pointer.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
+                // No full-row staging or eager auxiliary-row admission.
+                // k==0 includes the first component without reading its mobile
+                // record; later rows read it only for the deleted predicate.
                 for k in 0..count {
-                    let mobile_pointer = inchi_rows[k][TAUT_YES as usize];
-                    let mobile = if mobile_pointer.is_null() {
-                        return Err(SourceHeapError::NullPointer);
+                    let include = if k == 0 {
+                        true
                     } else {
+                        let mobile_pointer = heap.slice(rows_pointer.as_const())?
+                            .get(k).ok_or(SourceHeapError::PointerOutOfBounds)?[TAUT_YES as usize];
+                        if mobile_pointer.is_null() {
+                            return Err(SourceHeapError::NullPointer);
+                        }
                         heap.slice(mobile_pointer.as_const())?
-                            .first()
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?
+                            .first().ok_or(SourceHeapError::PointerOutOfBounds)?.bDeleted != 0
                     };
-                    if k == 0 || mobile.bDeleted != 0 {
-                        let aux_pointer = aux_rows[k][TAUT_YES as usize];
+                    if include {
+                        let aux_rows_pointer = structure.RevInChI.pINChI_Aux[i_index];
+                        if aux_rows_pointer.is_null() {
+                            return Err(SourceHeapError::NullPointer);
+                        }
+                        let aux_pointer = heap.slice(aux_rows_pointer.as_const())?
+                            .get(k).ok_or(SourceHeapError::PointerOutOfBounds)?[TAUT_YES as usize];
                         let aux = if aux_pointer.is_null() {
                             return Err(SourceHeapError::NullPointer);
                         } else {
@@ -5579,6 +5621,43 @@ INCHI_MODE CompareReversedStereoINChI3(INChI_Stereo* s1,
     // INCHI✔️❌: Checked SourceHeap slices add overhead versus direct memcmp and pointer indexing.
     // END INCHI ACTIVE MACRO CONFIGURATION: CompareReversedStereoINChI3
 
+    // INCHI✔️❗: unequal signed counts skip memcmp; merge tails read parity only.
+    // Each field view is cached only when reached; undefined ICR counters are
+    // checked only at their actual selected writes, after parity predicates.
+    // Complexity: unchanged linear merge/full memcmp gates, O(1) borrowed caches,
+    // no allocations/clones/per-item arena queries; emitted cost OPEN C097.
+    macro_rules! reached {
+        ($cache:ident, $pointer:expr) => {{
+            match $cache {
+                Some(view) => view,
+                None => {
+                    let view = heap.slice($pointer)?;
+                    $cache = Some(view);
+                    view
+                }
+            }
+        }};
+    }
+    macro_rules! word {
+        ($cache:ident, $pointer:expr, $index:expr) => {
+            *reached!($cache, $pointer)
+                .get($index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+        };
+    }
+    macro_rules! equal_prefix {
+        ($left:ident, $left_pointer:expr, $right:ident, $right_pointer:expr, $count:expr) => {{
+            let count = usize::try_from($count)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            reached!($left, $left_pointer)
+                .get(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                == reached!($right, $right_pointer)
+                    .get(..count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
+        }};
+    }
+
     let add_sb = picr.num_sb_undef_in1_only
         .wrapping_add(picr.num_sb_in1_only)
         .wrapping_add(picr.num_sb_in2_only) == 0;
@@ -5592,83 +5671,68 @@ INCHI_MODE CompareReversedStereoINChI3(INChI_Stereo* s1,
     let mut ret: INCHI_MODE = 0;
 
     if num_sc1 != 0 || num_sc2 != 0 {
-        let count1 = usize::try_from(num_sc1)
+        let count1 = usize::try_from(num_sc1.max(0))
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let count2 = usize::try_from(num_sc2)
+        let count2 = usize::try_from(num_sc2.max(0))
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let (numbers1, parities1): (&[AT_NUMB], &[i8]) = if count1 == 0 {
-            (&[], &[])
-        } else {
-            let stereo = s1.ok_or(SourceHeapError::NullPointer)?;
-            (
-                heap.slice(stereo.nNumber.as_const())?
-                    .get(..count1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                heap.slice(stereo.t_parity.as_const())?
-                    .get(..count1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        let mut numbers1_view: Option<&[AT_NUMB]> = None;
+        let mut numbers2_view: Option<&[AT_NUMB]> = None;
+        let mut parities1_view: Option<&[i8]> = None;
+        let mut parities2_view: Option<&[i8]> = None;
+        if num_sc1 != num_sc2
+            || !equal_prefix!(
+                numbers1_view, s1.ok_or(SourceHeapError::NullPointer)?.nNumber.as_const(),
+                numbers2_view, s2.ok_or(SourceHeapError::NullPointer)?.nNumber.as_const(), num_sc1
             )
-        };
-        let (numbers2, parities2): (&[AT_NUMB], &[i8]) = if count2 == 0 {
-            (&[], &[])
-        } else {
-            let stereo = s2.ok_or(SourceHeapError::NullPointer)?;
-            (
-                heap.slice(stereo.nNumber.as_const())?
-                    .get(..count2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                heap.slice(stereo.t_parity.as_const())?
-                    .get(..count2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            || !equal_prefix!(
+                parities1_view, s1.ok_or(SourceHeapError::NullPointer)?.t_parity.as_const(),
+                parities2_view, s2.ok_or(SourceHeapError::NullPointer)?.t_parity.as_const(), num_sc1
             )
-        };
-        if num_sc1 != num_sc2 || numbers1 != numbers2 || parities1 != parities2 {
+        {
             let (mut j1, mut j2) = (0_usize, 0_usize);
             let (mut num_dif, mut num_extra_undf, mut num_miss_undf) = (0_i32, 0_i32, 0_i32);
             let (mut num_in1_only, mut num_in2_only) = (0_i32, 0_i32);
             while j1 < count1 && j2 < count2 {
-                if numbers1[j1] == numbers2[j2] {
-                    if parities1[j1] != parities2[j2] {
+                if word!(numbers1_view, s1.ok_or(SourceHeapError::NullPointer)?.nNumber.as_const(), j1) == word!(numbers2_view, s2.ok_or(SourceHeapError::NullPointer)?.nNumber.as_const(), j2) {
+                    if word!(parities1_view, s1.ok_or(SourceHeapError::NullPointer)?.t_parity.as_const(), j1) != word!(parities2_view, s2.ok_or(SourceHeapError::NullPointer)?.t_parity.as_const(), j2) {
                         num_dif = num_dif.wrapping_add(1);
                     }
                     j1 += 1;
                     j2 += 1;
-                } else if numbers1[j1] < numbers2[j2] {
+                } else if word!(numbers1_view, s1.ok_or(SourceHeapError::NullPointer)?.nNumber.as_const(), j1) < word!(numbers2_view, s2.ok_or(SourceHeapError::NullPointer)?.nNumber.as_const(), j2) {
                     num_in1_only = num_in1_only.wrapping_add(1);
-                    let undefined = parities1[j1] == AB_PARITY_UNDF as i8;
+                    let undefined = word!(parities1_view, s1.ok_or(SourceHeapError::NullPointer)?.t_parity.as_const(), j1) == AB_PARITY_UNDF as i8;
                     if undefined {
                         num_extra_undf = num_extra_undf.wrapping_add(1);
                     }
                     if add_sc {
-                        if picr.num_sc_in1_only < 0 || picr.num_sc_undef_in1_only < 0 {
-                            return Err(SourceHeapError::SourceIntegerOverflow);
-                        }
                         if picr.num_sc_in1_only < ICR_MAX_SC_IN1_ONLY as i32 {
-                            picr.sc_in1_only[picr.num_sc_in1_only as usize] = j1 as AT_NUMB;
+                            picr.sc_in1_only[usize::try_from(picr.num_sc_in1_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                             picr.num_sc_in1_only = picr.num_sc_in1_only.wrapping_add(1);
                         }
                         if undefined && picr.num_sc_undef_in1_only < ICR_MAX_SC_UNDF as i32 {
-                            picr.sc_undef_in1_only[picr.num_sc_undef_in1_only as usize] = j1 as AT_NUMB;
+                            picr.sc_undef_in1_only[usize::try_from(picr.num_sc_undef_in1_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                             picr.num_sc_undef_in1_only = picr.num_sc_undef_in1_only.wrapping_add(1);
                         }
                     }
                     j1 += 1;
                 } else {
                     num_in2_only = num_in2_only.wrapping_add(1);
-                    let undefined = parities2[j2] == AB_PARITY_UNDF as i8;
+                    let undefined = word!(parities2_view, s2.ok_or(SourceHeapError::NullPointer)?.t_parity.as_const(), j2) == AB_PARITY_UNDF as i8;
                     if undefined {
                         num_miss_undf = num_miss_undf.wrapping_add(1);
                     }
                     if add_sc {
-                        if picr.num_sc_in2_only < 0 || picr.num_sc_undef_in2_only < 0 {
-                            return Err(SourceHeapError::SourceIntegerOverflow);
-                        }
                         if picr.num_sc_in2_only < ICR_MAX_SC_IN2_ONLY as i32 {
-                            picr.sc_in2_only[picr.num_sc_in2_only as usize] = j2 as AT_NUMB;
+                            picr.sc_in2_only[usize::try_from(picr.num_sc_in2_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j2 as AT_NUMB;
                             picr.num_sc_in2_only = picr.num_sc_in2_only.wrapping_add(1);
                         }
                         if undefined && picr.num_sc_undef_in2_only < ICR_MAX_SC_UNDF as i32 {
-                            picr.sc_undef_in2_only[picr.num_sc_undef_in2_only as usize] = j1 as AT_NUMB;
+                            picr.sc_undef_in2_only[usize::try_from(picr.num_sc_undef_in2_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                             picr.num_sc_undef_in2_only = picr.num_sc_undef_in2_only.wrapping_add(1);
                         }
                     }
@@ -5676,38 +5740,35 @@ INCHI_MODE CompareReversedStereoINChI3(INChI_Stereo* s1,
                 }
             }
             while j1 < count1 {
-                let undefined = parities1[j1] == AB_PARITY_UNDF as i8;
+                let undefined = word!(parities1_view, s1.ok_or(SourceHeapError::NullPointer)?.t_parity.as_const(), j1) == AB_PARITY_UNDF as i8;
                 if undefined {
                     num_extra_undf = num_extra_undf.wrapping_add(1);
                 }
                 num_in1_only = num_in1_only.wrapping_add(1);
                 if add_sc {
-                    if picr.num_sc_in1_only < 0 || picr.num_sc_undef_in1_only < 0 {
-                        return Err(SourceHeapError::SourceIntegerOverflow);
-                    }
                     if picr.num_sc_in1_only < ICR_MAX_SC_IN1_ONLY as i32 {
-                        picr.sc_in1_only[picr.num_sc_in1_only as usize] = j1 as AT_NUMB;
+                        picr.sc_in1_only[usize::try_from(picr.num_sc_in1_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                         picr.num_sc_in1_only = picr.num_sc_in1_only.wrapping_add(1);
                     }
                     if undefined && picr.num_sc_undef_in1_only < ICR_MAX_SC_UNDF as i32 {
-                        picr.sc_undef_in1_only[picr.num_sc_undef_in1_only as usize] = j1 as AT_NUMB;
+                        picr.sc_undef_in1_only[usize::try_from(picr.num_sc_undef_in1_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                         picr.num_sc_undef_in1_only = picr.num_sc_undef_in1_only.wrapping_add(1);
                     }
                 }
                 j1 += 1;
             }
             while j2 < count2 {
-                let undefined = parities2[j2] == AB_PARITY_UNDF as i8;
+                let undefined = word!(parities2_view, s2.ok_or(SourceHeapError::NullPointer)?.t_parity.as_const(), j2) == AB_PARITY_UNDF as i8;
                 if undefined {
                     num_miss_undf = num_miss_undf.wrapping_add(1);
                 }
                 num_in2_only = num_in2_only.wrapping_add(1);
                 if add_sc {
-                    if picr.num_sc_in2_only < 0 {
-                        return Err(SourceHeapError::SourceIntegerOverflow);
-                    }
                     if picr.num_sc_in2_only < ICR_MAX_SC_IN2_ONLY as i32 {
-                        picr.sc_in2_only[picr.num_sc_in2_only as usize] = j2 as AT_NUMB;
+                        picr.sc_in2_only[usize::try_from(picr.num_sc_in2_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j2 as AT_NUMB;
                         picr.num_sc_in2_only = picr.num_sc_in2_only.wrapping_add(1);
                     }
                 }
@@ -5745,91 +5806,76 @@ INCHI_MODE CompareReversedStereoINChI3(INChI_Stereo* s1,
     }
 
     if num_sb1 != 0 || num_sb2 != 0 {
-        let count1 = usize::try_from(num_sb1)
+        let count1 = usize::try_from(num_sb1.max(0))
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let count2 = usize::try_from(num_sb2)
+        let count2 = usize::try_from(num_sb2.max(0))
             .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let (atom11, atom12, parity1): (&[AT_NUMB], &[AT_NUMB], &[i8]) = if count1 == 0 {
-            (&[], &[], &[])
-        } else {
-            let stereo = s1.ok_or(SourceHeapError::NullPointer)?;
-            (
-                heap.slice(stereo.nBondAtom1.as_const())?
-                    .get(..count1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                heap.slice(stereo.nBondAtom2.as_const())?
-                    .get(..count1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                heap.slice(stereo.b_parity.as_const())?
-                    .get(..count1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        let mut atom11_view: Option<&[AT_NUMB]> = None;
+        let mut atom21_view: Option<&[AT_NUMB]> = None;
+        let mut atom12_view: Option<&[AT_NUMB]> = None;
+        let mut atom22_view: Option<&[AT_NUMB]> = None;
+        let mut parity1_view: Option<&[i8]> = None;
+        let mut parity2_view: Option<&[i8]> = None;
+        if num_sb1 != num_sb2
+            || !equal_prefix!(
+                atom11_view, s1.ok_or(SourceHeapError::NullPointer)?.nBondAtom1.as_const(),
+                atom21_view, s2.ok_or(SourceHeapError::NullPointer)?.nBondAtom1.as_const(), num_sb1
             )
-        };
-        let (atom21, atom22, parity2): (&[AT_NUMB], &[AT_NUMB], &[i8]) = if count2 == 0 {
-            (&[], &[], &[])
-        } else {
-            let stereo = s2.ok_or(SourceHeapError::NullPointer)?;
-            (
-                heap.slice(stereo.nBondAtom1.as_const())?
-                    .get(..count2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                heap.slice(stereo.nBondAtom2.as_const())?
-                    .get(..count2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                heap.slice(stereo.b_parity.as_const())?
-                    .get(..count2)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            || !equal_prefix!(
+                atom12_view, s1.ok_or(SourceHeapError::NullPointer)?.nBondAtom2.as_const(),
+                atom22_view, s2.ok_or(SourceHeapError::NullPointer)?.nBondAtom2.as_const(), num_sb1
             )
-        };
-        if num_sb1 != num_sb2 || atom11 != atom21 || atom12 != atom22 || parity1 != parity2 {
+            || !equal_prefix!(
+                parity1_view, s1.ok_or(SourceHeapError::NullPointer)?.b_parity.as_const(),
+                parity2_view, s2.ok_or(SourceHeapError::NullPointer)?.b_parity.as_const(), num_sb1
+            )
+        {
             let (mut j1, mut j2) = (0_usize, 0_usize);
             let (mut num_dif, mut num_extra_undf, mut num_miss_undf) = (0_i32, 0_i32, 0_i32);
             let (mut num_in1_only, mut num_in2_only) = (0_i32, 0_i32);
             while j1 < count1 && j2 < count2 {
-                if atom11[j1] == atom21[j2] && atom12[j1] == atom22[j2] {
-                    if parity1[j1] != parity2[j2] {
+                if word!(atom11_view, s1.ok_or(SourceHeapError::NullPointer)?.nBondAtom1.as_const(), j1) == word!(atom21_view, s2.ok_or(SourceHeapError::NullPointer)?.nBondAtom1.as_const(), j2) && word!(atom12_view, s1.ok_or(SourceHeapError::NullPointer)?.nBondAtom2.as_const(), j1) == word!(atom22_view, s2.ok_or(SourceHeapError::NullPointer)?.nBondAtom2.as_const(), j2) {
+                    if word!(parity1_view, s1.ok_or(SourceHeapError::NullPointer)?.b_parity.as_const(), j1) != word!(parity2_view, s2.ok_or(SourceHeapError::NullPointer)?.b_parity.as_const(), j2) {
                         num_dif = num_dif.wrapping_add(1);
                     }
                     j1 += 1;
                     j2 += 1;
-                } else if atom11[j1] < atom21[j2]
-                    || (atom11[j1] == atom21[j2] && atom12[j1] < atom22[j2])
+                } else if word!(atom11_view, s1.ok_or(SourceHeapError::NullPointer)?.nBondAtom1.as_const(), j1) < word!(atom21_view, s2.ok_or(SourceHeapError::NullPointer)?.nBondAtom1.as_const(), j2)
+                    || (word!(atom11_view, s1.ok_or(SourceHeapError::NullPointer)?.nBondAtom1.as_const(), j1) == word!(atom21_view, s2.ok_or(SourceHeapError::NullPointer)?.nBondAtom1.as_const(), j2) && word!(atom12_view, s1.ok_or(SourceHeapError::NullPointer)?.nBondAtom2.as_const(), j1) < word!(atom22_view, s2.ok_or(SourceHeapError::NullPointer)?.nBondAtom2.as_const(), j2))
                 {
                     num_in1_only = num_in1_only.wrapping_add(1);
-                    let undefined = parity1[j1] == AB_PARITY_UNDF as i8;
+                    let undefined = word!(parity1_view, s1.ok_or(SourceHeapError::NullPointer)?.b_parity.as_const(), j1) == AB_PARITY_UNDF as i8;
                     if undefined {
                         num_extra_undf = num_extra_undf.wrapping_add(1);
                     }
                     if add_sb {
-                        if picr.num_sb_in1_only < 0 || picr.num_sb_undef_in1_only < 0 {
-                            return Err(SourceHeapError::SourceIntegerOverflow);
-                        }
                         if picr.num_sb_in1_only < ICR_MAX_SB_IN1_ONLY as i32 {
-                            picr.sb_in1_only[picr.num_sb_in1_only as usize] = j1 as AT_NUMB;
+                            picr.sb_in1_only[usize::try_from(picr.num_sb_in1_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                             picr.num_sb_in1_only = picr.num_sb_in1_only.wrapping_add(1);
                         }
                         if undefined && picr.num_sb_undef_in1_only < ICR_MAX_SB_UNDF as i32 {
-                            picr.sb_undef_in1_only[picr.num_sb_undef_in1_only as usize] = j1 as AT_NUMB;
+                            picr.sb_undef_in1_only[usize::try_from(picr.num_sb_undef_in1_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                             picr.num_sb_undef_in1_only = picr.num_sb_undef_in1_only.wrapping_add(1);
                         }
                     }
                     j1 += 1;
                 } else {
                     num_in2_only = num_in2_only.wrapping_add(1);
-                    let undefined = parity2[j2] == AB_PARITY_UNDF as i8;
+                    let undefined = word!(parity2_view, s2.ok_or(SourceHeapError::NullPointer)?.b_parity.as_const(), j2) == AB_PARITY_UNDF as i8;
                     if undefined {
                         num_miss_undf = num_miss_undf.wrapping_add(1);
                     }
                     if add_sb {
-                        if picr.num_sb_in2_only < 0 || picr.num_sb_undef_in2_only < 0 {
-                            return Err(SourceHeapError::SourceIntegerOverflow);
-                        }
                         if picr.num_sb_in2_only < ICR_MAX_SB_IN2_ONLY as i32 {
-                            picr.sb_in2_only[picr.num_sb_in2_only as usize] = j2 as AT_NUMB;
+                            picr.sb_in2_only[usize::try_from(picr.num_sb_in2_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j2 as AT_NUMB;
                             picr.num_sb_in2_only = picr.num_sb_in2_only.wrapping_add(1);
                         }
                         if undefined && picr.num_sb_undef_in2_only < ICR_MAX_SB_UNDF as i32 {
-                            picr.sb_undef_in2_only[picr.num_sb_undef_in2_only as usize] = j1 as AT_NUMB;
+                            picr.sb_undef_in2_only[usize::try_from(picr.num_sb_undef_in2_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                             picr.num_sb_undef_in2_only = picr.num_sb_undef_in2_only.wrapping_add(1);
                         }
                     }
@@ -5838,20 +5884,19 @@ INCHI_MODE CompareReversedStereoINChI3(INChI_Stereo* s1,
             }
             while j1 < count1 {
                 num_in1_only = num_in1_only.wrapping_add(1);
-                let undefined = parity1[j1] == AB_PARITY_UNDF as i8;
+                let undefined = word!(parity1_view, s1.ok_or(SourceHeapError::NullPointer)?.b_parity.as_const(), j1) == AB_PARITY_UNDF as i8;
                 if undefined {
                     num_extra_undf = num_extra_undf.wrapping_add(1);
                 }
                 if add_sb {
-                    if picr.num_sb_in1_only < 0 || picr.num_sb_undef_in1_only < 0 {
-                        return Err(SourceHeapError::SourceIntegerOverflow);
-                    }
                     if picr.num_sb_in1_only < ICR_MAX_SB_IN1_ONLY as i32 {
-                        picr.sb_in1_only[picr.num_sb_in1_only as usize] = j1 as AT_NUMB;
+                        picr.sb_in1_only[usize::try_from(picr.num_sb_in1_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                         picr.num_sb_in1_only = picr.num_sb_in1_only.wrapping_add(1);
                     }
                     if undefined && picr.num_sb_undef_in1_only < ICR_MAX_SB_UNDF as i32 {
-                        picr.sb_undef_in1_only[picr.num_sb_undef_in1_only as usize] = j1 as AT_NUMB;
+                        picr.sb_undef_in1_only[usize::try_from(picr.num_sb_undef_in1_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                         picr.num_sb_undef_in1_only = picr.num_sb_undef_in1_only.wrapping_add(1);
                     }
                 }
@@ -5859,20 +5904,19 @@ INCHI_MODE CompareReversedStereoINChI3(INChI_Stereo* s1,
             }
             while j2 < count2 {
                 num_in2_only = num_in2_only.wrapping_add(1);
-                let undefined = parity2[j2] == AB_PARITY_UNDF as i8;
+                let undefined = word!(parity2_view, s2.ok_or(SourceHeapError::NullPointer)?.b_parity.as_const(), j2) == AB_PARITY_UNDF as i8;
                 if undefined {
                     num_miss_undf = num_miss_undf.wrapping_add(1);
                 }
                 if add_sb {
-                    if picr.num_sb_in2_only < 0 || picr.num_sb_undef_in2_only < 0 {
-                        return Err(SourceHeapError::SourceIntegerOverflow);
-                    }
                     if picr.num_sb_in2_only < ICR_MAX_SB_IN2_ONLY as i32 {
-                        picr.sb_in2_only[picr.num_sb_in2_only as usize] = j2 as AT_NUMB;
+                        picr.sb_in2_only[usize::try_from(picr.num_sb_in2_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j2 as AT_NUMB;
                         picr.num_sb_in2_only = picr.num_sb_in2_only.wrapping_add(1);
                     }
                     if undefined && picr.num_sb_undef_in2_only < ICR_MAX_SB_UNDF as i32 {
-                        picr.sb_undef_in2_only[picr.num_sb_undef_in2_only as usize] = j1 as AT_NUMB;
+                        picr.sb_undef_in2_only[usize::try_from(picr.num_sb_undef_in2_only)
+                            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?] = j1 as AT_NUMB;
                         picr.num_sb_undef_in2_only = picr.num_sb_undef_in2_only.wrapping_add(1);
                     }
                 }
@@ -6586,21 +6630,30 @@ exit_function:
     }
 
     if num_groups1 != 0 || num_groups2 != 0 {
-        let byte_count1 = u64::try_from(
-            (i64::from(i1.lenTautomer) + 1)
-                .checked_mul(std::mem::size_of::<AT_NUMB>() as i64)
-                .ok_or(SourceHeapError::AllocationSizeOverflow)?,
-        )
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-        let byte_count2 = u64::try_from(
-            (i64::from(i2.lenTautomer) + 1)
-                .checked_mul(std::mem::size_of::<AT_NUMB>() as i64)
-                .ok_or(SourceHeapError::AllocationSizeOverflow)?,
-        )
-        .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-
-        let allocation1 = inchi_malloc(heap, byte_count1);
-        let allocation2 = inchi_malloc(heap, byte_count2);
+        // INCHI✔️❌: Two native malloc calls become two actual typed endpoint
+        // allocations, with the same source failure counter and cleanup. Both
+        // attempts precede the failure branch. Negative byte sizes convert to
+        // the source unsigned size and fail allocation, not structural admission.
+        // No dummy byte buffers or input/endpoint mirrors. The existing safe
+        // malloc model's zero tail and arena constants remain human-deferred
+        // in INCHI-PERF-COMPARISON-ENDPOINTS; no cost equivalence is claimed.
+        // INCHI✔️❌: AT_NUMB* pe1 = (AT_NUMB*)inchi_malloc(((long long)i1->lenTautomer + 1) * sizeof(pe1[0]));
+        // INCHI✔️❌: AT_NUMB* pe2 = (AT_NUMB*)inchi_malloc(((long long)i2->lenTautomer + 1) * sizeof(pe2[0]));
+        let allocate_endpoints = |heap: &mut SourceHeap, length: i32|
+         -> Result<SourceMutPointer<AT_NUMB>, SourceHeapError> {
+            let byte_count = ((i64::from(length) + 1) as u64)
+                .wrapping_mul(std::mem::size_of::<AT_NUMB>() as u64);
+            let count = usize::try_from(byte_count / std::mem::size_of::<AT_NUMB>() as u64)
+                .map_err(|_| SourceHeapError::AllocationFailed)?;
+            let mut values = Vec::new();
+            values
+                .try_reserve_exact(count)
+                .map_err(|_| SourceHeapError::AllocationFailed)?;
+            values.resize(count, 0 as AT_NUMB);
+            heap.allocate(values)
+        };
+        let allocation1 = allocate_endpoints(heap, i1.lenTautomer);
+        let allocation2 = allocate_endpoints(heap, i2.lenTautomer);
         let (endpoint_allocation1, endpoint_allocation2) = match (allocation1, allocation2) {
             (Ok(pointer1), Ok(pointer2)) => (pointer1, pointer2),
             (result1, result2) => {
@@ -6622,173 +6675,109 @@ exit_function:
             }
         };
 
-        let endpoint_result = (|| -> Result<
-            (Vec<AT_NUMB>, usize, Vec<AT_NUMB>, usize, i32, i32, i32, i32),
-            SourceHeapError,
-        > {
-                let tautomer_count1 = usize::try_from(i1.lenTautomer)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let tautomer_count2 = usize::try_from(i2.lenTautomer)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let tautomer1 = if tautomer_count1 == 0 {
-                    Vec::new()
+        let endpoint_result = (|| -> Result<(), SourceHeapError> {
+            // Fresh endpoint allocations cannot alias preexisting live inputs.
+            // Extract only the output during each read-only input traversal;
+            // typed errors restore it before the common cleanup. No remaining
+            // quarantine or unchecked indexing occurs inside this extraction.
+            let collect = |heap: &mut SourceHeap,
+                           output: SourceMutPointer<AT_NUMB>,
+                           input: &INChI|
+             -> Result<(usize, i32, i32), SourceHeapError> {
+                heap.with_slice_mut_and_heap(output, |endpoints, heap| {
+                    let tautomer = if input.lenTautomer > 1 {
+                        heap.slice(input.nTautomer.as_const())?
+                    } else {
+                        &[]
+                    };
+                    let mut count = 0_usize;
+                    let mut hydrogens = 0_i32;
+                    let mut negative_charges = 0_i32;
+                    let mut m = 1_usize;
+                    while (m as i64) < i64::from(input.lenTautomer) {
+                        let length = usize::from(
+                            *tautomer.get(m).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        );
+                        m += 1;
+                        hydrogens = hydrogens.wrapping_add(i32::from(
+                            *tautomer.get(m).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        ));
+                        negative_charges = negative_charges.wrapping_add(i32::from(
+                            *tautomer.get(m + 1).ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        ));
+                        for j in 2..length {
+                            let value = *tautomer
+                                .get(m + j)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                            *endpoints
+                                .get_mut(count)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
+                            count += 1;
+                        }
+                        m += length;
+                    }
+                    Ok((count, hydrogens, negative_charges))
+                })
+            };
+            let (endpoint_count1, taut_h1, taut_m1) = collect(heap, endpoint_allocation1, i1)?;
+            let (endpoint_count2, taut_h2, taut_m2) = collect(heap, endpoint_allocation2, i2)?;
+            picr.num_taut_H1 = taut_h1;
+            picr.num_taut_H2 = taut_h2;
+            picr.num_taut_M1 = taut_m1;
+            picr.num_taut_M2 = taut_m2;
+
+            let count1 = i32::try_from(endpoint_count1)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            let count2 = i32::try_from(endpoint_count2)
+                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+            insertions_sort_AT_NUMB(heap.slice_mut(endpoint_allocation1)?, count1)?;
+            insertions_sort_AT_NUMB(heap.slice_mut(endpoint_allocation2)?, count2)?;
+            // Retain the full allocation for the source comparison's indexed
+            // accesses, while using only collected counts for the merge bounds.
+            let endpoints1 = heap.slice(endpoint_allocation1.as_const())?;
+            let endpoints2 = heap.slice(endpoint_allocation2.as_const())?;
+            let mut index1 = 0_usize;
+            let mut index2 = 0_usize;
+            let mut num_equal = 0_i32;
+            let mut num_in1_only = 0_i32;
+            let mut num_in2_only = 0_i32;
+            while index1 < endpoint_count1 && index2 < endpoint_count2 {
+                if endpoints1[index1] == endpoints2[index2] {
+                    index1 += 1;
+                    index2 += 1;
+                    num_equal = num_equal.wrapping_add(1);
+                // INCHI✔️❌: if (pe1[j1] < pe2[j1])
+                // This intentionally uses `index1`, exactly as the official source
+                // does, while retaining checked access to the complete allocation.
+                } else if endpoints1[index1]
+                    < *endpoints2
+                        .get(index1)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?
+                {
+                    if picr.num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY as i32 {
+                        picr.endp_in1_only[picr.num_endp_in1_only as usize] = endpoints1[index1];
+                        picr.num_endp_in1_only = picr.num_endp_in1_only.wrapping_add(1);
+                    }
+                    index1 += 1;
+                    num_in1_only = num_in1_only.wrapping_add(1);
                 } else {
-                    heap.slice(i1.nTautomer.as_const())?
-                        .get(..tautomer_count1)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec()
-                };
-                let tautomer2 = if tautomer_count2 == 0 {
-                    Vec::new()
-                } else {
-                    heap.slice(i2.nTautomer.as_const())?
-                        .get(..tautomer_count2)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec()
-                };
-
-                // INCHI✔️❌: AT_NUMB* pe1 = (AT_NUMB*)inchi_malloc(((long long)i1->lenTautomer + 1) * sizeof(pe1[0]));
-                // INCHI✔️❌: AT_NUMB* pe2 = (AT_NUMB*)inchi_malloc(((long long)i2->lenTautomer + 1) * sizeof(pe2[0]));
-                // Keep the complete source allocation extents, not only the initialized
-                // endpoint prefixes. The later official `pe2[j1]` access is measured
-                // against this allocation. `inchi_malloc`'s SourceHeap model supplies
-                // zero-filled bytes for the otherwise uninitialized tail.
-                let endpoint_extent1 = tautomer_count1
-                    .checked_add(1)
-                    .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-                let endpoint_extent2 = tautomer_count2
-                    .checked_add(1)
-                    .ok_or(SourceHeapError::AllocationSizeOverflow)?;
-                let mut endpoints1 = vec![0; endpoint_extent1];
-                let mut endpoints2 = vec![0; endpoint_extent2];
-                let mut endpoint_count1 = 0_usize;
-                let mut endpoint_count2 = 0_usize;
-                let mut taut_h1 = 0_i32;
-                let mut taut_h2 = 0_i32;
-                let mut taut_m1 = 0_i32;
-                let mut taut_m2 = 0_i32;
-
-                let mut m = 1_usize;
-                while m < tautomer_count1 {
-                    let length = usize::from(tautomer1[m]);
-                    m += 1;
-                    let record = tautomer1
-                        .get(m..m.saturating_add(length))
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    taut_h1 = taut_h1.wrapping_add(i32::from(
-                        *record.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    ));
-                    taut_m1 = taut_m1.wrapping_add(i32::from(
-                        *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    ));
-                    let source_endpoints = record
-                        .get(2..length)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let next_count = endpoint_count1
-                        .checked_add(source_endpoints.len())
-                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-                    endpoints1
-                        .get_mut(endpoint_count1..next_count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .copy_from_slice(source_endpoints);
-                    endpoint_count1 = next_count;
-                    m = m
-                        .checked_add(length)
-                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
+                    if picr.num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY as i32 {
+                        picr.endp_in2_only[picr.num_endp_in2_only as usize] = endpoints2[index2];
+                        picr.num_endp_in2_only = picr.num_endp_in2_only.wrapping_add(1);
+                    }
+                    index2 += 1;
+                    num_in2_only = num_in2_only.wrapping_add(1);
                 }
-
-                m = 1;
-                while m < tautomer_count2 {
-                    let length = usize::from(tautomer2[m]);
-                    m += 1;
-                    let record = tautomer2
-                        .get(m..m.saturating_add(length))
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    taut_h2 = taut_h2.wrapping_add(i32::from(
-                        *record.first().ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    ));
-                    taut_m2 = taut_m2.wrapping_add(i32::from(
-                        *record.get(1).ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    ));
-                    let source_endpoints = record
-                        .get(2..length)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let next_count = endpoint_count2
-                        .checked_add(source_endpoints.len())
-                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-                    endpoints2
-                        .get_mut(endpoint_count2..next_count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .copy_from_slice(source_endpoints);
-                    endpoint_count2 = next_count;
-                    m = m
-                        .checked_add(length)
-                        .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-                }
-
-                let count1 = i32::try_from(endpoint_count1)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                let count2 = i32::try_from(endpoint_count2)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                insertions_sort_AT_NUMB(&mut endpoints1, count1)?;
-                insertions_sort_AT_NUMB(&mut endpoints2, count2)?;
-                Ok((
-                    endpoints1,
-                    endpoint_count1,
-                    endpoints2,
-                    endpoint_count2,
-                    taut_h1,
-                    taut_h2,
-                    taut_m1,
-                    taut_m2,
-                ))
-            })();
-
-        let free1 = inchi_free(heap, endpoint_allocation1);
-        let free2 = inchi_free(heap, endpoint_allocation2);
-        free1?;
-        free2?;
-        let (
-            endpoints1,
-            endpoint_count1,
-            endpoints2,
-            endpoint_count2,
-            taut_h1,
-            taut_h2,
-            taut_m1,
-            taut_m2,
-        ) = endpoint_result?;
-
-        picr.num_taut_H1 = taut_h1;
-        picr.num_taut_H2 = taut_h2;
-        picr.num_taut_M1 = taut_m1;
-        picr.num_taut_M2 = taut_m2;
-
-        let mut index1 = 0_usize;
-        let mut index2 = 0_usize;
-        let mut num_equal = 0_i32;
-        let mut num_in1_only = 0_i32;
-        let mut num_in2_only = 0_i32;
-        while index1 < endpoint_count1 && index2 < endpoint_count2 {
-            if endpoints1[index1] == endpoints2[index2] {
-                index1 += 1;
-                index2 += 1;
-                num_equal = num_equal.wrapping_add(1);
-            // INCHI✔️❌: if (pe1[j1] < pe2[j1])
-            // This intentionally uses `index1`, exactly as the official source
-            // does, while retaining checked access to the complete allocation.
-            } else if endpoints1[index1]
-                < *endpoints2
-                    .get(index1)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-            {
+            }
+            while index1 < endpoint_count1 {
                 if picr.num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY as i32 {
                     picr.endp_in1_only[picr.num_endp_in1_only as usize] = endpoints1[index1];
                     picr.num_endp_in1_only = picr.num_endp_in1_only.wrapping_add(1);
                 }
                 index1 += 1;
                 num_in1_only = num_in1_only.wrapping_add(1);
-            } else {
+            }
+            while index2 < endpoint_count2 {
                 if picr.num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY as i32 {
                     picr.endp_in2_only[picr.num_endp_in2_only as usize] = endpoints2[index2];
                     picr.num_endp_in2_only = picr.num_endp_in2_only.wrapping_add(1);
@@ -6796,32 +6785,24 @@ exit_function:
                 index2 += 1;
                 num_in2_only = num_in2_only.wrapping_add(1);
             }
-        }
-        while index1 < endpoint_count1 {
-            if picr.num_endp_in1_only < ICR_MAX_ENDP_IN1_ONLY as i32 {
-                picr.endp_in1_only[picr.num_endp_in1_only as usize] = endpoints1[index1];
-                picr.num_endp_in1_only = picr.num_endp_in1_only.wrapping_add(1);
+            if num_in1_only != 0 {
+                ret |= tagInchiCompareDiffBits_INCHIDIFF_EXTRA_TG_ENDP;
             }
-            index1 += 1;
-            num_in1_only = num_in1_only.wrapping_add(1);
-        }
-        while index2 < endpoint_count2 {
-            if picr.num_endp_in2_only < ICR_MAX_ENDP_IN2_ONLY as i32 {
-                picr.endp_in2_only[picr.num_endp_in2_only as usize] = endpoints2[index2];
-                picr.num_endp_in2_only = picr.num_endp_in2_only.wrapping_add(1);
+            if num_in2_only != 0 {
+                ret |= tagInchiCompareDiffBits_INCHIDIFF_MISS_TG_ENDP;
             }
-            index2 += 1;
-            num_in2_only = num_in2_only.wrapping_add(1);
-        }
-        if num_in1_only != 0 {
-            ret |= tagInchiCompareDiffBits_INCHIDIFF_EXTRA_TG_ENDP;
-        }
-        if num_in2_only != 0 {
-            ret |= tagInchiCompareDiffBits_INCHIDIFF_MISS_TG_ENDP;
-        }
-        if num_in1_only != 0 || num_in2_only != 0 || num_equal == 0 {
-            ret |= tagInchiCompareDiffBits_INCHIDIFF_DIFF_TG_ENDP;
-        }
+            if num_in1_only != 0 || num_in2_only != 0 || num_equal == 0 {
+                ret |= tagInchiCompareDiffBits_INCHIDIFF_DIFF_TG_ENDP;
+            }
+            Ok(())
+        })();
+        // Source frees both endpoint arrays after comparison. Structural errors
+        // also release both allocations without discarding prior ICR writes.
+        let free1 = inchi_free(heap, endpoint_allocation1);
+        let free2 = inchi_free(heap, endpoint_allocation2);
+        free1?;
+        free2?;
+        endpoint_result?;
     }
 
     if i1.lenTautomer > 1 && i2.lenTautomer > 1 {
@@ -6878,15 +6859,14 @@ exit_function:
         }
     }
 
+    // INCHI✔️❗: native isotope-first selection reads regular stereo only in
+    // the fallback arm; reached typed-pointer errors and count-sum semantics
+    // remain unchanged. O(1) selection, no scan, clone or allocation; safe
+    // arena lookup constants remain OPEN (INCHI-PERF-STEREO-SELECTION).
     let isotopic_stereo1 = if i1.StereoIsotopic.is_null() {
         None
     } else {
         heap.slice(i1.StereoIsotopic.as_const())?.first()
-    };
-    let regular_stereo1 = if i1.Stereo.is_null() {
-        None
-    } else {
-        heap.slice(i1.Stereo.as_const())?.first()
     };
     let stereo1 = if isotopic_stereo1.is_some_and(|stereo| {
         stereo
@@ -6895,19 +6875,16 @@ exit_function:
             != 0
     }) {
         isotopic_stereo1
+    } else if i1.Stereo.is_null() {
+        None
     } else {
-        regular_stereo1
+        heap.slice(i1.Stereo.as_const())?.first()
     };
 
     let isotopic_stereo2 = if i2.StereoIsotopic.is_null() {
         None
     } else {
         heap.slice(i2.StereoIsotopic.as_const())?.first()
-    };
-    let regular_stereo2 = if i2.Stereo.is_null() {
-        None
-    } else {
-        heap.slice(i2.Stereo.as_const())?.first()
     };
     let stereo2 = if isotopic_stereo2.is_some_and(|stereo| {
         stereo
@@ -6916,8 +6893,10 @@ exit_function:
             != 0
     }) {
         isotopic_stereo2
+    } else if i2.Stereo.is_null() {
+        None
     } else {
-        regular_stereo2
+        heap.slice(i2.Stereo.as_const())?.first()
     };
 
     ret |= CompareReversedStereoINChI3(heap, stereo1, stereo2, &mut picr)? as u32;
@@ -8918,7 +8897,7 @@ mod tests {
         };
         assert_eq!(
             CompareReversedStereoINChI3(&heap, Some(&negative), None, &mut ICR::default(),),
-            Err(SourceHeapError::SourceIntegerOverflow)
+            Ok(0)
         );
         let malformed = INChI_Stereo {
             nNumberOfStereoBonds: 1,

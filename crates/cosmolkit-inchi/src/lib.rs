@@ -1,8 +1,8 @@
 //! Reusable Rust source-port boundary for the IUPAC InChI engine.
 //!
 //! The crate exposes the four audited toolkit-neutral scalar InChI operations.
-//! It is independent of `cosmolkit-core`, RDKit, Python, and external
-//! executables so completed functionality can be reused by other Rust projects.
+//! It receives periodic valence metadata through the caller's toolkit and is
+//! independent of `cosmolkit-core`, native RDKit, Python and external executables.
 //!
 //! See `dev/archive/plans/rdkit_inchi_full_port_plan.md` in the workspace for
 //! the required source inventory, marker, and parity contract.
@@ -192,36 +192,21 @@ fn structure_error(operation: &'static str, error: InchiToMolError) -> InchiErro
     }
 }
 
-fn nul_terminated_options(options: Option<&[u8]>) -> Result<Option<Vec<u8>>, InchiError> {
-    let Some(options) = options else {
-        return Ok(None);
-    };
-    let mut terminated = options.to_vec();
-    terminated.try_reserve(1).map_err(|_| InchiError {
-        operation: "mol_to_inchi",
-        kind: InchiErrorKind::AllocationFailed,
-        detail: "AllocationFailed".to_owned(),
-    })?;
-    terminated.push(0);
-    Ok(Some(terminated))
-}
-
 /// Generates an InChI from the toolkit-neutral molecular graph.
 pub fn mol_to_inchi(
     toolkit: &mut impl MolToInchiToolkit,
     molecule: &InchiMolecule,
     options: Option<&[u8]>,
 ) -> Result<MolToInchiOutput, InchiError> {
-    let options = nul_terminated_options(options)?;
     let mut heap = SourceHeap::default();
     let mut engine = SourceInchiGenerationEngine::new(&mut heap);
     let mut return_values = source::rdkit::inchi::ExtraInchiReturnValues::default();
-    let output = source::rdkit::inchi::mol_to_inchi(
+    let output = source::rdkit::inchi::mol_to_inchi_with_options(
         &mut engine,
         toolkit,
         molecule,
         &mut return_values,
-        options.as_deref(),
+        options.map(source::rdkit::inchi::GenerationOptions::Bytes),
     )
     .map_err(|error| generation_error("mol_to_inchi", error))?;
     Ok(MolToInchiOutput {
@@ -242,20 +227,16 @@ pub fn mol_to_inchi_key(
     molecule: &InchiMolecule,
     options: Option<&[u8]>,
 ) -> Result<MolToInchiKeyOutput, InchiError> {
-    let options = nul_terminated_options(options).map_err(|mut error| {
-        error.operation = "mol_to_inchi_key";
-        error
-    })?;
     let mut generation_heap = SourceHeap::default();
     let mut key_heap = SourceHeap::default();
     let mut generation_engine = SourceInchiGenerationEngine::new(&mut generation_heap);
     let mut key_engine = SourceInchiKeyEngine::new(&mut key_heap);
-    let output = source::rdkit::inchi::mol_to_inchi_key(
+    let output = source::rdkit::inchi::mol_to_inchi_key_with_options(
         &mut generation_engine,
         &mut key_engine,
         toolkit,
         molecule,
-        options.as_deref(),
+        options.map(source::rdkit::inchi::GenerationOptions::Bytes),
     )
     .map_err(|error| match error {
         MolToInchiKeyError::MolToInchi(error) => generation_error("mol_to_inchi_key", error),
@@ -454,6 +435,24 @@ mod scalar_api_tests {
     }
 
     impl InchiToMolToolkit for ScalarToolkit {
+        fn valence_list(&self, atomic_number: u8) -> Result<&[i32], InchiToolkitError> {
+            // Pinned periodicTableAtomData rows for this existing scalar fixture.
+            match atomic_number {
+                1 | 9 | 17 | 35 => Ok(&[1]),
+                5 | 7 => Ok(&[3]),
+                6 => Ok(&[4]),
+                8 => Ok(&[2]),
+                15 => Ok(&[3, 5]),
+                16 => Ok(&[2, 4, 6]),
+                53 => Ok(&[1, 3, 5]),
+                _ => Err(toolkit_failure("valence_list")),
+            }
+        }
+
+        fn default_valence(&self, atomic_number: u8) -> Result<i32, InchiToolkitError> {
+            Ok(self.valence_list(atomic_number)?[0])
+        }
+
         fn atomic_number(&mut self, element: &[u8]) -> Result<i32, InchiToolkitError> {
             atomic_number(element).ok_or_else(|| toolkit_failure("atomic_number"))
         }

@@ -18,8 +18,9 @@ IUPAC InChI engine for the four scalar operations used by COSMolKit:
 - `mol_from_inchi`
 
 The crate owns neutral atom, bond, coordinate, isotope, charge, hydrogen, and
-stereo representations. It does not depend on `cosmolkit-core`; conversion
-between a live COSMolKit `Molecule` and the neutral InChI graph belongs to the
+stereo representations. It does not depend on `cosmolkit-core`; the caller's
+`InchiToMolToolkit` provides borrowed valence lists and default valences.
+Conversion between a live COSMolKit `Molecule` and the neutral InChI graph belongs to the
 public `cosmolkit` facade; detached chemistry helpers remain in their owners.
 
 ## Examples
@@ -32,7 +33,7 @@ cargo run -p cosmolkit-inchi --example inchi_to_key -- 'InChI=1S/H2O/h1H2'
 ```
 
 The neutral graph operations use downstream toolkit traits for element,
-valence, sanitization, hydrogen, and stereochemistry behavior. These examples
+valence tables, sanitization, hydrogen, and stereochemistry behavior. These examples
 include an explicitly methane-only adapter that rejects every operation outside
 that narrow boundary:
 

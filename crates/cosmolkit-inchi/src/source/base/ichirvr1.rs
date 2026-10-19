@@ -7,11 +7,14 @@ use crate::source::base::ichimake::Create_INChI;
 use crate::source::base::ichinorm::FreeInpAtomData;
 use crate::source::base::ichiread::bRevInchiComponentExists;
 use crate::source::base::ichiring::{QueueCreate, QueueDelete};
+use crate::source::base::ichirvr2::copy_bns_to_atom_with_restore_mode;
 use crate::source::base::ichirvr2::{CopyBnsToAtom, CopySt2At};
 use crate::source::base::ichister::{FixUnkn0DStereoBonds, ReconcileAllCmlBondParities};
 use crate::source::base::ichitaut::free_t_group_info;
 use crate::source::base::mol2atom::{CreateInpAtomData, FreeOrigAtData};
-use crate::source::base::runichi::ProcessOneStructure;
+use crate::source::base::runichi::{
+    SourceCanonicalGlobals, SourceInputRecords, SourceTitle, process_one_structure_title,
+};
 use crate::source::base::strutil::{
     Alloc_INChI, Alloc_INChI_Aux, Free_INChI, Free_INChI_Aux, SetConnectedComponentNumber,
     bNumHeterAtomHasIsotopicH, fix_odd_things,
@@ -54,6 +57,45 @@ use crate::source_types::{
     tagTCGroupTypes_TCG_Plus0 as TCG_Plus0,
 };
 
+// Native ichirvr4.c3285/3462: descriptor borrowed only during restore.
+// Legacy entries resolve the CURRENT physical pointer at the reached read.
+// INCHI✔️❗: Actual immutable metadata, same mutable queue payloads, no new
+// model/address/NULL identity; C560 whole checked costs remain OPEN.
+#[derive(Clone, Copy)]
+pub(super) enum SourceBfsQueue<'a> {
+    Legacy,
+    Borrowed(&'a BFS_Q),
+}
+
+impl SourceBfsQueue<'_> {
+    pub(super) fn handles(
+        self,
+        heap: &SourceHeap,
+        legacy: SourceMutPointer<BFS_Q>,
+    ) -> Result<
+        (
+            SourceMutPointer<crate::source_types::QUEUE>,
+            SourceMutPointer<AT_RANK>,
+            SourceMutPointer<i8>,
+        ),
+        SourceHeapError,
+    > {
+        // VERBATIM SOURCE FRAGMENT: ichirvr2.c3929..3931
+        //                     int nMinRingSize = is_bond_in_Nmax_memb_ring( at2, i, j, pStruct->pbfsq->q,
+        //                                                              pStruct->pbfsq->nAtomLevel,
+        //                                                              pStruct->pbfsq->cSource, 99 /* max ring size */ );
+        // Native ring calls read these three fields only, at this same point.
+        let queue = match self {
+            Self::Legacy => heap
+                .slice(legacy.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+            Self::Borrowed(queue) => queue,
+        };
+        Ok((queue.q, queue.nAtomLevel, queue.cSource))
+    }
+}
+
 fn copy_inp_atom_prefix(
     heap: &mut SourceHeap,
     destination: SourceMutPointer<inp_ATOM>,
@@ -81,15 +123,32 @@ fn copy_inp_atom_prefix(
 
     // Preserve the modeled overlapping-pointer behavior even though the
     // Official production call sites use distinct allocations.
-    let source = heap
-        .slice(source.as_const())?
-        .get(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    heap.slice_mut(destination)?
-        .get_mut(..count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone_from_slice(&source);
+    {
+        // Pinned ichirvr4.c:1699 shared atom-copy operation:
+        // memcpy(at2, at, len_at * sizeof(at2[0]));
+        // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+        // reached bounds/errors and modeled overlap without a payload Vec.
+        // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+        let copy_source = source.as_const();
+        let copy_count = (heap
+            .slice(copy_source)?
+            .get(..count)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?)
+        .len();
+        let copy_destination = destination;
+        {
+            let copy_target = &mut (heap
+                .slice_mut(copy_destination)?
+                .get_mut(..count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?);
+            assert_eq!(copy_target.len(), copy_count);
+        }
+        if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity() {
+            heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+        } else {
+            heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+        }
+    }
     Ok(())
 }
 
@@ -304,42 +363,23 @@ pub(crate) fn FillOutpStructEndpointFromInChI(
         .fill(0);
 
     if inchi.lenTautomer > 1 && !inchi.nTautomer.is_null() {
-        let tautomer = heap.slice(inchi.nTautomer.as_const())?.to_vec();
-        let number_of_groups = i32::from(
-            *tautomer
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        );
+        // INCHI✔️❗: Read the live group limit on every source condition,
+        // and each endpoint immediately before its store. Valid overlapping
+        // arrays observe preceding clears/stores. O(reached groups/endpoints),
+        // O(1) scratch; no snapshot allocation. Checked heap cost stays OPEN.
         let mut group_index = 0_i32;
         let mut source_index = 1_i32;
-        while group_index < number_of_groups {
-            let mut group_length = i32::from(
-                *tautomer
-                    .get(
-                        usize::try_from(source_index)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            );
+        while group_index < i32::from(*heap.element_signed(inchi.nTautomer.as_const(), 0)?) {
+            let mut group_length =
+                i32::from(*heap.element_signed(inchi.nTautomer.as_const(), source_index)?);
             source_index = source_index.wrapping_add(T_GROUP_HDR_LEN as i32);
             group_length = group_length.wrapping_sub(T_GROUP_HDR_LEN as i32 - 1);
             while group_length > 0 {
-                let atom_number = i32::from(
-                    *tautomer
-                        .get(
-                            usize::try_from(source_index)
-                                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                        )
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                )
-                .wrapping_sub(1);
-                heap.slice_mut(endpoint)?
-                    .get_mut(
-                        usize::try_from(atom_number)
-                            .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone_from(&(group_index.wrapping_add(1) as AT_NUMB));
+                let atom_number =
+                    i32::from(*heap.element_signed(inchi.nTautomer.as_const(), source_index)?)
+                        .wrapping_sub(1);
+                *heap.element_signed_mut(endpoint, atom_number)? =
+                    group_index.wrapping_add(1) as AT_NUMB;
                 group_length = group_length.wrapping_sub(1);
                 source_index = source_index.wrapping_add(1);
             }
@@ -449,11 +489,16 @@ pub(crate) fn bMayBeACationInMobileHLayer(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: bMayBeACationInMobileHLayer
 
+    // INCHI✔️❗: Short-circuit before admitting an unused atom or VAL_AT.
+    // O(valence) time, O(1) scratch, no allocation/copy; safe-access cost OPEN.
+    if mobile_h == 0 {
+        return Ok(1);
+    }
     let index = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atom = atoms
         .get(index)
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if mobile_h == 0 || atom.num_H == 0 {
+    if atom.num_H == 0 {
         return Ok(1);
     }
     let cation_valence = match atom.el_number {
@@ -476,16 +521,18 @@ pub(crate) fn bMayBeACationInMobileHLayer(
             let neighbor_atom = atoms
                 .get(neighbor)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let neighbor_valence = valence_atoms
-                .get(neighbor)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if neighbor_atom.valence == 4
                 && neighbor_atom.chem_bonds_valence == 4
                 && neighbor_atom.num_H == 0
-                && neighbor_valence.cNumValenceElectrons == 3
-                && neighbor_valence.cPeriodicRowNumber == 1
             {
-                return Ok(1);
+                let neighbor_valence = valence_atoms
+                    .get(neighbor)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                if neighbor_valence.cNumValenceElectrons == 3
+                    && neighbor_valence.cPeriodicRowNumber == 1
+                {
+                    return Ok(1);
+                }
             }
             ordinal = ordinal.wrapping_add(1);
         }
@@ -1626,6 +1673,7 @@ pub(crate) fn GetAtomRestoreInfo(
     };
 
     valence_atoms[index].cnListIndex = list_index.wrapping_add(1) as i8;
+    // INCHI✔️❌: C219 human-deferred0395 static charge-node storage cost; see INCHI-PERF-CHARGE-NODE-STORAGE in dev/gap_reports/inchi/performance_pending.md.
     valence_atoms[index].cInitCharge = CN_LIST_INITIAL_CHARGES[list_index];
     let free_valences = charge_values[0]
         .nValence
@@ -1772,9 +1820,13 @@ pub(crate) fn GetTgroupInfoFromInChI(
     if p_inchi.lenTautomer <= 1 || p_inchi.nTautomer.is_null() {
         return Ok(0);
     }
-    let tautomer = heap.slice(p_inchi.nTautomer.as_const())?.to_vec();
+    // INCHI✔️❗: Reborrow each reached input field, without a whole-array
+    // snapshot. Same-u16 output pointers may alias future input/header words;
+    // preserve live source reads and allocation/error/partial-state order.
+    // O(reached groups/endpoints), O(1) scratch; arena constants OPEN C227.
     let num_t_groups = i32::from(
-        *tautomer
+        *heap
+            .slice(p_inchi.nTautomer.as_const())?
             .first()
             .ok_or(SourceHeapError::PointerOutOfBounds)?,
     );
@@ -1839,17 +1891,28 @@ pub(crate) fn GetTgroupInfoFromInChI(
     let mut j = 1_i32;
     let mut i = 0_i32;
     let mut itg = 0_i32;
-    while itg < num_t_groups && itg <= ti.max_num_t_groups {
+    while itg
+        < i32::from(
+            *heap
+                .slice(p_inchi.nTautomer.as_const())?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds)?,
+        )
+        && itg <= ti.max_num_t_groups
+    {
         let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         len_tg = i32::from(
-            *tautomer
+            *heap
+                .slice(p_inchi.nTautomer.as_const())?
                 .get(j_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        let mobile_h = *tautomer
+        let mobile_h = *heap
+            .slice(p_inchi.nTautomer.as_const())?
             .get(j_index + 1)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let mobile_minus = *tautomer
+        let mobile_minus = *heap
+            .slice(p_inchi.nTautomer.as_const())?
             .get(j_index + 2)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         let group_index = usize::try_from(itg).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -1889,10 +1952,15 @@ pub(crate) fn GetTgroupInfoFromInChI(
             let source_index =
                 usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let k = i32::from(
-                *tautomer
+                *heap
+                    .slice(p_inchi.nTautomer.as_const())?
                     .get(source_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
-            ) - 1;
+            )
+            .wrapping_sub(1) as AT_NUMB;
+            // INCHI✔️❗: k receives the ushort assignment result, not the
+            // original signed subtraction. Cost is scalar/O(1), OPEN C227.
+            let k = i32::from(k);
             let endpoint_index =
                 usize::try_from(i).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             *heap
@@ -2511,7 +2579,37 @@ pub(crate) fn MakeInChIOutOfStrFromINChI2(
     component: i32,
     _atom_number_offset: i32,
     input_number: i64,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // INCHI source: full original frame and sole algorithm remain in the private body below.
+    // C549 retains legacy pointer admission, with no new CG allocation or clone.
+    make_inchi_out_of_structure(
+        heap,
+        clock,
+        SourceCanonicalGlobals::Pointer(canonical_globals),
+        input_parameters,
+        input_structure_data,
+        structure,
+        component,
+        _atom_number_offset,
+        input_number,
+        clock_result,
+    )
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn make_inchi_out_of_structure(
+    heap: &mut SourceHeap,
+    clock: SourceMutPointer<INCHI_CLOCK>,
+    canonical_globals: SourceCanonicalGlobals<'_>,
+    input_parameters: Option<&INPUT_PARMS>,
+    input_structure_data: Option<&mut STRUCT_DATA>,
+    mut structure: Option<&mut StrFromINChI>,
+    component: i32,
+    _atom_number_offset: i32,
+    input_number: i64,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr1.c:5669 MakeInChIOutOfStrFromINChI2
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: MakeInChIOutOfStrFromINChI2
@@ -2773,7 +2871,18 @@ pub(crate) fn MakeInChIOutOfStrFromINChI2(
 
     structure.RevInChI.pINChI = [SourceMutPointer::null(); INCHI_NUM as usize];
     structure.RevInChI.pINChI_Aux = [SourceMutPointer::null(); INCHI_NUM as usize];
-    let mut title = vec![0_i8; 1024];
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr1.c:5678..5678 C403 title extent
+    //     char szTitle[MAX_SDF_HEADER + MAX_SDF_VALUE + 256];
+    // END VERBATIM SOURCE FRAGMENT: C403 title extent
+    // VERBATIM SOURCE FRAGMENT: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr1.c:5746..5746 C403 title initialization
+    //     memset( szTitle, 0, sizeof( szTitle ) ); /* djb-rwth: memset_s C11/Annex K variant? */
+    // END VERBATIM SOURCE FRAGMENT: C403 title initialization
+    // INCHI✔️✔️: Source575-byte local storage and explicit memset, no heap
+    // allocation, clone, registration or extra zeroing. Borrowed title cannot
+    // escape the synchronous child call; local display flags are source-zero.
+    // This local cost review does not accept other checked/backend call costs.
+    let mut title = [0_i8; (crate::source_types::MAX_SDF_HEADER
+        + crate::source_types::MAX_SDF_VALUE + 256) as usize];
 
     let total_atoms_i32 = structure.num_atoms.wrapping_add(structure.num_deleted_H);
     let total_atoms = match usize::try_from(total_atoms_i32) {
@@ -2881,33 +2990,33 @@ pub(crate) fn MakeInChIOutOfStrFromINChI2(
             }
         }
 
-        let original_slot = heap.allocate_model_storage(vec![original_atom_data.clone()])?;
-        let prepared_slot = heap.allocate_model_storage(prepared_atom_data.to_vec())?;
-        let process_result = ProcessOneStructure(
+        // INCHI source ichirvr1.c5689..5693/5820..5828:
+        // OrigAtData and PrepAtData[2] are distinct live source-local objects.
+        // INCHI✔️❗: Actual records through the one shared root, with all
+        // reached writes before source cleanup; no model/capture/copyback/free.
+        // O(1) target, no allocation; C550 whole checked costs remain OPEN.
+        let process_result = process_one_structure_title(
             heap,
             clock,
             canonical_globals,
             &mut local_structure_data,
             &mut local_parameters,
-            Some(&mut title),
+            SourceTitle::Borrowed(Some(&mut title[..])),
             &mut structure.RevInChI.pINChI,
             &mut structure.RevInChI.pINChI_Aux,
             None,
             None,
             None,
             None,
-            original_slot,
-            prepared_slot,
+            SourceInputRecords::Borrowed {
+                original: &mut original_atom_data, prepared: &mut prepared_atom_data,
+            },
             input_number,
             Some(&mut string_buffer),
             0,
             SourceMutPointer::null(),
             clock_result,
         );
-        original_atom_data = heap.slice(original_slot.as_const())?[0].clone();
-        prepared_atom_data.clone_from_slice(&heap.slice(prepared_slot.as_const())?[..2]);
-        heap.free(original_slot)?;
-        heap.free(prepared_slot)?;
         let process_result = process_result?;
 
         structure.RevInChI.num_components = local_structure_data.num_components;
@@ -3561,6 +3670,7 @@ pub(crate) fn nTautEndpointEdgeCap(
     if valence_atom.cnListIndex > 0 {
         let charge_node_index = usize::try_from(i32::from(valence_atom.cnListIndex) - 1)
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❌: C219 human-deferred0395 static charge-node storage cost; see INCHI-PERF-CHARGE-NODE-STORAGE in dev/gap_reports/inchi/performance_pending.md.
         edge_capacity = edge_capacity.wrapping_add(
             *CN_LIST_FIRST_NODE_FREE_VALENCE
                 .get(charge_node_index)
@@ -3880,9 +3990,6 @@ pub(crate) fn AtomStcapStflow(
 
     let iat = usize::try_from(atom_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let atom = atoms.get(iat).ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let valence_atom = valence_atoms
-        .get(iat)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let valence = i32::from(atom.valence);
     let mut st_capacity = i32::from(atom.chem_bonds_valence);
     let mut st_flow = 0_i32;
@@ -3890,7 +3997,13 @@ pub(crate) fn AtomStcapStflow(
     let mut metal_edge_capacity = 0_i32;
     let mut metal_edge_flow = 0_i32;
 
+    // INCHI✔️❗: The source flag gates this read; empty neighbor loops
+    // need no VAL_AT when disabled. O(degree), O(1), no allocation/copy.
+    // Safe indexed/Result whole-call cost remains OPEN.
     if restore_mode.bMetalAddFlower != 0 {
+        let valence_atom = valence_atoms
+            .get(iat)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         st_capacity = st_capacity.wrapping_sub(
             i32::from(valence_atom.cInitOrigValenceToMetal)
                 .wrapping_sub(i32::from(valence_atom.cInitValenceToMetal)),
@@ -4362,46 +4475,60 @@ pub(crate) fn nCountBnsSizes(
     groups.total_electrons = groups.total_electrons.wrapping_sub(groups.total_charge);
     groups.num_metal_bonds /= 2;
 
-    let tgroup_count = usize::try_from(tautomer_info.num_t_groups)
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let tautomer_groups = if tgroup_count == 0 {
-        Vec::new()
-    } else {
-        heap.slice(tautomer_info.t_group.as_const())?
-            .get(..tgroup_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    for tautomer_group in &tautomer_groups {
-        let result = RegisterTCGroup(
+    // INCHI✔️❗: Native signed loop skips nonpositive counts without touching
+    // t_group. Borrow only each reached record, never snapshot the prefix.
+    // Registration mutates TC_GROUP storage, not typed T_GROUP allocations;
+    // reborrow after it before reading source post-call fields.
+    // O(reached groups) traversal/O(1) scratch, no snapshot allocation;
+    // arena/checked-access and whole-call costs remain OPEN in performance_pending.md.
+    let mut result = 0_i32;
+    let mut tautomer_index = 0_i32;
+    while tautomer_index < tautomer_info.num_t_groups {
+        let index =
+            usize::try_from(tautomer_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        let tautomer_group = heap
+            .slice(tautomer_info.t_group.as_const())?
+            .get(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let group_number = i32::from(tautomer_group.nGroupNumber);
+        let capacity = i32::from(tautomer_group.num[0]);
+        let endpoints = i32::from(tautomer_group.nNumEndpoints);
+        result = RegisterTCGroup(
             heap,
             groups,
             BNS_VERT_TYPE_TGROUP as i32,
-            i32::from(tautomer_group.nGroupNumber),
-            i32::from(tautomer_group.num[0]),
+            group_number,
+            capacity,
             0,
             0,
             0,
-            i32::from(tautomer_group.nNumEndpoints),
+            endpoints,
         )?;
         if result < 0 {
             return Ok(result);
         }
+        let tautomer_group = heap
+            .slice(tautomer_info.t_group.as_const())?
+            .get(index)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         other_edges = other_edges.wrapping_add(i32::from(tautomer_group.nNumEndpoints));
         tgroup_edges_from_groups =
             tgroup_edges_from_groups.wrapping_add(i32::from(tautomer_group.nNumEndpoints));
         negative_charge_in_tgroups =
             negative_charge_in_tgroups.wrapping_add(i32::from(tautomer_group.num[1]));
         if result > 0 {
+            let hydrogens = tautomer_group.num[0].wrapping_sub(tautomer_group.num[1]) as i16;
+            let minus = tautomer_group.num[1] as i16;
             let group_index =
                 usize::try_from(result - 1).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
             let group = heap
                 .slice_mut(groups.pTCG)?
                 .get_mut(group_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            group.tg_num_H = tautomer_group.num[0].wrapping_sub(tautomer_group.num[1]) as i16;
-            group.tg_num_Minus = tautomer_group.num[1] as i16;
+            group.tg_num_H = hydrogens;
+            group.tg_num_Minus = minus;
         }
+        tautomer_index = tautomer_index.wrapping_add(1);
     }
 
     let mut metal_pass = false;
@@ -4428,6 +4555,7 @@ pub(crate) fn nCountBnsSizes(
                     atom_number = atom_number.wrapping_add(1);
                     continue;
                 }
+                // INCHI✔️❌: C219 human-deferred0395 static charge-node storage cost; see INCHI-PERF-CHARGE-NODE-STORAGE in dev/gap_reports/inchi/performance_pending.md.
                 for (node_index, node) in list.nodes.iter().enumerate() {
                     let (type_, node_cap, node_flow, edges) = *node;
                     for (neighbor_number, edge_cap, _forbidden, edge_flow) in edges {
@@ -4458,7 +4586,7 @@ pub(crate) fn nCountBnsSizes(
                                 } else {
                                     0
                                 };
-                                let mut result = RegisterTCGroup(
+                                result = RegisterTCGroup(
                                     heap, groups, group_type, 0, 0, 0, cap, flow, 1,
                                 )?;
                                 if result < 0 {
@@ -4500,7 +4628,7 @@ pub(crate) fn nCountBnsSizes(
                         if needs_flower == 0 {
                             return Ok(RI_ERR_PROGR);
                         }
-                        let result = RegisterTCGroup(
+                        result = RegisterTCGroup(
                             heap,
                             groups,
                             type_,
@@ -4516,12 +4644,12 @@ pub(crate) fn nCountBnsSizes(
                         }
                         other_edges = other_edges.wrapping_add(1);
                         if result > 0 {
-                            let result = RegisterTCGroup(heap, groups, type_, 0, 0, 0, 0, 0, 2)?;
+                            result = RegisterTCGroup(heap, groups, type_, 0, 0, 0, 0, 0, 2)?;
                             if result < 0 {
                                 return Ok(result);
                             }
                             for (order, edges) in [(1, 3), (2, 3), (3, 2)] {
-                                let result =
+                                result =
                                     RegisterTCGroup(heap, groups, type_, order, 0, 0, 0, 0, edges)?;
                                 if result <= 0 {
                                     return Ok(if result == 0 { RI_ERR_PROGR } else { result });
@@ -4551,7 +4679,7 @@ pub(crate) fn nCountBnsSizes(
                     } else {
                         0
                     };
-                    let result = RegisterTCGroup(heap, groups, type_, 0, cap, flow, 0, 0, 0)?;
+                    result = RegisterTCGroup(heap, groups, type_, 0, cap, flow, 0, 0, 0)?;
                     if result < 0 {
                         return Ok(result);
                     }
@@ -4565,7 +4693,7 @@ pub(crate) fn nCountBnsSizes(
                 if edge_capacity < 0 {
                     return Ok(edge_capacity);
                 }
-                let result = RegisterTCGroup(
+                result = RegisterTCGroup(
                     heap,
                     groups,
                     BNS_VERT_TYPE_TGROUP as i32,
@@ -4596,8 +4724,9 @@ pub(crate) fn nCountBnsSizes(
     groups.num_tgroups = tautomer_info.num_t_groups;
     groups.num_tgroup_edges = tgroup_edges;
     groups.tgroup_charge = negative_charge_in_tgroups.wrapping_neg();
-    let mut result = 0;
-    if tgroup_edges_from_groups != tgroup_edges {
+    // INCHI✔️✔️: Native ret retains the LAST registration status, including
+    // a positive new flower ordinal. Only endpoint mismatch overrides it.
+    if result >= 0 && tgroup_edges_from_groups != tgroup_edges {
         result = BNS_PROGRAM_ERR;
     }
     vertices = vertices.wrapping_add(number_of_atoms);
@@ -4759,17 +4888,16 @@ pub(crate) fn nAddSuperCGroups(
     // INCHI✔️❌: }
     // INCHI✔️❌:
     // END INCHI C FUNCTION: nAddSuperCGroups
-    let count = usize::try_from(groups.num_tc_groups)
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let existing = if count == 0 {
-        Vec::new()
-    } else {
-        heap.slice(groups.pTCG.as_const())?
-            .get(..count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    for (index, group) in existing.iter().enumerate() {
+    // INCHI✔️❗: Native signed loop reads only reached records; the scan
+    // changes nGroup slots only, never num_tc_groups or TC_GROUP storage.
+    // Registration/growth occurs after this borrow ends. No prefix snapshot,
+    // allocation or unreached-tail admission; O(reached groups)/O(1) scratch.
+    // Checked arena/whole-call cost remains OPEN in performance_pending.md.
+    for index in 0..groups.num_tc_groups {
+        let group = heap
+            .slice(groups.pTCG.as_const())?
+            .get(index as usize)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if group.type_ & BNS_VERT_TYPE_TGROUP as i32 != 0 {
             continue;
         }
@@ -5253,34 +5381,34 @@ pub(crate) fn EvaluateChargeChanges(
         type_ & (BNS_VERT_TYPE_ATOM | BNS_VERT_TYPE_TGROUP | BNS_VERT_TYPE_C_GROUP) as i32 != 0
             && type_ & BNS_VERT_TYPE_SUPER_TGROUP as i32 == 0
     }
+    // INCHI✔️❗: Read-only source records are borrowed at each reached access.
+    // No whole-record vertex/edge clone; O(1) scratch, native queue unchanged.
+    // Safe arena/union value-method constants remain OPEN under C226.
     fn path_entry(
         heap: &SourceHeap,
         path: SourceMutPointer<BNS_ALT_PATH>,
         index: i32,
-    ) -> Result<BNS_ALT_PATH, SourceHeapError> {
+    ) -> Result<&BNS_ALT_PATH, SourceHeapError> {
         heap.slice(path.as_const())?
             .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .copied()
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
-    fn vertex(
-        heap: &SourceHeap,
+    fn vertex<'a>(
+        heap: &'a SourceHeap,
         network: &BN_STRUCT,
         index: i32,
-    ) -> Result<BNS_VERTEX, SourceHeapError> {
+    ) -> Result<&'a BNS_VERTEX, SourceHeapError> {
         heap.slice(network.vert.as_const())?
             .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
-    fn edge(
-        heap: &SourceHeap,
+    fn edge<'a>(
+        heap: &'a SourceHeap,
         network: &BN_STRUCT,
         index: i32,
-    ) -> Result<BNS_EDGE, SourceHeapError> {
+    ) -> Result<&'a BNS_EDGE, SourceHeapError> {
         heap.slice(network.edge.as_const())?
             .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
-            .cloned()
             .ok_or(SourceHeapError::PointerOutOfBounds)
     }
 
@@ -5564,7 +5692,7 @@ pub(crate) fn RunBnsRestoreOnce(
     pBD: &mut BN_DATA,
     _pVA: &mut [crate::source_types::VAL_AT],
     _pTCGroups: &mut ALL_TC_GROUPS,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr1.c:4546 RunBnsRestoreOnce
     /*
@@ -5613,25 +5741,13 @@ pub(crate) fn RunBnsRestoreOnce(
 
     let mut total_delta = 0_i32;
     let _ = ReInitBnStructAltPaths(heap, pBNS)?;
-    // Some source-level error fixtures intentionally omit BNS work arrays.
-    // Keep the checked public path for those inputs so its original error code
-    // is preserved; valid BNS instances use the stable workspace below.
-    let mut workspace = BnsSearchWorkspace::new(heap, pBNS, pBD).ok();
-
+    // INCHI✔️❌: Delegate at the source call site without speculative workspace
+    // admission or swallowed constructor errors. The canonical callee skips
+    // workspace setup when max_altp <= 0. Repeated positive-pass calls may
+    // construct workspaces repeatedly; this independent cost remains OPEN.
     loop {
-        let delta_result = if let Some(workspace) = workspace.as_mut() {
-            run_balanced_network_search_with_workspace(
-                heap,
-                pBNS,
-                pBD,
-                BNS_EF_CHNG_FLOW as i32,
-                clock_result,
-                workspace,
-            )
-        } else {
-            RunBalancedNetworkSearch(heap, pBNS, pBD, BNS_EF_CHNG_FLOW as i32, clock_result)
-        };
-        let delta = delta_result?;
+        let delta =
+            RunBalancedNetworkSearch(heap, pBNS, pBD, BNS_EF_CHNG_FLOW as i32, clock_result)?;
         if BNS_ERR <= delta && delta <= BNS_MAX_ERR_VALUE {
             return Ok(delta);
         }
@@ -5947,15 +6063,41 @@ pub(crate) fn AllocEdgeList(
             if !old_edges.is_null() && copied_count > 0 {
                 let copied_count = usize::try_from(copied_count)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                let old_values = heap
-                    .slice(old_edges.as_const())?
-                    .get(..copied_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                heap.slice_mut(pEdges.pnEdges)?
-                    .get_mut(..copied_count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .copy_from_slice(&old_values);
+                {
+                    // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+                    // reached bounds/errors and modeled overlap without a payload Vec.
+                    // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+                    let copy_source = old_edges.as_const();
+                    let copy_count = (heap
+                        .slice(copy_source)?
+                        .get(..copied_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?)
+                    .len();
+                    let copy_destination = pEdges.pnEdges;
+                    {
+                        let copy_target = &mut (heap
+                            .slice_mut(copy_destination)?
+                            .get_mut(..copied_count)
+                            .ok_or(SourceHeapError::PointerOutOfBounds)?);
+                        assert_eq!(copy_target.len(), copy_count);
+                    }
+                    if copy_destination.allocation_identity()
+                        == copy_source.as_mut().allocation_identity()
+                    {
+                        heap.copy_prefix_within_allocation(
+                            copy_destination,
+                            copy_source,
+                            copy_count,
+                        )?;
+                    } else {
+                        heap.copy_nonoverlapping_prefix(
+                            copy_destination,
+                            copy_source,
+                            copy_count,
+                            false,
+                        )?;
+                    }
+                }
                 pEdges.num_edges = copied_count as i32;
             } else {
                 pEdges.num_edges = 0;
@@ -6056,27 +6198,46 @@ pub(crate) fn RemoveFromEdgeListByIndex(
     if len < 0 {
         return Ok(-1);
     }
-    let index = usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let len = usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let values = heap.slice_mut(pEdges.pnEdges)?;
-    if len != 0 {
-        let source_start = index
-            .checked_add(1)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let source_end = source_start
-            .checked_add(len)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if source_end > values.len() {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
-        values.copy_within(source_start..source_end, index);
+    // INCHI✔️❗: Empty move decrements before its sole signed tail store.
+    // Nonempty memmove uses one safe allocation admission and copy_within;
+    // O(len) time/O(1) scratch/no buffer. Checked arena cost remains OPEN.
+    if len == 0 {
+        pEdges.num_edges = pEdges.num_edges.wrapping_sub(1);
+        *heap.element_signed_mut(pEdges.pnEdges, pEdges.num_edges)? = 0;
+        return Ok(0);
     }
+    let negative_index = index < 0;
+    let (pointer, start) = if negative_index {
+        (
+            pEdges
+                .pnEdges
+                .offset(i64::from(index))
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
+            0,
+        )
+    } else {
+        (pEdges.pnEdges, index as usize)
+    };
+    let len = usize::try_from(len).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+    let values = heap.slice_mut(pointer).map_err(|error| {
+        if negative_index {
+            SourceHeapError::PointerOutOfBounds
+        } else {
+            error
+        }
+    })?;
+    let source_start = start
+        .checked_add(1)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    let source_end = source_start
+        .checked_add(len)
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    if source_end > values.len() {
+        return Err(SourceHeapError::PointerOutOfBounds);
+    }
+    values.copy_within(source_start..source_end, start);
     pEdges.num_edges = pEdges.num_edges.wrapping_sub(1);
-    let old_tail =
-        usize::try_from(pEdges.num_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    *values
-        .get_mut(old_tail)
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+    values[source_end - 1] = 0;
     Ok(0)
 }
 
@@ -6441,13 +6602,15 @@ pub(crate) fn GetChargeFlowerUpperEdge(
         return Ok(NO_VERTEX);
     }
 
-    let center_adjacency = heap.slice(center.iedge.as_const())?;
+    // INCHI✔️❗: At degree zero native returns NO_VERTEX without reading
+    // incident storage. O(reached degree), O(1); checked-arena cost OPEN C226.
     let mut edge_indices = [0_i32; 3];
     let mut neighbor_vertices = [0_i32; 3];
     let mut neighbor_count = 0_i32;
     let mut adjacency_index = 0_i32;
     while adjacency_index < i32::from(center.num_adj_edges) && neighbor_count < 3 {
-        let edge_index = *center_adjacency
+        let edge_index = *heap
+            .slice(center.iedge.as_const())?
             .get(
                 usize::try_from(adjacency_index)
                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
@@ -6589,10 +6752,10 @@ pub(crate) fn ConnectTwoVertices(
         usize::try_from(second_vertex_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     let edge_index_usize =
         usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let neighbor1 = u16::try_from(first_vertex_index.min(second_vertex_index))
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let neighbor12 = u16::try_from(first_vertex_index ^ second_vertex_index)
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    // INCHI✔️❗: Native ushort fields narrow modulo65536 after valid int
+    // bounds. No extra try_from failure; C-INTEGER-CONVERSIONS cost is OPEN.
+    let neighbor1 = first_vertex_index.min(second_vertex_index) as u16;
+    let neighbor12 = (first_vertex_index ^ second_vertex_index) as u16;
     heap.with_two_slices_mut_and_optional_third(
         network.vert,
         network.edge,
@@ -6879,16 +7042,18 @@ pub(crate) fn AddTGroups2TCGBnStruct(
         {
             return Ok(BNS_VERT_EDGE_OVFL);
         }
-        let group_count = usize::try_from(groups.num_tc_groups)
-            .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let mut group_values = heap
-            .slice(groups.pTCG.as_const())?
-            .get(..group_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
+        // INCHI✔️❗: Native leading-group scan stops before unread tail
+        // records; signed counts retain source mismatch rather than usize errors.
+        // No whole TC_GROUP/vertex/atom snapshots or deferred writebacks.
+        // O(reached groups + added vertices + reached atoms), O(1) scratch;
+        // checked arena/bundle constants remain OPEN in performance_pending.md.
         let mut max_tgroup_number = 0_i32;
-        let mut scanned = 0_usize;
-        for group in &group_values {
+        let mut scanned = 0_i32;
+        while scanned < groups.num_tc_groups {
+            let group = heap
+                .slice(groups.pTCG.as_const())?
+                .get(scanned as usize)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if group.type_ & BNS_VERT_TYPE_TGROUP as i32 == 0 {
                 break;
             }
@@ -6900,91 +7065,80 @@ pub(crate) fn AddTGroups2TCGBnStruct(
                 return Ok(BNS_CPOINT_ERR);
             }
             max_tgroup_number = order;
-            scanned += 1;
+            scanned = scanned.wrapping_add(1);
         }
-        if scanned
-            != usize::try_from(number_of_tgroups)
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-        {
+        if scanned != number_of_tgroups {
             return Ok(BNS_CPOINT_ERR);
         }
-        if number_of_vertices <= 0 {
-            return Err(SourceHeapError::PointerOutOfBounds);
-        }
 
-        let mut vertices = heap.slice(network.vert.as_const())?.to_vec();
         let clear_start =
             usize::try_from(number_of_vertices).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let clear_count =
             usize::try_from(max_tgroup_number).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        vertices
-            .get_mut(clear_start..clear_start + clear_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .fill(BNS_VERTEX::default());
-        let mut previous_index = clear_start - 1;
         let mut total_stationary_capacity = 0_i32;
         let total_stationary_flow = 0_i32;
-        for (index, group) in group_values
-            .iter_mut()
-            .take(
-                usize::try_from(number_of_tgroups)
-                    .map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
-            )
-            .enumerate()
-        {
-            let vertex_index = usize::try_from(
-                number_of_vertices
-                    .wrapping_add(group.ord_num)
-                    .wrapping_sub(1),
-            )
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let previous = vertices
-                .get(previous_index)
+        // Vertex and TC_GROUP allocations have distinct element types and cannot
+        // alias. This closure calls no quarantined child and restores storage on
+        // every Result, including errors after source-ordered partial mutation.
+        heap.with_slice_mut_and_heap_mut(network.vert, |vertices, heap| {
+            vertices
+                .get_mut(clear_start..clear_start + clear_count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .fill(BNS_VERTEX::default());
+            let mut previous_index = clear_start
+                .checked_sub(1)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let incident_pointer = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
-            let vertex = vertices
-                .get_mut(vertex_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            vertex.iedge = incident_pointer;
-            vertex.max_adj_edges = group
-                .num_edges
-                .wrapping_add(max_add_edges)
-                .wrapping_add(BNS_ADD_SUPER_TGROUP as i32)
-                as u16;
-            vertex.num_adj_edges = 0;
-            vertex.st_edge.flow = 0;
-            vertex.st_edge.flow0 = 0;
-            vertex.st_edge.cap = group.st_cap;
-            vertex.st_edge.cap0 = group.st_cap;
-            total_stationary_capacity = total_stationary_capacity.wrapping_add(group.st_cap);
-            vertex.type_ = group.type_ as u16;
-            group.nVertexNumber = vertex_index as i32;
-            previous_index = vertex_index;
-            let _ = index;
-        }
-        heap.slice_mut(network.vert)?.clone_from_slice(&vertices);
-        heap.slice_mut(groups.pTCG)?
-            .get_mut(..group_values.len())
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&group_values);
+            for index in 0..number_of_tgroups {
+                let group = heap
+                    .slice_mut(groups.pTCG)?
+                    .get_mut(index as usize)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let vertex_index = usize::try_from(
+                    number_of_vertices
+                        .wrapping_add(group.ord_num)
+                        .wrapping_sub(1),
+                )
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                let previous = vertices
+                    .get(previous_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let incident_pointer = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
+                let vertex = vertices
+                    .get_mut(vertex_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                vertex.iedge = incident_pointer;
+                vertex.max_adj_edges = group
+                    .num_edges
+                    .wrapping_add(max_add_edges)
+                    .wrapping_add(BNS_ADD_SUPER_TGROUP as i32)
+                    as u16;
+                vertex.num_adj_edges = 0;
+                vertex.st_edge.flow = 0;
+                vertex.st_edge.flow0 = 0;
+                vertex.st_edge.cap = group.st_cap;
+                vertex.st_edge.cap0 = group.st_cap;
+                total_stationary_capacity = total_stationary_capacity.wrapping_add(group.st_cap);
+                vertex.type_ = group.type_ as u16;
+                group.nVertexNumber = vertex_index as i32;
+                previous_index = vertex_index;
+            }
+            Ok(())
+        })?;
 
-        let atoms = if number_of_atoms == 0 {
-            Vec::new()
-        } else {
-            heap.slice(structure.at.as_const())?.to_vec()
-        };
         let mut endpoint = 0_i32;
         while endpoint < number_of_atoms {
             let endpoint_index =
                 usize::try_from(endpoint).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let atom = atoms
+            let source_endpoint = heap
+                .slice(structure.at.as_const())?
                 .get(endpoint_index)
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            if atom.endpoint == 0 {
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .endpoint;
+            if source_endpoint == 0 {
                 endpoint = endpoint.wrapping_add(1);
                 continue;
             }
-            let fictitious_index = i32::from(atom.endpoint)
+            let fictitious_index = i32::from(source_endpoint)
                 .wrapping_add(number_of_vertices)
                 .wrapping_sub(1);
             let fictitious_usize = usize::try_from(fictitious_index)
@@ -7060,12 +7214,52 @@ pub(crate) fn AddTGroups2TCGBnStruct(
     Ok(result)
 }
 
+// Concrete private SRM input for these two canonical charge-network kernels.
+// AddC retains its source pointer until a native field read is actually reached;
+// existing borrowed callers retain their signatures and perform no arena lookup.
+#[derive(Clone, Copy)]
+pub(super) enum SourceRestoreMode<'a> {
+    Borrowed(&'a SRM),
+    Pointer(crate::source_types::SourceConstPointer<SRM>),
+}
+
+impl SourceRestoreMode<'_> {
+    pub(super) fn get<'a>(&'a self, heap: &'a SourceHeap) -> Result<&'a SRM, SourceHeapError> {
+        match self {
+            Self::Borrowed(mode) => Ok(mode),
+            Self::Pointer(pointer) => heap
+                .slice(*pointer)?
+                .first()
+                .ok_or(SourceHeapError::PointerOutOfBounds),
+        }
+    }
+}
+
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub(crate) fn AddRadicalToMetal(
     heap: &mut SourceHeap,
     total_stationary_capacity: &mut i32,
     _total_stationary_flow: &mut i32,
     restore_mode: &SRM,
+    network: &BN_STRUCT,
+    groups: &ALL_TC_GROUPS,
+) -> Result<i32, SourceHeapError> {
+    add_radical_to_metal_with_mode(
+        heap,
+        total_stationary_capacity,
+        _total_stationary_flow,
+        SourceRestoreMode::Borrowed(restore_mode),
+        network,
+        groups,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn add_radical_to_metal_with_mode(
+    heap: &mut SourceHeap,
+    total_stationary_capacity: &mut i32,
+    _total_stationary_flow: &mut i32,
+    restore_mode: SourceRestoreMode<'_>,
     network: &BN_STRUCT,
     groups: &ALL_TC_GROUPS,
 ) -> Result<i32, SourceHeapError> {
@@ -7116,8 +7310,10 @@ pub(crate) fn AddRadicalToMetal(
         .into_iter()
         .map(|index| i32::from(index >= 0))
         .sum::<i32>();
+    // INCHI✔️❗: Resolve SRM only at the source's short-circuited flag read.
+    // O(1), no allocation/clone; projection cost remains OPEN under C224.
     if groups.num_metal_atoms != 0
-        && restore_mode.bMetalAddFlower != 0
+        && restore_mode.get(heap)?.bMetalAddFlower != 0
         && *total_stationary_capacity % 2 != 0
         && number_present == 4
     {
@@ -7159,6 +7355,29 @@ pub(crate) fn ConnectMetalFlower(
     total_stationary_capacity: &mut i32,
     total_stationary_flow: &mut i32,
     restore_mode: &SRM,
+    network: &BN_STRUCT,
+    groups: &ALL_TC_GROUPS,
+) -> Result<i32, SourceHeapError> {
+    connect_metal_flower_with_mode(
+        heap,
+        current_vertices,
+        current_edges,
+        total_stationary_capacity,
+        total_stationary_flow,
+        SourceRestoreMode::Borrowed(restore_mode),
+        network,
+        groups,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn connect_metal_flower_with_mode(
+    heap: &mut SourceHeap,
+    current_vertices: &mut i32,
+    current_edges: &mut i32,
+    total_stationary_capacity: &mut i32,
+    total_stationary_flow: &mut i32,
+    restore_mode: SourceRestoreMode<'_>,
     network: &BN_STRUCT,
     groups: &ALL_TC_GROUPS,
 ) -> Result<i32, SourceHeapError> {
@@ -7366,24 +7585,18 @@ pub(crate) fn ConnectMetalFlower(
             .get(usize::try_from(vertex_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
     }
-    let incident_start = g0.iedge.difference(network.iedge)?;
-    let incident_edges = heap.slice(network.iedge.as_const())?;
-    let edges = heap.slice(network.edge.as_const())?;
+    // INCHI✔️❗: Native incident reads occur only for reached neighbors.
+    // Borrow g0's actual pointer, with no base-arena admission at degree zero.
+    // O(degree), O(1) scratch; safe arena access cost is deferred under C224.
     let mut capacity = 0_i32;
     let mut flow = 0_i32;
     for offset in 0..usize::from(g0.num_adj_edges) {
-        let incident_index = usize::try_from(
-            incident_start
-                .checked_add(
-                    i64::try_from(offset).map_err(|_| SourceHeapError::PointerOutOfBounds)?,
-                )
-                .ok_or(SourceHeapError::PointerOutOfBounds)?,
-        )
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let edge_index = *incident_edges
-            .get(incident_index)
+        let edge_index = *heap
+            .slice(g0.iedge.as_const())?
+            .get(offset)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let edge = edges
+        let edge = heap
+            .slice(network.edge.as_const())?
             .get(usize::try_from(edge_index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         capacity = capacity.wrapping_add(edge.cap);
@@ -7428,7 +7641,7 @@ pub(crate) fn ConnectMetalFlower(
     capacity /= 2;
     let flow_remainder = flow % 2;
     flow /= 2;
-    let d = restore_mode.nMetalFlowerParam_D;
+    let d = restore_mode.get(heap)?.nMetalFlowerParam_D;
     let twice_d = d.wrapping_mul(2);
 
     let c0 = capacity
@@ -7867,7 +8080,10 @@ pub(crate) fn ConnectSuperCGroup(
         if central_usize == 0 {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        let mut vertices = heap.slice(network.vert.as_const())?.to_vec();
+        // INCHI✔️❗: Native initializes only this central vertex. Borrow live
+        // storage without a whole-network snapshot/writeback: O(1) work and
+        // scratch, no extra allocation. Safe arena constants remain OPEN C225.
+        let vertices = heap.slice_mut(network.vert)?;
         let previous = vertices
             .get(central_usize - 1)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -7881,7 +8097,6 @@ pub(crate) fn ConnectSuperCGroup(
             .wrapping_add(BNS_ADD_EDGES as i32) as u16;
         central.num_adj_edges = 0;
         central.type_ = BNS_VT_YVCONNECTOR as u16;
-        heap.slice_mut(network.vert)?.clone_from_slice(&vertices);
         next_vertex = next_vertex.wrapping_add(1);
 
         if first_connection == 0 {
@@ -8159,6 +8374,30 @@ pub(crate) fn AddCGroups2TCGBnStruct(
     valence_atoms: &mut [crate::source_types::VAL_AT],
     groups: &mut ALL_TC_GROUPS,
     max_add_edges: i32,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(structure.pSrm);
+    add_c_groups2_tcg_bn_struct_with_restore_mode(
+        heap,
+        network,
+        structure,
+        valence_atoms,
+        groups,
+        max_add_edges,
+        source_restore_mode,
+    )
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn add_c_groups2_tcg_bn_struct_with_restore_mode(
+    heap: &mut SourceHeap,
+    network: &mut BN_STRUCT,
+    structure: &StrFromINChI,
+    valence_atoms: &mut [crate::source_types::VAL_AT],
+    groups: &mut ALL_TC_GROUPS,
+    max_add_edges: i32,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr1.c:3249 AddCGroups2TCGBnStruct
     // INCHI✔️❌: int AddCGroups2TCGBnStruct( BN_STRUCT *pBNS, StrFromINChI *pStruct, VAL_AT *pVA,
@@ -8749,88 +8988,67 @@ pub(crate) fn AddCGroups2TCGBnStruct(
     if current_vertices >= network.max_vertices {
         return Ok(BNS_VERT_EDGE_OVFL);
     }
-    if current_vertices <= 0 {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
 
     let number_of_atoms = structure.num_atoms;
-    let atom_count =
-        usize::try_from(number_of_atoms).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let atoms = if atom_count == 0 {
-        Vec::new()
-    } else {
-        heap.slice(structure.at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    let restore_mode = heap
-        .slice(structure.pSrm)?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
-    if valence_atoms.len() < atom_count {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-
+    let restore_mode = source_restore_mode;
     let maximum_vertices = usize::try_from(network.max_vertices)
         .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let clear_start =
         usize::try_from(first_cgroup_vertex).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    let mut vertices = heap.slice(network.vert.as_const())?.to_vec();
-    vertices
-        .get_mut(clear_start..maximum_vertices)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .fill(BNS_VERTEX::default());
-    let group_count = usize::try_from(groups.num_tc_groups)
-        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let mut group_values = heap
-        .slice(groups.pTCG.as_const())?
-        .get(..group_count)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .to_vec();
-    let mut total_stationary_capacity = network.tot_st_cap;
-    let mut total_stationary_flow = network.tot_st_flow;
-    let mut previous_vertex = clear_start - 1;
     let cgroup_count =
         usize::try_from(number_of_cgroups).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-    let first_cgroup_usize =
-        usize::try_from(first_cgroup).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    for offset in 0..cgroup_count {
-        let vertex_index = clear_start
-            .checked_add(offset)
-            .ok_or(SourceHeapError::PointerOffsetOverflow)?;
-        let group_index = first_cgroup_usize
-            .checked_add(offset)
-            .ok_or(SourceHeapError::PointerOffsetOverflow)?;
-        let previous = vertices
-            .get(previous_vertex)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let next_iedge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
-        let group = group_values
-            .get_mut(group_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        let vertex = vertices
-            .get_mut(vertex_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        vertex.iedge = next_iedge;
-        vertex.max_adj_edges = group.num_edges.wrapping_add(max_add_edges) as AT_NUMB;
-        vertex.num_adj_edges = 0;
-        vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(group.st_flow);
-        total_stationary_flow = total_stationary_flow.wrapping_add(group.st_flow);
-        vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(group.st_cap);
-        total_stationary_capacity = total_stationary_capacity.wrapping_add(group.st_cap);
-        vertex.st_edge.flow0 = vertex.st_edge.flow;
-        vertex.st_edge.cap0 = vertex.st_edge.cap;
-        vertex.type_ = group.type_ as AT_NUMB;
-        group.nVertexNumber = vertex_index as i32;
-        previous_vertex = vertex_index;
-    }
-    heap.slice_mut(network.vert)?.clone_from_slice(&vertices);
-    heap.slice_mut(groups.pTCG)?
-        .get_mut(..group_values.len())
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone_from_slice(&group_values);
+    let mut total_stationary_capacity = network.tot_st_cap;
+    let mut total_stationary_flow = network.tot_st_flow;
+    // INCHI✔️❗: Clear only the native unused tail, then initialize live groups
+    // and vertices in order. Distinct typed allocations cannot alias; no child
+    // or quarantine is called while vertex storage is extracted. Every Result
+    // restores the allocation and preserves source-ordered partial writes.
+    // O(unused vertices + groups), O(1) scratch, no snapshot or writeback.
+    // Arena/bounds/SRM projection cost remains OPEN in performance_pending.md.
+    let (mut previous_vertex, first_cgroup_usize) =
+        heap.with_slice_mut_and_heap_mut(network.vert, |vertices, heap| {
+            vertices
+                .get_mut(clear_start..maximum_vertices)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .fill(BNS_VERTEX::default());
+            let mut previous_vertex = clear_start
+                .checked_sub(1)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let first_cgroup_usize = usize::try_from(first_cgroup)
+                .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            for offset in 0..cgroup_count {
+                let vertex_index = clear_start
+                    .checked_add(offset)
+                    .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+                let group_index = first_cgroup_usize
+                    .checked_add(offset)
+                    .ok_or(SourceHeapError::PointerOffsetOverflow)?;
+                let previous = vertices
+                    .get(previous_vertex)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let next_iedge = previous.iedge.offset(i64::from(previous.max_adj_edges))?;
+                let vertex = vertices
+                    .get_mut(vertex_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                vertex.iedge = next_iedge;
+                let group = heap
+                    .slice_mut(groups.pTCG)?
+                    .get_mut(group_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                vertex.max_adj_edges = group.num_edges.wrapping_add(max_add_edges) as AT_NUMB;
+                vertex.num_adj_edges = 0;
+                vertex.st_edge.flow = vertex.st_edge.flow.wrapping_add(group.st_flow);
+                total_stationary_flow = total_stationary_flow.wrapping_add(group.st_flow);
+                vertex.st_edge.cap = vertex.st_edge.cap.wrapping_add(group.st_cap);
+                total_stationary_capacity = total_stationary_capacity.wrapping_add(group.st_cap);
+                vertex.st_edge.flow0 = vertex.st_edge.flow;
+                vertex.st_edge.cap0 = vertex.st_edge.cap;
+                vertex.type_ = group.type_ as AT_NUMB;
+                group.nVertexNumber = vertex_index as i32;
+                previous_vertex = vertex_index;
+            }
+            Ok((previous_vertex, first_cgroup_usize))
+        })?;
     current_vertices =
         i32::try_from(previous_vertex + 1).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
 
@@ -8838,7 +9056,7 @@ pub(crate) fn AddCGroups2TCGBnStruct(
     while c_point < number_of_atoms {
         let cpoint_index =
             usize::try_from(c_point).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let list_number = i32::from(valence_atoms[cpoint_index].cnListIndex);
+        let list_number = i32::from(valence_atoms.get(cpoint_index).ok_or(SourceHeapError::PointerOutOfBounds)?.cnListIndex);
         if list_number == 0 {
             c_point = c_point.wrapping_add(1);
             continue;
@@ -8848,6 +9066,7 @@ pub(crate) fn AddCGroups2TCGBnStruct(
         let charge_structure = CN_LIST
             .get(list_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️❌: C219 human-deferred0395 static charge-node storage cost; see INCHI-PERF-CHARGE-NODE-STORAGE in dev/gap_reports/inchi/performance_pending.md.
         let node_valences = CN_LIST_VALENCES
             .get(list_index)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
@@ -8857,6 +9076,7 @@ pub(crate) fn AddCGroups2TCGBnStruct(
         let metal_atoms = charge_structure.bits == -1;
         let base_vertex = previous_vertex;
 
+        // INCHI✔️❌: C219 human-deferred0395 static charge-node storage cost; see INCHI-PERF-CHARGE-NODE-STORAGE in dev/gap_reports/inchi/performance_pending.md.
         for (node_index, node) in charge_structure.nodes.iter().enumerate() {
             let node_type = node.0;
             let is_auxiliary = node_type & BNS_VERT_TYPE__AUX as i32 != 0
@@ -8870,14 +9090,14 @@ pub(crate) fn AddCGroups2TCGBnStruct(
             let capacity = if !metal_atoms {
                 node.1
             } else if node.1 != 0 {
-                restore_mode.nMetalMaxCharge_D
+                restore_mode.get(heap)?.nMetalMaxCharge_D
             } else {
                 0
             };
             let flow = if !metal_atoms {
                 node.2
             } else if node.2 != 0 {
-                restore_mode.nMetalMaxCharge_D
+                restore_mode.get(heap)?.nMetalMaxCharge_D
             } else {
                 0
             };
@@ -8923,14 +9143,14 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                 let capacity = if !metal_atoms {
                     first_node.1
                 } else if first_node.1 != 0 {
-                    restore_mode.nMetalMaxCharge_D
+                    restore_mode.get(heap)?.nMetalMaxCharge_D
                 } else {
                     0
                 };
                 let flow = if !metal_atoms {
                     first_node.2
                 } else if first_node.2 != 0 {
-                    restore_mode.nMetalMaxCharge_D
+                    restore_mode.get(heap)?.nMetalMaxCharge_D
                 } else {
                     0
                 };
@@ -8981,7 +9201,7 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if group.type_ != first_type
                     || group.ord_num != 0
-                    || restore_mode.bMetalAddFlower == 0
+                    || restore_mode.get(heap)?.bMetalAddFlower == 0
                 {
                     return Ok(RI_ERR_PROGR);
                 }
@@ -9018,14 +9238,14 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                     let capacity = if !metal_atoms {
                         second_node.1
                     } else if second_node.1 != 0 {
-                        restore_mode.nMetalMaxCharge_D
+                        restore_mode.get(heap)?.nMetalMaxCharge_D
                     } else {
                         0
                     };
                     let flow = if !metal_atoms {
                         second_node.2
                     } else if second_node.2 != 0 {
-                        restore_mode.nMetalMaxCharge_D
+                        restore_mode.get(heap)?.nMetalMaxCharge_D
                     } else {
                         0
                     };
@@ -9076,7 +9296,7 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     if group.type_ != second_type
                         || group.ord_num != 0
-                        || restore_mode.bMetalAddFlower == 0
+                        || restore_mode.get(heap)?.bMetalAddFlower == 0
                     {
                         return Ok(RI_ERR_PROGR);
                     }
@@ -9108,9 +9328,9 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                     let mut edge_capacity = 0_i32;
                     let mut edge_flow = 0_i32;
                     let needs_flower = AtomStcapStflow(
-                        &atoms,
+                        heap.slice(structure.at.as_const())?,
                         valence_atoms,
-                        &restore_mode,
+                        restore_mode.get(heap)?,
                         c_point,
                         Some(&mut stationary_capacity),
                         Some(&mut stationary_flow),
@@ -9128,8 +9348,8 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                     if needs_flower == 0 {
                         return Ok(RI_ERR_PROGR);
                     }
-                    valence_atoms[cpoint_index].nMetalGroupEdge = current_edges.wrapping_add(1);
-                    let free_valences = i32::from(valence_atoms[cpoint_index].cInitFreeValences);
+                    valence_atoms.get_mut(cpoint_index).ok_or(SourceHeapError::PointerOutOfBounds)?.nMetalGroupEdge = current_edges.wrapping_add(1);
+                    let free_valences = i32::from(valence_atoms.get(cpoint_index).ok_or(SourceHeapError::PointerOutOfBounds)?.cInitFreeValences);
                     let atom_vertex = heap
                         .slice_mut(network.vert)?
                         .get_mut(cpoint_index)
@@ -9148,14 +9368,14 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                     let edge_capacity = if !metal_atoms {
                         source_edge_capacity
                     } else if source_edge_capacity != 0 {
-                        restore_mode.nMetalMaxCharge_D
+                        restore_mode.get(heap)?.nMetalMaxCharge_D
                     } else {
                         0
                     };
                     let edge_flow = if !metal_atoms {
                         source_edge_flow
                     } else if source_edge_flow != 0 {
-                        restore_mode.nMetalMaxCharge_D
+                        restore_mode.get(heap)?.nMetalMaxCharge_D
                     } else {
                         0
                     };
@@ -9231,10 +9451,10 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                 };
                 if cgroup_type != 0 {
                     if cgroup_type & BNS_VERT_TYPE_C_NEGATIVE as i32 != 0 {
-                        valence_atoms[cpoint_index].nCMinusGroupEdge =
+                        valence_atoms.get_mut(cpoint_index).ok_or(SourceHeapError::PointerOutOfBounds)?.nCMinusGroupEdge =
                             current_edges.wrapping_add(1);
                     } else {
-                        valence_atoms[cpoint_index].nCPlusGroupEdge = current_edges.wrapping_add(1);
+                        valence_atoms.get_mut(cpoint_index).ok_or(SourceHeapError::PointerOutOfBounds)?.nCPlusGroupEdge = current_edges.wrapping_add(1);
                     }
                 }
                 current_edges = current_edges.wrapping_add(1);
@@ -9281,23 +9501,25 @@ pub(crate) fn AddCGroups2TCGBnStruct(
                 continue;
             }
             let mut maximum_edge_flow = stationary_capacity.min(neighbor_vertex.st_edge.cap);
-            let metal_capacity = (restore_mode.bMetalAddFlower != 0
-                && restore_mode.nMetalMinBondOrder == 0
-                && valence_atoms[cpoint_index].cMetal != 0
-                && valence_atoms[cpoint_index].cNumBondsToMetal != 0)
+            let metal_capacity = (restore_mode.get(heap)?.bMetalAddFlower != 0
+                && restore_mode.get(heap)?.nMetalMinBondOrder == 0
+                && valence_atoms.get(cpoint_index).ok_or(SourceHeapError::PointerOutOfBounds)?.cMetal != 0
+                && valence_atoms.get(cpoint_index).ok_or(SourceHeapError::PointerOutOfBounds)?.cNumBondsToMetal != 0)
                 || (valence_atoms
                     .get(neighbor_usize)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .cMetal
                     != 0
-                    && valence_atoms[neighbor_usize].cNumBondsToMetal != 0);
+                    && valence_atoms.get(neighbor_usize).ok_or(SourceHeapError::PointerOutOfBounds)?.cNumBondsToMetal != 0);
             maximum_edge_flow = maximum_edge_flow.min(if metal_capacity {
                 MAX_BOND_EDGE_CAP as i32 + 1
             } else {
                 MAX_BOND_EDGE_CAP as i32
             });
             if u32::from(
-                *atoms[cpoint_index]
+                *heap.slice(structure.at.as_const())?
+                    .get(cpoint_index)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .bond_type
                     .get(adjacency_usize)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?,
@@ -9315,13 +9537,13 @@ pub(crate) fn AddCGroups2TCGBnStruct(
         c_point = c_point.wrapping_add(1);
     }
 
-    let mut result = ConnectMetalFlower(
+    let mut result = connect_metal_flower_with_mode(
         heap,
         &mut current_vertices,
         &mut current_edges,
         &mut total_stationary_capacity,
         &mut total_stationary_flow,
-        &restore_mode,
+        restore_mode,
         network,
         groups,
     )?;
@@ -9481,11 +9703,11 @@ pub(crate) fn AddCGroups2TCGBnStruct(
         }
     }
 
-    let _ = AddRadicalToMetal(
+    let _ = add_radical_to_metal_with_mode(
         heap,
         &mut total_stationary_capacity,
         &mut total_stationary_flow,
-        &restore_mode,
+        restore_mode,
         network,
         groups,
     )?;
@@ -9527,6 +9749,7 @@ pub(crate) fn nNumEdgesToCnVertex(
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
     let vertex_number = vertex.wrapping_add(1);
     let mut number_of_edges = 0_i32;
+    // INCHI✔️❌: C219 human-deferred0395 static charge-node storage cost; see INCHI-PERF-CHARGE-NODE-STORAGE in dev/gap_reports/inchi/performance_pending.md.
     for (node_index, node) in nodes.iter().enumerate() {
         let node_index =
             i32::try_from(node_index).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
@@ -9551,6 +9774,34 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
     nMaxAddEdges: i32,
     max_altp: i32,
     pNum_changed_bonds: &mut i32,
+) -> Result<SourceMutPointer<BN_STRUCT>, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(structure.pSrm);
+    allocate_and_init_tcg_bn_struct_with_restore_mode(
+        heap,
+        structure,
+        valence_atoms,
+        groups,
+        nMaxAddAtoms,
+        nMaxAddEdges,
+        max_altp,
+        pNum_changed_bonds,
+        source_restore_mode,
+    )
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn allocate_and_init_tcg_bn_struct_with_restore_mode(
+    heap: &mut SourceHeap,
+    structure: &StrFromINChI,
+    valence_atoms: &[crate::source_types::VAL_AT],
+    groups: &ALL_TC_GROUPS,
+    nMaxAddAtoms: i32,
+    nMaxAddEdges: i32,
+    max_altp: i32,
+    pNum_changed_bonds: &mut i32,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<SourceMutPointer<BN_STRUCT>, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr1.c:3879 AllocateAndInitTCGBnStruct
     // INCHI✔️❌: BN_STRUCT* AllocateAndInitTCGBnStruct( StrFromINChI *pStruct, VAL_AT *pVA,
@@ -9841,23 +10092,10 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
     fn cleanup(
         heap: &mut SourceHeap,
         network: SourceMutPointer<BN_STRUCT>,
-        allocated_alt_paths: i32,
+        _allocated_alt_paths: i32,
     ) -> Result<SourceMutPointer<BN_STRUCT>, SourceHeapError> {
-        if !network.is_null() {
-            let (vertices, incident_edges) = {
-                let stored = heap
-                    .slice_mut(network)?
-                    .first_mut()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                stored.max_altp = allocated_alt_paths;
-                (stored.vert, stored.iedge)
-            };
-            if !vertices.is_null() && !incident_edges.is_null() {
-                if let Some(first_vertex) = heap.slice_mut(vertices)?.first_mut() {
-                    first_vertex.iedge = incident_edges;
-                }
-            }
-        }
+        // Native3935 calls the deallocator before max_altp3947 and first
+        // vertex iedge3965 exist. Never synthesize ownership to repair leaks.
         DeAllocateBnStruct(heap, network)
     }
 
@@ -9867,25 +10105,11 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
     } else {
         0
     };
-    let mut atoms = if atom_count == 0 {
-        Vec::new()
-    } else {
-        heap.slice(structure.at.as_const())?
-            .get(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec()
-    };
-    if valence_atoms.len() < atom_count {
-        return Err(SourceHeapError::PointerOutOfBounds);
-    }
-    let restore_mode = if atom_count == 0 {
-        SRM::default()
-    } else {
-        heap.slice(structure.pSrm)?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone()
-    };
+    // INCHI✔️❗: Input pointers are admitted only at reached loop reads
+    // after source allocation. No atom snapshot/prefix preflight/SRM clone
+    // or default. Live bond writes survive later typed errors; source field
+    // publication and deallocation retain native failure leaks. O(source
+    // traversals)/O(1) scratch; safe arena whole-call costs remain OPEN.
 
     let _max_tg = groups.num_tgroups;
     let max_vertices = groups.nVertices.wrapping_add(nMaxAddAtoms);
@@ -9967,22 +10191,23 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
         num_altp = num_altp.wrapping_add(1);
     }
 
-    let mut network_value = heap
-        .slice(network.as_const())?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
-    network_value.alt_path = SourceMutPointer::null();
-    network_value.num_altp = 0;
-    network_value.max_altp = num_altp;
+    {
+        let value = heap.element_signed_mut(network, 0)?;
+        value.alt_path = SourceMutPointer::null();
+        value.num_altp = 0;
+        value.max_altp = num_altp;
+    }
 
-    let mut current_incident = network_value.iedge;
+    let mut current_incident = incident_edges;
     let mut total_stationary_capacity = 0_i32;
     for i in 0..atom_count {
-        let mut capacity = i32::from(atoms[i].valence)
-            .wrapping_add(i32::from(atoms[i].endpoint != 0))
+        let atom = heap.slice(structure.at.as_const())?.get(i)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let mut capacity = i32::from(atom.valence)
+            .wrapping_add(i32::from(atom.endpoint != 0))
             .wrapping_add(nMaxAddEdges);
-        let charge_list_index = i32::from(valence_atoms[i].cnListIndex).wrapping_sub(1);
+        let charge_list_index = i32::from(valence_atoms.get(i)
+            .ok_or(SourceHeapError::PointerOutOfBounds)?.cnListIndex).wrapping_sub(1);
         if charge_list_index >= 0 {
             let list = CN_LIST
                 .get(
@@ -10000,7 +10225,7 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
 
         {
             let vertex = heap
-                .slice_mut(network_value.vert)?
+                .slice_mut(vertices)?
                 .get_mut(i)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             vertex.max_adj_edges = capacity as AT_NUMB;
@@ -10011,9 +10236,9 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
         let mut atom_capacity = 0_i32;
         let mut atom_flow = 0_i32;
         let needs_flower = AtomStcapStflow(
-            &atoms,
+            heap.slice(structure.at.as_const())?,
             valence_atoms,
-            &restore_mode,
+            source_restore_mode.get(heap)?,
             i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?,
             Some(&mut atom_capacity),
             Some(&mut atom_flow),
@@ -10023,10 +10248,11 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
         atom_capacity = atom_capacity.wrapping_add(if needs_flower != 0 {
             0
         } else {
-            i32::from(valence_atoms[i].cInitFreeValences)
+            i32::from(valence_atoms.get(i)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?.cInitFreeValences)
         });
         let vertex = heap
-            .slice_mut(network_value.vert)?
+            .slice_mut(vertices)?
             .get_mut(i)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         vertex.st_edge.cap = atom_capacity;
@@ -10034,22 +10260,25 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
         total_stationary_capacity = total_stationary_capacity.wrapping_add(atom_capacity);
     }
 
-    let num_iedges = current_incident.difference(network_value.iedge)? as i32;
+    let num_iedges = current_incident.difference(incident_edges)? as i32;
     if max_iedges.wrapping_sub(num_iedges) < reserve_per_vertex.wrapping_mul(max_vertices) {
         return cleanup(heap, network, num_altp);
     }
 
-    network_value.num_atoms = num_atoms;
-    network_value.num_added_atoms = 0;
-    network_value.num_t_groups = 0;
-    network_value.num_c_groups = 0;
-    network_value.nMaxAddAtoms = nMaxAddAtoms;
-    network_value.nMaxAddEdges = nMaxAddEdges;
-    network_value.num_vertices = num_atoms;
-    network_value.max_vertices = max_vertices;
-    network_value.num_bonds = num_bonds;
-    network_value.max_edges = max_edges;
-    network_value.max_iedges = max_iedges;
+    {
+        let value = heap.element_signed_mut(network, 0)?;
+        value.num_atoms = num_atoms;
+        value.num_added_atoms = 0;
+        value.num_t_groups = 0;
+        value.num_c_groups = 0;
+        value.nMaxAddAtoms = nMaxAddAtoms;
+        value.nMaxAddEdges = nMaxAddEdges;
+        value.num_vertices = num_atoms;
+        value.max_vertices = max_vertices;
+        value.num_bonds = num_bonds;
+        value.max_edges = max_edges;
+        value.max_iedges = max_iedges;
+    }
 
     let mut total_stationary_flow = 0_i32;
     let mut n_edges = 0_i32;
@@ -10057,13 +10286,15 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
     for i in 0..atom_count {
         let mut stationary_flow = 0_i32;
         let mut j = 0_i32;
-        let atom_valence = i32::from(atoms[i].valence);
+        let atom_valence = i32::from(heap.slice(structure.at.as_const())?.get(i)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?.valence);
         while j < atom_valence {
             let j_index = usize::try_from(j).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let neighbor = i32::from(atoms[i].neighbor[j_index]);
+            let neighbor = i32::from(heap.slice(structure.at.as_const())?.get(i)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?.neighbor[j_index]);
             let neighbor_index =
                 usize::try_from(neighbor).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-            let neighbor_atom = atoms
+            let neighbor_atom = heap.slice(structure.at.as_const())?
                 .get(neighbor_index)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
             let neighbor_valence = i32::from(neighbor_atom.valence);
@@ -10071,23 +10302,25 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
             while k < neighbor_valence {
                 let k_index =
                     usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-                if neighbor_atom.neighbor[k_index]
-                    == i32::try_from(i).map_err(|_| SourceHeapError::SourceIntegerOverflow)?
-                        as AT_NUMB
-                {
+                // INCHI✔️❗: Promote the short, keeping the full source int
+                // loop index; C-INTEGER-CONVERSIONS whole-call cost is OPEN.
+                if usize::from(neighbor_atom.neighbor[k_index]) == i {
                     break;
                 }
                 k = k.wrapping_add(1);
             }
 
-            let mut bond_type = atoms[i].bond_type[j_index] & BOND_TYPE_MASK as u8;
-            let bond_mark = atoms[i].bond_type[j_index] & !(BOND_TYPE_MASK as u8);
+            let bond = heap.slice(structure.at.as_const())?.get(i)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?.bond_type[j_index];
+            let mut bond_type = bond & BOND_TYPE_MASK as u8;
+            let bond_mark = bond & !(BOND_TYPE_MASK as u8);
             if bond_type != BOND_TYPE_SINGLE as u8
                 && bond_type != BOND_TYPE_DOUBLE as u8
                 && bond_type != BOND_TYPE_TRIPLE as u8
             {
                 bond_type = BOND_TYPE_SINGLE as u8;
-                atoms[i].bond_type[j_index] = bond_mark | bond_type;
+                heap.slice_mut(structure.at)?.get_mut(i)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?.bond_type[j_index] = bond_mark | bond_type;
                 num_changed_bonds = num_changed_bonds.wrapping_add(1);
             }
 
@@ -10096,9 +10329,9 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
                 let mut atom_capacity = 0_i32;
                 let mut atom_flow = 0_i32;
                 let needs_flower_1 = AtomStcapStflow(
-                    &atoms,
+                    heap.slice(structure.at.as_const())?,
                     valence_atoms,
-                    &restore_mode,
+                    source_restore_mode.get(heap)?,
                     i as i32,
                     Some(&mut atom_capacity),
                     Some(&mut atom_flow),
@@ -10108,15 +10341,16 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
                 atom_capacity = atom_capacity.wrapping_add(if needs_flower_1 != 0 {
                     0
                 } else {
-                    i32::from(valence_atoms[i].cInitFreeValences)
+                    i32::from(valence_atoms.get(i)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?.cInitFreeValences)
                 });
 
                 let mut neighbor_capacity = 0_i32;
                 let mut neighbor_flow = 0_i32;
                 let needs_flower_2 = AtomStcapStflow(
-                    &atoms,
+                    heap.slice(structure.at.as_const())?,
                     valence_atoms,
-                    &restore_mode,
+                    source_restore_mode.get(heap)?,
                     neighbor,
                     Some(&mut neighbor_capacity),
                     Some(&mut neighbor_flow),
@@ -10126,15 +10360,15 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
                 neighbor_capacity = neighbor_capacity.wrapping_add(if needs_flower_2 != 0 {
                     0
                 } else {
-                    i32::from(valence_atoms[neighbor_index].cInitFreeValences)
+                    i32::from(valence_atoms.get(neighbor_index).ok_or(SourceHeapError::PointerOutOfBounds)?.cInitFreeValences)
                 });
 
                 let mut edge_capacity = 0_i32;
                 let mut minimum_order = 0_i32;
                 edge_flow = BondFlowMaxcapMinorder(
-                    &atoms,
+                    heap.slice(structure.at.as_const())?,
                     valence_atoms,
-                    &restore_mode,
+                    source_restore_mode.get(heap)?,
                     i as i32,
                     j,
                     Some(&mut edge_capacity),
@@ -10146,7 +10380,7 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
                     usize::try_from(n_edges).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                 {
                     let edge = heap
-                        .slice_mut(network_value.edge)?
+                        .slice_mut(edges)?
                         .get_mut(edge_index)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
                     edge.neighbor1 = i as AT_NUMB;
@@ -10159,25 +10393,29 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
                     edge.neigh_ord[1] = k as AT_NUMB;
                     edge.pass = 0;
                     edge.forbidden = 0;
-                    if bond_type == BOND_TYPE_DOUBLE as u8 {
-                        let mut m = 0_usize;
-                        while m < MAX_NUM_STEREO_BONDS as usize && atoms[i].sb_parity[m] != 0 {
-                            if i32::from(atoms[i].sb_ord[m]) == j {
-                                edge.forbidden |= BNS_EDGE_FORBIDDEN_MASK as i8;
-                                break;
-                            }
-                            m += 1;
+                }
+                if bond_type == BOND_TYPE_DOUBLE as u8 {
+                    let atom = heap.slice(structure.at.as_const())?.get(i)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let mut m = 0_usize;
+                    while m < MAX_NUM_STEREO_BONDS as usize && atom.sb_parity[m] != 0 {
+                        if i32::from(atom.sb_ord[m]) == j {
+                            heap.slice_mut(edges)?.get_mut(edge_index)
+                                .ok_or(SourceHeapError::PointerOutOfBounds)?.forbidden
+                                |= BNS_EDGE_FORBIDDEN_MASK as i8;
+                            break;
                         }
+                        m += 1;
                     }
                 }
 
                 let atom_incident = heap
-                    .slice(network_value.vert.as_const())?
+                    .slice(vertices.as_const())?
                     .get(i)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .iedge;
                 let neighbor_incident = heap
-                    .slice(network_value.vert.as_const())?
+                    .slice(vertices.as_const())?
                     .get(neighbor_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .iedge;
@@ -10196,7 +10434,7 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
                 }
             } else {
                 let neighbor_incident = heap
-                    .slice(network_value.vert.as_const())?
+                    .slice(vertices.as_const())?
                     .get(neighbor_index)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?
                     .iedge;
@@ -10205,7 +10443,7 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
                     .get(usize::try_from(k).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 edge_flow = heap
-                    .slice(network_value.edge.as_const())?
+                    .slice(edges.as_const())?
                     .get(
                         usize::try_from(edge_index)
                             .map_err(|_| SourceHeapError::PointerOutOfBounds)?,
@@ -10218,7 +10456,7 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
         }
 
         let vertex = heap
-            .slice_mut(network_value.vert)?
+            .slice_mut(vertices)?
             .get_mut(i)
             .ok_or(SourceHeapError::PointerOutOfBounds)?;
         vertex.num_adj_edges = j as AT_NUMB;
@@ -10229,22 +10467,14 @@ pub(crate) fn AllocateAndInitTCGBnStruct(
     }
 
     *pNum_changed_bonds = num_changed_bonds / 2;
-    network_value.num_edges = n_edges;
-    network_value.num_iedges = num_iedges;
-    network_value.num_added_edges = 0;
-    network_value.tot_st_cap = total_stationary_capacity;
-    network_value.tot_st_flow = total_stationary_flow;
-
-    if atom_count != 0 {
-        heap.slice_mut(structure.at)?
-            .get_mut(..atom_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&atoms);
+    {
+        let value = heap.element_signed_mut(network, 0)?;
+        value.num_edges = n_edges;
+        value.num_iedges = num_iedges;
+        value.num_added_edges = 0;
+        value.tot_st_cap = total_stationary_capacity;
+        value.tot_st_flow = total_stationary_flow;
     }
-    *heap
-        .slice_mut(network)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = network_value;
     Ok(network)
 }
 
@@ -10317,7 +10547,51 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI2(
     t_group_info: Option<&mut SourceTGroupInfoPointer>,
     at_norm: Option<&mut SourceMutPointer<inp_ATOM>>,
     at_prep: Option<&mut SourceMutPointer<inp_ATOM>>,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    // One original source algorithm/frame below; no early SRM admission.
+    let source_restore_mode = SourceRestoreMode::Pointer(structure.pSrm);
+    make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
+        heap,
+        canonical_globals,
+        clock,
+        input_parameters,
+        structure_data,
+        bns,
+        structure,
+        at,
+        at2,
+        at3,
+        valence_atoms,
+        groups,
+        t_group_info,
+        at_norm,
+        at_prep,
+        clock_result,
+        source_restore_mode,
+    )
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
+    heap: &mut SourceHeap,
+    canonical_globals: &mut CANON_GLOBALS,
+    clock: SourceMutPointer<INCHI_CLOCK>,
+    input_parameters: &INPUT_PARMS,
+    structure_data: &STRUCT_DATA,
+    bns: &BN_STRUCT,
+    structure: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    at3: SourceMutPointer<inp_ATOM>,
+    valence_atoms: &[VAL_AT],
+    groups: &ALL_TC_GROUPS,
+    t_group_info: Option<&mut SourceTGroupInfoPointer>,
+    at_norm: Option<&mut SourceMutPointer<inp_ATOM>>,
+    at_prep: Option<&mut SourceMutPointer<inp_ATOM>>,
+    clock_result: impl crate::source_types::SourceClock,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr1.c:5087 MakeOneInChIOutOfStrFromINChI2
     // BEGIN COMPLETE VERBATIM SOURCE FRAME: MakeOneInChIOutOfStrFromINChI2
@@ -10417,7 +10691,7 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI2(
     }
 
     structure.at = at2;
-    let copy_result = CopyBnsToAtom(heap, structure, bns, valence_atoms, groups, 1);
+    let copy_result = copy_bns_to_atom_with_restore_mode(heap, structure, bns, valence_atoms, groups, 1, source_restore_mode);
     structure.at = at;
     let ret = copy_result?;
     if ret < 0 {
@@ -10498,7 +10772,7 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI(
     at2: SourceMutPointer<inp_ATOM>,
     at3: SourceMutPointer<inp_ATOM>,
     groups: &ALL_TC_GROUPS,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr1.c:5168 MakeOneInChIOutOfStrFromINChI
     // INCHI✔️❌: complete active source frame follows verbatim; typed SourceHeap pointer validation,
@@ -10852,32 +11126,53 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI(
         let len_at = structure.num_atoms.wrapping_add(structure.num_deleted_H);
         let copied_count =
             usize::try_from(len_at).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-        let copied_atoms = heap
-            .slice(at2.as_const())?
-            .get(..copied_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .to_vec();
-        heap.slice_mut(at3)?
-            .get_mut(..copied_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .clone_from_slice(&copied_atoms);
+        {
+            // INCHI✔️❗: C069 direct source copy; retain source-first admission,
+            // reached bounds/errors and modeled overlap without a payload Vec.
+            // O(N) time/O(1) scratch; checked-arena/record costs remain OPEN.
+            let copy_source = at2.as_const();
+            let copy_count = (heap
+                .slice(copy_source)?
+                .get(..copied_count)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?)
+            .len();
+            let copy_destination = at3;
+            {
+                let copy_target = &mut (heap
+                    .slice_mut(copy_destination)?
+                    .get_mut(..copied_count)
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?);
+                assert_eq!(copy_target.len(), copy_count);
+            }
+            if copy_destination.allocation_identity() == copy_source.as_mut().allocation_identity()
+            {
+                heap.copy_prefix_within_allocation(copy_destination, copy_source, copy_count)?;
+            } else {
+                heap.copy_nonoverlapping_prefix(copy_destination, copy_source, copy_count, false)?;
+            }
+        }
 
         let component_number = groups.iComponent.wrapping_add(1);
         IncrZeroBondsAndClearEndpts(heap.slice_mut(at3)?, structure.num_atoms, component_number)?;
 
-        let stereo = if structure.st.is_null() {
-            None
-        } else {
-            let count = usize::try_from(structure.num_atoms)
-                .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-            Some(
-                heap.slice(structure.st.as_const())?
-                    .get(..count)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec(),
-            )
-        };
-        CopySt2At(heap.slice_mut(at3)?, stereo.as_deref(), structure.num_atoms)?;
+        // INCHI✔️❗: CopySt2At( at3, pStruct->st, pStruct->num_atoms );
+        // NULL stereo/nonpositive count touches no rows. Both typed views are
+        // borrowed only across the pure slice callee; reached errors retain
+        // earlier writes. No stereo Vec/scan/copy; arena cost remains OPEN
+        // in INCHI-PERF-ONE-INCHI-INPUT-PROJECTIONS, not whole-call equivalence.
+        if !structure.st.is_null() && structure.num_atoms > 0 {
+            if structure.st.allocation_identity() == at3.allocation_identity() {
+                // at3 was already admitted as inp_ATOM above. A forged stereo
+                // view of its allocation retains the structural type error.
+                let _ = heap.slice(structure.st.as_const())?;
+            }
+            heap.with_two_slices_mut_and_optional_third(
+                structure.st,
+                at3,
+                None::<SourceMutPointer<i8>>,
+                |stereo, atoms, _| CopySt2At(atoms, Some(stereo), structure.num_atoms),
+            )?;
+        }
         let _ = FixUnkn0DStereoBonds(heap, at3, structure.num_atoms)?;
         ret = ReconcileAllCmlBondParities(heap, at3, structure.num_atoms, 0)?;
         if ret < 0 {
@@ -10940,21 +11235,33 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI(
                     || (tautomer_i32 == TAUT_YES as i32
                         && input_parameters.nMode & u64::from(REQ_MODE_TAUT) != 0);
                 if requested {
-                    let atom_count = usize::try_from(current_data.num_at)
-                        .map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
-                    let atoms = heap
-                        .slice(current_data.at.as_const())?
-                        .get(..atom_count)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        .to_vec();
-                    current_inchi[tautomer] = Alloc_INChI(
-                        heap,
-                        &atoms,
-                        current_data.num_at,
-                        &mut current_data.num_bonds,
-                        &mut current_data.num_isotopic,
-                        allocation_mode,
-                    )?;
+                    // INCHI✔️❗: Native Alloc_INChI reads input atoms without
+                    // copying them and returns NULL before input access for
+                    // num_at<=0. Its fresh allocations/cleanup cannot name
+                    // the reserved input allocation; ID/counters stay intact.
+                    // No extra Vec/scan; safe heap/bounds cost remains OPEN.
+                    let num_atoms = current_data.num_at;
+                    current_inchi[tautomer] = if num_atoms <= 0 {
+                        Alloc_INChI(
+                            heap,
+                            &[],
+                            num_atoms,
+                            &mut current_data.num_bonds,
+                            &mut current_data.num_isotopic,
+                            allocation_mode,
+                        )?
+                    } else {
+                        heap.with_slice_mut_and_heap_mut(current_data.at, |atoms, heap| {
+                            Alloc_INChI(
+                                heap,
+                                atoms,
+                                num_atoms,
+                                &mut current_data.num_bonds,
+                                &mut current_data.num_isotopic,
+                                allocation_mode,
+                            )
+                        })?
+                    };
                     current_aux[tautomer] = Alloc_INChI_Aux(
                         heap,
                         current_data.num_at,
@@ -11101,19 +11408,17 @@ pub(crate) fn MakeOneInChIOutOfStrFromINChI(
                         group.nGroupNumber,
                     )
                 };
-                let endpoint_indices = heap
-                    .slice(structure.One_ti.nEndpointAtomNumber.as_const())?
-                    .get(
-                        first_endpoint
-                            ..first_endpoint
-                                .checked_add(endpoint_count)
-                                .ok_or(SourceHeapError::SourceIntegerOverflow)?,
-                    )
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .to_vec();
-                let atoms = heap.slice_mut(normalized_atoms)?;
-                for atom_index in endpoint_indices {
-                    atoms
+                // INCHI✔️❗: Read each reached endpoint immediately before its
+                // atom store, retaining earlier stores on a later error. A
+                // zero-endpoint group does not admit the endpoint allocation.
+                // Both endpoint fields are u16: their sum fits usize. O(E)
+                // time/O(1) scratch, no Vec; per-row arena cost remains OPEN.
+                for endpoint in 0..endpoint_count {
+                    let atom_index = *heap
+                        .slice(structure.One_ti.nEndpointAtomNumber.as_const())?
+                        .get(first_endpoint + endpoint)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    heap.slice_mut(normalized_atoms)?
                         .get_mut(usize::from(atom_index))
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         .endpoint = group_number;
@@ -14975,7 +15280,7 @@ mod tests {
                 &mode,
                 &mut metal_groups,
             ),
-            Ok(0)
+            Ok(6)
         );
         assert_eq!(metal_groups.num_metal_atoms, 1);
         assert_eq!(metal_groups.num_metal_bonds, 1);
@@ -18782,7 +19087,11 @@ mod tests {
                 "allocation failure after {successful_allocations} successful allocations",
             );
             assert_eq!(heap.source_allocation_calls(), successful_allocations + 1);
-            assert_eq!(heap.live_allocation_count(), baseline);
+            // Native ichirvr1.c3935 fails before max_altp3947 and first
+            // vertex iedge3965 publication; ichi_bns.c9010..9038 frees
+            // neither incident storage nor already allocated alt paths.
+            let retained = successful_allocations.saturating_sub(3) as usize;
+            assert_eq!(heap.live_allocation_count(), baseline + retained);
             assert_eq!(changed, -7);
         }
 
@@ -19233,5 +19542,352 @@ mod tests {
         inchi_free(&mut clear_heap, retained_levels).unwrap();
         inchi_free(&mut clear_heap, retained_sources).unwrap();
         assert_eq!(clear_heap.live_allocation_count(), 0);
+    }
+}
+
+#[cfg(test)]
+mod clear_endpts_regressions {
+    use super::ClearEndpts;
+    use crate::source_types::{SourceHeapError, inp_ATOM};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    fn backing(seed: u16, byte: u8) -> [inp_ATOM; 64] {
+        std::array::from_fn(|j| inp_ATOM {
+            elname: [0x19; 6],
+            el_number: byte,
+            neighbor: [0x1919; 20],
+            orig_at_number: 0x1919,
+            orig_compt_at_numb: 0x1919,
+            bond_stereo: [0x19; 20],
+            bond_type: [0x19; 20],
+            valence: (255 - byte) as i8,
+            chem_bonds_valence: 0x19,
+            num_H: 0x19,
+            num_iso_H: [0x19; 3],
+            iso_atw_diff: 0x19,
+            charge: byte as i8,
+            radical: 0x19,
+            bAmbiguousStereo: 0x19,
+            cFlags: 0x19,
+            at_type: 0x1919,
+            component: 0x1919,
+            endpoint: seed.wrapping_add(7919u16.wrapping_mul(j as u16)),
+            c_point: 0x1919,
+            x: f64::from_bits(0x1919191919191919),
+            y: f64::from_bits(0x1919191919191919),
+            z: f64::from_bits(0x1919191919191919),
+            bUsed0DParity: 0x19,
+            p_parity: 0x19,
+            p_orig_at_num: [0x1919; 4],
+            sb_ord: [0x19; 3],
+            sn_ord: [0x19; 3],
+            sb_parity: [0x19; 3],
+            sn_orig_at_num: [0x1919; 3],
+            bCutVertex: 0x19,
+            nRingSystem: 0x1919,
+            nNumAtInRingSystem: 0x1919,
+            nBlockSystem: 0x1919,
+        })
+    }
+
+    #[test]
+    fn complete_endpoint_prefix_partial_errors_and_idempotence() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/clear_endpts");
+        let inputs = std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected = std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let mut expected = expected.lines();
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut quarantine,
+            mut unexpected,
+            mut differences,
+            mut changes,
+            mut idempotence,
+        ) = (
+            0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize,
+        );
+        for (id, line) in inputs.lines().enumerate() {
+            let f: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(f.len(), 6);
+            assert_eq!(f[0].parse::<usize>().unwrap(), id);
+            assert!(matches!(f[1], "N" | "E"));
+            let len: usize = f[2].parse().unwrap();
+            let count: i32 = f[3].parse().unwrap();
+            let seed: u16 = f[4].parse().unwrap();
+            let byte: u8 = f[5].parse().unwrap();
+            assert!(len <= 64);
+            let want: Vec<_> = expected.next().unwrap().split_whitespace().collect();
+            assert_eq!(want.len(), 2);
+            assert!(matches!(want[0], "O" | "B"));
+            assert_eq!(want[1].len(), 256);
+            let endpoints: [u16; 64] = std::array::from_fn(|j| {
+                u16::from_str_radix(&want[1][j * 4..j * 4 + 4], 16).unwrap()
+            });
+            for _repeat in 0..2 {
+                let mut atoms = backing(seed, byte);
+                let original = atoms;
+                let mut wanted = atoms;
+                for (atom, endpoint) in wanted.iter_mut().zip(endpoints) {
+                    atom.endpoint = endpoint;
+                }
+                let mut first_status = None;
+                for invocation in 0..2 {
+                    let before = atoms;
+                    calls += 1;
+                    let status = match catch_unwind(AssertUnwindSafe(|| {
+                        ClearEndpts(&mut atoms[..len], count)
+                    })) {
+                        Ok(Ok(())) => {
+                            completed += 1;
+                            Some("O")
+                        }
+                        Ok(Err(SourceHeapError::PointerOutOfBounds)) => {
+                            bounds += 1;
+                            Some("B")
+                        }
+                        Ok(Err(_)) => {
+                            unexpected += 1;
+                            None
+                        }
+                        Err(payload) => {
+                            let message = payload
+                                .downcast_ref::<&str>()
+                                .copied()
+                                .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                            if message
+                                == Some(
+                                    "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                                )
+                            {
+                                quarantine += 1;
+                            } else {
+                                unexpected += 1;
+                            }
+                            changes += usize::from(atoms != before);
+                            None
+                        }
+                    };
+                    if let Some(status) = status {
+                        differences += usize::from(status != want[0]);
+                        changes += usize::from(atoms != wanted);
+                        // Complete unrelated state retained in wanted; first and second results both checked.
+                    }
+                    if invocation == 0 {
+                        first_status = status;
+                    } else {
+                        idempotence += usize::from(atoms != before || status != first_status);
+                    }
+                }
+                // Full trailing backing is part of the comparison, even with a zero logical slice.
+                for j in len..64 {
+                    changes += usize::from(atoms[j] != original[j]);
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        eprintln!(
+            "CLEAR_ENDPTS COUNTS calls={calls} completed={completed} bounds={bounds} audit159={quarantine} unexpected={unexpected} differences={differences} changes={changes} idempotence={idempotence}"
+        );
+        assert_eq!(calls, 556008);
+        assert_eq!(
+            (quarantine, unexpected, differences, changes, idempotence),
+            (0, 0, 0, 0, 0)
+        );
+        assert_eq!(completed + bounds, calls);
+    }
+}
+
+#[cfg(test)]
+mod zero_bonds_regressions {
+    use super::IncrZeroBonds;
+    use crate::source_types::{SourceHeapError, inp_ATOM};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    fn dirty_atom(seed: u8, index: usize, typ: u16, flags: u16) -> inp_ATOM {
+        let byte = seed.wrapping_add((index as u8).wrapping_mul(37));
+        let word = u16::from(byte) * 257;
+        inp_ATOM {
+            elname: [byte as i8; 6],
+            el_number: byte,
+            neighbor: [word; 20],
+            orig_at_number: word,
+            orig_compt_at_numb: typ.wrapping_add((index as u16).wrapping_mul(257)),
+            bond_stereo: [byte as i8; 20],
+            bond_type: [byte; 20],
+            valence: byte as i8,
+            chem_bonds_valence: !byte as i8,
+            num_H: byte as i8,
+            num_iso_H: [byte as i8; 3],
+            iso_atw_diff: !byte as i8,
+            charge: byte as i8,
+            radical: !byte as i8,
+            bAmbiguousStereo: byte as i8,
+            cFlags: byte as i8,
+            at_type: word,
+            component: flags.wrapping_add((index as u16).wrapping_mul(37)),
+            endpoint: !word,
+            c_point: word,
+            x: f64::from_bits(0x7ff8000000000000 | u64::from(word)),
+            y: f64::from_bits(0x8000000000000000 | u64::from(word)),
+            z: f64::from_bits(0x7ff0000000000000 | u64::from(word)),
+            bUsed0DParity: byte as i8,
+            p_parity: !byte as i8,
+            p_orig_at_num: [word; 4],
+            sb_ord: [byte as i8; 3],
+            sn_ord: [!byte as i8; 3],
+            sb_parity: [byte as i8; 3],
+            sn_orig_at_num: [word; 3],
+            bCutVertex: byte as i8,
+            nRingSystem: word,
+            nNumAtInRingSystem: !word,
+            nBlockSystem: word,
+        }
+    }
+
+    fn same_bits(mut a: inp_ATOM, mut b: inp_ATOM) -> bool {
+        let floats = a.x.to_bits() == b.x.to_bits()
+            && a.y.to_bits() == b.y.to_bits()
+            && a.z.to_bits() == b.z.to_bits();
+        a.x = 0.0;
+        a.y = 0.0;
+        a.z = 0.0;
+        b.x = 0.0;
+        b.y = 0.0;
+        b.z = 0.0;
+        floats && a == b
+    }
+
+    fn prepared_atoms(
+        degree: i8,
+        chemical: i8,
+        mask: u32,
+        slot: i32,
+        value: u8,
+        seed: u8,
+    ) -> [inp_ATOM; 10] {
+        std::array::from_fn(|i| {
+            let mut atom = dirty_atom(seed, i, 0x5aa5, 0xa55a);
+            atom.valence = degree;
+            atom.chem_bonds_valence = chemical;
+            atom.bond_type = std::array::from_fn(|j| {
+                if mask & (1 << j) != 0 {
+                    0
+                } else {
+                    ((usize::from(seed) + i + j) % 255 + 1) as u8
+                }
+            });
+            if i == 0 && slot >= 0 {
+                atom.bond_type[slot as usize] = value;
+            }
+            atom
+        })
+    }
+    fn protected_same(mut actual: inp_ATOM, before: inp_ATOM) -> bool {
+        actual.component = before.component;
+        actual.chem_bonds_valence = before.chem_bonds_valence;
+        actual.bond_type = before.bond_type;
+        same_bits(actual, before)
+    }
+    #[test]
+    fn complete_components_zero_bonds_wrapping_partial_errors_and_idempotence() {
+        let inputs =
+            include_str!("../../../../../testdata/inchi/expected/official/zero_bonds/inputs.txt");
+        let expected =
+            include_str!("../../../../../testdata/inchi/expected/official/zero_bonds/expected.txt");
+        assert_eq!(inputs.lines().count(), 251401);
+        assert_eq!(expected.lines().count(), 251401);
+        let (
+            mut calls,
+            mut completed,
+            mut bounds,
+            mut audit159,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+        for (ident, (input, output)) in inputs.lines().zip(expected.lines()).enumerate() {
+            let cells: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(cells.len(), 11);
+            assert_eq!(cells[0].parse::<usize>().unwrap(), ident);
+            let n: usize = cells[1].parse().unwrap();
+            let count: i32 = cells[2].parse().unwrap();
+            let component: i32 = cells[3].parse().unwrap();
+            let degree: i8 = cells[4].parse().unwrap();
+            let chemical: i8 = cells[5].parse().unwrap();
+            let mask: u32 = cells[6].parse().unwrap();
+            let slot: i32 = cells[7].parse().unwrap();
+            let value: u8 = cells[8].parse().unwrap();
+            let seed: u8 = cells[9].parse().unwrap();
+            assert!(n <= 8 && (-1..20).contains(&slot));
+            assert_eq!(
+                cells[10] == "N",
+                count <= 0 || (count as usize <= n && degree <= 20)
+            );
+            let wanted: Vec<_> = output.split_whitespace().collect();
+            assert_eq!(wanted.len(), 11);
+            let original = prepared_atoms(degree, chemical, mask, slot, value, seed);
+            for _repeat in 0..2 {
+                let mut atoms = original;
+                for _phase in 0..2 {
+                    calls += 1;
+                    let reached = match catch_unwind(AssertUnwindSafe(|| {
+                        IncrZeroBonds(&mut atoms[..n], count, component)
+                    })) {
+                        Ok(Ok(())) => {
+                            completed += 1;
+                            differences += usize::from(wanted[0] != "O");
+                            true
+                        }
+                        Ok(Err(SourceHeapError::PointerOutOfBounds)) => {
+                            bounds += 1;
+                            differences += usize::from(wanted[0] != "E");
+                            true
+                        }
+                        Ok(Err(_)) => {
+                            unexpected += 1;
+                            false
+                        }
+                        Err(payload) => {
+                            let message = payload
+                                .downcast_ref::<&str>()
+                                .copied()
+                                .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                            if message
+                                == Some(
+                                    "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                                )
+                            {
+                                audit159 += 1;
+                            } else {
+                                unexpected += 1;
+                            }
+                            false
+                        }
+                    };
+                    for i in 0..10 {
+                        changes += usize::from(!protected_same(atoms[i], original[i]));
+                        if reached {
+                            let mut actual = format!(
+                                "{:04x}{:02x}",
+                                atoms[i].component, atoms[i].chem_bonds_valence as u8
+                            );
+                            use std::fmt::Write;
+                            for bond in atoms[i].bond_type {
+                                write!(&mut actual, "{bond:02x}").unwrap();
+                            }
+                            differences += usize::from(actual != wanted[i + 1]);
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!(
+            "ZERO_BONDS COUNTS calls={calls} completed={completed} bounds={bounds} audit159={audit159} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 1005604);
+        assert_eq!((audit159, unexpected, differences, changes), (0, 0, 0, 0));
+        assert_eq!(completed + bounds, calls);
     }
 }

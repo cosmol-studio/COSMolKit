@@ -1,8 +1,12 @@
 use crate::source::base::ichiring::is_bond_in_Nmax_memb_ring;
+use crate::source::base::ichirvr1::SourceBfsQueue;
 use crate::source::base::ichirvr1::{
     AddToEdgeList, AllocEdgeList, FindInEdgeList, GetChargeFlowerUpperEdge,
     MakeOneInChIOutOfStrFromINChI2, RemoveForbiddenEdgeMask, RunBnsRestoreOnce, RunBnsTestOnce,
     SetForbiddenEdgeMask,
+};
+use crate::source::base::ichirvr1::{
+    SourceRestoreMode, make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode,
 };
 use crate::source::base::ichirvr4::{FillOutCMP2MHINCHI, FillOutExtraFixedHDataRestr};
 use crate::source_types::{
@@ -183,17 +187,25 @@ pub(crate) fn bIsUnsatCarbonInASmallRing(
     let atom = heap
         .slice(at2.as_const())?
         .get(index)
-        .cloned()
         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let valence = pVA.get(index).ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: Degree two alone reaches pVA in either fast predicate.
+    // Borrow the atom; retain only scalar degree across ring helper calls.
+    // No record clone/allocation; helper cost and checked whole-call cost OPEN.
+    let ring_size = if atom.valence == 2 {
+        Some(
+            pVA.get(index)
+                .ok_or(SourceHeapError::PointerOutOfBounds)?
+                .cMinRingSize,
+        )
+    } else {
+        None
+    };
     if min_ring_size < 5 {
-        if atom.valence == 2 && valence.cMinRingSize <= 5 && atom.chem_bonds_valence == 4 {
+        if ring_size.is_some_and(|size| size <= 5) && atom.chem_bonds_valence == 4 {
             return Ok(1);
         }
     } else {
-        if atom.valence == 2
-            && valence.cMinRingSize != 0
-            && i32::from(valence.cMinRingSize) <= min_ring_size
+        if ring_size.is_some_and(|size| size != 0 && i32::from(size) <= min_ring_size)
             && atom.chem_bonds_valence == 3
         {
             return Ok(1);
@@ -203,8 +215,9 @@ pub(crate) fn bIsUnsatCarbonInASmallRing(
         if (atom.valence == 2 || atom.valence == 3)
             && i32::from(atom.chem_bonds_valence) == i32::from(atom.valence) + 1
         {
+            let number_of_neighbors = i32::from(atom.valence);
             let mut neighbor_order = 0_i32;
-            while neighbor_order < i32::from(atom.valence) {
+            while neighbor_order < number_of_neighbors {
                 current_ring_size = is_bond_in_Nmax_memb_ring(
                     heap,
                     at2,
@@ -255,7 +268,69 @@ pub(crate) fn FixMobileHRestoredStructure(
     _pnTotalDelta: Option<&mut i32>,
     forbidden_edge_mask: i32,
     forbidden_stereo_edge_mask: i32,
-    clock_result: clock_t,
+    clock_result: impl crate::source_types::SourceClock,
+) -> Result<i32, SourceHeapError> {
+    let source_restore_mode = SourceRestoreMode::Pointer(pStruct.pSrm);
+    // One original algorithm/frame below; no eager BFS admission.
+    fix_mobile_h_with_bfs(
+        heap,
+        pCG,
+        ic,
+        ip,
+        sd,
+        pBNS,
+        pBD,
+        pStruct,
+        at,
+        at2,
+        at3,
+        pVA,
+        pTCGroups,
+        ppt_group_info,
+        ppat_norm,
+        ppat_prep,
+        pInChI,
+        _num_inp,
+        _bHasSomeFixedH,
+        _pnNumRunBNS,
+        _pnTotalDelta,
+        forbidden_edge_mask,
+        forbidden_stereo_edge_mask,
+        clock_result,
+        SourceBfsQueue::Legacy,
+        source_restore_mode,
+    )
+}
+
+#[rustfmt::skip]
+#[allow(non_snake_case, clippy::too_many_arguments)]
+pub(super) fn fix_mobile_h_with_bfs(
+    heap: &mut SourceHeap,
+    pCG: &mut CANON_GLOBALS,
+    ic: SourceMutPointer<INCHI_CLOCK>,
+    ip: &INPUT_PARMS,
+    sd: &STRUCT_DATA,
+    pBNS: &mut BN_STRUCT,
+    pBD: &mut BN_DATA,
+    pStruct: &mut StrFromINChI,
+    at: SourceMutPointer<inp_ATOM>,
+    at2: SourceMutPointer<inp_ATOM>,
+    at3: SourceMutPointer<inp_ATOM>,
+    pVA: &mut [VAL_AT],
+    pTCGroups: &mut ALL_TC_GROUPS,
+    mut ppt_group_info: Option<&mut SourceTGroupInfoPointer>,
+    mut ppat_norm: Option<&mut SourceMutPointer<inp_ATOM>>,
+    mut ppat_prep: Option<&mut SourceMutPointer<inp_ATOM>>,
+    pInChI: [SourceMutPointer<INChI>; 2],
+    _num_inp: i64,
+    _bHasSomeFixedH: i32,
+    _pnNumRunBNS: Option<&mut i32>,
+    _pnTotalDelta: Option<&mut i32>,
+    forbidden_edge_mask: i32,
+    forbidden_stereo_edge_mask: i32,
+    clock_result: impl crate::source_types::SourceClock,
+    bfs_queue: SourceBfsQueue<'_>,
+    source_restore_mode: SourceRestoreMode<'_>,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichirvr5.c:141 FixMobileHRestoredStructure
     // INCHI✔️❌: complete active source frame follows verbatim; implementation
@@ -1550,7 +1625,7 @@ pub(crate) fn FixMobileHRestoredStructure(
     let execution = (|| -> Result<(), SourceHeapError> {
         macro_rules! rebuild {
             () => {{
-                let rebuild_result = MakeOneInChIOutOfStrFromINChI2(
+                let rebuild_result = make_one_in_ch_i_out_of_str_from_in_ch_i2_with_restore_mode(
                     heap,
                     pCG,
                     ic,
@@ -1567,6 +1642,7 @@ pub(crate) fn FixMobileHRestoredStructure(
                     ppat_norm.as_deref_mut(),
                     ppat_prep.as_deref_mut(),
                     clock_result,
+                    source_restore_mode,
                 );
                 ret = rebuild_result?;
                 if ret < 0 {
@@ -1580,12 +1656,12 @@ pub(crate) fn FixMobileHRestoredStructure(
                 if ret != 0 {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret = FillOutCMP2MHINCHI(
                     heap,
                     pStruct,
                     pTCGroups,
-                    &at2_snapshot,
+                    at2_view,
                     pVA,
                     pInChI,
                     &mut comparison,
@@ -1732,11 +1808,7 @@ pub(crate) fn FixMobileHRestoredStructure(
         }
 
         if forbidden_stereo_edge_mask != 0 {
-            let bfs = heap
-                .slice(pStruct.pbfsq.as_const())?
-                .first()
-                .cloned()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+            let mut bfs_handles = None;
             atom_number = 0;
             while atom_number < pStruct.num_atoms {
                 let atom_index = usize::try_from(atom_number)
@@ -1772,14 +1844,31 @@ pub(crate) fn FixMobileHRestoredStructure(
                             .forbidden,
                     ) == forbidden_stereo_edge_mask
                     {
+                        // VERBATIM SOURCE FRAGMENT: ichirvr5.c264..266
+                        //                     int nMinRingSize = is_bond_in_Nmax_memb_ring( at2, i, j, pStruct->pbfsq->q,
+                        //                                                              pStruct->pbfsq->nAtomLevel,
+                        //                                                              pStruct->pbfsq->cSource, 99 /* max ring size */ );
+                        // INCHI✔️❗: Admit root only at first matched edge.
+                        // Ring writes QUEUE/rank/source payloads, not BFS_Q;
+                        // fresh edge lists cannot alias this root. Three handles
+                        // cached once; no whole clone/allocation/extra scan.
+                        // Source traversal/callback/cleanup costs remain OPEN.
+                        let (queue, levels, sources) = match bfs_handles {
+                            Some(handles) => handles,
+                            None => {
+                                let handles = bfs_queue.handles(heap, pStruct.pbfsq)?;
+                                bfs_handles = Some(handles);
+                                handles
+                            }
+                        };
                         let ring = is_bond_in_Nmax_memb_ring(
                             heap,
                             at2,
                             atom_number,
                             order,
-                            bfs.q,
-                            bfs.nAtomLevel,
-                            bfs.cSource,
+                            queue,
+                            levels,
+                            sources,
                             99,
                         )?;
                         if ring > 0 {
@@ -1836,12 +1925,12 @@ pub(crate) fn FixMobileHRestoredStructure(
                 if input_fixed.is_null() && reversed_fixed.is_null() {
                     return Ok(());
                 }
-                let at2_snapshot = heap.slice(at2.as_const())?.to_vec();
+                let at2_view = heap.slice(at2.as_const())?;
                 ret = FillOutCMP2MHINCHI(
                     heap,
                     pStruct,
                     pTCGroups,
-                    &at2_snapshot,
+                    at2_view,
                     pVA,
                     pInChI,
                     &mut comparison,
@@ -2580,17 +2669,22 @@ pub(crate) fn FixMobileHRestoredStructure(
                 } else {
                     &current_edges
                 };
-                let selected_edges = if selected.num_edges > 0 {
-                    heap.slice(selected.pnEdges.as_const())?[..usize::try_from(selected.num_edges)
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?]
-                        .to_vec()
-                } else {
-                    Vec::new()
-                };
-                for edge_number in selected_edges {
+                // VERBATIM SOURCE FRAGMENT: ichirvr5.c674..676
+                //             for (i = 0; pEdgeList && i < pEdgeList->num_edges && !cur_success; i++)
+                //             {
+                //                 pe = pBNS->edge + pEdgeList->pnEdges[i]; /* pe->flow = 1 <=> -OH */
+                // INCHI✔️❗: Fresh selected list stays owned until parent cleanup;
+                // network callbacks do not receive its root. Read only each
+                // reached index after success gate, no Vec/full preflight.
+                // O(reached edges), O(1), checked/whole-call costs remain OPEN.
+                let selected_count = usize::try_from(selected.num_edges.max(0))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                for ordinal in 0..selected_count {
                     if current_success != 0 {
                         break;
                     }
+                    let edge_number = *heap.slice(selected.pnEdges.as_const())?
+                        .get(ordinal).ok_or(SourceHeapError::PointerOutOfBounds)?;
                     let edge_index = usize::try_from(edge_number)
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                     let edge_before = heap
@@ -3014,10 +3108,15 @@ pub(crate) fn FixMobileHRestoredStructure(
                                 )
                                 .cloned()
                                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                            let edge_numbers = heap.slice(intermediate_vertex.iedge.as_const())?
-                                [..usize::from(intermediate_vertex.num_adj_edges)]
-                                .to_vec();
-                            for edge_number in edge_numbers {
+                            // VERBATIM SOURCE FRAGMENT: ichirvr5.c948
+                            //                 for (k = 0; k < pBNS->vert[j].num_adj_edges; k++)
+                            // INCHI✔️❗: Capacity stores target BNS_EDGE, not typed i32
+                            // adjacency payload; shared adjacency/interior pointers stay live.
+                            // Empty degree reads no storage; no clone/Vec/extra scan.
+                            // O(reached degree), O(1), checked/whole-call costs OPEN.
+                            for adjacency_ordinal in 0..usize::from(intermediate_vertex.num_adj_edges) {
+                                let edge_number = *heap.slice(intermediate_vertex.iedge.as_const())?
+                                    .get(adjacency_ordinal).ok_or(SourceHeapError::PointerOutOfBounds)?;
                                 let index = usize::try_from(edge_number)
                                     .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                 let edge = heap
@@ -3107,10 +3206,15 @@ pub(crate) fn FixMobileHRestoredStructure(
                                     )
                                     .cloned()
                                     .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                                let edge_numbers = heap.slice(vertex.iedge.as_const())?
-                                    [..usize::from(vertex.num_adj_edges)]
-                                    .to_vec();
-                                for edge_number in edge_numbers {
+                                // VERBATIM SOURCE FRAGMENT: ichirvr5.c984
+                                //                     for (k = 0; k < pBNS->vert[j].num_adj_edges; k++)
+                                // INCHI✔️❗: Capacity stores target BNS_EDGE, not typed i32
+                                // adjacency payload; shared adjacency/interior pointers stay live.
+                                // Empty degree reads no storage; no clone/Vec/extra scan.
+                                // O(reached degree), O(1), checked/whole-call costs OPEN.
+                                for adjacency_ordinal in 0..usize::from(vertex.num_adj_edges) {
+                                    let edge_number = *heap.slice(vertex.iedge.as_const())?
+                                        .get(adjacency_ordinal).ok_or(SourceHeapError::PointerOutOfBounds)?;
                                     let index = usize::try_from(edge_number)
                                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
                                     let edge = heap
@@ -3216,17 +3320,24 @@ pub(crate) fn FixMobileHRestoredStructure(
                                                 .flow
                                                 == 0;
                                         if carbon_edge_no_flow {
-                                            let bfs = heap
-                                                .slice(pStruct.pbfsq.as_const())?
-                                                .first()
-                                                .cloned()
-                                                .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                            // Legacy preserves its exact reached capture/errors;
+                                            // actual descriptor stays borrowed without a clone.
+                                            let captured;
+                                            let bfs = match bfs_queue {
+                                                SourceBfsQueue::Legacy => {
+                                                    captured = heap.slice(pStruct.pbfsq.as_const())?
+                                                        .first().cloned()
+                                                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                                                    &captured
+                                                }
+                                                SourceBfsQueue::Borrowed(queue) => queue,
+                                            };
                                             bIsUnsatCarbonInASmallRing(
                                                 heap,
                                                 at2,
                                                 pVA,
                                                 atom_number,
-                                                &bfs,
+                                                bfs,
                                                 mode,
                                             )? > 0
                                         } else {

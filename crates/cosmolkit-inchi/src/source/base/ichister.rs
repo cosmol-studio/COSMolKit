@@ -2,6 +2,7 @@ use crate::source::base::ichiring::{
     QueueCreate, QueueDelete, is_atom_in_3memb_ring, is_bond_in_Nmax_memb_ring,
 };
 use crate::source::base::ichisort::{inchi_swap, insertions_sort};
+use crate::source::base::runichi::CanonicalTarget;
 use crate::source::base::util::{get_endpoint_valence, inchi_calloc, inchi_free, is_el_a_metal};
 use crate::source_types::local_ichister::{
     MAX_EDGE_RATIO, MAX_SINE, MIN_ANGLE, MIN_ANGLE_DBOND, MIN_ANGLE_RELAXED, MIN_BOND_LEN,
@@ -81,7 +82,7 @@ pub(crate) fn CompDble(a1: i32, a2: i32, pDoubleForSort: &[f64]) -> Result<i32, 
 
 #[allow(non_snake_case)]
 pub(crate) fn Get2DTetrahedralAmbiguity(
-    _pCG: &mut CANON_GLOBALS,
+    _pCG: &mut impl CanonicalTarget,
     at_coord: &[[f64; 3]; MAX_NUM_STEREO_ATOM_NEIGH as usize],
     bAddExplicitNeighbor: i32,
     bFix2DstereoBorderCase: i32,
@@ -1058,9 +1059,11 @@ pub(crate) fn get_z_coord(
             }
         }
     }
-    let accepted = bPointedEdgeStereo == 0 || bPointedEdgeStereo.wrapping_mul(stereo_value) >= 0;
+    // INCHI✔️❗: Retain source short circuit: nonflat non-Either bonds never
+    // evaluate pointed-edge acceptance. No allocation or extra predicate;
+    // checked arena and emitted whole-call costs remain independently OPEN.
     if flat {
-        if accepted {
+        if bPointedEdgeStereo == 0 || bPointedEdgeStereo.wrapping_mul(stereo_value) >= 0 {
             *nType = match stereo_type as u32 {
                 0 => ZTYPE_NONE as i32,
                 STEREO_SNGL_UP => ZTYPE_UP as i32,
@@ -1074,7 +1077,9 @@ pub(crate) fn get_z_coord(
         } else {
             *nType = ZTYPE_NONE as i32;
         }
-    } else if stereo_type as u32 == STEREO_SNGL_EITHER && accepted {
+    } else if stereo_type as u32 == STEREO_SNGL_EITHER
+        && (bPointedEdgeStereo == 0 || bPointedEdgeStereo.wrapping_mul(stereo_value) >= 0)
+    {
         *nType = ZTYPE_EITHER as i32;
     } else {
         *nType = ZTYPE_3D as i32;
@@ -1264,13 +1269,14 @@ pub(crate) fn dot_prodchar3(a: &[S_CHAR; 3], b: &[S_CHAR; 3]) -> i32 {
     product
 }
 
+#[inline(never)]
 pub(crate) fn cross_prod3<'a>(
     a: &[f64; 3],
     b: &[f64; 3],
     result: &'a mut [f64; 3],
 ) -> &'a mut [f64; 3] {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:330 cross_prod3
-    // INCHI✔️✔️: complete active source frame follows verbatim; fixed-size temporary and write order match.
+    // INCHI❗❗: complete source frame follows verbatim; scalar boundary review below.
     /*
     void* cross_prod3( const double a[], const double b[], double result[] ) /* djb-rwth: changed function type */
     {
@@ -1289,10 +1295,18 @@ pub(crate) fn cross_prod3<'a>(
     */
     // END INCHI C FUNCTION: cross_prod3
 
-    let mut tmp = [0.0; 3];
-    tmp[0] = a[1] * b[2] - a[2] * b[1];
-    tmp[1] = -(a[0] * b[2] - a[2] * b[0]);
-    tmp[2] = a[0] * b[1] - a[1] * b[0];
+    // INCHI❗❗: preserve the three source expressions before destination stores.
+    // Historical inline production had 112 NaN-bit differences; the same scalar
+    // expressions with a noinline boundary matched the pinned scalar reference
+    // in prior controls. Keep that boundary; do not normalize NaN payloads.
+    // O(1) time/space: six multiplies, three subtractions, one negation,
+    // no allocation/scan/clone. Additional call cost remains OPEN in
+    // INCHI-PERF-CROSS-PROD-BOUNDARY; no fresh bulk/whole-call acceptance.
+    let tmp = [
+        a[1] * b[2] - a[2] * b[1],
+        -(a[0] * b[2] - a[2] * b[0]),
+        a[0] * b[1] - a[1] * b[0],
+    ];
     result[0] = tmp[0];
     result[1] = tmp[1];
     result[2] = tmp[2];
@@ -1673,23 +1687,56 @@ pub(crate) fn triple_prod_and_min_abs_sine2(
         let s3 = product / len3(cross_prod3(&edges[0], &edges[1], &mut temporary));
 
         let mut minimum_sine_value = 9999.0_f64;
-        for candidate in [
-            s0 / e01,
-            s0 / e02,
-            s0 / e03,
-            s1 / e01,
-            s1 / e12,
-            s1 / e13,
-            s2 / e02,
-            s2 / e12,
-            s2 / e23,
-            s3 / e03,
-            s3 / e13,
-            s3 / e23,
-        ] {
-            if candidate < minimum_sine_value {
-                minimum_sine_value = candidate;
-            }
+        // INCHI✔️❗: Preserve the twelve native scalar comparisons in order,
+        // including NaN and ties, without a source-absent 96-byte array.
+        // O(1) time/space/no allocation; emitted whole-call cost remains OPEN.
+        sine_value = s0 / e01;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s0 / e02;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s0 / e03;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s1 / e01;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s1 / e12;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s1 / e13;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s2 / e02;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s2 / e12;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s2 / e23;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s3 / e03;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s3 / e13;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
+        }
+        sine_value = s3 / e23;
+        if sine_value < minimum_sine_value {
+            minimum_sine_value = sine_value;
         }
         sine_value = minimum_sine_value;
         if let Some(output) = min_sine.as_deref_mut() {
@@ -3166,7 +3213,10 @@ pub(crate) fn half_stereo_bond_parity(
     let mut number_of_either = 0_i32;
     let mut number_of_explicit_attachments = 0_usize;
     if num_explicit_h > 0 {
-        let removed = heap.slice(at_removed_H)?.to_vec();
+        // INCHI✔️❗: Borrow removed-H storage through this read-only geometry
+        // loop; get_z_coord borrows the heap and cannot mutate its backing.
+        // No O(whole suffix) clone/allocation; reached access/errors unchanged.
+        let removed = heap.slice(at_removed_H)?;
         let removed_offset = at_removed_H.as_mut().difference(at)?;
         for j in 0..num_explicit_h as usize {
             let next = hydrogen_indices[j];
@@ -3209,7 +3259,11 @@ pub(crate) fn half_stereo_bond_parity(
             number_of_explicit_attachments += 1;
         }
     }
-    for j in 0..usize::try_from(current.valence).map_err(|_| SourceHeapError::PointerOutOfBounds)? {
+    // INCHI✔️❗: Native signed valence bounds skip the loop when negative;
+    // narrow the index only after the nonnegative iteration is reached.
+    // No preflight, allocation or extra traversal; whole-call cost stays OPEN.
+    for j in 0..i32::from(current.valence) {
+        let j = j as usize;
         let next = usize::from(current.neighbor[j]);
         let neighbor = heap
             .slice(at.as_const())?
@@ -5092,8 +5146,7 @@ pub(crate) fn bInpAtomHasRequirdNeigh(
     let current = heap
         .slice(at)?
         .get(current_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if current.endpoint != 0 || (RequirdNeighType & 1 != 0 && current.num_H != 0) {
         return Ok(0);
     }
@@ -5103,8 +5156,7 @@ pub(crate) fn bInpAtomHasRequirdNeigh(
             let first = heap
                 .slice(at)?
                 .get(usize::from(current.neighbor[i as usize]))
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .clone();
+                .ok_or(SourceHeapError::PointerOutOfBounds)?;
             if first.valence != 1 || get_endpoint_valence(first.el_number) == 0 {
                 continue;
             }
@@ -5112,20 +5164,17 @@ pub(crate) fn bInpAtomHasRequirdNeigh(
                 let second = heap
                     .slice(at)?
                     .get(usize::from(current.neighbor[j as usize]))
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .clone();
+                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
                 if second.valence != 1
                     || first.el_number != second.el_number
                     || get_endpoint_valence(second.el_number) == 0
                 {
                     continue;
                 }
-                let first_name_length = first
-                    .elname
-                    .iter()
-                    .position(|&byte| byte == 0)
-                    .ok_or(SourceHeapError::MissingNulTerminator)?;
-                if first.num_H != second.num_H && first.elname[..first_name_length] != [b'C' as i8]
+                // INCHI✔️❗: native strcmp is gated by different hydrogen counts;
+                // fixed label storage permits the determining C/NUL comparison.
+                if first.num_H != second.num_H
+                    && (first.elname[0] != b'C' as i8 || first.elname[1] != 0)
                 {
                     return Ok(0);
                 }
@@ -5139,13 +5188,10 @@ pub(crate) fn bInpAtomHasRequirdNeigh(
                 .slice(at)?
                 .get(usize::from(current.neighbor[i as usize]))
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let length = neighbor
-                .elname
-                .iter()
-                .position(|&byte| byte == 0)
-                .ok_or(SourceHeapError::MissingNulTerminator)?;
-            if neighbor.elname[..length] == [b'Z' as i8, b'z' as i8]
-                || neighbor.elname[..length] == [b'Z' as i8, b'y' as i8]
+            // INCHI✔️❗: the two source literals use only these three bytes.
+            if neighbor.elname[0] == b'Z' as i8
+                && (neighbor.elname[1] == b'z' as i8 || neighbor.elname[1] == b'y' as i8)
+                && neighbor.elname[2] == 0
             {
                 return Ok(0);
             }
@@ -5352,18 +5398,16 @@ pub(crate) fn bCanInpAtomBeAStereoCenter(
     let current = heap
         .slice(at.as_const())?
         .get(current_index)
-        .ok_or(SourceHeapError::PointerOutOfBounds)?
-        .clone();
-    let element_length = current
-        .elname
-        .iter()
-        .position(|&byte| byte == 0)
-        .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let element = &current.elname[..element_length];
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+    // INCHI✔️❗: compare each source table literal including its NUL, without
+    // pre-scanning unrelated tail bytes. All literals fit fixed6-byte elname.
+    // O(21) label checks/O(1) scratch; immutable atom staging no longer copies.
+    // Whole checked-access/lowering cost remains independently unresolved.
     let mut matched_index = ELEMENTS.len();
     let mut result = 0_i32;
     for i in 0..ELEMENTS.len() {
-        if element == ELEMENTS[i]
+        if current.elname[..ELEMENTS[i].len()] == *ELEMENTS[i]
+            && current.elname[ELEMENTS[i].len()] == 0
             && current.charge == CHARGES[i]
             && (current.radical == 0 || current.radical == 1)
             && i32::from(current.valence) + i32::from(current.num_H)
@@ -5447,7 +5491,7 @@ pub(crate) fn can_be_a_stereo_atom_with_isotopic_H(
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub(crate) fn GetStereocenter0DParity(
-    _pCG: &mut CANON_GLOBALS,
+    _pCG: &mut impl CanonicalTarget,
     heap: &mut SourceHeap,
     at: SourceMutPointer<inp_ATOM>,
     cur_at: i32,
@@ -5592,7 +5636,7 @@ pub(crate) fn GetStereocenter0DParity(
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub(crate) fn set_stereo_atom_parity(
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut impl CanonicalTarget,
     heap: &mut SourceHeap,
     out_at: SourceMutPointer<sp_ATOM>,
     at: SourceMutPointer<inp_ATOM>,
@@ -6312,7 +6356,10 @@ pub(crate) fn set_stereo_atom_parity(
 
         let mut explicit_neighbor_count = 0_usize;
         if number_of_explicit_hydrogens > 0 {
-            let removed_atoms = heap.slice(at_removed_H)?.to_vec();
+            // INCHI✔️❗: Borrow removed-H storage through this read-only geometry
+            // loop; get_z_coord borrows the heap and cannot mutate its backing.
+            // No O(whole suffix) clone/allocation; reached access/errors unchanged.
+            let removed_atoms = heap.slice(at_removed_H)?;
             let removed_offset = at_removed_H.as_mut().difference(at)?;
             for j in 0..usize::try_from(number_of_explicit_hydrogens)
                 .map_err(|_| SourceHeapError::PointerOutOfBounds)?
@@ -6516,7 +6563,9 @@ pub(crate) fn set_stereo_atom_parity(
             }
             if number_of_z == 0
                 || are_3_vect_in_one_plane(
-                    &[coordinates[0], coordinates[1], coordinates[2]],
+                    coordinates
+                        .first_chunk::<3>()
+                        .expect("four coordinate rows contain the first three"),
                     minimum_sine,
                 ) != 0
             {
@@ -6630,10 +6679,15 @@ pub(crate) fn set_stereo_atom_parity(
         let center = coordinate_center;
         diff3(&center, &coordinate_origin, &mut coordinate_center);
 
-        let tetrahedral_coordinates = [coordinates[1], coordinates[2], coordinates[3]];
+        // INCHI✔️❗: Borrow native three-row views, never copy 72-byte
+        // coordinate arguments. Fixed four-row storage guarantees both views;
+        // no allocation or new caller/error contract. Codegen cost stays OPEN.
+        let tetrahedral_coordinates = coordinates[1..]
+            .first_chunk::<3>()
+            .expect("four coordinate rows contain the final three");
         let mut actual_minimum_sine = 0.0_f64;
         let triple_product = triple_prod_and_min_abs_sine2(
-            &tetrahedral_coordinates,
+            tetrahedral_coordinates,
             &coordinate_center,
             add_explicit_neighbor,
             Some(&mut actual_minimum_sine),
@@ -6722,7 +6776,7 @@ pub(crate) fn bAtomHasValence3(
     radical: i8,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:1574 bAtomHasValence3
-    // INCHI✔️✔️: complete active source frame follows verbatim; fixed-table scan and allocation behavior match.
+    // INCHI✔️❗: verbatim source; behavior reproduced below; whole-call cost remains unresolved.
     /*
     int bAtomHasValence3( char *elname, S_CHAR charge, S_CHAR radical )
     {
@@ -6742,16 +6796,23 @@ pub(crate) fn bAtomHasValence3(
     */
     // END INCHI C FUNCTION: bAtomHasValence3
 
-    let length = elname
-        .iter()
-        .position(|&byte| byte == 0)
+    // Behavior: compare only determining label bytes before charge/radical.
+    // Missing reached bytes retain the existing Rust error; trailing bytes are unused.
+    // Complexity: O(1) time/space, no allocation or complete NUL scan.
+    // Cost: safe bounds and Result overhead unresolved; HUMAN 2026-10-10
+    // authorizes guard removal with this uncertainty recorded in performance_pending.md.
+    let first = *elname
+        .first()
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let element = &elname[..length];
-    let mut ret = 0_i32;
-    if element == [b'N' as i8] && charge == 0 {
-        ret = i32::from(radical == 0 || radical == RADICAL_SINGLET as i8);
+    if first as u8 != b'N' {
+        return Ok(0);
     }
-    Ok(ret)
+    if *elname.get(1).ok_or(SourceHeapError::MissingNulTerminator)? != 0 {
+        return Ok(0);
+    }
+    Ok(i32::from(
+        charge == 0 && (radical == 0 || radical == RADICAL_SINGLET as i8),
+    ))
 }
 
 #[allow(non_snake_case)]
@@ -6761,7 +6822,7 @@ pub(crate) fn bCanAtomHaveAStereoBond(
     radical: i8,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:1594 bCanAtomHaveAStereoBond
-    // INCHI✔️✔️: complete source frame follows verbatim; fixed-table scan and allocation behavior match.
+    // INCHI✔️❗: verbatim source; behavior reproduced below; whole-call cost remains unresolved.
     /*
     int bCanAtomHaveAStereoBond( char *elname, S_CHAR charge, S_CHAR radical )
     {
@@ -6782,26 +6843,31 @@ pub(crate) fn bCanAtomHaveAStereoBond(
     */
     // END INCHI C FUNCTION: bCanAtomHaveAStereoBond
 
-    let length = elname
-        .iter()
-        .position(|&byte| byte == 0)
+    // Behavior: compare only determining label bytes before charge/radical.
+    // Missing reached bytes retain the existing Rust error; trailing bytes are unused.
+    // Complexity: O(1) time/space, no allocation or complete NUL scan.
+    // Cost: safe bounds and Result overhead unresolved; HUMAN 2026-10-10
+    // authorizes guard removal with this uncertainty recorded in performance_pending.md.
+    let first = *elname
+        .first()
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let element = &elname[..length];
-    let elements: [(&[i8], i8); 5] = [
-        (&[b'C' as i8], 0),
-        (&[b'S' as i8, b'i' as i8], 0),
-        (&[b'G' as i8, b'e' as i8], 0),
-        (&[b'N' as i8], 0),
-        (&[b'N' as i8], 1),
-    ];
-    let mut ret = 0_i32;
-    for (expected_element, expected_charge) in elements {
-        if element == expected_element && charge == expected_charge {
-            ret = i32::from(radical == 0 || radical == RADICAL_SINGLET as i8);
-            break;
-        }
+    let expected_second = match first as u8 {
+        b'C' => 0,
+        b'S' => b'i' as i8,
+        b'G' => b'e' as i8,
+        b'N' => 0,
+        _ => return Ok(0),
+    };
+    if *elname.get(1).ok_or(SourceHeapError::MissingNulTerminator)? != expected_second {
+        return Ok(0);
     }
-    Ok(ret)
+    if expected_second != 0 && *elname.get(2).ok_or(SourceHeapError::MissingNulTerminator)? != 0 {
+        return Ok(0);
+    }
+    Ok(i32::from(
+        (charge == 0 || (first as u8 == b'N' && charge == 1))
+            && (radical == 0 || radical == RADICAL_SINGLET as i8),
+    ))
 }
 
 #[allow(non_snake_case)]
@@ -6811,7 +6877,7 @@ pub(crate) fn bCanAtomBeMiddleAllene(
     radical: i8,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:1615 bCanAtomBeMiddleAllene
-    // INCHI✔️✔️: complete active source frame follows verbatim; fixed-table scan and allocation behavior match.
+    // INCHI✔️❗: verbatim source; behavior reproduced below; whole-call cost remains unresolved.
     /*
     int bCanAtomBeMiddleAllene( char *elname, S_CHAR charge, S_CHAR radical )
     {
@@ -6832,24 +6898,29 @@ pub(crate) fn bCanAtomBeMiddleAllene(
     */
     // END INCHI C FUNCTION: bCanAtomBeMiddleAllene
 
-    let length = elname
-        .iter()
-        .position(|&byte| byte == 0)
+    // Behavior: compare only determining label bytes before charge/radical.
+    // Missing reached bytes retain the existing Rust error; trailing bytes are unused.
+    // Complexity: O(1) time/space, no allocation or complete NUL scan.
+    // Cost: safe bounds and Result overhead unresolved; HUMAN 2026-10-10
+    // authorizes guard removal with this uncertainty recorded in performance_pending.md.
+    let first = *elname
+        .first()
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let element = &elname[..length];
-    let elements: [&[i8]; 3] = [
-        &[b'C' as i8],
-        &[b'S' as i8, b'i' as i8],
-        &[b'G' as i8, b'e' as i8],
-    ];
-    let mut ret = 0_i32;
-    for expected_element in elements {
-        if element == expected_element && charge == 0 {
-            ret = i32::from(radical == 0 || radical == RADICAL_SINGLET as i8);
-            break;
-        }
+    let expected_second = match first as u8 {
+        b'C' => 0,
+        b'S' => b'i' as i8,
+        b'G' => b'e' as i8,
+        _ => return Ok(0),
+    };
+    if *elname.get(1).ok_or(SourceHeapError::MissingNulTerminator)? != expected_second {
+        return Ok(0);
     }
-    Ok(ret)
+    if expected_second != 0 && *elname.get(2).ok_or(SourceHeapError::MissingNulTerminator)? != 0 {
+        return Ok(0);
+    }
+    Ok(i32::from(
+        charge == 0 && (radical == 0 || radical == RADICAL_SINGLET as i8),
+    ))
 }
 
 #[allow(non_snake_case)]
@@ -6859,7 +6930,7 @@ pub(crate) fn bCanAtomBeTerminalAllene(
     radical: i8,
 ) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:1705 bCanAtomBeTerminalAllene
-    // INCHI✔️✔️: complete active source frame follows verbatim; fixed-table scan and allocation behavior match.
+    // INCHI✔️❗: verbatim source; behavior reproduced below; whole-call cost remains unresolved.
     /*
     int bCanAtomBeTerminalAllene( char *elname, S_CHAR charge, S_CHAR radical )
     {
@@ -6881,24 +6952,29 @@ pub(crate) fn bCanAtomBeTerminalAllene(
     */
     // END INCHI C FUNCTION: bCanAtomBeTerminalAllene
 
-    let length = elname
-        .iter()
-        .position(|&byte| byte == 0)
+    // Behavior: compare only determining label bytes before charge/radical.
+    // Missing reached bytes retain the existing Rust error; trailing bytes are unused.
+    // Complexity: O(1) time/space, no allocation or complete NUL scan.
+    // Cost: safe bounds and Result overhead unresolved; HUMAN 2026-10-10
+    // authorizes guard removal with this uncertainty recorded in performance_pending.md.
+    let first = *elname
+        .first()
         .ok_or(SourceHeapError::MissingNulTerminator)?;
-    let element = &elname[..length];
-    let elements: [&[i8]; 3] = [
-        &[b'C' as i8],
-        &[b'S' as i8, b'i' as i8],
-        &[b'G' as i8, b'e' as i8],
-    ];
-    let mut ret = 0_i32;
-    for expected_element in elements {
-        if element == expected_element && charge == 0 {
-            ret = i32::from(radical == 0 || radical == RADICAL_SINGLET as i8);
-            break;
-        }
+    let expected_second = match first as u8 {
+        b'C' => 0,
+        b'S' => b'i' as i8,
+        b'G' => b'e' as i8,
+        _ => return Ok(0),
+    };
+    if *elname.get(1).ok_or(SourceHeapError::MissingNulTerminator)? != expected_second {
+        return Ok(0);
     }
-    Ok(ret)
+    if expected_second != 0 && *elname.get(2).ok_or(SourceHeapError::MissingNulTerminator)? != 0 {
+        return Ok(0);
+    }
+    Ok(i32::from(
+        charge == 0 && (radical == 0 || radical == RADICAL_SINGLET as i8),
+    ))
 }
 
 #[allow(non_snake_case)]
@@ -7562,7 +7638,7 @@ pub(crate) fn can_be_a_stereo_bond_with_isotopic_H(
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
 pub(crate) fn set_stereo_parity(
-    pCG: &mut CANON_GLOBALS,
+    pCG: &mut impl CanonicalTarget,
     heap: &mut SourceHeap,
     at: SourceMutPointer<inp_ATOM>,
     at_output: SourceMutPointer<sp_ATOM>,
@@ -7894,7 +7970,13 @@ pub(crate) fn set_stereo_parity(
             std::mem::size_of::<AT_RANK>() as u64,
         ) {
             Ok(pointer) => pointer,
-            Err(SourceHeapError::AllocationFailed) => SourceMutPointer::null(),
+            // INCHI✔️❗: C330; native4559..4569 assigns NULL on calloc
+            // size overflow, still attempts cSource, then cleans all buffers
+            // and returns CT_OUT_OF_RAM. O(1) mapping; other typed errors
+            // retain their cleanup/propagation. Inherited allocator cost OPEN.
+            Err(SourceHeapError::AllocationFailed | SourceHeapError::AllocationSizeOverflow) => {
+                SourceMutPointer::null()
+            }
             Err(error) => {
                 QueueDelete(heap, q)?;
                 return Err(error);
@@ -7943,9 +8025,12 @@ pub(crate) fn set_stereo_parity(
                 bStereoAtZz,
             )?;
             if is_stereo != 0 {
+                // INCHI✔️❗: ATOM_PARITY_WELL_DEF tests the signed helper
+                // result directly; negative S_CHAR results never count.
+                // No source-absent abs; O(1), whole-call costs remain OPEN.
                 num_3D_stereo_atoms = num_3D_stereo_atoms.wrapping_add(i32::from(
                     (AB_MIN_WELL_DEFINED_PARITY as i32..=AB_MAX_WELL_DEFINED_PARITY as i32)
-                        .contains(&is_stereo.abs()),
+                        .contains(&is_stereo),
                 ));
             } else {
                 is_stereo = set_stereo_bonds_parity(
@@ -8410,7 +8495,11 @@ pub(crate) fn ReconcileCmlIncidentBondParities(
 
         if next_parity == 0 {
             let calculated = 2 - (next_order_parity + next_sb_parity) % 2;
-            heap.slice_mut(visited)?[next_index] = next_visited.wrapping_add(calculated as i8);
+            // INCHI✔️❗: Reload the live byte after the current-atom update;
+            // both indices may name the same atom. One mutable admission,
+            // no snapshot/allocation; checked-arena whole-call cost stays OPEN.
+            let live_next = &mut heap.slice_mut(visited)?[next_index];
+            *live_next = live_next.wrapping_add(calculated as i8);
         } else if next_parity != 2 - (next_order_parity + next_sb_parity) % 2 {
             return Ok(5);
         }
@@ -8490,8 +8579,12 @@ pub(crate) fn get_opposite_sb_atom(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: get_opposite_sb_atom
 
-    get_opposite_sb_atom_slice(
-        heap.slice(atoms.as_const())?,
+    // INCHI✔️❗: Retain initial typed pointer admission; signed reached
+    // indices can address the prefix of the same interior allocation.
+    // One canonical traversal, no snapshot/allocation; arena cost OPEN.
+    heap.slice(atoms.as_const())?;
+    get_opposite_sb_atom_core(
+        |index| heap.element_signed(atoms.as_const(), index),
         cur_atom,
         icur2nxt,
         next_atom_out,
@@ -8502,28 +8595,94 @@ pub(crate) fn get_opposite_sb_atom(
 
 pub(crate) fn get_opposite_sb_atom_slice(
     atoms: &[inp_ATOM],
+    cur_atom: i32,
+    icur2nxt: i32,
+    next_atom_out: Option<&mut i32>,
+    next_to_current_out: Option<&mut i32>,
+    next_parity_ordinal_out: Option<&mut i32>,
+) -> Result<i32, SourceHeapError> {
+    get_opposite_sb_atom_core(
+        |index| {
+            atoms
+                .get(usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?)
+                .ok_or(SourceHeapError::PointerOutOfBounds)
+        },
+        cur_atom,
+        icur2nxt,
+        next_atom_out,
+        next_to_current_out,
+        next_parity_ordinal_out,
+    )
+}
+
+pub(crate) fn get_opposite_sb_atom_core<'a>(
+    read_atom: impl Fn(i32) -> Result<&'a inp_ATOM, SourceHeapError>,
     mut cur_atom: i32,
     mut icur2nxt: i32,
     mut next_atom_out: Option<&mut i32>,
     mut next_to_current_out: Option<&mut i32>,
     mut next_parity_ordinal_out: Option<&mut i32>,
 ) -> Result<i32, SourceHeapError> {
+    // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichister.c:4861 get_opposite_sb_atom
+    // INCHI✔️❌: int get_opposite_sb_atom( inp_ATOM *at,
+    // INCHI✔️❌:                           int cur_atom,
+    // INCHI✔️❌:                           int icur2nxt,
+    // INCHI✔️❌:                           int *pnxt_atom,
+    // INCHI✔️❌:                           int *pinxt2cur,
+    // INCHI✔️❌:                           int *pinxt_sb_parity_ord )
+    // INCHI✔️❌: {
+    // INCHI✔️❌:     AT_NUMB nxt_atom;
+    // INCHI✔️❌:     int     j, len;
+    // INCHI✔️❌:
+    // INCHI✔️❌:     len = 0;
+    // INCHI✔️❌:     while (len++ < 20)
+    // INCHI✔️❌:     {
+    // INCHI✔️❌:         /* Arbitrarily set cumulene length limit to avoid infinite loop */
+    // INCHI✔️❌:         nxt_atom = at[cur_atom].neighbor[icur2nxt];
+    // INCHI✔️❌:         for (j = 0; j < MAX_NUM_STEREO_BONDS && at[nxt_atom].sb_parity[j]; j++)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             if (cur_atom == at[nxt_atom].neighbor[(int) at[nxt_atom].sb_ord[j]])
+    // INCHI✔️❌:             {
+    // INCHI✔️❌:                 /* Found the opposite atom */
+    // INCHI✔️❌:                 *pnxt_atom = nxt_atom;
+    // INCHI✔️❌:                 *pinxt2cur = at[nxt_atom].sb_ord[j];
+    // INCHI✔️❌:                 *pinxt_sb_parity_ord = j;
+    // INCHI✔️❌:                 return len;
+    // INCHI✔️❌:             }
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (j)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             return 0; /* reached atom(s) with stereobond (sb) parity, the opposite atom has not been found */
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         if (at[nxt_atom].valence == 2 && 2 * BOND_TYPE_DOUBLE == at[nxt_atom].chem_bonds_valence)
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             /* Follow cumulene =X= path */
+    // INCHI✔️❌:             icur2nxt = ( at[nxt_atom].neighbor[0] == cur_atom );
+    // INCHI✔️❌:             cur_atom = nxt_atom;
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:         else
+    // INCHI✔️❌:         {
+    // INCHI✔️❌:             return 0; /* neither atom with a sb parity not middle cumulene could be reached */
+    // INCHI✔️❌:         }
+    // INCHI✔️❌:     }
+    // INCHI✔️❌:
+    // INCHI✔️❌:     return 0; /* too long chain of cumulene was found */
+    // INCHI✔️❌: }
+    // END INCHI C FUNCTION: get_opposite_sb_atom
+    // INCHI✔️❗: Sole source traversal for both existing projections.
+    // Heap projection admits signed interior indices; a slice retains its
+    // own base-zero bounds. Ordinal/output errors and write order unchanged.
+    // At most twenty steps/O(1) scratch/no allocation; whole-call cost OPEN.
     for len in 1..=20_i32 {
-        let current_index =
-            usize::try_from(cur_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let next_ordinal =
             usize::try_from(icur2nxt).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         let next_atom = i32::from(
-            *atoms
-                .get(current_index)
-                .and_then(|atom| atom.neighbor.get(next_ordinal))
+            *read_atom(cur_atom)?
+                .neighbor
+                .get(next_ordinal)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?,
         );
-        let next_index =
-            usize::try_from(next_atom).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-        let next = atoms
-            .get(next_index)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
+        let next = read_atom(next_atom)?;
         let mut j = 0_usize;
         while j < MAX_NUM_STEREO_BONDS as usize && next.sb_parity[j] != 0 {
             let reverse_ordinal =
@@ -8551,7 +8710,10 @@ pub(crate) fn get_opposite_sb_atom_slice(
         }
         if next.valence == 2 && (2 * BOND_TYPE_DOUBLE as i32) == i32::from(next.chem_bonds_valence)
         {
-            icur2nxt = i32::from(next.neighbor[0] == cur_atom as u16);
+            // INCHI✔️❗: ichister.c4900
+            // icur2nxt = ( at[nxt_atom].neighbor[0] == cur_atom );
+            // Promote the short; whole-call C-INTEGER-CONVERSIONS cost is OPEN.
+            icur2nxt = i32::from(i32::from(next.neighbor[0]) == cur_atom);
             cur_atom = next_atom;
         } else {
             return Ok(0);
@@ -10709,7 +10871,9 @@ mod tests {
         malformed[0].elname = [b'C' as i8; 6];
         assert_eq!(
             evaluate(malformed, 0, all_features, 0),
-            Err(SourceHeapError::MissingNulTerminator)
+            // Native table strcmp differs at byte1 for C, byte0 for other
+            // labels; all six initialized bytes need no terminating NUL here.
+            Ok(0)
         );
         assert_eq!(
             evaluate(vec![inp_ATOM::default()], -1, all_features, 0),
@@ -12656,5 +12820,562 @@ mod tests {
                 "cleanup after allocation failure {successful_allocations}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod cross_prod_regressions {
+    use super::cross_prod3;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    #[test]
+    fn complete_binary64_bits_state_and_return_identity() {
+        let input =
+            include_str!("../../../../../testdata/inchi/expected/official/cross_prod/inputs.txt");
+        let expected =
+            include_str!("../../../../../testdata/inchi/expected/official/cross_prod/expected.txt");
+        let manifest: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../testdata/inchi/expected/official/cross_prod/manifest.json"
+        ))
+        .unwrap();
+        assert_eq!(manifest["version"], "1.07.5");
+        assert_eq!(manifest["unique_cases"], 47216);
+        assert_eq!(manifest["rust_calls"], 94432);
+        let inputs: Vec<[u64; 6]> = input
+            .lines()
+            .enumerate()
+            .map(|(i, line)| {
+                let fields: Vec<_> = line.split_whitespace().collect();
+                assert_eq!(fields.len(), 7);
+                assert_eq!(fields[0].parse::<usize>().unwrap(), i);
+                std::array::from_fn(|j| u64::from_str_radix(fields[j + 1], 16).unwrap())
+            })
+            .collect();
+        let wanted: Vec<[u64; 3]> = expected
+            .lines()
+            .map(|line| {
+                let fields: Vec<_> = line.split_whitespace().collect();
+                assert_eq!(fields.len(), 3);
+                std::array::from_fn(|i| u64::from_str_radix(fields[i], 16).unwrap())
+            })
+            .collect();
+        assert_eq!(inputs.len(), 47216);
+        assert_eq!(wanted.len(), inputs.len());
+        let (mut calls, mut ok, mut guards, mut unexpected, mut differences, mut changes) =
+            (0, 0, 0, 0, 0, 0);
+        for repeat in 0..2 {
+            for (id, words) in inputs.iter().enumerate() {
+                let a = std::array::from_fn(|i| f64::from_bits(words[i]));
+                let b = std::array::from_fn(|i| f64::from_bits(words[i + 3]));
+                let initial = [
+                    0x7ff8aaaabbbbcccc,
+                    0x4000000000000000,
+                    0x4008000000000000,
+                    0x4010000000000000,
+                    0xfff8dddd11112222,
+                ];
+                let mut output = initial.map(f64::from_bits);
+                let address = output[1..4].as_ptr();
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    cross_prod3(&a, &b, (&mut output[1..4]).try_into().unwrap()).as_ptr() == address
+                }));
+                calls += 1;
+                let actual = output.map(f64::to_bits);
+                let input_changed =
+                    a.map(f64::to_bits) != words[..3] || b.map(f64::to_bits) != words[3..];
+                let tails_changed = actual[0] != initial[0] || actual[4] != initial[4];
+                changes += usize::from(input_changed || tails_changed);
+                let (status, identity) = match result {
+                    Ok(identity) => {
+                        ok += 1;
+                        differences += usize::from(actual[1..4] != wanted[id] || !identity);
+                        (0, identity)
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                            .unwrap_or("unrecognized panic");
+                        if message
+                            == "INCHI-AUDIT-0046: suspected source divergence; see dev/audits/inchi/findings.md"
+                        {
+                            guards += 1;
+                            changes += usize::from(actual != initial);
+                            (46, false)
+                        } else {
+                            unexpected += 1;
+                            (999, false)
+                        }
+                    }
+                };
+                println!(
+                    "CALL {repeat} {id} {status} {:016x} {:016x} {:016x} {} {} {}",
+                    actual[1],
+                    actual[2],
+                    actual[3],
+                    u8::from(identity),
+                    u8::from(input_changed),
+                    u8::from(tails_changed)
+                );
+            }
+        }
+        println!(
+            "SUMMARY calls={calls} ok={ok} guards={guards} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(
+            (calls, ok, guards, unexpected, differences, changes),
+            (94432, 94432, 0, 0, 0, 0)
+        );
+    }
+}
+
+#[cfg(test)]
+mod compdble_regressions {
+    use super::{CompDble, SourceHeapError};
+
+    fn run_fixed_references(fixed8: bool) {
+        let manifest: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../testdata/inchi/expected/official/compdble/manifest.json"
+        ))
+        .unwrap();
+        assert_eq!(manifest["schema"], "inchi-compdble-binary64-v1");
+        assert_eq!(manifest["version"], "1.07.5");
+        assert_eq!(manifest["unique_cases"], 23156);
+        assert_eq!(manifest["repeats"], 2);
+        assert_eq!(manifest["rust_calls"], 46312);
+        assert_eq!(manifest["rust_fixed8_calls"], 8888);
+        let inputs: Vec<_> =
+            include_str!("../../../../../testdata/inchi/expected/official/compdble/inputs.txt")
+                .lines()
+                .collect();
+        let expected: Vec<_> =
+            include_str!("../../../../../testdata/inchi/expected/official/compdble/expected.txt")
+                .lines()
+                .collect();
+        assert_eq!(inputs.len(), 23156);
+        assert_eq!(expected.len(), inputs.len());
+        let (mut calls, mut ok, mut bounds, mut audit159) = (0, 0, 0, 0);
+        let (mut unexpected, mut differences, mut changed) = (0, 0, 0);
+        for (ident, (input, wanted)) in inputs.iter().zip(&expected).enumerate() {
+            let fields: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(fields[0].parse::<usize>().unwrap(), ident);
+            let a: i32 = fields[1].parse().unwrap();
+            let b: i32 = fields[2].parse().unwrap();
+            let n: usize = fields[3].parse().unwrap();
+            assert!(n <= 8);
+            assert_eq!(fields.len(), n + 5);
+            let admitted = a >= 0 && b >= 0 && (a as usize) < n && (b as usize) < n;
+            assert_eq!(fields[4] == "N", admitted);
+            let wanted = if *wanted == "E" {
+                assert!(!admitted);
+                Err(SourceHeapError::PointerOutOfBounds)
+            } else {
+                assert!(admitted);
+                let value: i32 = wanted.parse().unwrap();
+                assert!((-1..=1).contains(&value));
+                Ok(value)
+            };
+            let mut bits = [0x7ff800000000005a_u64; 10];
+            for (dest, text) in bits.iter_mut().zip(&fields[5..]) {
+                assert_eq!(text.len(), 16);
+                *dest = u64::from_str_radix(text, 16).unwrap();
+            }
+            let values = bits.map(f64::from_bits);
+            if fixed8 && n != 8 {
+                continue;
+            }
+            for repeat in 0..2 {
+                let result = std::panic::catch_unwind(|| CompDble(a, b, &values[..n]));
+                calls += 1;
+                match result {
+                    Ok(actual) => {
+                        match actual {
+                            Ok(_) => ok += 1,
+                            Err(SourceHeapError::PointerOutOfBounds) => bounds += 1,
+                            Err(_) => unexpected += 1,
+                        }
+                        if actual != wanted {
+                            differences += 1;
+                            if differences <= 8 {
+                                eprintln!(
+                                    "COMPDBLE DIFFERENCE fixed8={fixed8} id={ident} repeat={repeat} actual={actual:?} wanted={wanted:?}"
+                                );
+                            }
+                        }
+                    }
+                    Err(payload) => {
+                        let text = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        if text
+                            == Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            )
+                        {
+                            audit159 += 1;
+                        } else {
+                            unexpected += 1;
+                            if unexpected <= 8 {
+                                eprintln!(
+                                    "COMPDBLE UNEXPECTED fixed8={fixed8} id={ident} repeat={repeat} panic={text:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+                if values.map(f64::to_bits) != bits {
+                    changed += 1;
+                }
+            }
+        }
+        eprintln!(
+            "COMPDBLE COUNTS fixed8={fixed8} calls={calls} ok={ok} bounds={bounds} audit159={audit159} unexpected={unexpected} differences={differences} changed={changed}"
+        );
+        let wanted = if fixed8 {
+            (8888, 8798, 90)
+        } else {
+            (46312, 45562, 750)
+        };
+        assert_eq!((calls, ok, bounds), wanted);
+        assert_eq!((audit159, unexpected, differences, changed), (0, 0, 0, 0));
+    }
+
+    #[test]
+    fn complete_binary64_scalar_and_typed_admission() {
+        run_fixed_references(false);
+    }
+
+    #[test]
+    fn complete_fixed8_consumer_and_typed_admission() {
+        run_fixed_references(true);
+    }
+}
+
+#[cfg(test)]
+mod save_stereo_bond_regressions {
+    use super::save_a_stereo_bond;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    #[test]
+    fn complete_slots_narrowing_and_chained_state() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/inchi/expected/official/save_stereo_bond");
+        let inputs = std::fs::read_to_string(root.join("inputs.txt")).unwrap();
+        let expected = std::fs::read_to_string(root.join("expected.txt")).unwrap();
+        let mut expected = expected.lines();
+        let (mut calls, mut completed, mut quarantined, mut unexpected, mut differences) =
+            (0usize, 0usize, 0usize, 0usize, 0usize);
+        for (identity, line) in inputs.lines().enumerate() {
+            let f: Vec<i64> = line
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            assert_eq!(f.len(), 32);
+            assert_eq!(f[0], identity as i64);
+            assert_eq!(f[1], 4);
+            let v: [i32; 6] = std::array::from_fn(|i| i32::try_from(f[2 + i]).unwrap());
+            let wants: Vec<Vec<i64>> = (0..4)
+                .map(|step| {
+                    let row: Vec<i64> = expected
+                        .next()
+                        .unwrap()
+                        .split_whitespace()
+                        .map(|s| s.parse().unwrap())
+                        .collect();
+                    assert_eq!(row.len(), 27);
+                    assert_eq!(&row[..2], &[identity as i64, step]);
+                    row
+                })
+                .collect();
+            for _repeat in 0..2 {
+                let mut n1: [u16; 3] = std::array::from_fn(|i| u16::try_from(f[8 + i]).unwrap());
+                let mut n2: [u16; 3] = std::array::from_fn(|i| u16::try_from(f[11 + i]).unwrap());
+                let mut o1: [i8; 3] = std::array::from_fn(|i| i8::try_from(f[14 + i]).unwrap());
+                let mut z1: [i8; 3] = std::array::from_fn(|i| i8::try_from(f[17 + i]).unwrap());
+                let mut p1: [i8; 3] = std::array::from_fn(|i| i8::try_from(f[20 + i]).unwrap());
+                let mut o2: [i8; 3] = std::array::from_fn(|i| i8::try_from(f[23 + i]).unwrap());
+                let mut z2: [i8; 3] = std::array::from_fn(|i| i8::try_from(f[26 + i]).unwrap());
+                let mut p2: [i8; 3] = std::array::from_fn(|i| i8::try_from(f[29 + i]).unwrap());
+                for wanted in &wants {
+                    let before = (n1, n2, o1, z1, p1, o2, z2, p2);
+                    calls += 1;
+                    let result = catch_unwind(AssertUnwindSafe(|| {
+                        save_a_stereo_bond(
+                            v[0], v[1], v[2], v[3], &mut n1, &mut o1, &mut z1, &mut p1, v[4], v[5],
+                            &mut n2, &mut o2, &mut z2, &mut p2,
+                        )
+                    }));
+                    match result {
+                        Ok(value) => {
+                            completed += 1;
+                            let mut actual = vec![i64::from(value)];
+                            actual.extend(n1.into_iter().chain(n2).map(i64::from));
+                            for array in [o1, z1, p1, o2, z2, p2] {
+                                actual.extend(array.into_iter().map(i64::from));
+                            }
+                            differences += usize::from(actual.as_slice() != &wanted[2..]);
+                        }
+                        Err(payload) => {
+                            let message = payload
+                                .downcast_ref::<&str>()
+                                .copied()
+                                .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                            if message
+                                == Some(
+                                    "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                                )
+                            {
+                                quarantined += 1;
+                            } else {
+                                unexpected += 1;
+                            }
+                            differences += usize::from((n1, n2, o1, z1, p1, o2, z2, p2) != before);
+                        }
+                    }
+                }
+            }
+        }
+        assert!(expected.next().is_none());
+        eprintln!(
+            "SAVE_STEREO COUNTS calls={calls} completed={completed} audit159={quarantined} unexpected={unexpected} differences={differences}"
+        );
+        assert_eq!(calls, 216416);
+        assert_eq!((quarantined, unexpected, differences), (0, 0, 0));
+        assert_eq!(completed, calls);
+    }
+}
+
+#[cfg(test)]
+mod valence_three_regressions {
+    use super::bAtomHasValence3;
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    #[test]
+    fn complete_trivalent_n_source_order_signed_gates_reached_errors_and_backing() {
+        let inputs = include_str!(
+            "../../../../../testdata/inchi/expected/official/valence_three/inputs.txt"
+        );
+        let expected = include_str!(
+            "../../../../../testdata/inchi/expected/official/valence_three/expected.txt"
+        );
+        assert_eq!(inputs.lines().count(), 288249);
+        assert_eq!(expected.lines().count(), 288249);
+        let (
+            mut calls,
+            mut completed,
+            mut missing,
+            mut audit154,
+            mut audit162,
+            mut audit159,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (
+            0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize,
+        );
+        for (id, (input, expected)) in inputs.lines().zip(expected.lines()).enumerate() {
+            let p: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(p.len(), 8);
+            assert_eq!(p[0].parse::<usize>().unwrap(), id);
+            let length: usize = p[1].parse().unwrap();
+            let first: u8 = p[2].parse().unwrap();
+            let second: u8 = p[3].parse().unwrap();
+            let charge: i8 = p[4].parse().unwrap();
+            let radical: i8 = p[5].parse().unwrap();
+            let seed: u32 = p[6].parse().unwrap();
+            assert!(length <= 8);
+            let bytes: [i8; 8] = std::array::from_fn(|i| match i {
+                0 => first as i8,
+                1 => second as i8,
+                7 => 0,
+                _ => (seed + i as u32 * 37) as i8,
+            });
+            let before = bytes;
+            for _repeat in 0..2 {
+                calls += 1;
+                let actual = match catch_unwind(AssertUnwindSafe(|| {
+                    bAtomHasValence3(&bytes[..length], charge, radical)
+                })) {
+                    Ok(Ok(v)) => {
+                        completed += 1;
+                        Some(("OK", v))
+                    }
+                    Ok(Err(SourceHeapError::MissingNulTerminator)) => {
+                        missing += 1;
+                        Some(("MISSING", -1))
+                    }
+                    Ok(Err(_)) => {
+                        unexpected += 1;
+                        None
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0154: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => audit154 += 1,
+                            Some(
+                                "INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => audit162 += 1,
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => audit159 += 1,
+                            _ => unexpected += 1,
+                        }
+                        None
+                    }
+                };
+                changes += usize::from(bytes != before);
+                if let Some((tag, value)) = actual {
+                    use std::fmt::Write;
+                    let mut output = format!("{tag} {value} ");
+                    for b in bytes {
+                        write!(output, "{:02x}", b as u8).unwrap()
+                    }
+                    differences += usize::from(output != expected);
+                }
+            }
+        }
+        eprintln!(
+            "VALENCE_THREE COUNTS calls={calls} completed={completed} missing={missing} audit154={audit154} audit162={audit162} audit159={audit159} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 576498);
+        assert_eq!(
+            (
+                audit154,
+                audit162,
+                audit159,
+                unexpected,
+                differences,
+                changes
+            ),
+            (0, 0, 0, 0, 0, 0)
+        );
+        assert_eq!((completed, missing), (570244, 6254));
+    }
+}
+
+#[cfg(test)]
+mod middle_allene_regressions {
+    use super::bCanAtomBeMiddleAllene;
+    use crate::source_types::SourceHeapError;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    #[test]
+    fn complete_middle_allene_source_order_signed_gates_reached_errors_and_backing() {
+        let inputs = include_str!(
+            "../../../../../testdata/inchi/expected/official/middle_allene/inputs.txt"
+        );
+        let expected = include_str!(
+            "../../../../../testdata/inchi/expected/official/middle_allene/expected.txt"
+        );
+        assert_eq!(inputs.lines().count(), 504231);
+        assert_eq!(expected.lines().count(), 504231);
+        let (
+            mut calls,
+            mut completed,
+            mut missing,
+            mut audit154,
+            mut audit162,
+            mut audit159,
+            mut audit321,
+            mut unexpected,
+            mut differences,
+            mut changes,
+        ) = (
+            0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize,
+        );
+        for (id, (input, expected)) in inputs.lines().zip(expected.lines()).enumerate() {
+            let p: Vec<_> = input.split_whitespace().collect();
+            assert_eq!(p.len(), 9);
+            assert_eq!(p[0].parse::<usize>().unwrap(), id);
+            let length: usize = p[1].parse().unwrap();
+            let first: u8 = p[2].parse().unwrap();
+            let second: u8 = p[3].parse().unwrap();
+            let third: u8 = p[4].parse().unwrap();
+            let charge: i8 = p[5].parse().unwrap();
+            let radical: i8 = p[6].parse().unwrap();
+            let seed: u32 = p[7].parse().unwrap();
+            assert!(length <= 8);
+            let bytes: [i8; 8] = std::array::from_fn(|i| match i {
+                0 => first as i8,
+                1 => second as i8,
+                2 => third as i8,
+                7 => 0,
+                _ => (seed + i as u32 * 37) as i8,
+            });
+            let before = bytes;
+            for _repeat in 0..2 {
+                calls += 1;
+                let actual = match catch_unwind(AssertUnwindSafe(|| {
+                    bCanAtomBeMiddleAllene(&bytes[..length], charge, radical)
+                })) {
+                    Ok(Ok(v)) => {
+                        completed += 1;
+                        Some(("OK", v))
+                    }
+                    Ok(Err(SourceHeapError::MissingNulTerminator)) => {
+                        missing += 1;
+                        Some(("MISSING", -1))
+                    }
+                    Ok(Err(_)) => {
+                        unexpected += 1;
+                        None
+                    }
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .copied()
+                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+                        match message {
+                            Some(
+                                "INCHI-AUDIT-0154: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => audit154 += 1,
+                            Some(
+                                "INCHI-AUDIT-0162: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => audit162 += 1,
+                            Some(
+                                "INCHI-AUDIT-0159: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => audit159 += 1,
+                            Some(
+                                "INCHI-AUDIT-0321: suspected source divergence; see dev/audits/inchi/findings.md",
+                            ) => audit321 += 1,
+                            _ => unexpected += 1,
+                        }
+                        None
+                    }
+                };
+                changes += usize::from(bytes != before);
+                if let Some((tag, value)) = actual {
+                    use std::fmt::Write;
+                    let mut output = format!("{tag} {value} ");
+                    for b in bytes {
+                        write!(output, "{:02x}", b as u8).unwrap()
+                    }
+                    differences += usize::from(output != expected);
+                }
+            }
+        }
+        eprintln!(
+            "MIDDLE_ALLENE COUNTS calls={calls} completed={completed} missing={missing} audit154={audit154} audit162={audit162} audit159={audit159} audit321={audit321} unexpected={unexpected} differences={differences} changes={changes}"
+        );
+        assert_eq!(calls, 1008462);
+        assert_eq!(
+            (
+                audit154,
+                audit162,
+                audit159,
+                audit321,
+                unexpected,
+                differences,
+                changes
+            ),
+            (0, 0, 0, 0, 0, 0, 0)
+        );
+        assert_eq!((completed, missing), (985338, 23124));
     }
 }

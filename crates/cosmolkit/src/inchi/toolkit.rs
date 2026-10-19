@@ -300,6 +300,14 @@ impl ic::MolToInchiToolkit for Toolkit {
 }
 
 impl ic::InchiToMolToolkit for Toolkit {
+    fn valence_list(&self, number: u8) -> Result<&[i32], Error> {
+        core::required_valence_list(number).map_err(error)
+    }
+
+    fn default_valence(&self, number: u8) -> Result<i32, Error> {
+        core::rdkit_default_valence(number).map_err(error)
+    }
+
     fn atomic_number(&mut self, symbol: &[u8]) -> Result<i32, Error> {
         let symbol = std::str::from_utf8(symbol).map_err(error)?;
         Element::from_symbol(symbol)
