@@ -1,7 +1,7 @@
 //! Typed sparse fingerprint values; every operation delegates to the facade.
 
 /// Namespace for the facade's source-defined atom-pair encoding vocabulary.
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct AtomPairsParameters;
 
 #[pymethods]
@@ -53,7 +53,7 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::collections::BTreeMap;
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct SparseBitFingerprint {
     pub(crate) inner: ck::SparseBitFingerprint,
 }
@@ -74,7 +74,7 @@ impl SparseBitFingerprint {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct SparseCountFingerprint {
     pub(crate) inner: ck::SparseCountFingerprint,
 }
@@ -157,7 +157,7 @@ impl SparseCountFingerprint {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct SparseCountFingerprint32 {
     pub(crate) inner: ck::SparseCountFingerprint32,
 }

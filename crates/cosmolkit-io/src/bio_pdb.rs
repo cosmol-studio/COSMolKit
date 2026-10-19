@@ -51,7 +51,8 @@ impl PdbInputOptions {
 }
 
 /// Source options for reading PDB text into the detached BIO hierarchy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct BioPdbReadParams {
     /// Values `<= 0` or `> 120` are normalized to Gemmi's 120-byte maximum.
     pub max_line_length: i32,

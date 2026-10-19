@@ -55,7 +55,7 @@ mod tests {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object, eq)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
 pub struct LigandRef {
     inner: ck::LigandRef,
@@ -83,7 +83,7 @@ impl LigandRef {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct TetrahedralStereo {
     pub(crate) inner: ck::TetrahedralStereo,
@@ -109,7 +109,7 @@ impl TetrahedralStereo {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct MatchResult {
     pub(crate) inner: ck::MatchResult,
@@ -132,7 +132,7 @@ impl MatchResult {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct LayeredFingerprintResult {
     pub(crate) inner: ck::LayeredFingerprintResult,
@@ -159,7 +159,7 @@ impl LayeredFingerprintResult {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct AtomPairAtomCodeResult {
     pub(crate) inner: ck::AtomPairAtomCodeResult,

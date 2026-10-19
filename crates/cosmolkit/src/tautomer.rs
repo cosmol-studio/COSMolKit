@@ -17,7 +17,7 @@ pub fn default_tautomer_score_terms() -> &'static [TautomerScoreTerm] {
 }
 
 /// Terms used by the score query or restricted callback score. None selects the source defaults.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 pub struct TautomerScoreParams {
     pub terms: Option<Vec<TautomerScoreTerm>>,
 }
@@ -435,15 +435,22 @@ pub trait TautomerScorer: Send + Sync {
 }
 
 /// Source policy and shared immutable catalog/callback/scorer configuration.
-#[derive(Clone)]
+#[derive(Clone, cosmolkit_macros::Configuration)]
+#[configuration(stateful, accessors)]
 pub struct TautomerParams {
+    #[configuration(flatten)]
     pub(crate) policy: cosmolkit_tautomer::TautomerParams,
+    #[configuration(state)]
     pub(crate) catalog: Arc<cosmolkit_tautomer::TautomerCatalog>,
     // Internal invocation mode for finalizing a selected validated result.
     // It is never exposed or returned as public parameter configuration.
+    #[configuration(state)]
     pub(crate) finalize_selected: bool,
+    #[configuration(adapter)]
     callback: Option<Arc<dyn TautomerEnumerationCallback>>,
+    #[configuration(adapter)]
     scorer: Option<Arc<dyn TautomerScorer>>,
+    #[configuration(adapter)]
     pub score_params: TautomerScoreParams,
 }
 impl fmt::Debug for TautomerParams {
@@ -480,6 +487,16 @@ impl Default for TautomerParams {
         }
     }
 }
+
+impl From<TautomerScoreParams> for TautomerParams {
+    fn from(score_params: TautomerScoreParams) -> Self {
+        Self {
+            score_params,
+            ..Default::default()
+        }
+    }
+}
+
 impl TautomerParams {
     pub fn v1() -> Result<Self, TautomerCatalogError> {
         Ok(Self {

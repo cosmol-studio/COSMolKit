@@ -8,7 +8,7 @@ use crate::fingerprint_values::{
 };
 use crate::host_values::{bool_value, i32_value, sequence, type_error, u32_value};
 use crate::topological_torsion_parameters::{
-    TopologicalTorsionCallParams, TopologicalTorsionFingerprintParams, TopologicalTorsionParams,
+    TopologicalTorsionCallParams, TopologicalTorsionFingerprintParams, TopologicalTorsionGeneratorParams,
 };
 use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
@@ -255,13 +255,13 @@ impl Molecule {
     }
 }
 #[wasm_bindgen(
-    inline_js = "export function visitScalarTopologicalTorsionparams(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid TopologicalTorsionParams\",{cause});}} export function visitScalarTopologicalTorsionatom(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid AtomPairAtomInvariantsGenerator\",{cause});}} export function visitScalarTopologicalTorsioncall(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid TopologicalTorsionCallParams\",{cause});}} export function visitScalarTopologicalTorsionMolecule(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid Molecule\",{cause});}}"
+    inline_js = "export function visitScalarTopologicalTorsionparams(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid TopologicalTorsionGeneratorParams\",{cause});}} export function visitScalarTopologicalTorsionatom(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid AtomPairAtomInvariantsGenerator\",{cause});}} export function visitScalarTopologicalTorsioncall(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid TopologicalTorsionCallParams\",{cause});}} export function visitScalarTopologicalTorsionMolecule(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid Molecule\",{cause});}}"
 )]
 extern "C" {
     #[wasm_bindgen(catch,js_name=visitScalarTopologicalTorsionparams)]
     fn visit_params(
         v: &JsValue,
-        f: &mut dyn FnMut(&TopologicalTorsionParams),
+        f: &mut dyn FnMut(&TopologicalTorsionGeneratorParams),
     ) -> Result<(), JsValue>;
     #[wasm_bindgen(catch,js_name=visitScalarTopologicalTorsionatom)]
     fn visit_atom(
@@ -278,19 +278,19 @@ extern "C" {
 }
 fn with_params<T>(
     value: &JsValue,
-    run: impl FnOnce(Option<&ck::TopologicalTorsionParams>) -> Result<T, JsValue>,
+    run: impl FnOnce(Option<&ck::TopologicalTorsionGeneratorParams>) -> Result<T, JsValue>,
 ) -> Result<T, JsValue> {
     if value.is_null() || value.is_undefined() {
         return run(None);
     }
     let mut run = Some(run);
     let mut out = None;
-    visit_params(value, &mut |v: &TopologicalTorsionParams| {
+    visit_params(value, &mut |v: &TopologicalTorsionGeneratorParams| {
         if let Some(run) = run.take() {
             out = Some(run(Some(&v.inner)));
         }
     })?;
-    out.ok_or_else(|| type_error("TopologicalTorsionParams"))?
+    out.ok_or_else(|| type_error("TopologicalTorsionGeneratorParams"))?
 }
 fn with_atom<T>(
     value: &JsValue,
@@ -332,7 +332,7 @@ pub struct TopologicalTorsionFingerprintGenerator {
 impl TopologicalTorsionFingerprintGenerator {
     #[wasm_bindgen(constructor)]
     pub fn construct(
-        #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionParams | null")]
+        #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionGeneratorParams | null")]
         params: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "AtomPairAtomInvariantsGenerator | null")]
         atom_invariants: JsValue,
@@ -341,7 +341,7 @@ impl TopologicalTorsionFingerprintGenerator {
     }
     #[wasm_bindgen(js_name=new)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionParams | null")]
+        #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionGeneratorParams | null")]
         params: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "AtomPairAtomInvariantsGenerator | null")]
         atom_invariants: JsValue,
@@ -690,11 +690,11 @@ impl TopologicalTorsionSettings {
     ) -> Result<(), JsValue> {
         self.set_count_bounds(value)
     }
-    pub fn params(&self) -> Result<TopologicalTorsionParams, JsValue> {
-        // COSMolKit❗✔️: .map(|inner| TopologicalTorsionParams { inner })
+    pub fn params(&self) -> Result<TopologicalTorsionGeneratorParams, JsValue> {
+        // COSMolKit❗✔️: .map(|inner| TopologicalTorsionGeneratorParams { inner })
         self.inner
             .params()
-            .map(|inner| TopologicalTorsionParams { inner })
+            .map(|inner| TopologicalTorsionGeneratorParams { inner })
             .map_err(error)
     }
 }

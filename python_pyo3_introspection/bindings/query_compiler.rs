@@ -17,7 +17,7 @@ enum QueryOwner {
     SdfRecord(Arc<ck::SdfRecord>),
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct QueryGraph {
     owner: QueryOwner,
@@ -98,35 +98,30 @@ impl QueryGraph {
 #[pymethods]
 impl QueryGraph {
     #[staticmethod]
-    #[pyo3(signature = (text, params=None, *, allow_cxsmiles=None, strict_cxsmiles=None, parse_name=None, merge_hs=None, skip_cleanup=None, debug_parse=None, replacements=None))]
+    #[pyo3(signature = (text, params=crate::arguments::Argument::Missing, *, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing, parse_name=crate::arguments::Argument::Missing, merge_hs=crate::arguments::Argument::Missing, skip_cleanup=crate::arguments::Argument::Missing, debug_parse=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing))]
     fn from_smarts(
         text: &str,
-        params: Option<&SmartsParseParams>,
-        allow_cxsmiles: Option<bool>,
-        strict_cxsmiles: Option<bool>,
-        parse_name: Option<bool>,
-        merge_hs: Option<bool>,
-        skip_cleanup: Option<bool>,
-        debug_parse: Option<bool>,
-        replacements: Option<std::collections::BTreeMap<String, String>>,
+        params: crate::arguments::Argument<Option<PyRef<'_, SmartsParseParams>>>,
+        allow_cxsmiles: crate::arguments::Argument<Option<bool>>,
+        strict_cxsmiles: crate::arguments::Argument<Option<bool>>,
+        parse_name: crate::arguments::Argument<Option<bool>>,
+        merge_hs: crate::arguments::Argument<Option<bool>>,
+        skip_cleanup: crate::arguments::Argument<Option<bool>>,
+        debug_parse: crate::arguments::Argument<Option<bool>>,
+        replacements: crate::arguments::Argument<
+            Option<std::collections::BTreeMap<String, String>>,
+        >,
     ) -> PyResult<Self> {
-        let keywords = [
-            allow_cxsmiles,
-            strict_cxsmiles,
-            parse_name,
-            merge_hs,
-            skip_cleanup,
-            debug_parse,
-        ]
-        .iter()
-        .any(Option::is_some)
-            || replacements.is_some();
-        if params.is_some() && keywords {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keyword configuration are mutually exclusive",
-            ));
-        }
-        if keywords {
+        let keyword_form = allow_cxsmiles.is_supplied()
+            || strict_cxsmiles.is_supplied()
+            || parse_name.is_supplied()
+            || merge_hs.is_supplied()
+            || skip_cleanup.is_supplied()
+            || debug_parse.is_supplied()
+            || replacements.is_supplied();
+        crate::arguments::configuration_arguments!(params; allow_cxsmiles, strict_cxsmiles, parse_name, merge_hs, skip_cleanup, debug_parse, replacements);
+        let params = params.as_deref();
+        if keyword_form {
             Self::_from_smarts_keywords(
                 text,
                 allow_cxsmiles,
@@ -183,7 +178,7 @@ impl QueryGraph {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct CompiledQuery {
     inner: Arc<ck::CompiledQuery>,
 }

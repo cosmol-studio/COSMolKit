@@ -9,7 +9,7 @@ enum_value!(InchiErrorKind, {
     SanitizeFailed, Toolkit, SourcePort
 });
 
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct InchiError {
     inner: ck::InchiError,
 }
@@ -50,22 +50,20 @@ pub fn inchi_to_key(inchi: &str) -> PyResult<String> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (text, params=None, *, sanitize=None, remove_hs=None))]
+#[pyo3(signature = (text, params=crate::arguments::Argument::Missing, *, sanitize=crate::arguments::Argument::Missing, remove_hs=crate::arguments::Argument::Missing))]
 pub fn mol_from_inchi(
     text: &str,
-    params: Option<&crate::params::InchiReadParams>,
-    sanitize: Option<bool>,
-    remove_hs: Option<bool>,
+    params: crate::arguments::Argument<Option<PyRef<'_, crate::params::InchiReadParams>>>,
+    sanitize: crate::arguments::Argument<Option<bool>>,
+    remove_hs: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Molecule> {
-    if let Some(params) = params {
-        if sanitize.is_some() || remove_hs.is_some() {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "parameter object and configuration keywords are mutually exclusive",
-            ));
-        }
-        _mol_from_inchi_params(text, Some(params))
-    } else {
+    let keyword_form = sanitize.is_supplied() || remove_hs.is_supplied();
+    crate::arguments::configuration_arguments!(params; sanitize, remove_hs);
+    let params = params.as_deref();
+    if keyword_form {
         _mol_from_inchi_keywords(text, sanitize, remove_hs)
+    } else {
+        _mol_from_inchi_params(text, params)
     }
 }
 

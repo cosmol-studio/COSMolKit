@@ -135,7 +135,7 @@ enum ViewStorage {
     Owned(Mutex<ck::TautomerMoleculeView<'static>>),
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct TautomerMoleculeView {
     storage: ViewStorage,
 }
@@ -255,7 +255,7 @@ impl TautomerMoleculeView {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct TautomerProgress {
     storage: ProgressStorage,
 }
@@ -342,7 +342,7 @@ impl TautomerProgress {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 struct Entries {
     progress: ProgressStorage,
     index: usize,

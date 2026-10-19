@@ -1,6 +1,6 @@
-import { Molecule, Fingerprint, MorganFingerprintGenerator, MorganAtomInvariantsGenerator, MorganParams, TopologicalFingerprintParams, TopologicalFingerprintOutputRequest, LayeredFingerprintParams, PatternFingerprintParams } from "cosmolkit-generated";
+import { Molecule, Fingerprint, MorganFingerprintGenerator, MorganAtomInvariantsGenerator, MorganGeneratorParams, TopologicalFingerprintParams, TopologicalFingerprintOutputRequest, LayeredFingerprintParams, PatternFingerprintParams } from "cosmolkit-generated";
 const molecule = Molecule.fromSmiles("CCO");
-const generator = new MorganFingerprintGenerator(new MorganParams(0), MorganAtomInvariantsGenerator.features([]));
+const generator = new MorganFingerprintGenerator(new MorganGeneratorParams(0), MorganAtomInvariantsGenerator.features([]));
 const morgan: Fingerprint = molecule.fingerprintMorganWithGenerator(generator);
 const topological = molecule.fingerprintTopologicalWithOutputWithParams(new TopologicalFingerprintParams(), new TopologicalFingerprintOutputRequest(true, true));
 const paths: Map<number, number[][]> = topological.bitInfo();

@@ -2,14 +2,14 @@ use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum BioSelectionParseErrorKind {
     Syntax,
     SeqidRange,
 }
 
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioSelectionParseError {
     inner: ck::BioSelectionParseError,
 }
@@ -64,7 +64,7 @@ impl BioSelectionParseError {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct BioSelection {
     pub(crate) inner: ck::BioSelection,
 }

@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 // getters avoid cloning Rust strings before Python creates its own value.
 macro_rules! scalar_record {
     ($name:ident, {$($field:ident: $ty:ty),+ $(,)?}) => {
-        #[pyclass(module="fixed_projection._native", frozen, from_py_object)]
+        #[pyclass(module="cosmolkit", frozen, from_py_object)]
         #[derive(Clone)]
         pub struct $name { pub(crate) inner: ck::$name }
         #[pymethods]
@@ -43,7 +43,7 @@ scalar_record!(BioDiffractionInfo, {
     optics: String, detector: String, detector_make: String,
 });
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioStructureSourceState {
     pub(crate) inner: ck::BioStructureSourceState,

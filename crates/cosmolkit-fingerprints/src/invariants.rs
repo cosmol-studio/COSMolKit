@@ -732,7 +732,7 @@ mod tests {
         get_feature_invariants_with_patterns,
     };
     use crate::generator::FingerprintArguments;
-    use crate::morgan::{MorganGenerator, MorganParams, get_morgan_generator};
+    use crate::morgan::{MorganGenerator, MorganGeneratorParams, get_morgan_generator};
     use crate::{FingerprintError, MorganError};
     use cosmolkit_core::{ValenceParams, assign_valence, fast_find_rings};
     use cosmolkit_model::{
@@ -819,8 +819,8 @@ mod tests {
         ];
 
         assert_eq!(
-            MorganParams::default(),
-            MorganParams {
+            MorganGeneratorParams::default(),
+            MorganGeneratorParams {
                 radius: 3,
                 include_chirality: false,
                 use_bond_types: true,
@@ -845,7 +845,7 @@ mod tests {
                 include_redundant_environments,
             ] in OPTIONS
             {
-                let params = MorganParams {
+                let params = MorganGeneratorParams {
                     radius,
                     include_chirality,
                     use_bond_types,

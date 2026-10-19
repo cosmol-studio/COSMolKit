@@ -6,7 +6,8 @@ use crate::Molecule;
 ///
 /// Active atom and bond subsets remain detached implementation APIs because
 /// they do not describe an ordinary single-molecule query projection.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct DistanceMatrixParams {
     pub use_bond_order: bool,
     pub use_atom_weights: bool,

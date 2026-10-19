@@ -1,15 +1,17 @@
 use crate::ReactionCoordinateSelection;
 use cosmolkit_smiles::CxSmilesFields;
 /// Source-consumed SMARTS/CX options; canonical sorts strings within each role.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct ReactionWriteParams {
     pub canonical: bool,
     pub isomeric_smiles: bool,
     pub rooted_at_atom: Option<usize>,
     pub include_dative_bonds: bool,
     pub include_cx: bool,
+    #[configuration(none_default)]
     pub cx_fields: CxSmilesFields,
     /// Per template in original reactant, agent, product insertion order.
+    #[configuration(none_default)]
     pub coordinate_selections: Vec<ReactionCoordinateSelection>,
 }
 impl Default for ReactionWriteParams {

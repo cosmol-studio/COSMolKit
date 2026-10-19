@@ -37,11 +37,13 @@ impl CoordinateZPolicy {
         }
     }
 }
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct Coordinate2DInputParams {
     pub z_policy: CoordinateZPolicy,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct Coordinate3DInputParams {
     pub is_3d: bool,
 }
@@ -50,7 +52,8 @@ impl Default for Coordinate3DInputParams {
         Self { is_3d: true }
     }
 }
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct Replace3DCoordinatesParams {
     /// Actual ThreeD conformer ID; the default selects ID0 and never falls back.
     pub conformer_id: usize,

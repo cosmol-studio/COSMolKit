@@ -182,7 +182,7 @@ error_projection!(MoleculeFragmentsFailure, MoleculeFragmentsFailureKind, ck::Mo
     } }
 });
 
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 #[doc = r#"{"role":"error_record"}"#]
 pub struct MoleculeFragmentsError {
     inner: ck::MoleculeFragmentsError,

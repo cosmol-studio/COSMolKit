@@ -26,12 +26,13 @@ bio = ["dep:cosmolkit-bio", "dep:compact_str", "dep:lexical-core"]
 test-probes = ["bio", "cosmolkit-bio/test-probes"]
 
 [dependencies]
-cosmolkit-depict = { version = "0.5.1-rc.4", path = "../cosmolkit-depict", optional = true }
-cosmolkit-bio = { version = "0.5.1-rc.4", path = "../cosmolkit-bio", optional = true }
-cosmolkit-core = { version = "0.5.1-rc.4", path = "../cosmolkit-core", optional = true }
-cosmolkit-model = { version = "0.5.1-rc.4", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.1-rc.4", path = "../cosmolkit-search", optional = true, default-features = false }
-cosmolkit-types = { version = "0.5.1-rc.4", path = "../cosmolkit-types" }
+cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.5.1-rc.5" }
+cosmolkit-depict = { version = "0.5.1-rc.5", path = "../cosmolkit-depict", optional = true }
+cosmolkit-bio = { version = "0.5.1-rc.5", path = "../cosmolkit-bio", optional = true }
+cosmolkit-core = { version = "0.5.1-rc.5", path = "../cosmolkit-core", optional = true }
+cosmolkit-model = { version = "0.5.1-rc.5", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.1-rc.5", path = "../cosmolkit-search", optional = true, default-features = false }
+cosmolkit-types = { version = "0.5.1-rc.5", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
 compact_str = { version = "0.10.0", default-features = false, features = ["std"], optional = true }
 lexical-core = { version = "=1.0.6", default-features = false, features = ["parse-floats"], optional = true }
@@ -48,7 +49,7 @@ name = "migration_io_bio_rows"
 required-features = ["bio", "test-probes"]
 
 [dev-dependencies]
-cosmolkit-model = { version = "0.5.1-rc.4", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
+cosmolkit-model = { version = "0.5.1-rc.5", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
 tempfile = "3"
 
 [[test]]

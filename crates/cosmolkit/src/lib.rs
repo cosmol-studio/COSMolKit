@@ -28,10 +28,10 @@ mod forcefields;
 pub use cosmolkit_core::FragmentCoordinateViewError;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{
-    AtomPairAtomInvariantsGenerator, AtomPairError, AtomPairParams, Fingerprint,
+    AtomPairAtomInvariantsGenerator, AtomPairError, AtomPairGeneratorParams, Fingerprint,
     FingerprintAdditionalOutput, FingerprintError, FingerprintJsonError, FingerprintWorkerError,
-    MorganError, MorganParams, SparseBitFingerprint, SparseCountFingerprint,
-    SparseCountFingerprint32, TopologicalTorsionError, TopologicalTorsionParams,
+    MorganError, MorganGeneratorParams, SparseBitFingerprint, SparseCountFingerprint,
+    SparseCountFingerprint32, TopologicalTorsionError, TopologicalTorsionGeneratorParams,
 };
 #[cfg(all(feature = "cap-forcefields", not(target_family = "wasm")))]
 pub use cosmolkit_forcefields::DispatchedUffOptimizationError;
@@ -106,6 +106,8 @@ mod inchi;
 #[cfg(feature = "cap-matrices")]
 mod matrices;
 mod molecule;
+#[doc(hidden)]
+pub use cosmolkit_macros::{Configuration, project_configuration};
 mod molecule_builder;
 #[cfg(feature = "cap-inchi")]
 pub use cosmolkit_inchi::{InchiError, InchiErrorKind};
@@ -134,6 +136,8 @@ pub(crate) use ops::{
 pub use reaction::{
     Reaction, ReactionApplyResult, ReactionTemplateRemoval, parse_smirks, parse_smirks_with_params,
 };
+#[cfg(feature = "cap-fingerprints")]
+mod fingerprint_params;
 #[cfg(feature = "cap-fingerprints")]
 mod morgan;
 #[cfg(feature = "cap-fingerprints")]
@@ -555,6 +559,9 @@ pub(crate) use ops::{WithAlignedConformersAccess, WithAlignmentToAccess};
 #[cfg(feature = "cap-fingerprints")]
 mod maccs_fingerprint;
 #[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_MaccsFingerprintParams;
+#[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{AtomCodeError, MaccsFingerprintError, MaccsFingerprintParams};
 
 #[cfg(any(feature = "cap-conformer", feature = "cap-stereoisomers"))]
@@ -652,3 +659,279 @@ pub use persistent_forcefields::{
     MmffForceFieldParams, MolecularForceField, MolecularForceFieldErrorKind, UffForceFieldError,
     UffForceFieldParams,
 };
+
+#[cfg(feature = "cap-transforms")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_AtomPositionParams;
+#[cfg(feature = "cap-transforms")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_Coordinate3DInputParams;
+#[cfg(feature = "cap-matrices")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_DistanceMatrix3dParams;
+#[cfg(feature = "cap-kekulize")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_KekulizeParams;
+#[cfg(feature = "cap-stereo")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_PotentialStereoParams;
+#[cfg(feature = "cap-hydrogens")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_RemoveHsParams;
+#[cfg(feature = "cap-transforms")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_Replace3DCoordinatesParams;
+#[cfg(feature = "cap-rings")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_RingSearchParams;
+#[cfg(feature = "cap-stereo")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_StructureTagParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_PatternFingerprintParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_TopologicalFingerprintOutputRequest;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use cosmolkit_forcefields::__ck_configuration_MmffConformerOptimizationParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use cosmolkit_forcefields::__ck_configuration_MmffEvaluationParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use cosmolkit_forcefields::__ck_configuration_MmffOptimizationParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use cosmolkit_forcefields::__ck_configuration_MmffPropertiesParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use cosmolkit_forcefields::__ck_configuration_UffEvaluationParams;
+#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+#[doc(hidden)]
+pub use cosmolkit_io::__ck_configuration_BioMoleculeParams;
+#[cfg(feature = "cap-bio")]
+#[doc(hidden)]
+pub use cosmolkit_io::__ck_configuration_BioPdbReadParams;
+#[cfg(feature = "cap-bio")]
+#[doc(hidden)]
+pub use cosmolkit_io::__ck_configuration_BioPdbWriteParams;
+#[cfg(feature = "cap-io")]
+#[doc(hidden)]
+pub use cosmolkit_io::__ck_configuration_XyzWriteParams;
+#[cfg(feature = "cap-reaction")]
+#[doc(hidden)]
+pub use cosmolkit_reaction::__ck_configuration_ReactionApplyParams;
+#[cfg(feature = "cap-reaction")]
+#[doc(hidden)]
+pub use cosmolkit_reaction::__ck_configuration_ReactionTemplateRemovalParams;
+#[cfg(feature = "cap-reaction")]
+#[doc(hidden)]
+pub use cosmolkit_reaction::__ck_configuration_ReactionValidationParams;
+#[cfg(feature = "cap-search")]
+#[doc(hidden)]
+pub use cosmolkit_search::__ck_configuration_McsAtomCompareParameters;
+#[cfg(feature = "cap-search")]
+#[doc(hidden)]
+pub use cosmolkit_search::__ck_configuration_McsBondCompareParameters;
+#[cfg(feature = "cap-search")]
+#[doc(hidden)]
+pub use cosmolkit_search::__ck_configuration_SmartsWriteParams;
+#[cfg(feature = "cap-smiles")]
+#[doc(hidden)]
+pub use cosmolkit_smiles::__ck_configuration_RandomSmilesWriteParams;
+#[cfg(feature = "cap-inchi")]
+#[doc(hidden)]
+pub use inchi::__configuration_InchiReadParams;
+#[cfg(feature = "cap-inchi")]
+#[doc(hidden)]
+pub use inchi::__configuration_InchiWriteParams;
+#[cfg(feature = "cap-matrices")]
+#[doc(hidden)]
+pub use matrices::__configuration_DistanceMatrixParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use ops::__configuration_UffConformerOptimizationParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use ops::__configuration_UffOptimizationParams;
+
+#[cfg(feature = "cap-batch")]
+#[doc(hidden)]
+pub use batch::__configuration_BatchImageParams;
+#[cfg(feature = "cap-alignment")]
+#[doc(hidden)]
+pub use cosmolkit_alignment::__ck_configuration_AlignmentParameters;
+#[cfg(feature = "cap-alignment")]
+#[doc(hidden)]
+pub use cosmolkit_alignment::__ck_configuration_AllConformerRmsdParameters;
+#[cfg(feature = "cap-alignment")]
+#[doc(hidden)]
+pub use cosmolkit_alignment::__ck_configuration_BestAlignmentParameters;
+#[cfg(feature = "cap-alignment")]
+#[doc(hidden)]
+pub use cosmolkit_alignment::__ck_configuration_ConformerAlignmentParameters;
+#[cfg(feature = "cap-alignment")]
+#[doc(hidden)]
+pub use cosmolkit_alignment::__ck_configuration_CoordinateRmsdParameters;
+#[cfg(feature = "cap-hydrogens")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_AddHsParams;
+#[cfg(feature = "cap-depict")]
+#[doc(hidden)]
+pub use cosmolkit_depict::__ck_configuration_Compute2DCoordinatesParams as __ck_configuration_Coordinate2DParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_AtomPairGeneratorParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_LayeredFingerprintParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_MorganGeneratorParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_TopologicalFingerprintParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_TopologicalTorsionGeneratorParams;
+#[cfg(feature = "cap-reaction")]
+#[doc(hidden)]
+pub use cosmolkit_reaction::__ck_configuration_ReactionParseParams;
+#[cfg(feature = "cap-reaction")]
+#[doc(hidden)]
+pub use cosmolkit_reaction::__ck_configuration_ReactionRunParams;
+#[cfg(feature = "cap-reaction")]
+#[doc(hidden)]
+pub use cosmolkit_reaction::__ck_configuration_ReactionWriteParams;
+#[cfg(feature = "cap-search")]
+#[doc(hidden)]
+pub use cosmolkit_search::__ck_configuration_McsParameters;
+#[cfg(feature = "cap-search")]
+#[doc(hidden)]
+pub use cosmolkit_search::__ck_configuration_SmartsParseParams;
+#[cfg(feature = "cap-smiles")]
+#[doc(hidden)]
+pub use cosmolkit_smiles::__ck_configuration_CxSmilesWriteParams;
+#[cfg(feature = "cap-smiles")]
+#[doc(hidden)]
+pub use cosmolkit_smiles::__ck_configuration_SmilesParseParams;
+#[cfg(feature = "cap-stereo")]
+#[doc(hidden)]
+pub use cosmolkit_stereo::__ck_configuration_CipLabelOptions;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use legacy_topological_torsion::__configuration_LegacyTopologicalTorsionParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use morgan_reusable::__configuration_MorganCallParams;
+#[cfg(feature = "cap-smiles")]
+#[doc(hidden)]
+pub use smiles::__configuration_FragmentCxSmilesWriteParams;
+#[cfg(feature = "cap-smiles")]
+#[doc(hidden)]
+pub use smiles::__configuration_FragmentSmilesWriteParams;
+#[cfg(feature = "cap-tautomer")]
+#[doc(hidden)]
+pub use tautomer::__configuration_TautomerScoreParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use topological_torsion::__configuration_TopologicalTorsionCallParams;
+
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use atom_pair::__configuration_AtomPairFingerprintParams;
+#[cfg(feature = "cap-batch")]
+#[doc(hidden)]
+pub use batch::__configuration_BatchParams;
+#[cfg(feature = "cap-batch")]
+#[doc(hidden)]
+pub use batch::__configuration_BatchQueryParams;
+#[cfg(feature = "cap-batch")]
+#[doc(hidden)]
+pub use cosmolkit_batch::__ck_configuration_BatchExportParams;
+#[cfg(feature = "cap-conformer")]
+#[doc(hidden)]
+pub use cosmolkit_conformer::__ck_configuration_EmbedParams;
+#[cfg(feature = "cap-aromaticity")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_AromaticityParams;
+#[cfg(feature = "cap-transforms")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_Coordinate2DInputParams;
+#[cfg(feature = "cap-sanitize")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_SanitizeParams;
+#[cfg(feature = "cap-valence")]
+#[doc(hidden)]
+pub use cosmolkit_core::__ck_configuration_ValenceParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_AtomPairAtomInvariantsGenerator;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use cosmolkit_fingerprints::__ck_configuration_AvalonFingerprintParams;
+#[cfg(feature = "cap-bio")]
+#[doc(hidden)]
+pub use cosmolkit_io::__ck_configuration_BioMmcifWriteParams;
+#[cfg(feature = "cap-bio")]
+#[doc(hidden)]
+pub use cosmolkit_io::__ck_configuration_BioReadParams;
+#[cfg(feature = "cap-io")]
+#[doc(hidden)]
+pub use cosmolkit_io::__ck_configuration_MolBlockWriteParams;
+#[cfg(feature = "cap-io")]
+#[doc(hidden)]
+pub use cosmolkit_io::__ck_configuration_PdbExportParams as __ck_configuration_PdbWriteParams;
+#[cfg(feature = "cap-reaction")]
+#[doc(hidden)]
+pub use cosmolkit_reaction::__ck_configuration_ReactionSingleRunParams;
+#[cfg(feature = "cap-search")]
+#[doc(hidden)]
+pub use cosmolkit_search::__ck_configuration_SubstructMatchParams;
+#[cfg(feature = "cap-smiles")]
+#[doc(hidden)]
+pub use cosmolkit_smiles::__ck_configuration_SmilesWriteParams;
+#[cfg(feature = "cap-stereoisomers")]
+#[doc(hidden)]
+pub use cosmolkit_stereo::__ck_configuration_StereoisomerOptions;
+#[cfg(feature = "cap-io")]
+#[doc(hidden)]
+pub use molecular_io::__configuration_Mol2ReadParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use morgan::__configuration_MorganFingerprintParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use morgan_reusable::__configuration_MorganBondInvariantsGenerator;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use persistent_forcefields::__configuration_ForceFieldAngleConstraintParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use persistent_forcefields::__configuration_ForceFieldDistanceConstraintParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use persistent_forcefields::__configuration_ForceFieldMinimizeParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use persistent_forcefields::__configuration_ForceFieldPositionConstraintParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use persistent_forcefields::__configuration_ForceFieldTorsionConstraintParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use persistent_forcefields::__configuration_MmffForceFieldParams;
+#[cfg(feature = "cap-forcefields")]
+#[doc(hidden)]
+pub use persistent_forcefields::__configuration_UffForceFieldParams;
+#[cfg(feature = "cap-io")]
+#[doc(hidden)]
+pub use sdf::__configuration_SdfReadParams;
+#[cfg(feature = "cap-tautomer")]
+#[doc(hidden)]
+pub use tautomer::__configuration_TautomerParams;
+#[cfg(feature = "cap-fingerprints")]
+#[doc(hidden)]
+pub use topological_torsion::__configuration_TopologicalTorsionFingerprintParams;

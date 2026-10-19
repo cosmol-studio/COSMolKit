@@ -2,85 +2,14 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::collections::BTreeMap;
 
-#[pyclass(module = "fixed_projection._native")]
-pub struct AtomPairAtomInvariantsGenerator {
-    pub(crate) inner: ck::AtomPairAtomInvariantsGenerator,
-}
+ck::project_configuration!(ck::AtomPairAtomInvariantsGenerator, methods {
+    fn info_string(&self) -> String { self.inner.info_string() }
+    fn to_json(&self) -> String { self.inner.to_json() }
+});
 
-#[pymethods]
-impl AtomPairAtomInvariantsGenerator {
-    #[new]
-    #[pyo3(signature = (*, include_chirality=ck::AtomPairAtomInvariantsGenerator::default().include_chirality, topological_torsion_correction=ck::AtomPairAtomInvariantsGenerator::default().topological_torsion_correction))]
-    fn construct(include_chirality: bool, topological_torsion_correction: bool) -> Self {
-        Self {
-            inner: ck::AtomPairAtomInvariantsGenerator {
-                include_chirality,
-                topological_torsion_correction,
-            },
-        }
-    }
-    #[getter]
-    fn include_chirality(&self) -> bool {
-        self.inner.include_chirality
-    }
-    #[setter]
-    fn set_include_chirality(&mut self, value: bool) {
-        self.inner.include_chirality = value;
-    }
-    #[getter]
-    fn topological_torsion_correction(&self) -> bool {
-        self.inner.topological_torsion_correction
-    }
-    #[setter]
-    fn set_topological_torsion_correction(&mut self, value: bool) {
-        self.inner.topological_torsion_correction = value;
-    }
-    fn info_string(&self) -> String {
-        self.inner.info_string()
-    }
-    fn to_json(&self) -> String {
-        self.inner.to_json()
-    }
-}
+ck::project_configuration!(ck::MorganBondInvariantsGenerator);
 
-#[pyclass(module = "fixed_projection._native")]
-pub struct MorganBondInvariantsGenerator {
-    pub(crate) inner: ck::MorganBondInvariantsGenerator,
-}
-
-#[pymethods]
-impl MorganBondInvariantsGenerator {
-    #[new]
-    #[pyo3(signature = (*, use_bond_types=ck::MorganBondInvariantsGenerator::default().use_bond_types(), include_chirality=ck::MorganBondInvariantsGenerator::default().include_chirality()))]
-    fn construct(use_bond_types: bool, include_chirality: bool) -> Self {
-        Self {
-            inner: ck::MorganBondInvariantsGenerator::new(use_bond_types, include_chirality),
-        }
-    }
-    #[staticmethod]
-    #[pyo3(signature = (use_bond_types=ck::MorganBondInvariantsGenerator::default().use_bond_types(), include_chirality=ck::MorganBondInvariantsGenerator::default().include_chirality()))]
-    fn new(use_bond_types: bool, include_chirality: bool) -> Self {
-        Self::construct(use_bond_types, include_chirality)
-    }
-    #[getter]
-    fn use_bond_types(&self) -> bool {
-        self.inner.use_bond_types()
-    }
-    #[setter]
-    fn set_use_bond_types(&mut self, value: bool) {
-        self.inner = ck::MorganBondInvariantsGenerator::new(value, self.inner.include_chirality());
-    }
-    #[getter]
-    fn include_chirality(&self) -> bool {
-        self.inner.include_chirality()
-    }
-    #[setter]
-    fn set_include_chirality(&mut self, value: bool) {
-        self.inner = ck::MorganBondInvariantsGenerator::new(self.inner.use_bond_types(), value);
-    }
-}
-
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct FingerprintAdditionalOutput {
     pub(crate) inner: ck::FingerprintAdditionalOutput,
 }

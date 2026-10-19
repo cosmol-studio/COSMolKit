@@ -1,5 +1,5 @@
 //! Reusable Morgan state: each method forwards to the canonical live facade.
-use crate::fingerprint_configuration::MorganParams;
+use crate::fingerprint_configuration::MorganGeneratorParams;
 use crate::fingerprint_providers::{FingerprintAdditionalOutput, MorganBondInvariantsGenerator};
 use crate::fingerprint_values::{
     SparseBitFingerprint, SparseCountFingerprint, SparseCountFingerprint32,
@@ -20,11 +20,15 @@ macro_rules! molecule_call {
             params: Option<&crate::params::MorganCallParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<$result> {
-            let params = params.map(|value| &value.inner);
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
             let output = output.map(|value| &mut value.inner);
-            py.detach(|| molecule.inner.$name(&generator.inner, params, output))
-                .map(|inner| $result { inner })
-                .map_err(MorganReadError::from_rust)
+            py.detach(|| {
+                molecule
+                    .inner
+                    .$name(&generator.inner, params.as_ref(), output)
+            })
+            .map(|inner| $result { inner })
+            .map_err(MorganReadError::from_rust)
         }
     };
 }
@@ -43,24 +47,26 @@ molecule_call!(
 );
 
 pub(crate) fn call_keywords(
+    py: Python<'_>,
     from_atoms: Option<Vec<u32>>,
     ignore_atoms: Option<Vec<u32>>,
     custom_atom_invariants: Option<Vec<u32>>,
     custom_bond_invariants: Option<Vec<u32>>,
     conformer_id: Option<i32>,
-) -> crate::params::MorganCallParams {
-    crate::params::MorganCallParams {
-        inner: ck::MorganCallParams::new(
+) -> PyResult<crate::params::MorganCallParams> {
+    crate::params::MorganCallParams::from_rust(
+        py,
+        ck::MorganCallParams::new(
             from_atoms,
             ignore_atoms,
             custom_atom_invariants,
             custom_bond_invariants,
             conformer_id.unwrap_or_else(|| ck::MorganCallParams::default().conformer_id),
         ),
-    }
+    )
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct MorganFingerprintGenerator {
     pub(crate) inner: ck::MorganFingerprintGenerator,
@@ -71,12 +77,14 @@ impl MorganFingerprintGenerator {
     #[new]
     #[pyo3(signature = (params=None, atom_invariants=None, bond_invariants=None))]
     fn construct(
-        params: Option<&MorganParams>,
+        py: Python<'_>,
+        params: Option<&MorganGeneratorParams>,
         atom_invariants: Option<&MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&MorganBondInvariantsGenerator>,
     ) -> PyResult<Self> {
+        let params = params.map(|value| value.to_rust(py)).transpose()?;
         ck::MorganFingerprintGenerator::new(
-            params.map(|value| &value.inner),
+            params.as_ref(),
             atom_invariants.map(|value| &value.inner),
             bond_invariants.map(|value| &value.inner),
         )
@@ -86,11 +94,12 @@ impl MorganFingerprintGenerator {
     #[staticmethod]
     #[pyo3(signature = (params=None, atom_invariants=None, bond_invariants=None))]
     fn new(
-        params: Option<&MorganParams>,
+        py: Python<'_>,
+        params: Option<&MorganGeneratorParams>,
         atom_invariants: Option<&MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&MorganBondInvariantsGenerator>,
     ) -> PyResult<Self> {
-        Self::construct(params, atom_invariants, bond_invariants)
+        Self::construct(py, params, atom_invariants, bond_invariants)
     }
     #[staticmethod]
     fn from_json(json: &str) -> PyResult<Self> {
@@ -210,7 +219,7 @@ impl MorganFingerprintGenerator {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct MorganSettings {
     inner: ck::MorganSettings,
 }
@@ -231,8 +240,9 @@ macro_rules! live_settings {
                 fn [<set_ $field>](&mut self, value: $ty) -> PyResult<()> {
                     self.inner.[<set_ $field>](value).map_err(MorganReadError::from_rust)
                 })+
-                fn params(&self) -> PyResult<MorganParams> {
-                    self.inner.params().map(|inner| MorganParams { inner }).map_err(MorganReadError::from_rust)
+                fn params(&self, py: Python<'_>) -> PyResult<MorganGeneratorParams> {
+                    let value = self.inner.params().map_err(MorganReadError::from_rust)?;
+                    MorganGeneratorParams::from_rust(py, value)
                 }
             }
         }
@@ -266,20 +276,18 @@ mod tests {
                     inner: source.clone(),
                 },
             )?;
-            let mut native_params = ck::MorganParams::default();
+            let mut native_params = ck::MorganGeneratorParams::default();
             native_params.fp_size = 128;
             native_params.include_chirality = true;
-            let params = MorganParams {
-                inner: native_params.clone(),
-            };
+            let params = MorganGeneratorParams::from_rust(py, native_params.clone())?;
             let generator = Py::new(
                 py,
-                MorganFingerprintGenerator::new(Some(&params), None, None)?,
+                MorganFingerprintGenerator::new(py, Some(&params), None, None)?,
             )?;
             let settings = generator.bind(py).call_method0("settings")?;
             settings.setattr("radius", 3)?;
             assert_eq!(generator.borrow(py).inner.settings().radius().unwrap(), 3);
-            assert_eq!(params.inner, native_params);
+            assert_eq!(params.to_rust(py)?, native_params);
             let json = generator
                 .bind(py)
                 .call_method0("to_json")?
@@ -289,7 +297,7 @@ mod tests {
                 recreated.inner.settings().params().unwrap(),
                 generator.borrow(py).inner.settings().params().unwrap()
             );
-            let call = call_keywords(Some(vec![0, 2]), None, None, None, None);
+            let call = call_keywords(py, Some(vec![0, 2]), None, None, None, None)?;
             let call = Py::new(py, call)?;
             let output = Py::new(
                 py,
@@ -325,7 +333,7 @@ mod tests {
                         let expected = source
                             .fingerprint_morgan_with_generator(
                                 &generator.borrow(py).inner,
-                                Some(&call.borrow(py).inner),
+                                Some(&call.borrow(py).to_rust(py)?),
                                 None,
                             )
                             .unwrap();
@@ -342,7 +350,7 @@ mod tests {
                         let expected = source
                             .fingerprint_morgan_count_with_generator(
                                 &generator.borrow(py).inner,
-                                Some(&call.borrow(py).inner),
+                                Some(&call.borrow(py).to_rust(py)?),
                                 None,
                             )
                             .unwrap();
@@ -365,7 +373,7 @@ mod tests {
                         let expected = source
                             .fingerprint_morgan_sparse_with_generator(
                                 &generator.borrow(py).inner,
-                                Some(&call.borrow(py).inner),
+                                Some(&call.borrow(py).to_rust(py)?),
                                 None,
                             )
                             .unwrap();
@@ -388,7 +396,7 @@ mod tests {
                         let expected = source
                             .fingerprint_morgan_sparse_count_with_generator(
                                 &generator.borrow(py).inner,
-                                Some(&call.borrow(py).inner),
+                                Some(&call.borrow(py).to_rust(py)?),
                                 None,
                             )
                             .unwrap();

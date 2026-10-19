@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use std::error::Error;
 use std::sync::Arc;
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum ThreadCountErrorKind {
     UndefinedSignedNegation,
@@ -19,7 +19,7 @@ pub enum ThreadCountErrorKind {
     InvalidCpuList,
     AutomaticObservationUnavailable,
 }
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct ThreadCountError {
     node: ErrorRef,
 }
@@ -102,7 +102,7 @@ impl ThreadCountError {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct ThreadSelectionError {
     inner: Arc<ck::ThreadSelectionError>,
 }

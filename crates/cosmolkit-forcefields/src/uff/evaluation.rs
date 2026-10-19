@@ -3,7 +3,8 @@ use cosmolkit_core::{RingInfo, ValenceAssignment};
 use cosmolkit_model::{CoordinateBlock, MoleculeProperties, TopologyBlock};
 use std::{error::Error, fmt};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct UffEvaluationParams {
     pub vdw_threshold: f64,
     pub conformer_id: Option<usize>,

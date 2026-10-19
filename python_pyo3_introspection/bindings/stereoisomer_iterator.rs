@@ -7,7 +7,7 @@ use crate::stereoisomer_options::{
 use pyo3::prelude::*;
 use std::sync::{Mutex, MutexGuard};
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct StereoisomerIterator {
     inner: Mutex<cosmolkit::StereoisomerIterator>,
     source_owner: Option<Py<StereoisomerRandomSource>>,

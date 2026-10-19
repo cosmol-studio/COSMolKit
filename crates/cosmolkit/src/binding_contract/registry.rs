@@ -172,7 +172,7 @@ binding_contract! {
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganCallParams.new",item:callable,owner:type_,rust:crate::MorganCallParams::new,python:"new",javascript:"new",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:from_atoms,type:Option<Vec<u32>>,default:none},{name:ignore_atoms,type:Option<Vec<u32>>,default:none},{name:custom_atom_invariants,type:Option<Vec<u32>>,default:none},{name:custom_bond_invariants,type:Option<Vec<u32>>,default:none},{name:conformer_id,type:i32,default:"-1"}],output:crate::MorganCallParams,error:none,state:value_returning,operation:none,signature:fn(Option<Vec<u32>>,Option<Vec<u32>>,Option<Vec<u32>>,Option<Vec<u32>>,i32)->crate::MorganCallParams,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganFingerprintGenerator.new",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::new,python:"new",javascript:"new",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:params,type:Option<&'a crate::MorganParams>,default:none},{name:atom_invariants,type:Option<&'b crate::MorganAtomInvariantsGenerator>,default:none},{name:bond_invariants,type:Option<&'c crate::MorganBondInvariantsGenerator>,default:none}],output:crate::MorganFingerprintGenerator,error:crate::MorganReadError,state:value_returning,operation:none,signature:for<'a,'b,'c> fn(Option<&'a crate::MorganParams>,Option<&'b crate::MorganAtomInvariantsGenerator>,Option<&'c crate::MorganBondInvariantsGenerator>)->Result<crate::MorganFingerprintGenerator,crate::MorganReadError>,},
+        {semantic_id:"MorganFingerprintGenerator.new",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::new,python:"new",javascript:"new",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:params,type:Option<&'a crate::MorganGeneratorParams>,default:none},{name:atom_invariants,type:Option<&'b crate::MorganAtomInvariantsGenerator>,default:none},{name:bond_invariants,type:Option<&'c crate::MorganBondInvariantsGenerator>,default:none}],output:crate::MorganFingerprintGenerator,error:crate::MorganReadError,state:value_returning,operation:none,signature:for<'a,'b,'c> fn(Option<&'a crate::MorganGeneratorParams>,Option<&'b crate::MorganAtomInvariantsGenerator>,Option<&'c crate::MorganBondInvariantsGenerator>)->Result<crate::MorganFingerprintGenerator,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganFingerprintGenerator.from_json",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::from_json,python:"from_json",javascript:"fromJson",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:json,type:&'a str,default:required}],output:crate::MorganFingerprintGenerator,error:crate::MorganReadError,state:value_returning,operation:none,signature:for<'a> fn(&'a str)->Result<crate::MorganFingerprintGenerator,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
@@ -230,7 +230,7 @@ binding_contract! {
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganSettings.set_count_bounds",item:callable,owner:type_,rust:crate::MorganSettings::set_count_bounds,python:"set_count_bounds",javascript:"setCountBounds",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:mutable,parameters:[{name:value,type:Vec<u32>,default:required}],output:(),error:crate::MorganReadError,state:in_place,operation:none,signature:for<'a,'b,'c,'d> fn(&'a mut crate::MorganSettings,Vec<u32>)->Result<(),crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganSettings.params",item:callable,owner:type_,rust:crate::MorganSettings::params,python:"params",javascript:"params",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:crate::MorganParams,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganSettings)->Result<crate::MorganParams,crate::MorganReadError>,},
+        {semantic_id:"MorganSettings.params",item:callable,owner:type_,rust:crate::MorganSettings::params,python:"params",javascript:"params",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:crate::MorganGeneratorParams,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganSettings)->Result<crate::MorganGeneratorParams,crate::MorganReadError>,},
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "types.FingerprintPreparationError", item: type, owner: type_,
@@ -1940,7 +1940,7 @@ binding_contract! {
             signature: fn(&crate::BioMmcifReadError) -> crate::BioMmcifReadStage,
         },
         #[cfg(feature = "cap-fingerprints")]
-        { semantic_id: "types.AtomPairParams", item: type, owner: type_, rust: crate::AtomPairParams, python: "AtomPairParams", javascript: "AtomPairParams", feature: "cap-fingerprints", status: experimental,
+        { semantic_id: "types.AtomPairGeneratorParams", item: type, owner: type_, rust: crate::AtomPairGeneratorParams, python: "AtomPairGeneratorParams", javascript: "AtomPairGeneratorParams", feature: "cap-fingerprints", status: experimental,
             python_configuration: [
                 { name: min_distance, python_type: "builtins.int", default: "1" },
                 { name: max_distance, python_type: "builtins.int", default: "30" },
@@ -1954,7 +1954,14 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "types.AtomPairFingerprintParams", item: type, owner: type_, rust: crate::AtomPairFingerprintParams, python: "AtomPairFingerprintParams", javascript: "AtomPairFingerprintParams", feature: "cap-fingerprints", status: experimental,
             python_configuration: [
-                { name: generator, python_type: "typing.Optional[AtomPairParams]", default: "None" },
+                { name: min_distance, python_type: "builtins.int", default: "1" },
+                { name: max_distance, python_type: "builtins.int", default: "30" },
+                { name: include_chirality, python_type: "builtins.bool", default: "False" },
+                { name: use_2d, python_type: "builtins.bool", default: "True" },
+                { name: count_simulation, python_type: "builtins.bool", default: "True" },
+                { name: fp_size, python_type: "builtins.int", default: "2048" },
+                { name: bits_per_feature, python_type: "builtins.int", default: "1" },
+                { name: count_bounds, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
                 { name: from_atoms, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
                 { name: ignore_atoms, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
                 { name: custom_atom_invariants, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
@@ -1996,7 +2003,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "errors.AtomCodeExplanationError", item: type, owner: type_, rust: crate::AtomCodeExplanationError, python: "AtomCodeExplanationError", javascript: "AtomCodeExplanationError", feature: "cap-fingerprints", status: experimental, role: error, },
         #[cfg(feature = "cap-fingerprints")]
-        { semantic_id: "types.TopologicalTorsionParams", item: type, owner: type_, rust: crate::TopologicalTorsionParams, python: "TopologicalTorsionParams", javascript: "TopologicalTorsionParams", feature: "cap-fingerprints", status: experimental,
+        { semantic_id: "types.TopologicalTorsionGeneratorParams", item: type, owner: type_, rust: crate::TopologicalTorsionGeneratorParams, python: "TopologicalTorsionGeneratorParams", javascript: "TopologicalTorsionGeneratorParams", feature: "cap-fingerprints", status: experimental,
             python_configuration: [
                 { name: torsion_atom_count, python_type: "builtins.int", default: "4" },
                 { name: only_shortest_paths, python_type: "builtins.bool", default: "False" },
@@ -2009,7 +2016,13 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "types.TopologicalTorsionFingerprintParams", item: type, owner: type_, rust: crate::TopologicalTorsionFingerprintParams, python: "TopologicalTorsionFingerprintParams", javascript: "TopologicalTorsionFingerprintParams", feature: "cap-fingerprints", status: experimental,
             python_configuration: [
-                { name: generator, python_type: "typing.Optional[TopologicalTorsionParams]", default: "None" },
+                { name: torsion_atom_count, python_type: "builtins.int", default: "4" },
+                { name: only_shortest_paths, python_type: "builtins.bool", default: "False" },
+                { name: include_chirality, python_type: "builtins.bool", default: "False" },
+                { name: count_simulation, python_type: "builtins.bool", default: "True" },
+                { name: fp_size, python_type: "builtins.int", default: "2048" },
+                { name: bits_per_feature, python_type: "builtins.int", default: "1" },
+                { name: count_bounds, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
                 { name: from_atoms, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
                 { name: ignore_atoms, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
                 { name: custom_atom_invariants, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
@@ -2039,31 +2052,31 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {semantic_id:"types.FingerprintJsonError",item:type,owner:type_,rust:crate::FingerprintJsonError,python:"FingerprintJsonError",javascript:"FingerprintJsonError",feature:"cap-fingerprints",status:experimental,role:error},
         #[cfg(feature = "cap-fingerprints")]
-        {semantic_id:"MorganParams.info_string",item:callable,owner:type_,rust:crate::MorganParams::info_string,python:"info_string",javascript:"infoString",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MorganParams)->String},
+        {semantic_id:"MorganGeneratorParams.info_string",item:callable,owner:type_,rust:crate::MorganGeneratorParams::info_string,python:"info_string",javascript:"infoString",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MorganGeneratorParams)->String},
         #[cfg(feature = "cap-fingerprints")]
-        {semantic_id:"MorganParams.to_json",item:callable,owner:type_,rust:crate::MorganParams::to_json,python:"to_json",javascript:"toJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MorganParams)->String},
+        {semantic_id:"MorganGeneratorParams.to_json",item:callable,owner:type_,rust:crate::MorganGeneratorParams::to_json,python:"to_json",javascript:"toJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MorganGeneratorParams)->String},
         #[cfg(feature = "cap-fingerprints")]
-        {semantic_id:"MorganParams.with_json",item:callable,owner:type_,rust:crate::MorganParams::with_json,python:"with_json",javascript:"withJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:json,type:&str,default:required}],output:crate::MorganParams,error:crate::FingerprintJsonError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MorganParams,&'b str)->Result<crate::MorganParams,crate::FingerprintJsonError>},
+        {semantic_id:"MorganGeneratorParams.with_json",item:callable,owner:type_,rust:crate::MorganGeneratorParams::with_json,python:"with_json",javascript:"withJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:json,type:&str,default:required}],output:crate::MorganGeneratorParams,error:crate::FingerprintJsonError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MorganGeneratorParams,&'b str)->Result<crate::MorganGeneratorParams,crate::FingerprintJsonError>},
         #[cfg(feature = "cap-fingerprints")]
-        {semantic_id:"AtomPairParams.info_string",item:callable,owner:type_,rust:crate::AtomPairParams::info_string,python:"info_string",javascript:"infoString",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AtomPairParams)->String},
+        {semantic_id:"AtomPairGeneratorParams.info_string",item:callable,owner:type_,rust:crate::AtomPairGeneratorParams::info_string,python:"info_string",javascript:"infoString",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AtomPairGeneratorParams)->String},
         #[cfg(feature = "cap-fingerprints")]
-        {semantic_id:"AtomPairParams.to_json",item:callable,owner:type_,rust:crate::AtomPairParams::to_json,python:"to_json",javascript:"toJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AtomPairParams)->String},
+        {semantic_id:"AtomPairGeneratorParams.to_json",item:callable,owner:type_,rust:crate::AtomPairGeneratorParams::to_json,python:"to_json",javascript:"toJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AtomPairGeneratorParams)->String},
         #[cfg(feature = "cap-fingerprints")]
-        {semantic_id:"AtomPairParams.with_json",item:callable,owner:type_,rust:crate::AtomPairParams::with_json,python:"with_json",javascript:"withJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:json,type:&str,default:required}],output:crate::AtomPairParams,error:crate::FingerprintJsonError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::AtomPairParams,&'b str)->Result<crate::AtomPairParams,crate::FingerprintJsonError>},
+        {semantic_id:"AtomPairGeneratorParams.with_json",item:callable,owner:type_,rust:crate::AtomPairGeneratorParams::with_json,python:"with_json",javascript:"withJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:json,type:&str,default:required}],output:crate::AtomPairGeneratorParams,error:crate::FingerprintJsonError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::AtomPairGeneratorParams,&'b str)->Result<crate::AtomPairGeneratorParams,crate::FingerprintJsonError>},
         #[cfg(feature = "cap-fingerprints")]
-        {semantic_id:"TopologicalTorsionParams.info_string",item:callable,owner:type_,rust:crate::TopologicalTorsionParams::info_string,python:"info_string",javascript:"infoString",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalTorsionParams)->String},
+        {semantic_id:"TopologicalTorsionGeneratorParams.info_string",item:callable,owner:type_,rust:crate::TopologicalTorsionGeneratorParams::info_string,python:"info_string",javascript:"infoString",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalTorsionGeneratorParams)->String},
         #[cfg(feature = "cap-fingerprints")]
-        {semantic_id:"TopologicalTorsionParams.to_json",item:callable,owner:type_,rust:crate::TopologicalTorsionParams::to_json,python:"to_json",javascript:"toJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalTorsionParams)->String},
+        {semantic_id:"TopologicalTorsionGeneratorParams.to_json",item:callable,owner:type_,rust:crate::TopologicalTorsionGeneratorParams::to_json,python:"to_json",javascript:"toJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:String,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalTorsionGeneratorParams)->String},
         #[cfg(feature = "cap-fingerprints")]
-        {semantic_id:"TopologicalTorsionParams.with_json",item:callable,owner:type_,rust:crate::TopologicalTorsionParams::with_json,python:"with_json",javascript:"withJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:json,type:&str,default:required}],output:crate::TopologicalTorsionParams,error:crate::FingerprintJsonError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::TopologicalTorsionParams,&'b str)->Result<crate::TopologicalTorsionParams,crate::FingerprintJsonError>},
+        {semantic_id:"TopologicalTorsionGeneratorParams.with_json",item:callable,owner:type_,rust:crate::TopologicalTorsionGeneratorParams::with_json,python:"with_json",javascript:"withJson",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:json,type:&str,default:required}],output:crate::TopologicalTorsionGeneratorParams,error:crate::FingerprintJsonError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::TopologicalTorsionGeneratorParams,&'b str)->Result<crate::TopologicalTorsionGeneratorParams,crate::FingerprintJsonError>},
         // FP-values public boundary. Source: pinned RDKit SparseIntVect.h
         // and Wrap/SparseIntVect.cpp:135-185. Canonical names replace get_*
         // and *_i implementation spellings. Python/JS projections are declared,
         // not implemented by this Rust-only registration. No helper exports.
         #[cfg(feature = "cap-fingerprints")]
         {
-            semantic_id: "types.MorganParams", item: type, owner: type_,
-            rust: crate::MorganParams, python: "MorganParams", javascript: "MorganParams",
+            semantic_id: "types.MorganGeneratorParams", item: type, owner: type_,
+            rust: crate::MorganGeneratorParams, python: "MorganGeneratorParams", javascript: "MorganGeneratorParams",
             feature: "cap-fingerprints", status: experimental,
             python_configuration: [
                 { name: radius, python_type: "builtins.int", default: "3" },
@@ -2090,7 +2103,16 @@ binding_contract! {
             rust: crate::MorganFingerprintParams, python: "MorganFingerprintParams", javascript: "MorganFingerprintParams",
             feature: "cap-fingerprints", status: experimental,
             python_configuration: [
-                { name: generator, python_type: "typing.Optional[MorganParams]", default: "None" },
+                { name: radius, python_type: "builtins.int", default: "3" },
+                { name: include_chirality, python_type: "builtins.bool", default: "False" },
+                { name: use_bond_types, python_type: "builtins.bool", default: "True" },
+                { name: include_ring_membership, python_type: "builtins.bool", default: "True" },
+                { name: only_nonzero_invariants, python_type: "builtins.bool", default: "False" },
+                { name: include_redundant_environments, python_type: "builtins.bool", default: "False" },
+                { name: fp_size, python_type: "builtins.int", default: "2048" },
+                { name: count_simulation, python_type: "builtins.bool", default: "False" },
+                { name: count_bounds, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
+                { name: bits_per_feature, python_type: "builtins.int", default: "1" },
                 { name: from_atoms, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
                 { name: ignore_atoms, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
                 { name: custom_atom_invariants, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
@@ -9932,8 +9954,8 @@ binding_contract! {
             semantic_id: "TopologicalTorsionFingerprintGenerator.new", item: callable, owner: type_,
             rust: crate::TopologicalTorsionFingerprintGenerator::new, python: "new", javascript: "new",
             feature: "cap-fingerprints", status: experimental, kind: static_,
-            parameters: [{ name: params, type: Option<&crate::TopologicalTorsionParams>, default: none }, { name: atom_invariants, type: Option<crate::AtomPairAtomInvariantsGenerator>, default: none }], output: crate::TopologicalTorsionFingerprintGenerator, error: crate::TopologicalTorsionReadError,
-            state: value_returning, operation: none, signature: fn(Option<&crate::TopologicalTorsionParams>,Option<crate::AtomPairAtomInvariantsGenerator>)->Result<crate::TopologicalTorsionFingerprintGenerator,crate::TopologicalTorsionReadError>,
+            parameters: [{ name: params, type: Option<&crate::TopologicalTorsionGeneratorParams>, default: none }, { name: atom_invariants, type: Option<crate::AtomPairAtomInvariantsGenerator>, default: none }], output: crate::TopologicalTorsionFingerprintGenerator, error: crate::TopologicalTorsionReadError,
+            state: value_returning, operation: none, signature: fn(Option<&crate::TopologicalTorsionGeneratorParams>,Option<crate::AtomPairAtomInvariantsGenerator>)->Result<crate::TopologicalTorsionFingerprintGenerator,crate::TopologicalTorsionReadError>,
         },
         #[cfg(feature = "cap-fingerprints")]
         {
@@ -10116,8 +10138,8 @@ binding_contract! {
             semantic_id: "TopologicalTorsionSettings.params", item: callable, owner: type_,
             rust: crate::TopologicalTorsionSettings::params, python: "params", javascript: "params",
             feature: "cap-fingerprints", status: experimental, kind: instance,
-            parameters: [], output: crate::TopologicalTorsionParams, error: crate::TopologicalTorsionReadError,
-            state: read_only, operation: none, signature: for<'a> fn(&'a crate::TopologicalTorsionSettings)->Result<crate::TopologicalTorsionParams,crate::TopologicalTorsionReadError>,
+            parameters: [], output: crate::TopologicalTorsionGeneratorParams, error: crate::TopologicalTorsionReadError,
+            state: read_only, operation: none, signature: for<'a> fn(&'a crate::TopologicalTorsionSettings)->Result<crate::TopologicalTorsionGeneratorParams,crate::TopologicalTorsionReadError>,
         },
         #[cfg(feature = "cap-fingerprints")]
         {
@@ -11197,9 +11219,9 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_list_with_params,python:"fingerprint_morgan_with_output_list_with_params",javascript:"fingerprintMorganWithOutputListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganFingerprintParams,default:required},{name:collect_additional_output,type:bool,default:true},{name:params,type:&crate::BatchQueryParams,default:crate::BatchQueryParams::default()}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::MorganFingerprintParams,bool,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_morgan_list_with_generator_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_list_with_generator_params,python:"fingerprint_morgan_list_with_generator_params",javascript:"fingerprintMorganListWithGeneratorParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganParams,default:required},{name:atom_invariants,type:Option<&crate::MorganAtomInvariantsGenerator>,default:required},{name:bond_invariants,type:Option<&crate::MorganBondInvariantsGenerator>,default:required},{name:call,type:&crate::MorganCallParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c,'d,'e,'f> fn(&'a crate::MoleculeBatch,&'b crate::MorganParams,Option<&'c crate::MorganAtomInvariantsGenerator>,Option<&'d crate::MorganBondInvariantsGenerator>,&'e crate::MorganCallParams,&'f crate::BatchQueryParams)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_morgan_list_with_generator_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_list_with_generator_params,python:"fingerprint_morgan_list_with_generator_params",javascript:"fingerprintMorganListWithGeneratorParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganGeneratorParams,default:required},{name:atom_invariants,type:Option<&crate::MorganAtomInvariantsGenerator>,default:required},{name:bond_invariants,type:Option<&crate::MorganBondInvariantsGenerator>,default:required},{name:call,type:&crate::MorganCallParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c,'d,'e,'f> fn(&'a crate::MoleculeBatch,&'b crate::MorganGeneratorParams,Option<&'c crate::MorganAtomInvariantsGenerator>,Option<&'d crate::MorganBondInvariantsGenerator>,&'e crate::MorganCallParams,&'f crate::BatchQueryParams)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_list_with_generator_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_list_with_generator_params,python:"fingerprint_morgan_with_output_list_with_generator_params",javascript:"fingerprintMorganWithOutputListWithGeneratorParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganParams,default:required},{name:atom_invariants,type:Option<&crate::MorganAtomInvariantsGenerator>,default:required},{name:bond_invariants,type:Option<&crate::MorganBondInvariantsGenerator>,default:required},{name:call,type:&crate::MorganCallParams,default:required},{name:collect_additional_output,type:bool,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c,'d,'e,'f> fn(&'a crate::MoleculeBatch,&'b crate::MorganParams,Option<&'c crate::MorganAtomInvariantsGenerator>,Option<&'d crate::MorganBondInvariantsGenerator>,&'e crate::MorganCallParams,bool,&'f crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_list_with_generator_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_list_with_generator_params,python:"fingerprint_morgan_with_output_list_with_generator_params",javascript:"fingerprintMorganWithOutputListWithGeneratorParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganGeneratorParams,default:required},{name:atom_invariants,type:Option<&crate::MorganAtomInvariantsGenerator>,default:required},{name:bond_invariants,type:Option<&crate::MorganBondInvariantsGenerator>,default:required},{name:call,type:&crate::MorganCallParams,default:required},{name:collect_additional_output,type:bool,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c,'d,'e,'f> fn(&'a crate::MoleculeBatch,&'b crate::MorganGeneratorParams,Option<&'c crate::MorganAtomInvariantsGenerator>,Option<&'d crate::MorganBondInvariantsGenerator>,&'e crate::MorganCallParams,bool,&'f crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"types.BatchFingerprintAdditionalOutput",item:type,owner:type_,rust:crate::BatchFingerprintAdditionalOutput,python:"BatchFingerprintAdditionalOutput",javascript:"BatchFingerprintAdditionalOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,role:value,},
 #[cfg(feature="cap-batch")]

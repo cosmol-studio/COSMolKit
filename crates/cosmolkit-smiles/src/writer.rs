@@ -92,7 +92,8 @@ struct WriterStereoFragment {
     source_bonds: Vec<BondId>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct SmilesWriteParams {
     pub isomeric_smiles: bool,
     pub kekule: bool,
@@ -122,7 +123,8 @@ impl Default for SmilesWriteParams {
 }
 
 /// Source options accepted by RDKit's random-SMILES vector writer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct RandomSmilesWriteParams {
     pub isomeric_smiles: bool,
     pub kekule: bool,

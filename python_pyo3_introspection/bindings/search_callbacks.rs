@@ -5,7 +5,7 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct QueryAtom {
     pub(crate) inner: ck::QueryAtom,
@@ -66,104 +66,25 @@ typed_callback!(
     ]
 );
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct SubstructMatchParams {
-    pub(crate) inner: ck::SubstructMatchParams,
+    // Actual native inputs plus collector-visible Python callback owners.
+    inner: ck::SubstructMatchParams,
     final_match: Option<FinalMatch>,
     atom_match: Option<AtomMatch>,
     bond_match: Option<BondMatch>,
 }
-macro_rules! match_parameters {
-    ($($field:ident: $ty:ty),+ $(,)?) => {
-        paste::paste! {
-            #[pymethods]
-            impl SubstructMatchParams {
-                #[new]
-                #[pyo3(signature=(*, $($field=ck::SubstructMatchParams::default().$field,)+ atom_properties=None, bond_properties=None, final_match=None, atom_match=None, bond_match=None, extra_final_check=None, extra_atom_check=None, extra_bond_check=None))]
-                pub(crate) fn new($($field: $ty,)+ atom_properties: Option<Vec<String>>, bond_properties: Option<Vec<String>>, final_match: Option<FinalMatch>, atom_match: Option<AtomMatch>, bond_match: Option<BondMatch>, extra_final_check: Option<FinalMatch>, extra_atom_check: Option<AtomMatch>, extra_bond_check: Option<BondMatch>) -> PyResult<Self> {
-                    if final_match.is_some() && extra_final_check.is_some() || atom_match.is_some() && extra_atom_check.is_some() || bond_match.is_some() && extra_bond_check.is_some() {
-                        return Err(pyo3::exceptions::PyTypeError::new_err("callback and its alias are mutually exclusive"));
-                    }
-                    Ok(Self { inner: ck::SubstructMatchParams { $($field,)+
-                        atom_properties: atom_properties.unwrap_or_else(|| ck::SubstructMatchParams::default().atom_properties),
-                        bond_properties: bond_properties.unwrap_or_else(|| ck::SubstructMatchParams::default().bond_properties),
-                        extra_atom_check: None, extra_bond_check: None, extra_final_check: None,
-                    }, final_match: final_match.or(extra_final_check), atom_match: atom_match.or(extra_atom_check), bond_match: bond_match.or(extra_bond_check) })
-                }
-                $(#[getter] fn $field(&self) -> $ty { self.inner.$field.clone() }
-                #[setter] fn [<set_ $field>](&mut self, value: $ty) { self.inner.$field = value; })+
-                #[getter] fn atom_properties(&self) -> Vec<String> { self.inner.atom_properties.clone() }
-                #[setter] fn set_atom_properties(&mut self, value: Option<Vec<String>>) { self.inner.atom_properties = value.unwrap_or_else(|| ck::SubstructMatchParams::default().atom_properties); }
-                #[getter] fn bond_properties(&self) -> Vec<String> { self.inner.bond_properties.clone() }
-                #[setter] fn set_bond_properties(&mut self, value: Option<Vec<String>>) { self.inner.bond_properties = value.unwrap_or_else(|| ck::SubstructMatchParams::default().bond_properties); }
-                #[getter] fn final_match(&self, py: Python<'_>) -> Option<FinalMatch> { self.final_match.as_ref().map(|value| value.clone_ref(py)) }
-                #[setter] fn set_final_match(&mut self, value: Option<FinalMatch>) { self.final_match = value; }
-                #[getter] fn atom_match(&self, py: Python<'_>) -> Option<AtomMatch> { self.atom_match.as_ref().map(|value| value.clone_ref(py)) }
-                #[setter] fn set_atom_match(&mut self, value: Option<AtomMatch>) { self.atom_match = value; }
-                #[getter] fn bond_match(&self, py: Python<'_>) -> Option<BondMatch> { self.bond_match.as_ref().map(|value| value.clone_ref(py)) }
-                #[setter] fn set_bond_match(&mut self, value: Option<BondMatch>) { self.bond_match = value; }
-                #[getter] fn extra_final_check(&self, py: Python<'_>) -> Option<FinalMatch> { self.final_match(py) }
-                #[setter] fn set_extra_final_check(&mut self, value: Option<FinalMatch>) { self.set_final_match(value); }
-                #[getter] fn extra_atom_check(&self, py: Python<'_>) -> Option<AtomMatch> { self.atom_match(py) }
-                #[setter] fn set_extra_atom_check(&mut self, value: Option<AtomMatch>) { self.set_atom_match(value); }
-                #[getter] fn extra_bond_check(&self, py: Python<'_>) -> Option<BondMatch> { self.bond_match(py) }
-                #[setter] fn set_extra_bond_check(&mut self, value: Option<BondMatch>) { self.set_bond_match(value); }
-                fn __traverse__(&self, visit: pyo3::gc::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
-                    if let Some(value) = &self.final_match { value.traverse(&visit)?; }
-                    if let Some(value) = &self.atom_match { value.traverse(&visit)?; }
-                    if let Some(value) = &self.bond_match { value.traverse(&visit)?; }
-                    Ok(())
-                }
-                fn __clear__(&mut self) {
-                    self.final_match = None;
-                    self.atom_match = None;
-                    self.bond_match = None;
-                }
-            }
-        }
-    };
-}
-match_parameters! { max_matches: usize, uniquify: bool, use_chirality: bool,
-use_enhanced_stereo: bool, specified_stereo_query_matches_unspecified: bool,
-use_query_query_matches: bool, recursion_possible: bool, max_recursive_matches: usize,
-num_threads: i32, aromatic_matches_conjugated: bool, aromatic_matches_single_or_double: bool,
-extra_atom_check_overrides_default_check: bool, extra_bond_check_overrides_default_check: bool,
-use_generic_matchers: bool }
 
-impl SubstructMatchParams {
-    pub(crate) fn from_native(inner: ck::SubstructMatchParams) -> Self {
-        Self {
-            inner,
-            final_match: None,
-            atom_match: None,
-            bond_match: None,
-        }
-    }
-    pub(crate) fn with_native(&self, py: Python<'_>, inner: ck::SubstructMatchParams) -> Self {
-        Self {
-            inner,
-            final_match: self.final_match.as_ref().map(|value| value.clone_ref(py)),
-            atom_match: self.atom_match.as_ref().map(|value| value.clone_ref(py)),
-            bond_match: self.bond_match.as_ref().map(|value| value.clone_ref(py)),
-        }
-    }
-    pub(crate) fn from_keywords(
-        max_matches: Option<usize>,
-        uniquify: Option<bool>,
-        use_chirality: Option<bool>,
-        use_enhanced_stereo: Option<bool>,
-        specified_stereo_query_matches_unspecified: Option<bool>,
-        use_query_query_matches: Option<bool>,
-        recursion_possible: Option<bool>,
-        max_recursive_matches: Option<usize>,
-        num_threads: Option<i32>,
-        aromatic_matches_conjugated: Option<bool>,
-        aromatic_matches_single_or_double: Option<bool>,
-        extra_atom_check_overrides_default_check: Option<bool>,
-        extra_bond_check_overrides_default_check: Option<bool>,
-        use_generic_matchers: Option<bool>,
-        atom_properties: Option<Vec<String>>,
-        bond_properties: Option<Vec<String>>,
+/// One invocation owns its extracted native inputs and callback handles.
+pub(crate) struct MatchInvocation {
+    inner: ck::SubstructMatchParams,
+    final_match: Option<FinalMatch>,
+    atom_match: Option<AtomMatch>,
+    bond_match: Option<BondMatch>,
+}
+impl MatchInvocation {
+    fn new(
+        inner: ck::SubstructMatchParams,
         final_match: Option<FinalMatch>,
         atom_match: Option<AtomMatch>,
         bond_match: Option<BondMatch>,
@@ -171,38 +92,23 @@ impl SubstructMatchParams {
         extra_atom_check: Option<AtomMatch>,
         extra_bond_check: Option<BondMatch>,
     ) -> PyResult<Self> {
-        let defaults = ck::SubstructMatchParams::default();
-        Self::new(
-            max_matches.unwrap_or(defaults.max_matches),
-            uniquify.unwrap_or(defaults.uniquify),
-            use_chirality.unwrap_or(defaults.use_chirality),
-            use_enhanced_stereo.unwrap_or(defaults.use_enhanced_stereo),
-            specified_stereo_query_matches_unspecified
-                .unwrap_or(defaults.specified_stereo_query_matches_unspecified),
-            use_query_query_matches.unwrap_or(defaults.use_query_query_matches),
-            recursion_possible.unwrap_or(defaults.recursion_possible),
-            max_recursive_matches.unwrap_or(defaults.max_recursive_matches),
-            num_threads.unwrap_or(defaults.num_threads),
-            aromatic_matches_conjugated.unwrap_or(defaults.aromatic_matches_conjugated),
-            aromatic_matches_single_or_double.unwrap_or(defaults.aromatic_matches_single_or_double),
-            extra_atom_check_overrides_default_check
-                .unwrap_or(defaults.extra_atom_check_overrides_default_check),
-            extra_bond_check_overrides_default_check
-                .unwrap_or(defaults.extra_bond_check_overrides_default_check),
-            use_generic_matchers.unwrap_or(defaults.use_generic_matchers),
-            atom_properties,
-            bond_properties,
-            final_match,
-            atom_match,
-            bond_match,
-            extra_final_check,
-            extra_atom_check,
-            extra_bond_check,
-        )
+        if final_match.is_some() && extra_final_check.is_some()
+            || atom_match.is_some() && extra_atom_check.is_some()
+            || bond_match.is_some() && extra_bond_check.is_some()
+        {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "callback and its alias are mutually exclusive",
+            ));
+        }
+        Ok(Self {
+            inner,
+            final_match: final_match.or(extra_final_check),
+            atom_match: atom_match.or(extra_atom_check),
+            bond_match: bond_match.or(extra_bond_check),
+        })
     }
-
     pub(crate) fn with_callbacks<T, E>(
-        &self,
+        self,
         py: Python<'_>,
         target: &Py<Molecule>,
         run: impl FnOnce(&ck::SubstructMatchParams) -> Result<T, E>,
@@ -210,18 +116,13 @@ impl SubstructMatchParams {
         let target = target.try_borrow(py)?;
         self.with_callback_values(py, &[&target.inner], run)
     }
-
-    pub(crate) fn has_final_match(&self) -> bool {
-        self.final_match.is_some()
-    }
-
     pub(crate) fn with_callback_values<T, E>(
-        &self,
+        self,
         py: Python<'_>,
         targets: &[&ck::Molecule],
         run: impl FnOnce(&ck::SubstructMatchParams) -> Result<T, E>,
     ) -> PyResult<Result<T, E>> {
-        let mut params = self.inner.clone();
+        let mut params = self.inner;
         let errors = Arc::new(CallbackErrors::new());
         if let Some(callback) = &self.final_match {
             let callback = callback.clone_ref(py);
@@ -316,6 +217,129 @@ impl SubstructMatchParams {
             Some(error) => Err(error),
             None => Ok(result),
         }
+    }
+}
+macro_rules! match_parameters {
+    ($($field:ident: $ty:ty),+ $(,)?) => {
+        impl SubstructMatchParams {
+            pub(crate) fn from_keywords($($field: Option<$ty>,)+ atom_properties: Option<Vec<String>>, bond_properties: Option<Vec<String>>, final_match: Option<FinalMatch>, atom_match: Option<AtomMatch>, bond_match: Option<BondMatch>, extra_final_check: Option<FinalMatch>, extra_atom_check: Option<AtomMatch>, extra_bond_check: Option<BondMatch>) -> PyResult<MatchInvocation> {
+                let defaults = ck::SubstructMatchParams::default();
+                MatchInvocation::new(ck::SubstructMatchParams {
+                    $($field: $field.unwrap_or(defaults.$field),)+
+                    atom_properties: atom_properties.unwrap_or(defaults.atom_properties),
+                    bond_properties: bond_properties.unwrap_or(defaults.bond_properties),
+                    extra_atom_check: None, extra_bond_check: None, extra_final_check: None,
+                }, final_match, atom_match, bond_match, extra_final_check, extra_atom_check, extra_bond_check)
+            }
+        }
+        paste::paste! {
+            #[pymethods]
+            impl SubstructMatchParams {
+                #[new]
+                #[pyo3(signature=(*, $($field=ck::SubstructMatchParams::default().$field,)+ atom_properties=None, bond_properties=None, final_match=None, atom_match=None, bond_match=None, extra_final_check=None, extra_atom_check=None, extra_bond_check=None))]
+                pub(crate) fn new(py: Python<'_>, $($field: $ty,)+ atom_properties: Option<Vec<String>>, bond_properties: Option<Vec<String>>, final_match: Option<FinalMatch>, atom_match: Option<AtomMatch>, bond_match: Option<BondMatch>, extra_final_check: Option<FinalMatch>, extra_atom_check: Option<AtomMatch>, extra_bond_check: Option<BondMatch>) -> PyResult<Self> {
+                    let invocation = Self::from_keywords($(Some($field),)+ atom_properties, bond_properties, final_match, atom_match, bond_match, extra_final_check, extra_atom_check, extra_bond_check)?;
+                    Self::from_invocation(py, invocation)
+                }
+                $(#[getter] fn $field(&self) -> $ty { self.inner.$field.clone() }
+                #[setter] fn [<set_ $field>](&mut self, value: $ty) { self.inner.$field = value; })+
+                #[getter] fn atom_properties(&self) -> crate::parameters::ContainerOutput<'_, Vec<String>> { crate::parameters::ContainerOutput(&self.inner.atom_properties) }
+                #[setter] fn set_atom_properties(&mut self, value: Option<Vec<String>>) -> PyResult<()> {
+                    self.inner.atom_properties = value.unwrap_or_else(|| ck::SubstructMatchParams::default().atom_properties);
+                    Ok(())
+                }
+                #[getter] fn bond_properties(&self) -> crate::parameters::ContainerOutput<'_, Vec<String>> { crate::parameters::ContainerOutput(&self.inner.bond_properties) }
+                #[setter] fn set_bond_properties(&mut self, value: Option<Vec<String>>) -> PyResult<()> {
+                    self.inner.bond_properties = value.unwrap_or_else(|| ck::SubstructMatchParams::default().bond_properties);
+                    Ok(())
+                }
+                #[getter] fn final_match(&self, py: Python<'_>) -> Option<FinalMatch> { self.final_match.as_ref().map(|value| value.clone_ref(py)) }
+                #[setter] fn set_final_match(&mut self, value: Option<FinalMatch>) { self.final_match = value; }
+                #[getter] fn atom_match(&self, py: Python<'_>) -> Option<AtomMatch> { self.atom_match.as_ref().map(|value| value.clone_ref(py)) }
+                #[setter] fn set_atom_match(&mut self, value: Option<AtomMatch>) { self.atom_match = value; }
+                #[getter] fn bond_match(&self, py: Python<'_>) -> Option<BondMatch> { self.bond_match.as_ref().map(|value| value.clone_ref(py)) }
+                #[setter] fn set_bond_match(&mut self, value: Option<BondMatch>) { self.bond_match = value; }
+                #[getter] fn extra_final_check(&self, py: Python<'_>) -> Option<FinalMatch> { self.final_match(py) }
+                #[setter] fn set_extra_final_check(&mut self, value: Option<FinalMatch>) { self.set_final_match(value); }
+                #[getter] fn extra_atom_check(&self, py: Python<'_>) -> Option<AtomMatch> { self.atom_match(py) }
+                #[setter] fn set_extra_atom_check(&mut self, value: Option<AtomMatch>) { self.set_atom_match(value); }
+                #[getter] fn extra_bond_check(&self, py: Python<'_>) -> Option<BondMatch> { self.bond_match(py) }
+                #[setter] fn set_extra_bond_check(&mut self, value: Option<BondMatch>) { self.set_bond_match(value); }
+                fn __traverse__(&self, visit: pyo3::gc::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
+                    if let Some(value) = &self.final_match { value.traverse(&visit)?; }
+                    if let Some(value) = &self.atom_match { value.traverse(&visit)?; }
+                    if let Some(value) = &self.bond_match { value.traverse(&visit)?; }
+                    Ok(())
+                }
+                fn __clear__(&mut self) {
+                    self.final_match = None; self.atom_match = None; self.bond_match = None;
+                }
+            }
+        }
+    };
+}
+ck::project_configuration!(ck::SubstructMatchParams, using match_parameters);
+
+impl SubstructMatchParams {
+    fn from_invocation(py: Python<'_>, value: MatchInvocation) -> PyResult<Self> {
+        let mut result = Self::from_native(py, value.inner)?;
+        result.final_match = value.final_match;
+        result.atom_match = value.atom_match;
+        result.bond_match = value.bond_match;
+        Ok(result)
+    }
+    pub(crate) fn from_native(_py: Python<'_>, inner: ck::SubstructMatchParams) -> PyResult<Self> {
+        Ok(Self {
+            inner,
+            final_match: None,
+            atom_match: None,
+            bond_match: None,
+        })
+    }
+    pub(crate) fn to_rust(&self, _py: Python<'_>) -> PyResult<ck::SubstructMatchParams> {
+        Ok(self.inner.clone())
+    }
+    pub(crate) fn capture(&self, py: Python<'_>) -> PyResult<MatchInvocation> {
+        Ok(MatchInvocation {
+            inner: self.to_rust(py)?,
+            final_match: self.final_match.as_ref().map(|value| value.clone_ref(py)),
+            atom_match: self.atom_match.as_ref().map(|value| value.clone_ref(py)),
+            bond_match: self.bond_match.as_ref().map(|value| value.clone_ref(py)),
+        })
+    }
+    pub(crate) fn with_native(
+        &self,
+        py: Python<'_>,
+        inner: ck::SubstructMatchParams,
+    ) -> PyResult<Self> {
+        Self::from_invocation(
+            py,
+            MatchInvocation {
+                inner,
+                final_match: self.final_match.as_ref().map(|value| value.clone_ref(py)),
+                atom_match: self.atom_match.as_ref().map(|value| value.clone_ref(py)),
+                bond_match: self.bond_match.as_ref().map(|value| value.clone_ref(py)),
+            },
+        )
+    }
+    pub(crate) fn has_final_match(&self) -> bool {
+        self.final_match.is_some()
+    }
+    pub(crate) fn with_callbacks<T, E>(
+        &self,
+        py: Python<'_>,
+        target: &Py<Molecule>,
+        run: impl FnOnce(&ck::SubstructMatchParams) -> Result<T, E>,
+    ) -> PyResult<Result<T, E>> {
+        self.capture(py)?.with_callbacks(py, target, run)
+    }
+    pub(crate) fn with_callback_values<T, E>(
+        &self,
+        py: Python<'_>,
+        targets: &[&ck::Molecule],
+        run: impl FnOnce(&ck::SubstructMatchParams) -> Result<T, E>,
+    ) -> PyResult<Result<T, E>> {
+        self.capture(py)?.with_callback_values(py, targets, run)
     }
 }
 
@@ -511,12 +535,10 @@ def wrong_type(target, indices):
             let target = Py::new(py, Molecule { inner: ck::Molecule::from_smiles("CCO").unwrap() })?;
             let query = ck::parse_smarts("CO").unwrap();
             callbacks.setattr("target", target.clone_ref(py))?;
-            let mut params = SubstructMatchParams {
-                inner: ck::SubstructMatchParams::default(),
-                final_match: Some(callbacks.getattr("final_filter")?.extract()?),
-                atom_match: Some(callbacks.getattr("atom_filter")?.extract()?),
-                bond_match: Some(callbacks.getattr("bond_filter")?.extract()?),
-            };
+            let mut params = SubstructMatchParams::from_native(py, ck::SubstructMatchParams::default())?;
+            params.final_match = Some(callbacks.getattr("final_filter")?.extract()?);
+            params.atom_match = Some(callbacks.getattr("atom_filter")?.extract()?);
+            params.bond_match = Some(callbacks.getattr("bond_filter")?.extract()?);
             let run = |native: &ck::SubstructMatchParams| target.borrow(py).inner.substruct_matches_with_params(&query, native);
             let matches = params.with_callbacks(py, &target, run)?.unwrap();
             assert_eq!(matches.len(), 1);

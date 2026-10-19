@@ -16,7 +16,7 @@ use pyo3::prelude::*;
 // invented: the Rust type has no Default, so every field is required here.
 macro_rules! structure_values {
     (mmcif {$($mmcif:ident: $mmcif_ty:ty),+ $(,)?}, $($list:ident: $value:ident),+ $(,)?) => {
-        #[pyclass(module="fixed_projection._native", frozen, from_py_object)]
+        #[pyclass(module="cosmolkit", frozen, from_py_object)]
         #[derive(Clone)]
         pub struct BioStructureParts { pub(crate) inner: ck::BioStructureParts }
         #[pymethods]
@@ -42,18 +42,20 @@ macro_rules! structure_values {
             #[getter] fn crystal(&self) -> Option<BioCrystalInfo> { self.inner.crystal.clone().map(|inner| BioCrystalInfo { inner }) }
         }
 
-        #[pyclass(module="fixed_projection._native", from_py_object)]
+        #[pyclass(module="cosmolkit", from_py_object)]
         #[derive(Clone)]
         pub struct BioStructure { pub(crate) inner: ck::BioStructure }
         #[pymethods]
         impl BioStructure {
 
 #[staticmethod]
-#[pyo3(signature=(text,params=None,*,max_line_length=None,check_non_ascii=None,ignore_ter=None,split_chain_on_ter=None,skip_remarks=None))]
-fn from_pdb(py:Python<'_>,text:&str,params:Option<&crate::params::BioPdbReadParams>,max_line_length:Option<i32>,check_non_ascii:Option<bool>,ignore_ter:Option<bool>,split_chain_on_ter:Option<bool>,skip_remarks:Option<bool>)->PyResult<Self>{
-if params.is_some()&&(max_line_length.is_some()||check_non_ascii.is_some()||ignore_ter.is_some()||split_chain_on_ter.is_some()||skip_remarks.is_some()){return Err(pyo3::exceptions::PyTypeError::new_err("params and keyword configuration are mutually exclusive"));}
-if params.is_some()||(max_line_length.is_none()&&check_non_ascii.is_none()&&ignore_ter.is_none()&&split_chain_on_ter.is_none()&&skip_remarks.is_none()){Self::_from_pdb_params(py,text,params)}else{Self::_from_pdb_keywords(py,text,max_line_length,check_non_ascii,ignore_ter,split_chain_on_ter,skip_remarks)}
-}
+#[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,max_line_length=crate::arguments::Argument::Missing,check_non_ascii=crate::arguments::Argument::Missing,ignore_ter=crate::arguments::Argument::Missing,split_chain_on_ter=crate::arguments::Argument::Missing,skip_remarks=crate::arguments::Argument::Missing))]
+fn from_pdb(py:Python<'_>,text:&str,params:crate::arguments::Argument<Option<PyRef<'_, crate::params::BioPdbReadParams>>>,max_line_length:crate::arguments::Argument<Option<i32>>,check_non_ascii:crate::arguments::Argument<Option<bool>>,ignore_ter:crate::arguments::Argument<Option<bool>>,split_chain_on_ter:crate::arguments::Argument<Option<bool>>,skip_remarks:crate::arguments::Argument<Option<bool>>)->PyResult<Self>{
+        let keyword_form = max_line_length.is_supplied() || check_non_ascii.is_supplied() || ignore_ter.is_supplied() || split_chain_on_ter.is_supplied() || skip_remarks.is_supplied();
+        crate::arguments::configuration_arguments!(params; max_line_length, check_non_ascii, ignore_ter, split_chain_on_ter, skip_remarks);
+        let params = params.as_deref();
+        if keyword_form { Self::_from_pdb_keywords(py, text, max_line_length, check_non_ascii, ignore_ter, split_chain_on_ter, skip_remarks) } else { Self::_from_pdb_params(py, text, params) }
+    }
 #[staticmethod]
 fn from_pdb_with_params(py:Python<'_>,text:&str,params:&crate::params::BioPdbReadParams)->PyResult<Self>{
 py.detach(||ck::BioStructure::from_pdb_with_params(text,&params.inner)).map(|inner|Self{inner}).map_err(crate::bio_pdb_reader::BioPdbReadError::from_rust)
@@ -68,14 +70,13 @@ fn _from_pdb_params(py:Python<'_>,text:&str,params:Option<&crate::params::BioPdb
 fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_non_ascii:Option<bool>,ignore_ter:Option<bool>,split_chain_on_ter:Option<bool>,skip_remarks:Option<bool>)->PyResult<Self>{crate::bio_pdb_reader::_bio_from_pdb_keywords(py,text,max_line_length,check_non_ascii,ignore_ter,split_chain_on_ter,skip_remarks)}
 
             #[staticmethod]
-            #[pyo3(signature=(text, params=None, *, format=None, source_name=None))]
-            fn from_text(py: Python<'_>, text: &str, params: Option<&crate::bio_values::BioReadParams>, format: Option<BioCoordinateFormatInput>, source_name: Option<String>) -> PyResult<Self> {
-                if params.is_some() && (format.is_some() || source_name.is_some()) {
-                    return Err(pyo3::exceptions::PyTypeError::new_err("Params and keyword configuration are mutually exclusive"));
-                }
-                if format.is_some() || source_name.is_some() { Self::_from_text_keywords(py, text, format, source_name) }
-                else { Self::_from_text_params(py, text, params) }
-            }
+#[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, format=crate::arguments::Argument::Missing, source_name=crate::arguments::Argument::Missing))]
+            fn from_text(py: Python<'_>, text: &str, params: crate::arguments::Argument<Option<PyRef<'_, crate::bio_values::BioReadParams>>>, format: crate::arguments::Argument<Option<BioCoordinateFormatInput>>, source_name: crate::arguments::Argument<Option<String>>) -> PyResult<Self> {
+        let keyword_form = format.is_supplied() || source_name.is_supplied();
+        crate::arguments::configuration_arguments!(params; format, source_name);
+        let params = params.as_deref();
+        if keyword_form { Self::_from_text_keywords(py, text, format, source_name) } else { Self::_from_text_params(py, text, params) }
+    }
             #[staticmethod]
             #[doc = r#"{"role":"overload","target":"BioStructure.from_text"}"#]
             #[pyo3(signature=(text, params=None))]
@@ -113,12 +114,11 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             fn from_mmcif(py: Python<'_>, text: &str) -> PyResult<Self> {
                 crate::bio_mmcif_reader::bio_from_mmcif(py, text)
             }
-            #[pyo3(signature=(params=None, *, $($mmcif=None),+))]
-            fn to_mmcif(&self, params: Option<&crate::bio_write_configuration::BioMmcifWriteParams>, $($mmcif: Option<$mmcif_ty>),+) -> PyResult<String> {
-                let configured = false $(|| $mmcif.is_some())+;
-                if params.is_some() && configured {
-                    return Err(pyo3::exceptions::PyTypeError::new_err("Params and keyword configuration are mutually exclusive"));
-                }
+            #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, $($mmcif=crate::arguments::Argument::Missing),+))]
+            fn to_mmcif(&self, params: crate::arguments::Argument<Option<PyRef<'_, crate::bio_write_configuration::BioMmcifWriteParams>>>, $($mmcif: crate::arguments::Argument<Option<$mmcif_ty>>),+) -> PyResult<String> {
+                let configured = false $(|| $mmcif.is_supplied())+;
+                crate::arguments::configuration_arguments!(params; $($mmcif),+);
+                let params = params.as_deref();
                 if configured { self._to_mmcif_keywords($($mmcif),+) }
                 else { self._to_mmcif_params(params) }
             }
@@ -142,12 +142,11 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             fn to_mmcif_with_params(&self, params: &crate::bio_write_configuration::BioMmcifWriteParams) -> PyResult<String> {
                 self.inner.to_mmcif_with_params(&params.inner).map_err(crate::bio_mmcif_writer::BioMmcifWriteError::from_rust)
             }
-            #[pyo3(signature=(path, params=None, *, $($mmcif=None),+))]
-            fn write_mmcif(&self, path: std::path::PathBuf, params: Option<&crate::bio_write_configuration::BioMmcifWriteParams>, $($mmcif: Option<$mmcif_ty>),+) -> PyResult<()> {
-                let configured = false $(|| $mmcif.is_some())+;
-                if params.is_some() && configured {
-                    return Err(pyo3::exceptions::PyTypeError::new_err("Params and keyword configuration are mutually exclusive"));
-                }
+            #[pyo3(signature=(path, params=crate::arguments::Argument::Missing, *, $($mmcif=crate::arguments::Argument::Missing),+))]
+            fn write_mmcif(&self, path: std::path::PathBuf, params: crate::arguments::Argument<Option<PyRef<'_, crate::bio_write_configuration::BioMmcifWriteParams>>>, $($mmcif: crate::arguments::Argument<Option<$mmcif_ty>>),+) -> PyResult<()> {
+                let configured = false $(|| $mmcif.is_supplied())+;
+                crate::arguments::configuration_arguments!(params; $($mmcif),+);
+                let params = params.as_deref();
                 if configured { self._write_mmcif_keywords(path, $($mmcif),+) }
                 else { self._write_mmcif_params(path, params) }
             }
@@ -193,13 +192,13 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
                 self.inner.retain_selection_(&selection.inner)
                     .map_err(crate::bio_selection_errors::BioOperationError::from_rust)
             }
-            #[pyo3(signature=(params=None, *, sanitize=None, remove_hs=None, flavor=None, proximity_bonding=None))]
-            fn to_molecule(&self, py: Python<'_>, params: Option<&crate::params::BioMoleculeParams>, sanitize: Option<bool>, remove_hs: Option<bool>, flavor: Option<u32>, proximity_bonding: Option<bool>) -> PyResult<crate::native::Molecule> {
-                let configured = sanitize.is_some() || remove_hs.is_some() || flavor.is_some() || proximity_bonding.is_some();
-                if params.is_some() && configured { return Err(pyo3::exceptions::PyTypeError::new_err("Params and keyword configuration are mutually exclusive")); }
-                if configured { self._to_molecule_keywords(py, sanitize, remove_hs, flavor, proximity_bonding) }
-                else { self._to_molecule_params(py, params) }
-            }
+#[pyo3(signature=(params=crate::arguments::Argument::Missing, *, sanitize=crate::arguments::Argument::Missing, remove_hs=crate::arguments::Argument::Missing, flavor=crate::arguments::Argument::Missing, proximity_bonding=crate::arguments::Argument::Missing))]
+            fn to_molecule(&self, py: Python<'_>, params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>, sanitize: crate::arguments::Argument<Option<bool>>, remove_hs: crate::arguments::Argument<Option<bool>>, flavor: crate::arguments::Argument<Option<u32>>, proximity_bonding: crate::arguments::Argument<Option<bool>>) -> PyResult<crate::native::Molecule> {
+        let keyword_form = sanitize.is_supplied() || remove_hs.is_supplied() || flavor.is_supplied() || proximity_bonding.is_supplied();
+        crate::arguments::configuration_arguments!(params; sanitize, remove_hs, flavor, proximity_bonding);
+        let params = params.as_deref();
+        if keyword_form { self._to_molecule_keywords(py, sanitize, remove_hs, flavor, proximity_bonding) } else { self._to_molecule_params(py, params) }
+    }
             #[doc = r#"{"role":"overload","target":"BioStructure.to_molecule"}"#]
             #[pyo3(signature=(params=None))]
             fn _to_molecule_params(&self, py: Python<'_>, params: Option<&crate::params::BioMoleculeParams>) -> PyResult<crate::native::Molecule> {
@@ -223,16 +222,13 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
                 self.inner.translate_(offset)
                     .map_err(crate::bio_selection_errors::BioOperationError::from_rust)
             }
-            #[pyo3(signature=(params=None, *, ter_records=None, numbered_ter=None, ter_ignores_type=None, preserve_serial=None, end_record=None))]
-            fn to_pdb(&self, params: Option<&crate::params::BioPdbWriteParams>, ter_records: Option<bool>, numbered_ter: Option<bool>, ter_ignores_type: Option<bool>, preserve_serial: Option<bool>, end_record: Option<bool>) -> PyResult<String> {
-                let configured = ter_records.is_some() || numbered_ter.is_some() || ter_ignores_type.is_some() || preserve_serial.is_some() || end_record.is_some();
-                if params.is_some() && configured {
-                    return Err(pyo3::exceptions::PyTypeError::new_err("Params and keyword configuration are mutually exclusive"));
-                }
-                if configured {
-                    self._to_pdb_keywords(ter_records, numbered_ter, ter_ignores_type, preserve_serial, end_record)
-                } else { self._to_pdb_params(params) }
-            }
+#[pyo3(signature=(params=crate::arguments::Argument::Missing, *, ter_records=crate::arguments::Argument::Missing, numbered_ter=crate::arguments::Argument::Missing, ter_ignores_type=crate::arguments::Argument::Missing, preserve_serial=crate::arguments::Argument::Missing, end_record=crate::arguments::Argument::Missing))]
+            fn to_pdb(&self, params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioPdbWriteParams>>>, ter_records: crate::arguments::Argument<Option<bool>>, numbered_ter: crate::arguments::Argument<Option<bool>>, ter_ignores_type: crate::arguments::Argument<Option<bool>>, preserve_serial: crate::arguments::Argument<Option<bool>>, end_record: crate::arguments::Argument<Option<bool>>) -> PyResult<String> {
+        let keyword_form = ter_records.is_supplied() || numbered_ter.is_supplied() || ter_ignores_type.is_supplied() || preserve_serial.is_supplied() || end_record.is_supplied();
+        crate::arguments::configuration_arguments!(params; ter_records, numbered_ter, ter_ignores_type, preserve_serial, end_record);
+        let params = params.as_deref();
+        if keyword_form { self._to_pdb_keywords(ter_records, numbered_ter, ter_ignores_type, preserve_serial, end_record) } else { self._to_pdb_params(params) }
+    }
             #[doc = r#"{"role":"overload","target":"BioStructure.to_pdb"}"#]
             #[pyo3(signature=(params=None))]
             fn _to_pdb_params(&self, params: Option<&crate::params::BioPdbWriteParams>) -> PyResult<String> {
@@ -250,15 +246,13 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             fn to_pdb_with_params(&self, params: &crate::params::BioPdbWriteParams) -> PyResult<String> {
                 self.inner.to_pdb_with_params(&params.inner).map_err(crate::bio_pdb_writer::BioPdbWriteError::from_rust)
             }
-            #[pyo3(signature=(path, params=None, *, ter_records=None, numbered_ter=None, ter_ignores_type=None, preserve_serial=None, end_record=None))]
-            fn write_pdb(&self, path: std::path::PathBuf, params: Option<&crate::params::BioPdbWriteParams>, ter_records: Option<bool>, numbered_ter: Option<bool>, ter_ignores_type: Option<bool>, preserve_serial: Option<bool>, end_record: Option<bool>) -> PyResult<()> {
-                let configured = ter_records.is_some() || numbered_ter.is_some() || ter_ignores_type.is_some() || preserve_serial.is_some() || end_record.is_some();
-                if params.is_some() && configured {
-                    return Err(pyo3::exceptions::PyTypeError::new_err("Params and keyword configuration are mutually exclusive"));
-                }
-                if configured { self._write_pdb_keywords(path, ter_records, numbered_ter, ter_ignores_type, preserve_serial, end_record) }
-                else { self._write_pdb_params(path, params) }
-            }
+#[pyo3(signature=(path, params=crate::arguments::Argument::Missing, *, ter_records=crate::arguments::Argument::Missing, numbered_ter=crate::arguments::Argument::Missing, ter_ignores_type=crate::arguments::Argument::Missing, preserve_serial=crate::arguments::Argument::Missing, end_record=crate::arguments::Argument::Missing))]
+            fn write_pdb(&self, path: std::path::PathBuf, params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioPdbWriteParams>>>, ter_records: crate::arguments::Argument<Option<bool>>, numbered_ter: crate::arguments::Argument<Option<bool>>, ter_ignores_type: crate::arguments::Argument<Option<bool>>, preserve_serial: crate::arguments::Argument<Option<bool>>, end_record: crate::arguments::Argument<Option<bool>>) -> PyResult<()> {
+        let keyword_form = ter_records.is_supplied() || numbered_ter.is_supplied() || ter_ignores_type.is_supplied() || preserve_serial.is_supplied() || end_record.is_supplied();
+        crate::arguments::configuration_arguments!(params; ter_records, numbered_ter, ter_ignores_type, preserve_serial, end_record);
+        let params = params.as_deref();
+        if keyword_form { self._write_pdb_keywords(path, ter_records, numbered_ter, ter_ignores_type, preserve_serial, end_record) } else { self._write_pdb_params(path, params) }
+    }
             #[doc = r#"{"role":"overload","target":"BioStructure.write_pdb"}"#]
             #[pyo3(signature=(path, params=None))]
             fn _write_pdb_params(&self, path: std::path::PathBuf, params: Option<&crate::params::BioPdbWriteParams>) -> PyResult<()> {

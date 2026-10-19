@@ -2,7 +2,7 @@ use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct TemplateAttachment {
     pub(crate) inner: ck::TemplateAttachment,
@@ -22,7 +22,7 @@ impl TemplateAttachment {
         self.inner.label()
     }
 }
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct TemplateAttachmentOrder {
     pub(crate) inner: ck::TemplateAttachmentOrder,
@@ -50,7 +50,7 @@ impl TemplateAttachmentOrder {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum TemplateAttachmentOrderErrorKind {
     Empty,
@@ -60,7 +60,7 @@ pub enum TemplateAttachmentOrderErrorKind {
     MappingTargetOutOfRange,
     TargetRemoved,
 }
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct TemplateAttachmentOrderError {
     inner: ck::TemplateAttachmentOrderError,
 }
@@ -183,7 +183,7 @@ impl TemplateAttachmentOrderError {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct AtomMetadata {
     pub(crate) inner: ck::AtomMetadata,

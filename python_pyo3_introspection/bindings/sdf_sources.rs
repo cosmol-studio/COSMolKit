@@ -11,44 +11,36 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::{fs::File, io::BufReader, path::PathBuf};
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct SdfDataset {
     pub(crate) inner: ck::SdfDataset,
 }
 #[pymethods]
 impl SdfDataset {
-    #[pyo3(signature=(index,params=None,*,sanitize=None,remove_hs=None,strict_parsing=None,expand_attachment_points=None,process_property_lists=None,coordinate_mode=None))]
+    #[pyo3(signature=(index,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
     fn record(
         &self,
         py: Python<'_>,
         index: usize,
-        params: Option<&SdfReadParams>,
-        sanitize: Option<bool>,
-        remove_hs: Option<bool>,
-        strict_parsing: Option<bool>,
-        expand_attachment_points: Option<bool>,
-        process_property_lists: Option<bool>,
-        coordinate_mode: Option<crate::selectors::SdfCoordinateModeInput>,
+        params: crate::arguments::Argument<Option<PyRef<'_, SdfReadParams>>>,
+        sanitize: crate::arguments::Argument<Option<bool>>,
+        remove_hs: crate::arguments::Argument<Option<bool>>,
+        strict_parsing: crate::arguments::Argument<Option<bool>>,
+        expand_attachment_points: crate::arguments::Argument<Option<bool>>,
+        process_property_lists: crate::arguments::Argument<Option<bool>>,
+        coordinate_mode: crate::arguments::Argument<
+            Option<crate::selectors::SdfCoordinateModeInput>,
+        >,
     ) -> PyResult<SdfRecord> {
-        if params.is_some()
-            && (sanitize.is_some()
-                || remove_hs.is_some()
-                || strict_parsing.is_some()
-                || expand_attachment_points.is_some()
-                || process_property_lists.is_some()
-                || coordinate_mode.is_some())
-        {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keywords are mutually exclusive",
-            ));
-        }
-        if sanitize.is_some()
-            || remove_hs.is_some()
-            || strict_parsing.is_some()
-            || expand_attachment_points.is_some()
-            || process_property_lists.is_some()
-            || coordinate_mode.is_some()
-        {
+        let keyword_form = sanitize.is_supplied()
+            || remove_hs.is_supplied()
+            || strict_parsing.is_supplied()
+            || expand_attachment_points.is_supplied()
+            || process_property_lists.is_supplied()
+            || coordinate_mode.is_supplied();
+        crate::arguments::configuration_arguments!(params; sanitize, remove_hs, strict_parsing, expand_attachment_points, process_property_lists, coordinate_mode);
+        let params = params.as_deref();
+        if keyword_form {
             self._record_keywords(
                 py,
                 index,
@@ -111,37 +103,29 @@ impl SdfDataset {
     }
 
     #[staticmethod]
-    #[pyo3(signature=(path,params=None,*,sanitize=None,remove_hs=None,strict_parsing=None,expand_attachment_points=None,process_property_lists=None,coordinate_mode=None))]
+    #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
     fn open(
         py: Python<'_>,
         path: PathBuf,
-        params: Option<&SdfReadParams>,
-        sanitize: Option<bool>,
-        remove_hs: Option<bool>,
-        strict_parsing: Option<bool>,
-        expand_attachment_points: Option<bool>,
-        process_property_lists: Option<bool>,
-        coordinate_mode: Option<crate::selectors::SdfCoordinateModeInput>,
+        params: crate::arguments::Argument<Option<PyRef<'_, SdfReadParams>>>,
+        sanitize: crate::arguments::Argument<Option<bool>>,
+        remove_hs: crate::arguments::Argument<Option<bool>>,
+        strict_parsing: crate::arguments::Argument<Option<bool>>,
+        expand_attachment_points: crate::arguments::Argument<Option<bool>>,
+        process_property_lists: crate::arguments::Argument<Option<bool>>,
+        coordinate_mode: crate::arguments::Argument<
+            Option<crate::selectors::SdfCoordinateModeInput>,
+        >,
     ) -> PyResult<Self> {
-        if params.is_some()
-            && (sanitize.is_some()
-                || remove_hs.is_some()
-                || strict_parsing.is_some()
-                || expand_attachment_points.is_some()
-                || process_property_lists.is_some()
-                || coordinate_mode.is_some())
-        {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keywords are mutually exclusive",
-            ));
-        }
-        if sanitize.is_some()
-            || remove_hs.is_some()
-            || strict_parsing.is_some()
-            || expand_attachment_points.is_some()
-            || process_property_lists.is_some()
-            || coordinate_mode.is_some()
-        {
+        let keyword_form = sanitize.is_supplied()
+            || remove_hs.is_supplied()
+            || strict_parsing.is_supplied()
+            || expand_attachment_points.is_supplied()
+            || process_property_lists.is_supplied()
+            || coordinate_mode.is_supplied();
+        crate::arguments::configuration_arguments!(params; sanitize, remove_hs, strict_parsing, expand_attachment_points, process_property_lists, coordinate_mode);
+        let params = params.as_deref();
+        if keyword_form {
             Self::_open_keywords(
                 py,
                 path,
@@ -248,7 +232,7 @@ impl SdfDataset {
             .map_err(BatchValidationError::from_rust)
     }
 }
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct SdfDatasetIterator {
     inner: ck::SdfDatasetIterator,
 }
@@ -264,7 +248,7 @@ impl SdfDatasetIterator {
             .map_err(SdfError::from_rust)
     }
 }
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct SdfRecordStream {
     inner: Option<ck::SdfRecordStream<BufReader<File>>>,
 }
@@ -281,37 +265,29 @@ impl SdfRecordStream {
 #[pymethods]
 impl SdfRecordStream {
     #[staticmethod]
-    #[pyo3(signature=(path,params=None,*,sanitize=None,remove_hs=None,strict_parsing=None,expand_attachment_points=None,process_property_lists=None,coordinate_mode=None))]
+    #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
     fn open(
         py: Python<'_>,
         path: PathBuf,
-        params: Option<&SdfReadParams>,
-        sanitize: Option<bool>,
-        remove_hs: Option<bool>,
-        strict_parsing: Option<bool>,
-        expand_attachment_points: Option<bool>,
-        process_property_lists: Option<bool>,
-        coordinate_mode: Option<crate::selectors::SdfCoordinateModeInput>,
+        params: crate::arguments::Argument<Option<PyRef<'_, SdfReadParams>>>,
+        sanitize: crate::arguments::Argument<Option<bool>>,
+        remove_hs: crate::arguments::Argument<Option<bool>>,
+        strict_parsing: crate::arguments::Argument<Option<bool>>,
+        expand_attachment_points: crate::arguments::Argument<Option<bool>>,
+        process_property_lists: crate::arguments::Argument<Option<bool>>,
+        coordinate_mode: crate::arguments::Argument<
+            Option<crate::selectors::SdfCoordinateModeInput>,
+        >,
     ) -> PyResult<Self> {
-        if params.is_some()
-            && (sanitize.is_some()
-                || remove_hs.is_some()
-                || strict_parsing.is_some()
-                || expand_attachment_points.is_some()
-                || process_property_lists.is_some()
-                || coordinate_mode.is_some())
-        {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keywords are mutually exclusive",
-            ));
-        }
-        if sanitize.is_some()
-            || remove_hs.is_some()
-            || strict_parsing.is_some()
-            || expand_attachment_points.is_some()
-            || process_property_lists.is_some()
-            || coordinate_mode.is_some()
-        {
+        let keyword_form = sanitize.is_supplied()
+            || remove_hs.is_supplied()
+            || strict_parsing.is_supplied()
+            || expand_attachment_points.is_supplied()
+            || process_property_lists.is_supplied()
+            || coordinate_mode.is_supplied();
+        crate::arguments::configuration_arguments!(params; sanitize, remove_hs, strict_parsing, expand_attachment_points, process_property_lists, coordinate_mode);
+        let params = params.as_deref();
+        if keyword_form {
             Self::_open_keywords(
                 py,
                 path,
@@ -416,44 +392,36 @@ impl SdfRecordStream {
             .map_err(BatchValidationError::from_rust)
     }
 }
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct SdfReader {
     inner: ck::SdfReader,
 }
 #[pymethods]
 impl SdfReader {
     #[staticmethod]
-    #[pyo3(signature=(path,params=None,*,sanitize=None,remove_hs=None,strict_parsing=None,expand_attachment_points=None,process_property_lists=None,coordinate_mode=None))]
+    #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
     fn open(
         py: Python<'_>,
         path: PathBuf,
-        params: Option<&SdfReadParams>,
-        sanitize: Option<bool>,
-        remove_hs: Option<bool>,
-        strict_parsing: Option<bool>,
-        expand_attachment_points: Option<bool>,
-        process_property_lists: Option<bool>,
-        coordinate_mode: Option<crate::selectors::SdfCoordinateModeInput>,
+        params: crate::arguments::Argument<Option<PyRef<'_, SdfReadParams>>>,
+        sanitize: crate::arguments::Argument<Option<bool>>,
+        remove_hs: crate::arguments::Argument<Option<bool>>,
+        strict_parsing: crate::arguments::Argument<Option<bool>>,
+        expand_attachment_points: crate::arguments::Argument<Option<bool>>,
+        process_property_lists: crate::arguments::Argument<Option<bool>>,
+        coordinate_mode: crate::arguments::Argument<
+            Option<crate::selectors::SdfCoordinateModeInput>,
+        >,
     ) -> PyResult<Self> {
-        if params.is_some()
-            && (sanitize.is_some()
-                || remove_hs.is_some()
-                || strict_parsing.is_some()
-                || expand_attachment_points.is_some()
-                || process_property_lists.is_some()
-                || coordinate_mode.is_some())
-        {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keywords are mutually exclusive",
-            ));
-        }
-        if sanitize.is_some()
-            || remove_hs.is_some()
-            || strict_parsing.is_some()
-            || expand_attachment_points.is_some()
-            || process_property_lists.is_some()
-            || coordinate_mode.is_some()
-        {
+        let keyword_form = sanitize.is_supplied()
+            || remove_hs.is_supplied()
+            || strict_parsing.is_supplied()
+            || expand_attachment_points.is_supplied()
+            || process_property_lists.is_supplied()
+            || coordinate_mode.is_supplied();
+        crate::arguments::configuration_arguments!(params; sanitize, remove_hs, strict_parsing, expand_attachment_points, process_property_lists, coordinate_mode);
+        let params = params.as_deref();
+        if keyword_form {
             Self::_open_keywords(
                 py,
                 path,
@@ -537,7 +505,7 @@ impl SdfReader {
             .map_err(BatchValidationError::from_rust)
     }
 }
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct SdfBatchIterator {
     inner: ck::SdfBatchIterator,
 }
@@ -555,7 +523,7 @@ impl SdfBatchIterator {
         self.next_batch(py)
     }
 }
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct SdfReaderBatchIterator {
     inner: ck::SdfReaderBatchIterator<BufReader<File>>,
 }

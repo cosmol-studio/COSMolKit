@@ -1,59 +1,420 @@
 //! A parameter declaration generates construction and writable fields.
 //! It deliberately does not generate domain calls or a second default policy.
+use pyo3::BoundObject;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyDictMethods, PyMapping, PyMappingProxy};
+use pyo3::type_hint_union;
+use pyo3::types::{PyDict, PyDictMethods, PyMapping, PyMappingProxy, PyTuple};
 use std::collections::BTreeMap;
 
-const STRING_MAPPING: pyo3::inspect::PyStaticExpr = pyo3::type_hint_subscript!(
-    pyo3::type_hint_identifier!("collections.abc", "Mapping"),
-    pyo3::type_hint_identifier!("builtins", "str"),
-    pyo3::type_hint_identifier!("builtins", "str")
-);
+/// Typed value conversion at the language boundary. Configuration storage stays
+/// native; container reads are immutable snapshots, never editable mirrors.
+pub(crate) trait Container: Sized {
+    const OPTIONAL: bool = false;
+    type Native: Clone;
+    const TYPE: pyo3::inspect::PyStaticExpr;
+    const INPUT: pyo3::inspect::PyStaticExpr;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native>;
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>>;
+}
 
-/// Language conversion only: owned Rust strings in, builtin readonly snapshot out.
-pub(crate) struct StringMap(pub(crate) BTreeMap<String, String>);
+impl<T> Container for Vec<T>
+where
+    T: Clone,
+    for<'a, 'py> T: FromPyObject<'a, 'py>,
+    for<'py> T: IntoPyObject<'py>,
+{
+    type Native = Self;
+    const TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_subscript!(
+        pyo3::type_hint_identifier!("builtins", "tuple"),
+        <T as IntoPyObject<'_>>::OUTPUT_TYPE,
+        pyo3::inspect::PyStaticExpr::Constant {
+            value: pyo3::inspect::PyStaticConstant::Ellipsis
+        }
+    );
+    const INPUT: pyo3::inspect::PyStaticExpr = <Self as FromPyObject<'_, '_>>::INPUT_TYPE;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        value.extract()
+    }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for StringMap {
-    type Error = PyErr;
-    const INPUT_TYPE: pyo3::inspect::PyStaticExpr = STRING_MAPPING;
-
-    fn extract(value: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> PyResult<Self> {
-        let mapping = value.cast::<PyMapping>()?;
-        let dictionary = PyDict::new(value.py());
-        dictionary.update(&mapping)?;
-        dictionary.extract().map(Self)
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
+        Ok(PyTuple::new(py, value.clone())?.into_any())
     }
 }
 
-impl<'py> IntoPyObject<'py> for StringMap {
-    type Target = PyMappingProxy;
-    type Output = Bound<'py, PyMappingProxy>;
-    type Error = PyErr;
-    const OUTPUT_TYPE: pyo3::inspect::PyStaticExpr = STRING_MAPPING;
+// Fixed arrays use immutable tuples for reads and PyO3's native length/type
+// conversion for assignment.
+impl<T, const N: usize> Container for [T; N]
+where
+    T: Clone,
+    for<'a, 'py> T: FromPyObject<'a, 'py>,
+    for<'py> T: IntoPyObject<'py>,
+{
+    type Native = Self;
+    const TYPE: pyo3::inspect::PyStaticExpr = <Vec<T> as Container>::TYPE;
+    const INPUT: pyo3::inspect::PyStaticExpr = <Self as FromPyObject<'_, '_>>::INPUT_TYPE;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        value.extract()
+    }
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
+        Ok(PyTuple::new(py, value.clone())?.into_any())
+    }
+}
 
+impl<T: Container> Container for Option<T> {
+    const OPTIONAL: bool = true;
+    type Native = Option<T::Native>;
+    const TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_union!(
+        T::TYPE,
+        pyo3::inspect::PyStaticExpr::Constant {
+            value: pyo3::inspect::PyStaticConstant::None
+        }
+    );
+    const INPUT: pyo3::inspect::PyStaticExpr = pyo3::type_hint_union!(
+        T::INPUT,
+        pyo3::inspect::PyStaticExpr::Constant {
+            value: pyo3::inspect::PyStaticConstant::None
+        }
+    );
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        if value.is_none() {
+            Ok(None)
+        } else {
+            T::extract(value).map(Some)
+        }
+    }
+
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
+        match value {
+            Some(value) => T::output(py, value),
+            None => Ok(py.None().into_bound(py)),
+        }
+    }
+}
+
+pub(crate) struct ContainerOutput<'a, T: Container>(pub(crate) &'a T::Native);
+impl<'py, T: Container> IntoPyObject<'py> for ContainerOutput<'_, T> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+    const OUTPUT_TYPE: pyo3::inspect::PyStaticExpr = T::TYPE;
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        let dictionary = self.0.into_pyobject(py)?;
-        Ok(PyMappingProxy::new(py, dictionary.as_mapping()))
+        T::output(py, self.0)
+    }
+}
+
+/// Projection of a pure native input value, never an executor or diagnostics.
+pub(crate) trait Configuration: pyo3::PyClass<BaseType = PyAny> {
+    type Native: Clone;
+    const INPUT: pyo3::inspect::PyStaticExpr = <Py<Self> as FromPyObject<'_, '_>>::INPUT_TYPE;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        let instance = value.extract::<Py<Self>>()?;
+        let native = instance.try_borrow(value.py())?.to_native(value.py())?;
+        Ok(native)
+    }
+    fn from_native(py: Python<'_>, value: Self::Native) -> PyResult<Self>;
+    fn to_native(&self, py: Python<'_>) -> PyResult<Self::Native>;
+}
+
+pub(crate) struct ConfigurationField<T>(std::marker::PhantomData<T>);
+impl<T: Configuration> Container for ConfigurationField<T> {
+    type Native = T::Native;
+    const TYPE: pyo3::inspect::PyStaticExpr = <Py<T> as IntoPyObject<'_>>::OUTPUT_TYPE;
+    const INPUT: pyo3::inspect::PyStaticExpr = T::INPUT;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        T::extract(value)
+    }
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
+        Ok(Py::new(py, T::from_native(py, value.clone())?)?
+            .into_bound(py)
+            .into_any())
+    }
+}
+
+/// A constructor/setter captures a value, not the caller's editable object.
+pub(crate) struct ContainerInput<T: Container>(pub(crate) T::Native);
+impl<'a, 'py, T: Container> FromPyObject<'a, 'py> for ContainerInput<T> {
+    type Error = PyErr;
+    const INPUT_TYPE: pyo3::inspect::PyStaticExpr = T::INPUT;
+    fn extract(value: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        T::extract(value).map(Self)
+    }
+}
+impl<'py, T: Container> IntoPyObject<'py> for ContainerInput<T> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+    const OUTPUT_TYPE: pyo3::inspect::PyStaticExpr = T::TYPE;
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        T::output(py, &self.0)
+    }
+}
+pub(crate) type ConfigurationInput<T> = ContainerInput<ConfigurationField<T>>;
+
+/// Omission uses the field's native default. Explicit None is a value for a
+/// genuine Option; over concrete storage it selects the documented default.
+pub(crate) enum FieldInput<T: Container> {
+    Default,
+    Value(T::Native),
+}
+impl<T: Container> Default for FieldInput<T> {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+impl<T: Container> FieldInput<T> {
+    pub(crate) fn or_default(self, default: impl FnOnce() -> T::Native) -> T::Native {
+        match self {
+            Self::Default => default(),
+            Self::Value(value) => value,
+        }
+    }
+}
+impl<'a, 'py, T: Container> FromPyObject<'a, 'py> for FieldInput<T> {
+    type Error = PyErr;
+    const INPUT_TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_union!(
+        T::INPUT,
+        pyo3::inspect::PyStaticExpr::Constant {
+            value: pyo3::inspect::PyStaticConstant::None
+        }
+    );
+    fn extract(value: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        if value.is_none() && !T::OPTIONAL {
+            Ok(Self::Default)
+        } else {
+            T::extract(value).map(Self::Value)
+        }
+    }
+}
+impl<'py, T: Container> IntoPyObject<'py> for FieldInput<T> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+    const OUTPUT_TYPE: pyo3::inspect::PyStaticExpr = T::TYPE;
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match self {
+            Self::Default => Ok(py.None().into_bound(py)),
+            Self::Value(value) => T::output(py, &value),
+        }
+    }
+}
+
+/// Readonly value leaves do not need a retained editable child object.
+pub(crate) struct ValueField<T>(std::marker::PhantomData<T>);
+impl<T> Container for ValueField<T>
+where
+    T: Configuration + pyo3::PyClass<Frozen = pyo3::pyclass::boolean_struct::True>,
+    T::Native: Clone,
+{
+    type Native = T::Native;
+    const TYPE: pyo3::inspect::PyStaticExpr = <Py<T> as IntoPyObject<'_>>::OUTPUT_TYPE;
+    const INPUT: pyo3::inspect::PyStaticExpr = T::INPUT;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        T::extract(value)
+    }
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
+        Ok(Py::new(py, T::from_native(py, value.clone())?)?
+            .into_bound(py)
+            .into_any())
+    }
+}
+
+pub(crate) trait NativeScalar: Copy {
+    type Repr: Copy;
+    fn from_scalar(index: Self::Repr) -> Self;
+    fn scalar(self) -> Self::Repr;
+}
+impl NativeScalar for cosmolkit::AtomId {
+    type Repr = usize;
+    fn from_scalar(index: usize) -> Self {
+        Self::new(index)
+    }
+    fn scalar(self) -> usize {
+        self.index()
+    }
+}
+impl NativeScalar for cosmolkit::BondId {
+    type Repr = usize;
+    fn from_scalar(index: usize) -> Self {
+        Self::new(index)
+    }
+    fn scalar(self) -> usize {
+        self.index()
+    }
+}
+pub(crate) struct NativeScalarField<T>(std::marker::PhantomData<T>);
+impl<T: NativeScalar> Container for NativeScalarField<T>
+where
+    for<'a, 'py> T::Repr: FromPyObject<'a, 'py>,
+    for<'py> T::Repr: IntoPyObject<'py>,
+{
+    type Native = T;
+    const TYPE: pyo3::inspect::PyStaticExpr = <T::Repr as IntoPyObject<'_>>::OUTPUT_TYPE;
+    const INPUT: pyo3::inspect::PyStaticExpr = <T::Repr as FromPyObject<'_, '_>>::INPUT_TYPE;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<T> {
+        value
+            .extract::<T::Repr>()
+            .map(T::from_scalar)
+            .map_err(Into::into)
+    }
+    fn output<'py>(py: Python<'py>, value: &T) -> PyResult<Bound<'py, PyAny>> {
+        value
+            .scalar()
+            .into_pyobject(py)
+            .map(|value| value.into_any().into_bound())
+            .map_err(Into::into)
+    }
+}
+
+/// Immutable scalar leaves inside a mutable collection (for example map keys
+/// or coordinate tuples). This is ordinary PyO3 conversion, not validation.
+pub(crate) struct Scalar<T>(std::marker::PhantomData<T>);
+impl<T> Container for Scalar<T>
+where
+    T: Clone,
+    for<'a, 'py> T: FromPyObject<'a, 'py>,
+    for<'py> T: IntoPyObject<'py>,
+{
+    type Native = T;
+    const TYPE: pyo3::inspect::PyStaticExpr = <T as IntoPyObject<'_>>::OUTPUT_TYPE;
+    const INPUT: pyo3::inspect::PyStaticExpr = <T as FromPyObject<'_, '_>>::INPUT_TYPE;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<T> {
+        value.extract().map_err(Into::into)
+    }
+    fn output<'py>(py: Python<'py>, value: &T) -> PyResult<Bound<'py, PyAny>> {
+        value
+            .clone()
+            .into_pyobject(py)
+            .map(|value| value.into_any().into_bound())
+            .map_err(Into::into)
+    }
+}
+
+/// A native vector with recursively projected immutable reads.
+pub(crate) struct List<T>(std::marker::PhantomData<T>);
+impl<T: Container> Container for List<T> {
+    type Native = Vec<T::Native>;
+    const TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_subscript!(
+        pyo3::type_hint_identifier!("builtins", "tuple"),
+        T::TYPE,
+        pyo3::inspect::PyStaticExpr::Constant {
+            value: pyo3::inspect::PyStaticConstant::Ellipsis
+        }
+    );
+    const INPUT: pyo3::inspect::PyStaticExpr = pyo3::type_hint_subscript!(
+        pyo3::type_hint_identifier!("collections.abc", "Sequence"),
+        T::INPUT
+    );
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        value.cast::<pyo3::types::PySequence>()?;
+        value
+            .try_iter()?
+            .map(|value| T::extract(value?.as_borrowed()))
+            .collect()
+    }
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
+        let values = value
+            .iter()
+            .map(|value| T::output(py, value))
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(PyTuple::new(py, values)?.into_any())
+    }
+}
+
+pub(crate) struct Dict<K, V>(std::marker::PhantomData<(K, V)>);
+impl<K: Container, V: Container> Container for Dict<K, V>
+where
+    K::Native: Ord,
+{
+    type Native = BTreeMap<K::Native, V::Native>;
+    const TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_subscript!(
+        pyo3::type_hint_identifier!("collections.abc", "Mapping"),
+        K::TYPE,
+        V::TYPE
+    );
+    const INPUT: pyo3::inspect::PyStaticExpr = pyo3::type_hint_subscript!(
+        pyo3::type_hint_identifier!("collections.abc", "Mapping"),
+        K::INPUT,
+        V::INPUT
+    );
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        let values = PyDict::new(value.py());
+        let mapping = value.cast::<PyMapping>()?;
+        values.update(&mapping)?;
+        values
+            .iter()
+            .map(|(key, value)| {
+                Ok((
+                    K::extract(key.as_borrowed())?,
+                    V::extract(value.as_borrowed())?,
+                ))
+            })
+            .collect()
+    }
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
+        let output = PyDict::new(py);
+        for (key, value) in value {
+            output.set_item(K::output(py, key)?, V::output(py, value)?)?;
+        }
+        Ok(PyMappingProxy::new(py, output.as_mapping()).into_any())
+    }
+}
+
+pub(crate) trait NativeEnum:
+    crate::chemical_values::EnumValue + pyo3::PyClass<BaseType = PyAny> + Copy
+{
+    type Native: Copy;
+    const INPUT: pyo3::inspect::PyStaticExpr = pyo3::type_hint_union!(
+        <Py<Self> as IntoPyObject<'_>>::OUTPUT_TYPE,
+        pyo3::type_hint_identifier!("builtins", "str")
+    );
+    fn from_native(value: Self::Native) -> Self;
+    fn into_native(self) -> Self::Native;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        if value.is_instance_of::<pyo3::types::PyString>() {
+            Self::from_name(&value.extract::<String>()?).map(Self::into_native)
+        } else {
+            let object = value.extract::<Py<Self>>()?;
+            let native = *object.try_borrow(value.py())?;
+            Ok(native.into_native())
+        }
+    }
+}
+pub(crate) struct EnumField<T>(std::marker::PhantomData<T>);
+impl<T: NativeEnum> Container for EnumField<T> {
+    type Native = T::Native;
+    const TYPE: pyo3::inspect::PyStaticExpr = <Py<T> as IntoPyObject<'_>>::OUTPUT_TYPE;
+    const INPUT: pyo3::inspect::PyStaticExpr = T::INPUT;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        T::extract(value)
+    }
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
+        Ok(Py::new(py, T::from_native(*value))?
+            .into_bound(py)
+            .into_any())
     }
 }
 
 macro_rules! parameters {
     ($name:ident, $module:ident::$rust:ident, {$($field:ident: $ty:ty),+ $(,)?}
-        $(, string_maps = [$($map:ident),+ $(,)?])?
         $(, defaults = [$($unexposed:ident),+ $(,)?])?
         $(, methods = {$($method:item)*})?) => {
-        #[pyo3::pyclass(module = "fixed_projection._native")]
+        #[pyo3::pyclass(module = "cosmolkit")]
         pub struct $name { pub(crate) inner: $module::$rust }
+
+        impl $crate::parameters::Configuration for $name {
+            type Native = $module::$rust;
+            fn from_native(_py: pyo3::Python<'_>, inner: Self::Native) -> pyo3::PyResult<Self> { Ok(Self { inner }) }
+            fn to_native(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<Self::Native> { Ok(self.inner.clone()) }
+        }
 
         paste::paste! {
             #[pyo3::pymethods]
             impl $name {
                 #[new]
-                #[pyo3(signature = (*, $($field=$module::$rust::default().$field),+ $(, $($map=None),+)?))]
-                fn new($($field: $ty),+ $(, $($map: Option<$crate::parameters::StringMap>),+)?) -> Self {
+                #[pyo3(signature = (*, $($field=$module::$rust::default().$field),+))]
+                fn new($($field: $ty),+) -> Self {
                     // The exhaustive literal rejects new domain fields at compile time.
                     Self { inner: $module::$rust { $($field,)+
-                        $($($map: $map.map(|value| value.0).unwrap_or_else(|| $module::$rust::default().$map),)+)?
                         $($($unexposed: $module::$rust::default().$unexposed,)+)?
                     } }
                 }
@@ -63,16 +424,6 @@ macro_rules! parameters {
                     #[setter]
                     fn [<set_ $field>](&mut self, value: $ty) { self.inner.$field = value; }
                 )+
-                $($(
-                    #[getter]
-                    fn $map(&self) -> $crate::parameters::StringMap {
-                        $crate::parameters::StringMap(self.inner.$map.clone())
-                    }
-                    #[setter]
-                    fn [<set_ $map>](&mut self, value: Option<$crate::parameters::StringMap>) {
-                        self.inner.$map = value.map(|value| value.0).unwrap_or_else(|| $module::$rust::default().$map);
-                    }
-                )+)?
                 $($($method)*)?
             }
         }

@@ -43,7 +43,8 @@ pub enum RingComparator {
 }
 
 /// Atom-side FMCS comparison options.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct McsAtomCompareParameters {
     pub match_valences: bool,
     pub match_chiral_tag: bool,
@@ -80,7 +81,8 @@ impl Default for McsAtomCompareParameters {
 }
 
 /// Bond-side FMCS comparison options.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct McsBondCompareParameters {
     pub ring_matches_ring_only: bool,
     pub complete_rings_only: bool,
@@ -111,18 +113,37 @@ impl Default for McsBondCompareParameters {
 }
 
 /// Detached FMCS parameter value.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 pub struct McsParameters {
     pub store_all: bool,
     pub maximize_bonds: bool,
     pub threshold: f64,
     pub timeout: u32,
     pub verbose: bool,
+    #[configuration(none_default)]
     pub atom_compare_parameters: McsAtomCompareParameters,
+    #[configuration(none_default)]
     pub bond_compare_parameters: McsBondCompareParameters,
+    #[configuration(none_default)]
     pub atom_comparator: AtomComparator,
+    #[configuration(none_default)]
     pub bond_comparator: BondComparator,
     pub initial_seed: String,
+}
+
+impl From<(McsAtomCompareParameters, McsBondCompareParameters)> for McsParameters {
+    fn from(
+        (atom_compare_parameters, bond_compare_parameters): (
+            McsAtomCompareParameters,
+            McsBondCompareParameters,
+        ),
+    ) -> Self {
+        Self {
+            atom_compare_parameters,
+            bond_compare_parameters,
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum BioPdbWriteErrorKind {
     InvalidStructure,
@@ -22,7 +22,7 @@ pub enum BioPdbWriteErrorKind {
     Io,
 }
 
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioPdbWriteError {
     inner: Arc<ck::BioPdbWriteError>,
 }

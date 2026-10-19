@@ -34,7 +34,7 @@ pub(crate) fn keywords(
     track_failures: Option<bool>,
     enable_sequential_random_seeds: Option<bool>,
     symmetrize_conjugated_terminal_groups_for_pruning: Option<bool>,
-) -> EmbedParams {
+) -> ck::EmbedParams {
     // All eight registered embedding operations declare etkdg_v3 as their
     // default_args; partial keywords extend that operation default, not the
     // distinct generic EmbedParams::new constructor.
@@ -132,7 +132,7 @@ pub(crate) fn keywords(
     if let Some(value) = symmetrize_conjugated_terminal_groups_for_pruning {
         inner.symmetrize_conjugated_terminal_groups_for_pruning = value;
     }
-    EmbedParams { inner }
+    inner
 }
 
 #[cfg(test)]
@@ -160,7 +160,7 @@ mod tests {
             module.add_class::<OperationError>()?;
             let locals=PyDict::new(py);
             locals.set_item("api",module)?;
-            locals.set_item("params",Py::new(py,EmbedParams{inner:params})?)?;
+            locals.set_item("params",Py::new(py,EmbedParams::from_rust(py, params)?)?)?;
             locals.set_item("before",before)?;
             locals.set_item("expected_one",one.molecule().to_binary().unwrap())?;
             locals.set_item("expected_two",two.molecule().to_binary().unwrap())?;

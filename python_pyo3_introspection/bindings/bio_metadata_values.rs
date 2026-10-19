@@ -13,7 +13,7 @@ macro_rules! metadata_record {
     ($name:ident, scalars {$($field:ident: $ty:ty),+ $(,)?},
         values {$($value:ident: $value_ty:ident),* $(,)?},
         lists {$($list:ident: $list_ty:ident),* $(,)?}) => {
-        #[pyclass(module="fixed_projection._native", frozen, from_py_object)]
+        #[pyclass(module="cosmolkit", frozen, from_py_object)]
         #[derive(Clone)]
         pub struct $name { pub(crate) inner: ck::$name }
         #[pymethods]
@@ -55,7 +55,7 @@ impl BioSoftwareClassificationInput {
         }
     }
 }
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioSoftwareItem {
     pub(crate) inner: ck::BioSoftwareItem,
@@ -119,7 +119,7 @@ impl BioSoftwareItem {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioTlsSelection {
     pub(crate) inner: ck::BioTlsSelection,

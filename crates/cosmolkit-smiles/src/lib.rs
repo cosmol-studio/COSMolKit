@@ -237,7 +237,7 @@ impl From<cosmolkit_model::TopologyEditError> for SmilesParseError {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct SmilesParseParams {
     pub sanitize: bool,
     pub allow_cxsmiles: bool,
@@ -246,6 +246,7 @@ pub struct SmilesParseParams {
     pub remove_hs: bool,
     pub skip_cleanup: bool,
     pub debug_parse: bool,
+    #[configuration(none_default)]
     pub replacements: BTreeMap<String, String>,
 }
 
@@ -3706,3 +3707,12 @@ mod recovery_chem26 {
         assert_eq!(r.topology.bonds[4].order(), BondOrder::Single);
     }
 }
+
+#[doc(hidden)]
+pub use writer::__configuration_RandomSmilesWriteParams;
+
+#[doc(hidden)]
+pub use cx_writer::__configuration_CxSmilesWriteParams;
+
+#[doc(hidden)]
+pub use writer::__configuration_SmilesWriteParams;

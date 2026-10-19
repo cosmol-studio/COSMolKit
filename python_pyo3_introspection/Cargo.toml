@@ -1,6 +1,6 @@
 [package]
-name = "fixed-python-projection"
-version = "0.0.0"
+name = "cosmolkit-py"
+version = "0.5.1-rc.5"
 edition = "2024"
 publish = false
 
@@ -19,7 +19,7 @@ name = "registry_snapshot"
 path = "registry_snapshot.rs"
 
 [dependencies]
-cosmolkit = { path = "../crates/cosmolkit", default-features = false, features = ["full", "op-contracts-strict"] }
+cosmolkit = { path = "../crates/cosmolkit", default-features = false, features = ["full"] }
 # Library and official extractor use the same published version.
 pyo3 = { version = "=0.30.1", features = ["extension-module", "experimental-inspect", "abi3-py312", "num-bigint"] }
 num-bigint = "=0.4.8"

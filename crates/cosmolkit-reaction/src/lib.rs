@@ -69,3 +69,20 @@ pub use write_params::ReactionWriteParams;
 mod write_error;
 pub use write_error::ReactionWriteError;
 mod write;
+
+#[doc(hidden)]
+pub use apply_params::__configuration_ReactionApplyParams;
+#[doc(hidden)]
+pub use local_params::__configuration_ReactionTemplateRemovalParams;
+#[doc(hidden)]
+pub use validation::__configuration_ReactionValidationParams;
+
+#[doc(hidden)]
+pub use parse::__configuration_ReactionParseParams;
+#[doc(hidden)]
+pub use run_params::__configuration_ReactionRunParams;
+#[doc(hidden)]
+pub use write_params::__configuration_ReactionWriteParams;
+
+#[doc(hidden)]
+pub use run_params::__configuration_ReactionSingleRunParams;

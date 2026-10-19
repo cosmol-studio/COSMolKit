@@ -19,7 +19,7 @@ impl SdfPropertyListTargetInput {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct SdfPropertyList {
     pub(crate) inner: ck::SdfPropertyList,
@@ -58,7 +58,7 @@ impl SdfPropertyList {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct MoleculeProperties {
     pub(crate) inner: ck::MoleculeProperties,
 }

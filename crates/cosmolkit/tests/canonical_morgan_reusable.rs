@@ -3,7 +3,7 @@
 use cosmolkit::{
     FingerprintAdditionalOutput, FingerprintPreparationError, Molecule,
     MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator, MorganCallParams,
-    MorganFingerprintGenerator, MorganParams, MorganReadError,
+    MorganFingerprintGenerator, MorganGeneratorParams, MorganReadError,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -97,7 +97,7 @@ fn settings_alias_lifetime_and_immutable_snapshot_cover_all_live_fields() {
     assert_eq!(another.fp_size().unwrap(), 1000);
     assert_eq!(another.bits_per_feature().unwrap(), 2);
     assert_eq!(another.count_bounds().unwrap(), [1, 3, 5]);
-    assert_eq!(before, MorganParams::default());
+    assert_eq!(before, MorganGeneratorParams::default());
     let mut owned = another.count_bounds().unwrap();
     owned.push(99);
     assert_eq!(another.count_bounds().unwrap(), [1, 3, 5]);
@@ -112,7 +112,7 @@ fn settings_alias_lifetime_and_immutable_snapshot_cover_all_live_fields() {
 #[test]
 fn explicit_source_provider_precedence_and_independent_query_copy_lifetime() {
     let ring = Molecule::from_smiles("C1CCCCC1").unwrap();
-    let params = MorganParams {
+    let params = MorganGeneratorParams {
         include_ring_membership: false,
         ..Default::default()
     };
@@ -142,7 +142,7 @@ fn explicit_source_provider_precedence_and_independent_query_copy_lifetime() {
         cosmolkit::parse_smarts("[O]").unwrap(),
     ];
     let provider = MorganAtomInvariantsGenerator::features(Some(patterns));
-    let params = MorganParams {
+    let params = MorganGeneratorParams {
         radius: 0,
         ..Default::default()
     };

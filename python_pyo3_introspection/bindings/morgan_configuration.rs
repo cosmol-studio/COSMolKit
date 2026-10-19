@@ -1,14 +1,24 @@
 //! Source-owned Morgan selectors and configuration, without fingerprint logic.
-use crate::fingerprint_configuration::MorganParams;
 use crate::fingerprint_providers::AtomPairAtomInvariantsGenerator;
+use crate::parameters::Configuration;
 use crate::query_compiler::QueryGraph;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object, eq)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, PartialEq)]
 pub struct MorganInvariants {
     pub(crate) inner: ck::MorganInvariants,
+}
+
+impl Configuration for MorganInvariants {
+    type Native = ck::MorganInvariants;
+    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
+        Ok(Self { inner })
+    }
+    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
+        Ok(self.inner.clone())
+    }
 }
 
 #[pymethods]
@@ -37,7 +47,7 @@ impl MorganInvariants {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct MorganAtomInvariantsGenerator {
     pub(crate) inner: ck::MorganAtomInvariantsGenerator,
 }
@@ -71,55 +81,7 @@ impl MorganAtomInvariantsGenerator {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
-pub struct MorganFingerprintParams {
-    pub(crate) inner: ck::MorganFingerprintParams,
-}
-
-macro_rules! morgan_fingerprint_configuration {
-    ($($field:ident),+ $(,)?) => {
-        paste::paste! {
-            #[pymethods]
-            impl MorganFingerprintParams {
-                #[new]
-                #[pyo3(signature=(*, generator=None, $($field=None,)+ conformer_id=ck::MorganFingerprintParams::default().conformer_id, invariants=None))]
-                fn new(generator: Option<&MorganParams>, $($field: Option<Vec<u32>>,)+ conformer_id: i32, invariants: Option<&MorganInvariants>) -> Self {
-                    Self { inner: ck::MorganFingerprintParams {
-                        generator: generator.map(|value| value.inner.clone()).unwrap_or_else(|| ck::MorganFingerprintParams::default().generator),
-                        $($field,)+ conformer_id,
-                        invariants: invariants.map(|value| value.inner.clone()).unwrap_or_else(|| ck::MorganFingerprintParams::default().invariants),
-                    } }
-                }
-                #[getter]
-                fn generator(&self) -> MorganParams { MorganParams { inner: self.inner.generator.clone() } }
-                #[setter]
-                fn set_generator(&mut self, value: Option<&MorganParams>) {
-                    self.inner.generator = value.map(|value| value.inner.clone()).unwrap_or_else(|| ck::MorganFingerprintParams::default().generator);
-                }
-                $(#[getter]
-                fn $field(&self) -> Option<Vec<u32>> { self.inner.$field.clone() }
-                #[setter]
-                fn [<set_ $field>](&mut self, value: Option<Vec<u32>>) { self.inner.$field = value; })+
-                #[getter]
-                fn conformer_id(&self) -> i32 { self.inner.conformer_id }
-                #[setter]
-                fn set_conformer_id(&mut self, value: i32) { self.inner.conformer_id = value; }
-                #[getter]
-                fn invariants(&self) -> MorganInvariants { MorganInvariants { inner: self.inner.invariants.clone() } }
-                #[setter]
-                fn set_invariants(&mut self, value: Option<&MorganInvariants>) {
-                    self.inner.invariants = value.map(|value| value.inner.clone()).unwrap_or_else(|| ck::MorganFingerprintParams::default().invariants);
-                }
-            }
-        }
-    };
-}
-morgan_fingerprint_configuration!(
-    from_atoms,
-    ignore_atoms,
-    custom_atom_invariants,
-    custom_bond_invariants
-);
+ck::project_configuration!(ck::MorganFingerprintParams);
 
 #[cfg(test)]
 mod tests {
@@ -167,19 +129,16 @@ mod tests {
                     QueryGraph::from_rust(ck::parse_smarts("O").unwrap()),
                 )?],
             );
-            let params = MorganFingerprintParams::new(
-                None,
-                Some(vec![]),
-                None,
-                Some(vec![u32::MAX]),
-                None,
-                -1,
-                Some(&invariants),
-            );
-            assert_eq!(params.inner.from_atoms, Some(vec![]));
-            assert_eq!(params.inner.ignore_atoms, None);
-            assert_eq!(params.inner.custom_atom_invariants, Some(vec![u32::MAX]));
-            assert_eq!(params.inner.invariants, invariants.inner);
+            let mut native = ck::MorganFingerprintParams::default();
+            native.from_atoms = Some(vec![]);
+            native.custom_atom_invariants = Some(vec![u32::MAX]);
+            native.invariants = invariants.inner.clone();
+            let params = MorganFingerprintParams::from_rust(py, native)?;
+            let params = params.to_rust(py)?;
+            assert_eq!(params.from_atoms, Some(vec![]));
+            assert_eq!(params.ignore_atoms, None);
+            assert_eq!(params.custom_atom_invariants, Some(vec![u32::MAX]));
+            assert_eq!(params.invariants, invariants.inner);
             Ok(())
         })
         .unwrap();

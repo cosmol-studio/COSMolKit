@@ -31,19 +31,43 @@ stored concrete value; an explicit empty collection remains empty.
 Constructor and setter apply the same conversion. This rule does not apply to
 genuinely optional Rust fields, where None and a present empty value stay distinct.
 
-Replacement maps on SMILES, SMARTS and reaction parameter objects use whole-field
-assignment only. Getters return independent readonly `Mapping[str, str]` snapshots
-using Python's builtin mappingproxy; item changes raise TypeError, never silently
-change a discarded copy. Constructors/setters accept string mappings or None
-(the Rust default). Invalid inputs preserve the previous field. No live owner
-view or write-through container is introduced.
+Configuration follows the common public API contract. Rust defines the input
+values, composition, defaults and execution lifecycle. Bindings only adapt their
+representation. The wrapper holds the actual Rust configuration as its sole
+input storage. Constructors/setters use the same typed extraction and replace
+native fields only after conversion succeeds. Sequence getters return tuples;
+map getters return readonly mappings, recursively projecting their contents.
+Do not expose list.append/dict item assignment that silently edits a copy.
+Nested configuration getters return independent values: edit and assign back
+explicitly. Native callbacks, random sources and executors retain their actual
+state and ownership rather than being rebuilt as input records. Capture native
+invocation inputs before execution or callbacks. Keyword paths construct inputs
+directly, without allocating an intermediate editable Python configuration.
+
+Configuration bindings use native `Configuration` metadata and
+`ck::project_configuration!(ck::TypeName)`. Do not repeat their fields or types
+in binding declarations. Rust-resolved field aliases select shared typed
+projections; generated native struct literals enforce completeness. Required
+inputs, None/default interpretation, composition and registered factories are
+explicit native annotations. Fixed arrays return tuples; setters retain native
+length and element-type checks.
+
+Stateful/accessor records require an explicit ownership adapter, for example
+`ck::project_configuration!(ck::EmbedParams, using embedding_parameters)`.
+The native declaration marks fields handled as state or by that adapter;
+ordinary fields still come from native metadata. Keep native initialization,
+callbacks, diagnostics and random-source ownership in the existing adapter;
+never rebuild them from a Default record. Unsupported shapes fail compilation.
 
 ```python
 p = ck.SmartsParseParams()
-p.replacements = {"{A}": "O"}   # Writes the actual Rust field.
-rules = p.replacements          # Readonly snapshot, not another mutation path.
-# rules["{A}"] = "N"            # Type-check error and runtime TypeError.
-copied = dict(rules)            # Explicit independent mutable dictionary.
+source = {"{A}": "O"}
+p.replacements = source        # Receives an independent value.
+source["{A}"] = "C"            # Does not change p.
+rules = dict(p.replacements)    # Explicit editable copy of the readonly mapping.
+rules["{A}"] = "N"
+p.replacements = rules         # Replaces the actual Rust field.
+# p.replacements["{A}"] = "N" raises TypeError.
 ```
 
 ## Callbacks
@@ -372,6 +396,14 @@ its real source edges remain distinct from readonly error payload fields.
 
 ## Values and ownership
 
+- Molecule pickle uses the unchanged reconstruction path
+  `cosmolkit._molecule_from_binary(bytes)`. `__reduce__` returns that native
+  callable and one binary argument; `__reduce_ex__` validates Python's index
+  protocol and uses the same reduction. Binary encoding/decoding belongs only
+  to the canonical Rust API. An explicit `private_export` declaration re-exports
+  the actual native function at package level, attributes its module identity
+  to that public package, and keeps it outside public `__all__`. No callable is
+  wrapped/replaced and native module initialization remains statically described.
 - Consuming Rust resource methods transfer their resource exactly once. After
   `stream.batches(...)` enters the native consuming call, every original stream
   reference is unusable and raises RuntimeError, including if native parameter
@@ -454,6 +486,7 @@ Inside Molecule's PyO3 methods, register a main entrypoint and two real branches
 #[pyo3(signature = (params=Argument::Missing, *, n_bits=Argument::Missing))]
 fn fingerprint_maccs(
     &self,
+    py: Python<'_>,
     params: Argument<Option<PyRef<'_, MaccsFingerprintParams>>>,
     n_bits: Argument<Option<usize>>,
 ) -> PyResult<Fingerprint> {
@@ -462,7 +495,7 @@ fn fingerprint_maccs(
     if keyword_form {
         self._fingerprint_maccs_keywords(n_bits)
     } else {
-        self._fingerprint_maccs_params(params.as_deref())
+        self._fingerprint_maccs_params(py, params.as_deref())
     }
 }
 
@@ -470,16 +503,11 @@ fn fingerprint_maccs(
 #[pyo3(signature = (params=None))]
 fn _fingerprint_maccs_params(
     &self,
+    py: Python<'_>,
     params: Option<&MaccsFingerprintParams>,
 ) -> PyResult<Fingerprint> {
-    let defaults;
-    let effective = if let Some(params) = params {
-        &params.inner
-    } else {
-        defaults = ck::MaccsFingerprintParams::default();
-        &defaults
-    };
-    self.inner.fingerprint_maccs_with_params(effective)
+    let effective = params.map(|params| params.to_rust(py)).transpose()?.unwrap_or_default();
+    self.inner.fingerprint_maccs_with_params(&effective)
         .map(|inner| Fingerprint { inner })
         .map_err(errors::MaccsFingerprintError::from_rust)
 }
@@ -487,12 +515,12 @@ fn _fingerprint_maccs_params(
 #[doc = r#"{"role": "overload", "target": "Molecule.fingerprint_maccs"}"#]
 #[pyo3(signature = (*, n_bits=None))]
 fn _fingerprint_maccs_keywords(&self, n_bits: Option<usize>) -> PyResult<Fingerprint> {
-    let params = MaccsFingerprintParams {
-        inner: ck::MaccsFingerprintParams {
-            n_bits: n_bits.unwrap_or_else(|| ck::MaccsFingerprintParams::default().n_bits),
-        },
+    let params = ck::MaccsFingerprintParams {
+        n_bits: n_bits.unwrap_or_else(|| ck::MaccsFingerprintParams::default().n_bits),
     };
-    self._fingerprint_maccs_params(Some(&params))
+    self.inner.fingerprint_maccs_with_params(&params)
+        .map(|inner| Fingerprint { inner })
+        .map_err(errors::MaccsFingerprintError::from_rust)
 }
 ```
 

@@ -16,7 +16,8 @@ use cosmolkit_types::Element;
 
 /// Exactly five source-default bool fields (pinned PdbWriteOptions,
 /// NOT minimal()).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct BioPdbWriteParams {
     pub ter_records: bool,
     pub numbered_ter: bool,

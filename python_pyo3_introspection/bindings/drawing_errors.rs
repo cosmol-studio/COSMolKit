@@ -120,7 +120,7 @@ use pyo3::{exceptions::PyValueError, prelude::*};
 use std::error::Error;
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct XmlTextPos {
     inner: ck::XmlTextPos,
 }
@@ -135,7 +135,7 @@ impl XmlTextPos {
         self.inner.col
     }
 }
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum XmlParseErrorKind {
     InvalidXmlPrefixUri,
@@ -170,7 +170,7 @@ pub enum XmlParseErrorKind {
     UnknownToken,
     UnexpectedEndOfStream,
 }
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct XmlParseError {
     inner: RetainedError<ck::XmlParseError>,
 }
@@ -326,7 +326,7 @@ _=>Ok(None)}}
 });
 enum_value!(DoubleLexicalReadErrorKind,{Syntax,TrailingByte,Overflow,FloatingEnvironmentNotModeled});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct SourceNumericStreamState {
     inner: ck::SourceNumericStreamState,
 }
@@ -346,7 +346,7 @@ impl SourceNumericStreamState {
     }
 }
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct DoubleLexicalReadError {
     inner: RetainedError<ck::DoubleLexicalReadError>,
 }

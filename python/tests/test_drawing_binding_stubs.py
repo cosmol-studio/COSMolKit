@@ -31,7 +31,7 @@ def declared_fields(cls: ast.ClassDef) -> dict[str, str]:
 
 def test_selected_stub_classes_and_methods():
     classes = declarations()
-    expected_classes = {"Molecule", "Coordinate2DParams", "DrawingError", "DrawingWriteError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganParams", "FingerprintAdditionalOutput", "Element", "ElementInfo", "DescriptorReadError", "DescriptorError"}
+    expected_classes = {"Molecule", "Coordinate2DParams", "DrawingError", "DrawingWriteError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganGeneratorParams", "FingerprintAdditionalOutput", "Element", "ElementInfo", "DescriptorReadError", "DescriptorError"}
     # This focused regression does not forbid other registered domains.
     # The generator checks the complete enabled registry against the stub.
     assert expected_classes <= classes.keys()

@@ -185,6 +185,20 @@ pub fn try_get_substruct_atom_matches_with_compiled_query_and_context(
         query_context,
     )
 }
+#[doc(hidden)]
+pub use matcher::__configuration_SubstructMatchParams;
+
+#[doc(hidden)]
+pub use mcs::__configuration_McsParameters;
+#[doc(hidden)]
+pub use smarts_parse::__configuration_SmartsParseParams;
+
+#[doc(hidden)]
+pub use mcs::__configuration_McsAtomCompareParameters;
+#[doc(hidden)]
+pub use mcs::__configuration_McsBondCompareParameters;
+#[doc(hidden)]
+pub use smarts_write::__configuration_SmartsWriteParams;
 
 /// Compile a detached query graph into a reusable execution plan.
 pub fn compile_query(query: &QueryGraph) -> Result<CompiledQuery, QueryCompileError> {

@@ -5,7 +5,8 @@ use super::mol_properties::{
 };
 
 /// Options for MMFF atom typing and charge assignment.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct MmffPropertiesParams {
     pub mmff_variant: String,
 }

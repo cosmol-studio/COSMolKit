@@ -31,7 +31,7 @@ pub fn scalar(mol: &Molecule, profile: &serde_json::Value) -> Result<Value> {
     let p: Profile = serde_json::from_value(profile.clone())?;
     let other = Molecule::from_smiles(&p.other_smiles)?;
     let params = MorganFingerprintParams {
-        generator: MorganParams {
+        generator: MorganGeneratorParams {
             radius: p.radius,
             fp_size: p.fp_size,
             ..Default::default()

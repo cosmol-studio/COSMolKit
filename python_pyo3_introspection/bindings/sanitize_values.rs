@@ -11,7 +11,7 @@ enum_value!(SanitizeStage, {
 
 macro_rules! sanitize_flags {
     ($($flag:ident),+ $(,)?) => {
-        #[pyclass(module="fixed_projection._native", frozen, from_py_object, eq)]
+        #[pyclass(module="cosmolkit", frozen, from_py_object, eq)]
         #[derive(Clone, Copy, PartialEq)]
         pub struct SanitizeOperations { pub(crate) inner: ck::SanitizeOperations }
         #[pymethods]
@@ -46,36 +46,19 @@ sanitize_flags! { NONE, CLEANUP, PROPERTIES, SYMM_RINGS, KEKULIZE, FIND_RADICALS
 SET_AROMATICITY, SET_CONJUGATION, SET_HYBRIDIZATION, CLEANUP_CHIRALITY,
 ADJUST_HS, CLEANUP_ORGANOMETALLICS, CLEANUP_ATROPISOMERS, ALL }
 
-#[pyclass(module = "fixed_projection._native")]
-pub struct SanitizeParams {
-    pub(crate) inner: ck::SanitizeParams,
-}
-#[pymethods]
-impl SanitizeParams {
-    #[new]
-    #[pyo3(signature=(*, operations=None))]
-    fn new(operations: Option<SanitizeOperationsInput>) -> PyResult<Self> {
-        Ok(Self {
-            inner: ck::SanitizeParams {
-                operations: operations
-                    .map(SanitizeOperationsInput::into_rust)
-                    .transpose()?
-                    .unwrap_or_else(|| ck::SanitizeParams::default().operations),
-            },
-        })
+impl crate::parameters::Configuration for SanitizeOperations {
+    type Native = ck::SanitizeOperations;
+    const INPUT: pyo3::inspect::PyStaticExpr =
+        <SanitizeOperationsInput as FromPyObject<'_, '_>>::INPUT_TYPE;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        value.extract::<SanitizeOperationsInput>()?.into_rust()
     }
-    #[getter]
-    fn operations(&self) -> SanitizeOperations {
-        SanitizeOperations {
-            inner: self.inner.operations,
-        }
+    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
+        Ok(Self { inner })
     }
-    #[setter]
-    fn set_operations(&mut self, value: Option<SanitizeOperationsInput>) -> PyResult<()> {
-        self.inner.operations = value
-            .map(SanitizeOperationsInput::into_rust)
-            .transpose()?
-            .unwrap_or_else(|| ck::SanitizeParams::default().operations);
-        Ok(())
+    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
+        Ok(self.inner)
     }
 }
+
+ck::project_configuration!(ck::SanitizeParams);

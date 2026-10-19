@@ -13,7 +13,8 @@ use crate::{
 pub use cosmolkit_io::SdfCoordinateMode;
 
 /// Public policy for reading one SDF record into its final Rust graph value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct SdfReadParams {
     pub sanitize: bool,
     pub remove_hs: bool,

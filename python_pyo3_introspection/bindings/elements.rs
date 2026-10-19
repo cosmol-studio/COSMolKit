@@ -2,7 +2,7 @@
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct Element {
     pub(crate) inner: ck::Element,
@@ -26,7 +26,7 @@ impl Element {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct ElementInfo {
     inner: ck::ElementInfo,
 }

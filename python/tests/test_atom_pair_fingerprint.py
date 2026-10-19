@@ -85,7 +85,7 @@ def test_atom_pair_option_interactions_and_repeated_calls_are_exact_and_immutabl
     molecule = cosmolkit.Molecule.from_smiles("C[C@H](O)F")
     before = molecule.to_smiles()
     params = cosmolkit.AtomPairFingerprintParams(
-        generator=cosmolkit.AtomPairParams(fp_size=64, min_distance=1, max_distance=2, include_chirality=True, count_simulation=False),
+        generator=cosmolkit.AtomPairGeneratorParams(fp_size=64, min_distance=1, max_distance=2, include_chirality=True, count_simulation=False),
         from_atoms=[1], ignore_atoms=[3], custom_atom_invariants=[11, 22, 33, 44],
     )
     first = molecule.fingerprint_atom_pair_with_params(params, None)
@@ -101,16 +101,16 @@ def test_atom_pair_binding_returns_typed_value_errors():
     molecule = cosmolkit.Molecule.from_smiles("CCO")
     with pytest.raises(ValueError, match="fingerprint size"):
         molecule.fingerprint_atom_pair_with_params(
-            cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(fp_size=0)), None
+            cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairGeneratorParams(fp_size=0)), None
         )
     # Pinned AtomPairGenerator.cpp's precondition reports "bad distances provided".
     with pytest.raises(cosmolkit.AtomPairReadError, match="bad distances provided"):
         molecule.fingerprint_atom_pair_with_params(
-            cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(min_distance=4, max_distance=3)), None
+            cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairGeneratorParams(min_distance=4, max_distance=3)), None
         )
     with pytest.raises(ValueError, match="(?i)conformer"):
         molecule.fingerprint_atom_pair_with_params(
-            cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None
+            cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairGeneratorParams(use_2d=False)), None
         )
 
 

@@ -16,7 +16,7 @@ SPEC.loader.exec_module(bump)
 
 class ReleaseBumpTests(unittest.TestCase):
     def setUp(self):
-        files = ["Cargo.toml", "python/pyproject.toml", bump.README]
+        files = ["Cargo.toml", bump.README] + bump.PYTHON_VERSIONS
         files += bump.PACKAGE_VERSIONS
         files += [file for file, _, _ in bump.DEPENDENCIES]
         self.original = {file: (ROOT / file).read_text() for file in files}

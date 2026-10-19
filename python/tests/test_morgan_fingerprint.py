@@ -14,7 +14,7 @@ def assert_morgan_is_deterministic(smiles, settings, call=None, *, atom_invarian
 
 
 def test_morgan_fingerprint_default_and_tanimoto_are_self_consistent():
-    ethanol = assert_morgan_is_deterministic("CCO", cosmolkit.MorganParams(radius=2, fp_size=2048))
+    ethanol = assert_morgan_is_deterministic("CCO", cosmolkit.MorganGeneratorParams(radius=2, fp_size=2048))
 
     propanol = cosmolkit.Molecule.from_smiles("CCCO").fingerprint_morgan()
 
@@ -26,12 +26,12 @@ def test_morgan_fingerprint_default_and_tanimoto_are_self_consistent():
 def test_morgan_fingerprint_advanced_generators_and_counts_are_supported():
     feature_fp = assert_morgan_is_deterministic(
         "N[C@@H](C)C(=O)O",
-        cosmolkit.MorganParams(radius=2, fp_size=512, include_chirality=True, bits_per_feature=2),
+        cosmolkit.MorganGeneratorParams(radius=2, fp_size=512, include_chirality=True, bits_per_feature=2),
         atom_invariants=cosmolkit.MorganAtomInvariantsGenerator.features(),
     )
     count_fp = assert_morgan_is_deterministic(
         "c1ccccc1O",
-        cosmolkit.MorganParams(radius=3, fp_size=256, count_simulation=True, count_bounds=[1, 2, 4, 8]),
+        cosmolkit.MorganGeneratorParams(radius=3, fp_size=256, count_simulation=True, count_bounds=[1, 2, 4, 8]),
         atom_invariants=cosmolkit.MorganAtomInvariantsGenerator.connectivity(False),
         bond_invariants=cosmolkit.MorganBondInvariantsGenerator(use_bond_types=False),
     )
@@ -43,7 +43,7 @@ def test_morgan_fingerprint_custom_invariants_and_root_atoms_are_supported():
     smiles = "CC(C)O"
     fp = assert_morgan_is_deterministic(
         smiles,
-        cosmolkit.MorganParams(radius=2, fp_size=256, only_nonzero_invariants=True, include_redundant_environments=True),
+        cosmolkit.MorganGeneratorParams(radius=2, fp_size=256, only_nonzero_invariants=True, include_redundant_environments=True),
         cosmolkit.MorganCallParams(from_atoms=[0], custom_atom_invariants=[1, 2, 3, 4], custom_bond_invariants=[7, 8, 9]),
     )
     assert fp.on_bits()
@@ -51,7 +51,7 @@ def test_morgan_fingerprint_custom_invariants_and_root_atoms_are_supported():
 
 def test_morgan_additional_output_matches_returned_fingerprint():
     smiles = "CC(C)O"
-    generator = cosmolkit.MorganFingerprintGenerator(params=cosmolkit.MorganParams(radius=2, fp_size=256))
+    generator = cosmolkit.MorganFingerprintGenerator(params=cosmolkit.MorganGeneratorParams(radius=2, fp_size=256))
     output = cosmolkit.FingerprintAdditionalOutput()
     output.allocate_atom_counts()
     output.allocate_atom_to_bits()
@@ -72,7 +72,7 @@ def test_morgan_batch_api_preserves_order_and_none_for_invalid_records():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(
         ["CCO", "not-a-smiles", "CCCO"], errors="keep"
     )
-    settings = cosmolkit.MorganParams(fp_size=256)
+    settings = cosmolkit.MorganGeneratorParams(fp_size=256)
     execution = cosmolkit.BatchQueryParams(n_jobs=2)
     values = batch.fingerprint_morgan_list_with_generator_params(
         settings, None, None, cosmolkit.MorganCallParams(), execution

@@ -11,7 +11,7 @@ pub(crate) fn array<'py, const DIM: usize>(
         .into_pyarray(py)
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct Conformer2D {
     pub(crate) inner: ck::Conformer2D,
@@ -34,7 +34,7 @@ impl Conformer2D {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct Conformer3D {
     pub(crate) inner: ck::Conformer3D,

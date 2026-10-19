@@ -282,13 +282,16 @@ pub enum SdfFormat {
     V3000,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct MolBlockWriteParams {
+    #[configuration(none_default)]
     pub format: SdfFormat,
     pub force_2d: bool,
     pub include_stereo: bool,
     pub kekulize: bool,
     pub precision: usize,
+    #[configuration(none_default)]
     pub coordinate_selection: MolCoordinateSelection,
     pub include_coordinates: bool,
 }

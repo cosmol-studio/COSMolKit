@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 // keep the Python discriminants in sync with the actual native variants.
 macro_rules! value_kind {
     ($kind:ident, $rust:ident, {$($tag:ident $({$($field:ident),+ $(,)?})? $(($value:tt))?),+ $(,)?}) => {
-        #[pyclass(module="fixed_projection._native", eq, eq_int, from_py_object)]
+        #[pyclass(module="cosmolkit", eq, eq_int, from_py_object)]
         #[derive(Clone, Copy, PartialEq)]
         pub enum $kind { $($tag),+ }
         impl From<&ck::$rust> for $kind {
@@ -56,7 +56,7 @@ value_kind!(AtomRangeDataFunctionKind, AtomRangeDataFunction, {
 });
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct AtomQueryPredicate {
     pub(crate) owner: RetainedError<ck::SmartsWriteError>,
 }
@@ -197,7 +197,7 @@ impl AtomQueryPredicate {
 }
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct BondQueryPredicate {
     pub(crate) owner: RetainedError<ck::SmartsWriteError>,
 }
@@ -273,7 +273,7 @@ impl BondQueryPredicate {
 }
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct RecursiveStructureQuery {
     owner: RetainedError<ck::SmartsWriteError>,
 }
@@ -313,7 +313,7 @@ impl RecursiveStructureQuery {
 }
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct AtomRangeQuery {
     inner: ck::AtomRangeQuery,
 }
@@ -334,7 +334,7 @@ impl AtomRangeQuery {
 }
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct AtomRangeBounds {
     inner: ck::AtomRangeBounds,
 }
@@ -382,7 +382,7 @@ impl AtomRangeBounds {
 }
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct AtomRangeDataFunction {
     inner: ck::AtomRangeDataFunction,
 }

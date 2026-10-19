@@ -493,7 +493,7 @@ mod legacy_tests {
             }
             for count in [3, 5] {
                 let p = ck::TopologicalTorsionFingerprintParams {
-                    generator: ck::TopologicalTorsionParams {
+                    generator: ck::TopologicalTorsionGeneratorParams {
                         torsion_atom_count: count,
                         only_shortest_paths: true,
                         ..Default::default()

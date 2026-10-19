@@ -728,7 +728,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         expected.splice(
             0..0,
             [
-                "types.MorganParams",
+                "types.MorganGeneratorParams",
                 "types.MorganInvariants",
                 "types.MorganFingerprintParams",
                 "types.MorganReadError",
@@ -1068,7 +1068,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         let mut additions = Vec::new();
         if cfg!(feature = "cap-fingerprints") {
             additions.extend([
-                "types.AtomPairParams",
+                "types.AtomPairGeneratorParams",
                 "types.AtomPairFingerprintParams",
                 "types.AtomPairAtomInvariantsGenerator",
                 "types.AtomPairReadError",
@@ -1082,7 +1082,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "Molecule.fingerprint_atom_pair_sparse_count_with_params",
                 "AtomPairAtomInvariantsGenerator.info_string",
                 "AtomPairAtomInvariantsGenerator.to_json",
-                "types.TopologicalTorsionParams",
+                "types.TopologicalTorsionGeneratorParams",
                 "types.TopologicalTorsionFingerprintParams",
                 "types.TopologicalTorsionReadError",
                 "Molecule.fingerprint_topological_torsion",
@@ -1098,8 +1098,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         if !additions.is_empty() {
             let insertion = expected
                 .iter()
-                .position(|id| *id == "types.MorganParams")
-                .expect("original fixture anchor types.MorganParams");
+                .position(|id| *id == "types.MorganGeneratorParams")
+                .expect("original fixture anchor types.MorganGeneratorParams");
             expected.splice(insertion..insertion, additions);
         }
     }
@@ -1465,8 +1465,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     if cfg!(feature = "cap-fingerprints") {
         let position = expected
             .iter()
-            .position(|id| *id == "types.TopologicalTorsionParams")
-            .expect("the existing types.TopologicalTorsionParams fixture is present");
+            .position(|id| *id == "types.TopologicalTorsionGeneratorParams")
+            .expect("the existing types.TopologicalTorsionGeneratorParams fixture is present");
         expected.splice(
             position..position,
             [
@@ -1521,21 +1521,21 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     if cfg!(feature = "cap-fingerprints") {
         let position = expected
             .iter()
-            .position(|id| *id == "types.MorganParams")
-            .expect("the existing types.MorganParams fixture is present");
+            .position(|id| *id == "types.MorganGeneratorParams")
+            .expect("the existing types.MorganGeneratorParams fixture is present");
         expected.splice(
             position..position,
             [
                 "types.FingerprintJsonError",
-                "MorganParams.info_string",
-                "MorganParams.to_json",
-                "MorganParams.with_json",
-                "AtomPairParams.info_string",
-                "AtomPairParams.to_json",
-                "AtomPairParams.with_json",
-                "TopologicalTorsionParams.info_string",
-                "TopologicalTorsionParams.to_json",
-                "TopologicalTorsionParams.with_json",
+                "MorganGeneratorParams.info_string",
+                "MorganGeneratorParams.to_json",
+                "MorganGeneratorParams.with_json",
+                "AtomPairGeneratorParams.info_string",
+                "AtomPairGeneratorParams.to_json",
+                "AtomPairGeneratorParams.with_json",
+                "TopologicalTorsionGeneratorParams.info_string",
+                "TopologicalTorsionGeneratorParams.to_json",
+                "TopologicalTorsionGeneratorParams.with_json",
             ],
         );
     }

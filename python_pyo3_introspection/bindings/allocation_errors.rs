@@ -9,7 +9,7 @@ use std::error::Error;
 // its actual error and exposes only stable public information. kind() is an
 // unstable Rust API, not a field to reconstruct from Display or Debug.
 #[doc = r#"{"role":"error_leaf"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct TryReserveError {
     inner: std::collections::TryReserveError,
 }

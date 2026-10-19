@@ -139,7 +139,8 @@ pub enum KekulizeError {
     CanonicalRank(#[from] CanonicalRankError),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct KekulizeParams {
     pub mark_atoms_bonds: bool,
     pub canonical: bool,

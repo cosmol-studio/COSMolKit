@@ -165,7 +165,7 @@ provenance through the following ``MoleculeBatch`` conveniences:
 .. code-block:: python
 
    results = prepared.fingerprint_morgan_with_output_list(
-       generator=ck.MorganParams(radius=2, fp_size=2048),
+       options=ck.MorganFingerprintParams(radius=2, fp_size=2048),
    )
 
    for result in results:
@@ -174,7 +174,7 @@ provenance through the following ``MoleculeBatch`` conveniences:
            print(result.additional_output().bit_info_map())
 
    atom_pair_results = prepared.fingerprint_atom_pair_with_output_list(
-       generator=ck.AtomPairParams(fp_size=2048),
+       options=ck.AtomPairFingerprintParams(fp_size=2048),
    )
 
    for result in atom_pair_results:

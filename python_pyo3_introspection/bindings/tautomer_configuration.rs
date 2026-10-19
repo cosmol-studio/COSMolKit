@@ -1,14 +1,16 @@
 //! Tautomer configuration forwards native policy and reuses scoped callbacks.
 use crate::callbacks::CallbackErrors;
+use crate::parameters::{ConfigurationField, ContainerOutput};
 use crate::tautomer_callbacks::{EnumerationAdapter, EnumerationCallback, Scorer, ScorerAdapter};
 use crate::tautomer_values::TautomerScoreParams;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct TautomerParams {
-    pub(crate) inner: ck::TautomerParams,
+    // The native owner retains policy, catalogue and score inputs.
+    inner: ck::TautomerParams,
     callback: Option<EnumerationCallback>,
     scorer: Option<Scorer>,
 }
@@ -22,11 +24,14 @@ macro_rules! policy_fields {
             impl TautomerParams {
                 #[new]
                 #[pyo3(signature = (*, $($field=ck::TautomerParams::default().$field(),)+ callback=None, scorer=None, score_params=None))]
-                pub(crate) fn new($($field: $ty,)+ callback: Option<EnumerationCallback>, scorer: Option<Scorer>, score_params: Option<&TautomerScoreParams>) -> Self {
+                pub(crate) fn new(py: Python<'_>, $($field: $ty,)+ callback: Option<EnumerationCallback>, scorer: Option<Scorer>, score_params: Option<&TautomerScoreParams>) -> PyResult<Self> {
                     let mut inner = ck::TautomerParams::default();
                     $(inner.[<set_ $field>]($field);)+
-                    if let Some(params) = score_params { inner.score_params = params.inner.clone(); }
-                    Self { inner, callback, scorer }
+                    if let Some(params) = score_params { inner.score_params = params.to_rust(py)?; }
+                    let mut result = Self::from_native(py, inner)?;
+                    result.callback = callback;
+                    result.scorer = scorer;
+                    Ok(result)
                 }
                 $(
                     #[getter]
@@ -34,30 +39,32 @@ macro_rules! policy_fields {
                     #[setter($field)]
                     fn [<assign_ $field>](&mut self, value: $ty) { self.inner.[<set_ $field>](value); }
                     fn [<set_ $field>](&mut self, value: $ty) { self.inner.[<set_ $field>](value); }
-                    fn [<with_ $field>](&self, py: Python<'_>, value: $ty) -> Self {
-                        Self {
-                            inner: self.inner.clone().[<with_ $field>](value),
-                            callback: self.callback.as_ref().map(|callback| callback.clone_ref(py)),
-                            scorer: self.scorer.as_ref().map(|scorer| scorer.clone_ref(py)),
-                        }
+                    fn [<with_ $field>](&self, py: Python<'_>, value: $ty) -> PyResult<Self> {
+                        let mut result = Self::from_native(py, self.to_rust(py)?)?;
+                        result.callback = self.callback.as_ref().map(|value| value.clone_ref(py));
+                        result.scorer = self.scorer.as_ref().map(|value| value.clone_ref(py));
+                        result.inner.[<set_ $field>](value);
+                        Ok(result)
                     }
                 )+
                 fn transform_count(&self) -> usize { self.inner.transform_count() }
                 #[staticmethod]
-                fn v1() -> PyResult<Self> { crate::tautomer_catalog::v1() }
+                fn v1(py: Python<'_>) -> PyResult<Self> { crate::tautomer_catalog::v1(py) }
                 #[staticmethod]
-                fn from_transform_data(data: Vec<(String, String, String, String)>) -> PyResult<Self> {
-                    crate::tautomer_catalog::from_transform_data(data)
+                fn from_transform_data(py: Python<'_>, data: Vec<(String, String, String, String)>) -> PyResult<Self> {
+                    crate::tautomer_catalog::from_transform_data(py, data)
                 }
                 #[staticmethod]
-                fn from_transform_file(path: std::path::PathBuf) -> PyResult<Self> {
-                    crate::tautomer_catalog::from_transform_file(path)
+                fn from_transform_file(py: Python<'_>, path: std::path::PathBuf) -> PyResult<Self> {
+                    crate::tautomer_catalog::from_transform_file(py, path)
                 }
                 #[getter]
-                fn score_params(&self) -> TautomerScoreParams { TautomerScoreParams { inner: self.inner.score_params.clone() } }
+                fn score_params(&self) -> ContainerOutput<'_, ConfigurationField<TautomerScoreParams>> { ContainerOutput(&self.inner.score_params) }
                 #[setter]
-                fn set_score_params(&mut self, value: Option<&TautomerScoreParams>) {
-                    self.inner.score_params = value.map(|params| params.inner.clone()).unwrap_or_else(|| ck::TautomerParams::default().score_params);
+                fn set_score_params(&mut self, py: Python<'_>, value: Option<&TautomerScoreParams>) -> PyResult<()> {
+                    let value = value.map(|params| params.to_rust(py)).transpose()?.unwrap_or_default();
+                    self.inner.score_params = value;
+                    Ok(())
                 }
                 #[getter]
                 fn callback(&self, py: Python<'_>) -> Option<EnumerationCallback> {
@@ -83,36 +90,48 @@ macro_rules! policy_fields {
         }
     };
 }
-policy_fields! {
-    max_tautomers: u32,
-    max_transforms: u32,
-    remove_sp3_stereo: bool,
-    remove_bond_stereo: bool,
-    remove_isotopic_hydrogens: bool,
-    reassign_stereo: bool,
-}
+ck::project_configuration!(ck::TautomerParams, using policy_fields);
 
 impl TautomerParams {
-    pub(crate) fn clone_for_call(&self, py: Python<'_>) -> Self {
-        Self {
-            inner: self.inner.clone(),
+    pub(crate) fn capture(&self, py: Python<'_>) -> PyResult<TautomerInvocation> {
+        Ok(TautomerInvocation {
+            inner: self.to_rust(py)?,
             callback: self.callback.as_ref().map(|value| value.clone_ref(py)),
             scorer: self.scorer.as_ref().map(|value| value.clone_ref(py)),
-        }
+        })
     }
-    pub(crate) fn from_native(inner: ck::TautomerParams) -> Self {
-        Self {
+    pub(crate) fn from_native(_py: Python<'_>, inner: ck::TautomerParams) -> PyResult<Self> {
+        Ok(Self {
             inner,
             callback: None,
             scorer: None,
-        }
+        })
+    }
+    pub(crate) fn to_rust(&self, _py: Python<'_>) -> PyResult<ck::TautomerParams> {
+        Ok(self.inner.clone())
     }
     pub(crate) fn with_callbacks<T, E>(
         &self,
         py: Python<'_>,
         run: impl FnOnce(&ck::TautomerParams) -> Result<T, E>,
     ) -> PyResult<Result<T, E>> {
-        let mut params = self.inner.clone();
+        self.capture(py)?.with_callbacks(py, run)
+    }
+}
+
+/// Immutable invocation inputs; callbacks retain their actual Python owners.
+pub(crate) struct TautomerInvocation {
+    pub(crate) inner: ck::TautomerParams,
+    pub(crate) callback: Option<EnumerationCallback>,
+    pub(crate) scorer: Option<Scorer>,
+}
+impl TautomerInvocation {
+    pub(crate) fn with_callbacks<T, E>(
+        self,
+        py: Python<'_>,
+        run: impl FnOnce(&ck::TautomerParams) -> Result<T, E>,
+    ) -> PyResult<Result<T, E>> {
+        let mut params = self.inner;
         let errors = Arc::new(CallbackErrors::new());
         if let Some(callback) = &self.callback {
             params.set_callback(Some(Arc::new(EnumerationAdapter {
@@ -166,7 +185,7 @@ for field, value in [('max_tautomers', 31), ('max_transforms', 37),
     assert getattr(params, field) == value
     setattr(params, field, original)
     assert getattr(params, field) == original
-assert params.score_params.terms == []
+assert params.score_params.terms == ()
 params.score_params = None
 assert params.score_params.terms is None
 try:

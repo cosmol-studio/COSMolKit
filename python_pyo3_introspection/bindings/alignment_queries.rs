@@ -12,18 +12,15 @@ pub(crate) fn transform_keywords(
     weights: Option<Vec<f64>>,
     reflect: Option<bool>,
     max_iterations: Option<u32>,
-) -> AlignmentParameters {
+) -> ck::AlignmentParameters {
     let defaults = ck::AlignmentParameters::default();
-    AlignmentParameters {
-        inner: ck::AlignmentParameters {
-            probe_conformer_id: probe_conformer_id.unwrap_or(defaults.probe_conformer_id),
-            reference_conformer_id: reference_conformer_id
-                .unwrap_or(defaults.reference_conformer_id),
-            atom_map: atom_map.map(|items| items.into_iter().map(|value| value.inner).collect()),
-            weights,
-            reflect: reflect.unwrap_or(defaults.reflect),
-            max_iterations: max_iterations.unwrap_or(defaults.max_iterations),
-        },
+    ck::AlignmentParameters {
+        probe_conformer_id: probe_conformer_id.unwrap_or(defaults.probe_conformer_id),
+        reference_conformer_id: reference_conformer_id.unwrap_or(defaults.reference_conformer_id),
+        atom_map: atom_map.map(|items| items.into_iter().map(|value| value.inner).collect()),
+        weights,
+        reflect: reflect.unwrap_or(defaults.reflect),
+        max_iterations: max_iterations.unwrap_or(defaults.max_iterations),
     }
 }
 pub(crate) fn best_keywords(
@@ -37,29 +34,26 @@ pub(crate) fn best_keywords(
     symmetrize_conjugated_terminal_groups: Option<bool>,
     ignore_hydrogens: Option<bool>,
     num_threads: Option<i32>,
-) -> BestAlignmentParameters {
+) -> ck::BestAlignmentParameters {
     let defaults = ck::BestAlignmentParameters::default();
-    BestAlignmentParameters {
-        inner: ck::BestAlignmentParameters {
-            probe_conformer_id: probe_conformer_id.unwrap_or(defaults.probe_conformer_id),
-            reference_conformer_id: reference_conformer_id
-                .unwrap_or(defaults.reference_conformer_id),
-            atom_maps: atom_maps
-                .map(|maps| {
-                    maps.into_iter()
-                        .map(|row| row.into_iter().map(|value| value.inner).collect())
-                        .collect()
-                })
-                .unwrap_or(defaults.atom_maps),
-            weights,
-            reflect: reflect.unwrap_or(defaults.reflect),
-            max_iterations: max_iterations.unwrap_or(defaults.max_iterations),
-            max_matches: max_matches.unwrap_or(defaults.max_matches),
-            symmetrize_conjugated_terminal_groups: symmetrize_conjugated_terminal_groups
-                .unwrap_or(defaults.symmetrize_conjugated_terminal_groups),
-            ignore_hydrogens: ignore_hydrogens.unwrap_or(defaults.ignore_hydrogens),
-            num_threads: num_threads.unwrap_or(defaults.num_threads),
-        },
+    ck::BestAlignmentParameters {
+        probe_conformer_id: probe_conformer_id.unwrap_or(defaults.probe_conformer_id),
+        reference_conformer_id: reference_conformer_id.unwrap_or(defaults.reference_conformer_id),
+        atom_maps: atom_maps
+            .map(|maps| {
+                maps.into_iter()
+                    .map(|row| row.into_iter().map(|value| value.inner).collect())
+                    .collect()
+            })
+            .unwrap_or(defaults.atom_maps),
+        weights,
+        reflect: reflect.unwrap_or(defaults.reflect),
+        max_iterations: max_iterations.unwrap_or(defaults.max_iterations),
+        max_matches: max_matches.unwrap_or(defaults.max_matches),
+        symmetrize_conjugated_terminal_groups: symmetrize_conjugated_terminal_groups
+            .unwrap_or(defaults.symmetrize_conjugated_terminal_groups),
+        ignore_hydrogens: ignore_hydrogens.unwrap_or(defaults.ignore_hydrogens),
+        num_threads: num_threads.unwrap_or(defaults.num_threads),
     }
 }
 pub(crate) fn coordinate_keywords(
@@ -69,25 +63,22 @@ pub(crate) fn coordinate_keywords(
     weights: Option<Vec<f64>>,
     max_matches: Option<i32>,
     symmetrize_conjugated_terminal_groups: Option<bool>,
-) -> CoordinateRmsdParameters {
+) -> ck::CoordinateRmsdParameters {
     let defaults = ck::CoordinateRmsdParameters::default();
-    CoordinateRmsdParameters {
-        inner: ck::CoordinateRmsdParameters {
-            probe_conformer_id: probe_conformer_id.unwrap_or(defaults.probe_conformer_id),
-            reference_conformer_id: reference_conformer_id
-                .unwrap_or(defaults.reference_conformer_id),
-            atom_maps: atom_maps
-                .map(|maps| {
-                    maps.into_iter()
-                        .map(|row| row.into_iter().map(|value| value.inner).collect())
-                        .collect()
-                })
-                .unwrap_or(defaults.atom_maps),
-            weights,
-            max_matches: max_matches.unwrap_or(defaults.max_matches),
-            symmetrize_conjugated_terminal_groups: symmetrize_conjugated_terminal_groups
-                .unwrap_or(defaults.symmetrize_conjugated_terminal_groups),
-        },
+    ck::CoordinateRmsdParameters {
+        probe_conformer_id: probe_conformer_id.unwrap_or(defaults.probe_conformer_id),
+        reference_conformer_id: reference_conformer_id.unwrap_or(defaults.reference_conformer_id),
+        atom_maps: atom_maps
+            .map(|maps| {
+                maps.into_iter()
+                    .map(|row| row.into_iter().map(|value| value.inner).collect())
+                    .collect()
+            })
+            .unwrap_or(defaults.atom_maps),
+        weights,
+        max_matches: max_matches.unwrap_or(defaults.max_matches),
+        symmetrize_conjugated_terminal_groups: symmetrize_conjugated_terminal_groups
+            .unwrap_or(defaults.symmetrize_conjugated_terminal_groups),
     }
 }
 pub(crate) fn all_keywords(
@@ -97,24 +88,22 @@ pub(crate) fn all_keywords(
     symmetrize_conjugated_terminal_groups: Option<bool>,
     ignore_hydrogens: Option<bool>,
     num_threads: Option<i32>,
-) -> AllConformerRmsdParameters {
+) -> ck::AllConformerRmsdParameters {
     let defaults = ck::AllConformerRmsdParameters::default();
-    AllConformerRmsdParameters {
-        inner: ck::AllConformerRmsdParameters {
-            atom_maps: atom_maps
-                .map(|maps| {
-                    maps.into_iter()
-                        .map(|row| row.into_iter().map(|value| value.inner).collect())
-                        .collect()
-                })
-                .unwrap_or(defaults.atom_maps),
-            weights,
-            max_matches: max_matches.unwrap_or(defaults.max_matches),
-            symmetrize_conjugated_terminal_groups: symmetrize_conjugated_terminal_groups
-                .unwrap_or(defaults.symmetrize_conjugated_terminal_groups),
-            ignore_hydrogens: ignore_hydrogens.unwrap_or(defaults.ignore_hydrogens),
-            num_threads: num_threads.unwrap_or(defaults.num_threads),
-        },
+    ck::AllConformerRmsdParameters {
+        atom_maps: atom_maps
+            .map(|maps| {
+                maps.into_iter()
+                    .map(|row| row.into_iter().map(|value| value.inner).collect())
+                    .collect()
+            })
+            .unwrap_or(defaults.atom_maps),
+        weights,
+        max_matches: max_matches.unwrap_or(defaults.max_matches),
+        symmetrize_conjugated_terminal_groups: symmetrize_conjugated_terminal_groups
+            .unwrap_or(defaults.symmetrize_conjugated_terminal_groups),
+        ignore_hydrogens: ignore_hydrogens.unwrap_or(defaults.ignore_hydrogens),
+        num_threads: num_threads.unwrap_or(defaults.num_threads),
     }
 }
 
@@ -203,7 +192,7 @@ mod tests {
                         .inner
                         .$alias(&reference.borrow(py).inner, &native)
                         .unwrap();
-                    let params = Py::new(py, $params { inner: native })?;
+                    let params = Py::new(py, $params::from_rust(py, native)?)?;
                     let kwargs = PyDict::new(py);
                     kwargs.set_item("reflect", true)?;
                     kwargs.set_item("max_iterations", 20)?;
@@ -275,7 +264,7 @@ mod tests {
                         .inner
                         .$alias(&reference.borrow(py).inner, &native)
                         .unwrap();
-                    let params = Py::new(py, $params { inner: native })?;
+                    let params = Py::new(py, $params::from_rust(py, native)?)?;
                     let kwargs = PyDict::new(py);
                     kwargs.set_item("weights", vec![1., 2., 3.])?;
                     for actual in [
@@ -328,7 +317,7 @@ mod tests {
                     .inner
                     .all_conformer_best_rmsds_with_params(&native)
                     .unwrap();
-                let params = Py::new(py, AllConformerRmsdParameters { inner: native })?;
+                let params = Py::new(py, AllConformerRmsdParameters::from_rust(py, native)?)?;
                 let kwargs = PyDict::new(py);
                 kwargs.set_item("num_threads", num_threads)?;
                 let outputs = [

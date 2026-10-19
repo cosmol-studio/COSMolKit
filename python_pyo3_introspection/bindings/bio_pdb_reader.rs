@@ -16,7 +16,7 @@ enum_value!(PdbLinkNameCounter,{Covale,MetalC});
 
 value_kind!(PdbDbRefErrorKind,PdbDbRefError,{SourceIntegerOutsideDefinedRange {field_offset},MissingCurrentDbRef});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbDbRefError {
     inner: ck::PdbDbRefError,
 }
@@ -46,7 +46,7 @@ value_kind!(PdbMtrixErrorKind, PdbMtrixError, {
     }
 });
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbMtrixError {
     inner: ck::PdbMtrixError,
 }
@@ -78,7 +78,7 @@ value_kind!(PdbConectErrorKind, PdbConectError, {
     SourceSerialOutsideDefinedRange { field_offset }
 });
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbConectError {
     inner: ck::PdbConectError,
 }
@@ -103,7 +103,7 @@ impl PdbConectError {
 }
 value_kind!(PdbHelixErrorKind,PdbHelixError,{ChainNameNotRepresentable {field_offset,width,non_ascii},ResidueAddress(_),IntegerOutsideSourceDefinedRange {field_offset,width}});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbHelixError {
     inner: ck::PdbHelixError,
 }
@@ -155,7 +155,7 @@ impl PdbHelixError {
 }
 value_kind!(PdbModResErrorKind,PdbModResError,{ChainNameNotRepresentable {width,non_ascii},ResidueAddress(_),TextFieldNotUtf8 {field_offset,valid_up_to}});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbModResError {
     inner: ck::PdbModResError,
 }
@@ -210,7 +210,7 @@ impl PdbModResError {
 }
 value_kind!(PdbSheetErrorKind,PdbSheetError,{TextFieldNotUtf8 {field_offset,valid_up_to},ChainNameNotRepresentable {field_offset,width,non_ascii},ResidueAddress {sequence_offset,source},IntegerOutsideSourceDefinedRange {field_offset,width}});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbSheetError {
     inner: ck::PdbSheetError,
 }
@@ -281,7 +281,7 @@ impl PdbSheetError {
 }
 value_kind!(PdbRemark3ErrorKind,PdbRemark3Error,{IntegerOutsideSourceDefinedRange,TextNotUtf8 {valid_up_to},MissingContinuationTarget,TlsChainIdNotRepresentable {width}});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbRemark3Error {
     inner: ck::PdbRemark3Error,
 }
@@ -311,7 +311,7 @@ impl PdbRemark3Error {
 }
 value_kind!(PdbRemark200ErrorKind,PdbRemark200Error,{IntegerOutsideSourceDefinedRange,TextNotUtf8 {valid_up_to},MissingExperimentalRows,UndefinedPhNumericScreening,Software(_)});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbRemark200Error {
     inner: ck::PdbRemark200Error,
 }
@@ -341,7 +341,7 @@ impl PdbRemark200Error {
 }
 value_kind!(PdbRemarkMetadataErrorKind,PdbRemarkMetadataError,{IntegerOutsideSourceDefinedRange,UndefinedResolutionField {remark_length},TextBoundaryNotUtf8 {offset}});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbRemarkMetadataError {
     inner: ck::PdbRemarkMetadataError,
 }
@@ -373,7 +373,7 @@ impl PdbRemarkMetadataError {
 }
 value_kind!(PdbRemark350ErrorKind,PdbRemark350Error,{IntegerOutsideSourceDefinedRange,SourceUndefinedAccess {offset,width,record_length},TextNotUtf8 {field_offset,valid_up_to},StateInvariantLost});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbRemark350Error {
     inner: ck::PdbRemark350Error,
 }
@@ -426,7 +426,7 @@ impl PdbRemark350Error {
 }
 value_kind!(PdbSsbondRecordErrorKind,PdbSsbondRecordError,{EmptyRecord,ChainNameNotAscii {partner,byte},ResidueAddress {partner,source},CounterOutsideSourceIntRange});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbSsbondRecordError {
     inner: ck::PdbSsbondRecordError,
 }
@@ -470,7 +470,7 @@ impl PdbSsbondRecordError {
 }
 value_kind!(PdbLinkRecordErrorKind,PdbLinkRecordError,{ChainNameNotAscii {partner,byte},AtomNameNotAscii {partner,byte},LinkIdNotUtf8 {valid_up_to},ResidueAddress {partner,source},NameCounterOutsideSourceDefinedRange {counter}});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbLinkRecordError {
     inner: ck::PdbLinkRecordError,
 }
@@ -532,7 +532,7 @@ impl PdbLinkRecordError {
 }
 value_kind!(PdbCisPepRecordErrorKind,PdbCisPepRecordError,{RequiredFieldsPastRecord {record_len,required_len},NoModelsAfterSourceDefault,SingleModelNumberUnavailable,ChainNameNotAscii {partner,byte},ResidueAddress {partner,source},ModelNumberOutsideSourceDefinedRange});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbCisPepRecordError {
     inner: ck::PdbCisPepRecordError,
 }
@@ -594,7 +594,7 @@ impl PdbCisPepRecordError {
 }
 value_kind!(PdbCrystalErrorKind,PdbCrystalError,{BioStructureData(_),TextFieldNotUtf8 {field_offset,valid_up_to}});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbCrystalError {
     inner: ck::PdbCrystalError,
 }
@@ -637,7 +637,7 @@ impl PdbCrystalError {
 }
 value_kind!(PdbConnectionFinalizationErrorKind,PdbConnectionFinalizationError,{SsbondRecord(_),LinkRecord(_),CisPepRecord(_),SsbondResolution(_)});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbConnectionFinalizationError {
     inner: ck::PdbConnectionFinalizationError,
 }
@@ -693,7 +693,7 @@ impl PdbConnectionFinalizationError {
 }
 value_kind!(PdbRemarkFinalizationErrorKind,PdbRemarkFinalizationError,{IntegerOutsideSourceDefinedRange,Remark3(_),Remark200(_),RemarkMetadata(_),Remark350(_)});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbRemarkFinalizationError {
     inner: ck::PdbRemarkFinalizationError,
 }
@@ -751,7 +751,7 @@ Cif{source},Mmjson{source},
 fn source(&self)->&str{match &self.inner{ck::PdbInputFormatError::Cif{source}|ck::PdbInputFormatError::Mmjson{source}=>source}}
 });
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct PdbSsbondResolutionError {
     inner: ck::PdbSsbondResolutionError,
 }
@@ -791,7 +791,7 @@ source=Option<Py<BioStructureError>>,methods={
 #[getter]fn id(&self)->Option<u32>{match self.inner.as_ref(){ck::PdbModelTransitionError::ModelIdOutOfBounds{id,..}=>Some(id.value()),_=>None}}
 });
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbChargeError {
     inner: ck::PdbChargeError,
 }
@@ -812,7 +812,7 @@ impl PdbChargeError {
 
 value_kind!(PdbAtomFieldErrorKind,PdbAtomFieldError,{TooShort{len},SerialOutsideSourceDefinedRange,ChainNameNotRepresentable{bytes},AtomNameNotRepresentable{bytes},ResidueKey(_),Charge(_)});
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbAtomFieldError {
     owner: RetainedError<ck::PdbReaderCause>,
 }
@@ -875,7 +875,7 @@ value_kind!(PdbStructureFinalizationErrorKind,PdbStructureFinalizationError,{
 Model(_),Connection(_),Remarks(_),Ccd(_),NoModelAfterDefault,SourceIdNotRepresentable{field},Utf8{field,valid_up_to},Structure(_),StagingRowOrder{table,expected,actual}
 });
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct PdbStructureFinalizationError {
     owner: RetainedError<ck::PdbReaderCause>,
 }
@@ -1034,7 +1034,7 @@ fn finalization(&self)->Option<PdbStructureFinalizationError>{match self.inner.a
 });
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct BioPdbReadError {
     inner: RetainedError<ck::BioPdbReadError>,
 }
@@ -1102,37 +1102,25 @@ pub(crate) fn keywords(
     }
 }
 #[pyfunction]
-#[pyo3(signature=(text,params=None,*,max_line_length=None,check_non_ascii=None,ignore_ter=None,split_chain_on_ter=None,skip_remarks=None))]
+#[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,max_line_length=crate::arguments::Argument::Missing,check_non_ascii=crate::arguments::Argument::Missing,ignore_ter=crate::arguments::Argument::Missing,split_chain_on_ter=crate::arguments::Argument::Missing,skip_remarks=crate::arguments::Argument::Missing))]
 pub fn bio_from_pdb(
     py: Python<'_>,
     text: &str,
-    params: Option<&crate::params::BioPdbReadParams>,
-    max_line_length: Option<i32>,
-    check_non_ascii: Option<bool>,
-    ignore_ter: Option<bool>,
-    split_chain_on_ter: Option<bool>,
-    skip_remarks: Option<bool>,
+    params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioPdbReadParams>>>,
+    max_line_length: crate::arguments::Argument<Option<i32>>,
+    check_non_ascii: crate::arguments::Argument<Option<bool>>,
+    ignore_ter: crate::arguments::Argument<Option<bool>>,
+    split_chain_on_ter: crate::arguments::Argument<Option<bool>>,
+    skip_remarks: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<BioStructure> {
-    if params.is_some()
-        && (max_line_length.is_some()
-            || check_non_ascii.is_some()
-            || ignore_ter.is_some()
-            || split_chain_on_ter.is_some()
-            || skip_remarks.is_some())
-    {
-        return Err(pyo3::exceptions::PyTypeError::new_err(
-            "params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if params.is_some()
-        || (max_line_length.is_none()
-            && check_non_ascii.is_none()
-            && ignore_ter.is_none()
-            && split_chain_on_ter.is_none()
-            && skip_remarks.is_none())
-    {
-        _bio_from_pdb_params(py, text, params)
-    } else {
+    let keyword_form = max_line_length.is_supplied()
+        || check_non_ascii.is_supplied()
+        || ignore_ter.is_supplied()
+        || split_chain_on_ter.is_supplied()
+        || skip_remarks.is_supplied();
+    crate::arguments::configuration_arguments!(params; max_line_length, check_non_ascii, ignore_ter, split_chain_on_ter, skip_remarks);
+    let params = params.as_deref();
+    if keyword_form {
         _bio_from_pdb_keywords(
             py,
             text,
@@ -1142,6 +1130,8 @@ pub fn bio_from_pdb(
             split_chain_on_ter,
             skip_remarks,
         )
+    } else {
+        _bio_from_pdb_params(py, text, params)
     }
 }
 #[pyfunction]
@@ -1183,6 +1173,7 @@ pub fn _bio_from_pdb_keywords(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arguments::Argument::{Missing, Value};
     use pyo3::types::PyDict;
     #[test]
     fn pdb_reader_options_conveniences_and_complete_typed_failures_preserve_native_values() {
@@ -1194,7 +1185,7 @@ assert_eq!(default.atoms().len(),3);
 let expected=default.to_mmcif().unwrap();
 let output=py.get_type::<BioStructure>().call_method1("from_pdb",(text,))?.extract::<Py<BioStructure>>()?;
 assert_eq!(output.borrow(py).inner.to_mmcif().unwrap(),expected);
-assert_eq!(bio_from_pdb(py,text,None,None,None,None,None,None)?.inner.to_mmcif().unwrap(),expected);
+assert_eq!(bio_from_pdb(py,text,Missing,Missing,Missing,Missing,Missing,Missing)?.inner.to_mmcif().unwrap(),expected);
 for flags in 0..16{
 let native=ck::BioPdbReadParams{max_line_length:80,check_non_ascii:flags&1!=0,ignore_ter:flags&2!=0,split_chain_on_ter:flags&4!=0,skip_remarks:flags&8!=0};
 let expected=ck::BioStructure::from_pdb_with_params(text,&native).unwrap().to_mmcif().unwrap();
@@ -1209,14 +1200,14 @@ for form in 0..3{
 let output=match form{0=>py.get_type::<BioStructure>().call_method1("from_pdb",(text,params.clone_ref(py)))?,1=>py.get_type::<BioStructure>().call_method("from_pdb",(text,),Some(&kw))?,_=>py.get_type::<BioStructure>().call_method1("from_pdb_with_params",(text,params.clone_ref(py)))?}.extract::<Py<BioStructure>>()?;
 assert_eq!(output.borrow(py).inner.to_mmcif().unwrap(),expected);
 }
-let native_params=crate::params::BioPdbReadParams{inner:native};
-let free=bio_from_pdb(py,text,Some(&native_params),None,None,None,None,None)?;
+let native_params=Py::new(py,crate::params::BioPdbReadParams{inner:native})?;
+let free=bio_from_pdb(py,text,Value(Some(native_params.borrow(py))),Missing,Missing,Missing,Missing,Missing)?;
 assert_eq!(free.inner.to_mmcif().unwrap(),expected);
-let free=bio_from_pdb(py,text,None,Some(80),Some(native.check_non_ascii),Some(native.ignore_ter),Some(native.split_chain_on_ter),Some(native.skip_remarks))?;
+let free=bio_from_pdb(py,text,Missing,Value(Some(80)),Value(Some(native.check_non_ascii)),Value(Some(native.ignore_ter)),Value(Some(native.split_chain_on_ter)),Value(Some(native.skip_remarks)))?;
 assert_eq!(free.inner.to_mmcif().unwrap(),expected);
 let mixed=py.get_type::<BioStructure>().call_method("from_pdb",(text,params),Some(&kw)).unwrap_err();
 assert!(mixed.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
-assert!(bio_from_pdb(py,text,Some(&native_params),Some(80),None,None,None,None).err().expect("mixed PDB config rejected").is_instance_of::<pyo3::exceptions::PyTypeError>(py));
+assert!(bio_from_pdb(py,text,Value(Some(native_params.borrow(py))),Value(Some(80)),Missing,Missing,Missing,Missing).err().expect("mixed PDB config rejected").is_instance_of::<pyo3::exceptions::PyTypeError>(py));
 }
 let kw=PyDict::new(py);kw.set_item("skip_remarks",true)?;
 let output=py.get_type::<BioStructure>().call_method("from_pdb",(text,),Some(&kw))?.extract::<Py<BioStructure>>()?;
@@ -1243,7 +1234,7 @@ assert!(bytes.len()>=80);bytes[78]=b'x';bytes[79]=b'+';
 // Native read_charge deliberately accepts a non-digit first byte as zero.
 let accepted=String::from_utf8(bytes.clone()).unwrap();
 let expected=ck::BioStructure::from_pdb(&accepted).unwrap().to_mmcif().unwrap();
-assert_eq!(bio_from_pdb(py,&accepted,None,None,None,None,None,None)?.inner.to_mmcif().unwrap(),expected);
+assert_eq!(bio_from_pdb(py,&accepted,Missing,Missing,Missing,Missing,Missing,Missing)?.inner.to_mmcif().unwrap(),expected);
 // Only a digit followed by an invalid sign triggers the actual charge error.
 bytes[78]=b'5';bytes[79]=b'x';
 let invalid=String::from_utf8(bytes).unwrap();
@@ -1251,7 +1242,7 @@ let native_error=ck::BioStructure::from_pdb(&invalid).unwrap_err();
 let native_cause=native_error.source().unwrap().downcast_ref::<ck::PdbReaderCause>().unwrap();
 let ck::PdbReaderCause::AtomFields(ck::PdbAtomFieldError::Charge(native_charge))=native_cause else{panic!("actual source charge failure expected")};
 let digit=native_charge.digit();let sign=native_charge.sign();
-let error=bio_from_pdb(py,&invalid,None,None,None,None,None,None).err().expect("actual source charge failure");
+let error=bio_from_pdb(py,&invalid,Missing,Missing,Missing,Missing,Missing,Missing).err().expect("actual source charge failure");
 assert_eq!(error.value(py).str()?.to_str()?,native_error.to_string());
 let charge=error.cause(py).unwrap().value(py).getattr("atom_fields")?.getattr("charge")?.unbind();
 drop(error);drop(invalid);

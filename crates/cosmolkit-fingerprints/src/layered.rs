@@ -148,9 +148,10 @@ impl BitOrAssign for LayeredFingerprintLayers {
 /// counts, no output-bit mask, and no root selection. `from_atoms: None`
 /// selects the whole graph, while `Some(Vec::new())` is a present but empty
 /// root selection and therefore enumerates no paths.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct LayeredFingerprintParams {
     /// Layer flags. Unknown high bits are retained and emit no components.
+    #[configuration(none_default)]
     pub layers: LayeredFingerprintLayers,
     /// Minimum path length. The unrooted linear source branch counts atoms;
     /// branched and rooted paths count bonds. Zero is rejected as `minPath==0`.

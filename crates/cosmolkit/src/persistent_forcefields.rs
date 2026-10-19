@@ -4,12 +4,13 @@ pub use cosmolkit_forcefields::{ForceFieldError, MolecularForceFieldErrorKind};
 use std::{error::Error, fmt, sync::Mutex};
 
 /// Required distance restraint inputs; no implicit numerical defaults.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar, required)]
 pub struct ForceFieldDistanceConstraintParams {
-    relative: bool,
-    min_distance: f64,
-    max_distance: f64,
-    force_constant: f64,
+    pub relative: bool,
+    pub min_distance: f64,
+    pub max_distance: f64,
+    pub force_constant: f64,
 }
 impl ForceFieldDistanceConstraintParams {
     pub fn new(relative: bool, min_distance: f64, max_distance: f64, force_constant: f64) -> Self {
@@ -35,12 +36,13 @@ impl ForceFieldDistanceConstraintParams {
 }
 
 /// Required angle restraint inputs; no implicit numerical defaults.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar, required)]
 pub struct ForceFieldAngleConstraintParams {
-    relative: bool,
-    min_angle_deg: f64,
-    max_angle_deg: f64,
-    force_constant: f64,
+    pub relative: bool,
+    pub min_angle_deg: f64,
+    pub max_angle_deg: f64,
+    pub force_constant: f64,
 }
 impl ForceFieldAngleConstraintParams {
     pub fn new(
@@ -71,12 +73,13 @@ impl ForceFieldAngleConstraintParams {
 }
 
 /// Required torsion restraint inputs; no implicit numerical defaults.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar, required)]
 pub struct ForceFieldTorsionConstraintParams {
-    relative: bool,
-    min_dihedral_deg: f64,
-    max_dihedral_deg: f64,
-    force_constant: f64,
+    pub relative: bool,
+    pub min_dihedral_deg: f64,
+    pub max_dihedral_deg: f64,
+    pub force_constant: f64,
 }
 impl ForceFieldTorsionConstraintParams {
     pub fn new(
@@ -107,10 +110,11 @@ impl ForceFieldTorsionConstraintParams {
 }
 
 /// Required position restraint inputs; no implicit numerical defaults.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar, required)]
 pub struct ForceFieldPositionConstraintParams {
-    max_displacement: f64,
-    force_constant: f64,
+    pub max_displacement: f64,
+    pub force_constant: f64,
 }
 impl ForceFieldPositionConstraintParams {
     pub fn new(max_displacement: f64, force_constant: f64) -> Self {
@@ -146,12 +150,13 @@ fn contract_default(constructor: &str, name: &str) -> &'static str {
         BindingDefault::Required => panic!("persistent parameter must declare its default"),
     }
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct MmffForceFieldParams {
-    conformer_id: Option<usize>,
-    mmff_variant: String,
-    non_bonded_threshold: f64,
-    ignore_interfragment_interactions: bool,
+    pub conformer_id: Option<usize>,
+    pub mmff_variant: String,
+    pub non_bonded_threshold: f64,
+    pub ignore_interfragment_interactions: bool,
 }
 impl MmffForceFieldParams {
     pub fn new(
@@ -208,11 +213,12 @@ impl Default for MmffForceFieldParams {
             .clone()
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct UffForceFieldParams {
-    conformer_id: Option<usize>,
-    vdw_threshold: f64,
-    ignore_interfragment_interactions: bool,
+    pub conformer_id: Option<usize>,
+    pub vdw_threshold: f64,
+    pub ignore_interfragment_interactions: bool,
 }
 impl UffForceFieldParams {
     pub fn new(
@@ -259,11 +265,12 @@ impl Default for UffForceFieldParams {
         })
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct ForceFieldMinimizeParams {
-    max_iterations: u32,
-    force_tolerance: f64,
-    energy_tolerance: f64,
+    pub max_iterations: u32,
+    pub force_tolerance: f64,
+    pub energy_tolerance: f64,
 }
 impl ForceFieldMinimizeParams {
     pub fn new(max_iterations: u32, force_tolerance: f64, energy_tolerance: f64) -> Self {

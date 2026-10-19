@@ -56,3 +56,6 @@ pub(crate) use inversions::InversionContribs;
 pub use api::{UffBoundsCause, UffBoundsError, uff_bond_rest_lengths};
 
 pub use api::{MissingExplicitHydrogensError, needs_explicit_hydrogens};
+
+#[doc(hidden)]
+pub use evaluation::__configuration_UffEvaluationParams;

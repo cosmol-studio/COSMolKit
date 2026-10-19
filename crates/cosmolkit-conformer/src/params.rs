@@ -195,7 +195,8 @@ impl EmbedFailureCause {
 // RDKit✔️✔️:   std::vector<unsigned int> failures;
 // RDKit✔️✔️:   bool enableSequentialRandomSeeds{false};
 // RDKit✔️✔️:   bool symmetrizeConjugatedTerminalGroupsForPruning{true};
-#[derive(Clone)]
+#[derive(Clone, cosmolkit_macros::Configuration)]
+#[configuration(stateful)]
 pub struct EmbedParams {
     pub max_iterations: u32,
     pub num_threads: i32,
@@ -205,11 +206,13 @@ pub struct EmbedParams {
     pub box_size_mult: f64,
     pub rand_neg_eig: bool,
     pub num_zero_fail: u32,
+    #[configuration(adapter)]
     pub coord_map: Option<BTreeMap<i32, [f64; 3]>>,
     pub optimizer_force_tol: f64,
     pub ignore_smoothing_failures: bool,
     pub enforce_chirality: bool,
     pub use_exp_torsion_angle_prefs: bool,
+    #[configuration(state)]
     pub use_legacy_implementation: bool,
     pub use_basic_knowledge: bool,
     pub verbose: bool,
@@ -217,18 +220,22 @@ pub struct EmbedParams {
     pub prune_rms_thresh: f64,
     pub only_heavy_atoms_for_rms: bool,
     pub et_version: u32,
+    #[configuration(state)]
     pub(crate) bounds_mat: Option<Arc<BoundsMatrix>>,
     pub embed_fragments_separately: bool,
     pub use_small_ring_torsions: bool,
     pub use_macrocycle_torsions: bool,
     pub use_macrocycle14config: bool,
     pub timeout: u32,
+    #[configuration(adapter)]
     pub cpci: Option<BTreeMap<(u32, u32), f64>>,
+    #[configuration(state)]
     pub callback: Option<fn(u32)>,
     pub force_trans_amides: bool,
     pub use_symmetry_for_pruning: bool,
     pub bounds_mat_force_scaling: f64,
     pub track_failures: bool,
+    #[configuration(state)]
     pub failures: Vec<u32>,
     pub enable_sequential_random_seeds: bool,
     pub symmetrize_conjugated_terminal_groups_for_pruning: bool,

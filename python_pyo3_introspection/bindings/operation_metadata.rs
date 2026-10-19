@@ -4,7 +4,7 @@ use crate::public_selectors::ParityPolicy;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object, eq)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
 pub struct FunctionStatus {
     inner: ck::FunctionStatus,
@@ -44,7 +44,7 @@ impl FunctionStatus {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct MoleculeOpSpec {
     inner: &'static ck::MoleculeOpSpec,
 }
@@ -85,7 +85,7 @@ impl MoleculeOpSpec {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct SupportMatrixEntry {
     inner: &'static ck::SupportMatrixEntry,
 }
@@ -104,7 +104,7 @@ impl SupportMatrixEntry {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct OperationInvariantEntry {
     inner: &'static ck::OperationInvariantEntry,
 }
@@ -123,7 +123,7 @@ impl OperationInvariantEntry {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct ParityMatrixEntry {
     inner: &'static ck::ParityMatrixEntry,
 }

@@ -1442,7 +1442,7 @@ mod tests {
     use cosmolkit_smiles::{SmilesParseParams, parse_smiles};
 
     use crate::additional_output::FingerprintAdditionalOutput;
-    use crate::morgan::{MorganAtomEnvironment, MorganParams, get_morgan_generator};
+    use crate::morgan::{MorganAtomEnvironment, MorganGeneratorParams, get_morgan_generator};
     use crate::sparse_counts::SparseCountFingerprint;
 
     use super::{
@@ -2002,12 +2002,12 @@ mod tests {
         for case in &CASES {
             for fp_size in FP_SIZES {
                 for count_simulation in COUNT_SIMULATION {
-                    let params = MorganParams {
+                    let params = MorganGeneratorParams {
                         radius: 0,
                         fp_size,
                         count_simulation,
                         bits_per_feature: case.bits_per_feature,
-                        ..MorganParams::default()
+                        ..MorganGeneratorParams::default()
                     };
                     let generator = get_morgan_generator(&params)
                         .expect("every fixed O01 configuration satisfies source preconditions");
@@ -2194,9 +2194,9 @@ mod tests {
         let valence = assign_valence(&record.topology, &ValenceParams::default())
             .expect("fixed CCO has source-valid valence");
         let rings = fast_find_rings(&record.topology).expect("fixed CCO has ring information");
-        let generator = get_morgan_generator(&MorganParams {
+        let generator = get_morgan_generator(&MorganGeneratorParams {
             radius: 0,
-            ..MorganParams::default()
+            ..MorganGeneratorParams::default()
         })
         .expect("the fixed O01 generator satisfies source preconditions");
         let expected_reset_output = || FingerprintAdditionalOutput {
@@ -2346,12 +2346,12 @@ mod tests {
         for count_simulation in [false, true] {
             for (bounds_index, &(bounds_name, bounds)) in BOUND_CASES.iter().enumerate() {
                 parameter_combinations += 1;
-                let generator_result = get_morgan_generator(&MorganParams {
+                let generator_result = get_morgan_generator(&MorganGeneratorParams {
                     radius: 0,
                     fp_size: 1,
                     count_simulation,
                     count_bounds: bounds.to_vec(),
-                    ..MorganParams::default()
+                    ..MorganGeneratorParams::default()
                 });
 
                 if count_simulation && bounds.is_empty() {
@@ -2476,12 +2476,12 @@ mod tests {
         let mut hashed_calls = 0;
         for (size_index, &fp_size) in FP_SIZES.iter().enumerate() {
             for count_simulation in [false, true] {
-                let generator = get_morgan_generator(&MorganParams {
+                let generator = get_morgan_generator(&MorganGeneratorParams {
                     radius: 0,
                     fp_size,
                     count_simulation,
                     count_bounds: vec![1, 2, 4, 8],
-                    ..MorganParams::default()
+                    ..MorganGeneratorParams::default()
                 })
                 .expect("all fixed O03 generator configurations satisfy source preconditions");
 
@@ -2540,12 +2540,12 @@ mod tests {
         }
 
         let zero_generator = |count_simulation| {
-            get_morgan_generator(&MorganParams {
+            get_morgan_generator(&MorganGeneratorParams {
                 radius: 0,
                 fp_size: 0,
                 count_simulation,
                 count_bounds: vec![1, 2, 4, 8],
-                ..MorganParams::default()
+                ..MorganGeneratorParams::default()
             })
             .expect("zero-size O03 configuration passes constructor preconditions")
         };
@@ -2701,12 +2701,12 @@ mod tests {
                 } else {
                     Vec::new()
                 };
-                let generator = get_morgan_generator(&MorganParams {
+                let generator = get_morgan_generator(&MorganGeneratorParams {
                     radius: 0,
                     fp_size,
                     count_simulation,
                     count_bounds,
-                    ..MorganParams::default()
+                    ..MorganGeneratorParams::default()
                 })
                 .expect("fixed O04 generator options satisfy constructor preconditions");
 
@@ -2809,12 +2809,12 @@ mod tests {
             .expect("the empty molecule has an empty valid valence assignment");
         let empty_rings = fast_find_rings(&empty_record.topology)
             .expect("the empty molecule has an empty ring assignment");
-        let zero_size_generator = get_morgan_generator(&MorganParams {
+        let zero_size_generator = get_morgan_generator(&MorganGeneratorParams {
             radius: 0,
             fp_size: 0,
             count_simulation: false,
             count_bounds: Vec::new(),
-            ..MorganParams::default()
+            ..MorganGeneratorParams::default()
         })
         .expect("zero-size non-simulation options satisfy source construction");
         let mut zero_size_empty_calls = 0;
@@ -2885,12 +2885,12 @@ mod tests {
                 "Count bounds size is >= fingerprint size",
             ),
         ] {
-            let mut generator = get_morgan_generator(&MorganParams {
+            let mut generator = get_morgan_generator(&MorganGeneratorParams {
                 radius: 0,
                 fp_size,
                 count_simulation: true,
                 count_bounds: count_bounds.to_vec(),
-                ..MorganParams::default()
+                ..MorganGeneratorParams::default()
             })
             .expect("the source constructor allows these nonempty count bounds");
             if clear_bounds {
@@ -2931,7 +2931,7 @@ mod tests {
                 if count_simulation && size_index == 0 {
                     continue;
                 }
-                let generator = get_morgan_generator(&MorganParams {
+                let generator = get_morgan_generator(&MorganGeneratorParams {
                     radius: 0,
                     fp_size,
                     count_simulation,
@@ -2940,7 +2940,7 @@ mod tests {
                     } else {
                         Vec::new()
                     },
-                    ..MorganParams::default()
+                    ..MorganGeneratorParams::default()
                 })
                 .expect("fixed CCO reference options satisfy source construction");
                 let actual = get_fingerprint(

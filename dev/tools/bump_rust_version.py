@@ -15,44 +15,46 @@ DEPENDENCIES = [
      "cosmolkit-alignment cosmolkit-batch cosmolkit-bio cosmolkit-conformer "
      "cosmolkit-depict cosmolkit-fingerprints cosmolkit-forcefields cosmolkit-inchi "
      "cosmolkit-io cosmolkit-reaction cosmolkit-search cosmolkit-smiles cosmolkit-stereo cosmolkit-tautomer"),
-    ("crates/cosmolkit-alignment/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-search"),
-    ("crates/cosmolkit-batch/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-io"),
+    ("crates/cosmolkit-alignment/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-search cosmolkit-macros"),
+    ("crates/cosmolkit-batch/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-io cosmolkit-macros"),
     ("crates/cosmolkit-bio/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-types"),
-    ("crates/cosmolkit-conformer/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-core cosmolkit-forcefields cosmolkit-alignment cosmolkit-search"),
+    ("crates/cosmolkit-conformer/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-core cosmolkit-forcefields cosmolkit-alignment cosmolkit-search cosmolkit-macros"),
     ("crates/cosmolkit-conformer/Cargo.toml", "dev-dependencies", "cosmolkit-model cosmolkit-smiles cosmolkit-io"),
-    ("crates/cosmolkit-core/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-ringdecomposer cosmolkit-types"),
+    ("crates/cosmolkit-core/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-ringdecomposer cosmolkit-types cosmolkit-macros"),
     ("crates/cosmolkit-core/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
     ("crates/cosmolkit-cx/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-core"),
-    ("crates/cosmolkit-depict/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search"),
+    ("crates/cosmolkit-depict/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-macros"),
     ("crates/cosmolkit-depict/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
     ("crates/cosmolkit-descriptors/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search"),
     ("crates/cosmolkit-descriptors/Cargo.toml", "dev-dependencies", "cosmolkit-model cosmolkit-smiles"),
-    ("crates/cosmolkit-fingerprints/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-stereo"),
+    ("crates/cosmolkit-fingerprints/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-stereo cosmolkit-macros"),
     ("crates/cosmolkit-fingerprints/Cargo.toml", "dev-dependencies", "cosmolkit-model cosmolkit-smiles"),
-    ("crates/cosmolkit-forcefields/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search"),
+    ("crates/cosmolkit-forcefields/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-macros"),
     ("crates/cosmolkit-forcefields/Cargo.toml", "dev-dependencies", "cosmolkit-model cosmolkit-smiles cosmolkit-io"),
-    ("crates/cosmolkit-io/Cargo.toml", "dependencies", "cosmolkit-bio cosmolkit-core cosmolkit-depict cosmolkit-model cosmolkit-search cosmolkit-types"),
+    ("crates/cosmolkit-io/Cargo.toml", "dependencies", "cosmolkit-bio cosmolkit-core cosmolkit-depict cosmolkit-model cosmolkit-search cosmolkit-types cosmolkit-macros"),
     ("crates/cosmolkit-io/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
     ("crates/cosmolkit-model/Cargo.toml", "dependencies", "cosmolkit-types"),
-    ("crates/cosmolkit-reaction/Cargo.toml", "dependencies", "cosmolkit-types cosmolkit-model cosmolkit-core cosmolkit-search cosmolkit-smiles cosmolkit-cx"),
+    ("crates/cosmolkit-reaction/Cargo.toml", "dependencies", "cosmolkit-types cosmolkit-model cosmolkit-core cosmolkit-search cosmolkit-smiles cosmolkit-cx cosmolkit-macros"),
     ("crates/cosmolkit-reaction/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
-    ("crates/cosmolkit-search/Cargo.toml", "dependencies", "cosmolkit-cx cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-smiles"),
+    ("crates/cosmolkit-search/Cargo.toml", "dependencies", "cosmolkit-cx cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-smiles cosmolkit-macros"),
     ("crates/cosmolkit-search/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
-    ("crates/cosmolkit-smiles/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-cx cosmolkit-model cosmolkit-types"),
+    ("crates/cosmolkit-smiles/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-cx cosmolkit-model cosmolkit-types cosmolkit-macros"),
     ("crates/cosmolkit-smiles/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
-    ("crates/cosmolkit-stereo/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-smiles cosmolkit-conformer"),
+    ("crates/cosmolkit-stereo/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-smiles cosmolkit-conformer cosmolkit-macros"),
     ("crates/cosmolkit-stereo/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
-    ("crates/cosmolkit-tautomer/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-smiles cosmolkit-types"),
+    ("crates/cosmolkit-tautomer/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-smiles cosmolkit-types cosmolkit-macros"),
     ("crates/cosmolkit-tautomer/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
     ("python/Cargo.toml", "dependencies", "cosmolkit cosmolkit-macros"),
     ("wasm/Cargo.toml", "dependencies", "cosmolkit cosmolkit-macros"),
 ]
 README = "crates/cosmolkit/README.md"
 # Binding crate package version is separate from its cosmolkit dependency.
-PACKAGE_VERSIONS = ["python/Cargo.toml", "wasm/Cargo.toml"]
+PACKAGE_VERSIONS = ["python/Cargo.toml", "wasm/Cargo.toml", "python_pyo3_introspection/Cargo.toml"]
+PYTHON_VERSIONS = ["python/pyproject.toml", "python_pyo3_introspection/pyproject.toml"]
 BEGIN = "<!-- rust-install-version:start -->"
 END = "<!-- rust-install-version:end -->"
 LOCK_REFRESH = ["cargo", "update", "--workspace"]
+LOCK_ROOTS = [".", "python_pyo3_introspection"]
 
 
 def update_field(text, section, key, version):
@@ -71,10 +73,15 @@ def update_field(text, section, key, version):
     if len(matches) != 1:
         raise ValueError(f"expected one field: {section}.{key}")
     index = matches[0]
-    prefix, old, suffix = lines[index].split('"', 2)
-    if key != "version" and prefix != key + ' = { version = ':
-        raise ValueError(f"unexpected dependency layout: {section}.{key}")
-    lines[index] = prefix + '"' + version + '"' + suffix
+    if key == "version":
+        prefix, old, suffix = lines[index].split('"', 2)
+        lines[index] = prefix + '"' + version + '"' + suffix
+    else:
+        prefix, separator, rest = lines[index].partition('version = "')
+        if not lines[index].startswith(key + " = { ") or not separator:
+            raise ValueError(f"unexpected dependency layout: {section}.{key}")
+        old, suffix = rest.split('"', 1)
+        lines[index] = prefix + separator + version + '"' + suffix
     return before + header + "".join(lines)
 
 
@@ -88,9 +95,8 @@ def prepare_updates(original, version):
         updated[file] = update_field(updated[file], "package", "version", version)
     # Python release candidates use rcN; stable versions stay X.Y.Z.
     python_version = base + "rc" + rc if separator else base
-    updated["python/pyproject.toml"] = update_field(
-        updated["python/pyproject.toml"], "project", "version", python_version
-    )
+    for file in PYTHON_VERSIONS:
+        updated[file] = update_field(updated[file], "project", "version", python_version)
     for file, section, names in DEPENDENCIES:
         for name in names.split():
             updated[file] = update_field(updated[file], section, name, version)
@@ -123,7 +129,7 @@ def main():
         parser.error("expected X.Y.Z or X.Y.Z-rc.N")
 
     root = Path(__file__).resolve().parents[2]
-    files = ["Cargo.toml", "python/pyproject.toml", README] + PACKAGE_VERSIONS + [file for file, _, _ in DEPENDENCIES]
+    files = ["Cargo.toml", README] + PYTHON_VERSIONS + PACKAGE_VERSIONS + [file for file, _, _ in DEPENDENCIES]
     original = {file: (root / file).read_text() for file in files}
     try:
         updated = prepare_updates(original, args.version)
@@ -141,8 +147,11 @@ def main():
             print(f"Updated {file}")
     if args.dry_run:
         print("Would then run cargo update --workspace.")
-    elif subprocess.run(LOCK_REFRESH, cwd=root).returncode:
-        parser.exit(1, "cargo update --workspace failed; version edits remain.\n")
+        print("Would also refresh python_pyo3_introspection/Cargo.lock with cargo update --workspace.")
+    else:
+        for directory in LOCK_ROOTS:
+            if subprocess.run(LOCK_REFRESH, cwd=root / directory).returncode:
+                parser.exit(1, f"cargo update --workspace failed in {directory}; version edits remain.\n")
 
 
 if __name__ == "__main__":

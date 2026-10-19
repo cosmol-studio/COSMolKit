@@ -11,7 +11,7 @@ use pyo3::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum TautomerCatalogErrorKind {
     BadInputFile,
@@ -22,7 +22,7 @@ pub enum TautomerCatalogErrorKind {
     DeserializationUnderConstruction,
 }
 
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct TautomerCatalogError {
     inner: Arc<ck::TautomerCatalogError>,
 }
@@ -135,12 +135,12 @@ impl TautomerCatalogError {
     }
 }
 
-pub(crate) fn v1() -> PyResult<TautomerParams> {
-    ck::TautomerParams::v1()
-        .map(TautomerParams::from_native)
-        .map_err(TautomerCatalogError::from_rust)
+pub(crate) fn v1(py: Python<'_>) -> PyResult<TautomerParams> {
+    let native = ck::TautomerParams::v1().map_err(TautomerCatalogError::from_rust)?;
+    TautomerParams::from_native(py, native)
 }
 pub(crate) fn from_transform_data(
+    py: Python<'_>,
     data: Vec<(String, String, String, String)>,
 ) -> PyResult<TautomerParams> {
     let rows: Vec<_> = data
@@ -154,14 +154,14 @@ pub(crate) fn from_transform_data(
             )
         })
         .collect();
-    ck::TautomerParams::from_transform_data(&rows)
-        .map(TautomerParams::from_native)
-        .map_err(TautomerCatalogError::from_rust)
+    let native =
+        ck::TautomerParams::from_transform_data(&rows).map_err(TautomerCatalogError::from_rust)?;
+    TautomerParams::from_native(py, native)
 }
-pub(crate) fn from_transform_file(path: PathBuf) -> PyResult<TautomerParams> {
-    ck::TautomerParams::from_transform_file(path)
-        .map(TautomerParams::from_native)
-        .map_err(TautomerCatalogError::from_rust)
+pub(crate) fn from_transform_file(py: Python<'_>, path: PathBuf) -> PyResult<TautomerParams> {
+    let native =
+        ck::TautomerParams::from_transform_file(path).map_err(TautomerCatalogError::from_rust)?;
+    TautomerParams::from_native(py, native)
 }
 
 #[cfg(test)]
@@ -237,7 +237,7 @@ else: raise AssertionError('invalid transform accepted')
             )?;
             let old = module.getattr("old")?.extract::<PyRef<TautomerParams>>()?;
             assert_eq!(
-                old.inner.transform_count(),
+                old.to_rust(py)?.transform_count(),
                 ck::TautomerParams::v1().unwrap().transform_count()
             );
             Ok(())

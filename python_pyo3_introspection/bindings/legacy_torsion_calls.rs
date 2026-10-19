@@ -10,19 +10,17 @@ pub(crate) fn keywords(
     from_atoms: Option<Vec<u32>>,
     ignore_atoms: Option<Vec<u32>>,
     custom_atom_invariants: Option<Vec<u32>>,
-) -> LegacyTopologicalTorsionParams {
+) -> ck::LegacyTopologicalTorsionParams {
     let defaults = ck::LegacyTopologicalTorsionParams::default();
-    LegacyTopologicalTorsionParams {
-        inner: ck::LegacyTopologicalTorsionParams::new(
-            torsion_atom_count.unwrap_or(defaults.torsion_atom_count),
-            include_chirality.unwrap_or(defaults.include_chirality),
-            fp_size.unwrap_or(defaults.fp_size),
-            bits_per_entry.unwrap_or(defaults.bits_per_entry),
-            from_atoms,
-            ignore_atoms,
-            custom_atom_invariants,
-        ),
-    }
+    ck::LegacyTopologicalTorsionParams::new(
+        torsion_atom_count.unwrap_or(defaults.torsion_atom_count),
+        include_chirality.unwrap_or(defaults.include_chirality),
+        fp_size.unwrap_or(defaults.fp_size),
+        bits_per_entry.unwrap_or(defaults.bits_per_entry),
+        from_atoms,
+        ignore_atoms,
+        custom_atom_invariants,
+    )
 }
 
 #[cfg(test)]
@@ -44,7 +42,7 @@ mod tests {
             let molecule=Py::new(py,Molecule{inner:source.clone()})?;
             let options=ck::LegacyTopologicalTorsionParams::new(
                 3,true,256,2,Some(vec![0,3]),Some(vec![]),Some(vec![11,12,13,14]));
-            let params=Py::new(py,LegacyTopologicalTorsionParams{inner:options.clone()})?;
+            let params=Py::new(py,LegacyTopologicalTorsionParams::from_rust(py, options.clone())?)?;
             let kwargs=PyDict::new(py);
             kwargs.set_item("torsion_atom_count",3)?;
             kwargs.set_item("include_chirality",true)?;
@@ -69,7 +67,7 @@ mod tests {
                     let mut invalid=options.clone();
                     invalid.custom_atom_invariants=Some(vec![]);
                     let expected=source.[<fingerprint_topological_torsion $suffix _legacy_with_params>](&invalid).err().unwrap().to_string();
-                    let invalid=Py::new(py,LegacyTopologicalTorsionParams{inner:invalid})?;
+                    let invalid=Py::new(py,LegacyTopologicalTorsionParams::from_rust(py, invalid)?)?;
                     let error=molecule.bind(py).call_method1(method,(&invalid,)).unwrap_err();
                     assert!(error.is_instance_of::<TopologicalTorsionReadError>(py));
                     assert_eq!(error.value(py).str()?.to_str()?,expected);
@@ -85,7 +83,7 @@ mod tests {
                 assert_eq!(molecule.bind(py).call_method1("topological_torsion_ids",(size,))?.extract::<Vec<u64>>()?,expected);
                 assert_eq!(molecule.bind(py).call_method1("topological_torsion_ids_with_params",(size,))?.extract::<Vec<u64>>()?,expected);
             }
-            assert_eq!(params.borrow(py).inner,options);
+            assert_eq!(params.borrow(py).to_rust(py)?,options);
             assert_eq!(molecule.borrow(py).inner.to_binary().unwrap(),before);
             Ok(())
         }).unwrap();

@@ -4,7 +4,6 @@ Rust/PyO3 and the shared projection framework own their guarantees. These few
 samples exercise the Python boundary; do not add cases for ordinary new APIs,
 enumerate registry entries, or move chemistry tests here.
 """
-from operator import setitem
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -12,8 +11,8 @@ from tempfile import TemporaryDirectory
 import numpy as np
 
 sys.path.insert(0, str(Path(sys.argv[1]).resolve()))
-import fixed_projection as ck
-from fixed_projection import _native
+import cosmolkit as ck
+from cosmolkit import _native
 
 
 def raises(kind, call):
@@ -42,13 +41,33 @@ def forwarding_and_configuration():
     raises(TypeError, lambda: molecule.fingerprint_maccs(params, n_bits=None))
     raises(TypeError, lambda: molecule.fingerprint_maccs(None, n_bits=166))
 
-    options = ck.SmartsParseParams(replacements={"{A}": "O"})
-    snapshot = options.replacements
-    raises(TypeError, lambda: setitem(snapshot, "{A}", "N"))
+    source = {"{A}": "O"}
+    options = ck.SmartsParseParams(replacements=source)
+    source["{A}"] = "C"
+    assert options.replacements == {"{A}": "O"}
+    raises(AttributeError, lambda: options.replacements.update({"{A}": "N"}))
     options.replacements = {"{A}": "N"}
-    assert options.replacements == {"{A}": "N"} and snapshot == {"{A}": "O"}
     raises(TypeError, lambda: setattr(options, "replacements", {1: "O"}))
     assert options.replacements == {"{A}": "N"}
+
+    child = ck.McsAtomCompareParameters()
+    options = ck.McsParameters(atom_compare_parameters=child)
+    child.match_valences = not child.match_valences
+    assert options.atom_compare_parameters.match_valences != child.match_valences
+    owned_child = options.atom_compare_parameters
+    owned_child.match_valences = child.match_valences
+    options.atom_compare_parameters = owned_child
+    assert options.atom_compare_parameters.match_valences == child.match_valences
+
+    source = [0]
+    options = ck.MorganCallParams(from_atoms=source)
+    source.append(1)
+    assert options.from_atoms == (0,)
+    raises(AttributeError, lambda: options.from_atoms.append(2))
+    raises(TypeError, lambda: setattr(options, "from_atoms", ["bad"]))
+    assert options.from_atoms == (0,)
+    options.from_atoms = [0, 2]
+    assert options.from_atoms == (0, 2)
 
     selection = ck.SdfReadParams(coordinate_mode="require_3d")
     assert selection.coordinate_mode == ck.SdfCoordinateMode.Require3D

@@ -71,7 +71,7 @@ fn source(node: ErrorRef) -> PyErr {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct Mol2PostError {
     inner: RetainedError<ck::Mol2PostError>,
 }

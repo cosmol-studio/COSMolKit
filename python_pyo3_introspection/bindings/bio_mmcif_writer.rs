@@ -12,7 +12,7 @@ use std::sync::Arc;
 enum_value!(CifReadErrorKind, { Syntax, MissingValue, DuplicateName, InvalidLoop, InvalidValue, OutOfRange });
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct CifReadError {
     inner: ck::CifReadError,
 }
@@ -56,7 +56,7 @@ impl CifReadError {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum BioMmcifWriteErrorKind {
     Structure,
@@ -65,7 +65,7 @@ pub enum BioMmcifWriteErrorKind {
     Io,
     FileWrite,
 }
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct BioMmcifWriteError {
     inner: Arc<ck::BioMmcifWriteError>,
 }

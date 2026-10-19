@@ -20,7 +20,7 @@ enum_value!(MolecularForceFieldErrorKind, {
 
 macro_rules! flag_value {
     ($name:ident, {$($flag:ident),+ $(,)?}) => {
-        #[pyclass(module="fixed_projection._native", frozen, from_py_object, eq)]
+        #[pyclass(module="cosmolkit", frozen, from_py_object, eq)]
         #[derive(Clone, Copy, PartialEq)]
         pub struct $name { pub(crate) inner: ck::$name }
         #[pymethods]
@@ -40,7 +40,7 @@ flag_value!(LayeredFingerprintLayers, {
 });
 
 // Kept as an ordinary Rust item: PyO3's derives require non-macro item hygiene.
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object, eq)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
 pub struct AvalonFingerprintFlags {
     pub(crate) inner: ck::AvalonFingerprintFlags,

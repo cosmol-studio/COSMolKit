@@ -12,38 +12,41 @@ use pyo3::prelude::*;
 use std::sync::Arc;
 
 #[pyfunction]
-#[pyo3(signature=(inputs, params=None, *, store_all=None, maximize_bonds=None, threshold=None, timeout=None, verbose=None, atom_compare_parameters=None, bond_compare_parameters=None, atom_comparator=None, bond_comparator=None, initial_seed=None))]
+#[pyo3(signature=(inputs, params=crate::arguments::Argument::Missing, *, store_all=crate::arguments::Argument::Missing, maximize_bonds=crate::arguments::Argument::Missing, threshold=crate::arguments::Argument::Missing, timeout=crate::arguments::Argument::Missing, verbose=crate::arguments::Argument::Missing, atom_compare_parameters=crate::arguments::Argument::Missing, bond_compare_parameters=crate::arguments::Argument::Missing, atom_comparator=crate::arguments::Argument::Missing, bond_comparator=crate::arguments::Argument::Missing, initial_seed=crate::arguments::Argument::Missing))]
 pub fn maximum_common_substructure(
     py: Python<'_>,
     inputs: Vec<Py<Molecule>>,
-    params: Option<&McsParameters>,
-    store_all: Option<bool>,
-    maximize_bonds: Option<bool>,
-    threshold: Option<f64>,
-    timeout: Option<u32>,
-    verbose: Option<bool>,
-    atom_compare_parameters: Option<&McsAtomCompareParameters>,
-    bond_compare_parameters: Option<&McsBondCompareParameters>,
-    atom_comparator: Option<McsAtomComparatorInput>,
-    bond_comparator: Option<McsBondComparatorInput>,
-    initial_seed: Option<String>,
+    params: crate::arguments::Argument<Option<PyRef<'_, McsParameters>>>,
+    store_all: crate::arguments::Argument<Option<bool>>,
+    maximize_bonds: crate::arguments::Argument<Option<bool>>,
+    threshold: crate::arguments::Argument<Option<f64>>,
+    timeout: crate::arguments::Argument<Option<u32>>,
+    verbose: crate::arguments::Argument<Option<bool>>,
+    atom_compare_parameters: crate::arguments::Argument<
+        Option<PyRef<'_, McsAtomCompareParameters>>,
+    >,
+    bond_compare_parameters: crate::arguments::Argument<
+        Option<PyRef<'_, McsBondCompareParameters>>,
+    >,
+    atom_comparator: crate::arguments::Argument<Option<McsAtomComparatorInput>>,
+    bond_comparator: crate::arguments::Argument<Option<McsBondComparatorInput>>,
+    initial_seed: crate::arguments::Argument<Option<String>>,
 ) -> PyResult<McsResult> {
-    let keywords = store_all.is_some()
-        || maximize_bonds.is_some()
-        || threshold.is_some()
-        || timeout.is_some()
-        || verbose.is_some()
-        || atom_compare_parameters.is_some()
-        || bond_compare_parameters.is_some()
-        || atom_comparator.is_some()
-        || bond_comparator.is_some()
-        || initial_seed.is_some();
-    if params.is_some() && keywords {
-        return Err(PyTypeError::new_err(
-            "Params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if keywords {
+    let keyword_form = store_all.is_supplied()
+        || maximize_bonds.is_supplied()
+        || threshold.is_supplied()
+        || timeout.is_supplied()
+        || verbose.is_supplied()
+        || atom_compare_parameters.is_supplied()
+        || bond_compare_parameters.is_supplied()
+        || atom_comparator.is_supplied()
+        || bond_comparator.is_supplied()
+        || initial_seed.is_supplied();
+    crate::arguments::configuration_arguments!(params; store_all, maximize_bonds, threshold, timeout, verbose, atom_compare_parameters, bond_compare_parameters, atom_comparator, bond_comparator, initial_seed);
+    let params = params.as_deref();
+    let atom_compare_parameters = atom_compare_parameters.as_deref();
+    let bond_compare_parameters = bond_compare_parameters.as_deref();
+    if keyword_form {
         _maximum_common_substructure_keywords(
             py,
             inputs,
@@ -71,6 +74,15 @@ pub fn _maximum_common_substructure_params(
     inputs: Vec<Py<Molecule>>,
     params: Option<&McsParameters>,
 ) -> PyResult<McsResult> {
+    let params = params.map(|value| value.to_rust(py)).transpose()?;
+    run_mcs(py, inputs, params.as_ref())
+}
+
+fn run_mcs(
+    py: Python<'_>,
+    inputs: Vec<Py<Molecule>>,
+    params: Option<&ck::McsParameters>,
+) -> PyResult<McsResult> {
     // Input handles and their immutable Python borrow guards live until the
     // synchronous Rust call has finished. Only Rust references cross detach;
     // no Python object access, graph cloning or target reconstruction occurs.
@@ -80,9 +92,7 @@ pub fn _maximum_common_substructure_params(
         .collect::<Result<Vec<_>, _>>()?;
     let native: Vec<_> = guards.iter().map(|value| &value.inner).collect();
     let result = match params {
-        Some(params) => {
-            py.detach(|| ck::maximum_common_substructure_with_params(&native, &params.inner))
-        }
+        Some(params) => py.detach(|| ck::maximum_common_substructure_with_params(&native, params)),
         None => py.detach(|| ck::maximum_common_substructure(&native)),
     };
     result
@@ -110,19 +120,29 @@ pub fn _maximum_common_substructure_keywords(
     initial_seed: Option<String>,
 ) -> PyResult<McsResult> {
     let defaults = ck::McsParameters::default();
-    let params = McsParameters::new(
-        store_all.unwrap_or(defaults.store_all),
-        maximize_bonds.unwrap_or(defaults.maximize_bonds),
-        threshold.unwrap_or(defaults.threshold),
-        timeout.unwrap_or(defaults.timeout),
-        verbose.unwrap_or(defaults.verbose),
-        initial_seed.unwrap_or(defaults.initial_seed),
-        atom_compare_parameters,
-        bond_compare_parameters,
-        atom_comparator,
-        bond_comparator,
-    )?;
-    _maximum_common_substructure_params(py, inputs, Some(&params))
+    let params = ck::McsParameters {
+        store_all: store_all.unwrap_or(defaults.store_all),
+        maximize_bonds: maximize_bonds.unwrap_or(defaults.maximize_bonds),
+        threshold: threshold.unwrap_or(defaults.threshold),
+        timeout: timeout.unwrap_or(defaults.timeout),
+        verbose: verbose.unwrap_or(defaults.verbose),
+        initial_seed: initial_seed.unwrap_or(defaults.initial_seed),
+        atom_compare_parameters: atom_compare_parameters
+            .map(|value| value.inner.clone())
+            .unwrap_or(defaults.atom_compare_parameters),
+        bond_compare_parameters: bond_compare_parameters
+            .map(|value| value.inner.clone())
+            .unwrap_or(defaults.bond_compare_parameters),
+        atom_comparator: atom_comparator
+            .map(McsAtomComparatorInput::into_rust)
+            .transpose()?
+            .unwrap_or(defaults.atom_comparator),
+        bond_comparator: bond_comparator
+            .map(McsBondComparatorInput::into_rust)
+            .transpose()?
+            .unwrap_or(defaults.bond_comparator),
+    };
+    run_mcs(py, inputs, Some(&params))
 }
 
 #[pyfunction]
@@ -246,12 +266,7 @@ mod tests {
                     "bond_comparator",
                     crate::chemical_values::McsBondComparator::from(native_params.bond_comparator),
                 )?;
-                let params = Py::new(
-                    py,
-                    McsParameters {
-                        inner: native_params,
-                    },
-                )?;
+                let params = Py::new(py, McsParameters::from_rust(py, native_params)?)?;
                 for actual in [
                     module
                         .getattr("maximum_common_substructure")?
@@ -294,7 +309,7 @@ mod tests {
                         .unwrap_err()
                         .is_instance_of::<PyTypeError>(py)
                 );
-                assert_eq!(params.borrow(py).inner, original_params);
+                assert_eq!(params.borrow(py).to_rust(py)?, original_params);
             }
             for values in [vec![], vec![first.clone_ref(py)]] {
                 let count = values.len();

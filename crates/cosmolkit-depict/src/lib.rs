@@ -589,8 +589,9 @@ impl From<TemplateError> for DepictError {
 ///
 /// `clear_existing_2d` is consumed by the live runtime when this detached
 /// result is installed. It deliberately does not affect independent 3D rows.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 pub struct Compute2DCoordinatesParams {
+    #[configuration(none_default)]
     pub coordinate_map: BTreeMap<usize, [f64; 2]>,
     pub canonical_orientation: bool,
     pub clear_existing_2d: bool,

@@ -7,7 +7,7 @@ enum_value!(PolymerKind, { Unknown, PeptideL, PeptideD, Dna, Rna, DnaRnaHybrid,
     SaccharideD, SaccharideL, Pna, CyclicPseudoPeptide, Other });
 enum_value!(ResidueKind, { AminoAcid, Dna, Rna, Saccharide, Water, Buffer, Ligand, Unknown });
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct PdbSeqId {
     pub(crate) inner: ck::PdbSeqId,
@@ -29,7 +29,7 @@ impl PdbSeqId {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct AltLocLabel {
     pub(crate) inner: ck::AltLocLabel,
@@ -47,7 +47,7 @@ impl AltLocLabel {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct AtomSourceIds {
     pub(crate) inner: ck::AtomSourceIds,
@@ -66,7 +66,7 @@ impl AtomSourceIds {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct ResidueSourceIds {
     pub(crate) inner: ck::ResidueSourceIds,
@@ -110,7 +110,7 @@ impl ResidueSourceIds {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct EntitySourceIds {
     pub(crate) inner: ck::EntitySourceIds,
@@ -128,7 +128,7 @@ impl EntitySourceIds {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct AltLocRequest {
     pub(crate) inner: ck::AltLocRequest,

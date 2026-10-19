@@ -1135,12 +1135,14 @@ impl RandomBitsSource for SharedRandomBitsSource {
 /// The defaults reproduce RDKit Python's `StereoEnumerationOptions`. A
 /// `random_source` is consulted only when `max_isomers` selects the random
 /// configuration source; `None` uses RDKit's molecule-invariant default seed.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, cosmolkit_macros::Configuration)]
+#[configuration(stateful)]
 pub struct StereoisomerOptions {
     pub try_embedding: bool,
     pub only_unassigned: bool,
     pub only_stereo_groups: bool,
     pub max_isomers: usize,
+    #[configuration(adapter)]
     pub random_source: Option<StereoisomerRandomSource>,
     pub unique: bool,
 }

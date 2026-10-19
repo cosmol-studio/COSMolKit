@@ -52,3 +52,9 @@ pub use stereo_enumerate::{
     EnumerationError, StereoisomerIterator, StereoisomerOptions, StereoisomerRandomSource,
     enumerate_stereoisomers, enumerate_stereoisomers_with_random_bits, stereoisomer_count,
 };
+
+#[doc(hidden)]
+pub use cip_labels::__configuration_CipLabelOptions;
+#[cfg(feature = "enumeration")]
+#[doc(hidden)]
+pub use stereo_enumerate::__configuration_StereoisomerOptions;

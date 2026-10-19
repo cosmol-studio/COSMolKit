@@ -10,7 +10,7 @@ T = TypeVar("T")
 
 
 class AtomPairKeywordArgs(TypedDict, total=False):
-    generator: cosmolkit.AtomPairParams
+    generator: cosmolkit.AtomPairGeneratorParams
 
 
 def present_values(values: list[T | None]) -> list[T]:
@@ -21,7 +21,7 @@ def present_values(values: list[T | None]) -> list[T]:
 def test_atom_pair_batch_all_result_forms_match_ordered_scalar_calls():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(SMILES)
     kwargs: AtomPairKeywordArgs = {
-        "generator": cosmolkit.AtomPairParams(fp_size=256, include_chirality=True,
+        "generator": cosmolkit.AtomPairGeneratorParams(fp_size=256, include_chirality=True,
             count_simulation=True, count_bounds=[1, 3, 5], bits_per_feature=1),
     }
     options = cosmolkit.AtomPairFingerprintParams(**kwargs)
@@ -92,7 +92,7 @@ def test_atom_pair_batch_all_result_forms_match_ordered_scalar_calls():
 def test_atom_pair_sparse_count_batch_preserves_source_extra_bit_range_errors():
     molecule = cosmolkit.Molecule.from_smiles("CCO")
     kwargs: AtomPairKeywordArgs = {
-        "generator": cosmolkit.AtomPairParams(include_chirality=True, bits_per_feature=2),
+        "generator": cosmolkit.AtomPairGeneratorParams(include_chirality=True, bits_per_feature=2),
     }
     with pytest.raises(
         cosmolkit.AtomPairReadError,
@@ -121,7 +121,7 @@ def test_atom_pair_batch_keeps_invalid_positions_and_reports_operation_indices()
     ]
 
     with pytest.raises(Exception, match="batch.fingerprint_atom_pair"):
-        batch.fingerprint_atom_pair_list(generator=cosmolkit.AtomPairParams(use_2d=False), n_jobs=2, progress_bar=False)
+        batch.fingerprint_atom_pair_list(generator=cosmolkit.AtomPairGeneratorParams(use_2d=False), n_jobs=2, progress_bar=False)
 
 
 def test_atom_pair_batch_thread_counts_progress_defaults_and_repeats_are_stable():

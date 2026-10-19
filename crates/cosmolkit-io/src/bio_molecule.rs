@@ -7,7 +7,8 @@ use cosmolkit_model::{
 use std::collections::HashMap;
 
 /// Canonical detached structural conversion controls.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct BioMoleculeParams {
     pub sanitize: bool,
     pub remove_hs: bool,

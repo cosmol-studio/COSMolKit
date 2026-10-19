@@ -3,6 +3,7 @@
 #[allow(dead_code)]
 mod binding;
 mod bio;
+mod configuration;
 #[allow(dead_code)]
 mod declaration;
 mod javascript_options;
@@ -19,6 +20,24 @@ mod wrappers;
 
 use proc_macro::TokenStream;
 use quote::quote;
+
+/// Export the fields of a plain public-field configuration without language dependencies.
+#[proc_macro_derive(Configuration, attributes(configuration))]
+pub fn configuration(input: TokenStream) -> TokenStream {
+    match syn::parse(input).and_then(configuration::derive) {
+        Ok(output) => output.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Project a native configuration through the receiving language's shared framework.
+#[proc_macro]
+pub fn project_configuration(input: TokenStream) -> TokenStream {
+    match configuration::project(input.into()) {
+        Ok(output) => output.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
 
 /// Derive a plain-options constructor and TypeScript options interface from
 /// an existing wasm-bindgen constructor. Native constructor validation wins.

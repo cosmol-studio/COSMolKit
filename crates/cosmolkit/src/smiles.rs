@@ -5,9 +5,10 @@ use std::fmt;
 use crate::{Molecule, OperationError};
 
 /// Original-index fragment selection; symbol arrays are indexed by the full molecule.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 pub struct FragmentSmilesWriteParams {
     pub smiles: crate::SmilesWriteParams,
+    #[configuration(required)]
     pub atoms: Vec<crate::AtomId>,
     /// None selects all bonds between selected atoms; Some(empty) selects no bonds.
     pub bonds: Option<Vec<crate::BondId>>,
@@ -16,13 +17,32 @@ pub struct FragmentSmilesWriteParams {
 }
 
 /// Fragment selection with explicit CX fields and dimension-scoped coordinates.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 pub struct FragmentCxSmilesWriteParams {
     pub cx: crate::CxSmilesWriteParams,
+    #[configuration(required)]
     pub atoms: Vec<crate::AtomId>,
     pub bonds: Option<Vec<crate::BondId>>,
     pub atom_symbols: Option<Vec<String>>,
     pub bond_symbols: Option<Vec<String>>,
+}
+
+impl From<crate::SmilesWriteParams> for FragmentSmilesWriteParams {
+    fn from(smiles: crate::SmilesWriteParams) -> Self {
+        Self {
+            smiles,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<crate::CxSmilesWriteParams> for FragmentCxSmilesWriteParams {
+    fn from(cx: crate::CxSmilesWriteParams) -> Self {
+        Self {
+            cx,
+            ..Default::default()
+        }
+    }
 }
 
 /// Source-preserving serialization failures, without converting causes to strings.

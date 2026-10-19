@@ -2,7 +2,7 @@
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct DenseMatrix {
     pub(crate) inner: ck::DenseMatrix,
 }
@@ -20,7 +20,7 @@ impl DenseMatrix {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct ForceFieldEnergyGradient {
     pub(crate) inner: ck::ForceFieldEnergyGradient,
 }
@@ -37,7 +37,7 @@ impl ForceFieldEnergyGradient {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct ForceFieldMinimizeOutcome {
     pub(crate) inner: ck::ForceFieldMinimizeOutcome,
 }

@@ -26,7 +26,7 @@ assert_eq!(renamed.borrow(py).inner.len(),native.len());let ck::BatchRecord::Mol
 let invalid=batch.bind(py).call_method1("with_parallel_jobs",(Some(0),)).unwrap_err();assert!(invalid.is_instance_of::<BatchValidationError>(py));
 let transformed=batch.bind(py).call_method0("with_hydrogens")?.extract::<Py<MoleculeBatch>>()?;assert_eq!(transformed.borrow(py).inner.to_list(),native.with_hydrogens().unwrap().to_list());
 macro_rules! transform{($name:ident,$alias:ident,$module:ident,$params:ident)=>{{
-let options=ck::$params::default();let params=Py::new(py,crate::$module::$params{inner:options.clone()})?;let runtime=Py::new(py,BatchParams{inner:ck::BatchParams{errors:Some(ck::BatchErrorMode::KeepErrors),n_jobs:Some(1),progress_bar:Some(false)}})?;
+let options=ck::$params::default();let params=py.get_type::<crate::$module::$params>().call0()?;let runtime=Py::new(py,BatchParams{inner:ck::BatchParams{errors:Some(ck::BatchErrorMode::KeepErrors),n_jobs:Some(1),progress_bar:Some(false)}})?;
 let kw=PyDict::new(py);kw.set_item("n_jobs",1)?;kw.set_item("errors",crate::io_batch_params::BatchErrorMode::KeepErrors)?;kw.set_item("progress_bar",false)?;
 let want=native.$alias(&options,&runtime.borrow(py).inner).unwrap();
 for actual in [batch.bind(py).call_method0(stringify!($name))?,batch.bind(py).call_method(stringify!($name),(&params,),Some(&kw))?,batch.bind(py).call_method1(stringify!($alias),(&params,&runtime))?]{assert_eq!(actual.extract::<Py<MoleculeBatch>>()?.borrow(py).inner.to_list(),want.to_list());}
@@ -38,7 +38,7 @@ transform!(without_hydrogens,without_hydrogens_with_params,params,RemoveHsParams
 transform!(with_kekulized_bonds,with_kekulized_bonds_with_params,params,KekulizeParams);
 transform!(with_2d_coordinates,with_2d_coordinates_with_params,optional_configuration,Coordinate2DParams);
 macro_rules! bits{($name:ident,$alias:ident,$module:ident,$params:ident)=>{{
-let defaults=ck::$params::default();let options=Py::new(py,crate::$module::$params{inner:defaults.clone()})?;
+let defaults=ck::$params::default();let options=py.get_type::<crate::$module::$params>().call0()?.extract::<Py<crate::$module::$params>>()?;
 let runtime=py.get_type::<crate::batch_query_params::BatchQueryParams>().call0()?;
 let want=native.$alias(&defaults,&Default::default()).unwrap();
 for actual in [batch.bind(py).call_method0(stringify!($name))?,batch.bind(py).call_method1(stringify!($alias),(&options,&runtime))?]{let got=actual.extract::<Vec<Option<Py<crate::native::Fingerprint>>>>()?;assert_eq!(got.len(),want.len());for(got,want)in got.iter().zip(&want){assert_eq!(got.as_ref().map(|v|v.borrow(py).inner.on_bits()),want.as_ref().map(ck::Fingerprint::on_bits));}}

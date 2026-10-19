@@ -5,7 +5,8 @@ use crate::Molecule;
 pub use cosmolkit_batch::{BatchErrorMode, BatchRecordError as BatchError, BatchValidationError};
 
 /// Per-call scheduling and error policy; overrides never mutate stored batch configuration.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct BatchParams {
     /// None inherits the batch policy; constructors without a batch use Strict.
     pub errors: Option<BatchErrorMode>,
@@ -486,12 +487,14 @@ impl MoleculeBatch {
 }
 
 /// Runtime overrides for ordered read results; newly failed queries always raise.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, cosmolkit_macros::Configuration)]
+#[configuration(stateful)]
 pub struct BatchQueryParams {
     /// Inherit a stored batch setting when absent, otherwise default to one worker.
     pub n_jobs: Option<usize>,
     pub progress_bar: Option<bool>,
     /// One notification after every completed input row, including invalid rows.
+    #[configuration(adapter)]
     pub progress_callback: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 impl std::fmt::Debug for BatchQueryParams {
@@ -732,11 +735,12 @@ impl MoleculeBatch {
 }
 
 #[cfg(feature = "cap-depict")]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, cosmolkit_macros::Configuration)]
 pub struct BatchImageParams {
     pub format: String,
     pub width: u32,
     pub height: u32,
+    #[configuration(none_default)]
     pub execution: BatchParams,
     pub filenames: Option<Vec<Option<String>>>,
     pub report_path: Option<std::path::PathBuf>,
@@ -752,6 +756,38 @@ impl Default for BatchImageParams {
             filenames: None,
             report_path: None,
         }
+    }
+}
+
+#[cfg(feature = "cap-depict")]
+impl From<BatchParams> for BatchImageParams {
+    fn from(execution: BatchParams) -> Self {
+        Self {
+            execution,
+            ..Default::default()
+        }
+    }
+}
+
+#[cfg(feature = "cap-depict")]
+impl BatchImageParams {
+    pub fn errors(&self) -> Option<BatchErrorMode> {
+        self.execution.errors
+    }
+    pub fn set_errors(&mut self, value: Option<BatchErrorMode>) {
+        self.execution.errors = value;
+    }
+    pub fn n_jobs(&self) -> Option<usize> {
+        self.execution.n_jobs
+    }
+    pub fn set_n_jobs(&mut self, value: Option<usize>) {
+        self.execution.n_jobs = value;
+    }
+    pub fn progress_bar(&self) -> Option<bool> {
+        self.execution.progress_bar
+    }
+    pub fn set_progress_bar(&mut self, value: Option<bool>) {
+        self.execution.progress_bar = value;
     }
 }
 #[cfg(feature = "cap-depict")]
@@ -1501,7 +1537,7 @@ impl MoleculeBatch {
         (atom, call)
     }
     fn morgan_batch_generator(
-        options: &crate::MorganParams,
+        options: &crate::MorganGeneratorParams,
         atom_invariants: Option<&crate::MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&crate::MorganBondInvariantsGenerator>,
     ) -> Result<crate::MorganFingerprintGenerator, crate::MorganReadError> {
@@ -1596,7 +1632,7 @@ impl MoleculeBatch {
     }
     pub fn fingerprint_morgan_list_with_generator_params(
         &self,
-        options: &crate::MorganParams,
+        options: &crate::MorganGeneratorParams,
         atom_invariants: Option<&crate::MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&crate::MorganBondInvariantsGenerator>,
         call: &crate::MorganCallParams,
@@ -1685,7 +1721,7 @@ impl MoleculeBatch {
     }
     pub fn fingerprint_morgan_with_output_list_with_generator_params(
         &self,
-        options: &crate::MorganParams,
+        options: &crate::MorganGeneratorParams,
         atom_invariants: Option<&crate::MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&crate::MorganBondInvariantsGenerator>,
         call: &crate::MorganCallParams,

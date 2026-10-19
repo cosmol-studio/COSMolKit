@@ -10,7 +10,7 @@ use cosmolkit_search::{
 use std::{error::Error, fmt, sync::OnceLock};
 
 /// Exact source fixed-width public projection. Other widths remain source-defined rejected options.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct MaccsFingerprintParams {
     pub n_bits: usize,
 }

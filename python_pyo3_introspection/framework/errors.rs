@@ -99,11 +99,11 @@ macro_rules! error_projection {
         $($variant:ident $({$($field:ident $(: $ty:ty $(=> $convert:expr)?)?),+ $(,)?})? $(($source:tt))?),+ $(,)?
     } $(, cause = $cause:expr)? $(, source = $source_type:ty)? $(, methods = {$($method:item)*})? ) => {
         $crate::error_framework::require_retained_cause!($mode $(, $cause)?);
-        #[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+        #[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
         #[derive(Clone, Copy, PartialEq)]
         pub enum $kind { $($variant),+ }
 
-        #[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+        #[pyclass(module = "cosmolkit", extends=PyValueError)]
         pub struct $name {
             inner: $crate::error_framework::error_storage_type!($mode, $module::$rust)
         }

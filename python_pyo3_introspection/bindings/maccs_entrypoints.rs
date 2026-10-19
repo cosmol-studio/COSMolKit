@@ -16,9 +16,7 @@ fn raw_and_explicit_params_preserve_complete_native_vectors_and_errors() {
             let molecule = Py::new(py, Molecule { inner: native })?;
             let params = Py::new(
                 py,
-                MaccsFingerprintParams {
-                    inner: ck::MaccsFingerprintParams::default(),
-                },
+                MaccsFingerprintParams::from_rust(py, ck::MaccsFingerprintParams::default())?,
             )?;
             let projected_raw = molecule
                 .bind(py)
@@ -42,7 +40,7 @@ fn raw_and_explicit_params_preserve_complete_native_vectors_and_errors() {
             let expected = molecule
                 .borrow(py)
                 .inner
-                .fingerprint_maccs_with_params(&params.borrow(py).inner)
+                .fingerprint_maccs_with_params(&params.borrow(py).to_rust(py)?)
                 .unwrap_err();
             let error = molecule
                 .bind(py)

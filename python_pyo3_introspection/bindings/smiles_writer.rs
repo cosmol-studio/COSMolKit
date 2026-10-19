@@ -255,12 +255,7 @@ mod tests {
                         .to_cx_smiles_with_params(&native_cx)
                         .unwrap(),
                 );
-                let cx = Py::new(
-                    py,
-                    CxSmilesWriteParams {
-                        inner: native_cx.clone(),
-                    },
-                )?;
+                let cx = Py::new(py, CxSmilesWriteParams::from_rust(py, native_cx.clone())?)?;
                 let cx_kwargs = PyDict::new(py);
                 cx_kwargs.set_item("smiles", params.clone_ref(py))?;
                 cx_kwargs.set_item(
@@ -338,7 +333,7 @@ mod tests {
                         .to_fragment_smiles_with_params(&fragment)
                         .unwrap(),
                 );
-                let fragment = Py::new(py, FragmentSmilesWriteParams { inner: fragment })?;
+                let fragment = Py::new(py, FragmentSmilesWriteParams::from_rust(py, fragment)?)?;
                 let fragment_kwargs = PyDict::new(py);
                 fragment_kwargs.set_item("smiles", params.clone_ref(py))?;
                 fragment_kwargs.set_item("bonds", Vec::<usize>::new())?;
@@ -390,7 +385,8 @@ mod tests {
                         .to_fragment_cx_smiles_with_params(&fragment_cx)
                         .unwrap(),
                 );
-                let fragment_cx = Py::new(py, FragmentCxSmilesWriteParams { inner: fragment_cx })?;
+                let fragment_cx =
+                    Py::new(py, FragmentCxSmilesWriteParams::from_rust(py, fragment_cx)?)?;
                 let fragment_cx_kwargs = PyDict::new(py);
                 fragment_cx_kwargs.set_item("cx", cx.clone_ref(py))?;
                 fragment_cx_kwargs.set_item("bonds", Vec::<usize>::new())?;

@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 
 enum_value!(StereoGroupKind, { Absolute, Or, And });
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct StereoGroup {
     pub(crate) inner: ck::StereoGroup,

@@ -22,14 +22,14 @@ impl CipDescriptor {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum CipDescriptorErrorKind {
     InvalidNeighborOrder,
     Property,
     InvalidStoredDescriptor,
 }
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct CipDescriptorError {
     inner: ck::CipDescriptorError,
 }
@@ -152,7 +152,7 @@ mod source_tests {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct Atom {
     pub(crate) inner: ck::Atom,
@@ -227,7 +227,7 @@ impl Atom {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct Bond {
     pub(crate) inner: ck::Bond,

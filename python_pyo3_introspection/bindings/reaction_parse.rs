@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct CxParseError {
     inner: ck::CxParseError,
 }
@@ -136,41 +136,36 @@ pub(crate) fn keywords(
     replacements: Option<BTreeMap<String, String>>,
     allow_cxsmiles: Option<bool>,
     strict_cxsmiles: Option<bool>,
-) -> ReactionParseParams {
+) -> ck::ReactionParseParams {
     let defaults = ck::ReactionParseParams::default();
-    ReactionParseParams {
-        inner: ck::ReactionParseParams {
-            use_smiles: use_smiles.unwrap_or(defaults.use_smiles),
-            sanitize: sanitize.unwrap_or(defaults.sanitize),
-            replacements: replacements.unwrap_or(defaults.replacements),
-            allow_cxsmiles: allow_cxsmiles.unwrap_or(defaults.allow_cxsmiles),
-            strict_cxsmiles: strict_cxsmiles.unwrap_or(defaults.strict_cxsmiles),
-        },
+    ck::ReactionParseParams {
+        use_smiles: use_smiles.unwrap_or(defaults.use_smiles),
+        sanitize: sanitize.unwrap_or(defaults.sanitize),
+        replacements: replacements.unwrap_or(defaults.replacements),
+        allow_cxsmiles: allow_cxsmiles.unwrap_or(defaults.allow_cxsmiles),
+        strict_cxsmiles: strict_cxsmiles.unwrap_or(defaults.strict_cxsmiles),
     }
 }
 
 #[pyfunction]
-#[pyo3(signature=(text, params=None, *, use_smiles=None, sanitize=None, replacements=None, allow_cxsmiles=None, strict_cxsmiles=None))]
+#[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, use_smiles=crate::arguments::Argument::Missing, sanitize=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing))]
 pub fn parse_smirks(
     text: &str,
-    params: Option<&ReactionParseParams>,
-    use_smiles: Option<bool>,
-    sanitize: Option<bool>,
-    replacements: Option<BTreeMap<String, String>>,
-    allow_cxsmiles: Option<bool>,
-    strict_cxsmiles: Option<bool>,
+    params: crate::arguments::Argument<Option<PyRef<'_, ReactionParseParams>>>,
+    use_smiles: crate::arguments::Argument<Option<bool>>,
+    sanitize: crate::arguments::Argument<Option<bool>>,
+    replacements: crate::arguments::Argument<Option<BTreeMap<String, String>>>,
+    allow_cxsmiles: crate::arguments::Argument<Option<bool>>,
+    strict_cxsmiles: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Reaction> {
-    let configured = use_smiles.is_some()
-        || sanitize.is_some()
-        || replacements.is_some()
-        || allow_cxsmiles.is_some()
-        || strict_cxsmiles.is_some();
-    if params.is_some() && configured {
-        return Err(pyo3::exceptions::PyTypeError::new_err(
-            "Params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if configured {
+    let keyword_form = use_smiles.is_supplied()
+        || sanitize.is_supplied()
+        || replacements.is_supplied()
+        || allow_cxsmiles.is_supplied()
+        || strict_cxsmiles.is_supplied();
+    crate::arguments::configuration_arguments!(params; use_smiles, sanitize, replacements, allow_cxsmiles, strict_cxsmiles);
+    let params = params.as_deref();
+    if keyword_form {
         _parse_smirks_keywords(
             text,
             use_smiles,
@@ -190,8 +185,9 @@ pub fn _parse_smirks_params(
     text: &str,
     params: Option<&ReactionParseParams>,
 ) -> PyResult<Reaction> {
+    let params = Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
     match params {
-        Some(params) => ck::parse_smirks_with_params(text, &params.inner),
+        Some(params) => ck::parse_smirks_with_params(text, &params),
         None => ck::parse_smirks(text),
     }
     .map(Reaction::from_rust)
@@ -215,37 +211,34 @@ pub fn _parse_smirks_keywords(
         allow_cxsmiles,
         strict_cxsmiles,
     );
-    _parse_smirks_params(text, Some(&params))
-}
-#[pyfunction]
-pub fn parse_smirks_with_params(text: &str, params: &ReactionParseParams) -> PyResult<Reaction> {
-    ck::parse_smirks_with_params(text, &params.inner)
+    ck::parse_smirks_with_params(text, &params)
         .map(Reaction::from_rust)
         .map_err(ReactionParseError::from_rust)
 }
+#[pyfunction]
+pub fn parse_smirks_with_params(text: &str, params: &ReactionParseParams) -> PyResult<Reaction> {
+    _parse_smirks_params(text, Some(params))
+}
 
 #[pyfunction]
-#[pyo3(signature=(text, params=None, *, use_smiles=None, sanitize=None, replacements=None, allow_cxsmiles=None, strict_cxsmiles=None))]
+#[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, use_smiles=crate::arguments::Argument::Missing, sanitize=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing))]
 pub fn reaction_from_smirks(
     text: &str,
-    params: Option<&ReactionParseParams>,
-    use_smiles: Option<bool>,
-    sanitize: Option<bool>,
-    replacements: Option<BTreeMap<String, String>>,
-    allow_cxsmiles: Option<bool>,
-    strict_cxsmiles: Option<bool>,
+    params: crate::arguments::Argument<Option<PyRef<'_, ReactionParseParams>>>,
+    use_smiles: crate::arguments::Argument<Option<bool>>,
+    sanitize: crate::arguments::Argument<Option<bool>>,
+    replacements: crate::arguments::Argument<Option<BTreeMap<String, String>>>,
+    allow_cxsmiles: crate::arguments::Argument<Option<bool>>,
+    strict_cxsmiles: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Reaction> {
-    let configured = use_smiles.is_some()
-        || sanitize.is_some()
-        || replacements.is_some()
-        || allow_cxsmiles.is_some()
-        || strict_cxsmiles.is_some();
-    if params.is_some() && configured {
-        return Err(pyo3::exceptions::PyTypeError::new_err(
-            "Params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if configured {
+    let keyword_form = use_smiles.is_supplied()
+        || sanitize.is_supplied()
+        || replacements.is_supplied()
+        || allow_cxsmiles.is_supplied()
+        || strict_cxsmiles.is_supplied();
+    crate::arguments::configuration_arguments!(params; use_smiles, sanitize, replacements, allow_cxsmiles, strict_cxsmiles);
+    let params = params.as_deref();
+    if keyword_form {
         _reaction_from_smirks_keywords(
             text,
             use_smiles,
@@ -265,8 +258,9 @@ pub fn _reaction_from_smirks_params(
     text: &str,
     params: Option<&ReactionParseParams>,
 ) -> PyResult<Reaction> {
+    let params = Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
     match params {
-        Some(params) => ck::Reaction::from_smirks_with_params(text, &params.inner),
+        Some(params) => ck::Reaction::from_smirks_with_params(text, &params),
         None => ck::reaction_from_smirks(text),
     }
     .map(Reaction::from_rust)
@@ -290,7 +284,9 @@ pub fn _reaction_from_smirks_keywords(
         allow_cxsmiles,
         strict_cxsmiles,
     );
-    _reaction_from_smirks_params(text, Some(&params))
+    ck::Reaction::from_smirks_with_params(text, &params)
+        .map(Reaction::from_rust)
+        .map_err(ReactionParseError::from_rust)
 }
 
 #[cfg(test)]
@@ -348,9 +344,7 @@ mod tests {
                 let expected = ck::parse_smirks_with_params(text, &native_params).unwrap();
                 let params = Py::new(
                     py,
-                    ReactionParseParams {
-                        inner: native_params.clone(),
-                    },
+                    ReactionParseParams::from_rust(py, native_params.clone())?,
                 )?;
                 let kwargs = PyDict::new(py);
                 kwargs.set_item("use_smiles", native_params.use_smiles)?;

@@ -26,7 +26,7 @@ error_projection!(ChemistryProblemError, ChemistryProblemErrorKind, ck::Chemistr
     } }
 });
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct ChemistryProblem {
     pub(crate) inner: ck::ChemistryProblem,
@@ -55,7 +55,7 @@ impl ChemistryProblem {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct ChemistryProblemReport {
     pub(crate) inner: ck::ChemistryProblemReport,

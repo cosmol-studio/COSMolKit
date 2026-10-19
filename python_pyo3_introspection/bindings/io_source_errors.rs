@@ -64,7 +64,7 @@ impl ErrorRef {
 // Native ErrorKind is non-exhaustive and includes OS kinds unavailable as
 // stable Rust constants. Keep the actual native value even for those kinds;
 // named Final constants are convenience values, not a lossy closed enum map.
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object, eq)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
 pub struct IoErrorKind {
     inner: std::io::ErrorKind,
@@ -117,7 +117,7 @@ pub(crate) fn standard_source(node: ErrorRef) -> PyErr {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct IoError {
     node: ErrorRef,
 }
@@ -168,7 +168,7 @@ impl IoError {
 
 // An actual open-ended external error, not a replacement for a known CK type.
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct ExternalError {
     node: ErrorRef,
 }

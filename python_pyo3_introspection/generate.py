@@ -6,7 +6,7 @@ wheel, consult the registry, or execute runtime/type tests.
 
 Changes to the public __init__.pyi:
 1. Parse the official stub into a Python syntax tree (AST) and remove the
-   fixed_projection._native / builtins qualifiers from type names.
+   cosmolkit / builtins qualifiers from type names.
 2. Read JSON {"role": "overload", "target": "Class.method"} documentation on
    registered native branch functions (module targets omit Class). Group their
    official signatures by target, rename them and add @typing.overload, replacing
@@ -28,6 +28,9 @@ Changes to the public __init__.pyi:
    workaround. Qualify property decorators as builtins.property so an actual
    member named property cannot shadow the decorator. Add imports and derive
    __all__ from the extension's public exports by loading the extension.
+   Re-export explicit {"role": "private_export"} functions without adding them
+   to public __all__; attribute them to the public package for stable pickle
+   lookup. Their declarations remain officially extracted.
 
 Executable __init__.py:
 6. Re-export the existing native classes/functions without wrappers, replacement
@@ -57,7 +60,7 @@ import sys
 class PublicNames(ast.NodeTransformer):
     def visit_Attribute(self, node):
         name = ast.unparse(node)
-        if name.startswith("fixed_projection._native.") or name.startswith("builtins."):
+        if name.startswith("cosmolkit.") or name.startswith("builtins."):
             return ast.copy_location(ast.Name(id=node.attr, ctx=ast.Load()), node)
         return self.generic_visit(node)
 
@@ -202,15 +205,22 @@ def generate(library: Path, official_stub: Path, output: Path):
                 method.args.args = method.args.posonlyargs + method.args.args
                 method.args.posonlyargs = []
     exports = sorted(name for name in native.__all__ if not name.startswith("_"))
+    private_exports = sorted(node.name for node in tree.body
+                             if isinstance(node, ast.FunctionDef)
+                             and projection(node).get("role") == "private_export")
+    if any(not name.startswith("_") or name not in native.__all__ for name in private_exports):
+        raise ValueError("private_export requires an explicitly exported native private function")
     tree.body = [node for node in tree.body if not isinstance(node, ast.Assign) or not any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)]
     tree.body.insert(0, ast.Import(names=[ast.alias(name="builtins"), ast.alias(name="typing")]))
     tree.body.append(ast.parse(f"__all__ = {exports!r}").body[0])
 
-    package = output / "fixed_projection"
+    package = output / "cosmolkit"
     package.mkdir(parents=True, exist_ok=True)
     shutil.copy2(library, package / ("_native" + EXTENSION_SUFFIXES[-1]))
     (package / "__init__.pyi").write_text(ast.unparse(ast.fix_missing_locations(tree)) + "\n")
-    runtime = f"from . import _native\nfrom ._native import {', '.join(exports)}\n__all__ = {exports!r}\n"
+    runtime = f"from . import _native\nfrom ._native import {', '.join(exports + private_exports)}\n"
+    runtime += "".join(f"{name}.__module__ = __name__\n" for name in private_exports)
+    runtime += f"__all__ = {exports!r}\n"
     (package / "__init__.py").write_text(runtime)
     (package / "py.typed").touch()
     return package

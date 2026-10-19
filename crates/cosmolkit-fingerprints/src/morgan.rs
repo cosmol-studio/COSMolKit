@@ -1333,7 +1333,7 @@ fn update_neighbor_layer(
 }
 
 /// Project-native batch wrapper preflight; the reusable C++ generator keeps its own rules.
-pub fn validate_morgan_batch_params(params: &MorganParams) -> Result<(), MorganError> {
+pub fn validate_morgan_batch_params(params: &MorganGeneratorParams) -> Result<(), MorganError> {
     // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855
     // properties/fingerprint.rs::morgan_fingerprint_with_output, lines 4797–4803.
     //     validate_morgan_params(params)?;
@@ -1355,8 +1355,8 @@ pub fn validate_morgan_batch_params(params: &MorganParams) -> Result<(), MorganE
 /// This type is defined inside the private `morgan` module. Public visibility
 /// here supports the frozen detached owner signature without exposing a new
 /// root, runtime, or binding API.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MorganParams {
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+pub struct MorganGeneratorParams {
     pub radius: u32,
     pub include_chirality: bool,
     pub use_bond_types: bool,
@@ -1365,6 +1365,7 @@ pub struct MorganParams {
     pub include_redundant_environments: bool,
     pub fp_size: u32,
     pub count_simulation: bool,
+    #[configuration(none_default)]
     pub count_bounds: Vec<u32>,
     pub bits_per_feature: u32,
 }
@@ -1416,7 +1417,7 @@ pub enum MorganAtomInvariants<'a> {
     FeaturePatterns(&'a [cosmolkit_search::QueryGraph]),
 }
 
-impl Default for MorganParams {
+impl Default for MorganGeneratorParams {
     fn default() -> Self {
         // BEGIN RDKIT CPP FUNCTION MorganArguments::MorganArguments source defaults
         // RDKit❗✔️: MorganArguments(unsigned int radius = 3, bool countSimulation = false,
@@ -1468,7 +1469,9 @@ pub(crate) struct MorganGenerator {
 
 /// Construct the Morgan generator configuration and its default invariant
 /// owners. Per-call custom invariant slices remain on `MorganCall`.
-pub(crate) fn get_morgan_generator(params: &MorganParams) -> Result<MorganGenerator, MorganError> {
+pub(crate) fn get_morgan_generator(
+    params: &MorganGeneratorParams,
+) -> Result<MorganGenerator, MorganError> {
     // BEGIN RDKIT CPP FUNCTION getMorganGenerator(const MorganArguments &, ...)
     // RDKit❗✔️:   AtomEnvironmentGenerator<OutputType> *morganEnvGenerator =
     // RDKit❗✔️:       new MorganEnvGenerator<OutputType>();
@@ -1572,7 +1575,7 @@ fn selected_atom_invariants(
 }
 
 fn create_morgan_call<'call>(
-    params: &MorganParams,
+    params: &MorganGeneratorParams,
     call: &MorganCall<'call>,
 ) -> Result<(MorganGenerator, FingerprintFuncArguments<'call>), MorganError> {
     let generator = get_morgan_generator(params)?;
@@ -1583,7 +1586,7 @@ fn create_morgan_call<'call>(
 /// Generate raw sparse Morgan counts from final detached molecule state.
 pub fn morgan_sparse_count(
     input: &MorganPreparedInput<'_>,
-    params: &MorganParams,
+    params: &MorganGeneratorParams,
     call: &MorganCall<'_>,
     invariants: MorganAtomInvariants<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
@@ -1613,7 +1616,7 @@ pub fn morgan_sparse_count(
 /// Generate raw sparse Morgan presence bits from final detached molecule state.
 pub fn morgan_sparse_bits(
     input: &MorganPreparedInput<'_>,
-    params: &MorganParams,
+    params: &MorganGeneratorParams,
     call: &MorganCall<'_>,
     invariants: MorganAtomInvariants<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
@@ -1643,7 +1646,7 @@ pub fn morgan_sparse_bits(
 /// Generate a hashed 32-bit sparse Morgan count fingerprint.
 pub fn morgan_count(
     input: &MorganPreparedInput<'_>,
-    params: &MorganParams,
+    params: &MorganGeneratorParams,
     call: &MorganCall<'_>,
     invariants: MorganAtomInvariants<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
@@ -1673,7 +1676,7 @@ pub fn morgan_count(
 /// Generate a dense Morgan bit fingerprint.
 pub fn morgan_bits(
     input: &MorganPreparedInput<'_>,
-    params: &MorganParams,
+    params: &MorganGeneratorParams,
     call: &MorganCall<'_>,
     invariants: MorganAtomInvariants<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
@@ -1703,7 +1706,7 @@ pub fn morgan_bits(
 /// Detached legacy `MorganFingerprints::getFingerprint` projection.
 ///
 /// This private owner preserves the old wrapper's two sparse result branches;
-/// it is not the later public `MorganParams` projection API.
+/// it is not the later public `MorganGeneratorParams` projection API.
 pub(crate) fn get_legacy_morgan_fingerprint(
     topology: &TopologyBlock,
     properties: &MoleculeProperties,
@@ -1763,7 +1766,7 @@ pub(crate) fn get_legacy_morgan_fingerprint(
     // Complexity review: both source branches and these projections remain
     // O(E log K) with ordered sparse storage; the direct key projection removes
     // one temporary sparse structure, and neither branch rescans the molecule.
-    let mut generator_params = MorganParams::default();
+    let mut generator_params = MorganGeneratorParams::default();
     generator_params.radius = radius;
     generator_params.include_chirality = use_chirality;
     generator_params.use_bond_types = use_bond_types;
@@ -1900,7 +1903,7 @@ pub(crate) fn get_legacy_morgan_hashed_fingerprint(
         .into());
     }
 
-    let mut generator_params = MorganParams::default();
+    let mut generator_params = MorganGeneratorParams::default();
     generator_params.radius = radius;
     generator_params.include_chirality = use_chirality;
     generator_params.use_bond_types = use_bond_types;
@@ -2010,7 +2013,7 @@ pub(crate) fn get_legacy_morgan_fingerprint_as_bit_vector(
         .into());
     }
 
-    let mut generator_params = MorganParams::default();
+    let mut generator_params = MorganGeneratorParams::default();
     generator_params.radius = radius;
     generator_params.include_chirality = use_chirality;
     generator_params.use_bond_types = use_bond_types;
@@ -2058,7 +2061,7 @@ mod tests {
 
     use super::{
         MorganAtomEnvironment, MorganAtomInvariants, MorganBondEnvironment, MorganCall,
-        MorganChiralAtoms, MorganDistanceMatrixCache, MorganLayerCandidate, MorganParams,
+        MorganChiralAtoms, MorganDistanceMatrixCache, MorganGeneratorParams, MorganLayerCandidate,
         collect_morgan_layer, generate_morgan_environments, get_legacy_morgan_fingerprint,
         get_legacy_morgan_fingerprint_as_bit_vector, get_legacy_morgan_hashed_fingerprint,
         get_morgan_generator, morgan_bits, morgan_count, morgan_sparse_bits, morgan_sparse_count,
@@ -2209,13 +2212,13 @@ mod tests {
                 for include_ring_membership in [false, true] {
                     for only_nonzero_invariants in [false, true] {
                         for include_redundant_environments in [false, true] {
-                            let params = MorganParams {
+                            let params = MorganGeneratorParams {
                                 radius,
                                 include_chirality,
                                 include_ring_membership,
                                 only_nonzero_invariants,
                                 include_redundant_environments,
-                                ..MorganParams::default()
+                                ..MorganGeneratorParams::default()
                             };
                             let call = MorganCall::default();
                             let expected_row = fixed_row(radius, include_redundant_environments);
@@ -2316,9 +2319,9 @@ mod tests {
             valence: &valence,
             rings: Some(&rings),
         };
-        let params = MorganParams {
+        let params = MorganGeneratorParams {
             radius: 0,
-            ..MorganParams::default()
+            ..MorganGeneratorParams::default()
         };
         let call = MorganCall::default();
         let mut output = FingerprintAdditionalOutput {
@@ -2416,9 +2419,9 @@ mod tests {
 
         let carbon = parse_smarts("[#6]", &SmartsParseParams::default())
             .expect("fixed carbon feature SMARTS parses");
-        let params = MorganParams {
+        let params = MorganGeneratorParams {
             radius: 0,
-            ..MorganParams::default()
+            ..MorganGeneratorParams::default()
         };
         let call = MorganCall::default();
         let mut actual_calls = 0;
@@ -5154,7 +5157,7 @@ mod tests {
             let (record, prepared_valence) = fully_prepared_record_with_valence(smiles);
             let rings = fast_find_rings(&record.topology)
                 .expect("fixed Morgan topology has source ring state");
-            let mut generator = get_morgan_generator(&MorganParams::default())
+            let mut generator = get_morgan_generator(&MorganGeneratorParams::default())
                 .expect("source-default Morgan arguments are valid");
             let atom_invariants = generator
                 .atom_invariants
@@ -5269,10 +5272,10 @@ mod tests {
                         let record_properties_before = record.properties.clone();
                         let should_prepare = include_chirality && done_value.is_none();
 
-                        let params = MorganParams {
+                        let params = MorganGeneratorParams {
                             radius: 0,
                             include_chirality,
-                            ..MorganParams::default()
+                            ..MorganGeneratorParams::default()
                         };
                         let generator =
                             get_morgan_generator(&params).expect("fixed Morgan params are valid");

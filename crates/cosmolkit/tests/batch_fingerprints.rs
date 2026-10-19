@@ -4,9 +4,9 @@
     feature = "cap-fingerprints"
 ))]
 use cosmolkit::{
-    AtomPairFingerprintParams, AtomPairParams, BatchErrorMode, BatchParams, BatchQueryParams,
-    BatchRecord, FingerprintAdditionalOutput, LayeredFingerprintParams, Molecule, MoleculeBatch,
-    MorganFingerprintParams, MorganParams, PatternFingerprintParams,
+    AtomPairFingerprintParams, AtomPairGeneratorParams, BatchErrorMode, BatchParams,
+    BatchQueryParams, BatchRecord, FingerprintAdditionalOutput, LayeredFingerprintParams, Molecule,
+    MoleculeBatch, MorganFingerprintParams, MorganGeneratorParams, PatternFingerprintParams,
 };
 use std::error::Error;
 use std::sync::{
@@ -50,17 +50,14 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .map(|s| Molecule::from_smiles(s).unwrap())
         .collect();
     let batch = MoleculeBatch::from_smiles_list(&source).unwrap();
-    let params = AtomPairFingerprintParams {
-        generator: AtomPairParams {
-            fp_size: 256,
-            count_simulation: true,
-            count_bounds: vec![1, 3, 5],
-            bits_per_feature: 1,
-            include_chirality: true,
-            ..Default::default()
-        },
+    let params = AtomPairFingerprintParams::from(AtomPairGeneratorParams {
+        fp_size: 256,
+        count_simulation: true,
+        count_bounds: vec![1, 3, 5],
+        bits_per_feature: 1,
+        include_chirality: true,
         ..Default::default()
-    };
+    });
     let sparse_count = batch
         .fingerprint_atom_pair_sparse_count_list_with_params(&params, &execution(4))
         .unwrap();
@@ -135,14 +132,11 @@ fn unfolded_extra_bits_preserve_source_index_errors_and_batch_positions() {
         .map(|s| Molecule::from_smiles(s).unwrap())
         .collect();
     let batch = MoleculeBatch::from_smiles_list(&source).unwrap();
-    let params = AtomPairFingerprintParams {
-        generator: AtomPairParams {
-            bits_per_feature: 2,
-            include_chirality: true,
-            ..Default::default()
-        },
+    let params = AtomPairFingerprintParams::from(AtomPairGeneratorParams {
+        bits_per_feature: 2,
+        include_chirality: true,
         ..Default::default()
-    };
+    });
     assert!(
         molecules[0]
             .fingerprint_atom_pair_sparse_count_with_params(&params, None)
@@ -230,13 +224,10 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
     assert!(values[0].is_some());
     assert!(values[1].is_none());
     assert!(values[2].is_some());
-    let no_conformer = AtomPairFingerprintParams {
-        generator: AtomPairParams {
-            use_2d: false,
-            ..Default::default()
-        },
+    let no_conformer = AtomPairFingerprintParams::from(AtomPairGeneratorParams {
+        use_2d: false,
         ..Default::default()
-    };
+    });
     let error = batch
         .fingerprint_atom_pair_list_with_params(&no_conformer, &execution(2))
         .unwrap_err();
@@ -254,13 +245,10 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
             .iter()
             .all(|e| e.operation == "batch.fingerprint_atom_pair")
     );
-    let bad_config = AtomPairFingerprintParams {
-        generator: AtomPairParams {
-            fp_size: 0,
-            ..Default::default()
-        },
+    let bad_config = AtomPairFingerprintParams::from(AtomPairGeneratorParams {
+        fp_size: 0,
         ..Default::default()
-    };
+    });
     let error = batch
         .fingerprint_atom_pair_list_with_params(&bad_config, &execution(2))
         .unwrap_err();
@@ -307,14 +295,11 @@ fn all_families_return_full_ordered_bits_counts_and_metadata_masks() {
     let batch = batch(&["CCO", "C1", "c1ccccc1O", "C[C@H](O)F"]);
     let originals = batch.to_list();
     let ap = AtomPairFingerprintParams::default();
-    let morgan = MorganFingerprintParams {
-        generator: MorganParams {
-            radius: 2,
-            fp_size: 128,
-            ..Default::default()
-        },
+    let morgan = MorganFingerprintParams::from(MorganGeneratorParams {
+        radius: 2,
+        fp_size: 128,
         ..Default::default()
-    };
+    });
     let layered = LayeredFingerprintParams {
         fp_size: 128,
         atom_counts: Some(vec![0; 12]),
@@ -415,20 +400,16 @@ fn ap_preflight_runs_on_empty_invalid_rows_before_scheduling_and_morgan_preserve
  {
     for values in [vec![], vec!["C1", "C2"]] {
         let batch = batch(&values);
-        let params = AtomPairFingerprintParams {
-            generator: AtomPairParams {
-                fp_size: 0,
-                min_distance: 31,
-                max_distance: 30,
-                ..Default::default()
-            },
+        let params = AtomPairFingerprintParams::from(AtomPairGeneratorParams {
+            fp_size: 0,
+            min_distance: 31,
+            max_distance: 30,
             ..Default::default()
-        };
+        });
         let error = batch
             .fingerprint_atom_pair_list_with_params(&params, &execution(0))
             .unwrap_err();
-        let owner =
-            cosmolkit_fingerprints::validate_atom_pair_params(&params.generator).unwrap_err();
+        let owner = cosmolkit_fingerprints::validate_atom_pair_params(params.as_ref()).unwrap_err();
         assert_eq!(error.record_errors[0].index, 0);
         assert!(error.record_errors[0].message.contains(&owner.to_string()));
         assert!(
@@ -442,13 +423,10 @@ fn ap_preflight_runs_on_empty_invalid_rows_before_scheduling_and_morgan_preserve
             error.record_errors[0].operation,
             "batch.fingerprint_atom_pair"
         );
-        let bad = MorganFingerprintParams {
-            generator: MorganParams {
-                fp_size: 0,
-                ..Default::default()
-            },
+        let bad = MorganFingerprintParams::from(MorganGeneratorParams {
+            fp_size: 0,
             ..Default::default()
-        };
+        });
         assert_eq!(
             batch
                 .fingerprint_morgan_list_with_params(&bad, &execution(1))
@@ -461,13 +439,10 @@ fn ap_preflight_runs_on_empty_invalid_rows_before_scheduling_and_morgan_preserve
     assert!(
         valid
             .fingerprint_morgan_list_with_params(
-                &MorganFingerprintParams {
-                    generator: MorganParams {
-                        fp_size: 0,
-                        ..Default::default()
-                    },
+                &MorganFingerprintParams::from(MorganGeneratorParams {
+                    fp_size: 0,
                     ..Default::default()
-                },
+                }),
                 &execution(1)
             )
             .is_err()
@@ -486,7 +461,7 @@ fn original_morgan_explicit_providers_defaults_and_empty_options_match_scalar_ow
         MorganAtomInvariantsGenerator::features(None),
     ] {
         for bond in [None, Some(MorganBondInvariantsGenerator::new(false, true))] {
-            let params = MorganParams {
+            let params = MorganGeneratorParams {
                 radius: 2,
                 fp_size: 128,
                 ..Default::default()
@@ -589,7 +564,7 @@ fn morgan_defaults_match_scalar_with_omitted_or_explicit_workers() {
     }
     for radius in [2, 3] {
         let mut options = MorganFingerprintParams::default();
-        options.generator.radius = radius;
+        options.set_radius(radius);
         let actual = batch
             .fingerprint_morgan_list_with_params(&options, &execution(1))
             .unwrap();
@@ -608,14 +583,11 @@ fn morgan_defaults_match_scalar_with_omitted_or_explicit_workers() {
 #[test]
 fn legacy_morgan_batch_zero_size_and_zero_extra_bits_follow_wrapper_order() {
     let batch = batch(&["CCO", "C1CC", "C"]);
-    let zero = MorganFingerprintParams {
-        generator: MorganParams {
-            fp_size: 0,
-            count_simulation: false,
-            ..Default::default()
-        },
+    let zero = MorganFingerprintParams::from(MorganGeneratorParams {
+        fp_size: 0,
+        count_simulation: false,
         ..Default::default()
-    };
+    });
     let error = batch
         .fingerprint_morgan_list_with_params(&zero, &execution(2))
         .unwrap_err();
@@ -633,19 +605,16 @@ fn legacy_morgan_batch_zero_size_and_zero_extra_bits_follow_wrapper_order() {
             .iter()
             .all(|e| e.message.contains("fingerprint requires n_bits > 0"))
     );
-    let zero_bits = MorganFingerprintParams {
-        generator: MorganParams {
-            bits_per_feature: 0,
-            radius: 2,
-            ..Default::default()
-        },
+    let zero_bits = MorganFingerprintParams::from(MorganGeneratorParams {
+        bits_per_feature: 0,
+        radius: 2,
         ..Default::default()
-    };
+    });
     let actual = batch
         .fingerprint_morgan_list_with_params(&zero_bits, &execution(2))
         .unwrap();
     let generator = cosmolkit::MorganFingerprintGenerator::new(
-        Some(&MorganParams {
+        Some(&MorganGeneratorParams {
             radius: 2,
             ..Default::default()
         }),

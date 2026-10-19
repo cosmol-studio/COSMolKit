@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 
 macro_rules! gradient_result {
     ($name:ident) => {
-        #[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+        #[pyclass(module = "cosmolkit", frozen, from_py_object)]
         #[derive(Clone)]
         pub struct $name {
             pub(crate) inner: ck::$name,
@@ -30,7 +30,7 @@ macro_rules! gradient_result {
 gradient_result!(UffEnergyGradient);
 gradient_result!(MmffEnergyGradient);
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct UffOptimizationResult {
     pub(crate) inner: ck::UffOptimizationResult,
@@ -63,7 +63,7 @@ impl UffOptimizationResult {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct UffConformerResult {
     pub(crate) inner: ck::UffConformerResult,
@@ -94,7 +94,7 @@ impl UffConformerResult {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct UffConformerOptimizationResult {
     pub(crate) inner: ck::UffConformerOptimizationResult,
@@ -125,7 +125,7 @@ impl UffConformerOptimizationResult {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct MmffOptimizeMoleculeResult {
     pub(crate) inner: ck::MmffOptimizeMoleculeResult,
@@ -154,7 +154,7 @@ impl MmffOptimizeMoleculeResult {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct MmffOptimizeMoleculeConfResult {
     pub(crate) inner: ck::MmffOptimizeMoleculeConfResult,
@@ -178,7 +178,7 @@ impl MmffOptimizeMoleculeConfResult {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct MmffOptimizeMoleculeConfsResult {
     pub(crate) inner: ck::MmffOptimizeMoleculeConfsResult,
@@ -212,7 +212,7 @@ impl MmffOptimizeMoleculeConfsResult {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct CrippenTotals {
     pub(crate) inner: ck::CrippenTotals,
@@ -238,7 +238,7 @@ impl CrippenTotals {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct LabuteAsaContributions {
     pub(crate) inner: ck::LabuteAsaContributions,

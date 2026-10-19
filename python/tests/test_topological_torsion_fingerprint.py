@@ -39,7 +39,7 @@ def test_topological_torsion_generator_defaults_and_scalar_vector_forms():
 
 def test_topological_torsion_bulk_forms_preserve_order_and_match_scalar_calls():
     molecules = _molecules()
-    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(fp_size=512))
+    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionGeneratorParams(fp_size=512))
 
     sparse_counts = generator.sparse_counts(molecules, num_threads=2)
     sparse_bits = generator.sparse_fingerprints(molecules, num_threads=2)
@@ -123,7 +123,7 @@ def test_none_and_empty_atom_selections_remain_distinct():
 
 def test_custom_atom_invariants_and_selection_route_through_the_shared_core():
     molecule = cosmolkit.Molecule.from_smiles("CCCCC")
-    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(count_simulation=False))
+    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionGeneratorParams(count_simulation=False))
 
     default = molecule.fingerprint_topological_torsion_sparse_count_with_generator(generator).nonzero_elements()
     custom = molecule.fingerprint_topological_torsion_sparse_count_with_generator(generator, params=cosmolkit.TopologicalTorsionCallParams(custom_atom_invariants=[10, 20, 30, 40, 50]
@@ -139,7 +139,7 @@ def test_custom_atom_invariants_and_selection_route_through_the_shared_core():
 
 
 def test_additional_output_allocations_are_populated():
-    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(count_simulation=False))
+    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionGeneratorParams(count_simulation=False))
     output = cosmolkit.FingerprintAdditionalOutput()
     output.allocate_atom_to_bits()
     output.allocate_bit_info_map()
@@ -167,7 +167,7 @@ def test_additional_output_allocations_are_populated():
 
 def test_generator_json_round_trip_preserves_options_and_fingerprints():
     molecule = cosmolkit.Molecule.from_smiles("CC[C@H](F)Cl")
-    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(
+    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionGeneratorParams(
         include_chirality=True,
         torsion_atom_count=3,
         count_simulation=False,
@@ -193,7 +193,7 @@ def test_legacy_wrappers_are_thin_deterministic_adapters_to_modern_generation():
     molecule = cosmolkit.Molecule.from_smiles("CCCCO")
 
     unfolded = molecule.fingerprint_topological_torsion_sparse_count_legacy()
-    modern_generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(
+    modern_generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionGeneratorParams(
         count_simulation=False
     ))
     modern_sparse = molecule.fingerprint_topological_torsion_sparse_count_with_generator(modern_generator)
@@ -202,7 +202,7 @@ def test_legacy_wrappers_are_thin_deterministic_adapters_to_modern_generation():
     hashed = molecule.fingerprint_topological_torsion_count_legacy_with_params(
         cosmolkit.LegacyTopologicalTorsionParams(fp_size=1000)
     )
-    modern_generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(
+    modern_generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionGeneratorParams(
         count_simulation=False, fp_size=1000
     ))
     modern_count = molecule.fingerprint_topological_torsion_count_with_generator(modern_generator)
@@ -249,11 +249,11 @@ def test_python_surface_returns_typed_errors_for_invalid_inputs():
     # RDKit's factory accepts 8; construction does not calculate the
     # unfolded size (whose shift would be undefined for this setting).
     eight = cosmolkit.TopologicalTorsionFingerprintGenerator(
-        params=cosmolkit.TopologicalTorsionParams(torsion_atom_count=8)
+        params=cosmolkit.TopologicalTorsionGeneratorParams(torsion_atom_count=8)
     )
     assert eight.settings().torsion_atom_count == 8
     assert molecule.fingerprint_topological_torsion_count_with_generator(eight).nonzero_elements() == {}
-    zero_size = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(fp_size=0))
+    zero_size = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionGeneratorParams(fp_size=0))
     with pytest.raises(ValueError, match="fingerprint size"):
         _ = molecule.fingerprint_topological_torsion_with_generator(zero_size)
     with pytest.raises(ValueError, match="atom invariants"):
@@ -304,13 +304,13 @@ def test_live_invalid_options_never_panic_or_return_out_of_range_vectors():
 
 def test_repeated_python_calls_are_deterministic_over_the_rust_core():
     molecule = cosmolkit.Molecule.from_smiles("CC[C@H](F)Cl")
-    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(
+    generator = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionGeneratorParams(
         include_chirality=True, fp_size=4096
     ))
 
     first = molecule.fingerprint_topological_torsion_count_with_generator(generator).nonzero_elements()
     second = molecule.fingerprint_topological_torsion_count_with_generator(generator).nonzero_elements()
-    repeated = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionParams(
+    repeated = cosmolkit.TopologicalTorsionFingerprintGenerator(params=cosmolkit.TopologicalTorsionGeneratorParams(
         include_chirality=True, fp_size=4096
     ))
     third = molecule.fingerprint_topological_torsion_count_with_generator(repeated).nonzero_elements()

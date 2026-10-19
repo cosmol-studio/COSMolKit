@@ -18,7 +18,7 @@ impl DimensionInput {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct CoordinateBlock {
     pub(crate) inner: ck::CoordinateBlock,
@@ -77,7 +77,7 @@ impl CoordinateBlock {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct SdfRecordMetadata {
     pub(crate) inner: ck::SdfRecordMetadata,

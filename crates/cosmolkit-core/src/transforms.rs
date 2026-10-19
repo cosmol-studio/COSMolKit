@@ -157,7 +157,8 @@ impl Default for CanonicalTransformParams {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct AtomPositionParams {
     pub conformer_id: Option<usize>,
 }

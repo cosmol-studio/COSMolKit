@@ -17,7 +17,8 @@ use crate::{
     is_atom_bridgehead_from_topology,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct PotentialStereoParams {
     pub clean: bool,
     pub flag_possible: bool,

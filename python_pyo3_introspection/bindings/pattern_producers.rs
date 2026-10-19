@@ -21,20 +21,17 @@ pub(crate) fn keyword_params(
 }
 
 #[pyfunction]
-#[pyo3(signature = (query, params=None, *, n_bits=None, tautomeric=None))]
+#[pyo3(signature = (query, params=crate::arguments::Argument::Missing, *, n_bits=crate::arguments::Argument::Missing, tautomeric=crate::arguments::Argument::Missing))]
 pub fn fingerprint_pattern_query(
     query: &QueryGraph,
-    params: Option<&PatternFingerprintParams>,
-    n_bits: Option<usize>,
-    tautomeric: Option<bool>,
+    params: crate::arguments::Argument<Option<PyRef<'_, PatternFingerprintParams>>>,
+    n_bits: crate::arguments::Argument<Option<usize>>,
+    tautomeric: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Fingerprint> {
-    let keywords = n_bits.is_some() || tautomeric.is_some();
-    if params.is_some() && keywords {
-        return Err(PyTypeError::new_err(
-            "Params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if keywords {
+    let keyword_form = n_bits.is_supplied() || tautomeric.is_supplied();
+    crate::arguments::configuration_arguments!(params; n_bits, tautomeric);
+    let params = params.as_deref();
+    if keyword_form {
         _fingerprint_pattern_query_keywords(query, n_bits, tautomeric)
     } else {
         _fingerprint_pattern_query_params(query, params)

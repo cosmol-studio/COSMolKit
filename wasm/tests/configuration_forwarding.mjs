@@ -35,7 +35,7 @@ test('Short chemistry and notation calls forward both configuration representati
 
 test('Short fingerprint calls use supplied parameters instead of silently using defaults',()=>{
  const mol=ck.Molecule.fromSmiles('CCOC(=O)C');
- for(const [prefix,Class,Generator] of [['fingerprintMorgan',ck.MorganFingerprintParams,ck.MorganParams],['fingerprintAtomPair',ck.AtomPairFingerprintParams,ck.AtomPairParams],['fingerprintTopologicalTorsion',ck.TopologicalTorsionFingerprintParams,ck.TopologicalTorsionParams]]){
+ for(const [prefix,Class,Generator] of [['fingerprintMorgan',ck.MorganFingerprintParams,ck.MorganGeneratorParams],['fingerprintAtomPair',ck.AtomPairFingerprintParams,ck.AtomPairGeneratorParams],['fingerprintTopologicalTorsion',ck.TopologicalTorsionFingerprintParams,ck.TopologicalTorsionGeneratorParams]]){
   const params=new Class(),generator=new Generator();generator.fpSize=128;params.generator=generator;
   assert.equal(mol[prefix](params).nBits(),128);
   const expected=mol[prefix+'WithParams'](params,null).onBits();

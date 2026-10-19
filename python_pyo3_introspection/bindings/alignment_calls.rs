@@ -6,17 +6,15 @@ pub(crate) fn conformer_keywords(
     weights: Option<Vec<f64>>,
     reflect: Option<bool>,
     max_iterations: Option<u32>,
-) -> crate::numerical_params::ConformerAlignmentParameters {
+) -> ck::ConformerAlignmentParameters {
     let defaults = ck::ConformerAlignmentParameters::default();
-    crate::numerical_params::ConformerAlignmentParameters {
-        inner: ck::ConformerAlignmentParameters::new(
-            atom_indices,
-            conformer_ids,
-            weights,
-            reflect.unwrap_or(defaults.reflect),
-            max_iterations.unwrap_or(defaults.max_iterations),
-        ),
-    }
+    ck::ConformerAlignmentParameters::new(
+        atom_indices,
+        conformer_ids,
+        weights,
+        reflect.unwrap_or(defaults.reflect),
+        max_iterations.unwrap_or(defaults.max_iterations),
+    )
 }
 #[cfg(test)]
 mod tests {
@@ -37,7 +35,7 @@ builder.add_3d_conformer(vec![[2.0,4.0,0.0],[2.0,5.0,0.0],[1.0,5.0,0.0]]).unwrap
 let reference=builder.build().unwrap();let before=source.to_binary().unwrap();let reference_before=reference.to_binary().unwrap();
 let projected_reference=Py::new(py,Molecule{inner:reference.clone()})?;
 {
-let mut config=ck::AlignmentParameters::default();config.max_iterations=17;let params=Py::new(py,crate::collection_params::AlignmentParameters{inner:config.clone()})?;
+let mut config=ck::AlignmentParameters::default();config.max_iterations=17;let params=Py::new(py,crate::collection_params::AlignmentParameters::from_rust(py, config.clone())?)?;
 let keywords=PyDict::new(py);keywords.set_item("max_iterations",17)?;
 let default=source.with_alignment_to(&reference).unwrap();let configured=source.with_alignment_to_with_params(&reference,&config).unwrap();
 for mutates in [false,true]{for form in 0..4{
@@ -56,7 +54,7 @@ let actual=Py::new(py,Molecule{inner:source.clone()})?;let error=actual.bind(py)
 }
 }
 {
-let mut config=ck::ConformerAlignmentParameters::default();config.max_iterations=17;let params=Py::new(py,crate::numerical_params::ConformerAlignmentParameters{inner:config.clone()})?;
+let mut config=ck::ConformerAlignmentParameters::default();config.max_iterations=17;let params=Py::new(py,crate::numerical_params::ConformerAlignmentParameters::from_rust(py, config.clone())?)?;
 let keywords=PyDict::new(py);keywords.set_item("max_iterations",17)?;
 let default=source.with_aligned_conformers().unwrap();let configured=source.with_aligned_conformers_with_params(&config).unwrap();
 for mutates in [false,true]{for form in 0..4{

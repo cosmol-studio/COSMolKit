@@ -19,7 +19,8 @@ pub enum ValenceModel {
     RdkitLike,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct ValenceParams {
     pub model: ValenceModel,
     pub strict: bool,

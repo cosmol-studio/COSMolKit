@@ -1,5 +1,5 @@
-import {Molecule,TopologicalTorsionParams,TopologicalTorsionFingerprintParams,TopologicalTorsionCallParams,TopologicalTorsionFingerprintGenerator,TopologicalTorsionSettings,AtomPairAtomInvariantsGenerator,LegacyTopologicalTorsionParams,SparseCountFingerprint,FingerprintAdditionalOutput,Fingerprint,SparseBitFingerprint,SparseCountFingerprint32} from 'cosmolkit-generated';
-const m=Molecule.fromSmiles('CCO'),p=new TopologicalTorsionFingerprintParams(),g=TopologicalTorsionFingerprintGenerator.new(),call=new TopologicalTorsionCallParams(),out=FingerprintAdditionalOutput.new();new TopologicalTorsionFingerprintGenerator(new TopologicalTorsionParams(),new AtomPairAtomInvariantsGenerator());TopologicalTorsionFingerprintGenerator.fromJson(g.toJson());const info:string=g.infoString();const settings:TopologicalTorsionSettings=g.settings();
+import {Molecule,TopologicalTorsionGeneratorParams,TopologicalTorsionFingerprintParams,TopologicalTorsionCallParams,TopologicalTorsionFingerprintGenerator,TopologicalTorsionSettings,AtomPairAtomInvariantsGenerator,LegacyTopologicalTorsionParams,SparseCountFingerprint,FingerprintAdditionalOutput,Fingerprint,SparseBitFingerprint,SparseCountFingerprint32} from 'cosmolkit-generated';
+const m=Molecule.fromSmiles('CCO'),p=new TopologicalTorsionFingerprintParams(),g=TopologicalTorsionFingerprintGenerator.new(),call=new TopologicalTorsionCallParams(),out=FingerprintAdditionalOutput.new();new TopologicalTorsionFingerprintGenerator(new TopologicalTorsionGeneratorParams(),new AtomPairAtomInvariantsGenerator());TopologicalTorsionFingerprintGenerator.fromJson(g.toJson());const info:string=g.infoString();const settings:TopologicalTorsionSettings=g.settings();
 const fingerprint_topological_torsion_with_generator:Fingerprint=m.fingerprintTopologicalTorsionWithGenerator(g,call,out);
 const fingerprint_topological_torsion_count_with_generator:SparseCountFingerprint32=m.fingerprintTopologicalTorsionCountWithGenerator(g,call,out);
 const fingerprint_topological_torsion_sparse_with_generator:SparseBitFingerprint=m.fingerprintTopologicalTorsionSparseWithGenerator(g,call,out);
@@ -23,7 +23,7 @@ const countSimulation:boolean=settings.countSimulation;settings.setCountSimulati
 const fpSize:number=settings.fpSize;settings.setFpSize(64);settings.fpSize=64;
 const bitsPerFeature:number=settings.bitsPerFeature;settings.setBitsPerFeature(2);settings.bitsPerFeature=2;
 const countBounds:number[]=settings.countBounds;settings.setCountBounds([1,2]);settings.countBounds=[1,2];
-const snap:TopologicalTorsionParams=settings.params();
+const snap:TopologicalTorsionGeneratorParams=settings.params();
 // @ts-expect-error scalar params output requires explicit null or output
 m.fingerprintTopologicalTorsionWithParams(p);
 // @ts-expect-error typed nullable molecule rows

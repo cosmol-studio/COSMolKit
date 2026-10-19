@@ -306,19 +306,143 @@ it is not subject to the detached model's dependency restriction.
 
 ### 5.2 Inputs
 
-Parameters and options are configuration values. Their Rust API is unchanged
-by the language-projection rules below:
+Parameters and options are independently constructible, editable and reusable
+input configuration values:
 
 ```text
 SmilesParseParams
 SmilesWriteParams
 EmbedParams
-MmffParams
+MmffForceFieldParams
 SubstructMatchParams
 ```
 
 They must have explicit defaults where the source API defines defaults. A
 parameter type must not contain a live `Molecule` or a runtime capability.
+
+#### Configuration, executors and outputs
+
+Define and implement these responsibilities in the canonical Rust API first.
+Bindings call that API; they do not create their own configuration semantics,
+construction/validation policy or execution lifecycle. Typed extraction,
+enum/string conversion, configuration dispatch, indexing and result conversion
+are language adaptation, not permission to duplicate the underlying logic.
+
+Keep three responsibilities distinct in every language:
+
+- Params describe inputs; they are not an execution session.
+- Generators, force fields and other executors retain their actual Rust state.
+  Do not disguise them as Params or reconstruct them for each call.
+- Results and diagnostics describe computed state, not editable input fields.
+
+Separate reusable algorithm configuration from per-call selection where these
+have distinct lifetimes. Name these inputs `<Family>GeneratorParams` and
+`<Family>CallParams`; a useful complete fingerprint call uses
+`<Family>FingerprintParams`. Do not create empty roles for families that do not
+need them. For example:
+
+```python
+options = ck.MorganGeneratorParams(radius=2)
+selection = ck.MorganCallParams(from_atoms=[0, 1])
+generator = ck.MorganFingerprintGenerator(options)
+fp = mol.fingerprint_morgan_with_generator(generator, selection)
+
+# One-shot computation stays concise and uses the same Rust implementation.
+fp = mol.fingerprint_morgan(radius=2, from_atoms=[0, 1])
+```
+
+A complete-call aggregate such as `MorganFingerprintParams` is justified when
+it serves reuse of an entire call configuration. Neither difficult nested
+binding storage nor an existing Rust struct alone justifies deleting it or
+forcing users to construct it. Names describe these responsibilities; renaming
+is not a substitute for fixing ownership and lifetime semantics.
+
+Do not require a public nesting hierarchy simply because implementation code
+stores related options together. Reusable generator options and per-call
+selections remain independently usable. A complete-call aggregate may compose
+them while exposing its configuration directly. Meaningful native composition
+may remain public when borrowing it preserves the same ownership contract;
+bindings must not invent an additional hierarchy or present value copies as
+live mutable references to the parent.
+Rust owns the
+composition, defaults and forwarding into the existing algorithm; language
+bindings must not flatten/rebuild a second business model of their own.
+
+#### Configuration ownership and lifetime
+
+The same value-ownership contract applies to Rust, Python and JavaScript:
+
+- Construction and whole-field assignment receive configuration by value.
+  The destination owns independent editable configuration, including nested
+  Params and containers; later changes to the source do not affect it.
+- Language bindings expose container fields as immutable value snapshots, not
+  editable copies or write-through proxies. Change them by assigning the whole
+  field. Nested configuration getters return independent configuration values;
+  edit that value and explicitly assign it back. Rust continues to expose its
+  native typed fields and borrows.
+- Execution reads the effective configuration for that invocation. Subsequent
+  edits do not change completed results or an invocation already in progress.
+  Native borrowing may establish this guarantee without an additional copy.
+- Callbacks, random sources and native handles preserve their declared native
+  ownership and sharing. Value-copying configuration does not authorize
+  deep-copying or resetting execution state.
+
+For a meaningful nested configuration, these examples specify value ownership,
+not additional public type names:
+
+```python
+source = ChildParams(radius=3)
+params = OperationParams(child=source)
+source.radius = 2
+assert params.child.radius == 3       # Construction receives a value.
+child = params.child                 # An independent configuration value.
+child.radius = 0
+params.child = child                 # Explicitly replace the owned input.
+assert params.child.radius == 0
+
+indices = [0]
+selection = ck.MorganCallParams(from_atoms=indices)
+indices.append(1)
+assert selection.from_atoms == (0,)
+selection.from_atoms = [0, 2]
+assert selection.from_atoms == (0, 2)
+# selection.from_atoms.append(2) raises AttributeError: reads are tuples.
+```
+
+Python sequence getters return tuples and mapping getters return readonly
+mappings; JavaScript projects immutable container snapshots. Contents recursively
+use the same value projection. Constructors and
+whole-field setters perform typed conversion before replacing the Rust field.
+Invalid assignments raise an error and leave the previous field unchanged.
+Do not implement a second chemistry validation policy in bindings.
+
+#### One authoritative configuration state
+
+Each parameter object has one authoritative set of editable inputs, defined by
+its Rust owner. Reuse its native state and typed construction/editing API.
+Plain input records expose their typed Rust fields when assignment has no
+additional native policy. Bindings assign those fields directly; do not rebuild
+the whole record to edit one field, copy unrelated values, or reproduce its
+construction logic. Keep executor state and computed outputs encapsulated.
+Only representation changes required by the target language belong in the
+projection; share those conversions rather than inventing per-API policies.
+The parameter wrapper retains the canonical Rust configuration as its sole
+input storage. Setters assign native fields or call native editing methods;
+getters project values without creating a second editable input store. Do not
+maintain Python/JavaScript lists or dictionaries as a configuration mirror.
+
+Defaults, field types and construction rules come from Rust. Preserve native
+callbacks, random-source ownership, diagnostics and stateful initialization;
+do not mechanically rebuild every type whose name ends in Params. Output state
+continues to belong to its actual native owner and must remain observable.
+Generated `.pyi` and TypeScript declarations describe the real binding types,
+not hand-written corrections hiding a different runtime representation.
+
+Ordinary API growth uses the shared projection mechanism without extending
+stub-generation scripts or adding per-API consumer test inventories. A few
+representative framework examples validate the mechanisms; the canonical
+registry reconciles the actual public surface without becoming a second
+implementation or a second configuration definition.
 
 #### Python and JavaScript: writable configuration properties
 

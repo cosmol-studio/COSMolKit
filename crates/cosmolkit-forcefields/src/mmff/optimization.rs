@@ -12,7 +12,8 @@ use crate::uff::convenience::{
 use crate::uff::convenience::{PreparedConformerDispatchOutcome, UffThreadCountError};
 use cosmolkit_model::{CoordinateBlock, MoleculeProperties, TopologyBlock};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct MmffOptimizationParams {
     pub mmff_variant: String,
     pub max_iterations: i32,
@@ -37,7 +38,8 @@ impl Default for MmffOptimizationParams {
         }
     }
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct MmffConformerOptimizationParams {
     pub num_threads: i32,
     pub max_iterations: i32,
@@ -867,7 +869,8 @@ mod original_optimization_tests {
 }
 
 /// Non-mutating MMFF field evaluation over one stored 3D conformer.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct MmffEvaluationParams {
     pub mmff_variant: String,
     pub non_bonded_threshold: f64,

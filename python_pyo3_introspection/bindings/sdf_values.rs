@@ -4,7 +4,7 @@ use crate::query_compiler::QueryGraph;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub enum SdfGraph {
     Molecule { value: Molecule },
     Query { value: QueryGraph },

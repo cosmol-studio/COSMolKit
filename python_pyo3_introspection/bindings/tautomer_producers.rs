@@ -1,7 +1,7 @@
 //! Public producers use the existing operation runtime and scoped callbacks.
 use crate::native::Molecule;
 use crate::operation_errors::OperationError;
-use crate::tautomer_configuration::TautomerParams;
+use crate::tautomer_configuration::{TautomerInvocation, TautomerParams};
 use crate::tautomer_values::TautomerEnumeration;
 use cosmolkit as ck;
 use pyo3::prelude::*;
@@ -18,26 +18,40 @@ pub(crate) fn keywords(
     callback: Option<crate::tautomer_callbacks::EnumerationCallback>,
     scorer: Option<crate::tautomer_callbacks::Scorer>,
     score_params: Option<Py<crate::tautomer_values::TautomerScoreParams>>,
-) -> TautomerParams {
-    let defaults = ck::TautomerParams::default();
-    let score_params = score_params.as_ref().map(|value| value.borrow(py));
-    TautomerParams::new(
-        max_tautomers.unwrap_or_else(|| defaults.max_tautomers()),
-        max_transforms.unwrap_or_else(|| defaults.max_transforms()),
-        remove_sp3_stereo.unwrap_or_else(|| defaults.remove_sp3_stereo()),
-        remove_bond_stereo.unwrap_or_else(|| defaults.remove_bond_stereo()),
-        remove_isotopic_hydrogens.unwrap_or_else(|| defaults.remove_isotopic_hydrogens()),
-        reassign_stereo.unwrap_or_else(|| defaults.reassign_stereo()),
+) -> PyResult<TautomerInvocation> {
+    let mut inner = ck::TautomerParams::default();
+    if let Some(value) = max_tautomers {
+        inner.set_max_tautomers(value);
+    }
+    if let Some(value) = max_transforms {
+        inner.set_max_transforms(value);
+    }
+    if let Some(value) = remove_sp3_stereo {
+        inner.set_remove_sp3_stereo(value);
+    }
+    if let Some(value) = remove_bond_stereo {
+        inner.set_remove_bond_stereo(value);
+    }
+    if let Some(value) = remove_isotopic_hydrogens {
+        inner.set_remove_isotopic_hydrogens(value);
+    }
+    if let Some(value) = reassign_stereo {
+        inner.set_reassign_stereo(value);
+    }
+    if let Some(value) = score_params {
+        inner.score_params = value.try_borrow(py)?.to_rust(py)?;
+    }
+    Ok(TautomerInvocation {
+        inner,
         callback,
         scorer,
-        score_params.as_deref(),
-    )
+    })
 }
 
 pub(crate) fn enumerate(
     py: Python<'_>,
     molecule: &Molecule,
-    params: Option<&TautomerParams>,
+    params: Option<TautomerInvocation>,
 ) -> PyResult<TautomerEnumeration> {
     let inner = match params {
         None => py.detach(|| molecule.inner.enumerate_tautomers()),
@@ -53,7 +67,7 @@ pub(crate) fn enumerate(
 pub(crate) fn canonical(
     py: Python<'_>,
     molecule: &Molecule,
-    params: Option<&TautomerParams>,
+    params: Option<TautomerInvocation>,
 ) -> PyResult<Molecule> {
     let inner = match params {
         None => py.detach(|| molecule.inner.canonical_tautomer()),
@@ -67,7 +81,7 @@ pub(crate) fn canonical(
 pub(crate) fn canonical_enumeration(
     py: Python<'_>,
     result: &TautomerEnumeration,
-    params: Option<&TautomerParams>,
+    params: Option<TautomerInvocation>,
 ) -> PyResult<Molecule> {
     let inner = match params {
         None => py.detach(|| result.inner.canonical_tautomer()),
@@ -86,7 +100,9 @@ pub fn canonical_tautomer_from_molecules(
     molecules: Vec<Py<Molecule>>,
     params: Option<Py<TautomerParams>>,
 ) -> PyResult<Molecule> {
-    let params = params.map(|value| value.borrow(py).clone_for_call(py));
+    let params = params
+        .map(|value| value.try_borrow(py)?.capture(py))
+        .transpose()?;
     let guards = molecules
         .iter()
         .map(|value| value.try_borrow(py))
@@ -102,7 +118,7 @@ pub fn canonical_tautomer_from_molecules(
             )
         })
     };
-    let inner = match params.as_ref() {
+    let inner = match params {
         Some(params) => params.with_callbacks(py, invoke)?,
         None => invoke(&ck::TautomerParams::default()),
     }

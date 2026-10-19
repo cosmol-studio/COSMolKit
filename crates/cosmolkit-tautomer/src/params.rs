@@ -9,7 +9,8 @@ pub enum TautomerEnumerationStatus {
 }
 
 /// Source-compatible limits and stereochemistry policies for enumeration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(accessors)]
 pub struct TautomerParams {
     max_tautomers: u32,
     max_transforms: u32,

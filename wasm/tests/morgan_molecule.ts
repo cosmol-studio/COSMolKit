@@ -1,5 +1,5 @@
-import {Molecule,MorganParams,MorganFingerprintParams,MorganCallParams,MorganFingerprintGenerator,MorganSettings,MorganAtomInvariantsGenerator,MorganBondInvariantsGenerator,FingerprintAdditionalOutput,Fingerprint,SparseBitFingerprint,SparseCountFingerprint,SparseCountFingerprint32} from 'cosmolkit-generated';
-const m=Molecule.fromSmiles('CCO'),p=new MorganFingerprintParams(),g=MorganFingerprintGenerator.new(),call=MorganCallParams.new(),out=FingerprintAdditionalOutput.new();new MorganFingerprintGenerator(new MorganParams(),MorganAtomInvariantsGenerator.connectivity(),MorganBondInvariantsGenerator.new());MorganFingerprintGenerator.fromJson(g.toJson());const info:string=g.infoString();const settings:MorganSettings=g.settings();
+import {Molecule,MorganGeneratorParams,MorganFingerprintParams,MorganCallParams,MorganFingerprintGenerator,MorganSettings,MorganAtomInvariantsGenerator,MorganBondInvariantsGenerator,FingerprintAdditionalOutput,Fingerprint,SparseBitFingerprint,SparseCountFingerprint,SparseCountFingerprint32} from 'cosmolkit-generated';
+const m=Molecule.fromSmiles('CCO'),p=new MorganFingerprintParams(),g=MorganFingerprintGenerator.new(),call=MorganCallParams.new(),out=FingerprintAdditionalOutput.new();new MorganFingerprintGenerator(new MorganGeneratorParams(),MorganAtomInvariantsGenerator.connectivity(),MorganBondInvariantsGenerator.new());MorganFingerprintGenerator.fromJson(g.toJson());const info:string=g.infoString();const settings:MorganSettings=g.settings();
 const fingerprint_morgan_with_generator:Fingerprint=m.fingerprintMorganWithGenerator(g,call,out);
 const fingerprint_morgan_count_with_generator:SparseCountFingerprint32=m.fingerprintMorganCountWithGenerator(g,call,out);
 const fingerprint_morgan_sparse_with_generator:SparseBitFingerprint=m.fingerprintMorganSparseWithGenerator(g,call,out);
@@ -24,7 +24,7 @@ const countSimulation:boolean=settings.countSimulation;settings.setCountSimulati
 const fpSize:number=settings.fpSize;settings.setFpSize(64);settings.fpSize=64;
 const bitsPerFeature:number=settings.bitsPerFeature;settings.setBitsPerFeature(2);settings.bitsPerFeature=2;
 const countBounds:number[]=settings.countBounds;settings.setCountBounds([1,2]);settings.countBounds=[1,2];
-const snap:MorganParams=settings.params();
+const snap:MorganGeneratorParams=settings.params();
 // @ts-expect-error scalar params output requires explicit null or output
 m.fingerprintMorganWithParams(p);
 // @ts-expect-error typed nullable molecule rows

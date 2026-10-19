@@ -95,17 +95,18 @@ impl From<MorganError> for TopologicalTorsionError {
         Self::Preparation(e)
     }
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TopologicalTorsionParams {
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+pub struct TopologicalTorsionGeneratorParams {
     pub torsion_atom_count: u32,
     pub only_shortest_paths: bool,
     pub include_chirality: bool,
     pub count_simulation: bool,
+    #[configuration(none_default)]
     pub count_bounds: Vec<u32>,
     pub fp_size: u32,
     pub bits_per_feature: u32,
 }
-impl Default for TopologicalTorsionParams {
+impl Default for TopologicalTorsionGeneratorParams {
     fn default() -> Self {
         Self {
             torsion_atom_count: 4,
@@ -118,7 +119,7 @@ impl Default for TopologicalTorsionParams {
         }
     }
 }
-impl TopologicalTorsionParams {
+impl TopologicalTorsionGeneratorParams {
     pub fn new(
         include_chirality: bool,
         torsion_atom_count: u32,
@@ -300,7 +301,7 @@ struct TorsionEnvironment {
 }
 fn environments(
     input: &AtomPairPreparedInput<'_>,
-    arguments: &TopologicalTorsionParams,
+    arguments: &TopologicalTorsionGeneratorParams,
     from_atoms: Option<&[u32]>,
     ignore_atoms: Option<&[u32]>,
     atom_invariants: &[u32],
@@ -576,7 +577,7 @@ impl FingerprintEnvironment<TopologicalTorsionError> for TorsionEnvironment {
 }
 fn count_helper(
     input: &AtomPairPreparedInput<'_>,
-    params: &TopologicalTorsionParams,
+    params: &TopologicalTorsionGeneratorParams,
     common: &FingerprintArguments,
     call: &TopologicalTorsionCall<'_>,
     fp_size: u64,
@@ -587,7 +588,7 @@ fn count_helper(
 }
 fn configured_count_helper(
     input: &AtomPairPreparedInput<'_>,
-    params: &TopologicalTorsionParams,
+    params: &TopologicalTorsionGeneratorParams,
     common: &FingerprintArguments,
     call: &TopologicalTorsionCall<'_>,
     fp_size: u64,
@@ -671,7 +672,7 @@ fn configured_count_helper(
 }
 pub fn topological_torsion_sparse_count(
     input: &AtomPairPreparedInput<'_>,
-    params: &TopologicalTorsionParams,
+    params: &TopologicalTorsionGeneratorParams,
     call: &TopologicalTorsionCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint, TopologicalTorsionError> {
@@ -688,7 +689,7 @@ pub fn topological_torsion_sparse_count(
 }
 pub fn topological_torsion_sparse_bits(
     input: &AtomPairPreparedInput<'_>,
-    params: &TopologicalTorsionParams,
+    params: &TopologicalTorsionGeneratorParams,
     call: &TopologicalTorsionCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseBitFingerprint, TopologicalTorsionError> {
@@ -713,7 +714,7 @@ pub fn topological_torsion_sparse_bits(
 }
 pub fn topological_torsion_count(
     input: &AtomPairPreparedInput<'_>,
-    params: &TopologicalTorsionParams,
+    params: &TopologicalTorsionGeneratorParams,
     call: &TopologicalTorsionCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint32, TopologicalTorsionError> {
@@ -737,7 +738,7 @@ pub fn topological_torsion_count(
 }
 pub fn topological_torsion_bits(
     input: &AtomPairPreparedInput<'_>,
-    params: &TopologicalTorsionParams,
+    params: &TopologicalTorsionGeneratorParams,
     call: &TopologicalTorsionCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<Fingerprint, TopologicalTorsionError> {
@@ -778,8 +779,8 @@ impl Default for LegacyTopologicalTorsionParams {
         }
     }
 }
-fn legacy_arguments(params: &LegacyTopologicalTorsionParams) -> TopologicalTorsionParams {
-    TopologicalTorsionParams {
+fn legacy_arguments(params: &LegacyTopologicalTorsionParams) -> TopologicalTorsionGeneratorParams {
+    TopologicalTorsionGeneratorParams {
         torsion_atom_count: params.torsion_atom_count,
         include_chirality: params.include_chirality,
         fp_size: params.fp_size,
@@ -1123,7 +1124,7 @@ mod tests {
     }
     fn observed_environments(
         molecule: &TestMolecule,
-        args: &TopologicalTorsionParams,
+        args: &TopologicalTorsionGeneratorParams,
         from: Option<&[u32]>,
         ignore: Option<&[u32]>,
         invariants: &[u32],
@@ -1149,7 +1150,7 @@ mod tests {
     }
     fn environments(
         molecule: &TestMolecule,
-        args: &TopologicalTorsionParams,
+        args: &TopologicalTorsionGeneratorParams,
         from: Option<&[u32]>,
         ignore: Option<&[u32]>,
         invariants: &[u32],
@@ -1174,7 +1175,7 @@ mod tests {
     #[test]
     fn null_and_empty_from_atom_selections_are_distinct() {
         let molecule = TestMolecule::from_smiles("CCCCC").expect("chain");
-        let arguments = TopologicalTorsionParams::default();
+        let arguments = TopologicalTorsionGeneratorParams::default();
         let invariants = default_invariants(&molecule);
 
         let all = environments(&molecule, &arguments, None, None, &invariants, false);
@@ -1189,7 +1190,7 @@ mod tests {
     #[test]
     fn from_atoms_match_only_path_endpoints() {
         let molecule = TestMolecule::from_smiles("CCCCC").expect("chain");
-        let arguments = TopologicalTorsionParams::default();
+        let arguments = TopologicalTorsionGeneratorParams::default();
         let invariants = default_invariants(&molecule);
 
         let internal_only =
@@ -1205,7 +1206,7 @@ mod tests {
     #[test]
     fn ignored_atoms_remove_paths_when_the_atom_is_internal_or_terminal() {
         let molecule = TestMolecule::from_smiles("CCCCC").expect("chain");
-        let arguments = TopologicalTorsionParams::default();
+        let arguments = TopologicalTorsionGeneratorParams::default();
         let invariants = default_invariants(&molecule);
 
         assert!(
@@ -1219,7 +1220,7 @@ mod tests {
     #[test]
     fn custom_invariants_receive_endpoint_and_internal_source_corrections() {
         let molecule = TestMolecule::from_smiles("CCCCC").expect("chain");
-        let arguments = TopologicalTorsionParams::default();
+        let arguments = TopologicalTorsionGeneratorParams::default();
         let invariants = [10, 20, 30, 40, 50];
         let generated = environments(&molecule, &arguments, None, None, &invariants, false);
 
@@ -1235,7 +1236,7 @@ mod tests {
     #[test]
     fn legacy_unfolded_atom_codes_bypass_the_modern_base_code_modulus() {
         let molecule = TestMolecule::from_smiles("CCCC").expect("chain");
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
         arguments.include_chirality = true;
         let invariants = [600, 600, 600, 600];
 
@@ -1275,7 +1276,7 @@ mod tests {
     fn full_ring_closure_is_kept_but_a_later_illegal_repeat_is_not_enumerated() {
         let molecule = TestMolecule::from_smiles("C1CCC1").expect("four-membered ring");
         let invariants = default_invariants(&molecule);
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
         arguments.torsion_atom_count = 5;
 
         let closed = environments(&molecule, &arguments, None, None, &invariants, false);
@@ -1289,7 +1290,7 @@ mod tests {
     #[test]
     fn hashed_and_unhashed_ids_preserve_source_collisions() {
         let molecule = TestMolecule::from_smiles("CC(C)C").expect("branched molecule");
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
         arguments.torsion_atom_count = 3;
         let invariants = vec![7; molecule.num_atoms()];
 
@@ -1370,7 +1371,7 @@ mod argument_tests {
     use super::*;
     #[test]
     fn defaults_and_constructor_match_the_pinned_source_contract() {
-        let arguments = TopologicalTorsionParams::default();
+        let arguments = TopologicalTorsionGeneratorParams::default();
         let common = &arguments;
 
         assert_eq!(arguments.torsion_atom_count, 4);
@@ -1381,8 +1382,9 @@ mod argument_tests {
         assert_eq!(common.fp_size, 2048);
         assert_eq!(common.bits_per_feature, 1);
 
-        let constructed = TopologicalTorsionParams::new(true, 5, false, vec![2, 3, 7], 4096)
-            .expect("valid custom arguments");
+        let constructed =
+            TopologicalTorsionGeneratorParams::new(true, 5, false, vec![2, 3, 7], 4096)
+                .expect("valid custom arguments");
         assert_eq!(constructed.torsion_atom_count, 5);
         assert!(!constructed.only_shortest_paths);
         assert!(constructed.include_chirality);
@@ -1392,14 +1394,14 @@ mod argument_tests {
         assert_eq!(constructed.bits_per_feature, 1);
 
         assert!(matches!(
-            TopologicalTorsionParams::new(false, 4, true, Vec::new(), 2048),
+            TopologicalTorsionGeneratorParams::new(false, 4, true, Vec::new(), 2048),
             Err(FingerprintError::PreconditionViolation { .. })
         ));
     }
 
     #[test]
     fn mutable_options_and_information_strings_use_the_shared_common_arguments() {
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
         arguments.torsion_atom_count = 3;
         arguments.only_shortest_paths = true;
         arguments.count_simulation = false;
@@ -1421,7 +1423,7 @@ mod argument_tests {
 
     #[test]
     fn json_roundtrip_updates_derived_and_common_fields() {
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
         arguments.torsion_atom_count = 5;
         arguments.only_shortest_paths = true;
         arguments.count_simulation = false;
@@ -1442,14 +1444,14 @@ mod argument_tests {
         assert_eq!(value["numBitsPerFeature"], "3");
         assert_eq!(arguments.to_json(), json);
 
-        let mut restored = TopologicalTorsionParams::default();
+        let mut restored = TopologicalTorsionGeneratorParams::default();
         restored.from_json(&json).expect("roundtrip");
         assert_eq!(restored, arguments);
     }
 
     #[test]
     fn partial_json_preserves_scalar_defaults_and_clears_missing_count_bounds_like_source() {
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
         arguments
             .from_json(r#"{"torsionAtomCount":5,"onlyShortestPaths":true,"fpSize":1024}"#)
             .expect("partial update");
@@ -1471,7 +1473,7 @@ mod argument_tests {
 
     #[test]
     fn malformed_json_and_invalid_field_types_return_structured_errors() {
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
         assert!(matches!(
             arguments.from_json("{"),
             Err(FingerprintJsonError::Parse(_))
@@ -1501,7 +1503,7 @@ mod argument_tests {
 
     #[test]
     fn argument_unit_ignores_unknown_type_tags_and_fields_like_the_source_method() {
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
         arguments
         .from_json(
             r#"{"type":"UnknownArguments","unknownOption":17,"torsionAtomCount":2,"countBounds":[1]}"#,
@@ -1514,7 +1516,7 @@ mod argument_tests {
 
     #[test]
     fn result_sizes_cover_zero_default_chiral_and_maximum_defined_shifts() {
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
 
         assert_eq!(arguments.result_size().unwrap(), 1_u64 << 36);
         assert_eq!(arguments.result_size().unwrap(), 1_u64 << 36);
@@ -1532,7 +1534,7 @@ mod argument_tests {
 
     #[test]
     fn result_size_rejects_every_source_undefined_width_mapping() {
-        let mut arguments = TopologicalTorsionParams::default();
+        let mut arguments = TopologicalTorsionGeneratorParams::default();
 
         arguments.torsion_atom_count = 8;
         assert!(matches!(

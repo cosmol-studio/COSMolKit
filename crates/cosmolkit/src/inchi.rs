@@ -4,7 +4,8 @@ mod toolkit;
 use crate::{InchiError, InchiErrorKind, Molecule};
 
 /// Controls the source-defined InChI post-processing stages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct InchiReadParams {
     pub sanitize: bool,
     pub remove_hs: bool,
@@ -41,7 +42,8 @@ impl InchiReadParams {
 }
 
 /// Official InChI option string; an empty string selects the engine defaults.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct InchiWriteParams {
     pub options: String,
 }

@@ -72,7 +72,7 @@ fn project(node: ErrorRef) -> PyErr {
     standard_source(node)
 }
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct BatchError {
     pub(crate) inner: RetainedError<ck::BatchError>,
 }
@@ -127,7 +127,7 @@ impl BatchError {
     }
 }
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct BatchValidationError {
     inner: RetainedError<ck::BatchValidationError>,
 }
@@ -178,7 +178,7 @@ InvalidFormat(_),Write(_),
 source=Option<Py<crate::drawing_errors::DrawingWriteError>>,methods={
 #[getter]fn format(&self)->Option<&str>{match self.inner.as_ref(){ck::BatchImageError::InvalidFormat(v)=>Some(v),_=>None}}
 });
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct BatchExportReport {
     pub(crate) inner: ck::BatchExportReport,
 }

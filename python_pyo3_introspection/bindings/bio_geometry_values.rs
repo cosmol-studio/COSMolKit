@@ -4,7 +4,7 @@ use crate::coordinates;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioCoordinateBlock {
     pub(crate) inner: ck::BioCoordinateBlock,
@@ -29,7 +29,7 @@ impl BioCoordinateBlock {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioCrystalInfo {
     pub(crate) inner: ck::BioCrystalInfo,
@@ -116,7 +116,7 @@ impl BioCrystalInfo {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioNcsOperator {
     pub(crate) inner: ck::BioNcsOperator,
@@ -145,7 +145,7 @@ impl BioNcsOperator {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioAssemblyOperator {
     pub(crate) inner: ck::BioAssemblyOperator,
@@ -175,7 +175,7 @@ impl BioAssemblyOperator {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioAssemblyGenerator {
     pub(crate) inner: ck::BioAssemblyGenerator,
@@ -232,7 +232,7 @@ impl BioAssemblySpecialKindInput {
         }
     }
 }
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioAssembly {
     pub(crate) inner: ck::BioAssembly,

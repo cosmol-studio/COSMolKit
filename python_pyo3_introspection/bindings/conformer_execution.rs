@@ -145,7 +145,7 @@ error_projection!(retained GraphBoundsError,GraphBoundsErrorKind,ck::GraphBounds
 type PreparationSource =
     Source<Py<UffParameterError>, Source<Py<ValenceError>, Py<UffBondMathError>>>;
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct UffBoundsError {
     inner: RetainedError<ck::UffBoundsError>,
 }
@@ -194,7 +194,7 @@ impl UffBoundsError {
         self.inner.to_string()
     }
 }
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum UffBoundsCauseKind {
     Parameter,
@@ -203,12 +203,12 @@ pub enum UffBoundsCauseKind {
     AssignmentLength,
 }
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct UffBoundsCause {
     inner: RetainedError<ck::UffBoundsError>,
 }
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum DistGeomForceFieldErrorKind {
     Kernel,
@@ -216,7 +216,7 @@ pub enum DistGeomForceFieldErrorKind {
     IndexOverflow,
 }
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct DistGeomForceFieldError {
     inner: ck::DistGeomForceFieldError,
 }
@@ -264,14 +264,14 @@ impl DistGeomForceFieldError {
         }
     }
 }
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum ConformerOptimizerCauseKind {
     Input,
     Construction,
 }
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct ConformerOptimizerCause {
     inner: ck::ConformerOptimizerCause,
 }
@@ -305,7 +305,7 @@ impl ConformerOptimizerCause {
 }
 type OptimizerSource = Source<Py<ForceFieldKernelError>, Py<UffInversionContributionError>>;
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct ConformerOptimizerError {
     inner: ck::ConformerOptimizerError,
 }
@@ -354,7 +354,7 @@ impl ConformerOptimizerError {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct MissingExplicitHydrogensError {
     inner: RetainedError<ck::MissingExplicitHydrogensError>,
 }
@@ -395,7 +395,7 @@ impl MissingExplicitHydrogensError {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct ConformerRunError {
     inner: RetainedError<ck::ConformerRunError>,
 }
@@ -438,7 +438,7 @@ impl ConformerRunError {
     }
 }
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct EnumerationRunError {
     inner: RetainedError<ck::EnumerationRunError>,
 }
@@ -745,7 +745,7 @@ error_projection!(retained GenerationError,GenerationErrorKind,ck::GenerationErr
 
 // The concrete standard poison value carries unit data and no source/kind.
 #[doc = r#"{"role":"error_leaf"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct PoisonError {
     inner: RetainedError<std::sync::PoisonError<()>>,
 }

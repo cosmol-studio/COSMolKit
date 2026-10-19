@@ -41,7 +41,7 @@ input!(RoleInput, ReactionRole);
 input!(SeverityInput, ReactionValidationSeverity);
 input!(IssueKindInput, ReactionValidationIssueKind);
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct ReactionValidationIssue {
     pub(crate) inner: ck::ReactionValidationIssue,
@@ -107,7 +107,7 @@ impl ReactionValidationIssue {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct ReactionValidationReport {
     pub(crate) inner: ck::ReactionValidationReport,
@@ -155,7 +155,7 @@ impl ReactionValidationReport {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct ReactionApplyResult {
     pub(crate) inner: ck::ReactionApplyResult,

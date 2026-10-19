@@ -67,18 +67,19 @@ impl From<MatrixError> for AtomPairError {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AtomPairParams {
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+pub struct AtomPairGeneratorParams {
     pub min_distance: u32,
     pub max_distance: u32,
     pub include_chirality: bool,
     pub use_2d: bool,
     pub count_simulation: bool,
     pub fp_size: u32,
+    #[configuration(none_default)]
     pub count_bounds: Vec<u32>,
     pub bits_per_feature: u32,
 }
-impl Default for AtomPairParams {
+impl Default for AtomPairGeneratorParams {
     fn default() -> Self {
         Self {
             min_distance: 1,
@@ -94,11 +95,13 @@ impl Default for AtomPairParams {
 }
 /// Preserve the pinned project-native batch wrapper's preflight ordering.
 /// Modern scalar RDKit entrypoints retain their independent zero-size semantics.
-pub fn validate_atom_pair_params(params: &AtomPairParams) -> Result<(), FingerprintError> {
+pub fn validate_atom_pair_params(params: &AtomPairGeneratorParams) -> Result<(), FingerprintError> {
     AtomPairBatchArguments::new(params).map(|_| ())
 }
 
-fn batch_common(params: &AtomPairParams) -> Result<FingerprintArguments, FingerprintError> {
+fn batch_common(
+    params: &AtomPairGeneratorParams,
+) -> Result<FingerprintArguments, FingerprintError> {
     // COSMolKit❗✔️: d892ec3507c5b568c5ed5d86ae44e466f7d03855
     // properties/fingerprint/atom_pair.rs:812-842. The detached parameters
     // already carry a u32 width; the Python projection performs the source
@@ -150,12 +153,12 @@ fn batch_common(params: &AtomPairParams) -> Result<FingerprintArguments, Fingerp
 /// Never exposed by the public chemistry facade or language projections.
 #[doc(hidden)]
 pub struct AtomPairBatchArguments<'a> {
-    params: &'a AtomPairParams,
+    params: &'a AtomPairGeneratorParams,
     common: FingerprintArguments,
 }
 
 impl<'a> AtomPairBatchArguments<'a> {
-    pub fn new(params: &'a AtomPairParams) -> Result<Self, FingerprintError> {
+    pub fn new(params: &'a AtomPairGeneratorParams) -> Result<Self, FingerprintError> {
         // COSMolKit❗✔️: pinned batch::atom_pair_generator_for_batch constructs
         // one generator before collect_optional_values_with_options.
         // The source constructor anchor and ordered guards live in batch_common.
@@ -199,7 +202,7 @@ impl<'a> AtomPairBatchArguments<'a> {
     }
 }
 
-impl AtomPairParams {
+impl AtomPairGeneratorParams {
     fn common(&self) -> Result<FingerprintArguments, FingerprintError> {
         self.common_with_bits_per_feature(self.bits_per_feature)
     }
@@ -273,7 +276,8 @@ impl Default for AtomPairCall<'_> {
         }
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct AtomPairAtomInvariantsGenerator {
     pub include_chirality: bool,
     pub topological_torsion_correction: bool,
@@ -389,7 +393,7 @@ impl AtomPairAtomInvariantsGenerator {
 #[allow(clippy::too_many_arguments)]
 fn environments(
     input: &AtomPairPreparedInput<'_>,
-    arguments: &AtomPairParams,
+    arguments: &AtomPairGeneratorParams,
     from_atoms: Option<&[u32]>,
     ignore_atoms: Option<&[u32]>,
     conf_id: i32,
@@ -679,7 +683,7 @@ impl FingerprintEnvironment<AtomPairError> for AtomPairEnvironment {
 }
 fn count_helper(
     input: &AtomPairPreparedInput<'_>,
-    params: &AtomPairParams,
+    params: &AtomPairGeneratorParams,
     common: &FingerprintArguments,
     call: &AtomPairCall<'_>,
     fp_size: u64,
@@ -743,7 +747,7 @@ fn count_helper(
 
 pub fn atom_pair_sparse_count(
     input: &AtomPairPreparedInput<'_>,
-    params: &AtomPairParams,
+    params: &AtomPairGeneratorParams,
     call: &AtomPairCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint, AtomPairError> {
@@ -752,7 +756,7 @@ pub fn atom_pair_sparse_count(
 }
 fn atom_pair_sparse_count_with_common(
     input: &AtomPairPreparedInput<'_>,
-    params: &AtomPairParams,
+    params: &AtomPairGeneratorParams,
     common: &FingerprintArguments,
     call: &AtomPairCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
@@ -761,7 +765,7 @@ fn atom_pair_sparse_count_with_common(
 }
 pub fn atom_pair_sparse_bits(
     input: &AtomPairPreparedInput<'_>,
-    params: &AtomPairParams,
+    params: &AtomPairGeneratorParams,
     call: &AtomPairCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseBitFingerprint, AtomPairError> {
@@ -770,7 +774,7 @@ pub fn atom_pair_sparse_bits(
 }
 fn atom_pair_sparse_bits_with_common(
     input: &AtomPairPreparedInput<'_>,
-    params: &AtomPairParams,
+    params: &AtomPairGeneratorParams,
     common: &FingerprintArguments,
     call: &AtomPairCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
@@ -785,7 +789,7 @@ fn atom_pair_sparse_bits_with_common(
 }
 pub fn atom_pair_count(
     input: &AtomPairPreparedInput<'_>,
-    params: &AtomPairParams,
+    params: &AtomPairGeneratorParams,
     call: &AtomPairCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint32, AtomPairError> {
@@ -794,7 +798,7 @@ pub fn atom_pair_count(
 }
 fn atom_pair_count_with_common(
     input: &AtomPairPreparedInput<'_>,
-    params: &AtomPairParams,
+    params: &AtomPairGeneratorParams,
     common: &FingerprintArguments,
     call: &AtomPairCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
@@ -808,7 +812,7 @@ fn atom_pair_count_with_common(
 }
 pub fn atom_pair_bits(
     input: &AtomPairPreparedInput<'_>,
-    params: &AtomPairParams,
+    params: &AtomPairGeneratorParams,
     call: &AtomPairCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<Fingerprint, AtomPairError> {
@@ -817,7 +821,7 @@ pub fn atom_pair_bits(
 }
 fn atom_pair_bits_with_common(
     input: &AtomPairPreparedInput<'_>,
-    params: &AtomPairParams,
+    params: &AtomPairGeneratorParams,
     common: &FingerprintArguments,
     call: &AtomPairCall<'_>,
     output: Option<&mut FingerprintAdditionalOutput>,
@@ -834,7 +838,7 @@ fn atom_pair_bits_with_common(
 mod tests {
     #[test]
     fn project_batch_preflight_preserves_legacy_rejection_order_and_scalar_zero_size() {
-        let zero = AtomPairParams {
+        let zero = AtomPairGeneratorParams {
             fp_size: 0,
             ..Default::default()
         };
@@ -843,7 +847,7 @@ mod tests {
             "fingerprint requires n_bits > 0"
         );
         assert_eq!(zero.common().unwrap().fp_size, 0);
-        let distance_and_bits = AtomPairParams {
+        let distance_and_bits = AtomPairGeneratorParams {
             min_distance: 31,
             max_distance: 30,
             bits_per_feature: 0,
@@ -855,7 +859,7 @@ mod tests {
                 what: "bad distances provided"
             })
         );
-        let bounds_and_distance = AtomPairParams {
+        let bounds_and_distance = AtomPairGeneratorParams {
             count_bounds: vec![],
             min_distance: 31,
             max_distance: 30,
@@ -868,7 +872,7 @@ mod tests {
                 what: "bad count bounds provided"
             })
         );
-        let bits = AtomPairParams {
+        let bits = AtomPairGeneratorParams {
             bits_per_feature: 0,
             ..Default::default()
         };
@@ -879,7 +883,7 @@ mod tests {
             })
         );
         assert!(
-            validate_atom_pair_params(&AtomPairParams {
+            validate_atom_pair_params(&AtomPairGeneratorParams {
                 count_simulation: false,
                 count_bounds: vec![],
                 ..Default::default()
@@ -897,7 +901,7 @@ mod tests {
                 }
             ))
         ));
-        let scalar_zero = AtomPairParams {
+        let scalar_zero = AtomPairGeneratorParams {
             count_simulation: false,
             ..zero.clone()
         };
@@ -918,7 +922,7 @@ mod tests {
     use super::*;
     #[test]
     fn environment_bit_id_exact_mode_matches_pair_packing_and_endpoint_reversal() {
-        let arguments = AtomPairParams::default();
+        let arguments = AtomPairGeneratorParams::default();
         let forward = AtomPairEnvironment::new(0, 1, 1);
         let reverse = AtomPairEnvironment::new(1, 0, 1);
         let invariants = [10, 20];
@@ -938,7 +942,7 @@ mod tests {
 
     #[test]
     fn environment_bit_id_hashed_mode_uses_canonical_three_stage_gboost_order() {
-        let arguments = AtomPairParams::default();
+        let arguments = AtomPairGeneratorParams::default();
         let forward = AtomPairEnvironment::new(0, 1, 1);
         let reverse = AtomPairEnvironment::new(1, 0, 1);
         let invariants = [10, 20];
@@ -958,7 +962,7 @@ mod tests {
 
     #[test]
     fn environment_bit_id_uses_source_modulo_limit_not_a_bit_mask() {
-        let unchiral = AtomPairParams::default();
+        let unchiral = AtomPairGeneratorParams::default();
         let environment = AtomPairEnvironment::new(0, 1, 1);
         assert_eq!(
             environment
@@ -981,7 +985,7 @@ mod tests {
             atom_pair_code(3, 31, 1, false).unwrap()
         );
 
-        let mut chiral = AtomPairParams::default();
+        let mut chiral = AtomPairGeneratorParams::default();
         chiral.include_chirality = true;
         assert_eq!(
             environment
@@ -993,7 +997,7 @@ mod tests {
 
     #[test]
     fn environment_bit_id_preserves_modulo_collisions_before_hashing() {
-        let arguments = AtomPairParams::default();
+        let arguments = AtomPairGeneratorParams::default();
         let environment = AtomPairEnvironment::new(0, 1, 1);
         assert_eq!(
             environment
@@ -1082,7 +1086,7 @@ mod tests {
 
     #[test]
     fn invalid_invariant_lengths_retain_selected_index_and_length() {
-        let args = AtomPairParams::default().common().unwrap();
+        let args = AtomPairGeneratorParams::default().common().unwrap();
         for (first, second, atoms, expected) in [
             (0, 0, Vec::new(), (0, 0)),
             (0, 1, vec![10], (1, 1)),
@@ -1101,7 +1105,7 @@ mod tests {
     use cosmolkit_model::{AtomSpec, BondOrder, BondSpec, Conformer3D, Element};
     fn environments_2d(
         molecule: &TestMolecule,
-        arguments: &AtomPairParams,
+        arguments: &AtomPairGeneratorParams,
         from_atoms: Option<&[u32]>,
         ignore_atoms: Option<&[u32]>,
     ) -> Vec<AtomPairEnvironment> {
@@ -1131,7 +1135,7 @@ mod tests {
 
     #[test]
     fn additional_output_preserves_duplicate_provenance_after_hash_collision() {
-        let arguments = AtomPairParams::default();
+        let arguments = AtomPairGeneratorParams::default();
         let first = AtomPairEnvironment::new(0, 1, 1);
         let second = AtomPairEnvironment::new(2, 3, 1);
         let invariants = [0, 0, 511, 511];
@@ -1166,7 +1170,7 @@ mod tests {
 
     #[test]
     fn environment_generation_empty_single_chain_branch_ring_and_fused_order() {
-        let arguments = AtomPairParams::default();
+        let arguments = AtomPairGeneratorParams::default();
         assert!(environments_2d(&TestMolecule::new(), &arguments, None, None).is_empty());
         assert!(
             environments_2d(
@@ -1225,7 +1229,7 @@ mod tests {
 
     #[test]
     fn environment_generation_includes_explicit_hydrogens_and_handles_disconnected_distance() {
-        let arguments = AtomPairParams::default();
+        let arguments = AtomPairGeneratorParams::default();
         let mut explicit_h_builder = TestBuilder::default();
         let carbon = explicit_h_builder.add_atom(AtomSpec::new(Element::C));
         for _ in 0..4 {
@@ -1254,7 +1258,7 @@ mod tests {
     #[test]
     fn environment_generation_root_and_ignore_filters_match_source_precedence() {
         let molecule = TestMolecule::from_smiles("CCCC").unwrap();
-        let arguments = AtomPairParams::default();
+        let arguments = AtomPairGeneratorParams::default();
         assert_eq!(
             environments_2d(&molecule, &arguments, Some(&[1]), None),
             [
@@ -1295,7 +1299,7 @@ mod tests {
     #[test]
     fn environment_generation_distance_bounds_are_inclusive_and_allow_equality() {
         let molecule = TestMolecule::from_smiles("CCCCC").unwrap();
-        let exactly_two = AtomPairParams {
+        let exactly_two = AtomPairGeneratorParams {
             count_simulation: false,
             min_distance: 2,
             max_distance: 2,
@@ -1311,7 +1315,7 @@ mod tests {
             ]
         );
 
-        let one_through_two = AtomPairParams {
+        let one_through_two = AtomPairGeneratorParams {
             count_simulation: false,
             max_distance: 2,
             count_bounds: Vec::new(),
@@ -1327,7 +1331,7 @@ mod tests {
     #[test]
     fn environment_generation_3d_floors_fractional_distances_and_selects_conformer_ids() {
         let molecule = three_atom_3d_molecule();
-        let arguments = AtomPairParams {
+        let arguments = AtomPairGeneratorParams {
             count_simulation: false,
             use_2d: false,
             min_distance: 0,

@@ -2,94 +2,9 @@
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native")]
-pub struct BioMmcifWriteParams {
-    pub(crate) inner: ck::BioMmcifWriteParams,
-}
-
-macro_rules! mmcif_parameters {
-    (groups {$($group:ident),+ $(,)?}, flags {$($flag:ident),+ $(,)?}) => {
-        paste::paste! {
-            #[pymethods]
-            impl BioMmcifWriteParams {
-                #[new]
-                #[pyo3(signature=(*, $($group=None,)+ $($flag=ck::BioMmcifWriteParams::default().$flag,)+ align_pairs=ck::BioMmcifWriteParams::default().align_pairs, align_loops=ck::BioMmcifWriteParams::default().align_loops))]
-                fn new($($group: Option<bool>,)+ $($flag: bool,)+ align_pairs: u16, align_loops: u16) -> Self {
-                    Self { inner: ck::BioMmcifWriteParams {
-                        $($group: $group.unwrap_or_else(|| ck::BioMmcifWriteParams::default().$group),)+
-                        $($flag,)+ align_pairs, align_loops,
-                    } }
-                }
-                $(
-                    #[getter]
-                    fn $group(&self) -> bool { self.inner.$group }
-                    #[setter]
-                    fn [<set_ $group>](&mut self, value: Option<bool>) {
-                        self.inner.$group = value.unwrap_or_else(|| ck::BioMmcifWriteParams::default().$group);
-                    }
-                )+
-                $(
-                    #[getter]
-                    fn $flag(&self) -> bool { self.inner.$flag }
-                    #[setter]
-                    fn [<set_ $flag>](&mut self, value: bool) { self.inner.$flag = value; }
-                )+
-                #[getter]
-                fn align_pairs(&self) -> u16 { self.inner.align_pairs }
-                #[setter]
-                fn set_align_pairs(&mut self, value: u16) { self.inner.align_pairs = value; }
-                #[getter]
-                fn align_loops(&self) -> u16 { self.inner.align_loops }
-                #[setter]
-                fn set_align_loops(&mut self, value: u16) { self.inner.align_loops = value; }
-                fn __repr__(&self) -> String { format!("{:?}", self.inner) }
-            }
-        }
-    };
-}
-
-mmcif_parameters!(
-    groups {
-        atoms,
-        block_name,
-        entry,
-        database_status,
-        author,
-        cell,
-        symmetry,
-        entity,
-        entity_poly,
-        struct_ref,
-        chem_comp,
-        exptl,
-        diffrn,
-        reflns,
-        refine,
-        title_keywords,
-        ncs,
-        struct_asym,
-        origx,
-        struct_conf,
-        struct_sheet,
-        struct_biol,
-        assembly,
-        conn,
-        cis,
-        modres,
-        scale,
-        atom_type,
-        entity_poly_seq,
-        tls,
-        software,
-        group_pdb,
-        auth_all,
-    },
-    flags {
-        prefer_pairs,
-        compact,
-        misuse_hash
-    }
-);
+ck::project_configuration!(ck::BioMmcifWriteParams, methods {
+    fn __repr__(&self) -> String { format!("{:?}", self.inner) }
+});
 
 #[cfg(test)]
 mod tests {
@@ -125,19 +40,19 @@ mod tests {
             let class = py.get_type::<TopologicalFingerprintParams>();
             let params = class.call0()?.extract::<Py<TopologicalFingerprintParams>>()?;
             let molecule = ck::Molecule::from_smiles("CCO").unwrap();
-            let baseline = molecule.fingerprint_topological_with_params(&params.borrow(py).inner).unwrap();
+            let baseline = molecule.fingerprint_topological_with_params(&params.borrow(py).to_rust(py)?).unwrap();
             assert!(baseline.num_on_bits() > 0);
             params.bind(py).setattr("ignore_atoms", vec![1_u32])?;
-            let masked = molecule.fingerprint_topological_with_params(&params.borrow(py).inner).unwrap();
+            let masked = molecule.fingerprint_topological_with_params(&params.borrow(py).to_rust(py)?).unwrap();
             assert_eq!(masked.num_on_bits(), 0);
             let kwargs = PyDict::new(py);
             kwargs.set_item("ignore_atoms", vec![1_u32])?;
             let constructed = class.call((), Some(&kwargs))?.extract::<Py<TopologicalFingerprintParams>>()?;
-            assert_eq!(molecule.fingerprint_topological_with_params(&constructed.borrow(py).inner).unwrap(), masked);
+            assert_eq!(molecule.fingerprint_topological_with_params(&constructed.borrow(py).to_rust(py)?).unwrap(), masked);
             params.bind(py).setattr("ignore_atoms", Vec::<u32>::new())?;
-            assert_eq!(molecule.fingerprint_topological_with_params(&params.borrow(py).inner).unwrap(), baseline);
+            assert_eq!(molecule.fingerprint_topological_with_params(&params.borrow(py).to_rust(py)?).unwrap(), baseline);
             params.bind(py).setattr("ignore_atoms", py.None())?;
-            assert!(params.borrow(py).inner.ignore_atoms.is_none());
+            assert!(params.borrow(py).to_rust(py)?.ignore_atoms.is_none());
             Ok(())
         }).unwrap();
     }

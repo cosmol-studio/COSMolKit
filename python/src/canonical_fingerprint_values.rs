@@ -12,14 +12,14 @@ use std::collections::BTreeMap;
 /// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
-pub(crate) struct MorganParams {
-    pub(crate) inner: ck::MorganParams,
+pub(crate) struct MorganGeneratorParams {
+    pub(crate) inner: ck::MorganGeneratorParams,
 }
 
 #[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
-impl MorganParams {
+impl MorganGeneratorParams {
     /// Configure Morgan fingerprint generation; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, radius=3, include_chirality=false, use_bond_types=true, include_ring_membership=true, only_nonzero_invariants=false, include_redundant_environments=false, fp_size=2048, count_simulation=false, count_bounds=None, bits_per_feature=1))]
@@ -38,7 +38,7 @@ impl MorganParams {
         // Configuration transport only: validation belongs to canonical callers.
         // An explicit empty vector remains distinct from the source default.
         Self {
-            inner: ck::MorganParams {
+            inner: ck::MorganGeneratorParams {
                 radius,
                 include_chirality,
                 use_bond_types,
@@ -48,7 +48,7 @@ impl MorganParams {
                 fp_size,
                 count_simulation,
                 count_bounds: count_bounds
-                    .unwrap_or_else(|| ck::MorganParams::default().count_bounds),
+                    .unwrap_or_else(|| ck::MorganGeneratorParams::default().count_bounds),
                 bits_per_feature,
             },
         }
@@ -164,7 +164,7 @@ impl MorganFingerprintParams {
     #[new]
     #[pyo3(signature = (*, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=-1, invariants=None))]
     fn new(
-        generator: Option<&MorganParams>,
+        generator: Option<&MorganGeneratorParams>,
         from_atoms: Option<Vec<u32>>,
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
@@ -191,8 +191,8 @@ impl MorganFingerprintParams {
 
     /// Fingerprint generator configuration; nested edits update the parent parameter object.
     #[getter]
-    fn generator(&self) -> MorganParams {
-        MorganParams {
+    fn generator(&self) -> MorganGeneratorParams {
+        MorganGeneratorParams {
             inner: self.inner.generator.clone(),
         }
     }
@@ -327,13 +327,13 @@ impl FingerprintAdditionalOutput {
 /// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
-pub(crate) struct AtomPairParams {
-    pub(crate) inner: ck::AtomPairParams,
+pub(crate) struct AtomPairGeneratorParams {
+    pub(crate) inner: ck::AtomPairGeneratorParams,
 }
 #[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
-impl AtomPairParams {
+impl AtomPairGeneratorParams {
     /// Configure atom-pair fingerprint generation; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, min_distance=1, max_distance=30, include_chirality=false, use_2d=true, count_simulation=true, fp_size=2048, bits_per_feature=1, count_bounds=None))]
@@ -348,7 +348,7 @@ impl AtomPairParams {
         count_bounds: Option<Vec<u32>>,
     ) -> Self {
         Self {
-            inner: ck::AtomPairParams {
+            inner: ck::AtomPairGeneratorParams {
                 min_distance,
                 max_distance,
                 include_chirality,
@@ -357,7 +357,7 @@ impl AtomPairParams {
                 fp_size,
                 bits_per_feature,
                 count_bounds: count_bounds
-                    .unwrap_or_else(|| ck::AtomPairParams::default().count_bounds),
+                    .unwrap_or_else(|| ck::AtomPairGeneratorParams::default().count_bounds),
             },
         }
     }
@@ -480,7 +480,7 @@ impl AtomPairFingerprintParams {
     #[new]
     #[pyo3(signature = (*, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=-1, atom_invariants_generator=None, use_legacy_stereo_perception=true))]
     fn new(
-        generator: Option<&AtomPairParams>,
+        generator: Option<&AtomPairGeneratorParams>,
         from_atoms: Option<Vec<u32>>,
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
@@ -506,8 +506,8 @@ impl AtomPairFingerprintParams {
     }
     /// Fingerprint generator configuration; nested edits update the parent parameter object.
     #[getter]
-    fn generator(&self) -> AtomPairParams {
-        AtomPairParams {
+    fn generator(&self) -> AtomPairGeneratorParams {
+        AtomPairGeneratorParams {
             inner: self.inner.generator.clone(),
         }
     }
@@ -555,13 +555,13 @@ impl AtomPairFingerprintParams {
 /// documented constructor defaults; invalid assignments leave the previous value unchanged.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", dict, weakref)]
-pub(crate) struct TopologicalTorsionParams {
-    pub(crate) inner: ck::TopologicalTorsionParams,
+pub(crate) struct TopologicalTorsionGeneratorParams {
+    pub(crate) inner: ck::TopologicalTorsionGeneratorParams,
 }
 #[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
-impl TopologicalTorsionParams {
+impl TopologicalTorsionGeneratorParams {
     /// Configure topological-torsion fingerprint generation; omitted fields use the defaults shown in the signature.
     #[new]
     #[pyo3(signature = (*, torsion_atom_count=4, only_shortest_paths=false, include_chirality=false, count_simulation=true, fp_size=2048, bits_per_feature=1, count_bounds=None))]
@@ -575,15 +575,16 @@ impl TopologicalTorsionParams {
         count_bounds: Option<Vec<u32>>,
     ) -> Self {
         Self {
-            inner: ck::TopologicalTorsionParams {
+            inner: ck::TopologicalTorsionGeneratorParams {
                 torsion_atom_count,
                 only_shortest_paths,
                 include_chirality,
                 count_simulation,
                 fp_size,
                 bits_per_feature,
-                count_bounds: count_bounds
-                    .unwrap_or_else(|| ck::TopologicalTorsionParams::default().count_bounds),
+                count_bounds: count_bounds.unwrap_or_else(|| {
+                    ck::TopologicalTorsionGeneratorParams::default().count_bounds
+                }),
             },
         }
     }
@@ -655,7 +656,7 @@ impl TopologicalTorsionFingerprintParams {
     #[new]
     #[pyo3(signature = (*, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=-1, atom_invariants_generator=None, use_legacy_stereo_perception=true))]
     fn new(
-        generator: Option<&TopologicalTorsionParams>,
+        generator: Option<&TopologicalTorsionGeneratorParams>,
         from_atoms: Option<Vec<u32>>,
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
@@ -681,8 +682,8 @@ impl TopologicalTorsionFingerprintParams {
     }
     /// Fingerprint generator configuration; nested edits update the parent parameter object.
     #[getter]
-    fn generator(&self) -> TopologicalTorsionParams {
-        TopologicalTorsionParams {
+    fn generator(&self) -> TopologicalTorsionGeneratorParams {
+        TopologicalTorsionGeneratorParams {
             inner: self.inner.generator.clone(),
         }
     }
@@ -728,7 +729,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<TopologicalTorsionFingerprintGenerator>()?;
     module.add_class::<TopologicalTorsionSettings>()?;
     module.add_class::<TopologicalTorsionCallParams>()?;
-    module.add_class::<TopologicalTorsionParams>()?;
+    module.add_class::<TopologicalTorsionGeneratorParams>()?;
     module.add_class::<AtomCodeExplanation>()?;
     module.add_class::<AtomPairsParameters>()?;
     module.add_class::<AtomPairAtomCodeResult>()?;
@@ -738,10 +739,10 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     )?;
     module.add_class::<LegacyTopologicalTorsionParams>()?;
     module.add_class::<TopologicalTorsionFingerprintParams>()?;
-    module.add_class::<AtomPairParams>()?;
+    module.add_class::<AtomPairGeneratorParams>()?;
     module.add_class::<AtomPairFingerprintParams>()?;
     module.add_class::<AtomPairAtomInvariantsGenerator>()?;
-    module.add_class::<MorganParams>()?;
+    module.add_class::<MorganGeneratorParams>()?;
     module.add_class::<MorganAtomInvariantsGenerator>()?;
     module.add_class::<MorganBondInvariantsGenerator>()?;
     module.add_class::<MorganFingerprintGenerator>()?;
@@ -833,7 +834,7 @@ impl TopologicalTorsionFingerprintGenerator {
     #[pyo3(signature=(*,params=None,atom_invariants_generator=None))]
     fn py_new(
         py: Python<'_>,
-        params: Option<&TopologicalTorsionParams>,
+        params: Option<&TopologicalTorsionGeneratorParams>,
         atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
     ) -> PyResult<Self> {
         Self::new(py, params, atom_invariants_generator)
@@ -843,7 +844,7 @@ impl TopologicalTorsionFingerprintGenerator {
     #[pyo3(signature=(*,params=None,atom_invariants_generator=None))]
     fn new(
         py: Python<'_>,
-        params: Option<&TopologicalTorsionParams>,
+        params: Option<&TopologicalTorsionGeneratorParams>,
         atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
     ) -> PyResult<Self> {
         ck::TopologicalTorsionFingerprintGenerator::new(
@@ -1128,10 +1129,10 @@ impl TopologicalTorsionSettings {
         })
     }
     /// Return the parameter values associated with this result or settings view.
-    fn params(&self, py: Python<'_>) -> PyResult<TopologicalTorsionParams> {
+    fn params(&self, py: Python<'_>) -> PyResult<TopologicalTorsionGeneratorParams> {
         self.inner
             .params()
-            .map(|inner| TopologicalTorsionParams { inner })
+            .map(|inner| TopologicalTorsionGeneratorParams { inner })
             .map_err(|e| crate::canonical_values::topological_torsion_pyerr(py, e))
     }
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
@@ -1500,7 +1501,7 @@ impl MorganFingerprintGenerator {
     #[pyo3(signature=(*,params=None,atom_invariants=None,bond_invariants=None))]
     fn py_new(
         py: Python<'_>,
-        params: Option<&MorganParams>,
+        params: Option<&MorganGeneratorParams>,
         atom_invariants: Option<&MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&MorganBondInvariantsGenerator>,
     ) -> PyResult<Self> {
@@ -1511,7 +1512,7 @@ impl MorganFingerprintGenerator {
     #[pyo3(signature=(*,params=None,atom_invariants=None,bond_invariants=None))]
     fn new(
         py: Python<'_>,
-        params: Option<&MorganParams>,
+        params: Option<&MorganGeneratorParams>,
         atom_invariants: Option<&MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&MorganBondInvariantsGenerator>,
     ) -> PyResult<Self> {
@@ -1837,10 +1838,10 @@ impl MorganSettings {
             .map_err(|e| Python::attach(|py| crate::canonical_values::morgan_pyerr(py, e)))
     }
     /// Return the parameter values associated with this result or settings view.
-    fn params(&self, py: Python<'_>) -> PyResult<MorganParams> {
+    fn params(&self, py: Python<'_>) -> PyResult<MorganGeneratorParams> {
         self.inner
             .params()
-            .map(|inner| MorganParams { inner })
+            .map(|inner| MorganGeneratorParams { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
 }

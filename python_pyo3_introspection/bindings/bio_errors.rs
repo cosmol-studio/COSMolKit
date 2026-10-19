@@ -3,7 +3,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::error::Error;
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum BioStructureErrorKind {
     RowIndexTooLarge,
@@ -21,7 +21,7 @@ pub enum BioStructureErrorKind {
     AtomNotFound,
 }
 
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioStructureError {
     inner: ck::BioStructureError,
 }

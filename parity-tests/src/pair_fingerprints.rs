@@ -141,7 +141,7 @@ pub fn normalize(task: &str, profile: serde_json::Value) -> Result<serde_json::V
 impl PairProfile {
     fn params(&self, atoms: usize) -> AtomPairFingerprintParams {
         AtomPairFingerprintParams {
-            generator: AtomPairParams {
+            generator: AtomPairGeneratorParams {
                 min_distance: self.min_distance,
                 max_distance: self.max_distance,
                 include_chirality: self.include_chirality,
@@ -167,7 +167,7 @@ impl PairProfile {
 impl TorsionProfile {
     fn params(&self, atoms: usize) -> TopologicalTorsionFingerprintParams {
         TopologicalTorsionFingerprintParams {
-            generator: TopologicalTorsionParams {
+            generator: TopologicalTorsionGeneratorParams {
                 torsion_atom_count: self.torsion_atom_count,
                 only_shortest_paths: self.only_shortest_paths,
                 include_chirality: self.include_chirality,

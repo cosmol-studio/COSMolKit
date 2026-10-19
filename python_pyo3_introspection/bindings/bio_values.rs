@@ -9,7 +9,7 @@ enum_value!(ChainKind, {
     Protein, Dna, Rna, ProteinDnaComplex, ProteinRnaComplex, LigandOnly,
     WaterOnly, Mixed, Unknown,
 });
-enum_value!(BioCoordinateFormat, { Unknown, Detect, Pdb, Mmcif, Mmjson, ChemComp });
+enum_value!(BioCoordinateFormat, input = BioCoordinateFormatInput, { Unknown, Detect, Pdb, Mmcif, Mmjson, ChemComp });
 
 #[derive(FromPyObject, IntoPyObject)]
 pub enum BioCoordinateFormatInput {
@@ -47,40 +47,7 @@ impl BioCoordinateFormatInput {
         }
     }
 }
-#[pyclass(module = "fixed_projection._native")]
-pub struct BioReadParams {
-    pub(crate) inner: ck::BioReadParams,
-}
-#[pymethods]
-impl BioReadParams {
-    #[new]
-    #[pyo3(signature=(*, format=BioCoordinateFormatInput::Enum(ck::BioReadParams::default().format.into()), source_name=ck::BioReadParams::default().source_name))]
-    fn new(format: BioCoordinateFormatInput, source_name: String) -> PyResult<Self> {
-        Ok(Self {
-            inner: ck::BioReadParams {
-                format: format.into_rust()?,
-                source_name,
-            },
-        })
-    }
-    #[getter]
-    fn format(&self) -> BioCoordinateFormat {
-        self.inner.format.into()
-    }
-    #[setter]
-    fn set_format(&mut self, value: BioCoordinateFormatInput) -> PyResult<()> {
-        self.inner.format = value.into_rust()?;
-        Ok(())
-    }
-    #[getter]
-    fn source_name(&self) -> &str {
-        &self.inner.source_name
-    }
-    #[setter]
-    fn set_source_name(&mut self, value: String) {
-        self.inner.source_name = value;
-    }
-}
+ck::project_configuration!(ck::BioReadParams);
 
 #[derive(FromPyObject, IntoPyObject)]
 pub enum ChainKindInput {
@@ -96,7 +63,7 @@ impl ChainKindInput {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct ChainSourceIds {
     pub(crate) inner: ck::ChainSourceIds,
 }
@@ -128,7 +95,7 @@ impl ChainSourceIds {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioChainRow {
     pub(crate) inner: ck::BioChainRow,
@@ -177,7 +144,7 @@ impl BioChainRow {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct BioRowSpan {
     pub(crate) inner: ck::BioRowSpan<ck::BioAtomId>,
 }
@@ -191,7 +158,7 @@ impl BioRowSpan {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioModelRow {
     pub(crate) inner: ck::BioModelRow,
@@ -219,7 +186,7 @@ impl BioModelRow {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct AtomName {
     pub(crate) inner: ck::AtomName,
 }
@@ -268,7 +235,7 @@ parameters!(BioCrystalCell, ck::BioCrystalCell, {
     a: f64, b: f64, c: f64, alpha: f64, beta: f64, gamma: f64,
 });
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct BioTransform {
     pub(crate) inner: ck::BioTransform,

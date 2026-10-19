@@ -79,7 +79,7 @@ pub(crate) type WriterSource = Source<
     >,
 >;
 
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct SmartsWriteError {
     inner: RetainedError<ck::SmartsWriteError>,
 }
@@ -418,27 +418,22 @@ fn mixed(params: Option<&SmartsWriteParams>, values: [bool; 4]) -> PyResult<()> 
     Ok(())
 }
 #[pyfunction]
-#[pyo3(signature=(query, params=None, *, include_atom_maps=None, isomeric_smiles=None, include_dative_bonds=None, rooted_at_atom=None))]
+#[pyo3(signature=(query, params=crate::arguments::Argument::Missing, *, include_atom_maps=crate::arguments::Argument::Missing, isomeric_smiles=crate::arguments::Argument::Missing, include_dative_bonds=crate::arguments::Argument::Missing, rooted_at_atom=crate::arguments::Argument::Missing))]
 pub fn write_smarts(
     query: &QueryGraph,
-    params: Option<&SmartsWriteParams>,
-    include_atom_maps: Option<bool>,
-    isomeric_smiles: Option<bool>,
-    include_dative_bonds: Option<bool>,
-    rooted_at_atom: Option<usize>,
+    params: crate::arguments::Argument<Option<PyRef<'_, SmartsWriteParams>>>,
+    include_atom_maps: crate::arguments::Argument<Option<bool>>,
+    isomeric_smiles: crate::arguments::Argument<Option<bool>>,
+    include_dative_bonds: crate::arguments::Argument<Option<bool>>,
+    rooted_at_atom: crate::arguments::Argument<Option<usize>>,
 ) -> PyResult<String> {
-    mixed(
-        params,
-        [
-            include_atom_maps.is_some(),
-            isomeric_smiles.is_some(),
-            include_dative_bonds.is_some(),
-            rooted_at_atom.is_some(),
-        ],
-    )?;
-    if let Some(params) = params {
-        _write_smarts_params(query, Some(params))
-    } else {
+    let keyword_form = include_atom_maps.is_supplied()
+        || isomeric_smiles.is_supplied()
+        || include_dative_bonds.is_supplied()
+        || rooted_at_atom.is_supplied();
+    crate::arguments::configuration_arguments!(params; include_atom_maps, isomeric_smiles, include_dative_bonds, rooted_at_atom);
+    let params = params.as_deref();
+    if keyword_form {
         _write_smarts_keywords(
             query,
             include_atom_maps,
@@ -446,6 +441,8 @@ pub fn write_smarts(
             include_dative_bonds,
             rooted_at_atom,
         )
+    } else {
+        _write_smarts_params(query, params)
     }
 }
 #[pyfunction]
@@ -481,27 +478,22 @@ pub fn _write_smarts_keywords(
     )
 }
 #[pyfunction]
-#[pyo3(signature=(query, params=None, *, include_atom_maps=None, isomeric_smiles=None, include_dative_bonds=None, rooted_at_atom=None))]
+#[pyo3(signature=(query, params=crate::arguments::Argument::Missing, *, include_atom_maps=crate::arguments::Argument::Missing, isomeric_smiles=crate::arguments::Argument::Missing, include_dative_bonds=crate::arguments::Argument::Missing, rooted_at_atom=crate::arguments::Argument::Missing))]
 pub fn write_cx_smarts(
     query: &QueryGraph,
-    params: Option<&SmartsWriteParams>,
-    include_atom_maps: Option<bool>,
-    isomeric_smiles: Option<bool>,
-    include_dative_bonds: Option<bool>,
-    rooted_at_atom: Option<usize>,
+    params: crate::arguments::Argument<Option<PyRef<'_, SmartsWriteParams>>>,
+    include_atom_maps: crate::arguments::Argument<Option<bool>>,
+    isomeric_smiles: crate::arguments::Argument<Option<bool>>,
+    include_dative_bonds: crate::arguments::Argument<Option<bool>>,
+    rooted_at_atom: crate::arguments::Argument<Option<usize>>,
 ) -> PyResult<String> {
-    mixed(
-        params,
-        [
-            include_atom_maps.is_some(),
-            isomeric_smiles.is_some(),
-            include_dative_bonds.is_some(),
-            rooted_at_atom.is_some(),
-        ],
-    )?;
-    if let Some(params) = params {
-        _write_cx_smarts_params(query, Some(params))
-    } else {
+    let keyword_form = include_atom_maps.is_supplied()
+        || isomeric_smiles.is_supplied()
+        || include_dative_bonds.is_supplied()
+        || rooted_at_atom.is_supplied();
+    crate::arguments::configuration_arguments!(params; include_atom_maps, isomeric_smiles, include_dative_bonds, rooted_at_atom);
+    let params = params.as_deref();
+    if keyword_form {
         _write_cx_smarts_keywords(
             query,
             include_atom_maps,
@@ -509,6 +501,8 @@ pub fn write_cx_smarts(
             include_dative_bonds,
             rooted_at_atom,
         )
+    } else {
+        _write_cx_smarts_params(query, params)
     }
 }
 #[pyfunction]
@@ -547,6 +541,7 @@ pub fn _write_cx_smarts_keywords(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arguments::Argument::{Missing, Value};
     use pyo3::types::PyDict;
 
     #[test]
@@ -568,14 +563,10 @@ mod tests {
                     );
                     let expected = ck::write_smarts(&native_query, &params.inner).unwrap();
                     let expected = String::from_utf8(expected.into_bytes()).unwrap();
+                    assert_eq!(_write_smarts_params(&query, Some(&params))?, expected);
                     assert_eq!(
-                        write_smarts(&query, Some(&params), None, None, None, None)?,
-                        expected
-                    );
-                    assert_eq!(
-                        write_smarts(
+                        _write_smarts_keywords(
                             &query,
-                            None,
                             Some(flags & 1 != 0),
                             Some(flags & 2 != 0),
                             Some(flags & 4 != 0),
@@ -585,14 +576,10 @@ mod tests {
                     );
                     let expected = ck::write_cx_smarts(&native_query, &params.inner).unwrap();
                     let expected = String::from_utf8(expected.into_bytes()).unwrap();
+                    assert_eq!(_write_cx_smarts_params(&query, Some(&params))?, expected);
                     assert_eq!(
-                        write_cx_smarts(&query, Some(&params), None, None, None, None)?,
-                        expected
-                    );
-                    assert_eq!(
-                        write_cx_smarts(
+                        _write_cx_smarts_keywords(
                             &query,
-                            None,
                             Some(flags & 1 != 0),
                             Some(flags & 2 != 0),
                             Some(flags & 4 != 0),
@@ -662,14 +649,22 @@ mod tests {
             assert_eq!(mol.borrow(py).inner.to_binary().unwrap(), before);
             let params = keywords(None, None, None, Some(999));
             let native = ck::write_smarts(&native_query, &params.inner).unwrap_err();
-            let error = write_smarts(&query, Some(&params), None, None, None, None).unwrap_err();
+            let error = _write_smarts_params(&query, Some(&params)).unwrap_err();
             assert!(error.is_instance_of::<SmartsWriteError>(py));
             assert_eq!(error.value(py).str()?.to_str()?, native.to_string());
             assert_eq!(error.value(py).getattr("atom")?.extract::<usize>()?, 999);
+            let params = Py::new(py, params)?;
             assert!(
-                write_smarts(&query, Some(&params), Some(true), None, None, None)
-                    .unwrap_err()
-                    .is_instance_of::<PyTypeError>(py)
+                write_smarts(
+                    &query,
+                    Value(Some(params.borrow(py))),
+                    Value(Some(true)),
+                    Missing,
+                    Missing,
+                    Missing
+                )
+                .unwrap_err()
+                .is_instance_of::<PyTypeError>(py)
             );
 
             let mut recursive = ck::RecursiveStructureQuery::from_query_graph(native_query, 17);

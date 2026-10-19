@@ -15,7 +15,8 @@ use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct BioReadParams {
     pub format: BioCoordinateFormat,
     pub source_name: String,

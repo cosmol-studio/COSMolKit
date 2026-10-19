@@ -29,7 +29,7 @@ error_projection!(ReactionModelError, ReactionModelErrorKind, ck::ReactionModelE
     }
 });
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct Reaction {
     owner: ReactionOwner,
     match_owner: Mutex<Option<Py<SubstructMatchParams>>>,
@@ -102,34 +102,35 @@ impl Reaction {
 
 #[pymethods]
 impl Reaction {
-    #[pyo3(signature=(reactants,params=None,*,max_products=None,coordinate_selections=None,copy_atom_properties=None))]
+    #[pyo3(signature=(reactants,params=crate::arguments::Argument::Missing,*,max_products=crate::arguments::Argument::Missing,coordinate_selections=crate::arguments::Argument::Missing,copy_atom_properties=crate::arguments::Argument::Missing))]
     fn run(
         &mut self,
         py: Python<'_>,
         reactants: Vec<Py<crate::native::Molecule>>,
-        params: Option<&crate::optional_configuration::ReactionRunParams>,
-        max_products: Option<u32>,
-        coordinate_selections: Option<Vec<crate::construction_values::ReactionCoordinateSelection>>,
-        copy_atom_properties: Option<bool>,
+        params: crate::arguments::Argument<
+            Option<PyRef<'_, crate::optional_configuration::ReactionRunParams>>,
+        >,
+        max_products: crate::arguments::Argument<Option<u32>>,
+        coordinate_selections: crate::arguments::Argument<
+            Option<Vec<crate::construction_values::ReactionCoordinateSelection>>,
+        >,
+        copy_atom_properties: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<Vec<Vec<crate::native::Molecule>>> {
-        if params.is_some()
-            && (max_products.is_some()
-                || coordinate_selections.is_some()
-                || copy_atom_properties.is_some())
-        {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "params and keyword configuration are mutually exclusive",
-            ));
-        }
-        match params {
-            Some(params) => self._run_params(py, reactants, Some(params)),
-            None => self._run_keywords(
+        let keyword_form = max_products.is_supplied()
+            || coordinate_selections.is_supplied()
+            || copy_atom_properties.is_supplied();
+        crate::arguments::configuration_arguments!(params; max_products, coordinate_selections, copy_atom_properties);
+        let params = params.as_deref();
+        if keyword_form {
+            self._run_keywords(
                 py,
                 reactants,
                 max_products,
                 coordinate_selections,
                 copy_atom_properties,
-            ),
+            )
+        } else {
+            self._run_params(py, reactants, params)
         }
     }
     #[doc = r#"{"role":"overload","target":"Reaction.run"}"#]
@@ -142,7 +143,10 @@ impl Reaction {
     ) -> PyResult<Vec<Vec<crate::native::Molecule>>> {
         let defaults;
         let params = match params {
-            Some(params) => &params.inner,
+            Some(params) => {
+                defaults = params.to_rust(py)?;
+                &defaults
+            }
             None => {
                 defaults = ck::ReactionRunParams::default();
                 &defaults
@@ -165,54 +169,45 @@ impl Reaction {
             coordinate_selections,
             copy_atom_properties,
         );
-        self._run_params(py, reactants, Some(&params))
+        crate::reaction_calls::run(self, py, &reactants, &params)
     }
     fn set_match_params(&mut self, py: Python<'_>, params: &SubstructMatchParams) -> PyResult<()> {
-        let owner = Py::new(py, params.with_native(py, params.inner.clone()))?;
-        self.owner.inner_mut().set_match_params(&params.inner);
+        let native = params.to_rust(py)?;
+        let owner = Py::new(py, params.with_native(py, native.clone())?)?;
+        self.owner.inner_mut().set_match_params(&native);
         *self
             .match_owner
             .lock()
             .expect("reaction configuration lock") = Some(owner);
         Ok(())
     }
-    #[pyo3(signature=(params=None,*,canonical=None,isomeric_smiles=None,rooted_at_atom=None,include_dative_bonds=None,include_cx=None,cx_fields=None,coordinate_selections=None))]
+    #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,canonical=crate::arguments::Argument::Missing,isomeric_smiles=crate::arguments::Argument::Missing,rooted_at_atom=crate::arguments::Argument::Missing,include_dative_bonds=crate::arguments::Argument::Missing,include_cx=crate::arguments::Argument::Missing,cx_fields=crate::arguments::Argument::Missing,coordinate_selections=crate::arguments::Argument::Missing))]
     fn to_smirks(
         &self,
         py: Python<'_>,
-        params: Option<&crate::search_reaction_params::ReactionWriteParams>,
-        canonical: Option<bool>,
-        isomeric_smiles: Option<bool>,
-        rooted_at_atom: Option<usize>,
-        include_dative_bonds: Option<bool>,
-        include_cx: Option<bool>,
-        cx_fields: Option<crate::notation_params::CxSmilesFieldsInput>,
-        coordinate_selections: Option<Vec<crate::construction_values::ReactionCoordinateSelection>>,
+        params: crate::arguments::Argument<
+            Option<PyRef<'_, crate::search_reaction_params::ReactionWriteParams>>,
+        >,
+        canonical: crate::arguments::Argument<Option<bool>>,
+        isomeric_smiles: crate::arguments::Argument<Option<bool>>,
+        rooted_at_atom: crate::arguments::Argument<Option<usize>>,
+        include_dative_bonds: crate::arguments::Argument<Option<bool>>,
+        include_cx: crate::arguments::Argument<Option<bool>>,
+        cx_fields: crate::arguments::Argument<Option<crate::notation_params::CxSmilesFieldsInput>>,
+        coordinate_selections: crate::arguments::Argument<
+            Option<Vec<crate::construction_values::ReactionCoordinateSelection>>,
+        >,
     ) -> PyResult<String> {
-        if params.is_some()
-            && (canonical.is_some()
-                || isomeric_smiles.is_some()
-                || rooted_at_atom.is_some()
-                || include_dative_bonds.is_some()
-                || include_cx.is_some()
-                || cx_fields.is_some()
-                || coordinate_selections.is_some())
-        {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "params and keyword configuration are mutually exclusive",
-            ));
-        }
-        if params.is_some()
-            || (canonical.is_none()
-                && isomeric_smiles.is_none()
-                && rooted_at_atom.is_none()
-                && include_dative_bonds.is_none()
-                && include_cx.is_none()
-                && cx_fields.is_none()
-                && coordinate_selections.is_none())
-        {
-            self._writer_to_smirks_params(py, params)
-        } else {
+        let keyword_form = canonical.is_supplied()
+            || isomeric_smiles.is_supplied()
+            || rooted_at_atom.is_supplied()
+            || include_dative_bonds.is_supplied()
+            || include_cx.is_supplied()
+            || cx_fields.is_supplied()
+            || coordinate_selections.is_supplied();
+        crate::arguments::configuration_arguments!(params; canonical, isomeric_smiles, rooted_at_atom, include_dative_bonds, include_cx, cx_fields, coordinate_selections);
+        let params = params.as_deref();
+        if keyword_form {
             self._writer_to_smirks_keywords(
                 py,
                 canonical,
@@ -223,6 +218,8 @@ impl Reaction {
                 cx_fields,
                 coordinate_selections,
             )
+        } else {
+            self._writer_to_smirks_params(py, params)
         }
     }
     fn to_smirks_with_params(
@@ -230,8 +227,9 @@ impl Reaction {
         py: Python<'_>,
         params: &crate::search_reaction_params::ReactionWriteParams,
     ) -> PyResult<String> {
+        let params = params.to_rust(py)?;
         let text = py
-            .detach(|| self.inner().to_smirks_with_params(&params.inner))
+            .detach(|| self.inner().to_smirks_with_params(&params))
             .map_err(crate::reaction_writer::ReactionWriteError::from_rust)?;
         crate::property_values::decode_source_text(py, &text)
     }
@@ -242,8 +240,9 @@ impl Reaction {
         py: Python<'_>,
         params: Option<&crate::search_reaction_params::ReactionWriteParams>,
     ) -> PyResult<String> {
-        let text = match params {
-            Some(params) => py.detach(|| self.inner().to_smirks_with_params(&params.inner)),
+        let params = params.map(|value| value.to_rust(py)).transpose()?;
+        let text = match params.as_ref() {
+            Some(params) => py.detach(|| self.inner().to_smirks_with_params(&params)),
             None => py.detach(|| self.inner().to_smirks()),
         }
         .map_err(crate::reaction_writer::ReactionWriteError::from_rust)?;
@@ -271,46 +270,39 @@ impl Reaction {
             cx_fields,
             coordinate_selections,
         )?;
-        self._writer_to_smirks_params(py, Some(&params))
+        let text = py
+            .detach(|| self.inner().to_smirks_with_params(&params))
+            .map_err(crate::reaction_writer::ReactionWriteError::from_rust)?;
+        crate::property_values::decode_source_text(py, &text)
     }
 
-    #[pyo3(signature=(params=None,*,canonical=None,isomeric_smiles=None,rooted_at_atom=None,include_dative_bonds=None,include_cx=None,cx_fields=None,coordinate_selections=None))]
+    #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,canonical=crate::arguments::Argument::Missing,isomeric_smiles=crate::arguments::Argument::Missing,rooted_at_atom=crate::arguments::Argument::Missing,include_dative_bonds=crate::arguments::Argument::Missing,include_cx=crate::arguments::Argument::Missing,cx_fields=crate::arguments::Argument::Missing,coordinate_selections=crate::arguments::Argument::Missing))]
     fn to_cx_smirks(
         &self,
         py: Python<'_>,
-        params: Option<&crate::search_reaction_params::ReactionWriteParams>,
-        canonical: Option<bool>,
-        isomeric_smiles: Option<bool>,
-        rooted_at_atom: Option<usize>,
-        include_dative_bonds: Option<bool>,
-        include_cx: Option<bool>,
-        cx_fields: Option<crate::notation_params::CxSmilesFieldsInput>,
-        coordinate_selections: Option<Vec<crate::construction_values::ReactionCoordinateSelection>>,
+        params: crate::arguments::Argument<
+            Option<PyRef<'_, crate::search_reaction_params::ReactionWriteParams>>,
+        >,
+        canonical: crate::arguments::Argument<Option<bool>>,
+        isomeric_smiles: crate::arguments::Argument<Option<bool>>,
+        rooted_at_atom: crate::arguments::Argument<Option<usize>>,
+        include_dative_bonds: crate::arguments::Argument<Option<bool>>,
+        include_cx: crate::arguments::Argument<Option<bool>>,
+        cx_fields: crate::arguments::Argument<Option<crate::notation_params::CxSmilesFieldsInput>>,
+        coordinate_selections: crate::arguments::Argument<
+            Option<Vec<crate::construction_values::ReactionCoordinateSelection>>,
+        >,
     ) -> PyResult<String> {
-        if params.is_some()
-            && (canonical.is_some()
-                || isomeric_smiles.is_some()
-                || rooted_at_atom.is_some()
-                || include_dative_bonds.is_some()
-                || include_cx.is_some()
-                || cx_fields.is_some()
-                || coordinate_selections.is_some())
-        {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "params and keyword configuration are mutually exclusive",
-            ));
-        }
-        if params.is_some()
-            || (canonical.is_none()
-                && isomeric_smiles.is_none()
-                && rooted_at_atom.is_none()
-                && include_dative_bonds.is_none()
-                && include_cx.is_none()
-                && cx_fields.is_none()
-                && coordinate_selections.is_none())
-        {
-            self._writer_to_cx_smirks_params(py, params)
-        } else {
+        let keyword_form = canonical.is_supplied()
+            || isomeric_smiles.is_supplied()
+            || rooted_at_atom.is_supplied()
+            || include_dative_bonds.is_supplied()
+            || include_cx.is_supplied()
+            || cx_fields.is_supplied()
+            || coordinate_selections.is_supplied();
+        crate::arguments::configuration_arguments!(params; canonical, isomeric_smiles, rooted_at_atom, include_dative_bonds, include_cx, cx_fields, coordinate_selections);
+        let params = params.as_deref();
+        if keyword_form {
             self._writer_to_cx_smirks_keywords(
                 py,
                 canonical,
@@ -321,6 +313,8 @@ impl Reaction {
                 cx_fields,
                 coordinate_selections,
             )
+        } else {
+            self._writer_to_cx_smirks_params(py, params)
         }
     }
     fn to_cx_smirks_with_params(
@@ -328,8 +322,9 @@ impl Reaction {
         py: Python<'_>,
         params: &crate::search_reaction_params::ReactionWriteParams,
     ) -> PyResult<String> {
+        let params = params.to_rust(py)?;
         let text = py
-            .detach(|| self.inner().to_cx_smirks_with_params(&params.inner))
+            .detach(|| self.inner().to_cx_smirks_with_params(&params))
             .map_err(crate::reaction_writer::ReactionWriteError::from_rust)?;
         crate::property_values::decode_source_text(py, &text)
     }
@@ -340,8 +335,9 @@ impl Reaction {
         py: Python<'_>,
         params: Option<&crate::search_reaction_params::ReactionWriteParams>,
     ) -> PyResult<String> {
-        let text = match params {
-            Some(params) => py.detach(|| self.inner().to_cx_smirks_with_params(&params.inner)),
+        let params = params.map(|value| value.to_rust(py)).transpose()?;
+        let text = match params.as_ref() {
+            Some(params) => py.detach(|| self.inner().to_cx_smirks_with_params(&params)),
             None => py.detach(|| self.inner().to_cx_smirks()),
         }
         .map_err(crate::reaction_writer::ReactionWriteError::from_rust)?;
@@ -369,9 +365,12 @@ impl Reaction {
             cx_fields,
             coordinate_selections,
         )?;
-        self._writer_to_cx_smirks_params(py, Some(&params))
+        let text = py
+            .detach(|| self.inner().to_cx_smirks_with_params(&params))
+            .map_err(crate::reaction_writer::ReactionWriteError::from_rust)?;
+        crate::property_values::decode_source_text(py, &text)
     }
-    fn match_params(&self, py: Python<'_>) -> SubstructMatchParams {
+    fn match_params(&self, py: Python<'_>) -> PyResult<SubstructMatchParams> {
         let native = self.inner().match_params().clone();
         match self
             .match_owner
@@ -380,15 +379,15 @@ impl Reaction {
             .as_ref()
         {
             Some(owner) => owner.borrow(py).with_native(py, native),
-            None => SubstructMatchParams::from_native(native),
+            None => SubstructMatchParams::from_native(py, native),
         }
     }
     fn with_match_params(&self, py: Python<'_>, params: &SubstructMatchParams) -> PyResult<Self> {
         let inner = self
             .inner()
-            .with_match_params(&params.inner)
+            .with_match_params(&params.to_rust(py)?)
             .map_err(ReactionModelError::from_rust)?;
-        let owner = Py::new(py, params.with_native(py, inner.match_params().clone()))?;
+        let owner = Py::new(py, params.with_native(py, inner.match_params().clone())?)?;
         Ok(Self {
             owner: ReactionOwner::Value(Arc::new(inner)),
             match_owner: Mutex::new(Some(owner)),
@@ -414,27 +413,24 @@ impl Reaction {
         drop(previous);
     }
     #[staticmethod]
-    #[pyo3(signature=(text, params=None, *, use_smiles=None, sanitize=None, replacements=None, allow_cxsmiles=None, strict_cxsmiles=None))]
+    #[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, use_smiles=crate::arguments::Argument::Missing, sanitize=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing))]
     fn from_smirks(
         text: &str,
-        params: Option<&ReactionParseParams>,
-        use_smiles: Option<bool>,
-        sanitize: Option<bool>,
-        replacements: Option<BTreeMap<String, String>>,
-        allow_cxsmiles: Option<bool>,
-        strict_cxsmiles: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, ReactionParseParams>>>,
+        use_smiles: crate::arguments::Argument<Option<bool>>,
+        sanitize: crate::arguments::Argument<Option<bool>>,
+        replacements: crate::arguments::Argument<Option<BTreeMap<String, String>>>,
+        allow_cxsmiles: crate::arguments::Argument<Option<bool>>,
+        strict_cxsmiles: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<Self> {
-        let configured = use_smiles.is_some()
-            || sanitize.is_some()
-            || replacements.is_some()
-            || allow_cxsmiles.is_some()
-            || strict_cxsmiles.is_some();
-        if params.is_some() && configured {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keyword configuration are mutually exclusive",
-            ));
-        }
-        if configured {
+        let keyword_form = use_smiles.is_supplied()
+            || sanitize.is_supplied()
+            || replacements.is_supplied()
+            || allow_cxsmiles.is_supplied()
+            || strict_cxsmiles.is_supplied();
+        crate::arguments::configuration_arguments!(params; use_smiles, sanitize, replacements, allow_cxsmiles, strict_cxsmiles);
+        let params = params.as_deref();
+        if keyword_form {
             Self::_from_smirks_keywords(
                 text,
                 use_smiles,
@@ -451,8 +447,9 @@ impl Reaction {
     #[doc = r#"{"role":"overload","target":"Reaction.from_smirks"}"#]
     #[pyo3(signature=(text, params=None))]
     fn _from_smirks_params(text: &str, params: Option<&ReactionParseParams>) -> PyResult<Self> {
+        let params = Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
         match params {
-            Some(params) => ck::Reaction::from_smirks_with_params(text, &params.inner),
+            Some(params) => ck::Reaction::from_smirks_with_params(text, &params),
             None => ck::Reaction::from_smirks(text),
         }
         .map(Self::from_rust)
@@ -476,26 +473,24 @@ impl Reaction {
             allow_cxsmiles,
             strict_cxsmiles,
         );
-        Self::_from_smirks_params(text, Some(&params))
-    }
-    #[staticmethod]
-    fn from_smirks_with_params(text: &str, params: &ReactionParseParams) -> PyResult<Self> {
-        ck::Reaction::from_smirks_with_params(text, &params.inner)
+        ck::Reaction::from_smirks_with_params(text, &params)
             .map(Self::from_rust)
             .map_err(ReactionParseError::from_rust)
     }
-    #[pyo3(signature = (params=None, *, silent=None))]
+    #[staticmethod]
+    fn from_smirks_with_params(text: &str, params: &ReactionParseParams) -> PyResult<Self> {
+        Self::_from_smirks_params(text, Some(params))
+    }
+    #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, silent=crate::arguments::Argument::Missing))]
     fn validate(
         &self,
-        params: Option<&ReactionValidationParams>,
-        silent: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, ReactionValidationParams>>>,
+        silent: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<ReactionValidationReport> {
-        if params.is_some() && silent.is_some() {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keyword configuration are mutually exclusive",
-            ));
-        }
-        if silent.is_some() {
+        let keyword_form = silent.is_supplied();
+        crate::arguments::configuration_arguments!(params; silent);
+        let params = params.as_deref();
+        if keyword_form {
             self._validate_keywords(silent)
         } else {
             self._validate_params(params)
@@ -531,18 +526,16 @@ impl Reaction {
         self._validate_params(Some(params))
     }
 
-    #[pyo3(signature = (params=None, *, silent=None))]
+    #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, silent=crate::arguments::Argument::Missing))]
     fn with_initialized(
         &self,
-        params: Option<&ReactionValidationParams>,
-        silent: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, ReactionValidationParams>>>,
+        silent: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<Self> {
-        if params.is_some() && silent.is_some() {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keyword configuration are mutually exclusive",
-            ));
-        }
-        if silent.is_some() {
+        let keyword_form = silent.is_supplied();
+        crate::arguments::configuration_arguments!(params; silent);
+        let params = params.as_deref();
+        if keyword_form {
             self._with_initialized_keywords(silent)
         } else {
             self._with_initialized_params(params)
@@ -678,27 +671,24 @@ impl Reaction {
         self.with_removal(self.inner().without_agents())
     }
 
-    #[pyo3(signature = (params=None, *, threshold_unmapped_atoms=None, move_to_agent_templates=None))]
+    #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, threshold_unmapped_atoms=crate::arguments::Argument::Missing, move_to_agent_templates=crate::arguments::Argument::Missing))]
     fn without_unmapped_reactants(
         &self,
-        params: Option<&ReactionTemplateRemovalParams>,
-        threshold_unmapped_atoms: Option<f64>,
-        move_to_agent_templates: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, ReactionTemplateRemovalParams>>>,
+        threshold_unmapped_atoms: crate::arguments::Argument<Option<f64>>,
+        move_to_agent_templates: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<ReactionTemplateRemoval> {
-        if params.is_some()
-            && (threshold_unmapped_atoms.is_some() || move_to_agent_templates.is_some())
-        {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "parameter object and configuration keywords are mutually exclusive",
-            ));
-        }
-        Ok(if params.is_some() {
-            self._without_unmapped_reactants_params(params)
-        } else {
+        let keyword_form =
+            threshold_unmapped_atoms.is_supplied() || move_to_agent_templates.is_supplied();
+        crate::arguments::configuration_arguments!(params; threshold_unmapped_atoms, move_to_agent_templates);
+        let params = params.as_deref();
+        Ok(if keyword_form {
             self._without_unmapped_reactants_keywords(
                 threshold_unmapped_atoms,
                 move_to_agent_templates,
             )
+        } else {
+            self._without_unmapped_reactants_params(params)
         })
     }
     #[doc = r#"{"role":"overload","target":"Reaction.without_unmapped_reactants"}"#]
@@ -739,27 +729,24 @@ impl Reaction {
         self._without_unmapped_reactants_params(Some(params))
     }
 
-    #[pyo3(signature = (params=None, *, threshold_unmapped_atoms=None, move_to_agent_templates=None))]
+    #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, threshold_unmapped_atoms=crate::arguments::Argument::Missing, move_to_agent_templates=crate::arguments::Argument::Missing))]
     fn without_unmapped_products(
         &self,
-        params: Option<&ReactionTemplateRemovalParams>,
-        threshold_unmapped_atoms: Option<f64>,
-        move_to_agent_templates: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, ReactionTemplateRemovalParams>>>,
+        threshold_unmapped_atoms: crate::arguments::Argument<Option<f64>>,
+        move_to_agent_templates: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<ReactionTemplateRemoval> {
-        if params.is_some()
-            && (threshold_unmapped_atoms.is_some() || move_to_agent_templates.is_some())
-        {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "parameter object and configuration keywords are mutually exclusive",
-            ));
-        }
-        Ok(if params.is_some() {
-            self._without_unmapped_products_params(params)
-        } else {
+        let keyword_form =
+            threshold_unmapped_atoms.is_supplied() || move_to_agent_templates.is_supplied();
+        crate::arguments::configuration_arguments!(params; threshold_unmapped_atoms, move_to_agent_templates);
+        let params = params.as_deref();
+        Ok(if keyword_form {
             self._without_unmapped_products_keywords(
                 threshold_unmapped_atoms,
                 move_to_agent_templates,
             )
+        } else {
+            self._without_unmapped_products_params(params)
         })
     }
     #[doc = r#"{"role":"overload","target":"Reaction.without_unmapped_products"}"#]
@@ -801,7 +788,7 @@ impl Reaction {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct ReactionTemplateRemoval {
     inner: Arc<ck::ReactionTemplateRemoval>,
     match_owner: Mutex<Option<Py<SubstructMatchParams>>>,
@@ -988,12 +975,9 @@ for removal in (False, True):
                     },
                 };
                 let expected = native.without_unmapped_reactants_with_params(&params.inner);
-                let via_params = reaction.without_unmapped_reactants(Some(&params), None, None)?;
-                let via_keywords = reaction.without_unmapped_reactants(
-                    None,
-                    Some(0.5),
-                    Some(move_to_agent_templates),
-                )?;
+                let via_params = reaction._without_unmapped_reactants_params(Some(&params));
+                let via_keywords = reaction
+                    ._without_unmapped_reactants_keywords(Some(0.5), Some(move_to_agent_templates));
                 for actual in [
                     via_params,
                     via_keywords,
@@ -1022,12 +1006,11 @@ for removal in (False, True):
                 }
                 let expected = native.without_unmapped_products_with_params(&params.inner);
                 for actual in [
-                    reaction.without_unmapped_products(Some(&params), None, None)?,
-                    reaction.without_unmapped_products(
-                        None,
+                    reaction._without_unmapped_products_params(Some(&params)),
+                    reaction._without_unmapped_products_keywords(
                         Some(0.5),
                         Some(move_to_agent_templates),
-                    )?,
+                    ),
                     reaction.without_unmapped_products_with_params(&params),
                 ] {
                     assert_eq!(
@@ -1043,9 +1026,14 @@ for removal in (False, True):
                         expected.removed_templates().len()
                     );
                 }
+                let params = Py::new(py, params)?;
                 assert!(
                     reaction
-                        .without_unmapped_products(Some(&params), Some(0.5), None)
+                        .without_unmapped_products(
+                            crate::arguments::Argument::Value(Some(params.borrow(py))),
+                            crate::arguments::Argument::Value(Some(0.5)),
+                            crate::arguments::Argument::Missing
+                        )
                         .err()
                         .unwrap()
                         .is_instance_of::<pyo3::exceptions::PyTypeError>(py)

@@ -185,7 +185,7 @@ error_projection!(UffBuilderError,UffBuilderErrorKind,ck::UffBuilderError,"uff",
     fn center_atom_index(&self)->Option<usize>{match self.inner {ck::UffBuilderError::SourceDirectionVectorBelowTolerance {center_atom_index,..}|ck::UffBuilderError::SourceTbpAtomPrecondition {center_atom_index}|ck::UffBuilderError::SourceTbpHybridizationPrecondition {center_atom_index,..}|ck::UffBuilderError::SourceTbpDegreePrecondition {center_atom_index,..}|ck::UffBuilderError::SourceTbpAxialBondNotFound {center_atom_index}|ck::UffBuilderError::SourceTbpEquatorialBondNotFound {center_atom_index,..}|ck::UffBuilderError::SourceTbpCenterParamsMissing {center_atom_index}=>Some(center_atom_index),_=>None}}
 });
 
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 #[doc = r#"{"role":"error_record"}"#]
 pub struct UffParameterError {
     inner: RetainedError<ck::UffParameterError>,

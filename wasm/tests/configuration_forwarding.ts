@@ -1,7 +1,7 @@
-import {Molecule, MoleculeBatch, SmilesParseParams, SmilesWriteParams, BatchParams, BatchQueryParams, MorganFingerprintParams, MorganParams, AtomPairFingerprintParams, TopologicalTorsionFingerprintParams, Reaction, ReactionWriteParams, AlignmentParameters, MolBlockWriteParams} from 'cosmolkit-generated';
+import {Molecule, MoleculeBatch, SmilesParseParams, SmilesWriteParams, BatchParams, BatchQueryParams, MorganFingerprintParams, MorganGeneratorParams, AtomPairFingerprintParams, TopologicalTorsionFingerprintParams, Reaction, ReactionWriteParams, AlignmentParameters, MolBlockWriteParams} from 'cosmolkit-generated';
 const molecule=Molecule.fromSmiles('CCO');
 molecule.fingerprintMorgan(new MorganFingerprintParams());
-molecule.fingerprintMorgan({generator:new MorganParams()});
+molecule.fingerprintMorgan({generator:new MorganGeneratorParams()});
 molecule.fingerprintAtomPair(new AtomPairFingerprintParams());
 molecule.fingerprintTopologicalTorsion(new TopologicalTorsionFingerprintParams());
 molecule.toMol(new MolBlockWriteParams());

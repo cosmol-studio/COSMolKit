@@ -7,7 +7,7 @@ enum_value!(TautomerEnumerationStatus, { Completed, MaxTautomersReached, MaxTran
 enum_value!(UffParameterErrorKind, { Preparation, ParameterTable, Typing });
 enum_value!(MmffVariant, { Mmff94, Mmff94s });
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object, eq)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
 pub struct UffOptimizationErrorKind {
     pub(crate) inner: ck::UffOptimizationErrorKind,
@@ -53,7 +53,7 @@ impl UffOptimizationErrorKind {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct TopologicalFingerprintOutput {
     pub(crate) inner: ck::TopologicalFingerprintOutput,
@@ -83,7 +83,7 @@ impl TopologicalFingerprintOutput {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct MmffAtomProperties {
     pub(crate) inner: ck::MmffAtomProperties,

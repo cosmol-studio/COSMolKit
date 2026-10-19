@@ -99,7 +99,7 @@ fn legacy_unfolded_ids_counts_and_compatibility_size_match_pinned_rdkit() {
 
     let modern = topological_torsion_sparse_count(
         &molecule.input(),
-        &TopologicalTorsionParams::default(),
+        &TopologicalTorsionGeneratorParams::default(),
         &TopologicalTorsionCall::default(),
         None,
     )
@@ -128,11 +128,13 @@ fn legacy_hashed_counts_match_exact_pinned_ids_and_modern_count_core() {
 
     let modern = count_helper(
         &molecule.input(),
-        &TopologicalTorsionParams {
+        &TopologicalTorsionGeneratorParams {
             fp_size: 1000,
             ..Default::default()
         },
-        &TopologicalTorsionParams::default().common().unwrap(),
+        &TopologicalTorsionGeneratorParams::default()
+            .common()
+            .unwrap(),
         &TopologicalTorsionCall::default(),
         1000,
         None,
@@ -454,7 +456,7 @@ fn legacy_stereo_done_presence_custom_invariants_and_modern_original_provider_co
                 legacy_topological_torsion_bits(&prepared_input, &params, &call).unwrap()
             );
         }
-        let modern_params = TopologicalTorsionParams {
+        let modern_params = TopologicalTorsionGeneratorParams {
             include_chirality: true,
             ..Default::default()
         };

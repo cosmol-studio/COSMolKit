@@ -270,7 +270,8 @@ impl Default for AtomCoordsMatchFunctor {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, cosmolkit_macros::Configuration)]
+#[configuration(stateful)]
 pub struct SubstructMatchParams {
     /// Maximum number of matches to return (default: 1000).
     pub max_matches: usize,
@@ -295,20 +296,25 @@ pub struct SubstructMatchParams {
     /// Whether aromatic bonds may match any single or double bond.
     pub aromatic_matches_single_or_double: bool,
     /// Atom property names that must have equal string values on both atoms.
+    #[configuration(adapter)]
     pub atom_properties: Vec<String>,
     /// Bond property names that must have equal string values on both bonds.
+    #[configuration(adapter)]
     pub bond_properties: Vec<String>,
     /// Optional caller-provided atom compatibility check.
+    #[configuration(adapter)]
     pub extra_atom_check: Option<ExtraAtomCheck>,
     /// Whether `extra_atom_check` replaces the default atom comparison.
     pub extra_atom_check_overrides_default_check: bool,
     /// Optional caller-provided bond compatibility check.
+    #[configuration(adapter)]
     pub extra_bond_check: Option<ExtraBondCheck>,
     /// Whether `extra_bond_check` replaces the default bond comparison.
     pub extra_bond_check_overrides_default_check: bool,
     /// Whether generic-group labels participate in final matching.
     pub use_generic_matchers: bool,
     /// Optional caller-provided final check over target atom indices.
+    #[configuration(adapter)]
     pub extra_final_check: Option<ExtraFinalCheck>,
 }
 

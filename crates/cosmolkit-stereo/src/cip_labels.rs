@@ -14,11 +14,11 @@ use crate::cip_graph::{
     descriptor_to_string,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct CipLabelOptions {
-    atoms: Option<Vec<AtomId>>,
-    bonds: Option<Vec<BondId>>,
-    max_recursive_iterations: u32,
+    pub atoms: Option<Vec<AtomId>>,
+    pub bonds: Option<Vec<BondId>>,
+    pub max_recursive_iterations: u32,
 }
 
 impl Default for CipLabelOptions {

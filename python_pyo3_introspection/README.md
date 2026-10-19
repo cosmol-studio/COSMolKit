@@ -26,7 +26,7 @@ This command compiles the Rust extension, extracts types, generates the Python
 package and `.pyi`, then runs the runtime samples and static type checks.
 
 The package is written to
-`python_pyo3_introspection/artifacts/smoke/package/fixed_projection/`.
+`python_pyo3_introspection/artifacts/smoke/package/cosmolkit/`.
 
 ## Check an existing build
 
@@ -61,14 +61,57 @@ After `build.py`, package the extension, `__init__.py`, `__init__.pyi` and `py.t
     --interpreter .venv/bin/python \
     --out python_pyo3_introspection/artifacts/wheels
 uv pip install --python .venv/bin/python --reinstall \
-    python_pyo3_introspection/artifacts/wheels/*.whl
-.venv/bin/python -c 'import fixed_projection as ck; print(ck.mol_from_smiles("CCO").num_atoms())'
+    python_pyo3_introspection/artifacts/wheels/cosmolkit-*.whl
+.venv/bin/python -c 'import cosmolkit as ck; print(ck.mol_from_smiles("CCO").num_atoms())'
 ```
 
 The final command prints `3`. Add `--release` to `maturin build` for an optimized
-wheel. Distribution name: `fixed-python-projection`; import name: `fixed_projection`.
+wheel. Distribution name: `cosmolkit`; import name: `cosmolkit`.
+
+Molecules support `pickle.dumps(mol)` and `pickle.loads(data)` through the stable
+`cosmolkit._molecule_from_binary` reconstruction function and native binary format.
 
 ## Extending bindings
+
+Configurations declare fields only in their Rust owner, using
+`#[derive(cosmolkit_macros::Configuration)]`. Re-export its generated
+hidden metadata alongside the native type; the facade also re-exports its
+`__ck_configuration_TypeName` macro. The Python declaration names only that type:
+
+```rust
+ck::project_configuration!(ck::MaccsFingerprintParams);
+```
+
+The shared projection generates typed construction and writable properties over
+the actual Rust configuration. Getters return tuples, readonly mappings or
+independent nested configuration values; replace fields through assignment.
+Conversion failures leave the Rust field unchanged, including fixed-array
+length errors. No editable Python container mirror is retained.
+
+```python
+p = ck.MorganCallParams(from_atoms=[0])
+p.from_atoms = [0, 2]          # Assigns the actual Rust field.
+assert p.from_atoms == (0, 2)
+# p.from_atoms.append(2)      # AttributeError: tuple has no append.
+# p.from_atoms = ["wrong"]   # TypeError; the field stays (0, 2).
+```
+
+Native annotations specify construction and composition: `required` keeps
+mandatory inputs, `none_default` accepts None as the native default, `flatten`
+exposes explicitly composed options, and `factory` forwards the registered
+`new()` method. Every ordinary parameter wrapper retains its native record.
+
+Callbacks, random sources and private execution state use an explicit adapter:
+
+```rust
+ck::project_configuration!(ck::SubstructMatchParams, using match_parameters);
+```
+
+Their native declarations mark `state` and `adapter` fields; ordinary fields
+still come from native metadata and assign the actual native fields.
+Adapters retain actual native ownership, initialization and invocation errors.
+Unmarked private fields, generic records and unsupported field types fail
+compilation, rather than being inferred or downgraded.
 
 Ordinary new APIs must not require generator, runner or consumer-sample changes.
 `tests/runtime.py` and `tests/positive.py` contain only a few fixed framework

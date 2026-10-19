@@ -22,19 +22,19 @@ def test_configuration_assignment_reaches_the_actual_operation():
 
 
 def test_assignment_preserves_nested_configuration_and_owned_lists():
-    generator = ck.MorganParams(radius=2, include_chirality=True)
+    generator = ck.MorganGeneratorParams(radius=2, include_chirality=True)
     params = ck.MorganFingerprintParams(generator=generator, from_atoms=[0])
     params.from_atoms = [1, 2]
     assert params.from_atoms == [1, 2]
     assert params.generator.radius == 2
     assert params.generator.include_chirality is True
-    params.generator = ck.MorganParams(radius=4)
+    params.generator = ck.MorganGeneratorParams(radius=4)
     assert params.generator.radius == 4
     assert params.from_atoms == [1, 2]
 
 
 def test_nested_edits_reach_native_calls_without_aliasing_constructor_inputs():
-    original = ck.MorganParams(radius=3)
+    original = ck.MorganGeneratorParams(radius=3)
     roots = [0]
     params = ck.MorganFingerprintParams(generator=original, from_atoms=roots)
     generator = params.generator
@@ -45,9 +45,9 @@ def test_nested_edits_reach_native_calls_without_aliasing_constructor_inputs():
     assert params.from_atoms == [0, 1]
     assert original.radius == 3 and roots == [0]
     molecule = ck.Molecule.from_smiles("CCO")
-    explicit = ck.MorganFingerprintParams(generator=ck.MorganParams(radius=0), from_atoms=[0, 1])
+    explicit = ck.MorganFingerprintParams(generator=ck.MorganGeneratorParams(radius=0), from_atoms=[0, 1])
     assert molecule.fingerprint_morgan_with_params(params, None).on_bits() == molecule.fingerprint_morgan_with_params(explicit, None).on_bits()
-    params.generator = ck.MorganParams(radius=2)
+    params.generator = ck.MorganGeneratorParams(radius=2)
     assert generator.radius == 2
     assert ck.MorganFingerprintParams(generator=generator).generator.radius == 2
     params.generator.count_bounds.append(16)

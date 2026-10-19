@@ -150,7 +150,7 @@ error_projection!(OptimizationStageError,OptimizationStageErrorKind,ck::Optimiza
 },source=Option<Py<ForceFieldKernelError>>);
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct SerialResultCapacityError {
     inner: ck::SerialResultCapacityError,
 }
@@ -181,7 +181,7 @@ impl SerialResultCapacityError {
     }
 }
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct SerialCoordinateCountError {
     inner: ck::SerialCoordinateCountError,
 }
@@ -270,7 +270,7 @@ error_projection!(retained UffPreparedOptimizationError,UffPreparedOptimizationE
 macro_rules! source_record {
     ($name:ident,$native:ident,$source:ty) => {
         #[doc = r#"{"role":"error_record"}"#]
-        #[pyclass(module="fixed_projection._native",extends=PyValueError)]
+        #[pyclass(module="cosmolkit",extends=PyValueError)]
         pub struct $name {
             inner: RetainedError<ck::$native>,
         }
@@ -431,7 +431,7 @@ error_projection!(retained MmffOptimizationFailure,MmffOptimizationFailureKind,c
     }}
 });
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum UffEvaluationFailureKind {
     MissingConformer,
@@ -440,7 +440,7 @@ pub enum UffEvaluationFailureKind {
     Kernel,
 }
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct UffEvaluationFailure {
     inner: RetainedError<ck::UffEvaluationError>,
 }
@@ -530,7 +530,7 @@ type EvaluationSource = Source<
     Source<Py<AutomaticForceFieldConstructionError>, Py<ForceFieldKernelError>>,
 >;
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct UffEvaluationError {
     inner: RetainedError<ck::UffEvaluationError>,
 }
@@ -584,7 +584,7 @@ type UffSource = Source<
     Source<Py<UffSingleError>, Source<Py<UffConformerError>, Py<UffEvaluationError>>>,
 >;
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct UffOptimizationError {
     inner: RetainedError<ck::UffOptimizationError>,
 }

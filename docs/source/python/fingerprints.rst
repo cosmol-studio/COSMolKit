@@ -60,7 +60,7 @@ bit-domain and count-simulation rules, count output folds counts into
    import cosmolkit as ck
 
    mol = ck.mol_from_smiles("CCCCO")
-   settings = ck.TopologicalTorsionParams(
+   settings = ck.TopologicalTorsionGeneratorParams(
        include_chirality=False,
        torsion_atom_count=4,
        count_simulation=True,
@@ -79,7 +79,7 @@ bit-domain and count-simulation rules, count output folds counts into
    print(count.nonzero_elements())
    print(bit.on_bits())
 
-The ``TopologicalTorsionParams`` passed to the constructor controls
+The ``TopologicalTorsionGeneratorParams`` passed to the constructor controls
 ``include_chirality``, ``torsion_atom_count``, ``count_simulation``,
 ``count_bounds``, ``fp_size``, ``bits_per_feature``, and
 ``only_shortest_paths``. ``generator.settings()`` returns a live settings view

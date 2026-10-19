@@ -94,8 +94,8 @@ pub fn morgan_profiles() -> Result<Vec<serde_json::Value>> {
 }
 
 impl MorganProfile {
-    fn generator_params(&self) -> MorganParams {
-        MorganParams {
+    fn generator_params(&self) -> MorganGeneratorParams {
+        MorganGeneratorParams {
             radius: self.radius,
             include_chirality: self.include_chirality,
             use_bond_types: self.use_bond_types,

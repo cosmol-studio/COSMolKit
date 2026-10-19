@@ -4,15 +4,16 @@ use crate::{
     SparseBitFingerprint, SparseCountFingerprint, SparseCountFingerprint32,
 };
 use cosmolkit_fingerprints::{
-    AtomPairAtomInvariantsGenerator, AtomPairCall, AtomPairError, AtomPairParams,
+    AtomPairAtomInvariantsGenerator, AtomPairCall, AtomPairError, AtomPairGeneratorParams,
     AtomPairPreparedInput, atom_pair_bits, atom_pair_count, atom_pair_sparse_bits,
     atom_pair_sparse_count,
 };
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct AtomPairFingerprintParams {
-    pub generator: AtomPairParams,
+    #[configuration(flatten)]
+    pub generator: AtomPairGeneratorParams,
     pub from_atoms: Option<Vec<u32>>,
     pub ignore_atoms: Option<Vec<u32>>,
     pub custom_atom_invariants: Option<Vec<u32>>,
@@ -23,8 +24,13 @@ pub struct AtomPairFingerprintParams {
 }
 impl Default for AtomPairFingerprintParams {
     fn default() -> Self {
+        Self::from(AtomPairGeneratorParams::default())
+    }
+}
+impl From<AtomPairGeneratorParams> for AtomPairFingerprintParams {
+    fn from(generator: AtomPairGeneratorParams) -> Self {
         Self {
-            generator: AtomPairParams::default(),
+            generator,
             from_atoms: None,
             ignore_atoms: None,
             custom_atom_invariants: None,
@@ -35,6 +41,15 @@ impl Default for AtomPairFingerprintParams {
         }
     }
 }
+crate::fingerprint_params::generator_fields!(AtomPairFingerprintParams, AtomPairGeneratorParams, {
+    min_distance, set_min_distance: u32,
+    max_distance, set_max_distance: u32,
+    include_chirality, set_include_chirality: bool,
+    use_2d, set_use_2d: bool,
+    count_simulation, set_count_simulation: bool,
+    fp_size, set_fp_size: u32,
+    bits_per_feature, set_bits_per_feature: u32,
+});
 #[derive(Debug)]
 pub enum AtomPairReadError {
     Preparation(FingerprintPreparationError),

@@ -183,7 +183,7 @@ def test_torsion_batch_thin_bindings_match_scalar_and_propagate_callback_errors(
     generator = ck.TopologicalTorsionFingerprintGenerator()
     expected = [m.fingerprint_topological_torsion_with_generator(generator).on_bits() for m in molecules]
     assert [v.on_bits() for v in batch.fingerprint_topological_torsion_list() if v is not None] == expected
-    generator_params = ck.TopologicalTorsionParams(fp_size=256, count_simulation=False)
+    generator_params = ck.TopologicalTorsionGeneratorParams(fp_size=256, count_simulation=False)
     options = ck.TopologicalTorsionFingerprintParams(generator=generator_params)
     calls: list[None] = []
     values = batch.fingerprint_topological_torsion_list_with_params(options, ck.BatchQueryParams(n_jobs=2, progress_callback=lambda: calls.append(None)))

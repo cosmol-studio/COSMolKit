@@ -32,7 +32,8 @@ pub enum AromaticityModel {
     Custom,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct AromaticityParams {
     pub model: AromaticityModel,
 }

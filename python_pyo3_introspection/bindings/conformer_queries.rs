@@ -62,10 +62,10 @@ pub(crate) fn count_keywords(
         py,
         try_embedding.unwrap_or(defaults.try_embedding),
         only_unassigned.unwrap_or(defaults.only_unassigned),
-        max_isomers.unwrap_or(defaults.max_isomers),
-        random_source,
-        unique.unwrap_or(defaults.unique),
         only_stereo_groups.unwrap_or(defaults.only_stereo_groups),
+        max_isomers.unwrap_or(defaults.max_isomers),
+        unique.unwrap_or(defaults.unique),
+        random_source,
     );
     count(py, molecule, Some(Py::new(py, options)?))
 }
@@ -121,10 +121,10 @@ mod tests {
                         py,
                         false,
                         false,
+                        false,
                         17,
+                        false,
                         Some(source.clone_ref(py)),
-                        false,
-                        false,
                     ),
                 )?;
                 let expected = molecule

@@ -50,7 +50,8 @@ pub enum XyzWriteError {
 }
 
 /// Controls RDKit-aligned XYZ conformer selection and coordinate precision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct XyzWriteParams {
     /// Select a conformer by id. `None` uses the first available conformer.
     pub conformer_id: Option<usize>,

@@ -2,8 +2,8 @@
 //! Fingerprint chemistry and worker scheduling remain in their sole domain owner.
 use crate::{
     AtomPairAtomInvariantsGenerator, Fingerprint, FingerprintAdditionalOutput, Molecule,
-    MorganParams, MorganReadError, QueryGraph, SparseBitFingerprint, SparseCountFingerprint,
-    SparseCountFingerprint32,
+    MorganGeneratorParams, MorganReadError, QueryGraph, SparseBitFingerprint,
+    SparseCountFingerprint, SparseCountFingerprint32,
 };
 use cosmolkit_fingerprints::{MorganAtomProvider, MorganBondProvider, MorganCall, MorganOperator};
 
@@ -34,28 +34,28 @@ impl MorganAtomInvariantsGenerator {
         }
     }
 }
-/// Immutable explicit bond-provider flags, captured independently of live settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Explicit bond-provider inputs, captured independently of live settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar, factory)]
 pub struct MorganBondInvariantsGenerator {
-    inner: MorganBondProvider,
+    pub use_bond_types: bool,
+    pub include_chirality: bool,
 }
 impl MorganBondInvariantsGenerator {
     #[must_use]
     pub fn new(use_bond_types: bool, include_chirality: bool) -> Self {
         Self {
-            inner: MorganBondProvider {
-                use_bond_types,
-                include_chirality,
-            },
+            use_bond_types,
+            include_chirality,
         }
     }
     #[must_use]
     pub fn use_bond_types(&self) -> bool {
-        self.inner.use_bond_types
+        self.use_bond_types
     }
     #[must_use]
     pub fn include_chirality(&self) -> bool {
-        self.inner.include_chirality
+        self.include_chirality
     }
 }
 impl Default for MorganBondInvariantsGenerator {
@@ -74,7 +74,8 @@ pub struct MorganSettings {
     inner: cosmolkit_fingerprints::MorganSettings,
 }
 /// Owned call selections. None and a present empty vector remain distinct.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(factory)]
 pub struct MorganCallParams {
     pub from_atoms: Option<Vec<u32>>,
     pub ignore_atoms: Option<Vec<u32>>,
@@ -116,17 +117,20 @@ impl Default for MorganCallParams {
 }
 impl MorganFingerprintGenerator {
     pub fn new(
-        params: Option<&MorganParams>,
+        params: Option<&MorganGeneratorParams>,
         atom_invariants: Option<&MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&MorganBondInvariantsGenerator>,
     ) -> Result<Self, MorganReadError> {
-        let defaults = MorganParams::default();
+        let defaults = MorganGeneratorParams::default();
         // One creation-time source getCopy equivalent for an explicit provider.
         // The owner consumes this independent vector; calculations only borrow it.
         MorganOperator::new(
             params.unwrap_or(&defaults),
             atom_invariants.map(|provider| provider.inner.clone()),
-            bond_invariants.map(|provider| provider.inner),
+            bond_invariants.map(|provider| MorganBondProvider {
+                use_bond_types: provider.use_bond_types,
+                include_chirality: provider.include_chirality,
+            }),
         )
         .map(|inner| Self { inner })
         .map_err(MorganReadError::Generator)
@@ -172,7 +176,7 @@ impl MorganSettings {
     live_field!(fp_size, set_fp_size, u32);
     live_field!(bits_per_feature, set_bits_per_feature, u32);
     live_field!(count_bounds, set_count_bounds, Vec<u32>);
-    pub fn params(&self) -> Result<MorganParams, MorganReadError> {
+    pub fn params(&self) -> Result<MorganGeneratorParams, MorganReadError> {
         self.inner.snapshot().map_err(MorganReadError::Generator)
     }
 }
@@ -308,7 +312,7 @@ mod tests {
 
     #[test]
     fn morgan_locked_ring_free_calls_and_bulk_keep_cold_cache() {
-        let params = MorganParams {
+        let params = MorganGeneratorParams {
             radius: 2,
             // Explicit captured provider below must override this factory flag.
             include_ring_membership: true,
@@ -320,7 +324,7 @@ mod tests {
         let cold = cold("C1CCCCC1", None);
         let before = acquisitions();
         let configured = MorganFingerprintParams {
-            generator: MorganParams {
+            generator: MorganGeneratorParams {
                 radius: 2,
                 include_ring_membership: false,
                 ..Default::default()
@@ -378,7 +382,7 @@ mod tests {
     #[test]
     fn morgan_locked_required_rings_reuse_warm_and_prepare_cold() {
         let generator = MorganFingerprintGenerator::new(
-            Some(&MorganParams {
+            Some(&MorganGeneratorParams {
                 radius: 2,
                 ..Default::default()
             }),

@@ -44,7 +44,7 @@ enum_input!(StereoTypeInput, PotentialStereoType);
 enum_input!(StereoSpecifiedInput, PotentialStereoSpecified);
 enum_input!(StereoDescriptorInput, PotentialStereoDescriptor);
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct PotentialStereoCenter {
     inner: ck::PotentialStereoCenter,
@@ -84,7 +84,7 @@ impl PotentialStereoCenter {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PotentialStereoInfo {
     pub(crate) inner: ck::PotentialStereoInfo,
@@ -144,7 +144,7 @@ impl PotentialStereoInfo {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct RingStereoRelation {
     pub(crate) inner: ck::RingStereoRelation,
@@ -175,7 +175,7 @@ impl RingStereoRelation {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PotentialStereoResult {
     pub(crate) inner: ck::PotentialStereoResult,

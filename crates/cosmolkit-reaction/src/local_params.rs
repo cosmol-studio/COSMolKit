@@ -1,6 +1,7 @@
 /// Source removal threshold. The name is retained from RDKit even though
 /// the predicate compares mapped-property count divided by heavy-atom count.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct ReactionTemplateRemovalParams {
     pub threshold_unmapped_atoms: f64,
     pub move_to_agent_templates: bool,

@@ -6,7 +6,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::error::Error;
 
-error_projection!(PickleError, PickleErrorKind, ck::PickleError, "io", {
+error_projection!(PickleError, PickleErrorKind, ck::PickleError, "serialization", {
     StereoGroup(_), UnexpectedEof, UnsupportedVersion(_),
     UnsupportedArchiveVersion { major: u16, minor: u16 },
     UnsupportedSectionVersion { section, version },
@@ -64,6 +64,35 @@ error_projection!(PickleError, PickleErrorKind, ck::PickleError, "io", {
 #[pyfunction]
 pub fn mol_from_binary(data: &[u8]) -> PyResult<Molecule> {
     Molecule::from_binary(data)
+}
+
+// Stable reconstruction entry used by existing cosmolkit pickle data.
+#[pyfunction]
+#[doc = r#"{"role":"private_export"}"#]
+pub fn _molecule_from_binary(data: &[u8]) -> PyResult<Molecule> {
+    Molecule::from_binary(data)
+}
+
+crate::callbacks::typed_callback!(
+    MoleculeRebuild,
+    [pyo3::type_hint_identifier!("builtins", "bytes")],
+    <Py<Molecule> as IntoPyObject<'_>>::OUTPUT_TYPE
+);
+
+/// Python's index protocol without a fixed-width integer restriction.
+pub struct PickleProtocol;
+impl FromPyObject<'_, '_> for PickleProtocol {
+    type Error = PyErr;
+    const INPUT_TYPE: pyo3::inspect::PyStaticExpr =
+        pyo3::type_hint_identifier!("typing", "SupportsIndex");
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self> {
+        value
+            .py()
+            .import("operator")?
+            .getattr("index")?
+            .call1((value,))?;
+        Ok(Self)
+    }
 }
 
 #[cfg(test)]

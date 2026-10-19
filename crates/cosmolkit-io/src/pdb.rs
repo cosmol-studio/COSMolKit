@@ -86,8 +86,10 @@ pub struct PdbWriteParams {
 /// All-set output uses 2D storage order followed by 3D storage order; IDs are
 /// not assumed contiguous. PDB stores 2D positions with z=0 and cannot retain
 /// the coordinate dimension or arbitrary CK conformer identifiers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct PdbExportParams {
+    #[configuration(none_default)]
     pub coordinate_selection: crate::MolCoordinateSelection,
     pub all_conformers: bool,
     pub flavor: u32,

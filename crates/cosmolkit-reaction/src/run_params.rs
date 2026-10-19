@@ -1,10 +1,11 @@
 use crate::ReactionCoordinateSelection;
 /// Options for ordered multiple-reagent reaction execution.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct ReactionRunParams {
     /// RDKit default 1000; zero leaves matching and combinations unlimited.
     pub max_products: u32,
     /// Empty selects Auto for each input; otherwise input arity must match.
+    #[configuration(none_default)]
     pub coordinate_selections: Vec<ReactionCoordinateSelection>,
     /// CK extension: fill missing product user properties from atom origins.
     /// False preserves native behavior; it never clears existing properties.
@@ -19,7 +20,9 @@ impl Default for ReactionRunParams {
         }
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct ReactionSingleRunParams {
+    #[configuration(none_default)]
     pub coordinate_selection: ReactionCoordinateSelection,
 }

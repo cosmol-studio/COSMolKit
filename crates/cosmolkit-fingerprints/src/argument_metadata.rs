@@ -2,9 +2,12 @@
 use crate::metadata::{
     bool_or, common_arguments_from_json, common_arguments_json, parse_object, u32_or,
 };
-use crate::{AtomPairParams, FingerprintJsonError, MorganParams, TopologicalTorsionParams};
+use crate::{
+    AtomPairGeneratorParams, FingerprintJsonError, MorganGeneratorParams,
+    TopologicalTorsionGeneratorParams,
+};
 
-impl MorganParams {
+impl MorganGeneratorParams {
     #[must_use]
     pub fn info_string(&self) -> String {
         // RDKit❗✔️: std::string MorganArguments::infoString() const {
@@ -97,7 +100,7 @@ impl MorganParams {
         Ok(result)
     }
 }
-impl AtomPairParams {
+impl AtomPairGeneratorParams {
     #[must_use]
     pub fn info_string(&self) -> String {
         // RDKit❗✔️: std::string AtomPairArguments::infoString() const {
@@ -185,7 +188,7 @@ impl AtomPairParams {
         Ok(result)
     }
 }
-impl TopologicalTorsionParams {
+impl TopologicalTorsionGeneratorParams {
     pub fn with_json(&self, json: &str) -> Result<Self, FingerprintJsonError> {
         // RDKit❗✔️: void TopologicalTorsionArguments::fromJSON(
         // RDKit❗✔️:     const boost::property_tree::ptree &pt) {

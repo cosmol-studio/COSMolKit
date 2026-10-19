@@ -149,3 +149,29 @@ pub use molecule_binary::{
     BinaryDerivedState, BinaryDerivedView, BinaryInput, BinaryRecord, PickleError,
     decode_molecule_binary, encode_molecule_binary,
 };
+
+#[doc(hidden)]
+#[cfg(all(feature = "bio", feature = "molecule"))]
+pub use bio_molecule::__configuration_BioMoleculeParams;
+#[doc(hidden)]
+#[cfg(feature = "bio")]
+pub use bio_pdb::__configuration_BioPdbReadParams;
+#[doc(hidden)]
+#[cfg(feature = "bio")]
+pub use bio_pdb_write::__configuration_BioPdbWriteParams;
+#[doc(hidden)]
+#[cfg(feature = "molecule")]
+pub use xyz::__configuration_XyzWriteParams;
+
+#[cfg(feature = "bio")]
+#[doc(hidden)]
+pub use bio_read::__configuration_BioReadParams;
+#[cfg(feature = "bio")]
+#[doc(hidden)]
+pub use bio_write::__configuration_BioMmcifWriteParams;
+#[cfg(feature = "molecule")]
+#[doc(hidden)]
+pub use mol_write::__configuration_MolBlockWriteParams;
+#[cfg(feature = "molecule")]
+#[doc(hidden)]
+pub use pdb::__configuration_PdbExportParams;

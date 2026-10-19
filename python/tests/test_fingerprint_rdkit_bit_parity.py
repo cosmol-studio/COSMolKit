@@ -21,7 +21,7 @@ def test_morgan_additional_output_python_container_projection():
     # representative list/tuple/dict projection without executing an oracle.
     ck_mol = cosmolkit.Molecule.from_smiles("CCO")
     ck_generator = cosmolkit.MorganFingerprintGenerator(
-        params=cosmolkit.MorganParams(radius=2, fp_size=2048)
+        params=cosmolkit.MorganGeneratorParams(radius=2, fp_size=2048)
     )
     ck_output = cosmolkit.FingerprintAdditionalOutput()
     ck_output.allocate_atom_counts()

@@ -2,7 +2,7 @@ use super::errors::AtomCodeExplanationError;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct AtomCodeExplanation {
     inner: ck::AtomCodeExplanation,
 }

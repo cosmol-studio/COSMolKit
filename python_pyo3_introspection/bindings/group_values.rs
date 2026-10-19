@@ -3,7 +3,7 @@ use crate::property_values::decode_source_text;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct SubstanceGroupId {
     pub(crate) inner: ck::SubstanceGroupId,
@@ -27,7 +27,7 @@ impl SubstanceGroupId {
 
 macro_rules! group_kinds {
     ($($variant:ident),+ $(,)?) => {
-        #[pyclass(module="fixed_projection._native", frozen, from_py_object, eq)]
+        #[pyclass(module="cosmolkit", frozen, from_py_object, eq)]
         #[derive(Clone, PartialEq)]
         pub struct SubstanceGroupKind { pub(crate) inner: ck::SubstanceGroupKind }
         #[pymethods]
@@ -65,7 +65,7 @@ pub enum SubstanceGroupKindInput {
 group_kinds! { Data, Superatom, MultipleGroup, StructuralRepeatUnit, Monomer,
 Copolymer, Crosslink, Graft, Modification, Mer, AnyPolymer, MixtureComponent, Mixture, Formulation }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct SGroupBracket {
     pub(crate) inner: ck::SGroupBracket,
@@ -86,7 +86,7 @@ impl SGroupBracket {
         *self.inner.points()
     }
 }
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct SGroupCState {
     pub(crate) inner: ck::SGroupCState,
@@ -110,7 +110,7 @@ impl SGroupCState {
         *self.inner.vector()
     }
 }
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct SGroupDisplay {
     pub(crate) inner: ck::SGroupDisplay,
@@ -155,7 +155,7 @@ impl SGroupDisplay {
             .transpose()
     }
 }
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct SubstanceGroup {
     pub(crate) inner: ck::SubstanceGroup,

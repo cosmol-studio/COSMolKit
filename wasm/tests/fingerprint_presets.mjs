@@ -9,7 +9,7 @@ test("concrete fingerprints and configured providers do not require public searc
     const molecule = ck.Molecule.fromSmiles("CCO");
     const generator = ck.MorganFingerprintGenerator.new();
     const featureProvider = ck.MorganAtomInvariantsGenerator.features([]);
-    const configured = new ck.MorganFingerprintGenerator(new ck.MorganParams(0), featureProvider);
+    const configured = new ck.MorganFingerprintGenerator(new ck.MorganGeneratorParams(0), featureProvider);
     try {
         assert.deepEqual(molecule.fingerprintMorgan().onBits(), molecule.fingerprintMorganWithGenerator(generator).onBits());
         assert.ok(molecule.fingerprintMorganWithGenerator(configured) instanceof ck.Fingerprint);

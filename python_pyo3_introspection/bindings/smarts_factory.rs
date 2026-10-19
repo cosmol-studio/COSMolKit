@@ -8,35 +8,28 @@ use pyo3::prelude::*;
 use std::collections::BTreeMap;
 
 #[pyfunction]
-#[pyo3(signature = (text, params=None, *, allow_cxsmiles=None, strict_cxsmiles=None, parse_name=None, merge_hs=None, skip_cleanup=None, debug_parse=None, replacements=None))]
+#[pyo3(signature = (text, params=crate::arguments::Argument::Missing, *, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing, parse_name=crate::arguments::Argument::Missing, merge_hs=crate::arguments::Argument::Missing, skip_cleanup=crate::arguments::Argument::Missing, debug_parse=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing))]
 pub fn parse_smarts(
     text: &str,
-    params: Option<&SmartsParseParams>,
-    allow_cxsmiles: Option<bool>,
-    strict_cxsmiles: Option<bool>,
-    parse_name: Option<bool>,
-    merge_hs: Option<bool>,
-    skip_cleanup: Option<bool>,
-    debug_parse: Option<bool>,
-    replacements: Option<BTreeMap<String, String>>,
+    params: crate::arguments::Argument<Option<PyRef<'_, SmartsParseParams>>>,
+    allow_cxsmiles: crate::arguments::Argument<Option<bool>>,
+    strict_cxsmiles: crate::arguments::Argument<Option<bool>>,
+    parse_name: crate::arguments::Argument<Option<bool>>,
+    merge_hs: crate::arguments::Argument<Option<bool>>,
+    skip_cleanup: crate::arguments::Argument<Option<bool>>,
+    debug_parse: crate::arguments::Argument<Option<bool>>,
+    replacements: crate::arguments::Argument<Option<BTreeMap<String, String>>>,
 ) -> PyResult<QueryGraph> {
-    let keywords = [
-        allow_cxsmiles,
-        strict_cxsmiles,
-        parse_name,
-        merge_hs,
-        skip_cleanup,
-        debug_parse,
-    ]
-    .iter()
-    .any(Option::is_some)
-        || replacements.is_some();
-    if params.is_some() && keywords {
-        return Err(PyTypeError::new_err(
-            "Params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if keywords {
+    let keyword_form = allow_cxsmiles.is_supplied()
+        || strict_cxsmiles.is_supplied()
+        || parse_name.is_supplied()
+        || merge_hs.is_supplied()
+        || skip_cleanup.is_supplied()
+        || debug_parse.is_supplied()
+        || replacements.is_supplied();
+    crate::arguments::configuration_arguments!(params; allow_cxsmiles, strict_cxsmiles, parse_name, merge_hs, skip_cleanup, debug_parse, replacements);
+    let params = params.as_deref();
+    if keyword_form {
         _parse_smarts_keywords(
             text,
             allow_cxsmiles,
@@ -60,12 +53,16 @@ pub fn _parse_smarts_params(
     params: Option<&SmartsParseParams>,
 ) -> PyResult<QueryGraph> {
     let result = match params {
-        Some(params) => ck::parse_smarts_with_params(text, &params.inner),
-        None => ck::parse_smarts(text),
+        Some(params) => Python::attach(|py| {
+            ck::parse_smarts_with_params(text, &params.to_rust(py)?)
+                .map_err(SmartsParseError::from_rust)
+        })
+        .map(QueryGraph::from_rust),
+        None => ck::parse_smarts(text)
+            .map(QueryGraph::from_rust)
+            .map_err(SmartsParseError::from_rust),
     };
     result
-        .map(QueryGraph::from_rust)
-        .map_err(SmartsParseError::from_rust)
 }
 
 #[pyfunction]
@@ -106,7 +103,9 @@ pub fn _parse_smarts_keywords(
             .map(|(key, value)| (key.into(), value.into()))
             .collect();
     }
-    _parse_smarts_params(text, Some(&SmartsParseParams { inner }))
+    ck::parse_smarts_with_params(text, &inner)
+        .map(QueryGraph::from_rust)
+        .map_err(SmartsParseError::from_rust)
 }
 
 #[pyfunction]
@@ -136,7 +135,7 @@ mod tests {
                 ..Default::default()
             };
             let expected = ck::parse_smarts_with_params(text, &inner).unwrap();
-            let params = Py::new(py, SmartsParseParams { inner })?;
+            let params = Py::new(py, SmartsParseParams::from_rust(py, inner)?)?;
             let kwargs = PyDict::new(py);
             kwargs.set_item("merge_hs", true)?;
             let from_keywords = module

@@ -29,7 +29,8 @@ pub enum RingFindType {
     SymmSssr,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct RingSearchParams {
     pub include_dative_bonds: bool,
     pub include_hydrogen_bonds: bool,

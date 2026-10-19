@@ -51,7 +51,7 @@ fn field_source(node: ErrorRef) -> PyErr {
 macro_rules! field_error {
     ($name:ident, $source:ty, $convert:expr) => {
         #[doc = r#"{"role":"error_record"}"#]
-        #[pyclass(module="fixed_projection._native", extends=PyValueError)]
+        #[pyclass(module="cosmolkit", extends=PyValueError)]
         pub struct $name {
             inner: RetainedError<ck::$name>,
         }
@@ -125,7 +125,7 @@ field_error!(
 type UffFieldSource = Source<Py<ForceFieldError>, Source<Py<RingFindingError>, Py<OperationError>>>;
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct UffForceFieldError {
     inner: RetainedError<ck::UffForceFieldError>,
 }
@@ -177,7 +177,7 @@ impl UffForceFieldError {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct MolecularForceField {
     pub(crate) inner: ck::MolecularForceField,
 }
@@ -281,25 +281,19 @@ evaluator_methods! {
             .map(|inner| ForceFieldEnergyGradient { inner })
             .map_err(ForceFieldError::from_rust)
     }
-    #[pyo3(signature=(params=None, *, max_iterations=None, force_tolerance=None, energy_tolerance=None))]
+#[pyo3(signature=(params=crate::arguments::Argument::Missing, *, max_iterations=crate::arguments::Argument::Missing, force_tolerance=crate::arguments::Argument::Missing, energy_tolerance=crate::arguments::Argument::Missing))]
     fn minimize_(
         &mut self,
         py: Python<'_>,
-        params: Option<&ForceFieldMinimizeParams>,
-        max_iterations: Option<u32>,
-        force_tolerance: Option<f64>,
-        energy_tolerance: Option<f64>,
+        params: crate::arguments::Argument<Option<PyRef<'_, ForceFieldMinimizeParams>>>,
+        max_iterations: crate::arguments::Argument<Option<u32>>,
+        force_tolerance: crate::arguments::Argument<Option<f64>>,
+        energy_tolerance: crate::arguments::Argument<Option<f64>>,
     ) -> PyResult<ForceFieldMinimizeOutcome> {
-        let keywords =
-            max_iterations.is_some() || force_tolerance.is_some() || energy_tolerance.is_some();
-        if params.is_some() && keywords {
-            return Err(mixed());
-        }
-        if keywords {
-            self._minimize_keywords(py, max_iterations, force_tolerance, energy_tolerance)
-        } else {
-            self._minimize_params(py, params)
-        }
+        let keyword_form = max_iterations.is_supplied() || force_tolerance.is_supplied() || energy_tolerance.is_supplied();
+        crate::arguments::configuration_arguments!(params; max_iterations, force_tolerance, energy_tolerance);
+        let params = params.as_deref();
+        if keyword_form { self._minimize_keywords(py, max_iterations, force_tolerance, energy_tolerance) } else { self._minimize_params(py, params) }
     }
     #[doc = r#"{"role":"overload","target":"MolecularForceField.minimize_"}"#]
     #[pyo3(signature=(params=None))]

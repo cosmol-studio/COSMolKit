@@ -80,3 +80,14 @@ pub use persistent::{
     ForceFieldError, MolecularForceFieldErrorKind, PreparedForceField, prepare_mmff_force_field,
     prepare_uff_force_field,
 };
+
+#[doc(hidden)]
+pub use mmff::optimization::__configuration_MmffConformerOptimizationParams;
+#[doc(hidden)]
+pub use mmff::optimization::__configuration_MmffEvaluationParams;
+#[doc(hidden)]
+pub use mmff::optimization::__configuration_MmffOptimizationParams;
+#[doc(hidden)]
+pub use mmff::properties_api::__configuration_MmffPropertiesParams;
+#[doc(hidden)]
+pub use uff::__configuration_UffEvaluationParams;

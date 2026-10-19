@@ -178,7 +178,8 @@ pub const PATTERN_FINGERPRINT_VERSION: &str = "1.0.0";
 /// Pattern fingerprint version 1.0.0 experimental; COSMolKit preserves that
 /// upstream metadata while validating the modeled ordinary-molecule boundary
 /// exactly against the pinned source revision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct PatternFingerprintParams {
     /// Number of bits in the explicit result. Zero is rejected.
     pub n_bits: usize,

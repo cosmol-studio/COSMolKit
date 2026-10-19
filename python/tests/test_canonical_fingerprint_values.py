@@ -72,14 +72,14 @@ def expression(node: ast.expr | None) -> str:
     return ast.unparse(node)
 
 
-def construct_morgan(**fields: object) -> cosmolkit.MorganParams:
-    constructor = cast(Callable[..., cosmolkit.MorganParams], cosmolkit.MorganParams)
+def construct_morgan(**fields: object) -> cosmolkit.MorganGeneratorParams:
+    constructor = cast(Callable[..., cosmolkit.MorganGeneratorParams], cosmolkit.MorganGeneratorParams)
     return constructor(**fields)
 
 
 class TestMorganParams:
     def test_defaults(self):
-        params = cosmolkit.MorganParams()
+        params = cosmolkit.MorganGeneratorParams()
         assert cosmolkit._binding_profile == "canonical-bootstrap"
         assert {field: cast(object, getattr(params, field)) for field in DEFAULTS} == DEFAULTS
         for field, value in DEFAULTS.items():
@@ -88,7 +88,7 @@ class TestMorganParams:
                 assert isinstance(actual, list)
             else:
                 assert type(actual) is type(value)
-        assert cosmolkit.MorganParams(count_bounds=None).count_bounds == [1, 2, 4, 8]
+        assert cosmolkit.MorganGeneratorParams(count_bounds=None).count_bounds == [1, 2, 4, 8]
 
     def test_all_fields(self):
         values = dict(radius=0, include_chirality=True, use_bond_types=False,
@@ -118,12 +118,12 @@ class TestMorganParams:
             _ = construct_morgan(count_bounds=[value])
 
     def test_explicit_empty_bounds(self):
-        assert cosmolkit.MorganParams(count_bounds=[]).count_bounds == []
-        assert cosmolkit.MorganParams(count_bounds=[0, 4294967295]).count_bounds == [0, 4294967295]
+        assert cosmolkit.MorganGeneratorParams(count_bounds=[]).count_bounds == []
+        assert cosmolkit.MorganGeneratorParams(count_bounds=[0, 4294967295]).count_bounds == [0, 4294967295]
 
     def test_configuration_bounds_copy_input_and_write_through(self):
         supplied = [8, 1, 1, 0]
-        params = cosmolkit.MorganParams(count_bounds=supplied)
+        params = cosmolkit.MorganGeneratorParams(count_bounds=supplied)
         supplied.append(99)
         first = params.count_bounds
         first[0] = 77
@@ -131,13 +131,13 @@ class TestMorganParams:
         assert params.count_bounds == [77, 1, 1, 0, 123]
         assert supplied == [8, 1, 1, 0, 99]
         assert first is params.count_bounds
-        default_result = cosmolkit.MorganParams().count_bounds
+        default_result = cosmolkit.MorganGeneratorParams().count_bounds
         default_result.clear()
-        assert cosmolkit.MorganParams().count_bounds == [1, 2, 4, 8]
+        assert cosmolkit.MorganGeneratorParams().count_bounds == [1, 2, 4, 8]
 
     @pytest.mark.parametrize("field", list(DEFAULTS), ids=list(DEFAULTS))
     def test_configuration_assignment_and_no_deletion(self, field: str):
-        params = cosmolkit.MorganParams()
+        params = cosmolkit.MorganGeneratorParams()
         setattr(params, field, DEFAULTS[field])
         assert getattr(params, field) == DEFAULTS[field]
         with pytest.raises(AttributeError):
@@ -145,7 +145,7 @@ class TestMorganParams:
         assert cast(object, getattr(params, field)) == DEFAULTS[field]
 
     def test_signature(self):
-        signature = inspect.signature(cosmolkit.MorganParams)
+        signature = inspect.signature(cosmolkit.MorganGeneratorParams)
         assert list(signature.parameters) == list(DEFAULTS)
         expected = dict(DEFAULTS, count_bounds=None)
         assert {name: cast(object, param.default) for name, param in signature.parameters.items()} == expected
@@ -153,7 +153,7 @@ class TestMorganParams:
 
     @pytest.mark.parametrize("case", ["positional", "unknown", "bounds_scalar"], ids=["positional", "unknown", "bounds_scalar"])
     def test_constructor_errors(self, case: str):
-        constructor = cast(Callable[..., cosmolkit.MorganParams], cosmolkit.MorganParams)
+        constructor = cast(Callable[..., cosmolkit.MorganGeneratorParams], cosmolkit.MorganGeneratorParams)
         with pytest.raises(TypeError):
             if case == "positional":
                 _ = constructor(3)
@@ -163,14 +163,14 @@ class TestMorganParams:
                 _ = constructor(count_bounds=8)
 
     def test_stub(self):
-        methods = stub_methods("MorganParams")
+        methods = stub_methods("MorganGeneratorParams")
         assert set(methods) == {"__new__", *DEFAULTS, "info_string", "to_json", "with_json"}
         constructor = methods["__new__"]
         assert [arg.arg for arg in constructor.args.args] == ["cls"]
         assert [arg.arg for arg in constructor.args.kwonlyargs] == list(DEFAULTS)
         expected = dict(DEFAULTS, count_bounds=None)
         assert [ast.literal_eval(value) for value in constructor.args.kw_defaults if value is not None] == list(expected.values())
-        assert expression(constructor.returns) == "MorganParams"
+        assert expression(constructor.returns) == "MorganGeneratorParams"
         for field, value in DEFAULTS.items():
             assert [ast.unparse(node) for node in methods[field].decorator_list] == ["property"]
             expected_type = "builtins.list[builtins.int]" if field == "count_bounds" else ("builtins.bool" if type(value) is bool else "builtins.int")

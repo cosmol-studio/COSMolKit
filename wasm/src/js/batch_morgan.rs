@@ -5,7 +5,7 @@ use crate::batch_queries::BatchQueryParams;
 use crate::fingerprint_values::Fingerprint;
 use crate::host_values::bool_value;
 use crate::morgan_parameters::{
-    MorganCallParams, MorganFingerprintParams, MorganParams, optional_atom, optional_bond,
+    MorganCallParams, MorganFingerprintParams, MorganGeneratorParams, optional_atom, optional_bond,
 };
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
@@ -160,7 +160,7 @@ impl MoleculeBatch {
     #[wasm_bindgen(js_name=fingerprintMorganListWithGeneratorParams,unchecked_return_type="(Fingerprint | null)[]")]
     pub fn fingerprint_morgan_list_with_generator_params(
         &self,
-        options: &MorganParams,
+        options: &MorganGeneratorParams,
         #[wasm_bindgen(unchecked_param_type = "MorganAtomInvariantsGenerator | null")]
         atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_param_type = "MorganBondInvariantsGenerator | null")]
@@ -190,7 +190,7 @@ impl MoleculeBatch {
     #[wasm_bindgen(js_name=fingerprintMorganWithOutputListWithGeneratorParams,unchecked_return_type="(BatchFingerprintOutput | null)[]")]
     pub fn fingerprint_morgan_with_output_list_with_generator_params(
         &self,
-        options: &MorganParams,
+        options: &MorganGeneratorParams,
         #[wasm_bindgen(unchecked_param_type = "MorganAtomInvariantsGenerator | null")]
         atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_param_type = "MorganBondInvariantsGenerator | null")]

@@ -13,7 +13,7 @@ use std::error::Error;
 
 enum_value!(MmffParamTable, { Def, Prop, Pbci, Chg, Bond, Bndk, Stbn, Dfsb, Angle, Oop, Tor, Vdw, HerschbachLaurie, CovRadPauEle });
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum MmffParamParseCauseKind {
     InvalidUnsigned,
@@ -21,7 +21,7 @@ pub enum MmffParamParseCauseKind {
     MissingToken,
     EmptyProcessedLine,
 }
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 #[doc = r#"{"role":"error_value"}"#]
 pub struct MmffParamParseCause {
     inner: ck::MmffParamParseCause,
@@ -55,7 +55,7 @@ impl MmffParamParseCause {
     }
 }
 
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 #[doc = r#"{"role":"error_record"}"#]
 pub struct MmffParamParseError {
     inner: ck::MmffParamParseError,
@@ -193,7 +193,7 @@ error_projection!(MmffMolPropertiesError,MmffMolPropertiesErrorKind,ck::MmffMolP
     }}
 });
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct MmffProperties {
     pub(crate) inner: ck::MmffProperties,
 }

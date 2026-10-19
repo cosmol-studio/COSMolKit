@@ -52,7 +52,7 @@ fn draw_random_bits(run: impl FnOnce(Python<'_>) -> PyResult<BigUint>) -> Result
     })
 }
 
-#[pyclass(module = "fixed_projection._native", weakref, eq)]
+#[pyclass(module = "cosmolkit", weakref, eq)]
 pub struct StereoisomerRandomSource {
     pub(crate) inner: ck::StereoisomerRandomSource,
     // This is the only strong Python callback owner. Native source clones
@@ -136,77 +136,32 @@ impl StereoisomerRandomSource {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct StereoisomerOptions {
     pub(crate) inner: ck::StereoisomerOptions,
     // Keep the exact source alive rather than an untraversable native clone.
     source_owner: Option<Py<StereoisomerRandomSource>>,
 }
 
-#[pymethods]
-impl StereoisomerOptions {
-    #[new]
-    #[pyo3(signature = (*,
-        try_embedding=ck::StereoisomerOptions::default().try_embedding,
-        only_unassigned=ck::StereoisomerOptions::default().only_unassigned,
-        max_isomers=ck::StereoisomerOptions::default().max_isomers,
-        random_source=None,
-        unique=ck::StereoisomerOptions::default().unique,
-        only_stereo_groups=ck::StereoisomerOptions::default().only_stereo_groups))]
-    pub(crate) fn new(
-        py: Python<'_>,
-        try_embedding: bool,
-        only_unassigned: bool,
-        max_isomers: usize,
-        random_source: Option<Py<StereoisomerRandomSource>>,
-        unique: bool,
-        only_stereo_groups: bool,
-    ) -> Self {
-        Self {
-            inner: ck::StereoisomerOptions::new(
-                try_embedding,
-                only_unassigned,
-                max_isomers,
-                random_source
-                    .as_ref()
-                    .map(|source| source.borrow(py).inner.clone()),
-                unique,
-                only_stereo_groups,
-            ),
-            source_owner: random_source,
-        }
-    }
-    #[staticmethod]
-    fn default() -> Self {
-        Self {
-            inner: ck::StereoisomerOptions::default(),
-            source_owner: None,
-        }
-    }
-    #[getter]
-    fn try_embedding(&self) -> bool {
-        self.inner.try_embedding()
-    }
-    #[setter]
-    fn set_try_embedding(&mut self, value: bool) {
-        self.inner.set_try_embedding(value);
-    }
-    #[getter]
-    fn only_unassigned(&self) -> bool {
-        self.inner.only_unassigned()
-    }
-    #[setter]
-    fn set_only_unassigned(&mut self, value: bool) {
-        self.inner.set_only_unassigned(value);
-    }
-    #[getter]
-    fn max_isomers(&self) -> usize {
-        self.inner.max_isomers()
-    }
-    #[setter]
-    fn set_max_isomers(&mut self, value: usize) {
-        self.inner.set_max_isomers(value);
-    }
+macro_rules! stereoisomer_configuration {
+    ($($field:ident: $ty:ty),+ $(,)?) => {
+        paste::paste! {
+            #[pymethods]
+            impl StereoisomerOptions {
+                #[new]
+                #[pyo3(signature = (*, $($field=ck::StereoisomerOptions::default().$field,)+ random_source=None))]
+                pub(crate) fn new(py: Python<'_>, $($field: $ty,)+ random_source: Option<Py<StereoisomerRandomSource>>) -> Self {
+                    let mut inner = ck::StereoisomerOptions::default();
+                    $(inner.$field = $field;)+
+                    inner.set_random_source(random_source.as_ref().map(|source| source.borrow(py).inner.clone()));
+                    Self { inner, source_owner: random_source }
+                }
+                #[staticmethod]
+                fn default() -> Self {
+                    Self { inner: ck::StereoisomerOptions::default(), source_owner: None }
+                }
+                $(#[getter] fn $field(&self) -> $ty { self.inner.$field() }
+                #[setter] fn [<set_ $field>](&mut self, value: $ty) { self.inner.[<set_ $field>](value); })+
     #[getter]
     pub(crate) fn random_source(&self, py: Python<'_>) -> Option<Py<StereoisomerRandomSource>> {
         self.source_owner
@@ -226,26 +181,13 @@ impl StereoisomerOptions {
         self.inner.set_random_source(None);
         self.source_owner = None;
     }
-    #[getter]
-    fn unique(&self) -> bool {
-        self.inner.unique()
-    }
-    #[setter]
-    fn set_unique(&mut self, value: bool) {
-        self.inner.set_unique(value);
-    }
-    #[getter]
-    fn only_stereo_groups(&self) -> bool {
-        self.inner.only_stereo_groups()
-    }
-    #[setter]
-    fn set_only_stereo_groups(&mut self, value: bool) {
-        self.inner.set_only_stereo_groups(value);
-    }
-    fn __repr__(&self) -> String {
-        format!("{:?}", self.inner)
-    }
+
+                fn __repr__(&self) -> String { format!("{:?}", self.inner) }
+            }
+        }
+    };
 }
+ck::project_configuration!(ck::StereoisomerOptions, using stereoisomer_configuration);
 
 #[cfg(test)]
 mod tests {

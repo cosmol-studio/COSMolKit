@@ -17,28 +17,25 @@ pub fn protein_from_mmcif(py: Python<'_>, text: &str) -> PyResult<Protein> {
 }
 
 #[pyfunction]
-#[pyo3(signature=(text,params=None,*,max_line_length=None,check_non_ascii=None,ignore_ter=None,split_chain_on_ter=None,skip_remarks=None))]
+#[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,max_line_length=crate::arguments::Argument::Missing,check_non_ascii=crate::arguments::Argument::Missing,ignore_ter=crate::arguments::Argument::Missing,split_chain_on_ter=crate::arguments::Argument::Missing,skip_remarks=crate::arguments::Argument::Missing))]
 pub fn protein_from_pdb(
     py: Python<'_>,
     text: &str,
-    params: Option<&BioPdbReadParams>,
-    max_line_length: Option<i32>,
-    check_non_ascii: Option<bool>,
-    ignore_ter: Option<bool>,
-    split_chain_on_ter: Option<bool>,
-    skip_remarks: Option<bool>,
+    params: crate::arguments::Argument<Option<PyRef<'_, BioPdbReadParams>>>,
+    max_line_length: crate::arguments::Argument<Option<i32>>,
+    check_non_ascii: crate::arguments::Argument<Option<bool>>,
+    ignore_ter: crate::arguments::Argument<Option<bool>>,
+    split_chain_on_ter: crate::arguments::Argument<Option<bool>>,
+    skip_remarks: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Protein> {
-    let configured = max_line_length.is_some()
-        || check_non_ascii.is_some()
-        || ignore_ter.is_some()
-        || split_chain_on_ter.is_some()
-        || skip_remarks.is_some();
-    if params.is_some() && configured {
-        return Err(PyTypeError::new_err(
-            "Params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if configured {
+    let keyword_form = max_line_length.is_supplied()
+        || check_non_ascii.is_supplied()
+        || ignore_ter.is_supplied()
+        || split_chain_on_ter.is_supplied()
+        || skip_remarks.is_supplied();
+    crate::arguments::configuration_arguments!(params; max_line_length, check_non_ascii, ignore_ter, split_chain_on_ter, skip_remarks);
+    let params = params.as_deref();
+    if keyword_form {
         _protein_from_pdb_keywords(
             py,
             text,

@@ -5,7 +5,7 @@ use std::fmt;
 use cosmolkit_core::{RingInfo, RingSearchParams, ValenceAssignment, symmetrized_sssr};
 use cosmolkit_fingerprints::{
     Fingerprint, FingerprintAdditionalOutput, MorganAtomInvariants, MorganCall, MorganError,
-    MorganParams, MorganPreparedInput, SparseBitFingerprint, SparseCountFingerprint,
+    MorganGeneratorParams, MorganPreparedInput, SparseBitFingerprint, SparseCountFingerprint,
     SparseCountFingerprint32, morgan_bits, morgan_count, morgan_sparse_bits, morgan_sparse_count,
 };
 
@@ -171,10 +171,11 @@ pub enum MorganInvariants {
 ///
 /// Optional vectors preserve `None` separately from `Some(Vec::new())` and
 /// are borrowed when projected into the fingerprint owner's call arguments.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 pub struct MorganFingerprintParams {
     /// Canonical Morgan generator options and source defaults.
-    pub generator: MorganParams,
+    #[configuration(flatten)]
+    pub generator: MorganGeneratorParams,
     /// Source atom indices at which to start fingerprint expansion.
     pub from_atoms: Option<Vec<u32>>,
     /// Source atom indices to ignore.
@@ -186,24 +187,49 @@ pub struct MorganFingerprintParams {
     /// Source conformer identifier; the source generator currently ignores it.
     pub conformer_id: i32,
     /// Atom invariant generation policy.
+    #[configuration(none_default)]
     pub invariants: MorganInvariants,
 }
 
 impl Default for MorganFingerprintParams {
     fn default() -> Self {
+        Self::from(MorganGeneratorParams::default())
+    }
+}
+
+impl From<MorganGeneratorParams> for MorganFingerprintParams {
+    fn from(generator: MorganGeneratorParams) -> Self {
+        Self::from((generator, crate::MorganCallParams::default()))
+    }
+}
+
+impl From<(MorganGeneratorParams, crate::MorganCallParams)> for MorganFingerprintParams {
+    fn from((generator, call): (MorganGeneratorParams, crate::MorganCallParams)) -> Self {
         // Reuse the canonical source-shaped generator defaults. The per-call
         // values match MorganCall::default while retaining owned vectors here.
         Self {
-            generator: MorganParams::default(),
-            from_atoms: None,
-            ignore_atoms: None,
-            custom_atom_invariants: None,
-            custom_bond_invariants: None,
-            conformer_id: -1,
+            generator,
+            from_atoms: call.from_atoms,
+            ignore_atoms: call.ignore_atoms,
+            custom_atom_invariants: call.custom_atom_invariants,
+            custom_bond_invariants: call.custom_bond_invariants,
+            conformer_id: call.conformer_id,
             invariants: MorganInvariants::Connectivity,
         }
     }
 }
+
+crate::fingerprint_params::generator_fields!(MorganFingerprintParams, MorganGeneratorParams, {
+    radius, set_radius: u32,
+    include_chirality, set_include_chirality: bool,
+    use_bond_types, set_use_bond_types: bool,
+    include_ring_membership, set_include_ring_membership: bool,
+    only_nonzero_invariants, set_only_nonzero_invariants: bool,
+    include_redundant_environments, set_include_redundant_environments: bool,
+    fp_size, set_fp_size: u32,
+    count_simulation, set_count_simulation: bool,
+    bits_per_feature, set_bits_per_feature: u32,
+});
 
 impl Molecule {
     /// Computes a sparse Morgan count fingerprint with source defaults.
@@ -378,7 +404,7 @@ mod tests {
     use crate::{
         BINDING_CONTRACT, BindingItem, BindingKind, BindingOwner, BindingReceiver, BindingTypeRole,
         DerivedState, Fingerprint, FingerprintAdditionalOutput, FingerprintPreparationError,
-        FunctionStatus, Molecule, MorganFingerprintParams, MorganInvariants, MorganParams,
+        FunctionStatus, Molecule, MorganFingerprintParams, MorganGeneratorParams, MorganInvariants,
         MorganReadError, QueryGraph, SparseBitFingerprint, StateModel,
     };
 
@@ -405,7 +431,7 @@ mod tests {
         let cache = molecule.derived_cache_arc_runtime();
         for custom in [false, true] {
             let params = MorganFingerprintParams {
-                generator: MorganParams {
+                generator: MorganGeneratorParams {
                     radius: 2,
                     include_ring_membership: custom,
                     ..Default::default()
@@ -505,7 +531,7 @@ mod tests {
         );
 
         let generator = crate::MorganFingerprintGenerator::new(
-            Some(&MorganParams {
+            Some(&MorganGeneratorParams {
                 radius: 2,
                 include_ring_membership: false,
                 ..Default::default()
@@ -809,7 +835,7 @@ mod tests {
         assert!(params.custom_bond_invariants.is_none());
         assert_eq!(params.conformer_id, -1);
         assert!(matches!(params.invariants, MorganInvariants::Connectivity));
-        assert_eq!(params.generator, MorganParams::default());
+        assert_eq!(params.generator, MorganGeneratorParams::default());
 
         let empty_vectors = MorganFingerprintParams {
             from_atoms: Some(Vec::new()),
@@ -972,10 +998,10 @@ mod tests {
                 BindingTypeRole::Error,
             ),
             (
-                "types.MorganParams",
-                "crate::MorganParams",
-                "MorganParams",
-                "MorganParams",
+                "types.MorganGeneratorParams",
+                "crate::MorganGeneratorParams",
+                "MorganGeneratorParams",
+                "MorganGeneratorParams",
                 BindingTypeRole::Parameter,
             ),
             (
@@ -1536,9 +1562,9 @@ mod tests {
         // zero at size one; O03 separately fixes three custom radius-zero IDs
         // colliding at that same index.
         let size_one_params = MorganFingerprintParams {
-            generator: MorganParams {
+            generator: MorganGeneratorParams {
                 fp_size: 1,
-                ..MorganParams::default()
+                ..MorganGeneratorParams::default()
             },
             ..MorganFingerprintParams::default()
         };
@@ -1549,10 +1575,10 @@ mod tests {
         assert_eq!(size_one.nonzero_elements(), &BTreeMap::from([(0, 6)]));
 
         let custom_collision_params = MorganFingerprintParams {
-            generator: MorganParams {
+            generator: MorganGeneratorParams {
                 radius: 0,
                 fp_size: 1,
-                ..MorganParams::default()
+                ..MorganGeneratorParams::default()
             },
             custom_atom_invariants: Some(vec![1, 2, 3]),
             ..MorganFingerprintParams::default()
@@ -1773,9 +1799,9 @@ mod tests {
         assert_eq!(short, configured);
 
         let collision_params = MorganFingerprintParams {
-            generator: MorganParams {
+            generator: MorganGeneratorParams {
                 fp_size: 1,
-                ..MorganParams::default()
+                ..MorganGeneratorParams::default()
             },
             ..MorganFingerprintParams::default()
         };
@@ -1786,12 +1812,12 @@ mod tests {
         assert_eq!(collision.on_bits(), vec![0]);
 
         let count_simulation_params = MorganFingerprintParams {
-            generator: MorganParams {
+            generator: MorganGeneratorParams {
                 radius: 0,
                 fp_size: 128,
                 count_simulation: true,
                 count_bounds: vec![1, 2, 4, 8],
-                ..MorganParams::default()
+                ..MorganGeneratorParams::default()
             },
             custom_atom_invariants: Some(vec![1, 2, 1]),
             ..MorganFingerprintParams::default()
@@ -1808,12 +1834,12 @@ mod tests {
     fn morgan_public_bits_all_output_masks_none_and_exact_lengths() {
         let molecule = morgan_public_sparse_count_molecule("CCO");
         let params = MorganFingerprintParams {
-            generator: MorganParams {
+            generator: MorganGeneratorParams {
                 radius: 0,
                 fp_size: 128,
                 count_simulation: true,
                 count_bounds: vec![1, 2, 4, 8],
-                ..MorganParams::default()
+                ..MorganGeneratorParams::default()
             },
             custom_atom_invariants: Some(vec![1, 2, 1]),
             ..MorganFingerprintParams::default()
@@ -2049,9 +2075,9 @@ mod tests {
             }};
         }
 
-        let radius_zero = MorganParams {
+        let radius_zero = MorganGeneratorParams {
             radius: 0,
-            ..MorganParams::default()
+            ..MorganGeneratorParams::default()
         };
 
         // Literal argument-shape tables freeze None, present-empty, and

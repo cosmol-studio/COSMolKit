@@ -8,12 +8,12 @@ use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
-pub struct MorganParams {
-    pub(crate) inner: ck::MorganParams,
+pub struct MorganGeneratorParams {
+    pub(crate) inner: ck::MorganGeneratorParams,
 }
 #[cosmolkit_wasm::javascript_options("MorganParamsOptions")]
 #[wasm_bindgen]
-impl MorganParams {
+impl MorganGeneratorParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "number")] radius: JsValue,
@@ -29,10 +29,10 @@ impl MorganParams {
         count_bounds: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] bits_per_feature: JsValue,
     ) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: canonical_fingerprint_values.rs::MorganParams::new:
+        // COSMolKit❗✔️: canonical_fingerprint_values.rs::MorganGeneratorParams::new:
         //         // Configuration transport only: validation belongs to canonical callers.
         // O(fields + supplied array length), detached configurations only.
-        let mut inner = ck::MorganParams::default();
+        let mut inner = ck::MorganGeneratorParams::default();
         if !radius.is_undefined() {
             inner.radius = u32_value(&radius, "radius")?;
         }
@@ -149,11 +149,11 @@ impl MorganInvariants {
     }
 }
 #[wasm_bindgen(
-    inline_js = "export function visitMorganParams(v,f){try{f(v);}catch(cause){throw new TypeError('invalid MorganParams',{cause});}} export function visitMorganInvariants(v,f){try{f(v);}catch(cause){throw new TypeError('invalid MorganInvariants',{cause});}} export function visitMorganQuery(v,f){try{f(v);}catch(cause){throw new TypeError('invalid QueryGraph',{cause});}} export function visitMorganAtom(v,f){try{f(v);}catch(cause){throw new TypeError('invalid MorganAtomInvariantsGenerator',{cause});}} export function visitMorganBond(v,f){try{f(v);}catch(cause){throw new TypeError('invalid MorganBondInvariantsGenerator',{cause});}}"
+    inline_js = "export function visitMorganParams(v,f){try{f(v);}catch(cause){throw new TypeError('invalid MorganGeneratorParams',{cause});}} export function visitMorganInvariants(v,f){try{f(v);}catch(cause){throw new TypeError('invalid MorganInvariants',{cause});}} export function visitMorganQuery(v,f){try{f(v);}catch(cause){throw new TypeError('invalid QueryGraph',{cause});}} export function visitMorganAtom(v,f){try{f(v);}catch(cause){throw new TypeError('invalid MorganAtomInvariantsGenerator',{cause});}} export function visitMorganBond(v,f){try{f(v);}catch(cause){throw new TypeError('invalid MorganBondInvariantsGenerator',{cause});}}"
 )]
 extern "C" {
     #[wasm_bindgen(catch,js_name=visitMorganParams)]
-    fn visit_params(value: &JsValue, visit: &mut dyn FnMut(&MorganParams)) -> Result<(), JsValue>;
+    fn visit_params(value: &JsValue, visit: &mut dyn FnMut(&MorganGeneratorParams)) -> Result<(), JsValue>;
     #[wasm_bindgen(catch,js_name=visitMorganInvariants)]
     fn visit_invariants(
         value: &JsValue,
@@ -181,7 +181,7 @@ pub struct MorganFingerprintParams {
 impl MorganFingerprintParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "MorganParams | null")] generator: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "MorganGeneratorParams | null")] generator: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type="number[] | Uint32Array | null")] from_atoms:JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
         ignore_atoms: JsValue,
@@ -195,7 +195,7 @@ impl MorganFingerprintParams {
     ) -> Result<Self, JsValue> {
         let mut inner = ck::MorganFingerprintParams::default();
         if !generator.is_null() && !generator.is_undefined() {
-            visit_params(&generator, &mut |v: &MorganParams| {
+            visit_params(&generator, &mut |v: &MorganGeneratorParams| {
                 inner.generator = v.inner.clone()
             })?;
         }
@@ -216,8 +216,8 @@ impl MorganFingerprintParams {
         Ok(Self { inner })
     }
     #[wasm_bindgen(getter)]
-    pub fn generator(&self) -> MorganParams {
-        MorganParams {
+    pub fn generator(&self) -> MorganGeneratorParams {
+        MorganGeneratorParams {
             inner: self.inner.generator.clone(),
         }
     }

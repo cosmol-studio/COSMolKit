@@ -144,12 +144,12 @@ def test_provider_query_copy_lifetime_none_empty_and_custom_precedence():
     patterns = [ck.QueryGraph.from_smarts("[C]"), ck.QueryGraph.from_smarts("[O]")]
     provider = ck.MorganAtomInvariantsGenerator.features(patterns)
     patterns.clear()
-    generator = ck.MorganFingerprintGenerator(params=ck.MorganParams(radius=0), atom_invariants=provider)
+    generator = ck.MorganFingerprintGenerator(params=ck.MorganGeneratorParams(radius=0), atom_invariants=provider)
     del provider
     molecule = ck.Molecule.from_smiles("CCO")
     assert molecule.fingerprint_morgan_sparse_count_with_generator(generator).nonzero_elements() == {1: 2, 2: 1}
     assert json.loads(generator.to_json())["atomInvariantsGenerator"]["patternSMARTS"] == ["C", "O"]
-    empty = ck.MorganFingerprintGenerator(params=ck.MorganParams(radius=0), atom_invariants=ck.MorganAtomInvariantsGenerator.features([]))
+    empty = ck.MorganFingerprintGenerator(params=ck.MorganGeneratorParams(radius=0), atom_invariants=ck.MorganAtomInvariantsGenerator.features([]))
     assert molecule.fingerprint_morgan_sparse_count_with_generator(empty).nonzero_elements() == {0: 3}
     params = ck.MorganCallParams(custom_atom_invariants=[11, 12, 13])
     assert molecule.fingerprint_morgan_sparse_count_with_generator(empty, params=params).nonzero_elements() == {11: 1, 12: 1, 13: 1}
@@ -157,7 +157,7 @@ def test_provider_query_copy_lifetime_none_empty_and_custom_precedence():
     assert "patternSMARTS" not in json.loads(default.to_json())["atomInvariantsGenerator"]
 
 def test_root_explicit_ring_decision_and_bond_provider_precedence():
-    params = ck.MorganParams(include_ring_membership=False, use_bond_types=False)
+    params = ck.MorganGeneratorParams(include_ring_membership=False, use_bond_types=False)
     generator = ck.MorganFingerprintGenerator(params=params)
     explicit = ck.MorganFingerprintGenerator(params=params, atom_invariants=ck.MorganAtomInvariantsGenerator.connectivity(True), bond_invariants=ck.MorganBondInvariantsGenerator(use_bond_types=True, include_chirality=True))
     assert json.loads(generator.to_json())["atomInvariantsGenerator"]["includeRingMembership"] == "false"

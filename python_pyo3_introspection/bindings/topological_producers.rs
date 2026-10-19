@@ -23,27 +23,25 @@ pub(crate) fn keyword_params(
     atom_invariants: Option<Vec<u32>>,
     from_atoms: Option<Vec<u32>>,
     ignore_atoms: Option<Vec<u32>>,
-) -> TopologicalFingerprintParams {
+) -> ck::TopologicalFingerprintParams {
     let defaults = ck::TopologicalFingerprintParams::default();
-    TopologicalFingerprintParams {
-        inner: ck::TopologicalFingerprintParams {
-            min_path: min_path.unwrap_or(defaults.min_path),
-            max_path: max_path.unwrap_or(defaults.max_path),
-            fp_size: fp_size.unwrap_or(defaults.fp_size),
-            num_bits_per_feature: num_bits_per_feature.unwrap_or(defaults.num_bits_per_feature),
-            use_hs: use_hs.unwrap_or(defaults.use_hs),
-            target_density: target_density.unwrap_or(defaults.target_density),
-            min_size: min_size.unwrap_or(defaults.min_size),
-            branched_paths: branched_paths.unwrap_or(defaults.branched_paths),
-            use_bond_order: use_bond_order.unwrap_or(defaults.use_bond_order),
-            atom_invariants,
-            from_atoms,
-            ignore_atoms,
-        },
+    ck::TopologicalFingerprintParams {
+        min_path: min_path.unwrap_or(defaults.min_path),
+        max_path: max_path.unwrap_or(defaults.max_path),
+        fp_size: fp_size.unwrap_or(defaults.fp_size),
+        num_bits_per_feature: num_bits_per_feature.unwrap_or(defaults.num_bits_per_feature),
+        use_hs: use_hs.unwrap_or(defaults.use_hs),
+        target_density: target_density.unwrap_or(defaults.target_density),
+        min_size: min_size.unwrap_or(defaults.min_size),
+        branched_paths: branched_paths.unwrap_or(defaults.branched_paths),
+        use_bond_order: use_bond_order.unwrap_or(defaults.use_bond_order),
+        atom_invariants,
+        from_atoms,
+        ignore_atoms,
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct TopologicalFingerprintResult {
     pub(crate) inner: Arc<ck::TopologicalFingerprintResult>,
@@ -88,22 +86,24 @@ impl TopologicalFingerprintResult {
 
 #[pyfunction]
 pub fn fingerprint_topological_query_with_params(
+    py: Python<'_>,
     query: &QueryGraph,
     params: &TopologicalFingerprintParams,
 ) -> PyResult<Fingerprint> {
-    ck::fingerprint_topological_query_with_params(query.inner(), &params.inner)
+    ck::fingerprint_topological_query_with_params(query.inner(), &params.to_rust(py)?)
         .map(|inner| Fingerprint { inner })
         .map_err(TopologicalFingerprintError::from_rust)
 }
 #[pyfunction]
 pub fn fingerprint_topological_query_with_output_with_params(
+    py: Python<'_>,
     query: &QueryGraph,
     params: &TopologicalFingerprintParams,
     request: &TopologicalFingerprintOutputRequest,
 ) -> PyResult<TopologicalFingerprintResult> {
     ck::fingerprint_topological_query_with_output_with_params(
         query.inner(),
-        &params.inner,
+        &params.to_rust(py)?,
         request.inner,
     )
     .map(TopologicalFingerprintResult::from_rust)
@@ -202,14 +202,12 @@ mod tests {
                         .unwrap();
                     let params = Py::new(
                         py,
-                        TopologicalFingerprintParams {
-                            inner: native_params,
-                        },
+                        TopologicalFingerprintParams::from_rust(py, native_params)?,
                     )?;
                     let kwargs = PyDict::new(py);
                     {
                         let value = params.borrow(py);
-                        let p = &value.inner;
+                        let p = value.to_rust(py)?;
                         kwargs.set_item("min_path", p.min_path)?;
                         kwargs.set_item("max_path", p.max_path)?;
                         kwargs.set_item("fp_size", p.fp_size)?;
@@ -368,7 +366,7 @@ mod tests {
                             assert_eq!(result.borrow(py).inner.as_ref(), &expected);
                         }
                     }
-                    assert_eq!(params.borrow(py).inner, original_params);
+                    assert_eq!(params.borrow(py).to_rust(py)?, original_params);
                 }
                 assert_eq!(molecule.borrow(py).inner.to_binary().unwrap(), before);
                 drop(molecule);
@@ -411,7 +409,7 @@ mod tests {
                     .inner
                     .fingerprint_topological_with_params(&native)
                     .unwrap_err();
-                let params = Py::new(py, TopologicalFingerprintParams { inner: native })?;
+                let params = Py::new(py, TopologicalFingerprintParams::from_rust(py, native)?)?;
                 for method in [
                     "fingerprint_topological",
                     "fingerprint_topological_with_output",

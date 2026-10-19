@@ -1,6 +1,5 @@
 use crate::error_framework::error_projection;
 use crate::native::Fingerprint;
-use crate::parameters::parameters;
 use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -8,26 +7,13 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
 
-parameters!(TopologicalFingerprintParams, ck::TopologicalFingerprintParams, {
-    min_path: u32,
-    max_path: u32,
-    fp_size: u32,
-    num_bits_per_feature: u32,
-    use_hs: bool,
-    target_density: f64,
-    min_size: u32,
-    branched_paths: bool,
-    use_bond_order: bool,
-    atom_invariants: Option<Vec<u32>>,
-    from_atoms: Option<Vec<u32>>,
-    ignore_atoms: Option<Vec<u32>>,
-});
+ck::project_configuration!(ck::TopologicalFingerprintParams);
 
 error_projection!(BatchFingerprintOutputError, BatchFingerprintOutputErrorKind, ck::BatchFingerprintOutputError, "fingerprint", {
     MissingAdditionalOutput { fingerprint_kind: &'static str },
 }, cause = |_: &ck::BatchFingerprintOutputError| None::<PyErr>);
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct BatchFingerprintOutput {
     inner: Arc<ck::BatchFingerprintOutput>,
 }
@@ -59,7 +45,7 @@ impl BatchFingerprintOutput {
 
 /// Immutable view keeps the actual result alive; constructing it never copies
 /// provenance. Individual reads only allocate their requested Python value.
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct BatchFingerprintAdditionalOutput {
     owner: Arc<ck::BatchFingerprintOutput>,
 }

@@ -7,7 +7,7 @@ from pathlib import Path
 import cosmolkit as ck
 import pytest
 
-TYPES = [ck.MorganParams, ck.AtomPairParams, ck.TopologicalTorsionParams]
+TYPES = [ck.MorganGeneratorParams, ck.AtomPairGeneratorParams, ck.TopologicalTorsionGeneratorParams]
 
 
 @pytest.mark.parametrize("kind", TYPES)
@@ -84,7 +84,7 @@ def test_typed_errors_retain_receiver_and_source_cause(kind, text, expected_kind
 
 
 def test_derived_fields_and_source_omitted_morgan_policies():
-    m = ck.MorganParams(use_bond_types=False, include_ring_membership=False,
+    m = ck.MorganGeneratorParams(use_bond_types=False, include_ring_membership=False,
                         include_redundant_environments=True)
     result = m.with_json('{"radius":"4294967295","onlyNonzeroInvariants":"1","useBondTypes":true,"includeRedundantEnvironments":false}')
     assert result.radius == 4294967295
@@ -94,10 +94,10 @@ def test_derived_fields_and_source_omitted_morgan_policies():
     assert result.include_redundant_environments is True
     assert result.info_string() == 'MorganArguments onlyNonzeroInvariants=1 radius=4294967295'
     assert not {'useBondTypes', 'includeRingMembership', 'includeRedundantEnvironments'} & json.loads(result.to_json()).keys()
-    ap = ck.AtomPairParams().with_json('{"use2D":false,"minDistance":30,"maxDistance":1,"numBitsPerFeature":0}')
+    ap = ck.AtomPairGeneratorParams().with_json('{"use2D":false,"minDistance":30,"maxDistance":1,"numBitsPerFeature":0}')
     assert ap.info_string() == 'AtomPairArguments use2D=0 minDistance=30 maxDistance=1'
     assert ap.bits_per_feature == 0
-    tt = ck.TopologicalTorsionParams().with_json('{"torsionAtomCount":8,"onlyShortestPaths":"true","numBitsPerFeature":0}')
+    tt = ck.TopologicalTorsionGeneratorParams().with_json('{"torsionAtomCount":8,"onlyShortestPaths":"true","numBitsPerFeature":0}')
     assert tt.info_string() == 'TopologicalTorsionArguments torsionAtomCount=8 onlyShortestPaths=1'
     assert tt.bits_per_feature == 0
 
@@ -106,7 +106,7 @@ def test_original_generated_stub_projects_value_update_and_structured_error():
     stub = Path(__file__).resolve().parents[1] / 'cosmolkit.pyi'
     classes = {node.name: node for node in ast.parse(stub.read_text()).body
                if isinstance(node, ast.ClassDef)}
-    for name in ('MorganParams', 'AtomPairParams', 'TopologicalTorsionParams'):
+    for name in ('MorganGeneratorParams', 'AtomPairGeneratorParams', 'TopologicalTorsionGeneratorParams'):
         methods = {node.name: node for node in classes[name].body
                    if isinstance(node, ast.FunctionDef)}
         assert {'info_string', 'to_json', 'with_json'} <= methods.keys()

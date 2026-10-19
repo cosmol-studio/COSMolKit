@@ -1040,7 +1040,7 @@ impl MoleculeBatch {
     }
     pub fn fingerprint_morgan_list_with_generator_params(
         &self,
-        options: &ck::MorganParams,
+        options: &ck::MorganGeneratorParams,
         atom_invariants: Option<&ck::MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&ck::MorganBondInvariantsGenerator>,
         call: &ck::MorganCallParams,
@@ -1056,7 +1056,7 @@ impl MoleculeBatch {
     }
     pub fn fingerprint_morgan_with_output_list_with_generator_params(
         &self,
-        options: &ck::MorganParams,
+        options: &ck::MorganGeneratorParams,
         atom_invariants: Option<&ck::MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&ck::MorganBondInvariantsGenerator>,
         call: &ck::MorganCallParams,
@@ -1090,7 +1090,7 @@ mod morgan_tests {
         )
         .unwrap();
         let scalar = ck::Molecule::from_smiles("CCO").unwrap();
-        let generator = ck::MorganParams {
+        let generator = ck::MorganGeneratorParams {
             radius: 2,
             ..Default::default()
         };

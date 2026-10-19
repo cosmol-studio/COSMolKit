@@ -38,7 +38,7 @@ enum_input!(BioConnectionKindInput, BioConnectionKind);
 enum_input!(BioAsuInput, BioAsu);
 enum_input!(BioHelixClassInput, BioHelixClass);
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct ResidueAddress {
     pub(crate) inner: ck::ResidueAddress,
@@ -76,7 +76,7 @@ impl ResidueAddress {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct AtomAddress {
     pub(crate) inner: ck::AtomAddress,
@@ -114,7 +114,7 @@ impl AtomAddress {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioConnection {
     pub(crate) inner: ck::BioConnection,
@@ -195,7 +195,7 @@ impl BioConnection {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioCisPep {
     pub(crate) inner: ck::BioCisPep,
@@ -252,7 +252,7 @@ impl BioCisPep {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioModRes {
     pub(crate) inner: ck::BioModRes,
@@ -311,7 +311,7 @@ impl BioModRes {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", from_py_object)]
+#[pyclass(module = "cosmolkit", from_py_object)]
 #[derive(Clone)]
 pub struct BioHelix {
     pub(crate) inner: ck::BioHelix,
@@ -364,7 +364,7 @@ impl BioHelix {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioStrand {
     pub(crate) inner: ck::BioStrand,
@@ -425,7 +425,7 @@ impl BioStrand {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioSheet {
     pub(crate) inner: ck::BioSheet,

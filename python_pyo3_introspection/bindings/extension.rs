@@ -2,20 +2,11 @@
 use crate::arguments::Argument;
 use crate::io_batch_params::BatchErrorMode;
 use crate::native::Molecule;
-use crate::parameters::parameters;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::collections::BTreeMap;
 
-parameters!(SmilesParseParams, ck::SmilesParseParams, {
-    sanitize: bool,
-    allow_cxsmiles: bool,
-    strict_cxsmiles: bool,
-    parse_name: bool,
-    remove_hs: bool,
-    skip_cleanup: bool,
-    debug_parse: bool,
-}, string_maps = [replacements]);
+ck::project_configuration!(ck::SmilesParseParams);
 
 #[pyfunction]
 #[pyo3(signature = (text, params=Argument::Missing, *, sanitize=Argument::Missing, allow_cxsmiles=Argument::Missing, strict_cxsmiles=Argument::Missing, parse_name=Argument::Missing, remove_hs=Argument::Missing, skip_cleanup=Argument::Missing, debug_parse=Argument::Missing, replacements=Argument::Missing))]
@@ -61,7 +52,8 @@ pub fn _mol_from_smiles_params(
 ) -> PyResult<Molecule> {
     let defaults;
     let effective = if let Some(params) = params {
-        &params.inner
+        defaults = Python::attach(|py| params.to_rust(py))?;
+        &defaults
     } else {
         defaults = ck::SmilesParseParams::default();
         &defaults
@@ -110,10 +102,12 @@ pub fn _mol_from_smiles_keywords(
     if let Some(option) = replacements {
         value.replacements = option;
     }
-    _mol_from_smiles_params(text, Some(&SmilesParseParams { inner: value }))
+    ck::Molecule::from_smiles_with_params(text, &value)
+        .map(|inner| Molecule { inner })
+        .map_err(crate::errors::SmilesError::from_rust)
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct MoleculeBatch {
     pub(crate) inner: ck::MoleculeBatch,
 }
@@ -279,11 +273,10 @@ impl MoleculeBatch {
             filenames,
             report_path,
         };
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
         py.detach(|| {
-            self.inner.write_images_with_params(
-                &directory,
-                options.map(|v| &v.inner).unwrap_or(&resolved),
-            )
+            self.inner
+                .write_images_with_params(&directory, options.as_ref().unwrap_or(&resolved))
         })
         .map(|inner| crate::batch_errors::BatchExportReport { inner })
         .map_err(crate::batch_errors::BatchValidationError::from_rust)
@@ -311,19 +304,21 @@ impl MoleculeBatch {
     fn fingerprint_morgan_list_with_generator_params(
         &self,
         py: Python<'_>,
-        options: &crate::fingerprint_configuration::MorganParams,
+        options: &crate::fingerprint_configuration::MorganGeneratorParams,
         atom_invariants: Option<&crate::morgan_configuration::MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&crate::fingerprint_providers::MorganBondInvariantsGenerator>,
         call: &crate::params::MorganCallParams,
         params: &crate::batch_query_params::BatchQueryParams,
     ) -> PyResult<Vec<Option<crate::native::Fingerprint>>> {
+        let call = call.to_rust(py)?;
+        let options = options.to_rust(py)?;
         params
             .with_callback(py, |runtime| {
                 self.inner.fingerprint_morgan_list_with_generator_params(
-                    &options.inner,
+                    &options,
                     atom_invariants.map(|v| &v.inner),
                     bond_invariants.map(|v| &v.inner),
-                    &call.inner,
+                    &call,
                     runtime,
                 )
             })?
@@ -339,21 +334,23 @@ impl MoleculeBatch {
     fn fingerprint_morgan_with_output_list_with_generator_params(
         &self,
         py: Python<'_>,
-        options: &crate::fingerprint_configuration::MorganParams,
+        options: &crate::fingerprint_configuration::MorganGeneratorParams,
         atom_invariants: Option<&crate::morgan_configuration::MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&crate::fingerprint_providers::MorganBondInvariantsGenerator>,
         call: &crate::params::MorganCallParams,
         collect_additional_output: bool,
         params: &crate::batch_query_params::BatchQueryParams,
     ) -> PyResult<Vec<Option<crate::batch_fingerprint_values::BatchFingerprintOutput>>> {
+        let call = call.to_rust(py)?;
+        let options = options.to_rust(py)?;
         params
             .with_callback(py, |runtime| {
                 self.inner
                     .fingerprint_morgan_with_output_list_with_generator_params(
-                        &options.inner,
+                        &options,
                         atom_invariants.map(|v| &v.inner),
                         bond_invariants.map(|v| &v.inner),
-                        &call.inner,
+                        &call,
                         collect_additional_output,
                         runtime,
                     )
@@ -455,7 +452,8 @@ impl MoleculeBatch {
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<crate::native::Fingerprint>>> {
         let defaults = ck::MorganFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner
                 .fingerprint_morgan_list_with_params(selected, runtime)
@@ -485,7 +483,8 @@ impl MoleculeBatch {
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<crate::native::Fingerprint>>> {
         let defaults = ck::AtomPairFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner
                 .fingerprint_atom_pair_list_with_params(selected, runtime)
@@ -515,7 +514,8 @@ impl MoleculeBatch {
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<crate::fingerprint_values::SparseCountFingerprint>>> {
         let defaults = ck::AtomPairFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner
                 .fingerprint_atom_pair_sparse_count_list_with_params(selected, runtime)
@@ -545,7 +545,8 @@ impl MoleculeBatch {
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<crate::fingerprint_values::SparseCountFingerprint32>>> {
         let defaults = ck::AtomPairFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner
                 .fingerprint_atom_pair_count_list_with_params(selected, runtime)
@@ -577,7 +578,8 @@ impl MoleculeBatch {
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<crate::fingerprint_values::SparseBitFingerprint>>> {
         let defaults = ck::AtomPairFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner
                 .fingerprint_atom_pair_sparse_bits_list_with_params(selected, runtime)
@@ -607,7 +609,8 @@ impl MoleculeBatch {
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<crate::native::Fingerprint>>> {
         let defaults = ck::TopologicalTorsionFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner
                 .fingerprint_topological_torsion_list_with_params(selected, runtime)
@@ -637,7 +640,8 @@ impl MoleculeBatch {
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<crate::native::Fingerprint>>> {
         let defaults = ck::LayeredFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner
                 .fingerprint_layered_list_with_params(selected, runtime)
@@ -667,7 +671,8 @@ impl MoleculeBatch {
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<crate::ordered_results::LayeredFingerprintResult>>> {
         let defaults = ck::LayeredFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner
                 .fingerprint_layered_with_output_list_with_params(selected, runtime)
@@ -728,7 +733,8 @@ impl MoleculeBatch {
         collect_additional_output: bool,
     ) -> PyResult<Vec<Option<crate::batch_fingerprint_values::BatchFingerprintOutput>>> {
         let defaults = ck::MorganFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner.fingerprint_morgan_with_output_list_with_params(
                 selected,
@@ -774,7 +780,8 @@ impl MoleculeBatch {
         collect_additional_output: bool,
     ) -> PyResult<Vec<Option<crate::batch_fingerprint_values::BatchFingerprintOutput>>> {
         let defaults = ck::AtomPairFingerprintParams::default();
-        let selected = options.map(|v| &v.inner).unwrap_or(&defaults);
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
+        let selected = options.as_ref().unwrap_or(&defaults);
         crate::batch_calls::query(py, params, n_jobs, progress_bar, |runtime| {
             self.inner
                 .fingerprint_atom_pair_with_output_list_with_params(
@@ -840,13 +847,14 @@ impl MoleculeBatch {
                 &runtime.inner
             }
         };
+        let parse = parse.map(|value| value.to_rust(py)).transpose()?;
         py.detach(|| {
             if unconfigured {
                 ck::MoleculeBatch::from_smiles_list(&smiles)
             } else {
                 ck::MoleculeBatch::from_smiles_list_with_params(
                     &smiles,
-                    parse.map(|v| &v.inner).unwrap_or(&parse_default),
+                    parse.as_ref().unwrap_or(&parse_default),
                     exec,
                 )
             }
@@ -954,22 +962,21 @@ impl MoleculeBatch {
         Self::read_sdf(py, path, Some(read), Some(mode), n_jobs, Some(progress_bar))
     }
 
-    #[pyo3(signature=(options=None,params=None,*,errors=None,n_jobs=None,progress_bar=None))]
+    #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
     fn sanitize(
         &self,
         py: Python<'_>,
         options: Option<&crate::sanitize_values::SanitizeParams>,
-        params: Option<&crate::io_batch_params::BatchParams>,
-        errors: Option<crate::io_batch_params::BatchErrorModeInput>,
-        n_jobs: Option<usize>,
-        progress_bar: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, crate::io_batch_params::BatchParams>>>,
+        errors: crate::arguments::Argument<Option<crate::io_batch_params::BatchErrorModeInput>>,
+        n_jobs: crate::arguments::Argument<Option<usize>>,
+        progress_bar: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<Self> {
-        if params.is_some() && (errors.is_some() || n_jobs.is_some() || progress_bar.is_some()) {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and runtime keywords are mutually exclusive",
-            ));
-        }
-        if errors.is_some() || n_jobs.is_some() || progress_bar.is_some() {
+        let keyword_form =
+            errors.is_supplied() || n_jobs.is_supplied() || progress_bar.is_supplied();
+        crate::arguments::configuration_arguments!(params; errors, n_jobs, progress_bar);
+        let params = params.as_deref();
+        if keyword_form {
             self._batch_sanitize_keywords(py, options, errors, n_jobs, progress_bar)
         } else {
             self._batch_sanitize_params(py, options, params)
@@ -1019,22 +1026,21 @@ impl MoleculeBatch {
     ) -> PyResult<Self> {
         self._batch_sanitize_params(py, Some(options), Some(params))
     }
-    #[pyo3(signature=(options=None,params=None,*,errors=None,n_jobs=None,progress_bar=None))]
+    #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
     fn with_hydrogens(
         &self,
         py: Python<'_>,
         options: Option<&crate::chemical_params::AddHsParams>,
-        params: Option<&crate::io_batch_params::BatchParams>,
-        errors: Option<crate::io_batch_params::BatchErrorModeInput>,
-        n_jobs: Option<usize>,
-        progress_bar: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, crate::io_batch_params::BatchParams>>>,
+        errors: crate::arguments::Argument<Option<crate::io_batch_params::BatchErrorModeInput>>,
+        n_jobs: crate::arguments::Argument<Option<usize>>,
+        progress_bar: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<Self> {
-        if params.is_some() && (errors.is_some() || n_jobs.is_some() || progress_bar.is_some()) {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and runtime keywords are mutually exclusive",
-            ));
-        }
-        if errors.is_some() || n_jobs.is_some() || progress_bar.is_some() {
+        let keyword_form =
+            errors.is_supplied() || n_jobs.is_supplied() || progress_bar.is_supplied();
+        crate::arguments::configuration_arguments!(params; errors, n_jobs, progress_bar);
+        let params = params.as_deref();
+        if keyword_form {
             self._batch_with_hydrogens_keywords(py, options, errors, n_jobs, progress_bar)
         } else {
             self._batch_with_hydrogens_params(py, options, params)
@@ -1050,12 +1056,13 @@ impl MoleculeBatch {
     ) -> PyResult<Self> {
         let defaults = ck::AddHsParams::default();
         let execution = ck::BatchParams::default();
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
         py.detach(|| {
             if options.is_none() && params.is_none() {
                 self.inner.with_hydrogens()
             } else {
                 self.inner.with_hydrogens_with_params(
-                    options.map(|v| &v.inner).unwrap_or(&defaults),
+                    options.as_ref().unwrap_or(&defaults),
                     params.map(|v| &v.inner).unwrap_or(&execution),
                 )
             }
@@ -1084,22 +1091,21 @@ impl MoleculeBatch {
     ) -> PyResult<Self> {
         self._batch_with_hydrogens_params(py, Some(options), Some(params))
     }
-    #[pyo3(signature=(options=None,params=None,*,errors=None,n_jobs=None,progress_bar=None))]
+    #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
     fn without_hydrogens(
         &self,
         py: Python<'_>,
         options: Option<&crate::params::RemoveHsParams>,
-        params: Option<&crate::io_batch_params::BatchParams>,
-        errors: Option<crate::io_batch_params::BatchErrorModeInput>,
-        n_jobs: Option<usize>,
-        progress_bar: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, crate::io_batch_params::BatchParams>>>,
+        errors: crate::arguments::Argument<Option<crate::io_batch_params::BatchErrorModeInput>>,
+        n_jobs: crate::arguments::Argument<Option<usize>>,
+        progress_bar: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<Self> {
-        if params.is_some() && (errors.is_some() || n_jobs.is_some() || progress_bar.is_some()) {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and runtime keywords are mutually exclusive",
-            ));
-        }
-        if errors.is_some() || n_jobs.is_some() || progress_bar.is_some() {
+        let keyword_form =
+            errors.is_supplied() || n_jobs.is_supplied() || progress_bar.is_supplied();
+        crate::arguments::configuration_arguments!(params; errors, n_jobs, progress_bar);
+        let params = params.as_deref();
+        if keyword_form {
             self._batch_without_hydrogens_keywords(py, options, errors, n_jobs, progress_bar)
         } else {
             self._batch_without_hydrogens_params(py, options, params)
@@ -1149,22 +1155,21 @@ impl MoleculeBatch {
     ) -> PyResult<Self> {
         self._batch_without_hydrogens_params(py, Some(options), Some(params))
     }
-    #[pyo3(signature=(options=None,params=None,*,errors=None,n_jobs=None,progress_bar=None))]
+    #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
     fn with_kekulized_bonds(
         &self,
         py: Python<'_>,
         options: Option<&crate::params::KekulizeParams>,
-        params: Option<&crate::io_batch_params::BatchParams>,
-        errors: Option<crate::io_batch_params::BatchErrorModeInput>,
-        n_jobs: Option<usize>,
-        progress_bar: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, crate::io_batch_params::BatchParams>>>,
+        errors: crate::arguments::Argument<Option<crate::io_batch_params::BatchErrorModeInput>>,
+        n_jobs: crate::arguments::Argument<Option<usize>>,
+        progress_bar: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<Self> {
-        if params.is_some() && (errors.is_some() || n_jobs.is_some() || progress_bar.is_some()) {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and runtime keywords are mutually exclusive",
-            ));
-        }
-        if errors.is_some() || n_jobs.is_some() || progress_bar.is_some() {
+        let keyword_form =
+            errors.is_supplied() || n_jobs.is_supplied() || progress_bar.is_supplied();
+        crate::arguments::configuration_arguments!(params; errors, n_jobs, progress_bar);
+        let params = params.as_deref();
+        if keyword_form {
             self._batch_with_kekulized_bonds_keywords(py, options, errors, n_jobs, progress_bar)
         } else {
             self._batch_with_kekulized_bonds_params(py, options, params)
@@ -1214,22 +1219,21 @@ impl MoleculeBatch {
     ) -> PyResult<Self> {
         self._batch_with_kekulized_bonds_params(py, Some(options), Some(params))
     }
-    #[pyo3(signature=(options=None,params=None,*,errors=None,n_jobs=None,progress_bar=None))]
+    #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
     fn with_2d_coordinates(
         &self,
         py: Python<'_>,
         options: Option<&crate::optional_configuration::Coordinate2DParams>,
-        params: Option<&crate::io_batch_params::BatchParams>,
-        errors: Option<crate::io_batch_params::BatchErrorModeInput>,
-        n_jobs: Option<usize>,
-        progress_bar: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, crate::io_batch_params::BatchParams>>>,
+        errors: crate::arguments::Argument<Option<crate::io_batch_params::BatchErrorModeInput>>,
+        n_jobs: crate::arguments::Argument<Option<usize>>,
+        progress_bar: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<Self> {
-        if params.is_some() && (errors.is_some() || n_jobs.is_some() || progress_bar.is_some()) {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and runtime keywords are mutually exclusive",
-            ));
-        }
-        if errors.is_some() || n_jobs.is_some() || progress_bar.is_some() {
+        let keyword_form =
+            errors.is_supplied() || n_jobs.is_supplied() || progress_bar.is_supplied();
+        crate::arguments::configuration_arguments!(params; errors, n_jobs, progress_bar);
+        let params = params.as_deref();
+        if keyword_form {
             self._batch_with_2d_coordinates_keywords(py, options, errors, n_jobs, progress_bar)
         } else {
             self._batch_with_2d_coordinates_params(py, options, params)
@@ -1245,12 +1249,13 @@ impl MoleculeBatch {
     ) -> PyResult<Self> {
         let defaults = ck::Coordinate2DParams::default();
         let execution = ck::BatchParams::default();
+        let options = options.map(|value| value.to_rust(py)).transpose()?;
         py.detach(|| {
             if options.is_none() && params.is_none() {
                 self.inner.with_2d_coordinates()
             } else {
                 self.inner.with_2d_coordinates_with_params(
-                    options.map(|v| &v.inner).unwrap_or(&defaults),
+                    options.as_ref().unwrap_or(&defaults),
                     params.map(|v| &v.inner).unwrap_or(&execution),
                 )
             }

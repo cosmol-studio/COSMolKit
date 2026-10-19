@@ -40,7 +40,8 @@ impl BatchExportReport {
         &self.errors
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct BatchExportParams {
     pub format: SdfFormat,
     /// The live batch resolves inheritance; detached exports default to Strict.

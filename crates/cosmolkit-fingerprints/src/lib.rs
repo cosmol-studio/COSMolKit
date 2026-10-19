@@ -14,7 +14,7 @@
 //! ```rust
 //! use cosmolkit_fingerprints::{
 //!     FingerprintAdditionalOutput, Fingerprint, MorganAtomInvariants, MorganCall, MorganError,
-//!     MorganParams, MorganPreparedInput, SparseBitFingerprint, SparseCountFingerprint,
+//!     MorganGeneratorParams, MorganPreparedInput, SparseBitFingerprint, SparseCountFingerprint,
 //!     SparseCountFingerprint32, morgan_bits, morgan_count, morgan_sparse_bits,
 //!     morgan_sparse_count,
 //! };
@@ -22,28 +22,28 @@
 //! fn main() {
 //!     let _: fn(
 //!         &MorganPreparedInput<'_>,
-//!         &MorganParams,
+//!         &MorganGeneratorParams,
 //!         &MorganCall<'_>,
 //!         MorganAtomInvariants<'_>,
 //!         Option<&mut FingerprintAdditionalOutput>,
 //!     ) -> Result<SparseCountFingerprint, MorganError> = morgan_sparse_count;
 //!     let _: fn(
 //!         &MorganPreparedInput<'_>,
-//!         &MorganParams,
+//!         &MorganGeneratorParams,
 //!         &MorganCall<'_>,
 //!         MorganAtomInvariants<'_>,
 //!         Option<&mut FingerprintAdditionalOutput>,
 //!     ) -> Result<SparseBitFingerprint, MorganError> = morgan_sparse_bits;
 //!     let _: fn(
 //!         &MorganPreparedInput<'_>,
-//!         &MorganParams,
+//!         &MorganGeneratorParams,
 //!         &MorganCall<'_>,
 //!         MorganAtomInvariants<'_>,
 //!         Option<&mut FingerprintAdditionalOutput>,
 //!     ) -> Result<SparseCountFingerprint32, MorganError> = morgan_count;
 //!     let _: fn(
 //!         &MorganPreparedInput<'_>,
-//!         &MorganParams,
+//!         &MorganGeneratorParams,
 //!         &MorganCall<'_>,
 //!         MorganAtomInvariants<'_>,
 //!         Option<&mut FingerprintAdditionalOutput>,
@@ -109,7 +109,7 @@ pub use atom_code::{AtomCodeAssignment, AtomCodeError, AtomCodeInput, AtomCodeOp
 #[doc(hidden)]
 pub use atom_pair::AtomPairBatchArguments;
 pub use atom_pair::{
-    AtomPairAtomInvariantsGenerator, AtomPairCall, AtomPairError, AtomPairParams,
+    AtomPairAtomInvariantsGenerator, AtomPairCall, AtomPairError, AtomPairGeneratorParams,
     AtomPairPreparedInput, atom_pair_bits, atom_pair_count, atom_pair_sparse_bits,
     atom_pair_sparse_count, validate_atom_pair_params,
 };
@@ -122,8 +122,8 @@ pub use layered::{
     layered_query_fingerprint_with_output,
 };
 pub use morgan::{
-    MorganAtomInvariants, MorganCall, MorganParams, morgan_bits, morgan_count, morgan_sparse_bits,
-    morgan_sparse_count, validate_morgan_batch_params,
+    MorganAtomInvariants, MorganCall, MorganGeneratorParams, morgan_bits, morgan_count,
+    morgan_sparse_bits, morgan_sparse_count, validate_morgan_batch_params,
 };
 pub use packed_codes::{atom_pair_code, topological_torsion_code, topological_torsion_hash};
 pub use prepared::MorganPreparedInput;
@@ -390,7 +390,7 @@ pub fn pattern(topology: &TopologyBlock) -> Result<Fingerprint, FingerprintError
 }
 
 pub use topological_torsion::{
-    TopologicalTorsionCall, TopologicalTorsionError, TopologicalTorsionParams,
+    TopologicalTorsionCall, TopologicalTorsionError, TopologicalTorsionGeneratorParams,
     topological_torsion_bits, topological_torsion_count, topological_torsion_sparse_bits,
     topological_torsion_sparse_count,
 };
@@ -449,6 +449,8 @@ pub use topological_torsion_path::{
 };
 
 mod maccs;
+#[doc(hidden)]
+pub use maccs::__configuration_MaccsFingerprintParams;
 pub use maccs::{
     MaccsFingerprintError, MaccsFingerprintParams, maccs_fingerprint, maccs_fingerprint_raw,
 };
@@ -465,3 +467,24 @@ pub use topological::{
     topological_fingerprint_with_output, topological_query_fingerprint,
     topological_query_fingerprint_with_output,
 };
+
+#[doc(hidden)]
+pub use pattern::__configuration_PatternFingerprintParams;
+#[doc(hidden)]
+pub use topological::__configuration_TopologicalFingerprintOutputRequest;
+
+#[doc(hidden)]
+pub use atom_pair::__configuration_AtomPairGeneratorParams;
+#[doc(hidden)]
+pub use layered::__configuration_LayeredFingerprintParams;
+#[doc(hidden)]
+pub use morgan::__configuration_MorganGeneratorParams;
+#[doc(hidden)]
+pub use topological::__configuration_TopologicalFingerprintParams;
+#[doc(hidden)]
+pub use topological_torsion::__configuration_TopologicalTorsionGeneratorParams;
+
+#[doc(hidden)]
+pub use atom_pair::__configuration_AtomPairAtomInvariantsGenerator;
+#[doc(hidden)]
+pub use avalon::__configuration_AvalonFingerprintParams;

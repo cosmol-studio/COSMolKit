@@ -18,6 +18,8 @@ pub use enumeration::{
     finalize_canonical_candidate, pick_canonical_with, select_canonical_index_by,
     select_canonical_index_from_iterable_with, select_canonical_index_with, specified_stereo_count,
 };
+#[doc(hidden)]
+pub use params::__configuration_TautomerParams;
 pub use params::{TautomerEnumerationStatus, TautomerParams};
 pub use score::{
     TautomerScore, TautomerScoreTerm, default_tautomer_score_terms, score_tautomer_,

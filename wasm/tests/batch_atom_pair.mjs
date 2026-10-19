@@ -14,16 +14,16 @@ test('All four AtomPair batch outputs equal scalar outputs', () => {
  }
 });
 test('AtomPair complete parameter fields preserve defaults, borrowed objects and nullable arrays',()=>{
- const p=new b.AtomPairParams(),fields=['minDistance','maxDistance','includeChirality','use2d','countSimulation','fpSize','bitsPerFeature'];
+ const p=new b.AtomPairGeneratorParams(),fields=['minDistance','maxDistance','includeChirality','use2d','countSimulation','fpSize','bitsPerFeature'];
  assert.deepEqual(fields.map(n=>p[n]),[1,30,false,true,true,2048,1]);assert.deepEqual(p.countBounds,[1,2,4,8]);
- const bounds=[1,3],custom=new b.AtomPairParams(2,20,true,false,false,128,2,bounds);bounds.push(8);assert.deepEqual(custom.countBounds,[1,3]);
- assert.deepEqual(fields.map(n=>custom[n]),[2,20,true,false,false,128,2]);assert.deepEqual(new b.AtomPairParams(undefined,undefined,undefined,undefined,undefined,undefined,undefined,[]).countBounds,[]);
+ const bounds=[1,3],custom=new b.AtomPairGeneratorParams(2,20,true,false,false,128,2,bounds);bounds.push(8);assert.deepEqual(custom.countBounds,[1,3]);
+ assert.deepEqual(fields.map(n=>custom[n]),[2,20,true,false,false,128,2]);assert.deepEqual(new b.AtomPairGeneratorParams(undefined,undefined,undefined,undefined,undefined,undefined,undefined,[]).countBounds,[]);
  assert.equal(typeof p.infoString(),'string');assert.equal(p.withJson(p.toJson()).toJson(),p.toJson());assert.throws(()=>p.withJson('{'),e=>e.kind==='Parse'&&e.detail instanceof b.FingerprintJsonError);
  const invariants=new b.AtomPairAtomInvariantsGenerator(true,true);assert.equal(invariants.includeChirality,true);assert.equal(invariants.topologicalTorsionCorrection,true);assert.equal(typeof invariants.infoString(),'string');assert.equal(typeof invariants.toJson(),'string');
  const atoms=[0,2],call=new b.AtomPairFingerprintParams(p,atoms,[],[6,6,8],[],2,invariants,false);atoms.push(1);
  assert.deepEqual(call.fromAtoms,[0,2]);assert.deepEqual(call.ignoreAtoms,[]);assert.deepEqual(call.customAtomInvariants,[6,6,8]);assert.deepEqual(call.customBondInvariants,[]);assert.equal(call.conformerId,2);assert.equal(call.useLegacyStereoPerception,false);assert.equal(call.atomInvariantsGenerator.includeChirality,true);
  assert.equal(p.fpSize,2048);assert.equal(invariants.includeChirality,true);assert.equal(call.generator.fpSize,2048);const defaults=new b.AtomPairFingerprintParams();assert.equal(defaults.fromAtoms,null);assert.equal(defaults.ignoreAtoms,null);assert.equal(defaults.customAtomInvariants,null);assert.equal(defaults.customBondInvariants,null);assert.equal(defaults.atomInvariantsGenerator,null);assert.equal(defaults.conformerId,-1);assert.equal(defaults.useLegacyStereoPerception,true);
- {const previous=p.fpSize;p.fpSize=9;assert.deepEqual(p.fpSize,9);p.fpSize=previous;}assert.throws(()=>new b.AtomPairFingerprintParams({}),TypeError);assert.throws(()=>new b.AtomPairParams(-1),RangeError);assert.throws(()=>new b.AtomPairParams(undefined,undefined,'false'),TypeError);
+ {const previous=p.fpSize;p.fpSize=9;assert.deepEqual(p.fpSize,9);p.fpSize=previous;}assert.throws(()=>new b.AtomPairFingerprintParams({}),TypeError);assert.throws(()=>new b.AtomPairGeneratorParams(-1),RangeError);assert.throws(()=>new b.AtomPairGeneratorParams(undefined,undefined,'false'),TypeError);
  for(const n of [-2147483649,2147483648,1.5])assert.throws(()=>new b.AtomPairFingerprintParams(null,null,null,null,null,n),RangeError);
 });
 test('all ten batch AtomPair calls preserve order, real output types and sparse value shapes',()=>{
@@ -47,7 +47,7 @@ test('batch fingerprint additional output is detached and missing collection ret
 test('AtomPair batch callbacks and source failures preserve row indices and original exception identity',()=>{
  const value=batch(),options=new b.AtomPairFingerprintParams();let ticks=0;const query=new b.BatchQueryParams(null,false,()=>{ticks++;});value.fingerprintAtomPairListWithParams(options,query);assert.equal(ticks,3);
  const thrown=Symbol('callback');ticks=0;assert.throws(()=>value.fingerprintAtomPairListWithParams(options,new b.BatchQueryParams(null,false,()=>{ticks++;throw thrown;})),e=>e===thrown);assert.equal(ticks,3);
- const zero=new b.AtomPairFingerprintParams(new b.AtomPairParams(undefined,undefined,undefined,undefined,undefined,0));ticks=0;assert.throws(()=>value.fingerprintAtomPairListWithParams(zero,query),e=>e.domain==='batch'&&e.cause.cause.kind==='EmptyFingerprint');assert.equal(ticks,0);
+ const zero=new b.AtomPairFingerprintParams(new b.AtomPairGeneratorParams(undefined,undefined,undefined,undefined,undefined,0));ticks=0;assert.throws(()=>value.fingerprintAtomPairListWithParams(zero,query),e=>e.domain==='batch'&&e.cause.cause.kind==='EmptyFingerprint');assert.equal(ticks,0);
  // Both switches must be off: sanitize=false alone retains the default
  // remove-hydrogens path and is not a promise of an uninitialized cache.
  const unprepared=b.Molecule.fromSmilesWithParams('CC',new b.SmilesParseParams(false,undefined,undefined,undefined,false)),raw=b.MoleculeBatch.fromRecords([b.BatchRecord.molecule(unprepared)],b.BatchErrorMode.Strict);

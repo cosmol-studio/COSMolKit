@@ -8,7 +8,7 @@ use crate::fingerprint_values::{
 use crate::host_values::{bool_value, i32_value, sequence, type_error, u32_value};
 use crate::morgan_parameters::{
     MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator, MorganCallParams,
-    MorganFingerprintParams, MorganParams,
+    MorganFingerprintParams, MorganGeneratorParams,
 };
 use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
@@ -237,11 +237,11 @@ impl Molecule {
     }
 }
 #[wasm_bindgen(
-    inline_js = "export function visitScalarMorganparams(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid MorganParams\",{cause});}} export function visitScalarMorganatom(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid MorganAtomInvariantsGenerator\",{cause});}} export function visitScalarMorganbond(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid MorganBondInvariantsGenerator\",{cause});}} export function visitScalarMorgancall(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid MorganCallParams\",{cause});}} export function visitScalarMorganMolecule(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid Molecule\",{cause});}}"
+    inline_js = "export function visitScalarMorganparams(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid MorganGeneratorParams\",{cause});}} export function visitScalarMorganatom(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid MorganAtomInvariantsGenerator\",{cause});}} export function visitScalarMorganbond(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid MorganBondInvariantsGenerator\",{cause});}} export function visitScalarMorgancall(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid MorganCallParams\",{cause});}} export function visitScalarMorganMolecule(v,f){try{f(v);}catch(cause){throw new TypeError(\"invalid Molecule\",{cause});}}"
 )]
 extern "C" {
     #[wasm_bindgen(catch,js_name=visitScalarMorganparams)]
-    fn visit_params(v: &JsValue, f: &mut dyn FnMut(&MorganParams)) -> Result<(), JsValue>;
+    fn visit_params(v: &JsValue, f: &mut dyn FnMut(&MorganGeneratorParams)) -> Result<(), JsValue>;
     #[wasm_bindgen(catch,js_name=visitScalarMorganatom)]
     fn visit_atom(
         v: &JsValue,
@@ -259,19 +259,19 @@ extern "C" {
 }
 fn with_params<T>(
     value: &JsValue,
-    run: impl FnOnce(Option<&ck::MorganParams>) -> Result<T, JsValue>,
+    run: impl FnOnce(Option<&ck::MorganGeneratorParams>) -> Result<T, JsValue>,
 ) -> Result<T, JsValue> {
     if value.is_null() || value.is_undefined() {
         return run(None);
     }
     let mut run = Some(run);
     let mut out = None;
-    visit_params(value, &mut |v: &MorganParams| {
+    visit_params(value, &mut |v: &MorganGeneratorParams| {
         if let Some(run) = run.take() {
             out = Some(run(Some(&v.inner)));
         }
     })?;
-    out.ok_or_else(|| type_error("MorganParams"))?
+    out.ok_or_else(|| type_error("MorganGeneratorParams"))?
 }
 fn with_atom<T>(
     value: &JsValue,
@@ -329,7 +329,7 @@ pub struct MorganFingerprintGenerator {
 impl MorganFingerprintGenerator {
     #[wasm_bindgen(constructor)]
     pub fn construct(
-        #[wasm_bindgen(unchecked_optional_param_type = "MorganParams | null")] params: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "MorganGeneratorParams | null")] params: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "MorganAtomInvariantsGenerator | null")]
         atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "MorganBondInvariantsGenerator | null")]
@@ -339,7 +339,7 @@ impl MorganFingerprintGenerator {
     }
     #[wasm_bindgen(js_name=new)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "MorganParams | null")] params: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "MorganGeneratorParams | null")] params: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "MorganAtomInvariantsGenerator | null")]
         atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "MorganBondInvariantsGenerator | null")]
@@ -716,11 +716,11 @@ impl MorganSettings {
     ) -> Result<(), JsValue> {
         self.set_count_bounds(value)
     }
-    pub fn params(&self) -> Result<MorganParams, JsValue> {
-        // COSMolKit❗✔️: .map(|inner| MorganParams { inner })
+    pub fn params(&self) -> Result<MorganGeneratorParams, JsValue> {
+        // COSMolKit❗✔️: .map(|inner| MorganGeneratorParams { inner })
         self.inner
             .params()
-            .map(|inner| MorganParams { inner })
+            .map(|inner| MorganGeneratorParams { inner })
             .map_err(error)
     }
 }

@@ -46,7 +46,8 @@ pub struct AlignmentAtomMap {
     pub reference_atom: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(factory)]
 pub struct AlignmentParameters {
     pub probe_conformer_id: i32,
     pub reference_conformer_id: i32,
@@ -69,10 +70,12 @@ impl Default for AlignmentParameters {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(factory)]
 pub struct BestAlignmentParameters {
     pub probe_conformer_id: i32,
     pub reference_conformer_id: i32,
+    #[configuration(none_default)]
     pub atom_maps: Vec<Vec<AlignmentAtomMap>>,
     pub weights: Option<Vec<f64>>,
     pub reflect: bool,
@@ -100,8 +103,10 @@ impl Default for BestAlignmentParameters {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(factory)]
 pub struct AllConformerRmsdParameters {
+    #[configuration(none_default)]
     pub atom_maps: Vec<Vec<AlignmentAtomMap>>,
     pub weights: Option<Vec<f64>>,
     pub max_matches: i32,
@@ -123,10 +128,12 @@ impl Default for AllConformerRmsdParameters {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(factory)]
 pub struct CoordinateRmsdParameters {
     pub probe_conformer_id: i32,
     pub reference_conformer_id: i32,
+    #[configuration(none_default)]
     pub atom_maps: Vec<Vec<AlignmentAtomMap>>,
     pub weights: Option<Vec<f64>>,
     pub max_matches: i32,
@@ -206,7 +213,8 @@ pub enum AlignmentError {
     WorkerTerminated,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(factory)]
 pub struct ConformerAlignmentParameters {
     pub atom_indices: Option<Vec<usize>>,
     pub conformer_ids: Option<Vec<usize>>,

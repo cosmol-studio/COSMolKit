@@ -9,8 +9,8 @@ struct State {
     atom_invariants: Option<AtomPairAtomInvariantsGenerator>,
 }
 impl State {
-    fn params(&self) -> TopologicalTorsionParams {
-        TopologicalTorsionParams {
+    fn params(&self) -> TopologicalTorsionGeneratorParams {
+        TopologicalTorsionGeneratorParams {
             torsion_atom_count: self.torsion_atom_count,
             only_shortest_paths: self.only_shortest_paths,
             include_chirality: self.common.include_chirality,
@@ -20,11 +20,11 @@ impl State {
             count_bounds: self.common.count_bounds.clone(),
         }
     }
-    fn derived(&self) -> TopologicalTorsionParams {
+    fn derived(&self) -> TopologicalTorsionGeneratorParams {
         // Computation borrows canonical common state; this view contains only
         // primitive derived values. Empty local bounds are never used. No
         // per-call constructor, vector clone or option validation is introduced.
-        TopologicalTorsionParams {
+        TopologicalTorsionGeneratorParams {
             torsion_atom_count: self.torsion_atom_count,
             only_shortest_paths: self.only_shortest_paths,
             include_chirality: self.common.include_chirality,
@@ -52,7 +52,7 @@ fn lock(state: &Mutex<State>) -> Result<MutexGuard<'_, State>, TopologicalTorsio
 }
 impl TopologicalTorsionGenerator {
     pub fn new(
-        params: &TopologicalTorsionParams,
+        params: &TopologicalTorsionGeneratorParams,
         atom_invariants: Option<AtomPairAtomInvariantsGenerator>,
     ) -> Result<Self, TopologicalTorsionError> {
         // Source constructor validation occurs once. getResultSize is not
@@ -306,7 +306,7 @@ impl TopologicalTorsionGenerator {
             }
             .into());
         }
-        let mut params = TopologicalTorsionParams::default();
+        let mut params = TopologicalTorsionGeneratorParams::default();
         params.from_json_value(args)?;
         let atom_invariants = if let Some(node) = value.get("atomInvariantsGenerator") {
             let inv_type = typ(node, "AtomInvariantsGenerator")?;
@@ -484,7 +484,7 @@ macro_rules! bound_setting {
     };
 }
 impl TopologicalTorsionSettings {
-    pub fn snapshot(&self) -> Result<TopologicalTorsionParams, TopologicalTorsionError> {
+    pub fn snapshot(&self) -> Result<TopologicalTorsionGeneratorParams, TopologicalTorsionError> {
         Ok(lock(&self.state)?.params())
     }
     bound_setting!(
@@ -537,7 +537,8 @@ mod tests {
         let input = m.input();
         let call = TopologicalTorsionCall::default();
         let g =
-            TopologicalTorsionGenerator::new(&TopologicalTorsionParams::default(), None).unwrap();
+            TopologicalTorsionGenerator::new(&TopologicalTorsionGeneratorParams::default(), None)
+                .unwrap();
         let sparse = g.sparse_count(&input, &call, None).unwrap();
         assert_eq!(sparse.nonzero_elements().values().sum::<i32>(), 2);
         assert_eq!(
@@ -555,7 +556,7 @@ mod tests {
         assert_eq!(bit.n_bits(), 2048);
         assert_eq!(bit.on_bits().len(), 2);
         let folded = TopologicalTorsionGenerator::new(
-            &TopologicalTorsionParams {
+            &TopologicalTorsionGeneratorParams {
                 fp_size: 1000,
                 ..Default::default()
             },
@@ -581,7 +582,8 @@ mod tests {
         let input = m.input();
         let call = TopologicalTorsionCall::default();
         let g =
-            TopologicalTorsionGenerator::new(&TopologicalTorsionParams::default(), None).unwrap();
+            TopologicalTorsionGenerator::new(&TopologicalTorsionGeneratorParams::default(), None)
+                .unwrap();
         let alias = g.clone();
         let settings = g.settings();
         let four = g.sparse_count(&input, &call, None).unwrap();
@@ -618,7 +620,8 @@ mod tests {
         let input = m.input();
         let call = TopologicalTorsionCall::default();
         let g =
-            TopologicalTorsionGenerator::new(&TopologicalTorsionParams::default(), None).unwrap();
+            TopologicalTorsionGenerator::new(&TopologicalTorsionGeneratorParams::default(), None)
+                .unwrap();
         let settings = g.settings();
         settings.set_count_bounds(Vec::new()).unwrap();
         assert!(g.sparse_count(&input, &call, None).is_ok());
@@ -659,7 +662,7 @@ mod tests {
     #[test]
     fn original_json_roundtrip_retains_source_configuration_and_output() {
         let m = TestMolecule::from_smiles("C1CC1").unwrap();
-        let params = TopologicalTorsionParams {
+        let params = TopologicalTorsionGeneratorParams {
             include_chirality: true,
             torsion_atom_count: 3,
             count_bounds: vec![1, 3, 5],
@@ -693,7 +696,7 @@ mod tests {
             include_chirality: false,
             topological_torsion_correction: false,
         };
-        let params = TopologicalTorsionParams::default();
+        let params = TopologicalTorsionGeneratorParams::default();
         let g = TopologicalTorsionGenerator::new(&params, Some(supplied)).unwrap();
         assert_eq!(lock(&g.state).unwrap().atom_invariants, Some(supplied));
         let default = TopologicalTorsionGenerator::new(&params, None).unwrap();
@@ -709,7 +712,8 @@ mod tests {
     #[test]
     fn source_native_metadata_and_absent_generator_restoration_have_no_fallback() {
         let g =
-            TopologicalTorsionGenerator::new(&TopologicalTorsionParams::default(), None).unwrap();
+            TopologicalTorsionGenerator::new(&TopologicalTorsionGeneratorParams::default(), None)
+                .unwrap();
         assert_eq!(
             g.info_string().unwrap(),
             "Common arguments : countSimulation=1 fpSize=2048 bitsPerFeature=1 includeChirality=0 --- TopologicalTorsionArguments torsionAtomCount=4 onlyShortestPaths=0 --- TopologicalTorsionEnvGenerator --- AtomPairInvariantGenerator topologicalTorsionCorrection=1 --- No bond invariants generator"
@@ -858,7 +862,8 @@ mod bulk_tests {
             None,
         ];
         let generator =
-            TopologicalTorsionGenerator::new(&TopologicalTorsionParams::default(), None).unwrap();
+            TopologicalTorsionGenerator::new(&TopologicalTorsionGeneratorParams::default(), None)
+                .unwrap();
         for workers in [1, 2, 7] {
             let rows = generator.sparse_counts(&inputs, workers).unwrap();
             assert_eq!(rows.len(), 5);
@@ -931,7 +936,8 @@ mod bulk_tests {
     #[test]
     fn source_empty_none_only_and_shared_live_options_bulk() {
         let g =
-            TopologicalTorsionGenerator::new(&TopologicalTorsionParams::default(), None).unwrap();
+            TopologicalTorsionGenerator::new(&TopologicalTorsionGeneratorParams::default(), None)
+                .unwrap();
         assert!(g.fingerprints(&[], 2).unwrap().is_empty());
         assert_eq!(
             g.counts(&[None, None, None], 7).unwrap(),
@@ -961,7 +967,8 @@ mod bulk_tests {
     #[test]
     fn bulk_source_defined_dense_error_propagates_and_does_not_poison_state() {
         let g =
-            TopologicalTorsionGenerator::new(&TopologicalTorsionParams::default(), None).unwrap();
+            TopologicalTorsionGenerator::new(&TopologicalTorsionGeneratorParams::default(), None)
+                .unwrap();
         let a = TestMolecule::from_smiles("CCCC").unwrap();
         let inputs = [None, Some(a.input()), None];
         g.settings().set_count_bounds(vec![]).unwrap();

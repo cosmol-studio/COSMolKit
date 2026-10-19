@@ -5,10 +5,11 @@ use cosmolkit_model::{
 };
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct ReactionParseParams {
     pub use_smiles: bool,
     pub sanitize: bool,
+    #[configuration(none_default)]
     pub replacements: BTreeMap<String, String>,
     pub allow_cxsmiles: bool,
     /// Declared by RDKit but not consumed by parseReaction. This flag does

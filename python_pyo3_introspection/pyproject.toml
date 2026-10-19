@@ -3,17 +3,17 @@ requires = ["maturin==1.15.0"]
 build-backend = "maturin"
 
 [project]
-name = "fixed-python-projection"
-version = "0.0.0"
+name = "cosmolkit"
+version = "0.5.1rc5"
 requires-python = ">=3.12"
 dependencies = ["numpy"]
 
 [tool.maturin]
-module-name = "fixed_projection._native"
+module-name = "cosmolkit._native"
 python-source = "artifacts/smoke/package"
 # Generated Python sources are ignored by Git; include these package files explicitly.
 include = [
-    { path = "fixed_projection/__init__.py", format = "wheel" },
-    { path = "fixed_projection/__init__.pyi", format = "wheel" },
-    { path = "fixed_projection/py.typed", format = "wheel" },
+    { path = "cosmolkit/__init__.py", format = "wheel" },
+    { path = "cosmolkit/__init__.pyi", format = "wheel" },
+    { path = "cosmolkit/py.typed", format = "wheel" },
 ]

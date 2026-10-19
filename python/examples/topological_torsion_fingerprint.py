@@ -8,7 +8,7 @@ molecules = [
     ck.mol_from_smiles("CCCCC"),
 ]
 generator = ck.TopologicalTorsionFingerprintGenerator(
-    params=ck.TopologicalTorsionParams(fp_size=2048)
+    params=ck.TopologicalTorsionGeneratorParams(fp_size=2048)
 )
 
 sparse_count = molecules[0].fingerprint_topological_torsion_sparse_count_with_generator(generator)

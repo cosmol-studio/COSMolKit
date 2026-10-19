@@ -2,7 +2,8 @@ use crate::{Reaction, ReactionInitializationError, ReactionRole, ReactionValidat
 use cosmolkit_model::{AtomId, AtomQueryPredicate, QueryAtom, QueryNode};
 use std::collections::{BTreeMap, VecDeque};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct ReactionValidationParams {
     pub silent: bool,
 }

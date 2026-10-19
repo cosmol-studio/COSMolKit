@@ -7,44 +7,44 @@ use pyo3::types::PyIterator;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct TautomerEnumeration {
     pub(crate) inner: Arc<ck::TautomerEnumeration>,
 }
 #[pymethods]
 impl TautomerEnumeration {
-    #[pyo3(signature=(params=None,*,max_tautomers=None,max_transforms=None,remove_sp3_stereo=None,remove_bond_stereo=None,remove_isotopic_hydrogens=None,reassign_stereo=None,callback=None,scorer=None,score_params=None))]
+    #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_tautomers=crate::arguments::Argument::Missing,max_transforms=crate::arguments::Argument::Missing,remove_sp3_stereo=crate::arguments::Argument::Missing,remove_bond_stereo=crate::arguments::Argument::Missing,remove_isotopic_hydrogens=crate::arguments::Argument::Missing,reassign_stereo=crate::arguments::Argument::Missing,callback=crate::arguments::Argument::Missing,scorer=crate::arguments::Argument::Missing,score_params=crate::arguments::Argument::Missing))]
     fn canonical_tautomer(
         &self,
         py: Python<'_>,
-        params: Option<Py<crate::tautomer_configuration::TautomerParams>>,
-        max_tautomers: Option<u32>,
-        max_transforms: Option<u32>,
-        remove_sp3_stereo: Option<bool>,
-        remove_bond_stereo: Option<bool>,
-        remove_isotopic_hydrogens: Option<bool>,
-        reassign_stereo: Option<bool>,
-        callback: Option<crate::tautomer_callbacks::EnumerationCallback>,
-        scorer: Option<crate::tautomer_callbacks::Scorer>,
-        score_params: Option<Py<crate::tautomer_values::TautomerScoreParams>>,
+        params: crate::arguments::Argument<
+            Option<Py<crate::tautomer_configuration::TautomerParams>>,
+        >,
+        max_tautomers: crate::arguments::Argument<Option<u32>>,
+        max_transforms: crate::arguments::Argument<Option<u32>>,
+        remove_sp3_stereo: crate::arguments::Argument<Option<bool>>,
+        remove_bond_stereo: crate::arguments::Argument<Option<bool>>,
+        remove_isotopic_hydrogens: crate::arguments::Argument<Option<bool>>,
+        reassign_stereo: crate::arguments::Argument<Option<bool>>,
+        callback: crate::arguments::Argument<
+            Option<crate::tautomer_callbacks::EnumerationCallback>,
+        >,
+        scorer: crate::arguments::Argument<Option<crate::tautomer_callbacks::Scorer>>,
+        score_params: crate::arguments::Argument<
+            Option<Py<crate::tautomer_values::TautomerScoreParams>>,
+        >,
     ) -> PyResult<Molecule> {
-        if params.is_some() {
-            if max_tautomers.is_some()
-                || max_transforms.is_some()
-                || remove_sp3_stereo.is_some()
-                || remove_bond_stereo.is_some()
-                || remove_isotopic_hydrogens.is_some()
-                || reassign_stereo.is_some()
-                || callback.is_some()
-                || scorer.is_some()
-                || score_params.is_some()
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            self._canonical_tautomer_params(py, params)
-        } else {
+        let keyword_form = max_tautomers.is_supplied()
+            || max_transforms.is_supplied()
+            || remove_sp3_stereo.is_supplied()
+            || remove_bond_stereo.is_supplied()
+            || remove_isotopic_hydrogens.is_supplied()
+            || reassign_stereo.is_supplied()
+            || callback.is_supplied()
+            || scorer.is_supplied()
+            || score_params.is_supplied();
+        crate::arguments::configuration_arguments!(params; max_tautomers, max_transforms, remove_sp3_stereo, remove_bond_stereo, remove_isotopic_hydrogens, reassign_stereo, callback, scorer, score_params);
+        if keyword_form {
             self._canonical_tautomer_keywords(
                 py,
                 max_tautomers,
@@ -57,6 +57,8 @@ impl TautomerEnumeration {
                 scorer,
                 score_params,
             )
+        } else {
+            self._canonical_tautomer_params(py, params)
         }
     }
     #[doc = r#"{"role":"overload","target":"TautomerEnumeration.canonical_tautomer"}"#]
@@ -68,8 +70,9 @@ impl TautomerEnumeration {
     ) -> PyResult<Molecule> {
         let params = params
             .as_ref()
-            .map(|value| value.borrow(py).clone_for_call(py));
-        crate::tautomer_producers::canonical_enumeration(py, self, params.as_ref())
+            .map(|value| value.try_borrow(py)?.capture(py))
+            .transpose()?;
+        crate::tautomer_producers::canonical_enumeration(py, self, params)
     }
     #[doc = r#"{"role":"overload","target":"TautomerEnumeration.canonical_tautomer"}"#]
     #[pyo3(signature=(*,max_tautomers=None,max_transforms=None,remove_sp3_stereo=None,remove_bond_stereo=None,remove_isotopic_hydrogens=None,reassign_stereo=None,callback=None,scorer=None,score_params=None))]
@@ -109,8 +112,8 @@ impl TautomerEnumeration {
             callback,
             scorer,
             score_params,
-        );
-        crate::tautomer_producers::canonical_enumeration(py, self, Some(&params))
+        )?;
+        crate::tautomer_producers::canonical_enumeration(py, self, Some(params))
     }
     fn canonical_tautomer_with_params(
         &self,
@@ -185,7 +188,7 @@ impl TautomerEnumeration {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 struct TautomerMoleculeIterator {
     owner: Arc<ck::TautomerEnumeration>,
     index: usize,
@@ -205,7 +208,7 @@ impl TautomerMoleculeIterator {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 struct TautomerEntryIterator {
     owner: Arc<ck::TautomerEnumeration>,
     index: usize,
@@ -232,7 +235,7 @@ impl TautomerEntryIterator {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct TautomerScore {
     pub(crate) inner: ck::TautomerScore,
 }
@@ -253,7 +256,7 @@ impl TautomerScore {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct TautomerScoreTerm {
     pub(crate) inner: ck::TautomerScoreTerm,
 }
@@ -290,47 +293,16 @@ pub fn default_tautomer_score_terms() -> Vec<TautomerScoreTerm> {
         .collect()
 }
 
-#[pyclass(module = "fixed_projection._native")]
-pub struct TautomerScoreParams {
-    pub(crate) inner: ck::TautomerScoreParams,
-}
-
-#[pymethods]
-impl TautomerScoreParams {
-    #[new]
-    #[pyo3(signature = (*, terms=None))]
-    fn new(py: Python<'_>, terms: Option<Vec<Py<TautomerScoreTerm>>>) -> Self {
-        Self {
-            inner: ck::TautomerScoreParams {
-                terms: terms.map(|terms| {
-                    terms
-                        .iter()
-                        .map(|term| term.borrow(py).inner.clone())
-                        .collect()
-                }),
-            },
-        }
+impl crate::parameters::Configuration for TautomerScoreTerm {
+    type Native = ck::TautomerScoreTerm;
+    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
+        Ok(Self { inner })
     }
-    #[getter]
-    fn terms(&self) -> Option<Vec<TautomerScoreTerm>> {
-        self.inner.terms.as_ref().map(|terms| {
-            terms
-                .iter()
-                .cloned()
-                .map(|inner| TautomerScoreTerm { inner })
-                .collect()
-        })
-    }
-    #[setter]
-    fn set_terms(&mut self, py: Python<'_>, value: Option<Vec<Py<TautomerScoreTerm>>>) {
-        self.inner.terms = value.map(|terms| {
-            terms
-                .iter()
-                .map(|term| term.borrow(py).inner.clone())
-                .collect()
-        });
+    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
+        Ok(self.inner.clone())
     }
 }
+ck::project_configuration!(ck::TautomerScoreParams);
 
 #[cfg(test)]
 mod tests {

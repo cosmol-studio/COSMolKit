@@ -3,7 +3,7 @@ use crate::elements::Element;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct AtomSpec {
     pub(crate) inner: ck::AtomSpec,
 }
@@ -43,7 +43,7 @@ impl AtomSpec {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct BondSpec {
     pub(crate) inner: ck::BondSpec,
 }
@@ -62,10 +62,20 @@ impl BondSpec {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct ReactionCoordinateSelection {
     pub(crate) inner: ck::ReactionCoordinateSelection,
+}
+
+impl crate::parameters::Configuration for ReactionCoordinateSelection {
+    type Native = ck::ReactionCoordinateSelection;
+    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
+        Ok(Self { inner })
+    }
+    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
+        Ok(self.inner)
+    }
 }
 
 #[pymethods]

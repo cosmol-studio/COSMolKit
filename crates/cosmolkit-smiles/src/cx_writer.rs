@@ -224,10 +224,13 @@ impl std::ops::BitOr for CxSmilesFields {
 }
 
 /// Options for detached CXSMILES writing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct CxSmilesWriteParams {
+    #[configuration(none_default)]
     pub smiles: SmilesWriteParams,
+    #[configuration(none_default)]
     pub fields: CxSmilesFields,
+    #[configuration(none_default)]
     pub coordinate_selection: CxCoordinateSelection,
 }
 
@@ -248,6 +251,15 @@ impl Default for CxSmilesWriteParams {
             smiles: SmilesWriteParams::default(),
             fields: CxSmilesFields::ALL,
             coordinate_selection: CxCoordinateSelection::Auto,
+        }
+    }
+}
+
+impl From<SmilesWriteParams> for CxSmilesWriteParams {
+    fn from(smiles: SmilesWriteParams) -> Self {
+        Self {
+            smiles,
+            ..Default::default()
         }
     }
 }

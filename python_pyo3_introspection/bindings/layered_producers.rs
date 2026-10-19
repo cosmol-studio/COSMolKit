@@ -16,41 +16,41 @@ pub(crate) fn keyword_params(
     set_only_bits: Option<&Fingerprint>,
     branched_paths: Option<bool>,
     from_atoms: Option<Vec<u32>>,
-) -> LayeredFingerprintParams {
+) -> ck::LayeredFingerprintParams {
     let defaults = ck::LayeredFingerprintParams::default();
-    LayeredFingerprintParams {
-        inner: ck::LayeredFingerprintParams {
-            layers: layers.map_or(
-                defaults.layers,
-                ck::LayeredFingerprintLayers::from_bits_retain,
-            ),
-            min_path: min_path.unwrap_or(defaults.min_path),
-            max_path: max_path.unwrap_or(defaults.max_path),
-            fp_size: fp_size.unwrap_or(defaults.fp_size),
-            atom_counts,
-            set_only_bits: set_only_bits.map(|value| value.inner.clone()),
-            branched_paths: branched_paths.unwrap_or(defaults.branched_paths),
-            from_atoms,
-        },
+    ck::LayeredFingerprintParams {
+        layers: layers.map_or(
+            defaults.layers,
+            ck::LayeredFingerprintLayers::from_bits_retain,
+        ),
+        min_path: min_path.unwrap_or(defaults.min_path),
+        max_path: max_path.unwrap_or(defaults.max_path),
+        fp_size: fp_size.unwrap_or(defaults.fp_size),
+        atom_counts,
+        set_only_bits: set_only_bits.map(|value| value.inner.clone()),
+        branched_paths: branched_paths.unwrap_or(defaults.branched_paths),
+        from_atoms,
     }
 }
 
 #[pyfunction]
 pub fn fingerprint_layered_query_with_params(
+    py: Python<'_>,
     query: &QueryGraph,
     params: &LayeredFingerprintParams,
 ) -> PyResult<Fingerprint> {
-    ck::fingerprint_layered_query_with_params(query.inner(), &params.inner)
+    ck::fingerprint_layered_query_with_params(query.inner(), &params.to_rust(py)?)
         .map(|inner| Fingerprint { inner })
         .map_err(LayeredFingerprintError::from_rust)
 }
 
 #[pyfunction]
 pub fn fingerprint_layered_query_with_output_with_params(
+    py: Python<'_>,
     query: &QueryGraph,
     params: &LayeredFingerprintParams,
 ) -> PyResult<LayeredFingerprintResult> {
-    ck::fingerprint_layered_query_with_output_with_params(query.inner(), &params.inner)
+    ck::fingerprint_layered_query_with_output_with_params(query.inner(), &params.to_rust(py)?)
         .map(|inner| LayeredFingerprintResult { inner })
         .map_err(LayeredFingerprintError::from_rust)
 }
@@ -151,16 +151,12 @@ mod tests {
                         },
                     )
                     .unwrap();
-                    let params = Py::new(
-                        py,
-                        LayeredFingerprintParams {
-                            inner: native_params,
-                        },
-                    )?;
+                    let params =
+                        Py::new(py, LayeredFingerprintParams::from_rust(py, native_params)?)?;
                     let kwargs = PyDict::new(py);
                     {
                         let borrowed = params.borrow(py);
-                        let p = &borrowed.inner;
+                        let p = borrowed.to_rust(py)?;
                         kwargs.set_item("layers", p.layers.bits())?;
                         kwargs.set_item("min_path", p.min_path)?;
                         kwargs.set_item("max_path", p.max_path)?;
@@ -207,7 +203,7 @@ mod tests {
                         assert_eq!(actual.borrow(py).inner, expected);
                         retained.push(actual);
                     }
-                    assert_eq!(params.borrow(py).inner, original_params);
+                    assert_eq!(params.borrow(py).to_rust(py)?, original_params);
                     assert!(
                         molecule
                             .bind(py)
@@ -230,12 +226,13 @@ mod tests {
                     );
                     let query_params = Py::new(
                         py,
-                        LayeredFingerprintParams {
-                            inner: ck::LayeredFingerprintParams {
+                        LayeredFingerprintParams::from_rust(
+                            py,
+                            ck::LayeredFingerprintParams {
                                 atom_counts: None,
                                 ..original_params
                             },
-                        },
+                        )?,
                     )?;
                     exact(
                         py,

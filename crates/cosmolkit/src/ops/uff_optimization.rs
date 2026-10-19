@@ -4,7 +4,8 @@ use cosmolkit_macros::{MoleculeResult, mol_op_body};
 use std::{error::Error, fmt, sync::Arc};
 
 /// Options matching UFFOptimizeMolecule; None selects the first stored 3D row.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct UffOptimizationParams {
     pub max_iterations: i32,
     pub vdw_threshold: f64,
@@ -37,7 +38,8 @@ pub struct UffOptimizationResult<M = Molecule> {
 }
 
 /// Options for source-ordered optimization of every stored 3D conformer.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct UffConformerOptimizationParams {
     pub num_threads: i32,
     pub max_iterations: i32,

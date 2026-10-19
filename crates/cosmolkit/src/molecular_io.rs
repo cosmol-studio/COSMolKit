@@ -247,10 +247,12 @@ impl Molecule {
             .map_err(|source| MolecularIoError::Io { path, source })
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct Mol2ReadParams {
     pub sanitize: bool,
     pub remove_hs: bool,
+    #[configuration(none_default)]
     pub variant: Mol2Type,
     pub cleanup_substructures: bool,
 }

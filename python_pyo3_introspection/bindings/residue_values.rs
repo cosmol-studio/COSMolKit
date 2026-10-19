@@ -102,7 +102,7 @@ impl ResidueInfoKindInput {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct ResidueCodeParseError {
     inner: ck::ResidueCodeParseError,
 }
@@ -152,7 +152,7 @@ impl ResidueCode {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct ResidueInfo {
     pub(crate) inner: ck::ResidueInfo,
 }
@@ -209,7 +209,7 @@ impl ResidueInfo {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct ResidueIdentity {
     pub(crate) inner: ck::ResidueIdentity,
 }

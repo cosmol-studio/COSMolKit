@@ -43,9 +43,9 @@ struct State {
     initial_use_bond_types: bool,
 }
 impl State {
-    fn params(&self) -> MorganParams {
+    fn params(&self) -> MorganGeneratorParams {
         let g = &self.backend;
-        MorganParams {
+        MorganGeneratorParams {
             radius: g.radius,
             only_nonzero_invariants: g.only_nonzero_invariants,
             include_redundant_environments: g.include_redundant_environments,
@@ -161,7 +161,7 @@ impl MorganOperator {
     }
 
     pub fn new(
-        params: &MorganParams,
+        params: &MorganGeneratorParams,
         atoms: Option<MorganAtomProvider>,
         bonds: Option<MorganBondProvider>,
     ) -> Result<Self, MorganError> {
@@ -527,7 +527,7 @@ impl MorganOperator {
             }
             .into());
         }
-        let params = MorganParams::default().with_json_value(args)?;
+        let params = MorganGeneratorParams::default().with_json_value(args)?;
         let mut backend = MorganGenerator {
             radius: params.radius,
             only_nonzero_invariants: params.only_nonzero_invariants,
@@ -794,7 +794,7 @@ macro_rules! setting {($get:ident,$set:ident,$ty:ty,$($field:ident).+) => {
     pub fn $set(&self,value:$ty)->Result<(),MorganError>{lock(&self.state)?.backend.$($field).+ = value;Ok(())}
 }}
 impl MorganSettings {
-    pub fn snapshot(&self) -> Result<MorganParams, MorganError> {
+    pub fn snapshot(&self) -> Result<MorganGeneratorParams, MorganError> {
         Ok(lock(&self.state)?.params())
     }
     setting!(radius, set_radius, u32, radius);
@@ -860,14 +860,14 @@ mod tests {
         }
     }
     fn generator() -> MorganOperator {
-        MorganOperator::new(&MorganParams::default(), None, None).unwrap()
+        MorganOperator::new(&MorganGeneratorParams::default(), None, None).unwrap()
     }
 
     #[test]
     fn morgan_calculation_guard_keeps_ring_decision_and_execution_locked() {
         let molecule = TestMolecule::from_smiles("CCO").unwrap();
         let generator = MorganOperator::new(
-            &MorganParams {
+            &MorganGeneratorParams {
                 radius: 2,
                 ..Default::default()
             },
@@ -1045,7 +1045,7 @@ mod tests {
     }
     #[test]
     fn explicit_provider_precedence_ring_configuration_and_live_chirality_capture() {
-        let params = MorganParams {
+        let params = MorganGeneratorParams {
             include_ring_membership: false,
             use_bond_types: true,
             include_chirality: false,
@@ -1103,7 +1103,7 @@ mod tests {
     fn four_outputs_and_full_additional_output_reuse_existing_source_pipeline() {
         for text in ["CCO", "C1CCCCC1", "C[C@H](F)Cl"] {
             let m = TestMolecule::from_smiles(text).unwrap();
-            let p = MorganParams::default();
+            let p = MorganGeneratorParams::default();
             let g = MorganOperator::new(&p, None, None).unwrap();
             let call = MorganCall::default();
             let i = input(&m);
@@ -1140,7 +1140,7 @@ mod tests {
     }
     #[test]
     fn source_feature_patterns_present_empty_and_custom_invariants_have_distinct_semantics() {
-        let p = MorganParams {
+        let p = MorganGeneratorParams {
             radius: 0,
             ..Default::default()
         };
@@ -1216,7 +1216,7 @@ mod tests {
     #[test]
     fn source_feature_json_invalid_pattern_null_branch_and_provider_omission() {
         let g = MorganOperator::new(
-            &MorganParams {
+            &MorganGeneratorParams {
                 radius: 0,
                 ..Default::default()
             },

@@ -17,7 +17,8 @@ use crate::{StereoOrderError, ValenceAssignment, bond_affects_atom_chirality};
 const ZERO_VECTOR_TOLERANCE: f64 = 1.0e-16;
 const ZERO_VOLUME_TOLERANCE: f64 = 0.1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct StructureTagParams {
     pub conformer_id: i32,
     pub replace_existing_tags: bool,

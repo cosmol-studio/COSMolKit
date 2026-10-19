@@ -1156,7 +1156,7 @@ impl MoleculeBatch {
     /// BatchValidationError. The source batch is unchanged.
     /// Accepts MorganFingerprintParams as options and BatchQueryParams as params,
     /// or their fields as keywords. For example:
-    /// batch.fingerprint_morgan_list(generator=ck.MorganParams(radius=2), n_jobs=1).
+    /// batch.fingerprint_morgan_list(generator=ck.MorganGeneratorParams(radius=2), n_jobs=1).
     /// Omitted n_jobs uses the batch setting, or one worker if unset.
     fn fingerprint_morgan_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
@@ -1396,7 +1396,7 @@ impl MoleculeBatch {
     fn fingerprint_morgan_list_with_generator_params(
         &self,
         py: Python<'_>,
-        options: &crate::canonical_fingerprint_values::MorganParams,
+        options: &crate::canonical_fingerprint_values::MorganGeneratorParams,
         atom_invariants: Option<
             &crate::canonical_fingerprint_values::MorganAtomInvariantsGenerator,
         >,
@@ -1422,7 +1422,7 @@ impl MoleculeBatch {
     fn fingerprint_morgan_with_output_list_with_generator_params(
         &self,
         py: Python<'_>,
-        options: &crate::canonical_fingerprint_values::MorganParams,
+        options: &crate::canonical_fingerprint_values::MorganGeneratorParams,
         atom_invariants: Option<
             &crate::canonical_fingerprint_values::MorganAtomInvariantsGenerator,
         >,

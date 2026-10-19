@@ -43,6 +43,12 @@ mod chemistry_calls;
 mod chemistry_problems;
 mod cip_atom_code_errors;
 mod collection_params;
+#[path = "../framework/configuration.rs"]
+mod configuration;
+#[cfg(test)]
+pub use configuration::fixture::{
+    __configuration_ProjectionChild, __configuration_ProjectionExample,
+};
 mod conformer_execution;
 mod conformer_queries;
 mod construction_values;
@@ -199,7 +205,10 @@ pub mod native {
     #[pymodule_export]
     use super::batch_query_params::BatchQueryParams;
     #[pymodule_export]
-    use super::binary_archive::{PickleError, PickleErrorKind, mol_from_binary};
+    use super::binary_archive::{
+        _molecule_from_binary, PickleError, PickleErrorKind, mol_from_binary,
+    };
+
     #[pymodule_export]
     use super::bio_selection_errors::{
         BioOperationError, BioOperationErrorKind, BioRowChainError, BioRowChainErrorKind,
@@ -453,6 +462,7 @@ pub mod native {
         UffPreparedValenceField, UffTorsionBondQueryError, UffTorsionBondQueryErrorKind,
         UffTypingError, UffTypingErrorKind, UffTypingInput,
     };
+    use crate::parameters::{ConfigurationField, FieldInput, Scalar};
 
     #[pymodule_export]
     use super::allocation_errors::{
@@ -798,8 +808,8 @@ pub mod native {
 
     #[pymodule_export]
     use super::fingerprint_configuration::{
-        AtomPairFingerprintParams, AtomPairParams, MorganParams,
-        TopologicalTorsionFingerprintParams, TopologicalTorsionParams,
+        AtomPairFingerprintParams, AtomPairGeneratorParams, MorganGeneratorParams,
+        TopologicalTorsionFingerprintParams, TopologicalTorsionGeneratorParams,
     };
     #[pymodule_export]
     use super::fingerprint_json::{
@@ -915,10 +925,524 @@ pub mod native {
         ck::version()
     }
 
-    #[pyclass(module = "fixed_projection._native", from_py_object)]
+    #[pyclass(module = "cosmolkit", from_py_object)]
     #[derive(Clone)]
     pub struct Molecule {
         pub(crate) inner: ck::Molecule,
+    }
+
+    impl Molecule {
+        fn _substruct_match_params_native(
+            slf: Bound<'_, Self>,
+            query: &QueryGraph,
+            params: Option<super::search_callbacks::MatchInvocation>,
+        ) -> PyResult<Option<MatchResult>> {
+            let py = slf.py();
+            let target = slf.clone().unbind();
+            let holder = slf.borrow();
+            let native = &holder.inner;
+            let query = query.inner();
+            let result = match params {
+                Some(params) => params.with_callbacks(py, &target, |params| {
+                    py.detach(|| native.substruct_match_with_params(query, params))
+                })?,
+                None => py.detach(|| native.substruct_match(query)),
+            };
+            result
+                .map(|value| value.map(|inner| MatchResult { inner }))
+                .map_err(SubstructMatchError::from_rust)
+        }
+        fn _substruct_matches_params_native(
+            slf: Bound<'_, Self>,
+            query: &QueryGraph,
+            params: Option<super::search_callbacks::MatchInvocation>,
+        ) -> PyResult<Vec<MatchResult>> {
+            let py = slf.py();
+            let target = slf.clone().unbind();
+            let holder = slf.borrow();
+            let native = &holder.inner;
+            let query = query.inner();
+            let result = match params {
+                Some(params) => params.with_callbacks(py, &target, |params| {
+                    py.detach(|| native.substruct_matches_with_params(query, params))
+                })?,
+                None => py.detach(|| native.substruct_matches(query)),
+            };
+            result
+                .map(|value| {
+                    value
+                        .into_iter()
+                        .map(|inner| MatchResult { inner })
+                        .collect()
+                })
+                .map_err(SubstructMatchError::from_rust)
+        }
+        fn _has_substruct_match_params_native(
+            slf: Bound<'_, Self>,
+            query: &QueryGraph,
+            params: Option<super::search_callbacks::MatchInvocation>,
+        ) -> PyResult<bool> {
+            let py = slf.py();
+            let target = slf.clone().unbind();
+            let holder = slf.borrow();
+            let native = &holder.inner;
+            let query = query.inner();
+            let result = match params {
+                Some(params) => params.with_callbacks(py, &target, |params| {
+                    py.detach(|| native.has_substruct_match_with_params(query, params))
+                })?,
+                None => py.detach(|| native.has_substruct_match(query)),
+            };
+            result
+                .map(|value| value)
+                .map_err(SubstructMatchError::from_rust)
+        }
+        fn _chem_tautomer_score_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::TautomerScoreParams>,
+        ) -> PyResult<super::tautomer_values::TautomerScore> {
+            match params {
+                Some(value) => py.detach(|| self.inner.tautomer_score_with_params(&value)),
+                None => py.detach(|| self.inner.tautomer_score()),
+            }
+            .map(|inner| super::tautomer_values::TautomerScore { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+        fn _with_3d_conformer_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::EmbedParams>,
+        ) -> PyResult<Molecule> {
+            match params {
+                Some(params) => py.detach(|| self.inner.with_3d_conformer_with_params(&params)),
+                None => py.detach(|| self.inner.with_3d_conformer()),
+            }
+            .map(|inner| Molecule { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _embed_3d_conformer_params_native(
+            &mut self,
+            py: Python<'_>,
+            params: Option<&ck::EmbedParams>,
+        ) -> PyResult<()> {
+            match params {
+                Some(params) => py.detach(|| self.inner.embed_3d_conformer_with_params_(&params)),
+                None => py.detach(|| self.inner.embed_3d_conformer_()),
+            }
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _with_3d_conformer_result_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::EmbedParams>,
+        ) -> PyResult<super::embedding_values::EmbedMoleculeResult> {
+            match params {
+                Some(params) => {
+                    py.detach(|| self.inner.with_3d_conformer_result_with_params(&params))
+                }
+                None => py.detach(|| self.inner.with_3d_conformer_result()),
+            }
+            .map(|inner| super::embedding_values::EmbedMoleculeResult { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _embed_3d_conformer_result_params_native(
+            &mut self,
+            py: Python<'_>,
+            params: Option<&ck::EmbedParams>,
+        ) -> PyResult<super::embedding_values::EmbedMoleculeResult> {
+            match params {
+                Some(params) => {
+                    py.detach(|| self.inner.embed_3d_conformer_result_with_params_(&params))
+                }
+                None => py.detach(|| self.inner.embed_3d_conformer_result_()),
+            }
+            .map(|inner| super::embedding_values::EmbedMoleculeResult { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _with_3d_conformers_params_native(
+            &self,
+            py: Python<'_>,
+            num_confs: u32,
+            params: Option<&ck::EmbedParams>,
+        ) -> PyResult<Molecule> {
+            match params {
+                Some(params) => py.detach(|| {
+                    self.inner
+                        .with_3d_conformers_with_params(num_confs, &params)
+                }),
+                None => py.detach(|| self.inner.with_3d_conformers(num_confs)),
+            }
+            .map(|inner| Molecule { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _embed_3d_conformers_params_native(
+            &mut self,
+            py: Python<'_>,
+            num_confs: u32,
+            params: Option<&ck::EmbedParams>,
+        ) -> PyResult<()> {
+            match params {
+                Some(params) => py.detach(|| {
+                    self.inner
+                        .embed_3d_conformers_with_params_(num_confs, &params)
+                }),
+                None => py.detach(|| self.inner.embed_3d_conformers_(num_confs)),
+            }
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _with_3d_conformers_result_params_native(
+            &self,
+            py: Python<'_>,
+            num_confs: u32,
+            params: Option<&ck::EmbedParams>,
+        ) -> PyResult<super::embedding_values::EmbedMultipleConfsResult> {
+            match params {
+                Some(params) => py.detach(|| {
+                    self.inner
+                        .with_3d_conformers_result_with_params(num_confs, &params)
+                }),
+                None => py.detach(|| self.inner.with_3d_conformers_result(num_confs)),
+            }
+            .map(|inner| super::embedding_values::EmbedMultipleConfsResult { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _embed_3d_conformers_result_params_native(
+            &mut self,
+            py: Python<'_>,
+            num_confs: u32,
+            params: Option<&ck::EmbedParams>,
+        ) -> PyResult<super::embedding_values::EmbedMultipleConfsResult> {
+            match params {
+                Some(params) => py.detach(|| {
+                    self.inner
+                        .embed_3d_conformers_result_with_params_(num_confs, &params)
+                }),
+                None => py.detach(|| self.inner.embed_3d_conformers_result_(num_confs)),
+            }
+            .map(|inner| super::embedding_values::EmbedMultipleConfsResult { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+        fn _fingerprint_topological_torsion_legacy_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::LegacyTopologicalTorsionParams>,
+        ) -> PyResult<Fingerprint> {
+            py.detach(|| match params {
+                Some(params) => self
+                    .inner
+                    .fingerprint_topological_torsion_legacy_with_params(&params),
+                None => self.inner.fingerprint_topological_torsion_legacy(),
+            })
+            .map(|inner| Fingerprint { inner })
+            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+        }
+
+        fn _fingerprint_topological_torsion_count_legacy_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::LegacyTopologicalTorsionParams>,
+        ) -> PyResult<SparseCountFingerprint> {
+            py.detach(|| match params {
+                Some(params) => self
+                    .inner
+                    .fingerprint_topological_torsion_count_legacy_with_params(&params),
+                None => self.inner.fingerprint_topological_torsion_count_legacy(),
+            })
+            .map(|inner| SparseCountFingerprint { inner })
+            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+        }
+
+        fn _fingerprint_topological_torsion_sparse_count_legacy_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::LegacyTopologicalTorsionParams>,
+        ) -> PyResult<SparseCountFingerprint> {
+            py.detach(|| match params {
+                Some(params) => self
+                    .inner
+                    .fingerprint_topological_torsion_sparse_count_legacy_with_params(&params),
+                None => self
+                    .inner
+                    .fingerprint_topological_torsion_sparse_count_legacy(),
+            })
+            .map(|inner| SparseCountFingerprint { inner })
+            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+        }
+
+        fn _alignment_transform_to_params_native(
+            &self,
+            py: Python<'_>,
+            reference: &Molecule,
+            params: Option<&ck::AlignmentParameters>,
+        ) -> PyResult<AlignmentResult> {
+            py.detach(|| match params {
+                Some(params) => self
+                    .inner
+                    .alignment_transform_to_with_params(&reference.inner, &params),
+                None => self.inner.alignment_transform_to(&reference.inner),
+            })
+            .map(|inner| AlignmentResult { inner })
+            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+        }
+
+        fn _best_alignment_to_params_native(
+            &self,
+            py: Python<'_>,
+            reference: &Molecule,
+            params: Option<&ck::BestAlignmentParameters>,
+        ) -> PyResult<AlignmentResult> {
+            py.detach(|| match params {
+                Some(params) => self
+                    .inner
+                    .best_alignment_to_with_params(&reference.inner, &params),
+                None => self.inner.best_alignment_to(&reference.inner),
+            })
+            .map(|inner| AlignmentResult { inner })
+            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+        }
+
+        fn _best_rmsd_to_params_native(
+            &self,
+            py: Python<'_>,
+            reference: &Molecule,
+            params: Option<&ck::BestAlignmentParameters>,
+        ) -> PyResult<f64> {
+            py.detach(|| match params {
+                Some(params) => self
+                    .inner
+                    .best_rmsd_to_with_params(&reference.inner, &params),
+                None => self.inner.best_rmsd_to(&reference.inner),
+            })
+            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+        }
+
+        fn _coordinate_rmsd_to_params_native(
+            &self,
+            py: Python<'_>,
+            reference: &Molecule,
+            params: Option<&ck::CoordinateRmsdParameters>,
+        ) -> PyResult<f64> {
+            py.detach(|| match params {
+                Some(params) => self
+                    .inner
+                    .coordinate_rmsd_to_with_params(&reference.inner, &params),
+                None => self.inner.coordinate_rmsd_to(&reference.inner),
+            })
+            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+        }
+
+        fn _all_conformer_best_rmsds_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::AllConformerRmsdParameters>,
+        ) -> PyResult<Vec<ConformerRmsd>> {
+            py.detach(|| match params {
+                Some(params) => self.inner.all_conformer_best_rmsds_with_params(&params),
+                None => self.inner.all_conformer_best_rmsds(),
+            })
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|inner| ConformerRmsd { inner })
+                    .collect()
+            })
+            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+        }
+
+        fn _fingerprint_topological_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::TopologicalFingerprintParams>,
+        ) -> PyResult<Fingerprint> {
+            match params {
+                Some(params) => self.inner.fingerprint_topological_with_params(&params),
+                None => self.inner.fingerprint_topological(),
+            }
+            .map(|inner| Fingerprint { inner })
+            .map_err(TopologicalFingerprintError::from_rust)
+        }
+
+        fn _fingerprint_topological_with_output_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::TopologicalFingerprintParams>,
+            request: Option<&TopologicalFingerprintOutputRequest>,
+        ) -> PyResult<TopologicalFingerprintResult> {
+            match (params, request) {
+                (None, None) => self.inner.fingerprint_topological_with_output(),
+                (Some(params), request) => {
+                    self.inner.fingerprint_topological_with_output_with_params(
+                        &params,
+                        request.map(|value| value.inner).unwrap_or_default(),
+                    )
+                }
+                (None, Some(request)) => {
+                    self.inner.fingerprint_topological_with_output_with_params(
+                        &ck::TopologicalFingerprintParams::default(),
+                        request.inner,
+                    )
+                }
+            }
+            .map(TopologicalFingerprintResult::from_rust)
+            .map_err(TopologicalFingerprintError::from_rust)
+        }
+
+        fn _fingerprint_layered_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::LayeredFingerprintParams>,
+        ) -> PyResult<Fingerprint> {
+            match params {
+                Some(params) => self.inner.fingerprint_layered_with_params(&params),
+                None => self.inner.fingerprint_layered(),
+            }
+            .map(|inner| Fingerprint { inner })
+            .map_err(LayeredFingerprintError::from_rust)
+        }
+
+        fn _fingerprint_layered_with_output_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::LayeredFingerprintParams>,
+        ) -> PyResult<LayeredFingerprintResult> {
+            match params {
+                Some(params) => self
+                    .inner
+                    .fingerprint_layered_with_output_with_params(&params),
+                None => self.inner.fingerprint_layered_with_output(),
+            }
+            .map(|inner| LayeredFingerprintResult { inner })
+            .map_err(LayeredFingerprintError::from_rust)
+        }
+
+        fn _chem_with_cip_labels_params_native(
+            &self,
+            py: Python<'_>,
+            options: Option<&ck::CipLabelOptions>,
+        ) -> PyResult<Molecule> {
+            match options {
+                Some(value) => py.detach(|| self.inner.with_cip_labels_with_options(&value)),
+                None => py.detach(|| self.inner.with_cip_labels()),
+            }
+            .map(|inner| Molecule { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _chem_assign_cip_labels_params_native(
+            &mut self,
+            py: Python<'_>,
+            options: Option<&ck::CipLabelOptions>,
+        ) -> PyResult<()> {
+            match options {
+                Some(value) => py.detach(|| self.inner.assign_cip_labels_with_options_(&value)),
+                None => py.detach(|| self.inner.assign_cip_labels_()),
+            }
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _chem_with_hydrogens_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::AddHsParams>,
+        ) -> PyResult<Molecule> {
+            match params {
+                Some(value) => py.detach(|| self.inner.with_hydrogens_with_params(&value)),
+                None => py.detach(|| self.inner.with_hydrogens()),
+            }
+            .map(|inner| Molecule { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _chem_add_hydrogens_params_native(
+            &mut self,
+            py: Python<'_>,
+            params: Option<&ck::AddHsParams>,
+        ) -> PyResult<()> {
+            match params {
+                Some(value) => py.detach(|| self.inner.add_hydrogens_with_params_(&value)),
+                None => py.detach(|| self.inner.add_hydrogens_()),
+            }
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _alignment_with_alignment_to_params_native(
+            &self,
+            py: Python<'_>,
+            reference: &Self,
+            params: Option<&ck::AlignmentParameters>,
+        ) -> PyResult<(Self, super::alignment_values::AlignmentResult)> {
+            match params {
+                Some(params) => py.detach(|| {
+                    self.inner
+                        .with_alignment_to_with_params(&reference.inner, &params)
+                }),
+                None => py.detach(|| self.inner.with_alignment_to(&reference.inner)),
+            }
+            .map(|(inner, report)| {
+                (
+                    Self { inner },
+                    super::alignment_values::AlignmentResult { inner: report },
+                )
+            })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _alignment_with_alignment_to_inplace_params_native(
+            &mut self,
+            py: Python<'_>,
+            reference: &Self,
+            params: Option<&ck::AlignmentParameters>,
+        ) -> PyResult<super::alignment_values::AlignmentResult> {
+            match params {
+                Some(params) => {
+                    py.detach(|| self.inner.align_to_with_params_(&reference.inner, &params))
+                }
+                None => py.detach(|| self.inner.align_to_(&reference.inner)),
+            }
+            .map(|inner| super::alignment_values::AlignmentResult { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _alignment_with_aligned_conformers_params_native(
+            &self,
+            py: Python<'_>,
+            params: Option<&ck::ConformerAlignmentParameters>,
+        ) -> PyResult<(Self, super::alignment_values::ConformerAlignmentReport)> {
+            match params {
+                Some(params) => {
+                    py.detach(|| self.inner.with_aligned_conformers_with_params(&params))
+                }
+                None => py.detach(|| self.inner.with_aligned_conformers()),
+            }
+            .map(|(inner, report)| {
+                (
+                    Self { inner },
+                    super::alignment_values::ConformerAlignmentReport { inner: report },
+                )
+            })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        fn _alignment_with_aligned_conformers_inplace_params_native(
+            &mut self,
+            py: Python<'_>,
+            params: Option<&ck::ConformerAlignmentParameters>,
+        ) -> PyResult<super::alignment_values::ConformerAlignmentReport> {
+            match params {
+                Some(params) => py.detach(|| self.inner.align_conformers_with_params_(&params)),
+                None => py.detach(|| self.inner.align_conformers_()),
+            }
+            .map(|inner| super::alignment_values::ConformerAlignmentReport { inner })
+            .map_err(super::operation_errors::OperationError::from_rust)
+        }
     }
 
     #[pymethods]
@@ -934,29 +1458,31 @@ pub mod native {
         fn __copy__(&self) -> Self {
             self.copy()
         }
-        #[pyo3(signature=(reaction,reactant_template,params=None,*,coordinate_selection=None))]
+        #[pyo3(signature=(reaction,reactant_template,params=crate::arguments::Argument::Missing,*,coordinate_selection=crate::arguments::Argument::Missing))]
         fn reaction_products(
             slf: Bound<'_, Self>,
             reaction: &mut super::reaction::Reaction,
             reactant_template: usize,
-            params: Option<&super::search_reaction_params::ReactionSingleRunParams>,
-            coordinate_selection: Option<&super::construction_values::ReactionCoordinateSelection>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::search_reaction_params::ReactionSingleRunParams>>,
+            >,
+            coordinate_selection: crate::arguments::Argument<
+                Option<PyRef<'_, super::construction_values::ReactionCoordinateSelection>>,
+            >,
         ) -> PyResult<Vec<Vec<Molecule>>> {
-            if params.is_some() && coordinate_selection.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            match params {
-                Some(params) => {
-                    Self::_reaction_products_params(slf, reaction, reactant_template, Some(params))
-                }
-                None => Self::_reaction_products_keywords(
+            let keyword_form = coordinate_selection.is_supplied();
+            crate::arguments::configuration_arguments!(params; coordinate_selection);
+            let params = params.as_deref();
+            let coordinate_selection = coordinate_selection.as_deref();
+            if keyword_form {
+                Self::_reaction_products_keywords(
                     slf,
                     reaction,
                     reactant_template,
                     coordinate_selection,
-                ),
+                )
+            } else {
+                Self::_reaction_products_params(slf, reaction, reactant_template, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.reaction_products"}"#]
@@ -1009,38 +1535,37 @@ pub mod native {
             Self::_reaction_products_params(slf, reaction, reactant_template, Some(params))
         }
 
-        #[pyo3(signature=(reaction,reactants,params=None,*,max_products=None,coordinate_selections=None,copy_atom_properties=None))]
+        #[pyo3(signature=(reaction,reactants,params=crate::arguments::Argument::Missing,*,max_products=crate::arguments::Argument::Missing,coordinate_selections=crate::arguments::Argument::Missing,copy_atom_properties=crate::arguments::Argument::Missing))]
         fn reaction_products_from_inputs(
             &self,
             py: Python<'_>,
             reaction: &mut super::reaction::Reaction,
             reactants: Vec<Py<Molecule>>,
-            params: Option<&super::optional_configuration::ReactionRunParams>,
-            max_products: Option<u32>,
-            coordinate_selections: Option<
-                Vec<super::construction_values::ReactionCoordinateSelection>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::optional_configuration::ReactionRunParams>>,
             >,
-            copy_atom_properties: Option<bool>,
+            max_products: crate::arguments::Argument<Option<u32>>,
+            coordinate_selections: crate::arguments::Argument<
+                Option<Vec<super::construction_values::ReactionCoordinateSelection>>,
+            >,
+            copy_atom_properties: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Vec<Vec<Molecule>>> {
-            if params.is_some()
-                && (max_products.is_some()
-                    || coordinate_selections.is_some()
-                    || copy_atom_properties.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            match params {
-                Some(params) => self._reaction_inputs_params(py, reaction, reactants, Some(params)),
-                None => self._reaction_inputs_keywords(
+            let keyword_form = max_products.is_supplied()
+                || coordinate_selections.is_supplied()
+                || copy_atom_properties.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_products, coordinate_selections, copy_atom_properties);
+            let params = params.as_deref();
+            if keyword_form {
+                self._reaction_inputs_keywords(
                     py,
                     reaction,
                     reactants,
                     max_products,
                     coordinate_selections,
                     copy_atom_properties,
-                ),
+                )
+            } else {
+                self._reaction_inputs_params(py, reaction, reactants, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.reaction_products_from_inputs"}"#]
@@ -1054,23 +1579,16 @@ pub mod native {
         ) -> PyResult<Vec<Vec<Molecule>>> {
             let defaults;
             let params = match params {
-                Some(params) => &params.inner,
+                Some(params) => {
+                    defaults = params.to_rust(py)?;
+                    &defaults
+                }
                 None => {
                     defaults = ck::ReactionRunParams::default();
                     &defaults
                 }
             };
-            let owners = reactants
-                .iter()
-                .map(|value| value.borrow(py))
-                .collect::<Vec<_>>();
-            let inputs = owners.iter().map(|owner| &owner.inner).collect::<Vec<_>>();
-            reaction
-                .invoke(py, &inputs, |reaction| {
-                    self.inner
-                        .reaction_products_from_inputs(reaction, &inputs, params)
-                })
-                .map(super::reaction_calls::products)
+            super::reaction_calls::run_from_inputs(self, reaction, py, &reactants, params)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.reaction_products_from_inputs"}"#]
         #[pyo3(signature=(reaction,reactants,*,max_products=None,coordinate_selections=None,copy_atom_properties=None))]
@@ -1090,24 +1608,25 @@ pub mod native {
                 coordinate_selections,
                 copy_atom_properties,
             );
-            self._reaction_inputs_params(py, reaction, reactants, Some(&params))
+            super::reaction_calls::run_from_inputs(self, reaction, py, &reactants, &params)
         }
 
-        #[pyo3(signature=(reaction,params=None,*,remove_unmatched_atoms=None))]
+        #[pyo3(signature=(reaction,params=crate::arguments::Argument::Missing,*,remove_unmatched_atoms=crate::arguments::Argument::Missing))]
         fn apply_reaction(
             slf: Bound<'_, Self>,
             reaction: &mut super::reaction::Reaction,
-            params: Option<&super::params::ReactionApplyParams>,
-            remove_unmatched_atoms: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::ReactionApplyParams>>,
+            >,
+            remove_unmatched_atoms: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<super::reaction_values::ReactionApplyResult> {
-            if params.is_some() && remove_unmatched_atoms.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            match params {
-                Some(params) => Self::_apply_reaction_params(slf, reaction, Some(params)),
-                None => Self::_apply_reaction_keywords(slf, reaction, remove_unmatched_atoms),
+            let keyword_form = remove_unmatched_atoms.is_supplied();
+            crate::arguments::configuration_arguments!(params; remove_unmatched_atoms);
+            let params = params.as_deref();
+            if keyword_form {
+                Self::_apply_reaction_keywords(slf, reaction, remove_unmatched_atoms)
+            } else {
+                Self::_apply_reaction_params(slf, reaction, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.apply_reaction"}"#]
@@ -1151,23 +1670,22 @@ pub mod native {
             Self::_apply_reaction_params(slf, reaction, Some(params))
         }
 
-        #[pyo3(signature=(reaction,params=None,*,remove_unmatched_atoms=None))]
+        #[pyo3(signature=(reaction,params=crate::arguments::Argument::Missing,*,remove_unmatched_atoms=crate::arguments::Argument::Missing))]
         fn apply_reaction_(
             slf: Bound<'_, Self>,
             reaction: &mut super::reaction::Reaction,
-            params: Option<&super::params::ReactionApplyParams>,
-            remove_unmatched_atoms: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::ReactionApplyParams>>,
+            >,
+            remove_unmatched_atoms: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<bool> {
-            if params.is_some() && remove_unmatched_atoms.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            match params {
-                Some(params) => Self::_apply_reaction_inplace_params(slf, reaction, Some(params)),
-                None => {
-                    Self::_apply_reaction_inplace_keywords(slf, reaction, remove_unmatched_atoms)
-                }
+            let keyword_form = remove_unmatched_atoms.is_supplied();
+            crate::arguments::configuration_arguments!(params; remove_unmatched_atoms);
+            let params = params.as_deref();
+            if keyword_form {
+                Self::_apply_reaction_inplace_keywords(slf, reaction, remove_unmatched_atoms)
+            } else {
+                Self::_apply_reaction_inplace_params(slf, reaction, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.apply_reaction_"}"#]
@@ -1288,30 +1806,29 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
         #[staticmethod]
-        #[pyo3(signature=(input,params=None,*,sanitize=None,remove_hs=None,strict_parsing=None,expand_attachment_points=None,process_property_lists=None,coordinate_mode=None))]
+        #[pyo3(signature=(input,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
         pub(crate) fn from_sdf(
             py: Python<'_>,
             input: &str,
-            params: Option<&super::selectors::SdfReadParams>,
-            sanitize: Option<bool>,
-            remove_hs: Option<bool>,
-            strict_parsing: Option<bool>,
-            expand_attachment_points: Option<bool>,
-            process_property_lists: Option<bool>,
-            coordinate_mode: Option<crate::selectors::SdfCoordinateModeInput>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::selectors::SdfReadParams>>>,
+            sanitize: crate::arguments::Argument<Option<bool>>,
+            remove_hs: crate::arguments::Argument<Option<bool>>,
+            strict_parsing: crate::arguments::Argument<Option<bool>>,
+            expand_attachment_points: crate::arguments::Argument<Option<bool>>,
+            process_property_lists: crate::arguments::Argument<Option<bool>>,
+            coordinate_mode: crate::arguments::Argument<
+                Option<crate::selectors::SdfCoordinateModeInput>,
+            >,
         ) -> PyResult<Molecule> {
-            let keywords = sanitize.is_some()
-                || remove_hs.is_some()
-                || strict_parsing.is_some()
-                || expand_attachment_points.is_some()
-                || process_property_lists.is_some()
-                || coordinate_mode.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = sanitize.is_supplied()
+                || remove_hs.is_supplied()
+                || strict_parsing.is_supplied()
+                || expand_attachment_points.is_supplied()
+                || process_property_lists.is_supplied()
+                || coordinate_mode.is_supplied();
+            crate::arguments::configuration_arguments!(params; sanitize, remove_hs, strict_parsing, expand_attachment_points, process_property_lists, coordinate_mode);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_from_sdf_keywords(
                     py,
                     input,
@@ -1369,30 +1886,29 @@ pub mod native {
         }
 
         #[staticmethod]
-        #[pyo3(signature=(text,params=None,*,sanitize=None,remove_hs=None,strict_parsing=None,expand_attachment_points=None,process_property_lists=None,coordinate_mode=None))]
+        #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
         pub(crate) fn from_mol(
             py: Python<'_>,
             text: &str,
-            params: Option<&super::selectors::SdfReadParams>,
-            sanitize: Option<bool>,
-            remove_hs: Option<bool>,
-            strict_parsing: Option<bool>,
-            expand_attachment_points: Option<bool>,
-            process_property_lists: Option<bool>,
-            coordinate_mode: Option<crate::selectors::SdfCoordinateModeInput>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::selectors::SdfReadParams>>>,
+            sanitize: crate::arguments::Argument<Option<bool>>,
+            remove_hs: crate::arguments::Argument<Option<bool>>,
+            strict_parsing: crate::arguments::Argument<Option<bool>>,
+            expand_attachment_points: crate::arguments::Argument<Option<bool>>,
+            process_property_lists: crate::arguments::Argument<Option<bool>>,
+            coordinate_mode: crate::arguments::Argument<
+                Option<crate::selectors::SdfCoordinateModeInput>,
+            >,
         ) -> PyResult<Molecule> {
-            let keywords = sanitize.is_some()
-                || remove_hs.is_some()
-                || strict_parsing.is_some()
-                || expand_attachment_points.is_some()
-                || process_property_lists.is_some()
-                || coordinate_mode.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = sanitize.is_supplied()
+                || remove_hs.is_supplied()
+                || strict_parsing.is_supplied()
+                || expand_attachment_points.is_supplied()
+                || process_property_lists.is_supplied()
+                || coordinate_mode.is_supplied();
+            crate::arguments::configuration_arguments!(params; sanitize, remove_hs, strict_parsing, expand_attachment_points, process_property_lists, coordinate_mode);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_from_mol_keywords(
                     py,
                     text,
@@ -1449,21 +1965,19 @@ pub mod native {
             Self::_from_mol_params(py, text, Some(params))
         }
 
-        #[pyo3(signature=(atom, position, params=None, *, conformer_id=None))]
+        #[pyo3(signature=(atom, position, params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing))]
         fn with_atom_position(
             &self,
             py: Python<'_>,
             atom: usize,
             position: [f64; 3],
-            params: Option<&AtomPositionParams>,
-            conformer_id: Option<usize>,
+            params: crate::arguments::Argument<Option<PyRef<'_, AtomPositionParams>>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() && conformer_id.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if conformer_id.is_some() {
+            let keyword_form = conformer_id.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_atom_position_keywords(py, atom, position, conformer_id)
             } else {
                 self._with_atom_position_params(py, atom, position, params)
@@ -1523,21 +2037,19 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(atom, position, params=None, *, conformer_id=None))]
+        #[pyo3(signature=(atom, position, params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing))]
         fn set_atom_position_(
             &mut self,
             py: Python<'_>,
             atom: usize,
             position: [f64; 3],
-            params: Option<&AtomPositionParams>,
-            conformer_id: Option<usize>,
+            params: crate::arguments::Argument<Option<PyRef<'_, AtomPositionParams>>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
         ) -> PyResult<()> {
-            if params.is_some() && conformer_id.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if conformer_id.is_some() {
+            let keyword_form = conformer_id.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id);
+            let params = params.as_deref();
+            if keyword_form {
                 self._set_atom_position_keywords(py, atom, position, conformer_id)
             } else {
                 self._set_atom_position_params(py, atom, position, params)
@@ -1595,38 +2107,37 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(params=None, *, coordinate_map=None,canonical_orientation=None,clear_existing_2d=None,flips_per_sample=None,samples=None,sample_seed=None,permute_degree_four=None,force_rdkit=None,use_ring_templates=None,use_path_angle_expansion=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, coordinate_map=crate::arguments::Argument::Missing,canonical_orientation=crate::arguments::Argument::Missing,clear_existing_2d=crate::arguments::Argument::Missing,flips_per_sample=crate::arguments::Argument::Missing,samples=crate::arguments::Argument::Missing,sample_seed=crate::arguments::Argument::Missing,permute_degree_four=crate::arguments::Argument::Missing,force_rdkit=crate::arguments::Argument::Missing,use_ring_templates=crate::arguments::Argument::Missing,use_path_angle_expansion=crate::arguments::Argument::Missing))]
         fn with_2d_coordinates(
             &self,
             py: Python<'_>,
-            params: Option<&Coordinate2DParams>,
-            coordinate_map: Option<std::collections::BTreeMap<usize, [f64; 2]>>,
-            canonical_orientation: Option<bool>,
-            clear_existing_2d: Option<bool>,
-            flips_per_sample: Option<u32>,
-            samples: Option<u32>,
-            sample_seed: Option<i32>,
-            permute_degree_four: Option<bool>,
-            force_rdkit: Option<bool>,
-            use_ring_templates: Option<bool>,
-            use_path_angle_expansion: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Coordinate2DParams>>>,
+            coordinate_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<usize, [f64; 2]>>,
+            >,
+            canonical_orientation: crate::arguments::Argument<Option<bool>>,
+            clear_existing_2d: crate::arguments::Argument<Option<bool>>,
+            flips_per_sample: crate::arguments::Argument<Option<u32>>,
+            samples: crate::arguments::Argument<Option<u32>>,
+            sample_seed: crate::arguments::Argument<Option<i32>>,
+            permute_degree_four: crate::arguments::Argument<Option<bool>>,
+            force_rdkit: crate::arguments::Argument<Option<bool>>,
+            use_ring_templates: crate::arguments::Argument<Option<bool>>,
+            use_path_angle_expansion: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Molecule> {
-            let keywords = coordinate_map.is_some()
-                || canonical_orientation.is_some()
-                || clear_existing_2d.is_some()
-                || flips_per_sample.is_some()
-                || samples.is_some()
-                || sample_seed.is_some()
-                || permute_degree_four.is_some()
-                || force_rdkit.is_some()
-                || use_ring_templates.is_some()
-                || use_path_angle_expansion.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = coordinate_map.is_supplied()
+                || canonical_orientation.is_supplied()
+                || clear_existing_2d.is_supplied()
+                || flips_per_sample.is_supplied()
+                || samples.is_supplied()
+                || sample_seed.is_supplied()
+                || permute_degree_four.is_supplied()
+                || force_rdkit.is_supplied()
+                || use_ring_templates.is_supplied()
+                || use_path_angle_expansion.is_supplied();
+            crate::arguments::configuration_arguments!(params; coordinate_map, canonical_orientation, clear_existing_2d, flips_per_sample, samples, sample_seed, permute_degree_four, force_rdkit, use_ring_templates, use_path_angle_expansion);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_2d_coordinates_keywords(
                     py,
                     coordinate_map,
@@ -1651,12 +2162,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&Coordinate2DParams>,
         ) -> PyResult<Molecule> {
-            py.detach(|| match params {
-                Some(params) => self.inner.with_2d_coordinates_with_params(&params.inner),
-                None => self.inner.with_2d_coordinates(),
-            })
-            .map(|inner| Molecule { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            super::coordinate_calls::with_layout(self, py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_2d_coordinates"}"#]
         #[pyo3(signature=(*, coordinate_map=None,canonical_orientation=None,clear_existing_2d=None,flips_per_sample=None,samples=None,sample_seed=None,permute_degree_four=None,force_rdkit=None,use_ring_templates=None,use_path_angle_expansion=None))]
@@ -1686,50 +2193,47 @@ pub mod native {
                 use_ring_templates,
                 use_path_angle_expansion,
             );
-            self._with_2d_coordinates_params(py, Some(&params))
+            super::coordinate_calls::with_layout(self, py, Some(&params))
         }
         fn with_2d_coordinates_with_params(
             &self,
             py: Python<'_>,
             params: &Coordinate2DParams,
         ) -> PyResult<Molecule> {
-            py.detach(|| self.inner.with_2d_coordinates_with_params(&params.inner))
-                .map(|inner| Molecule { inner })
-                .map_err(super::operation_errors::OperationError::from_rust)
+            self._with_2d_coordinates_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None, *, coordinate_map=None,canonical_orientation=None,clear_existing_2d=None,flips_per_sample=None,samples=None,sample_seed=None,permute_degree_four=None,force_rdkit=None,use_ring_templates=None,use_path_angle_expansion=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, coordinate_map=crate::arguments::Argument::Missing,canonical_orientation=crate::arguments::Argument::Missing,clear_existing_2d=crate::arguments::Argument::Missing,flips_per_sample=crate::arguments::Argument::Missing,samples=crate::arguments::Argument::Missing,sample_seed=crate::arguments::Argument::Missing,permute_degree_four=crate::arguments::Argument::Missing,force_rdkit=crate::arguments::Argument::Missing,use_ring_templates=crate::arguments::Argument::Missing,use_path_angle_expansion=crate::arguments::Argument::Missing))]
         fn add_2d_coordinates_(
             &mut self,
             py: Python<'_>,
-            params: Option<&Coordinate2DParams>,
-            coordinate_map: Option<std::collections::BTreeMap<usize, [f64; 2]>>,
-            canonical_orientation: Option<bool>,
-            clear_existing_2d: Option<bool>,
-            flips_per_sample: Option<u32>,
-            samples: Option<u32>,
-            sample_seed: Option<i32>,
-            permute_degree_four: Option<bool>,
-            force_rdkit: Option<bool>,
-            use_ring_templates: Option<bool>,
-            use_path_angle_expansion: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Coordinate2DParams>>>,
+            coordinate_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<usize, [f64; 2]>>,
+            >,
+            canonical_orientation: crate::arguments::Argument<Option<bool>>,
+            clear_existing_2d: crate::arguments::Argument<Option<bool>>,
+            flips_per_sample: crate::arguments::Argument<Option<u32>>,
+            samples: crate::arguments::Argument<Option<u32>>,
+            sample_seed: crate::arguments::Argument<Option<i32>>,
+            permute_degree_four: crate::arguments::Argument<Option<bool>>,
+            force_rdkit: crate::arguments::Argument<Option<bool>>,
+            use_ring_templates: crate::arguments::Argument<Option<bool>>,
+            use_path_angle_expansion: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<()> {
-            let keywords = coordinate_map.is_some()
-                || canonical_orientation.is_some()
-                || clear_existing_2d.is_some()
-                || flips_per_sample.is_some()
-                || samples.is_some()
-                || sample_seed.is_some()
-                || permute_degree_four.is_some()
-                || force_rdkit.is_some()
-                || use_ring_templates.is_some()
-                || use_path_angle_expansion.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = coordinate_map.is_supplied()
+                || canonical_orientation.is_supplied()
+                || clear_existing_2d.is_supplied()
+                || flips_per_sample.is_supplied()
+                || samples.is_supplied()
+                || sample_seed.is_supplied()
+                || permute_degree_four.is_supplied()
+                || force_rdkit.is_supplied()
+                || use_ring_templates.is_supplied()
+                || use_path_angle_expansion.is_supplied();
+            crate::arguments::configuration_arguments!(params; coordinate_map, canonical_orientation, clear_existing_2d, flips_per_sample, samples, sample_seed, permute_degree_four, force_rdkit, use_ring_templates, use_path_angle_expansion);
+            let params = params.as_deref();
+            if keyword_form {
                 self._add_2d_coordinates_keywords(
                     py,
                     coordinate_map,
@@ -1754,11 +2258,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&Coordinate2DParams>,
         ) -> PyResult<()> {
-            py.detach(|| match params {
-                Some(params) => self.inner.add_2d_coordinates_with_params_(&params.inner),
-                None => self.inner.add_2d_coordinates_(),
-            })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            super::coordinate_calls::add_layout(self, py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.add_2d_coordinates_"}"#]
         #[pyo3(signature=(*, coordinate_map=None,canonical_orientation=None,clear_existing_2d=None,flips_per_sample=None,samples=None,sample_seed=None,permute_degree_four=None,force_rdkit=None,use_ring_templates=None,use_path_angle_expansion=None))]
@@ -1788,31 +2289,28 @@ pub mod native {
                 use_ring_templates,
                 use_path_angle_expansion,
             );
-            self._add_2d_coordinates_params(py, Some(&params))
+            super::coordinate_calls::add_layout(self, py, Some(&params))
         }
         fn add_2d_coordinates_with_params_(
             &mut self,
             py: Python<'_>,
             params: &Coordinate2DParams,
         ) -> PyResult<()> {
-            py.detach(|| self.inner.add_2d_coordinates_with_params_(&params.inner))
-                .map_err(super::operation_errors::OperationError::from_rust)
+            self._add_2d_coordinates_params(py, Some(params))
         }
 
-        #[pyo3(signature=(coordinates, params=None, *, z_policy=None))]
+        #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, z_policy=crate::arguments::Argument::Missing))]
         fn with_2d_coordinate_block(
             &self,
             py: Python<'_>,
             coordinates: Vec<Vec<f64>>,
-            params: Option<&Coordinate2DInputParams>,
-            z_policy: Option<super::selectors::CoordinateZPolicyInput>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Coordinate2DInputParams>>>,
+            z_policy: crate::arguments::Argument<Option<super::selectors::CoordinateZPolicyInput>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() && z_policy.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if z_policy.is_some() {
+            let keyword_form = z_policy.is_supplied();
+            crate::arguments::configuration_arguments!(params; z_policy);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_2d_coordinate_block_input_keywords(py, coordinates, z_policy)
             } else {
                 self._with_2d_coordinate_block_input_params(py, coordinates, params)
@@ -1860,20 +2358,18 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(coordinates, params=None, *, z_policy=None))]
+        #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, z_policy=crate::arguments::Argument::Missing))]
         fn set_2d_coordinates_(
             &mut self,
             py: Python<'_>,
             coordinates: Vec<Vec<f64>>,
-            params: Option<&Coordinate2DInputParams>,
-            z_policy: Option<super::selectors::CoordinateZPolicyInput>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Coordinate2DInputParams>>>,
+            z_policy: crate::arguments::Argument<Option<super::selectors::CoordinateZPolicyInput>>,
         ) -> PyResult<()> {
-            if params.is_some() && z_policy.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if z_policy.is_some() {
+            let keyword_form = z_policy.is_supplied();
+            crate::arguments::configuration_arguments!(params; z_policy);
+            let params = params.as_deref();
+            if keyword_form {
                 self._set_2d_coordinates_input_keywords(py, coordinates, z_policy)
             } else {
                 self._set_2d_coordinates_input_params(py, coordinates, params)
@@ -1919,20 +2415,18 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(coordinates, params=None, *, conformer_id=None))]
+        #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing))]
         fn with_3d_coordinates(
             &self,
             py: Python<'_>,
             coordinates: Vec<Vec<f64>>,
-            params: Option<&Replace3DCoordinatesParams>,
-            conformer_id: Option<usize>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Replace3DCoordinatesParams>>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() && conformer_id.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if conformer_id.is_some() {
+            let keyword_form = conformer_id.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_3d_coordinates_input_keywords(py, coordinates, conformer_id)
             } else {
                 self._with_3d_coordinates_input_params(py, coordinates, params)
@@ -1985,20 +2479,18 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(coordinates, params=None, *, conformer_id=None))]
+        #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing))]
         fn set_3d_coordinates_(
             &mut self,
             py: Python<'_>,
             coordinates: Vec<Vec<f64>>,
-            params: Option<&Replace3DCoordinatesParams>,
-            conformer_id: Option<usize>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Replace3DCoordinatesParams>>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
         ) -> PyResult<()> {
-            if params.is_some() && conformer_id.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if conformer_id.is_some() {
+            let keyword_form = conformer_id.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id);
+            let params = params.as_deref();
+            if keyword_form {
                 self._set_3d_coordinates_input_keywords(py, coordinates, conformer_id)
             } else {
                 self._set_3d_coordinates_input_params(py, coordinates, params)
@@ -2049,20 +2541,18 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(coordinates, params=None, *, is_3d=None))]
+        #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, is_3d=crate::arguments::Argument::Missing))]
         fn with_added_3d_conformer(
             &self,
             py: Python<'_>,
             coordinates: Vec<Vec<f64>>,
-            params: Option<&Coordinate3DInputParams>,
-            is_3d: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Coordinate3DInputParams>>>,
+            is_3d: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() && is_3d.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if is_3d.is_some() {
+            let keyword_form = is_3d.is_supplied();
+            crate::arguments::configuration_arguments!(params; is_3d);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_added_3d_conformer_input_keywords(py, coordinates, is_3d)
             } else {
                 self._with_added_3d_conformer_input_params(py, coordinates, params)
@@ -2114,20 +2604,18 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(coordinates, params=None, *, is_3d=None))]
+        #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, is_3d=crate::arguments::Argument::Missing))]
         fn add_3d_conformer_(
             &mut self,
             py: Python<'_>,
             coordinates: Vec<Vec<f64>>,
-            params: Option<&Coordinate3DInputParams>,
-            is_3d: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Coordinate3DInputParams>>>,
+            is_3d: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<usize> {
-            if params.is_some() && is_3d.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if is_3d.is_some() {
+            let keyword_form = is_3d.is_supplied();
+            crate::arguments::configuration_arguments!(params; is_3d);
+            let params = params.as_deref();
+            if keyword_form {
                 self._add_3d_conformer_input_keywords(py, coordinates, is_3d)
             } else {
                 self._add_3d_conformer_input_params(py, coordinates, params)
@@ -2177,20 +2665,18 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(coordinates, params=None, *, is_3d=None))]
+        #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, is_3d=crate::arguments::Argument::Missing))]
         fn with_only_3d_conformer(
             &self,
             py: Python<'_>,
             coordinates: Vec<Vec<f64>>,
-            params: Option<&Coordinate3DInputParams>,
-            is_3d: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Coordinate3DInputParams>>>,
+            is_3d: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() && is_3d.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if is_3d.is_some() {
+            let keyword_form = is_3d.is_supplied();
+            crate::arguments::configuration_arguments!(params; is_3d);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_only_3d_conformer_input_keywords(py, coordinates, is_3d)
             } else {
                 self._with_only_3d_conformer_input_params(py, coordinates, params)
@@ -2242,20 +2728,18 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(coordinates, params=None, *, is_3d=None))]
+        #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, is_3d=crate::arguments::Argument::Missing))]
         fn set_only_3d_conformer_(
             &mut self,
             py: Python<'_>,
             coordinates: Vec<Vec<f64>>,
-            params: Option<&Coordinate3DInputParams>,
-            is_3d: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, Coordinate3DInputParams>>>,
+            is_3d: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<usize> {
-            if params.is_some() && is_3d.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if is_3d.is_some() {
+            let keyword_form = is_3d.is_supplied();
+            crate::arguments::configuration_arguments!(params; is_3d);
+            let params = params.as_deref();
+            if keyword_form {
                 self._set_only_3d_conformer_input_keywords(py, coordinates, is_3d)
             } else {
                 self._set_only_3d_conformer_input_params(py, coordinates, params)
@@ -2314,24 +2798,21 @@ pub mod native {
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
 
-        #[pyo3(signature=(params=None, *, conformer_id=None, vdw_threshold=None, ignore_interfragment_interactions=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing, vdw_threshold=crate::arguments::Argument::Missing, ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
         fn uff_force_field(
             &self,
             py: Python<'_>,
-            params: Option<&UffForceFieldParams>,
-            conformer_id: Option<usize>,
-            vdw_threshold: Option<f64>,
-            ignore_interfragment_interactions: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, UffForceFieldParams>>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
+            vdw_threshold: crate::arguments::Argument<Option<f64>>,
+            ignore_interfragment_interactions: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<MolecularForceField> {
-            let keywords = conformer_id.is_some()
-                || vdw_threshold.is_some()
-                || ignore_interfragment_interactions.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = conformer_id.is_supplied()
+                || vdw_threshold.is_supplied()
+                || ignore_interfragment_interactions.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id, vdw_threshold, ignore_interfragment_interactions);
+            let params = params.as_deref();
+            if keyword_form {
                 self._uff_field_keywords(
                     py,
                     conformer_id,
@@ -2367,26 +2848,23 @@ pub mod native {
                 ignore_interfragment_interactions,
             )
         }
-        #[pyo3(signature=(params=None, *, conformer_id=None, mmff_variant=None, non_bonded_threshold=None, ignore_interfragment_interactions=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing, mmff_variant=crate::arguments::Argument::Missing, non_bonded_threshold=crate::arguments::Argument::Missing, ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
         fn mmff_force_field(
             &self,
             py: Python<'_>,
-            params: Option<&MmffForceFieldParams>,
-            conformer_id: Option<usize>,
-            mmff_variant: Option<String>,
-            non_bonded_threshold: Option<f64>,
-            ignore_interfragment_interactions: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, MmffForceFieldParams>>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
+            mmff_variant: crate::arguments::Argument<Option<String>>,
+            non_bonded_threshold: crate::arguments::Argument<Option<f64>>,
+            ignore_interfragment_interactions: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<MolecularForceField> {
-            let keywords = conformer_id.is_some()
-                || mmff_variant.is_some()
-                || non_bonded_threshold.is_some()
-                || ignore_interfragment_interactions.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = conformer_id.is_supplied()
+                || mmff_variant.is_supplied()
+                || non_bonded_threshold.is_supplied()
+                || ignore_interfragment_interactions.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id, mmff_variant, non_bonded_threshold, ignore_interfragment_interactions);
+            let params = params.as_deref();
+            if keyword_form {
                 self._mmff_field_keywords(
                     py,
                     conformer_id,
@@ -2425,34 +2903,29 @@ pub mod native {
                 ignore_interfragment_interactions,
             )
         }
-        #[pyo3(signature=(params=None,*,torsion_atom_count=None,include_chirality=None,fp_size=None,bits_per_entry=None,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,torsion_atom_count=crate::arguments::Argument::Missing,include_chirality=crate::arguments::Argument::Missing,fp_size=crate::arguments::Argument::Missing,bits_per_entry=crate::arguments::Argument::Missing,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_legacy(
             &self,
             py: Python<'_>,
-            params: Option<&LegacyTopologicalTorsionParams>,
-            torsion_atom_count: Option<u32>,
-            include_chirality: Option<bool>,
-            fp_size: Option<u32>,
-            bits_per_entry: Option<u32>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
+            params: crate::arguments::Argument<Option<PyRef<'_, LegacyTopologicalTorsionParams>>>,
+            torsion_atom_count: crate::arguments::Argument<Option<u32>>,
+            include_chirality: crate::arguments::Argument<Option<bool>>,
+            fp_size: crate::arguments::Argument<Option<u32>>,
+            bits_per_entry: crate::arguments::Argument<Option<u32>>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
         ) -> PyResult<Fingerprint> {
-            if let Some(params) = params {
-                if torsion_atom_count.is_some()
-                    || include_chirality.is_some()
-                    || fp_size.is_some()
-                    || bits_per_entry.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._fingerprint_topological_torsion_legacy_params(py, Some(params))
-            } else {
+            let keyword_form = torsion_atom_count.is_supplied()
+                || include_chirality.is_supplied()
+                || fp_size.is_supplied()
+                || bits_per_entry.is_supplied()
+                || from_atoms.is_supplied()
+                || ignore_atoms.is_supplied()
+                || custom_atom_invariants.is_supplied();
+            crate::arguments::configuration_arguments!(params; torsion_atom_count, include_chirality, fp_size, bits_per_entry, from_atoms, ignore_atoms, custom_atom_invariants);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_topological_torsion_legacy_keywords(
                     py,
                     torsion_atom_count,
@@ -2463,6 +2936,8 @@ pub mod native {
                     ignore_atoms,
                     custom_atom_invariants,
                 )
+            } else {
+                self._fingerprint_topological_torsion_legacy_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_legacy"}"#]
@@ -2472,14 +2947,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&LegacyTopologicalTorsionParams>,
         ) -> PyResult<Fingerprint> {
-            py.detach(|| match params {
-                Some(params) => self
-                    .inner
-                    .fingerprint_topological_torsion_legacy_with_params(&params.inner),
-                None => self.inner.fingerprint_topological_torsion_legacy(),
-            })
-            .map(|inner| Fingerprint { inner })
-            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._fingerprint_topological_torsion_legacy_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_legacy"}"#]
         #[pyo3(signature=(*,torsion_atom_count=None,include_chirality=None,fp_size=None,bits_per_entry=None,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None))]
@@ -2503,7 +2972,7 @@ pub mod native {
                 ignore_atoms,
                 custom_atom_invariants,
             );
-            self._fingerprint_topological_torsion_legacy_params(py, Some(&params))
+            self._fingerprint_topological_torsion_legacy_params_native(py, Some(&params))
         }
         fn fingerprint_topological_torsion_legacy_with_params(
             &self,
@@ -2513,34 +2982,29 @@ pub mod native {
             self._fingerprint_topological_torsion_legacy_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,torsion_atom_count=None,include_chirality=None,fp_size=None,bits_per_entry=None,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,torsion_atom_count=crate::arguments::Argument::Missing,include_chirality=crate::arguments::Argument::Missing,fp_size=crate::arguments::Argument::Missing,bits_per_entry=crate::arguments::Argument::Missing,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_count_legacy(
             &self,
             py: Python<'_>,
-            params: Option<&LegacyTopologicalTorsionParams>,
-            torsion_atom_count: Option<u32>,
-            include_chirality: Option<bool>,
-            fp_size: Option<u32>,
-            bits_per_entry: Option<u32>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
+            params: crate::arguments::Argument<Option<PyRef<'_, LegacyTopologicalTorsionParams>>>,
+            torsion_atom_count: crate::arguments::Argument<Option<u32>>,
+            include_chirality: crate::arguments::Argument<Option<bool>>,
+            fp_size: crate::arguments::Argument<Option<u32>>,
+            bits_per_entry: crate::arguments::Argument<Option<u32>>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
         ) -> PyResult<SparseCountFingerprint> {
-            if let Some(params) = params {
-                if torsion_atom_count.is_some()
-                    || include_chirality.is_some()
-                    || fp_size.is_some()
-                    || bits_per_entry.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._fingerprint_topological_torsion_count_legacy_params(py, Some(params))
-            } else {
+            let keyword_form = torsion_atom_count.is_supplied()
+                || include_chirality.is_supplied()
+                || fp_size.is_supplied()
+                || bits_per_entry.is_supplied()
+                || from_atoms.is_supplied()
+                || ignore_atoms.is_supplied()
+                || custom_atom_invariants.is_supplied();
+            crate::arguments::configuration_arguments!(params; torsion_atom_count, include_chirality, fp_size, bits_per_entry, from_atoms, ignore_atoms, custom_atom_invariants);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_topological_torsion_count_legacy_keywords(
                     py,
                     torsion_atom_count,
@@ -2551,6 +3015,8 @@ pub mod native {
                     ignore_atoms,
                     custom_atom_invariants,
                 )
+            } else {
+                self._fingerprint_topological_torsion_count_legacy_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_count_legacy"}"#]
@@ -2560,14 +3026,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&LegacyTopologicalTorsionParams>,
         ) -> PyResult<SparseCountFingerprint> {
-            py.detach(|| match params {
-                Some(params) => self
-                    .inner
-                    .fingerprint_topological_torsion_count_legacy_with_params(&params.inner),
-                None => self.inner.fingerprint_topological_torsion_count_legacy(),
-            })
-            .map(|inner| SparseCountFingerprint { inner })
-            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._fingerprint_topological_torsion_count_legacy_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_count_legacy"}"#]
         #[pyo3(signature=(*,torsion_atom_count=None,include_chirality=None,fp_size=None,bits_per_entry=None,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None))]
@@ -2591,7 +3051,7 @@ pub mod native {
                 ignore_atoms,
                 custom_atom_invariants,
             );
-            self._fingerprint_topological_torsion_count_legacy_params(py, Some(&params))
+            self._fingerprint_topological_torsion_count_legacy_params_native(py, Some(&params))
         }
         fn fingerprint_topological_torsion_count_legacy_with_params(
             &self,
@@ -2601,34 +3061,29 @@ pub mod native {
             self._fingerprint_topological_torsion_count_legacy_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,torsion_atom_count=None,include_chirality=None,fp_size=None,bits_per_entry=None,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,torsion_atom_count=crate::arguments::Argument::Missing,include_chirality=crate::arguments::Argument::Missing,fp_size=crate::arguments::Argument::Missing,bits_per_entry=crate::arguments::Argument::Missing,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_sparse_count_legacy(
             &self,
             py: Python<'_>,
-            params: Option<&LegacyTopologicalTorsionParams>,
-            torsion_atom_count: Option<u32>,
-            include_chirality: Option<bool>,
-            fp_size: Option<u32>,
-            bits_per_entry: Option<u32>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
+            params: crate::arguments::Argument<Option<PyRef<'_, LegacyTopologicalTorsionParams>>>,
+            torsion_atom_count: crate::arguments::Argument<Option<u32>>,
+            include_chirality: crate::arguments::Argument<Option<bool>>,
+            fp_size: crate::arguments::Argument<Option<u32>>,
+            bits_per_entry: crate::arguments::Argument<Option<u32>>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
         ) -> PyResult<SparseCountFingerprint> {
-            if let Some(params) = params {
-                if torsion_atom_count.is_some()
-                    || include_chirality.is_some()
-                    || fp_size.is_some()
-                    || bits_per_entry.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._fingerprint_topological_torsion_sparse_count_legacy_params(py, Some(params))
-            } else {
+            let keyword_form = torsion_atom_count.is_supplied()
+                || include_chirality.is_supplied()
+                || fp_size.is_supplied()
+                || bits_per_entry.is_supplied()
+                || from_atoms.is_supplied()
+                || ignore_atoms.is_supplied()
+                || custom_atom_invariants.is_supplied();
+            crate::arguments::configuration_arguments!(params; torsion_atom_count, include_chirality, fp_size, bits_per_entry, from_atoms, ignore_atoms, custom_atom_invariants);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_topological_torsion_sparse_count_legacy_keywords(
                     py,
                     torsion_atom_count,
@@ -2639,6 +3094,8 @@ pub mod native {
                     ignore_atoms,
                     custom_atom_invariants,
                 )
+            } else {
+                self._fingerprint_topological_torsion_sparse_count_legacy_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse_count_legacy"}"#]
@@ -2648,16 +3105,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&LegacyTopologicalTorsionParams>,
         ) -> PyResult<SparseCountFingerprint> {
-            py.detach(|| match params {
-                Some(params) => self
-                    .inner
-                    .fingerprint_topological_torsion_sparse_count_legacy_with_params(&params.inner),
-                None => self
-                    .inner
-                    .fingerprint_topological_torsion_sparse_count_legacy(),
-            })
-            .map(|inner| SparseCountFingerprint { inner })
-            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._fingerprint_topological_torsion_sparse_count_legacy_params_native(
+                py,
+                params.as_ref(),
+            )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse_count_legacy"}"#]
         #[pyo3(signature=(*,torsion_atom_count=None,include_chirality=None,fp_size=None,bits_per_entry=None,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None))]
@@ -2681,7 +3133,10 @@ pub mod native {
                 ignore_atoms,
                 custom_atom_invariants,
             );
-            self._fingerprint_topological_torsion_sparse_count_legacy_params(py, Some(&params))
+            self._fingerprint_topological_torsion_sparse_count_legacy_params_native(
+                py,
+                Some(&params),
+            )
         }
         fn fingerprint_topological_torsion_sparse_count_legacy_with_params(
             &self,
@@ -2714,39 +3169,29 @@ pub mod native {
             })
             .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
         }
-        #[pyo3(signature=(generator,params=None,output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_with_generator(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
-            params: Option<&TopologicalTorsionCallParams>,
+            params: crate::arguments::Argument<Option<PyRef<'_, TopologicalTorsionCallParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            use_legacy_stereo_perception: Option<bool>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_bond_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            conformer_id: crate::arguments::Argument<Option<i32>>,
+            use_legacy_stereo_perception: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Fingerprint> {
-            if let Some(params) = params {
-                if from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._fingerprint_topological_torsion_with_generator_params(
-                    py,
-                    generator,
-                    Some(params),
-                    output,
-                )
-            } else {
+            let keyword_form = from_atoms.is_supplied()
+                || ignore_atoms.is_supplied()
+                || custom_atom_invariants.is_supplied()
+                || custom_bond_invariants.is_supplied()
+                || conformer_id.is_supplied()
+                || use_legacy_stereo_perception.is_supplied();
+            crate::arguments::configuration_arguments!(params; from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, use_legacy_stereo_perception);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_topological_torsion_with_generator_keywords(
                     py,
                     generator,
@@ -2757,6 +3202,10 @@ pub mod native {
                     custom_bond_invariants,
                     conformer_id,
                     use_legacy_stereo_perception,
+                )
+            } else {
+                self._fingerprint_topological_torsion_with_generator_params(
+                    py, generator, params, output,
                 )
             }
         }
@@ -2788,13 +3237,14 @@ pub mod native {
             use_legacy_stereo_perception: Option<bool>,
         ) -> PyResult<Fingerprint> {
             let params = crate::torsion_reusable::call_keywords(
+                py,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
                 conformer_id,
                 use_legacy_stereo_perception,
-            );
+            )?;
             self._fingerprint_topological_torsion_with_generator_params(
                 py,
                 generator,
@@ -2803,39 +3253,29 @@ pub mod native {
             )
         }
 
-        #[pyo3(signature=(generator,params=None,output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_count_with_generator(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
-            params: Option<&TopologicalTorsionCallParams>,
+            params: crate::arguments::Argument<Option<PyRef<'_, TopologicalTorsionCallParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            use_legacy_stereo_perception: Option<bool>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_bond_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            conformer_id: crate::arguments::Argument<Option<i32>>,
+            use_legacy_stereo_perception: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<SparseCountFingerprint32> {
-            if let Some(params) = params {
-                if from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._fingerprint_topological_torsion_count_with_generator_params(
-                    py,
-                    generator,
-                    Some(params),
-                    output,
-                )
-            } else {
+            let keyword_form = from_atoms.is_supplied()
+                || ignore_atoms.is_supplied()
+                || custom_atom_invariants.is_supplied()
+                || custom_bond_invariants.is_supplied()
+                || conformer_id.is_supplied()
+                || use_legacy_stereo_perception.is_supplied();
+            crate::arguments::configuration_arguments!(params; from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, use_legacy_stereo_perception);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_topological_torsion_count_with_generator_keywords(
                     py,
                     generator,
@@ -2846,6 +3286,10 @@ pub mod native {
                     custom_bond_invariants,
                     conformer_id,
                     use_legacy_stereo_perception,
+                )
+            } else {
+                self._fingerprint_topological_torsion_count_with_generator_params(
+                    py, generator, params, output,
                 )
             }
         }
@@ -2877,13 +3321,14 @@ pub mod native {
             use_legacy_stereo_perception: Option<bool>,
         ) -> PyResult<SparseCountFingerprint32> {
             let params = crate::torsion_reusable::call_keywords(
+                py,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
                 conformer_id,
                 use_legacy_stereo_perception,
-            );
+            )?;
             self._fingerprint_topological_torsion_count_with_generator_params(
                 py,
                 generator,
@@ -2892,39 +3337,29 @@ pub mod native {
             )
         }
 
-        #[pyo3(signature=(generator,params=None,output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_sparse_with_generator(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
-            params: Option<&TopologicalTorsionCallParams>,
+            params: crate::arguments::Argument<Option<PyRef<'_, TopologicalTorsionCallParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            use_legacy_stereo_perception: Option<bool>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_bond_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            conformer_id: crate::arguments::Argument<Option<i32>>,
+            use_legacy_stereo_perception: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<SparseBitFingerprint> {
-            if let Some(params) = params {
-                if from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._fingerprint_topological_torsion_sparse_with_generator_params(
-                    py,
-                    generator,
-                    Some(params),
-                    output,
-                )
-            } else {
+            let keyword_form = from_atoms.is_supplied()
+                || ignore_atoms.is_supplied()
+                || custom_atom_invariants.is_supplied()
+                || custom_bond_invariants.is_supplied()
+                || conformer_id.is_supplied()
+                || use_legacy_stereo_perception.is_supplied();
+            crate::arguments::configuration_arguments!(params; from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, use_legacy_stereo_perception);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_topological_torsion_sparse_with_generator_keywords(
                     py,
                     generator,
@@ -2935,6 +3370,10 @@ pub mod native {
                     custom_bond_invariants,
                     conformer_id,
                     use_legacy_stereo_perception,
+                )
+            } else {
+                self._fingerprint_topological_torsion_sparse_with_generator_params(
+                    py, generator, params, output,
                 )
             }
         }
@@ -2966,13 +3405,14 @@ pub mod native {
             use_legacy_stereo_perception: Option<bool>,
         ) -> PyResult<SparseBitFingerprint> {
             let params = crate::torsion_reusable::call_keywords(
+                py,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
                 conformer_id,
                 use_legacy_stereo_perception,
-            );
+            )?;
             self._fingerprint_topological_torsion_sparse_with_generator_params(
                 py,
                 generator,
@@ -2981,39 +3421,29 @@ pub mod native {
             )
         }
 
-        #[pyo3(signature=(generator,params=None,output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_sparse_count_with_generator(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
-            params: Option<&TopologicalTorsionCallParams>,
+            params: crate::arguments::Argument<Option<PyRef<'_, TopologicalTorsionCallParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            use_legacy_stereo_perception: Option<bool>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            custom_bond_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            conformer_id: crate::arguments::Argument<Option<i32>>,
+            use_legacy_stereo_perception: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<SparseCountFingerprint> {
-            if let Some(params) = params {
-                if from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._fingerprint_topological_torsion_sparse_count_with_generator_params(
-                    py,
-                    generator,
-                    Some(params),
-                    output,
-                )
-            } else {
+            let keyword_form = from_atoms.is_supplied()
+                || ignore_atoms.is_supplied()
+                || custom_atom_invariants.is_supplied()
+                || custom_bond_invariants.is_supplied()
+                || conformer_id.is_supplied()
+                || use_legacy_stereo_perception.is_supplied();
+            crate::arguments::configuration_arguments!(params; from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, use_legacy_stereo_perception);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_topological_torsion_sparse_count_with_generator_keywords(
                     py,
                     generator,
@@ -3024,6 +3454,10 @@ pub mod native {
                     custom_bond_invariants,
                     conformer_id,
                     use_legacy_stereo_perception,
+                )
+            } else {
+                self._fingerprint_topological_torsion_sparse_count_with_generator_params(
+                    py, generator, params, output,
                 )
             }
         }
@@ -3055,13 +3489,14 @@ pub mod native {
             use_legacy_stereo_perception: Option<bool>,
         ) -> PyResult<SparseCountFingerprint> {
             let params = crate::torsion_reusable::call_keywords(
+                py,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
                 conformer_id,
                 use_legacy_stereo_perception,
-            );
+            )?;
             self._fingerprint_topological_torsion_sparse_count_with_generator_params(
                 py,
                 generator,
@@ -3069,31 +3504,46 @@ pub mod native {
                 output,
             )
         }
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, generator=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
         fn fingerprint_morgan(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, MorganFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Argument<Option<PyRef<'_, MorganParams>>>,
-            from_atoms: Argument<Option<Vec<u32>>>,
-            ignore_atoms: Argument<Option<Vec<u32>>>,
-            custom_atom_invariants: Argument<Option<Vec<u32>>>,
-            custom_bond_invariants: Argument<Option<Vec<u32>>>,
-            conformer_id: Argument<Option<i32>>,
-            invariants: Argument<Option<PyRef<'_, MorganInvariants>>>,
+            radius: Argument<FieldInput<Scalar<u32>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            use_bond_types: Argument<FieldInput<Scalar<bool>>>,
+            include_ring_membership: Argument<FieldInput<Scalar<bool>>>,
+            only_nonzero_invariants: Argument<FieldInput<Scalar<bool>>>,
+            include_redundant_environments: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            invariants: Argument<FieldInput<ConfigurationField<MorganInvariants>>>,
         ) -> PyResult<Fingerprint> {
-            crate::arguments::configuration_arguments!(params; generator, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
-            let params = params.as_deref();
-            let generator = generator.as_deref();
-            let invariants = invariants.as_deref();
-            if let Some(params) = params {
+            crate::arguments::configuration_arguments!(params; radius, include_chirality, use_bond_types, include_ring_membership, only_nonzero_invariants, include_redundant_environments, fp_size, count_simulation, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_morgan_params(py, Some(params), output)
             } else {
                 self._fingerprint_morgan_keywords(
                     py,
                     output,
-                    generator,
+                    radius,
+                    include_chirality,
+                    use_bond_types,
+                    include_ring_membership,
+                    only_nonzero_invariants,
+                    include_redundant_environments,
+                    fp_size,
+                    count_simulation,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3111,35 +3561,46 @@ pub mod native {
             params: Option<&MorganFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::MorganFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| self.inner.fingerprint_morgan_with_params(effective, output))
-                .map(|inner| Fingerprint { inner })
-                .map_err(crate::morgan_errors::MorganReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_morgan(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, invariants=None))]
+        #[pyo3(signature=(output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
         fn _fingerprint_morgan_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&MorganParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            invariants: Option<&MorganInvariants>,
+            radius: FieldInput<Scalar<u32>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            use_bond_types: FieldInput<Scalar<bool>>,
+            include_ring_membership: FieldInput<Scalar<bool>>,
+            only_nonzero_invariants: FieldInput<Scalar<bool>>,
+            include_redundant_environments: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            invariants: FieldInput<ConfigurationField<MorganInvariants>>,
         ) -> PyResult<Fingerprint> {
             let params = crate::fingerprint_calls::morgan_keywords(
-                generator,
+                radius,
+                include_chirality,
+                use_bond_types,
+                include_ring_membership,
+                only_nonzero_invariants,
+                include_redundant_environments,
+                fp_size,
+                count_simulation,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -3147,7 +3608,7 @@ pub mod native {
                 conformer_id,
                 invariants,
             );
-            self._fingerprint_morgan_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_morgan(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_morgan_with_params(
@@ -3159,31 +3620,46 @@ pub mod native {
             self._fingerprint_morgan_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, generator=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
         fn fingerprint_morgan_count(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, MorganFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Argument<Option<PyRef<'_, MorganParams>>>,
-            from_atoms: Argument<Option<Vec<u32>>>,
-            ignore_atoms: Argument<Option<Vec<u32>>>,
-            custom_atom_invariants: Argument<Option<Vec<u32>>>,
-            custom_bond_invariants: Argument<Option<Vec<u32>>>,
-            conformer_id: Argument<Option<i32>>,
-            invariants: Argument<Option<PyRef<'_, MorganInvariants>>>,
+            radius: Argument<FieldInput<Scalar<u32>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            use_bond_types: Argument<FieldInput<Scalar<bool>>>,
+            include_ring_membership: Argument<FieldInput<Scalar<bool>>>,
+            only_nonzero_invariants: Argument<FieldInput<Scalar<bool>>>,
+            include_redundant_environments: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            invariants: Argument<FieldInput<ConfigurationField<MorganInvariants>>>,
         ) -> PyResult<SparseCountFingerprint32> {
-            crate::arguments::configuration_arguments!(params; generator, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
-            let params = params.as_deref();
-            let generator = generator.as_deref();
-            let invariants = invariants.as_deref();
-            if let Some(params) = params {
+            crate::arguments::configuration_arguments!(params; radius, include_chirality, use_bond_types, include_ring_membership, only_nonzero_invariants, include_redundant_environments, fp_size, count_simulation, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_morgan_count_params(py, Some(params), output)
             } else {
                 self._fingerprint_morgan_count_keywords(
                     py,
                     output,
-                    generator,
+                    radius,
+                    include_chirality,
+                    use_bond_types,
+                    include_ring_membership,
+                    only_nonzero_invariants,
+                    include_redundant_environments,
+                    fp_size,
+                    count_simulation,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3201,38 +3677,46 @@ pub mod native {
             params: Option<&MorganFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::MorganFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_morgan_count_with_params(effective, output)
-            })
-            .map(|inner| SparseCountFingerprint32 { inner })
-            .map_err(crate::morgan_errors::MorganReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_morgan_count(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_count"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, invariants=None))]
+        #[pyo3(signature=(output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
         fn _fingerprint_morgan_count_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&MorganParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            invariants: Option<&MorganInvariants>,
+            radius: FieldInput<Scalar<u32>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            use_bond_types: FieldInput<Scalar<bool>>,
+            include_ring_membership: FieldInput<Scalar<bool>>,
+            only_nonzero_invariants: FieldInput<Scalar<bool>>,
+            include_redundant_environments: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            invariants: FieldInput<ConfigurationField<MorganInvariants>>,
         ) -> PyResult<SparseCountFingerprint32> {
             let params = crate::fingerprint_calls::morgan_keywords(
-                generator,
+                radius,
+                include_chirality,
+                use_bond_types,
+                include_ring_membership,
+                only_nonzero_invariants,
+                include_redundant_environments,
+                fp_size,
+                count_simulation,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -3240,7 +3724,7 @@ pub mod native {
                 conformer_id,
                 invariants,
             );
-            self._fingerprint_morgan_count_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_morgan_count(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_morgan_count_with_params(
@@ -3252,31 +3736,46 @@ pub mod native {
             self._fingerprint_morgan_count_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, generator=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
         fn fingerprint_morgan_sparse(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, MorganFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Argument<Option<PyRef<'_, MorganParams>>>,
-            from_atoms: Argument<Option<Vec<u32>>>,
-            ignore_atoms: Argument<Option<Vec<u32>>>,
-            custom_atom_invariants: Argument<Option<Vec<u32>>>,
-            custom_bond_invariants: Argument<Option<Vec<u32>>>,
-            conformer_id: Argument<Option<i32>>,
-            invariants: Argument<Option<PyRef<'_, MorganInvariants>>>,
+            radius: Argument<FieldInput<Scalar<u32>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            use_bond_types: Argument<FieldInput<Scalar<bool>>>,
+            include_ring_membership: Argument<FieldInput<Scalar<bool>>>,
+            only_nonzero_invariants: Argument<FieldInput<Scalar<bool>>>,
+            include_redundant_environments: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            invariants: Argument<FieldInput<ConfigurationField<MorganInvariants>>>,
         ) -> PyResult<SparseBitFingerprint> {
-            crate::arguments::configuration_arguments!(params; generator, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
-            let params = params.as_deref();
-            let generator = generator.as_deref();
-            let invariants = invariants.as_deref();
-            if let Some(params) = params {
+            crate::arguments::configuration_arguments!(params; radius, include_chirality, use_bond_types, include_ring_membership, only_nonzero_invariants, include_redundant_environments, fp_size, count_simulation, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_morgan_sparse_params(py, Some(params), output)
             } else {
                 self._fingerprint_morgan_sparse_keywords(
                     py,
                     output,
-                    generator,
+                    radius,
+                    include_chirality,
+                    use_bond_types,
+                    include_ring_membership,
+                    only_nonzero_invariants,
+                    include_redundant_environments,
+                    fp_size,
+                    count_simulation,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3294,38 +3793,46 @@ pub mod native {
             params: Option<&MorganFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::MorganFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_morgan_sparse_with_params(effective, output)
-            })
-            .map(|inner| SparseBitFingerprint { inner })
-            .map_err(crate::morgan_errors::MorganReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_morgan_sparse(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, invariants=None))]
+        #[pyo3(signature=(output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
         fn _fingerprint_morgan_sparse_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&MorganParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            invariants: Option<&MorganInvariants>,
+            radius: FieldInput<Scalar<u32>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            use_bond_types: FieldInput<Scalar<bool>>,
+            include_ring_membership: FieldInput<Scalar<bool>>,
+            only_nonzero_invariants: FieldInput<Scalar<bool>>,
+            include_redundant_environments: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            invariants: FieldInput<ConfigurationField<MorganInvariants>>,
         ) -> PyResult<SparseBitFingerprint> {
             let params = crate::fingerprint_calls::morgan_keywords(
-                generator,
+                radius,
+                include_chirality,
+                use_bond_types,
+                include_ring_membership,
+                only_nonzero_invariants,
+                include_redundant_environments,
+                fp_size,
+                count_simulation,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -3333,7 +3840,7 @@ pub mod native {
                 conformer_id,
                 invariants,
             );
-            self._fingerprint_morgan_sparse_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_morgan_sparse(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_morgan_sparse_with_params(
@@ -3345,31 +3852,46 @@ pub mod native {
             self._fingerprint_morgan_sparse_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, generator=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
         fn fingerprint_morgan_sparse_count(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, MorganFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Argument<Option<PyRef<'_, MorganParams>>>,
-            from_atoms: Argument<Option<Vec<u32>>>,
-            ignore_atoms: Argument<Option<Vec<u32>>>,
-            custom_atom_invariants: Argument<Option<Vec<u32>>>,
-            custom_bond_invariants: Argument<Option<Vec<u32>>>,
-            conformer_id: Argument<Option<i32>>,
-            invariants: Argument<Option<PyRef<'_, MorganInvariants>>>,
+            radius: Argument<FieldInput<Scalar<u32>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            use_bond_types: Argument<FieldInput<Scalar<bool>>>,
+            include_ring_membership: Argument<FieldInput<Scalar<bool>>>,
+            only_nonzero_invariants: Argument<FieldInput<Scalar<bool>>>,
+            include_redundant_environments: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            invariants: Argument<FieldInput<ConfigurationField<MorganInvariants>>>,
         ) -> PyResult<SparseCountFingerprint> {
-            crate::arguments::configuration_arguments!(params; generator, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
-            let params = params.as_deref();
-            let generator = generator.as_deref();
-            let invariants = invariants.as_deref();
-            if let Some(params) = params {
+            crate::arguments::configuration_arguments!(params; radius, include_chirality, use_bond_types, include_ring_membership, only_nonzero_invariants, include_redundant_environments, fp_size, count_simulation, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_morgan_sparse_count_params(py, Some(params), output)
             } else {
                 self._fingerprint_morgan_sparse_count_keywords(
                     py,
                     output,
-                    generator,
+                    radius,
+                    include_chirality,
+                    use_bond_types,
+                    include_ring_membership,
+                    only_nonzero_invariants,
+                    include_redundant_environments,
+                    fp_size,
+                    count_simulation,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3387,38 +3909,46 @@ pub mod native {
             params: Option<&MorganFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::MorganFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_morgan_sparse_count_with_params(effective, output)
-            })
-            .map(|inner| SparseCountFingerprint { inner })
-            .map_err(crate::morgan_errors::MorganReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_morgan_sparse_count(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse_count"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, invariants=None))]
+        #[pyo3(signature=(output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
         fn _fingerprint_morgan_sparse_count_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&MorganParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            invariants: Option<&MorganInvariants>,
+            radius: FieldInput<Scalar<u32>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            use_bond_types: FieldInput<Scalar<bool>>,
+            include_ring_membership: FieldInput<Scalar<bool>>,
+            only_nonzero_invariants: FieldInput<Scalar<bool>>,
+            include_redundant_environments: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            invariants: FieldInput<ConfigurationField<MorganInvariants>>,
         ) -> PyResult<SparseCountFingerprint> {
             let params = crate::fingerprint_calls::morgan_keywords(
-                generator,
+                radius,
+                include_chirality,
+                use_bond_types,
+                include_ring_membership,
+                only_nonzero_invariants,
+                include_redundant_environments,
+                fp_size,
+                count_simulation,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -3426,7 +3956,7 @@ pub mod native {
                 conformer_id,
                 invariants,
             );
-            self._fingerprint_morgan_sparse_count_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_morgan_sparse_count(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_morgan_sparse_count_with_params(
@@ -3438,41 +3968,45 @@ pub mod native {
             self._fingerprint_morgan_sparse_count_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=None, output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_atom_pair(
             &self,
             py: Python<'_>,
-            params: Option<&AtomPairFingerprintParams>,
+            params: Argument<Option<PyRef<'_, AtomPairFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&AtomPairParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            min_distance: Argument<FieldInput<Scalar<u32>>>,
+            max_distance: Argument<FieldInput<Scalar<u32>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            use_2d: Argument<FieldInput<Scalar<bool>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            atom_invariants_generator: Argument<
+                FieldInput<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>,
+            >,
+            use_legacy_stereo_perception: Argument<FieldInput<Scalar<bool>>>,
         ) -> PyResult<Fingerprint> {
-            if let Some(params) = params {
-                if generator.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || atom_invariants_generator.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
+            crate::arguments::configuration_arguments!(params; min_distance, max_distance, include_chirality, use_2d, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_atom_pair_params(py, Some(params), output)
             } else {
                 self._fingerprint_atom_pair_keywords(
                     py,
                     output,
-                    generator,
+                    min_distance,
+                    max_distance,
+                    include_chirality,
+                    use_2d,
+                    count_simulation,
+                    fp_size,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3491,39 +4025,45 @@ pub mod native {
             params: Option<&AtomPairFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::AtomPairFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_atom_pair_with_params(effective, output)
-            })
-            .map(|inner| Fingerprint { inner })
-            .map_err(crate::morgan_errors::AtomPairReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_atom_pair(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_atom_pair_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&AtomPairParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            min_distance: FieldInput<Scalar<u32>>,
+            max_distance: FieldInput<Scalar<u32>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            use_2d: FieldInput<Scalar<bool>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            atom_invariants_generator: FieldInput<
+                Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
+            >,
+            use_legacy_stereo_perception: FieldInput<Scalar<bool>>,
         ) -> PyResult<Fingerprint> {
             let params = crate::fingerprint_calls::atom_pair_keywords(
-                generator,
+                min_distance,
+                max_distance,
+                include_chirality,
+                use_2d,
+                count_simulation,
+                fp_size,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -3532,7 +4072,7 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            self._fingerprint_atom_pair_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_atom_pair(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_atom_pair_with_params(
@@ -3544,41 +4084,45 @@ pub mod native {
             self._fingerprint_atom_pair_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=None, output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_atom_pair_count(
             &self,
             py: Python<'_>,
-            params: Option<&AtomPairFingerprintParams>,
+            params: Argument<Option<PyRef<'_, AtomPairFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&AtomPairParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            min_distance: Argument<FieldInput<Scalar<u32>>>,
+            max_distance: Argument<FieldInput<Scalar<u32>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            use_2d: Argument<FieldInput<Scalar<bool>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            atom_invariants_generator: Argument<
+                FieldInput<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>,
+            >,
+            use_legacy_stereo_perception: Argument<FieldInput<Scalar<bool>>>,
         ) -> PyResult<SparseCountFingerprint32> {
-            if let Some(params) = params {
-                if generator.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || atom_invariants_generator.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
+            crate::arguments::configuration_arguments!(params; min_distance, max_distance, include_chirality, use_2d, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_atom_pair_count_params(py, Some(params), output)
             } else {
                 self._fingerprint_atom_pair_count_keywords(
                     py,
                     output,
-                    generator,
+                    min_distance,
+                    max_distance,
+                    include_chirality,
+                    use_2d,
+                    count_simulation,
+                    fp_size,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3597,39 +4141,45 @@ pub mod native {
             params: Option<&AtomPairFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::AtomPairFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_atom_pair_count_with_params(effective, output)
-            })
-            .map(|inner| SparseCountFingerprint32 { inner })
-            .map_err(crate::morgan_errors::AtomPairReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_atom_pair_count(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair_count"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_atom_pair_count_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&AtomPairParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            min_distance: FieldInput<Scalar<u32>>,
+            max_distance: FieldInput<Scalar<u32>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            use_2d: FieldInput<Scalar<bool>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            atom_invariants_generator: FieldInput<
+                Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
+            >,
+            use_legacy_stereo_perception: FieldInput<Scalar<bool>>,
         ) -> PyResult<SparseCountFingerprint32> {
             let params = crate::fingerprint_calls::atom_pair_keywords(
-                generator,
+                min_distance,
+                max_distance,
+                include_chirality,
+                use_2d,
+                count_simulation,
+                fp_size,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -3638,7 +4188,7 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            self._fingerprint_atom_pair_count_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_atom_pair_count(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_atom_pair_count_with_params(
@@ -3650,41 +4200,45 @@ pub mod native {
             self._fingerprint_atom_pair_count_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=None, output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_atom_pair_sparse(
             &self,
             py: Python<'_>,
-            params: Option<&AtomPairFingerprintParams>,
+            params: Argument<Option<PyRef<'_, AtomPairFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&AtomPairParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            min_distance: Argument<FieldInput<Scalar<u32>>>,
+            max_distance: Argument<FieldInput<Scalar<u32>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            use_2d: Argument<FieldInput<Scalar<bool>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            atom_invariants_generator: Argument<
+                FieldInput<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>,
+            >,
+            use_legacy_stereo_perception: Argument<FieldInput<Scalar<bool>>>,
         ) -> PyResult<SparseBitFingerprint> {
-            if let Some(params) = params {
-                if generator.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || atom_invariants_generator.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
+            crate::arguments::configuration_arguments!(params; min_distance, max_distance, include_chirality, use_2d, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_atom_pair_sparse_params(py, Some(params), output)
             } else {
                 self._fingerprint_atom_pair_sparse_keywords(
                     py,
                     output,
-                    generator,
+                    min_distance,
+                    max_distance,
+                    include_chirality,
+                    use_2d,
+                    count_simulation,
+                    fp_size,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3703,39 +4257,45 @@ pub mod native {
             params: Option<&AtomPairFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::AtomPairFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_atom_pair_sparse_with_params(effective, output)
-            })
-            .map(|inner| SparseBitFingerprint { inner })
-            .map_err(crate::morgan_errors::AtomPairReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_atom_pair_sparse(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair_sparse"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_atom_pair_sparse_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&AtomPairParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            min_distance: FieldInput<Scalar<u32>>,
+            max_distance: FieldInput<Scalar<u32>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            use_2d: FieldInput<Scalar<bool>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            atom_invariants_generator: FieldInput<
+                Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
+            >,
+            use_legacy_stereo_perception: FieldInput<Scalar<bool>>,
         ) -> PyResult<SparseBitFingerprint> {
             let params = crate::fingerprint_calls::atom_pair_keywords(
-                generator,
+                min_distance,
+                max_distance,
+                include_chirality,
+                use_2d,
+                count_simulation,
+                fp_size,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -3744,7 +4304,7 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            self._fingerprint_atom_pair_sparse_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_atom_pair_sparse(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_atom_pair_sparse_with_params(
@@ -3756,41 +4316,45 @@ pub mod native {
             self._fingerprint_atom_pair_sparse_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=None, output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_atom_pair_sparse_count(
             &self,
             py: Python<'_>,
-            params: Option<&AtomPairFingerprintParams>,
+            params: Argument<Option<PyRef<'_, AtomPairFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&AtomPairParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            min_distance: Argument<FieldInput<Scalar<u32>>>,
+            max_distance: Argument<FieldInput<Scalar<u32>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            use_2d: Argument<FieldInput<Scalar<bool>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            atom_invariants_generator: Argument<
+                FieldInput<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>,
+            >,
+            use_legacy_stereo_perception: Argument<FieldInput<Scalar<bool>>>,
         ) -> PyResult<SparseCountFingerprint> {
-            if let Some(params) = params {
-                if generator.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || atom_invariants_generator.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
+            crate::arguments::configuration_arguments!(params; min_distance, max_distance, include_chirality, use_2d, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_atom_pair_sparse_count_params(py, Some(params), output)
             } else {
                 self._fingerprint_atom_pair_sparse_count_keywords(
                     py,
                     output,
-                    generator,
+                    min_distance,
+                    max_distance,
+                    include_chirality,
+                    use_2d,
+                    count_simulation,
+                    fp_size,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3809,39 +4373,45 @@ pub mod native {
             params: Option<&AtomPairFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::AtomPairFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_atom_pair_sparse_count_with_params(effective, output)
-            })
-            .map(|inner| SparseCountFingerprint { inner })
-            .map_err(crate::morgan_errors::AtomPairReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_atom_pair_sparse_count(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair_sparse_count"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_atom_pair_sparse_count_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&AtomPairParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            min_distance: FieldInput<Scalar<u32>>,
+            max_distance: FieldInput<Scalar<u32>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            use_2d: FieldInput<Scalar<bool>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            atom_invariants_generator: FieldInput<
+                Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
+            >,
+            use_legacy_stereo_perception: FieldInput<Scalar<bool>>,
         ) -> PyResult<SparseCountFingerprint> {
             let params = crate::fingerprint_calls::atom_pair_keywords(
-                generator,
+                min_distance,
+                max_distance,
+                include_chirality,
+                use_2d,
+                count_simulation,
+                fp_size,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -3850,7 +4420,7 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            self._fingerprint_atom_pair_sparse_count_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_atom_pair_sparse_count(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_atom_pair_sparse_count_with_params(
@@ -3862,41 +4432,43 @@ pub mod native {
             self._fingerprint_atom_pair_sparse_count_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=None, output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_topological_torsion(
             &self,
             py: Python<'_>,
-            params: Option<&TopologicalTorsionFingerprintParams>,
+            params: Argument<Option<PyRef<'_, TopologicalTorsionFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&TopologicalTorsionParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            torsion_atom_count: Argument<FieldInput<Scalar<u32>>>,
+            only_shortest_paths: Argument<FieldInput<Scalar<bool>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            atom_invariants_generator: Argument<
+                FieldInput<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>,
+            >,
+            use_legacy_stereo_perception: Argument<FieldInput<Scalar<bool>>>,
         ) -> PyResult<Fingerprint> {
-            if let Some(params) = params {
-                if generator.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || atom_invariants_generator.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
+            crate::arguments::configuration_arguments!(params; torsion_atom_count, only_shortest_paths, include_chirality, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_topological_torsion_params(py, Some(params), output)
             } else {
                 self._fingerprint_topological_torsion_keywords(
                     py,
                     output,
-                    generator,
+                    torsion_atom_count,
+                    only_shortest_paths,
+                    include_chirality,
+                    count_simulation,
+                    fp_size,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3915,39 +4487,43 @@ pub mod native {
             params: Option<&TopologicalTorsionFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::TopologicalTorsionFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_topological_torsion_with_params(effective, output)
-            })
-            .map(|inner| Fingerprint { inner })
-            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_topological_torsion(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_topological_torsion_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&TopologicalTorsionParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            torsion_atom_count: FieldInput<Scalar<u32>>,
+            only_shortest_paths: FieldInput<Scalar<bool>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            atom_invariants_generator: FieldInput<
+                Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
+            >,
+            use_legacy_stereo_perception: FieldInput<Scalar<bool>>,
         ) -> PyResult<Fingerprint> {
             let params = crate::fingerprint_calls::topological_torsion_keywords(
-                generator,
+                torsion_atom_count,
+                only_shortest_paths,
+                include_chirality,
+                count_simulation,
+                fp_size,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -3956,7 +4532,7 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            self._fingerprint_topological_torsion_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_topological_torsion(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_topological_torsion_with_params(
@@ -3968,41 +4544,43 @@ pub mod native {
             self._fingerprint_topological_torsion_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=None, output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_topological_torsion_count(
             &self,
             py: Python<'_>,
-            params: Option<&TopologicalTorsionFingerprintParams>,
+            params: Argument<Option<PyRef<'_, TopologicalTorsionFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&TopologicalTorsionParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            torsion_atom_count: Argument<FieldInput<Scalar<u32>>>,
+            only_shortest_paths: Argument<FieldInput<Scalar<bool>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            atom_invariants_generator: Argument<
+                FieldInput<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>,
+            >,
+            use_legacy_stereo_perception: Argument<FieldInput<Scalar<bool>>>,
         ) -> PyResult<SparseCountFingerprint32> {
-            if let Some(params) = params {
-                if generator.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || atom_invariants_generator.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
+            crate::arguments::configuration_arguments!(params; torsion_atom_count, only_shortest_paths, include_chirality, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_topological_torsion_count_params(py, Some(params), output)
             } else {
                 self._fingerprint_topological_torsion_count_keywords(
                     py,
                     output,
-                    generator,
+                    torsion_atom_count,
+                    only_shortest_paths,
+                    include_chirality,
+                    count_simulation,
+                    fp_size,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -4021,39 +4599,43 @@ pub mod native {
             params: Option<&TopologicalTorsionFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::TopologicalTorsionFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_topological_torsion_count_with_params(effective, output)
-            })
-            .map(|inner| SparseCountFingerprint32 { inner })
-            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_topological_torsion_count(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_count"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_topological_torsion_count_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&TopologicalTorsionParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            torsion_atom_count: FieldInput<Scalar<u32>>,
+            only_shortest_paths: FieldInput<Scalar<bool>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            atom_invariants_generator: FieldInput<
+                Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
+            >,
+            use_legacy_stereo_perception: FieldInput<Scalar<bool>>,
         ) -> PyResult<SparseCountFingerprint32> {
             let params = crate::fingerprint_calls::topological_torsion_keywords(
-                generator,
+                torsion_atom_count,
+                only_shortest_paths,
+                include_chirality,
+                count_simulation,
+                fp_size,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -4062,7 +4644,7 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            self._fingerprint_topological_torsion_count_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_topological_torsion_count(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_topological_torsion_count_with_params(
@@ -4074,41 +4656,43 @@ pub mod native {
             self._fingerprint_topological_torsion_count_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=None, output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_topological_torsion_sparse(
             &self,
             py: Python<'_>,
-            params: Option<&TopologicalTorsionFingerprintParams>,
+            params: Argument<Option<PyRef<'_, TopologicalTorsionFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&TopologicalTorsionParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            torsion_atom_count: Argument<FieldInput<Scalar<u32>>>,
+            only_shortest_paths: Argument<FieldInput<Scalar<bool>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            atom_invariants_generator: Argument<
+                FieldInput<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>,
+            >,
+            use_legacy_stereo_perception: Argument<FieldInput<Scalar<bool>>>,
         ) -> PyResult<SparseBitFingerprint> {
-            if let Some(params) = params {
-                if generator.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || atom_invariants_generator.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
+            crate::arguments::configuration_arguments!(params; torsion_atom_count, only_shortest_paths, include_chirality, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_topological_torsion_sparse_params(py, Some(params), output)
             } else {
                 self._fingerprint_topological_torsion_sparse_keywords(
                     py,
                     output,
-                    generator,
+                    torsion_atom_count,
+                    only_shortest_paths,
+                    include_chirality,
+                    count_simulation,
+                    fp_size,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -4127,39 +4711,43 @@ pub mod native {
             params: Option<&TopologicalTorsionFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::TopologicalTorsionFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_topological_torsion_sparse_with_params(effective, output)
-            })
-            .map(|inner| SparseBitFingerprint { inner })
-            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_topological_torsion_sparse(self, py, &effective, output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_topological_torsion_sparse_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&TopologicalTorsionParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            torsion_atom_count: FieldInput<Scalar<u32>>,
+            only_shortest_paths: FieldInput<Scalar<bool>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            atom_invariants_generator: FieldInput<
+                Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
+            >,
+            use_legacy_stereo_perception: FieldInput<Scalar<bool>>,
         ) -> PyResult<SparseBitFingerprint> {
             let params = crate::fingerprint_calls::topological_torsion_keywords(
-                generator,
+                torsion_atom_count,
+                only_shortest_paths,
+                include_chirality,
+                count_simulation,
+                fp_size,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -4168,7 +4756,7 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            self._fingerprint_topological_torsion_sparse_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_topological_torsion_sparse(self, py, &params, output)
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_topological_torsion_sparse_with_params(
@@ -4180,41 +4768,43 @@ pub mod native {
             self._fingerprint_topological_torsion_sparse_params(py, Some(params), output)
         }
 
-        #[pyo3(signature=(params=None, output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(params=Argument::Missing, output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_topological_torsion_sparse_count(
             &self,
             py: Python<'_>,
-            params: Option<&TopologicalTorsionFingerprintParams>,
+            params: Argument<Option<PyRef<'_, TopologicalTorsionFingerprintParams>>>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&TopologicalTorsionParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            torsion_atom_count: Argument<FieldInput<Scalar<u32>>>,
+            only_shortest_paths: Argument<FieldInput<Scalar<bool>>>,
+            include_chirality: Argument<FieldInput<Scalar<bool>>>,
+            count_simulation: Argument<FieldInput<Scalar<bool>>>,
+            fp_size: Argument<FieldInput<Scalar<u32>>>,
+            bits_per_feature: Argument<FieldInput<Scalar<u32>>>,
+            count_bounds: Argument<FieldInput<Vec<u32>>>,
+            from_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            ignore_atoms: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_atom_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            custom_bond_invariants: Argument<FieldInput<Option<Vec<u32>>>>,
+            conformer_id: Argument<FieldInput<Scalar<i32>>>,
+            atom_invariants_generator: Argument<
+                FieldInput<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>,
+            >,
+            use_legacy_stereo_perception: Argument<FieldInput<Scalar<bool>>>,
         ) -> PyResult<SparseCountFingerprint> {
-            if let Some(params) = params {
-                if generator.is_some()
-                    || from_atoms.is_some()
-                    || ignore_atoms.is_some()
-                    || custom_atom_invariants.is_some()
-                    || custom_bond_invariants.is_some()
-                    || conformer_id.is_some()
-                    || atom_invariants_generator.is_some()
-                    || use_legacy_stereo_perception.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
+            crate::arguments::configuration_arguments!(params; torsion_atom_count, only_shortest_paths, include_chirality, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
+            if let Some(params) = params.as_deref() {
                 self._fingerprint_topological_torsion_sparse_count_params(py, Some(params), output)
             } else {
                 self._fingerprint_topological_torsion_sparse_count_keywords(
                     py,
                     output,
-                    generator,
+                    torsion_atom_count,
+                    only_shortest_paths,
+                    include_chirality,
+                    count_simulation,
+                    fp_size,
+                    bits_per_feature,
+                    count_bounds,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -4233,39 +4823,45 @@ pub mod native {
             params: Option<&TopologicalTorsionFingerprintParams>,
             output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
-            let output = output.map(|value| &mut value.inner);
-            let defaults;
-            let effective = match params {
-                Some(value) => &value.inner,
-                None => {
-                    defaults = ck::TopologicalTorsionFingerprintParams::default();
-                    &defaults
-                }
-            };
-            py.detach(|| {
-                self.inner
-                    .fingerprint_topological_torsion_sparse_count_with_params(effective, output)
-            })
-            .map(|inner| SparseCountFingerprint { inner })
-            .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
+            let effective = params
+                .map(|value| value.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
+            crate::fingerprint_calls::run_topological_torsion_sparse_count(
+                self, py, &effective, output,
+            )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse_count"}"#]
-        #[pyo3(signature=(output=None, *, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_topological_torsion_sparse_count_keywords(
             &self,
             py: Python<'_>,
             output: Option<&mut FingerprintAdditionalOutput>,
-            generator: Option<&TopologicalTorsionParams>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
-            custom_atom_invariants: Option<Vec<u32>>,
-            custom_bond_invariants: Option<Vec<u32>>,
-            conformer_id: Option<i32>,
-            atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
-            use_legacy_stereo_perception: Option<bool>,
+            torsion_atom_count: FieldInput<Scalar<u32>>,
+            only_shortest_paths: FieldInput<Scalar<bool>>,
+            include_chirality: FieldInput<Scalar<bool>>,
+            count_simulation: FieldInput<Scalar<bool>>,
+            fp_size: FieldInput<Scalar<u32>>,
+            bits_per_feature: FieldInput<Scalar<u32>>,
+            count_bounds: FieldInput<Vec<u32>>,
+            from_atoms: FieldInput<Option<Vec<u32>>>,
+            ignore_atoms: FieldInput<Option<Vec<u32>>>,
+            custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
+            custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
+            conformer_id: FieldInput<Scalar<i32>>,
+            atom_invariants_generator: FieldInput<
+                Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
+            >,
+            use_legacy_stereo_perception: FieldInput<Scalar<bool>>,
         ) -> PyResult<SparseCountFingerprint> {
             let params = crate::fingerprint_calls::topological_torsion_keywords(
-                generator,
+                torsion_atom_count,
+                only_shortest_paths,
+                include_chirality,
+                count_simulation,
+                fp_size,
+                bits_per_feature,
+                count_bounds,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
@@ -4274,7 +4870,9 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            self._fingerprint_topological_torsion_sparse_count_params(py, Some(&params), output)
+            crate::fingerprint_calls::run_topological_torsion_sparse_count(
+                self, py, &params, output,
+            )
         }
         #[pyo3(signature=(params, output=None))]
         fn fingerprint_topological_torsion_sparse_count_with_params(
@@ -4347,12 +4945,13 @@ pub mod native {
             conformer_id: Option<i32>,
         ) -> PyResult<Fingerprint> {
             let params = crate::morgan_reusable::call_keywords(
+                py,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
                 conformer_id,
-            );
+            )?;
             self._fingerprint_morgan_with_generator_params(py, generator, Some(&params), output)
         }
 
@@ -4418,12 +5017,13 @@ pub mod native {
             conformer_id: Option<i32>,
         ) -> PyResult<SparseCountFingerprint32> {
             let params = crate::morgan_reusable::call_keywords(
+                py,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
                 conformer_id,
-            );
+            )?;
             self._fingerprint_morgan_count_with_generator_params(
                 py,
                 generator,
@@ -4494,12 +5094,13 @@ pub mod native {
             conformer_id: Option<i32>,
         ) -> PyResult<SparseBitFingerprint> {
             let params = crate::morgan_reusable::call_keywords(
+                py,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
                 conformer_id,
-            );
+            )?;
             self._fingerprint_morgan_sparse_with_generator_params(
                 py,
                 generator,
@@ -4572,12 +5173,13 @@ pub mod native {
             conformer_id: Option<i32>,
         ) -> PyResult<SparseCountFingerprint> {
             let params = crate::morgan_reusable::call_keywords(
+                py,
                 from_atoms,
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
                 conformer_id,
-            );
+            )?;
             self._fingerprint_morgan_sparse_count_with_generator_params(
                 py,
                 generator,
@@ -4586,25 +5188,22 @@ pub mod native {
             )
         }
 
-        #[pyo3(signature=(params=None, *, include_atom_maps=None, isomeric_smiles=None, include_dative_bonds=None, rooted_at_atom=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, include_atom_maps=crate::arguments::Argument::Missing, isomeric_smiles=crate::arguments::Argument::Missing, include_dative_bonds=crate::arguments::Argument::Missing, rooted_at_atom=crate::arguments::Argument::Missing))]
         fn to_smarts(
             &self,
-            params: Option<&SmartsWriteParams>,
-            include_atom_maps: Option<bool>,
-            isomeric_smiles: Option<bool>,
-            include_dative_bonds: Option<bool>,
-            rooted_at_atom: Option<usize>,
+            params: crate::arguments::Argument<Option<PyRef<'_, SmartsWriteParams>>>,
+            include_atom_maps: crate::arguments::Argument<Option<bool>>,
+            isomeric_smiles: crate::arguments::Argument<Option<bool>>,
+            include_dative_bonds: crate::arguments::Argument<Option<bool>>,
+            rooted_at_atom: crate::arguments::Argument<Option<usize>>,
         ) -> PyResult<String> {
-            let configured = include_atom_maps.is_some()
-                || isomeric_smiles.is_some()
-                || include_dative_bonds.is_some()
-                || rooted_at_atom.is_some();
-            if params.is_some() && configured {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if configured {
+            let keyword_form = include_atom_maps.is_supplied()
+                || isomeric_smiles.is_supplied()
+                || include_dative_bonds.is_supplied()
+                || rooted_at_atom.is_supplied();
+            crate::arguments::configuration_arguments!(params; include_atom_maps, isomeric_smiles, include_dative_bonds, rooted_at_atom);
+            let params = params.as_deref();
+            if keyword_form {
                 self._to_smarts_keywords(
                     include_atom_maps,
                     isomeric_smiles,
@@ -4644,25 +5243,22 @@ pub mod native {
             self._to_smarts_params(Some(params))
         }
 
-        #[pyo3(signature=(params=None, *, include_atom_maps=None, isomeric_smiles=None, include_dative_bonds=None, rooted_at_atom=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, include_atom_maps=crate::arguments::Argument::Missing, isomeric_smiles=crate::arguments::Argument::Missing, include_dative_bonds=crate::arguments::Argument::Missing, rooted_at_atom=crate::arguments::Argument::Missing))]
         fn to_cx_smarts(
             &self,
-            params: Option<&SmartsWriteParams>,
-            include_atom_maps: Option<bool>,
-            isomeric_smiles: Option<bool>,
-            include_dative_bonds: Option<bool>,
-            rooted_at_atom: Option<usize>,
+            params: crate::arguments::Argument<Option<PyRef<'_, SmartsWriteParams>>>,
+            include_atom_maps: crate::arguments::Argument<Option<bool>>,
+            isomeric_smiles: crate::arguments::Argument<Option<bool>>,
+            include_dative_bonds: crate::arguments::Argument<Option<bool>>,
+            rooted_at_atom: crate::arguments::Argument<Option<usize>>,
         ) -> PyResult<String> {
-            let configured = include_atom_maps.is_some()
-                || isomeric_smiles.is_some()
-                || include_dative_bonds.is_some()
-                || rooted_at_atom.is_some();
-            if params.is_some() && configured {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if configured {
+            let keyword_form = include_atom_maps.is_supplied()
+                || isomeric_smiles.is_supplied()
+                || include_dative_bonds.is_supplied()
+                || rooted_at_atom.is_supplied();
+            crate::arguments::configuration_arguments!(params; include_atom_maps, isomeric_smiles, include_dative_bonds, rooted_at_atom);
+            let params = params.as_deref();
+            if keyword_form {
                 self._to_cx_smarts_keywords(
                     include_atom_maps,
                     isomeric_smiles,
@@ -4702,31 +5298,28 @@ pub mod native {
             self._to_cx_smarts_params(Some(params))
         }
 
-        #[pyo3(signature=(reference, params=None, *, probe_conformer_id=None, reference_conformer_id=None, atom_map=None, weights=None, reflect=None, max_iterations=None))]
+        #[pyo3(signature=(reference, params=crate::arguments::Argument::Missing, *, probe_conformer_id=crate::arguments::Argument::Missing, reference_conformer_id=crate::arguments::Argument::Missing, atom_map=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, reflect=crate::arguments::Argument::Missing, max_iterations=crate::arguments::Argument::Missing))]
         fn alignment_transform_to(
             &self,
             py: Python<'_>,
             reference: &Molecule,
-            params: Option<&AlignmentParameters>,
-            probe_conformer_id: Option<i32>,
-            reference_conformer_id: Option<i32>,
-            atom_map: Option<Vec<AlignmentAtomMap>>,
-            weights: Option<Vec<f64>>,
-            reflect: Option<bool>,
-            max_iterations: Option<u32>,
+            params: crate::arguments::Argument<Option<PyRef<'_, AlignmentParameters>>>,
+            probe_conformer_id: crate::arguments::Argument<Option<i32>>,
+            reference_conformer_id: crate::arguments::Argument<Option<i32>>,
+            atom_map: crate::arguments::Argument<Option<Vec<AlignmentAtomMap>>>,
+            weights: crate::arguments::Argument<Option<Vec<f64>>>,
+            reflect: crate::arguments::Argument<Option<bool>>,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<AlignmentResult> {
-            let configured = probe_conformer_id.is_some()
-                || reference_conformer_id.is_some()
-                || atom_map.is_some()
-                || weights.is_some()
-                || reflect.is_some()
-                || max_iterations.is_some();
-            if params.is_some() && configured {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if configured {
+            let keyword_form = probe_conformer_id.is_supplied()
+                || reference_conformer_id.is_supplied()
+                || atom_map.is_supplied()
+                || weights.is_supplied()
+                || reflect.is_supplied()
+                || max_iterations.is_supplied();
+            crate::arguments::configuration_arguments!(params; probe_conformer_id, reference_conformer_id, atom_map, weights, reflect, max_iterations);
+            let params = params.as_deref();
+            if keyword_form {
                 self._alignment_transform_to_keywords(
                     py,
                     reference,
@@ -4749,14 +5342,8 @@ pub mod native {
             reference: &Molecule,
             params: Option<&AlignmentParameters>,
         ) -> PyResult<AlignmentResult> {
-            py.detach(|| match params {
-                Some(params) => self
-                    .inner
-                    .alignment_transform_to_with_params(&reference.inner, &params.inner),
-                None => self.inner.alignment_transform_to(&reference.inner),
-            })
-            .map(|inner| AlignmentResult { inner })
-            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._alignment_transform_to_params_native(py, reference, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.alignment_transform_to"}"#]
         #[pyo3(signature=(reference, *, probe_conformer_id=None, reference_conformer_id=None, atom_map=None, weights=None, reflect=None, max_iterations=None))]
@@ -4779,7 +5366,7 @@ pub mod native {
                 reflect,
                 max_iterations,
             );
-            self._alignment_transform_to_params(py, reference, Some(&params))
+            self._alignment_transform_to_params_native(py, reference, Some(&params))
         }
         fn alignment_transform_to_with_params(
             &self,
@@ -4790,39 +5377,36 @@ pub mod native {
             self._alignment_transform_to_params(py, reference, Some(params))
         }
 
-        #[pyo3(signature=(reference, params=None, *, probe_conformer_id=None, reference_conformer_id=None, atom_maps=None, weights=None, reflect=None, max_iterations=None, max_matches=None, symmetrize_conjugated_terminal_groups=None, ignore_hydrogens=None, num_threads=None))]
+        #[pyo3(signature=(reference, params=crate::arguments::Argument::Missing, *, probe_conformer_id=crate::arguments::Argument::Missing, reference_conformer_id=crate::arguments::Argument::Missing, atom_maps=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, reflect=crate::arguments::Argument::Missing, max_iterations=crate::arguments::Argument::Missing, max_matches=crate::arguments::Argument::Missing, symmetrize_conjugated_terminal_groups=crate::arguments::Argument::Missing, ignore_hydrogens=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing))]
         fn best_alignment_to(
             &self,
             py: Python<'_>,
             reference: &Molecule,
-            params: Option<&BestAlignmentParameters>,
-            probe_conformer_id: Option<i32>,
-            reference_conformer_id: Option<i32>,
-            atom_maps: Option<Vec<Vec<AlignmentAtomMap>>>,
-            weights: Option<Vec<f64>>,
-            reflect: Option<bool>,
-            max_iterations: Option<u32>,
-            max_matches: Option<i32>,
-            symmetrize_conjugated_terminal_groups: Option<bool>,
-            ignore_hydrogens: Option<bool>,
-            num_threads: Option<i32>,
+            params: crate::arguments::Argument<Option<PyRef<'_, BestAlignmentParameters>>>,
+            probe_conformer_id: crate::arguments::Argument<Option<i32>>,
+            reference_conformer_id: crate::arguments::Argument<Option<i32>>,
+            atom_maps: crate::arguments::Argument<Option<Vec<Vec<AlignmentAtomMap>>>>,
+            weights: crate::arguments::Argument<Option<Vec<f64>>>,
+            reflect: crate::arguments::Argument<Option<bool>>,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            max_matches: crate::arguments::Argument<Option<i32>>,
+            symmetrize_conjugated_terminal_groups: crate::arguments::Argument<Option<bool>>,
+            ignore_hydrogens: crate::arguments::Argument<Option<bool>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
         ) -> PyResult<AlignmentResult> {
-            let configured = probe_conformer_id.is_some()
-                || reference_conformer_id.is_some()
-                || atom_maps.is_some()
-                || weights.is_some()
-                || reflect.is_some()
-                || max_iterations.is_some()
-                || max_matches.is_some()
-                || symmetrize_conjugated_terminal_groups.is_some()
-                || ignore_hydrogens.is_some()
-                || num_threads.is_some();
-            if params.is_some() && configured {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if configured {
+            let keyword_form = probe_conformer_id.is_supplied()
+                || reference_conformer_id.is_supplied()
+                || atom_maps.is_supplied()
+                || weights.is_supplied()
+                || reflect.is_supplied()
+                || max_iterations.is_supplied()
+                || max_matches.is_supplied()
+                || symmetrize_conjugated_terminal_groups.is_supplied()
+                || ignore_hydrogens.is_supplied()
+                || num_threads.is_supplied();
+            crate::arguments::configuration_arguments!(params; probe_conformer_id, reference_conformer_id, atom_maps, weights, reflect, max_iterations, max_matches, symmetrize_conjugated_terminal_groups, ignore_hydrogens, num_threads);
+            let params = params.as_deref();
+            if keyword_form {
                 self._best_alignment_to_keywords(
                     py,
                     reference,
@@ -4849,14 +5433,8 @@ pub mod native {
             reference: &Molecule,
             params: Option<&BestAlignmentParameters>,
         ) -> PyResult<AlignmentResult> {
-            py.detach(|| match params {
-                Some(params) => self
-                    .inner
-                    .best_alignment_to_with_params(&reference.inner, &params.inner),
-                None => self.inner.best_alignment_to(&reference.inner),
-            })
-            .map(|inner| AlignmentResult { inner })
-            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._best_alignment_to_params_native(py, reference, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.best_alignment_to"}"#]
         #[pyo3(signature=(reference, *, probe_conformer_id=None, reference_conformer_id=None, atom_maps=None, weights=None, reflect=None, max_iterations=None, max_matches=None, symmetrize_conjugated_terminal_groups=None, ignore_hydrogens=None, num_threads=None))]
@@ -4887,7 +5465,7 @@ pub mod native {
                 ignore_hydrogens,
                 num_threads,
             );
-            self._best_alignment_to_params(py, reference, Some(&params))
+            self._best_alignment_to_params_native(py, reference, Some(&params))
         }
         fn best_alignment_to_with_params(
             &self,
@@ -4898,39 +5476,36 @@ pub mod native {
             self._best_alignment_to_params(py, reference, Some(params))
         }
 
-        #[pyo3(signature=(reference, params=None, *, probe_conformer_id=None, reference_conformer_id=None, atom_maps=None, weights=None, reflect=None, max_iterations=None, max_matches=None, symmetrize_conjugated_terminal_groups=None, ignore_hydrogens=None, num_threads=None))]
+        #[pyo3(signature=(reference, params=crate::arguments::Argument::Missing, *, probe_conformer_id=crate::arguments::Argument::Missing, reference_conformer_id=crate::arguments::Argument::Missing, atom_maps=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, reflect=crate::arguments::Argument::Missing, max_iterations=crate::arguments::Argument::Missing, max_matches=crate::arguments::Argument::Missing, symmetrize_conjugated_terminal_groups=crate::arguments::Argument::Missing, ignore_hydrogens=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing))]
         fn best_rmsd_to(
             &self,
             py: Python<'_>,
             reference: &Molecule,
-            params: Option<&BestAlignmentParameters>,
-            probe_conformer_id: Option<i32>,
-            reference_conformer_id: Option<i32>,
-            atom_maps: Option<Vec<Vec<AlignmentAtomMap>>>,
-            weights: Option<Vec<f64>>,
-            reflect: Option<bool>,
-            max_iterations: Option<u32>,
-            max_matches: Option<i32>,
-            symmetrize_conjugated_terminal_groups: Option<bool>,
-            ignore_hydrogens: Option<bool>,
-            num_threads: Option<i32>,
+            params: crate::arguments::Argument<Option<PyRef<'_, BestAlignmentParameters>>>,
+            probe_conformer_id: crate::arguments::Argument<Option<i32>>,
+            reference_conformer_id: crate::arguments::Argument<Option<i32>>,
+            atom_maps: crate::arguments::Argument<Option<Vec<Vec<AlignmentAtomMap>>>>,
+            weights: crate::arguments::Argument<Option<Vec<f64>>>,
+            reflect: crate::arguments::Argument<Option<bool>>,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            max_matches: crate::arguments::Argument<Option<i32>>,
+            symmetrize_conjugated_terminal_groups: crate::arguments::Argument<Option<bool>>,
+            ignore_hydrogens: crate::arguments::Argument<Option<bool>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
         ) -> PyResult<f64> {
-            let configured = probe_conformer_id.is_some()
-                || reference_conformer_id.is_some()
-                || atom_maps.is_some()
-                || weights.is_some()
-                || reflect.is_some()
-                || max_iterations.is_some()
-                || max_matches.is_some()
-                || symmetrize_conjugated_terminal_groups.is_some()
-                || ignore_hydrogens.is_some()
-                || num_threads.is_some();
-            if params.is_some() && configured {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if configured {
+            let keyword_form = probe_conformer_id.is_supplied()
+                || reference_conformer_id.is_supplied()
+                || atom_maps.is_supplied()
+                || weights.is_supplied()
+                || reflect.is_supplied()
+                || max_iterations.is_supplied()
+                || max_matches.is_supplied()
+                || symmetrize_conjugated_terminal_groups.is_supplied()
+                || ignore_hydrogens.is_supplied()
+                || num_threads.is_supplied();
+            crate::arguments::configuration_arguments!(params; probe_conformer_id, reference_conformer_id, atom_maps, weights, reflect, max_iterations, max_matches, symmetrize_conjugated_terminal_groups, ignore_hydrogens, num_threads);
+            let params = params.as_deref();
+            if keyword_form {
                 self._best_rmsd_to_keywords(
                     py,
                     reference,
@@ -4957,13 +5532,8 @@ pub mod native {
             reference: &Molecule,
             params: Option<&BestAlignmentParameters>,
         ) -> PyResult<f64> {
-            py.detach(|| match params {
-                Some(params) => self
-                    .inner
-                    .best_rmsd_to_with_params(&reference.inner, &params.inner),
-                None => self.inner.best_rmsd_to(&reference.inner),
-            })
-            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._best_rmsd_to_params_native(py, reference, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.best_rmsd_to"}"#]
         #[pyo3(signature=(reference, *, probe_conformer_id=None, reference_conformer_id=None, atom_maps=None, weights=None, reflect=None, max_iterations=None, max_matches=None, symmetrize_conjugated_terminal_groups=None, ignore_hydrogens=None, num_threads=None))]
@@ -4994,7 +5564,7 @@ pub mod native {
                 ignore_hydrogens,
                 num_threads,
             );
-            self._best_rmsd_to_params(py, reference, Some(&params))
+            self._best_rmsd_to_params_native(py, reference, Some(&params))
         }
         fn best_rmsd_to_with_params(
             &self,
@@ -5005,31 +5575,28 @@ pub mod native {
             self._best_rmsd_to_params(py, reference, Some(params))
         }
 
-        #[pyo3(signature=(reference, params=None, *, probe_conformer_id=None, reference_conformer_id=None, atom_maps=None, weights=None, max_matches=None, symmetrize_conjugated_terminal_groups=None))]
+        #[pyo3(signature=(reference, params=crate::arguments::Argument::Missing, *, probe_conformer_id=crate::arguments::Argument::Missing, reference_conformer_id=crate::arguments::Argument::Missing, atom_maps=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, max_matches=crate::arguments::Argument::Missing, symmetrize_conjugated_terminal_groups=crate::arguments::Argument::Missing))]
         fn coordinate_rmsd_to(
             &self,
             py: Python<'_>,
             reference: &Molecule,
-            params: Option<&CoordinateRmsdParameters>,
-            probe_conformer_id: Option<i32>,
-            reference_conformer_id: Option<i32>,
-            atom_maps: Option<Vec<Vec<AlignmentAtomMap>>>,
-            weights: Option<Vec<f64>>,
-            max_matches: Option<i32>,
-            symmetrize_conjugated_terminal_groups: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, CoordinateRmsdParameters>>>,
+            probe_conformer_id: crate::arguments::Argument<Option<i32>>,
+            reference_conformer_id: crate::arguments::Argument<Option<i32>>,
+            atom_maps: crate::arguments::Argument<Option<Vec<Vec<AlignmentAtomMap>>>>,
+            weights: crate::arguments::Argument<Option<Vec<f64>>>,
+            max_matches: crate::arguments::Argument<Option<i32>>,
+            symmetrize_conjugated_terminal_groups: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<f64> {
-            let configured = probe_conformer_id.is_some()
-                || reference_conformer_id.is_some()
-                || atom_maps.is_some()
-                || weights.is_some()
-                || max_matches.is_some()
-                || symmetrize_conjugated_terminal_groups.is_some();
-            if params.is_some() && configured {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if configured {
+            let keyword_form = probe_conformer_id.is_supplied()
+                || reference_conformer_id.is_supplied()
+                || atom_maps.is_supplied()
+                || weights.is_supplied()
+                || max_matches.is_supplied()
+                || symmetrize_conjugated_terminal_groups.is_supplied();
+            crate::arguments::configuration_arguments!(params; probe_conformer_id, reference_conformer_id, atom_maps, weights, max_matches, symmetrize_conjugated_terminal_groups);
+            let params = params.as_deref();
+            if keyword_form {
                 self._coordinate_rmsd_to_keywords(
                     py,
                     reference,
@@ -5052,13 +5619,8 @@ pub mod native {
             reference: &Molecule,
             params: Option<&CoordinateRmsdParameters>,
         ) -> PyResult<f64> {
-            py.detach(|| match params {
-                Some(params) => self
-                    .inner
-                    .coordinate_rmsd_to_with_params(&reference.inner, &params.inner),
-                None => self.inner.coordinate_rmsd_to(&reference.inner),
-            })
-            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._coordinate_rmsd_to_params_native(py, reference, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.coordinate_rmsd_to"}"#]
         #[pyo3(signature=(reference, *, probe_conformer_id=None, reference_conformer_id=None, atom_maps=None, weights=None, max_matches=None, symmetrize_conjugated_terminal_groups=None))]
@@ -5081,7 +5643,7 @@ pub mod native {
                 max_matches,
                 symmetrize_conjugated_terminal_groups,
             );
-            self._coordinate_rmsd_to_params(py, reference, Some(&params))
+            self._coordinate_rmsd_to_params_native(py, reference, Some(&params))
         }
         fn coordinate_rmsd_to_with_params(
             &self,
@@ -5092,30 +5654,27 @@ pub mod native {
             self._coordinate_rmsd_to_params(py, reference, Some(params))
         }
 
-        #[pyo3(signature=(params=None, *, atom_maps=None, weights=None, max_matches=None, symmetrize_conjugated_terminal_groups=None, ignore_hydrogens=None, num_threads=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, atom_maps=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, max_matches=crate::arguments::Argument::Missing, symmetrize_conjugated_terminal_groups=crate::arguments::Argument::Missing, ignore_hydrogens=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing))]
         fn all_conformer_best_rmsds(
             &self,
             py: Python<'_>,
-            params: Option<&AllConformerRmsdParameters>,
-            atom_maps: Option<Vec<Vec<AlignmentAtomMap>>>,
-            weights: Option<Vec<f64>>,
-            max_matches: Option<i32>,
-            symmetrize_conjugated_terminal_groups: Option<bool>,
-            ignore_hydrogens: Option<bool>,
-            num_threads: Option<i32>,
+            params: crate::arguments::Argument<Option<PyRef<'_, AllConformerRmsdParameters>>>,
+            atom_maps: crate::arguments::Argument<Option<Vec<Vec<AlignmentAtomMap>>>>,
+            weights: crate::arguments::Argument<Option<Vec<f64>>>,
+            max_matches: crate::arguments::Argument<Option<i32>>,
+            symmetrize_conjugated_terminal_groups: crate::arguments::Argument<Option<bool>>,
+            ignore_hydrogens: crate::arguments::Argument<Option<bool>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
         ) -> PyResult<Vec<ConformerRmsd>> {
-            let configured = atom_maps.is_some()
-                || weights.is_some()
-                || max_matches.is_some()
-                || symmetrize_conjugated_terminal_groups.is_some()
-                || ignore_hydrogens.is_some()
-                || num_threads.is_some();
-            if params.is_some() && configured {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if configured {
+            let keyword_form = atom_maps.is_supplied()
+                || weights.is_supplied()
+                || max_matches.is_supplied()
+                || symmetrize_conjugated_terminal_groups.is_supplied()
+                || ignore_hydrogens.is_supplied()
+                || num_threads.is_supplied();
+            crate::arguments::configuration_arguments!(params; atom_maps, weights, max_matches, symmetrize_conjugated_terminal_groups, ignore_hydrogens, num_threads);
+            let params = params.as_deref();
+            if keyword_form {
                 self._all_conformer_best_rmsds_keywords(
                     py,
                     atom_maps,
@@ -5136,19 +5695,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&AllConformerRmsdParameters>,
         ) -> PyResult<Vec<ConformerRmsd>> {
-            py.detach(|| match params {
-                Some(params) => self
-                    .inner
-                    .all_conformer_best_rmsds_with_params(&params.inner),
-                None => self.inner.all_conformer_best_rmsds(),
-            })
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|inner| ConformerRmsd { inner })
-                    .collect()
-            })
-            .map_err(crate::alignment_errors::AlignmentError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._all_conformer_best_rmsds_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.all_conformer_best_rmsds"}"#]
         #[pyo3(signature=(*, atom_maps=None, weights=None, max_matches=None, symmetrize_conjugated_terminal_groups=None, ignore_hydrogens=None, num_threads=None))]
@@ -5170,7 +5718,7 @@ pub mod native {
                 ignore_hydrogens,
                 num_threads,
             );
-            self._all_conformer_best_rmsds_params(py, Some(&params))
+            self._all_conformer_best_rmsds_params_native(py, Some(&params))
         }
         fn all_conformer_best_rmsds_with_params(
             &self,
@@ -5179,42 +5727,41 @@ pub mod native {
         ) -> PyResult<Vec<ConformerRmsd>> {
             self._all_conformer_best_rmsds_params(py, Some(params))
         }
-        #[pyo3(signature=(params=None, *, min_path=None, max_path=None, fp_size=None, num_bits_per_feature=None, use_hs=None, target_density=None, min_size=None, branched_paths=None, use_bond_order=None, atom_invariants=None, from_atoms=None, ignore_atoms=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, num_bits_per_feature=crate::arguments::Argument::Missing, use_hs=crate::arguments::Argument::Missing, target_density=crate::arguments::Argument::Missing, min_size=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, use_bond_order=crate::arguments::Argument::Missing, atom_invariants=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing, ignore_atoms=crate::arguments::Argument::Missing))]
         fn fingerprint_topological(
             &self,
-            params: Option<&TopologicalFingerprintParams>,
-            min_path: Option<u32>,
-            max_path: Option<u32>,
-            fp_size: Option<u32>,
-            num_bits_per_feature: Option<u32>,
-            use_hs: Option<bool>,
-            target_density: Option<f64>,
-            min_size: Option<u32>,
-            branched_paths: Option<bool>,
-            use_bond_order: Option<bool>,
-            atom_invariants: Option<Vec<u32>>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
+            py: Python<'_>,
+            params: crate::arguments::Argument<Option<PyRef<'_, TopologicalFingerprintParams>>>,
+            min_path: crate::arguments::Argument<Option<u32>>,
+            max_path: crate::arguments::Argument<Option<u32>>,
+            fp_size: crate::arguments::Argument<Option<u32>>,
+            num_bits_per_feature: crate::arguments::Argument<Option<u32>>,
+            use_hs: crate::arguments::Argument<Option<bool>>,
+            target_density: crate::arguments::Argument<Option<f64>>,
+            min_size: crate::arguments::Argument<Option<u32>>,
+            branched_paths: crate::arguments::Argument<Option<bool>>,
+            use_bond_order: crate::arguments::Argument<Option<bool>>,
+            atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
         ) -> PyResult<Fingerprint> {
-            let keywords = min_path.is_some()
-                || max_path.is_some()
-                || fp_size.is_some()
-                || num_bits_per_feature.is_some()
-                || use_hs.is_some()
-                || target_density.is_some()
-                || min_size.is_some()
-                || branched_paths.is_some()
-                || use_bond_order.is_some()
-                || atom_invariants.is_some()
-                || from_atoms.is_some()
-                || ignore_atoms.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = min_path.is_supplied()
+                || max_path.is_supplied()
+                || fp_size.is_supplied()
+                || num_bits_per_feature.is_supplied()
+                || use_hs.is_supplied()
+                || target_density.is_supplied()
+                || min_size.is_supplied()
+                || branched_paths.is_supplied()
+                || use_bond_order.is_supplied()
+                || atom_invariants.is_supplied()
+                || from_atoms.is_supplied()
+                || ignore_atoms.is_supplied();
+            crate::arguments::configuration_arguments!(params; min_path, max_path, fp_size, num_bits_per_feature, use_hs, target_density, min_size, branched_paths, use_bond_order, atom_invariants, from_atoms, ignore_atoms);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_topological_keywords(
+                    py,
                     min_path,
                     max_path,
                     fp_size,
@@ -5229,28 +5776,24 @@ pub mod native {
                     ignore_atoms,
                 )
             } else {
-                self._fingerprint_topological_params(params)
+                self._fingerprint_topological_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological"}"#]
         #[pyo3(signature=(params=None))]
         fn _fingerprint_topological_params(
             &self,
+            py: Python<'_>,
             params: Option<&TopologicalFingerprintParams>,
         ) -> PyResult<Fingerprint> {
-            match params {
-                Some(params) => self
-                    .inner
-                    .fingerprint_topological_with_params(&params.inner),
-                None => self.inner.fingerprint_topological(),
-            }
-            .map(|inner| Fingerprint { inner })
-            .map_err(TopologicalFingerprintError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._fingerprint_topological_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological"}"#]
         #[pyo3(signature=(*, min_path=None, max_path=None, fp_size=None, num_bits_per_feature=None, use_hs=None, target_density=None, min_size=None, branched_paths=None, use_bond_order=None, atom_invariants=None, from_atoms=None, ignore_atoms=None))]
         fn _fingerprint_topological_keywords(
             &self,
+            py: Python<'_>,
             min_path: Option<u32>,
             max_path: Option<u32>,
             fp_size: Option<u32>,
@@ -5278,54 +5821,55 @@ pub mod native {
                 from_atoms,
                 ignore_atoms,
             );
-            self._fingerprint_topological_params(Some(&params))
+            self._fingerprint_topological_params_native(py, Some(&params))
         }
         fn fingerprint_topological_with_params(
             &self,
+            py: Python<'_>,
             params: &TopologicalFingerprintParams,
         ) -> PyResult<Fingerprint> {
+            let params = params.to_rust(py)?;
             self.inner
-                .fingerprint_topological_with_params(&params.inner)
+                .fingerprint_topological_with_params(&params)
                 .map(|inner| Fingerprint { inner })
                 .map_err(TopologicalFingerprintError::from_rust)
         }
-        #[pyo3(signature=(params=None, request=None, *, min_path=None, max_path=None, fp_size=None, num_bits_per_feature=None, use_hs=None, target_density=None, min_size=None, branched_paths=None, use_bond_order=None, atom_invariants=None, from_atoms=None, ignore_atoms=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, request=None, *, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, num_bits_per_feature=crate::arguments::Argument::Missing, use_hs=crate::arguments::Argument::Missing, target_density=crate::arguments::Argument::Missing, min_size=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, use_bond_order=crate::arguments::Argument::Missing, atom_invariants=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing, ignore_atoms=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_with_output(
             &self,
-            params: Option<&TopologicalFingerprintParams>,
+            py: Python<'_>,
+            params: crate::arguments::Argument<Option<PyRef<'_, TopologicalFingerprintParams>>>,
             request: Option<&TopologicalFingerprintOutputRequest>,
-            min_path: Option<u32>,
-            max_path: Option<u32>,
-            fp_size: Option<u32>,
-            num_bits_per_feature: Option<u32>,
-            use_hs: Option<bool>,
-            target_density: Option<f64>,
-            min_size: Option<u32>,
-            branched_paths: Option<bool>,
-            use_bond_order: Option<bool>,
-            atom_invariants: Option<Vec<u32>>,
-            from_atoms: Option<Vec<u32>>,
-            ignore_atoms: Option<Vec<u32>>,
+            min_path: crate::arguments::Argument<Option<u32>>,
+            max_path: crate::arguments::Argument<Option<u32>>,
+            fp_size: crate::arguments::Argument<Option<u32>>,
+            num_bits_per_feature: crate::arguments::Argument<Option<u32>>,
+            use_hs: crate::arguments::Argument<Option<bool>>,
+            target_density: crate::arguments::Argument<Option<f64>>,
+            min_size: crate::arguments::Argument<Option<u32>>,
+            branched_paths: crate::arguments::Argument<Option<bool>>,
+            use_bond_order: crate::arguments::Argument<Option<bool>>,
+            atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
+            ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
         ) -> PyResult<TopologicalFingerprintResult> {
-            let keywords = min_path.is_some()
-                || max_path.is_some()
-                || fp_size.is_some()
-                || num_bits_per_feature.is_some()
-                || use_hs.is_some()
-                || target_density.is_some()
-                || min_size.is_some()
-                || branched_paths.is_some()
-                || use_bond_order.is_some()
-                || atom_invariants.is_some()
-                || from_atoms.is_some()
-                || ignore_atoms.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = min_path.is_supplied()
+                || max_path.is_supplied()
+                || fp_size.is_supplied()
+                || num_bits_per_feature.is_supplied()
+                || use_hs.is_supplied()
+                || target_density.is_supplied()
+                || min_size.is_supplied()
+                || branched_paths.is_supplied()
+                || use_bond_order.is_supplied()
+                || atom_invariants.is_supplied()
+                || from_atoms.is_supplied()
+                || ignore_atoms.is_supplied();
+            crate::arguments::configuration_arguments!(params; min_path, max_path, fp_size, num_bits_per_feature, use_hs, target_density, min_size, branched_paths, use_bond_order, atom_invariants, from_atoms, ignore_atoms);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_topological_with_output_keywords(
+                    py,
                     request,
                     min_path,
                     max_path,
@@ -5341,38 +5885,25 @@ pub mod native {
                     ignore_atoms,
                 )
             } else {
-                self._fingerprint_topological_with_output_params(params, request)
+                self._fingerprint_topological_with_output_params(py, params, request)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_with_output"}"#]
         #[pyo3(signature=(params=None, request=None))]
         fn _fingerprint_topological_with_output_params(
             &self,
+            py: Python<'_>,
             params: Option<&TopologicalFingerprintParams>,
             request: Option<&TopologicalFingerprintOutputRequest>,
         ) -> PyResult<TopologicalFingerprintResult> {
-            match (params, request) {
-                (None, None) => self.inner.fingerprint_topological_with_output(),
-                (Some(params), request) => {
-                    self.inner.fingerprint_topological_with_output_with_params(
-                        &params.inner,
-                        request.map(|value| value.inner).unwrap_or_default(),
-                    )
-                }
-                (None, Some(request)) => {
-                    self.inner.fingerprint_topological_with_output_with_params(
-                        &ck::TopologicalFingerprintParams::default(),
-                        request.inner,
-                    )
-                }
-            }
-            .map(TopologicalFingerprintResult::from_rust)
-            .map_err(TopologicalFingerprintError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._fingerprint_topological_with_output_params_native(py, params.as_ref(), request)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_with_output"}"#]
         #[pyo3(signature=(*, request=None, min_path=None, max_path=None, fp_size=None, num_bits_per_feature=None, use_hs=None, target_density=None, min_size=None, branched_paths=None, use_bond_order=None, atom_invariants=None, from_atoms=None, ignore_atoms=None))]
         fn _fingerprint_topological_with_output_keywords(
             &self,
+            py: Python<'_>,
             request: Option<&TopologicalFingerprintOutputRequest>,
             min_path: Option<u32>,
             max_path: Option<u32>,
@@ -5401,46 +5932,48 @@ pub mod native {
                 from_atoms,
                 ignore_atoms,
             );
-            self._fingerprint_topological_with_output_params(Some(&params), request)
+            self._fingerprint_topological_with_output_params_native(py, Some(&params), request)
         }
         fn fingerprint_topological_with_output_with_params(
             &self,
+            py: Python<'_>,
             params: &TopologicalFingerprintParams,
             request: &TopologicalFingerprintOutputRequest,
         ) -> PyResult<TopologicalFingerprintResult> {
+            let params = params.to_rust(py)?;
             self.inner
-                .fingerprint_topological_with_output_with_params(&params.inner, request.inner)
+                .fingerprint_topological_with_output_with_params(&params, request.inner)
                 .map(TopologicalFingerprintResult::from_rust)
                 .map_err(TopologicalFingerprintError::from_rust)
         }
-        #[pyo3(signature=(params=None, *, layers=None, min_path=None, max_path=None, fp_size=None, atom_counts=None, set_only_bits=None, branched_paths=None, from_atoms=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, layers=crate::arguments::Argument::Missing, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, atom_counts=crate::arguments::Argument::Missing, set_only_bits=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing))]
         fn fingerprint_layered(
             &self,
-            params: Option<&LayeredFingerprintParams>,
-            layers: Option<u32>,
-            min_path: Option<u32>,
-            max_path: Option<u32>,
-            fp_size: Option<u32>,
-            atom_counts: Option<Vec<u32>>,
-            set_only_bits: Option<&Fingerprint>,
-            branched_paths: Option<bool>,
-            from_atoms: Option<Vec<u32>>,
+            py: Python<'_>,
+            params: crate::arguments::Argument<Option<PyRef<'_, LayeredFingerprintParams>>>,
+            layers: crate::arguments::Argument<Option<u32>>,
+            min_path: crate::arguments::Argument<Option<u32>>,
+            max_path: crate::arguments::Argument<Option<u32>>,
+            fp_size: crate::arguments::Argument<Option<u32>>,
+            atom_counts: crate::arguments::Argument<Option<Vec<u32>>>,
+            set_only_bits: crate::arguments::Argument<Option<PyRef<'_, Fingerprint>>>,
+            branched_paths: crate::arguments::Argument<Option<bool>>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
         ) -> PyResult<Fingerprint> {
-            let keywords = layers.is_some()
-                || min_path.is_some()
-                || max_path.is_some()
-                || fp_size.is_some()
-                || atom_counts.is_some()
-                || set_only_bits.is_some()
-                || branched_paths.is_some()
-                || from_atoms.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = layers.is_supplied()
+                || min_path.is_supplied()
+                || max_path.is_supplied()
+                || fp_size.is_supplied()
+                || atom_counts.is_supplied()
+                || set_only_bits.is_supplied()
+                || branched_paths.is_supplied()
+                || from_atoms.is_supplied();
+            crate::arguments::configuration_arguments!(params; layers, min_path, max_path, fp_size, atom_counts, set_only_bits, branched_paths, from_atoms);
+            let params = params.as_deref();
+            let set_only_bits = set_only_bits.as_deref();
+            if keyword_form {
                 self._fingerprint_layered_keywords(
+                    py,
                     layers,
                     min_path,
                     max_path,
@@ -5451,26 +5984,24 @@ pub mod native {
                     from_atoms,
                 )
             } else {
-                self._fingerprint_layered_params(params)
+                self._fingerprint_layered_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_layered"}"#]
         #[pyo3(signature=(params=None))]
         fn _fingerprint_layered_params(
             &self,
+            py: Python<'_>,
             params: Option<&LayeredFingerprintParams>,
         ) -> PyResult<Fingerprint> {
-            match params {
-                Some(params) => self.inner.fingerprint_layered_with_params(&params.inner),
-                None => self.inner.fingerprint_layered(),
-            }
-            .map(|inner| Fingerprint { inner })
-            .map_err(LayeredFingerprintError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._fingerprint_layered_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_layered"}"#]
         #[pyo3(signature=(*, layers=None, min_path=None, max_path=None, fp_size=None, atom_counts=None, set_only_bits=None, branched_paths=None, from_atoms=None))]
         fn _fingerprint_layered_keywords(
             &self,
+            py: Python<'_>,
             layers: Option<u32>,
             min_path: Option<u32>,
             max_path: Option<u32>,
@@ -5490,45 +6021,47 @@ pub mod native {
                 branched_paths,
                 from_atoms,
             );
-            self._fingerprint_layered_params(Some(&params))
+            self._fingerprint_layered_params_native(py, Some(&params))
         }
         fn fingerprint_layered_with_params(
             &self,
+            py: Python<'_>,
             params: &LayeredFingerprintParams,
         ) -> PyResult<Fingerprint> {
+            let params = params.to_rust(py)?;
             self.inner
-                .fingerprint_layered_with_params(&params.inner)
+                .fingerprint_layered_with_params(&params)
                 .map(|inner| Fingerprint { inner })
                 .map_err(LayeredFingerprintError::from_rust)
         }
-        #[pyo3(signature=(params=None, *, layers=None, min_path=None, max_path=None, fp_size=None, atom_counts=None, set_only_bits=None, branched_paths=None, from_atoms=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, layers=crate::arguments::Argument::Missing, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, atom_counts=crate::arguments::Argument::Missing, set_only_bits=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing))]
         fn fingerprint_layered_with_output(
             &self,
-            params: Option<&LayeredFingerprintParams>,
-            layers: Option<u32>,
-            min_path: Option<u32>,
-            max_path: Option<u32>,
-            fp_size: Option<u32>,
-            atom_counts: Option<Vec<u32>>,
-            set_only_bits: Option<&Fingerprint>,
-            branched_paths: Option<bool>,
-            from_atoms: Option<Vec<u32>>,
+            py: Python<'_>,
+            params: crate::arguments::Argument<Option<PyRef<'_, LayeredFingerprintParams>>>,
+            layers: crate::arguments::Argument<Option<u32>>,
+            min_path: crate::arguments::Argument<Option<u32>>,
+            max_path: crate::arguments::Argument<Option<u32>>,
+            fp_size: crate::arguments::Argument<Option<u32>>,
+            atom_counts: crate::arguments::Argument<Option<Vec<u32>>>,
+            set_only_bits: crate::arguments::Argument<Option<PyRef<'_, Fingerprint>>>,
+            branched_paths: crate::arguments::Argument<Option<bool>>,
+            from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
         ) -> PyResult<LayeredFingerprintResult> {
-            let keywords = layers.is_some()
-                || min_path.is_some()
-                || max_path.is_some()
-                || fp_size.is_some()
-                || atom_counts.is_some()
-                || set_only_bits.is_some()
-                || branched_paths.is_some()
-                || from_atoms.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = layers.is_supplied()
+                || min_path.is_supplied()
+                || max_path.is_supplied()
+                || fp_size.is_supplied()
+                || atom_counts.is_supplied()
+                || set_only_bits.is_supplied()
+                || branched_paths.is_supplied()
+                || from_atoms.is_supplied();
+            crate::arguments::configuration_arguments!(params; layers, min_path, max_path, fp_size, atom_counts, set_only_bits, branched_paths, from_atoms);
+            let params = params.as_deref();
+            let set_only_bits = set_only_bits.as_deref();
+            if keyword_form {
                 self._fingerprint_layered_with_output_keywords(
+                    py,
                     layers,
                     min_path,
                     max_path,
@@ -5539,28 +6072,24 @@ pub mod native {
                     from_atoms,
                 )
             } else {
-                self._fingerprint_layered_with_output_params(params)
+                self._fingerprint_layered_with_output_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_layered_with_output"}"#]
         #[pyo3(signature=(params=None))]
         fn _fingerprint_layered_with_output_params(
             &self,
+            py: Python<'_>,
             params: Option<&LayeredFingerprintParams>,
         ) -> PyResult<LayeredFingerprintResult> {
-            match params {
-                Some(params) => self
-                    .inner
-                    .fingerprint_layered_with_output_with_params(&params.inner),
-                None => self.inner.fingerprint_layered_with_output(),
-            }
-            .map(|inner| LayeredFingerprintResult { inner })
-            .map_err(LayeredFingerprintError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._fingerprint_layered_with_output_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_layered_with_output"}"#]
         #[pyo3(signature=(*, layers=None, min_path=None, max_path=None, fp_size=None, atom_counts=None, set_only_bits=None, branched_paths=None, from_atoms=None))]
         fn _fingerprint_layered_with_output_keywords(
             &self,
+            py: Python<'_>,
             layers: Option<u32>,
             min_path: Option<u32>,
             max_path: Option<u32>,
@@ -5580,31 +6109,30 @@ pub mod native {
                 branched_paths,
                 from_atoms,
             );
-            self._fingerprint_layered_with_output_params(Some(&params))
+            self._fingerprint_layered_with_output_params_native(py, Some(&params))
         }
         fn fingerprint_layered_with_output_with_params(
             &self,
+            py: Python<'_>,
             params: &LayeredFingerprintParams,
         ) -> PyResult<LayeredFingerprintResult> {
+            let params = params.to_rust(py)?;
             self.inner
-                .fingerprint_layered_with_output_with_params(&params.inner)
+                .fingerprint_layered_with_output_with_params(&params)
                 .map(|inner| LayeredFingerprintResult { inner })
                 .map_err(LayeredFingerprintError::from_rust)
         }
-        #[pyo3(signature = (params=None, *, n_bits=None, tautomeric=None))]
+        #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, n_bits=crate::arguments::Argument::Missing, tautomeric=crate::arguments::Argument::Missing))]
         fn fingerprint_pattern(
             &self,
-            params: Option<&PatternFingerprintParams>,
-            n_bits: Option<usize>,
-            tautomeric: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, PatternFingerprintParams>>>,
+            n_bits: crate::arguments::Argument<Option<usize>>,
+            tautomeric: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Fingerprint> {
-            let keywords = n_bits.is_some() || tautomeric.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = n_bits.is_supplied() || tautomeric.is_supplied();
+            crate::arguments::configuration_arguments!(params; n_bits, tautomeric);
+            let params = params.as_deref();
+            if keyword_form {
                 self._fingerprint_pattern_keywords(n_bits, tautomeric)
             } else {
                 self._fingerprint_pattern_params(params)
@@ -5642,18 +6170,18 @@ pub mod native {
                 .map(|inner| Fingerprint { inner })
                 .map_err(PatternFingerprintError::from_rust)
         }
-        #[pyo3(signature = (params=None, *, operations=None))]
+        #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, operations=crate::arguments::Argument::Missing))]
         fn detect_chemistry_problems(
             &self,
-            params: Option<&SanitizeParams>,
-            operations: Option<super::sanitize_values::SanitizeOperationsInput>,
+            params: crate::arguments::Argument<Option<PyRef<'_, SanitizeParams>>>,
+            operations: crate::arguments::Argument<
+                Option<super::sanitize_values::SanitizeOperationsInput>,
+            >,
         ) -> PyResult<ChemistryProblemReport> {
-            if params.is_some() && operations.is_some() {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if operations.is_some() {
+            let keyword_form = operations.is_supplied();
+            crate::arguments::configuration_arguments!(params; operations);
+            let params = params.as_deref();
+            if keyword_form {
                 self._detect_chemistry_problems_keywords(operations)
             } else {
                 self._detect_chemistry_problems_params(params)
@@ -6335,62 +6863,59 @@ pub mod native {
                 .find_chiral_centers(include_unassigned)
                 .map_err(StereoReadError::from_rust)
         }
-        #[pyo3(signature = (query, params=None, *, max_matches=None, uniquify=None, use_chirality=None, use_enhanced_stereo=None, specified_stereo_query_matches_unspecified=None, use_query_query_matches=None, recursion_possible=None, max_recursive_matches=None, num_threads=None, aromatic_matches_conjugated=None, aromatic_matches_single_or_double=None, extra_atom_check_overrides_default_check=None, extra_bond_check_overrides_default_check=None, use_generic_matchers=None, atom_properties=None, bond_properties=None, final_match=None, atom_match=None, bond_match=None, extra_final_check=None, extra_atom_check=None, extra_bond_check=None))]
+        #[pyo3(signature = (query, params=crate::arguments::Argument::Missing, *, max_matches=crate::arguments::Argument::Missing, uniquify=crate::arguments::Argument::Missing, use_chirality=crate::arguments::Argument::Missing, use_enhanced_stereo=crate::arguments::Argument::Missing, specified_stereo_query_matches_unspecified=crate::arguments::Argument::Missing, use_query_query_matches=crate::arguments::Argument::Missing, recursion_possible=crate::arguments::Argument::Missing, max_recursive_matches=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing, aromatic_matches_conjugated=crate::arguments::Argument::Missing, aromatic_matches_single_or_double=crate::arguments::Argument::Missing, extra_atom_check_overrides_default_check=crate::arguments::Argument::Missing, extra_bond_check_overrides_default_check=crate::arguments::Argument::Missing, use_generic_matchers=crate::arguments::Argument::Missing, atom_properties=crate::arguments::Argument::Missing, bond_properties=crate::arguments::Argument::Missing, final_match=crate::arguments::Argument::Missing, atom_match=crate::arguments::Argument::Missing, bond_match=crate::arguments::Argument::Missing, extra_final_check=crate::arguments::Argument::Missing, extra_atom_check=crate::arguments::Argument::Missing, extra_bond_check=crate::arguments::Argument::Missing))]
         fn substruct_match(
             slf: Bound<'_, Self>,
             query: &QueryGraph,
-            params: Option<&SubstructMatchParams>,
-            max_matches: Option<usize>,
-            uniquify: Option<bool>,
-            use_chirality: Option<bool>,
-            use_enhanced_stereo: Option<bool>,
-            specified_stereo_query_matches_unspecified: Option<bool>,
-            use_query_query_matches: Option<bool>,
-            recursion_possible: Option<bool>,
-            max_recursive_matches: Option<usize>,
-            num_threads: Option<i32>,
-            aromatic_matches_conjugated: Option<bool>,
-            aromatic_matches_single_or_double: Option<bool>,
-            extra_atom_check_overrides_default_check: Option<bool>,
-            extra_bond_check_overrides_default_check: Option<bool>,
-            use_generic_matchers: Option<bool>,
-            atom_properties: Option<Vec<String>>,
-            bond_properties: Option<Vec<String>>,
-            final_match: Option<FinalMatch>,
-            atom_match: Option<AtomMatch>,
-            bond_match: Option<BondMatch>,
-            extra_final_check: Option<FinalMatch>,
-            extra_atom_check: Option<AtomMatch>,
-            extra_bond_check: Option<BondMatch>,
+            params: crate::arguments::Argument<Option<PyRef<'_, SubstructMatchParams>>>,
+            max_matches: crate::arguments::Argument<Option<usize>>,
+            uniquify: crate::arguments::Argument<Option<bool>>,
+            use_chirality: crate::arguments::Argument<Option<bool>>,
+            use_enhanced_stereo: crate::arguments::Argument<Option<bool>>,
+            specified_stereo_query_matches_unspecified: crate::arguments::Argument<Option<bool>>,
+            use_query_query_matches: crate::arguments::Argument<Option<bool>>,
+            recursion_possible: crate::arguments::Argument<Option<bool>>,
+            max_recursive_matches: crate::arguments::Argument<Option<usize>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            aromatic_matches_conjugated: crate::arguments::Argument<Option<bool>>,
+            aromatic_matches_single_or_double: crate::arguments::Argument<Option<bool>>,
+            extra_atom_check_overrides_default_check: crate::arguments::Argument<Option<bool>>,
+            extra_bond_check_overrides_default_check: crate::arguments::Argument<Option<bool>>,
+            use_generic_matchers: crate::arguments::Argument<Option<bool>>,
+            atom_properties: crate::arguments::Argument<Option<Vec<String>>>,
+            bond_properties: crate::arguments::Argument<Option<Vec<String>>>,
+            final_match: crate::arguments::Argument<Option<FinalMatch>>,
+            atom_match: crate::arguments::Argument<Option<AtomMatch>>,
+            bond_match: crate::arguments::Argument<Option<BondMatch>>,
+            extra_final_check: crate::arguments::Argument<Option<FinalMatch>>,
+            extra_atom_check: crate::arguments::Argument<Option<AtomMatch>>,
+            extra_bond_check: crate::arguments::Argument<Option<BondMatch>>,
         ) -> PyResult<Option<MatchResult>> {
-            let keywords = max_matches.is_some()
-                || uniquify.is_some()
-                || use_chirality.is_some()
-                || use_enhanced_stereo.is_some()
-                || specified_stereo_query_matches_unspecified.is_some()
-                || use_query_query_matches.is_some()
-                || recursion_possible.is_some()
-                || max_recursive_matches.is_some()
-                || num_threads.is_some()
-                || aromatic_matches_conjugated.is_some()
-                || aromatic_matches_single_or_double.is_some()
-                || extra_atom_check_overrides_default_check.is_some()
-                || extra_bond_check_overrides_default_check.is_some()
-                || use_generic_matchers.is_some()
-                || atom_properties.is_some()
-                || bond_properties.is_some()
-                || final_match.is_some()
-                || atom_match.is_some()
-                || bond_match.is_some()
-                || extra_final_check.is_some()
-                || extra_atom_check.is_some()
-                || extra_bond_check.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = max_matches.is_supplied()
+                || uniquify.is_supplied()
+                || use_chirality.is_supplied()
+                || use_enhanced_stereo.is_supplied()
+                || specified_stereo_query_matches_unspecified.is_supplied()
+                || use_query_query_matches.is_supplied()
+                || recursion_possible.is_supplied()
+                || max_recursive_matches.is_supplied()
+                || num_threads.is_supplied()
+                || aromatic_matches_conjugated.is_supplied()
+                || aromatic_matches_single_or_double.is_supplied()
+                || extra_atom_check_overrides_default_check.is_supplied()
+                || extra_bond_check_overrides_default_check.is_supplied()
+                || use_generic_matchers.is_supplied()
+                || atom_properties.is_supplied()
+                || bond_properties.is_supplied()
+                || final_match.is_supplied()
+                || atom_match.is_supplied()
+                || bond_match.is_supplied()
+                || extra_final_check.is_supplied()
+                || extra_atom_check.is_supplied()
+                || extra_bond_check.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_matches, uniquify, use_chirality, use_enhanced_stereo, specified_stereo_query_matches_unspecified, use_query_query_matches, recursion_possible, max_recursive_matches, num_threads, aromatic_matches_conjugated, aromatic_matches_single_or_double, extra_atom_check_overrides_default_check, extra_bond_check_overrides_default_check, use_generic_matchers, atom_properties, bond_properties, final_match, atom_match, bond_match, extra_final_check, extra_atom_check, extra_bond_check);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_substruct_match_keywords(
                     slf,
                     query,
@@ -6430,19 +6955,8 @@ pub mod native {
             params: Option<&SubstructMatchParams>,
         ) -> PyResult<Option<MatchResult>> {
             let py = slf.py();
-            let target = slf.clone().unbind();
-            let holder = slf.borrow();
-            let native = &holder.inner;
-            let query = query.inner();
-            let result = match params {
-                Some(params) => params.with_callbacks(py, &target, |params| {
-                    py.detach(|| native.substruct_match_with_params(query, params))
-                })?,
-                None => py.detach(|| native.substruct_match(query)),
-            };
-            result
-                .map(|value| value.map(|inner| MatchResult { inner }))
-                .map_err(SubstructMatchError::from_rust)
+            let params = params.map(|value| value.capture(py)).transpose()?;
+            Self::_substruct_match_params_native(slf, query, params)
         }
 
         #[doc = r#"{"role":"overload","target":"Molecule.substruct_match"}"#]
@@ -6497,7 +7011,7 @@ pub mod native {
                 extra_atom_check,
                 extra_bond_check,
             )?;
-            Self::_substruct_match_params(slf, query, Some(&params))
+            Self::_substruct_match_params_native(slf, query, Some(params))
         }
 
         fn substruct_match_with_params(
@@ -6508,62 +7022,59 @@ pub mod native {
             Self::_substruct_match_params(slf, query, Some(params))
         }
 
-        #[pyo3(signature = (query, params=None, *, max_matches=None, uniquify=None, use_chirality=None, use_enhanced_stereo=None, specified_stereo_query_matches_unspecified=None, use_query_query_matches=None, recursion_possible=None, max_recursive_matches=None, num_threads=None, aromatic_matches_conjugated=None, aromatic_matches_single_or_double=None, extra_atom_check_overrides_default_check=None, extra_bond_check_overrides_default_check=None, use_generic_matchers=None, atom_properties=None, bond_properties=None, final_match=None, atom_match=None, bond_match=None, extra_final_check=None, extra_atom_check=None, extra_bond_check=None))]
+        #[pyo3(signature = (query, params=crate::arguments::Argument::Missing, *, max_matches=crate::arguments::Argument::Missing, uniquify=crate::arguments::Argument::Missing, use_chirality=crate::arguments::Argument::Missing, use_enhanced_stereo=crate::arguments::Argument::Missing, specified_stereo_query_matches_unspecified=crate::arguments::Argument::Missing, use_query_query_matches=crate::arguments::Argument::Missing, recursion_possible=crate::arguments::Argument::Missing, max_recursive_matches=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing, aromatic_matches_conjugated=crate::arguments::Argument::Missing, aromatic_matches_single_or_double=crate::arguments::Argument::Missing, extra_atom_check_overrides_default_check=crate::arguments::Argument::Missing, extra_bond_check_overrides_default_check=crate::arguments::Argument::Missing, use_generic_matchers=crate::arguments::Argument::Missing, atom_properties=crate::arguments::Argument::Missing, bond_properties=crate::arguments::Argument::Missing, final_match=crate::arguments::Argument::Missing, atom_match=crate::arguments::Argument::Missing, bond_match=crate::arguments::Argument::Missing, extra_final_check=crate::arguments::Argument::Missing, extra_atom_check=crate::arguments::Argument::Missing, extra_bond_check=crate::arguments::Argument::Missing))]
         fn substruct_matches(
             slf: Bound<'_, Self>,
             query: &QueryGraph,
-            params: Option<&SubstructMatchParams>,
-            max_matches: Option<usize>,
-            uniquify: Option<bool>,
-            use_chirality: Option<bool>,
-            use_enhanced_stereo: Option<bool>,
-            specified_stereo_query_matches_unspecified: Option<bool>,
-            use_query_query_matches: Option<bool>,
-            recursion_possible: Option<bool>,
-            max_recursive_matches: Option<usize>,
-            num_threads: Option<i32>,
-            aromatic_matches_conjugated: Option<bool>,
-            aromatic_matches_single_or_double: Option<bool>,
-            extra_atom_check_overrides_default_check: Option<bool>,
-            extra_bond_check_overrides_default_check: Option<bool>,
-            use_generic_matchers: Option<bool>,
-            atom_properties: Option<Vec<String>>,
-            bond_properties: Option<Vec<String>>,
-            final_match: Option<FinalMatch>,
-            atom_match: Option<AtomMatch>,
-            bond_match: Option<BondMatch>,
-            extra_final_check: Option<FinalMatch>,
-            extra_atom_check: Option<AtomMatch>,
-            extra_bond_check: Option<BondMatch>,
+            params: crate::arguments::Argument<Option<PyRef<'_, SubstructMatchParams>>>,
+            max_matches: crate::arguments::Argument<Option<usize>>,
+            uniquify: crate::arguments::Argument<Option<bool>>,
+            use_chirality: crate::arguments::Argument<Option<bool>>,
+            use_enhanced_stereo: crate::arguments::Argument<Option<bool>>,
+            specified_stereo_query_matches_unspecified: crate::arguments::Argument<Option<bool>>,
+            use_query_query_matches: crate::arguments::Argument<Option<bool>>,
+            recursion_possible: crate::arguments::Argument<Option<bool>>,
+            max_recursive_matches: crate::arguments::Argument<Option<usize>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            aromatic_matches_conjugated: crate::arguments::Argument<Option<bool>>,
+            aromatic_matches_single_or_double: crate::arguments::Argument<Option<bool>>,
+            extra_atom_check_overrides_default_check: crate::arguments::Argument<Option<bool>>,
+            extra_bond_check_overrides_default_check: crate::arguments::Argument<Option<bool>>,
+            use_generic_matchers: crate::arguments::Argument<Option<bool>>,
+            atom_properties: crate::arguments::Argument<Option<Vec<String>>>,
+            bond_properties: crate::arguments::Argument<Option<Vec<String>>>,
+            final_match: crate::arguments::Argument<Option<FinalMatch>>,
+            atom_match: crate::arguments::Argument<Option<AtomMatch>>,
+            bond_match: crate::arguments::Argument<Option<BondMatch>>,
+            extra_final_check: crate::arguments::Argument<Option<FinalMatch>>,
+            extra_atom_check: crate::arguments::Argument<Option<AtomMatch>>,
+            extra_bond_check: crate::arguments::Argument<Option<BondMatch>>,
         ) -> PyResult<Vec<MatchResult>> {
-            let keywords = max_matches.is_some()
-                || uniquify.is_some()
-                || use_chirality.is_some()
-                || use_enhanced_stereo.is_some()
-                || specified_stereo_query_matches_unspecified.is_some()
-                || use_query_query_matches.is_some()
-                || recursion_possible.is_some()
-                || max_recursive_matches.is_some()
-                || num_threads.is_some()
-                || aromatic_matches_conjugated.is_some()
-                || aromatic_matches_single_or_double.is_some()
-                || extra_atom_check_overrides_default_check.is_some()
-                || extra_bond_check_overrides_default_check.is_some()
-                || use_generic_matchers.is_some()
-                || atom_properties.is_some()
-                || bond_properties.is_some()
-                || final_match.is_some()
-                || atom_match.is_some()
-                || bond_match.is_some()
-                || extra_final_check.is_some()
-                || extra_atom_check.is_some()
-                || extra_bond_check.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = max_matches.is_supplied()
+                || uniquify.is_supplied()
+                || use_chirality.is_supplied()
+                || use_enhanced_stereo.is_supplied()
+                || specified_stereo_query_matches_unspecified.is_supplied()
+                || use_query_query_matches.is_supplied()
+                || recursion_possible.is_supplied()
+                || max_recursive_matches.is_supplied()
+                || num_threads.is_supplied()
+                || aromatic_matches_conjugated.is_supplied()
+                || aromatic_matches_single_or_double.is_supplied()
+                || extra_atom_check_overrides_default_check.is_supplied()
+                || extra_bond_check_overrides_default_check.is_supplied()
+                || use_generic_matchers.is_supplied()
+                || atom_properties.is_supplied()
+                || bond_properties.is_supplied()
+                || final_match.is_supplied()
+                || atom_match.is_supplied()
+                || bond_match.is_supplied()
+                || extra_final_check.is_supplied()
+                || extra_atom_check.is_supplied()
+                || extra_bond_check.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_matches, uniquify, use_chirality, use_enhanced_stereo, specified_stereo_query_matches_unspecified, use_query_query_matches, recursion_possible, max_recursive_matches, num_threads, aromatic_matches_conjugated, aromatic_matches_single_or_double, extra_atom_check_overrides_default_check, extra_bond_check_overrides_default_check, use_generic_matchers, atom_properties, bond_properties, final_match, atom_match, bond_match, extra_final_check, extra_atom_check, extra_bond_check);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_substruct_matches_keywords(
                     slf,
                     query,
@@ -6603,24 +7114,8 @@ pub mod native {
             params: Option<&SubstructMatchParams>,
         ) -> PyResult<Vec<MatchResult>> {
             let py = slf.py();
-            let target = slf.clone().unbind();
-            let holder = slf.borrow();
-            let native = &holder.inner;
-            let query = query.inner();
-            let result = match params {
-                Some(params) => params.with_callbacks(py, &target, |params| {
-                    py.detach(|| native.substruct_matches_with_params(query, params))
-                })?,
-                None => py.detach(|| native.substruct_matches(query)),
-            };
-            result
-                .map(|value| {
-                    value
-                        .into_iter()
-                        .map(|inner| MatchResult { inner })
-                        .collect()
-                })
-                .map_err(SubstructMatchError::from_rust)
+            let params = params.map(|value| value.capture(py)).transpose()?;
+            Self::_substruct_matches_params_native(slf, query, params)
         }
 
         #[doc = r#"{"role":"overload","target":"Molecule.substruct_matches"}"#]
@@ -6675,7 +7170,7 @@ pub mod native {
                 extra_atom_check,
                 extra_bond_check,
             )?;
-            Self::_substruct_matches_params(slf, query, Some(&params))
+            Self::_substruct_matches_params_native(slf, query, Some(params))
         }
 
         fn substruct_matches_with_params(
@@ -6686,62 +7181,59 @@ pub mod native {
             Self::_substruct_matches_params(slf, query, Some(params))
         }
 
-        #[pyo3(signature = (query, params=None, *, max_matches=None, uniquify=None, use_chirality=None, use_enhanced_stereo=None, specified_stereo_query_matches_unspecified=None, use_query_query_matches=None, recursion_possible=None, max_recursive_matches=None, num_threads=None, aromatic_matches_conjugated=None, aromatic_matches_single_or_double=None, extra_atom_check_overrides_default_check=None, extra_bond_check_overrides_default_check=None, use_generic_matchers=None, atom_properties=None, bond_properties=None, final_match=None, atom_match=None, bond_match=None, extra_final_check=None, extra_atom_check=None, extra_bond_check=None))]
+        #[pyo3(signature = (query, params=crate::arguments::Argument::Missing, *, max_matches=crate::arguments::Argument::Missing, uniquify=crate::arguments::Argument::Missing, use_chirality=crate::arguments::Argument::Missing, use_enhanced_stereo=crate::arguments::Argument::Missing, specified_stereo_query_matches_unspecified=crate::arguments::Argument::Missing, use_query_query_matches=crate::arguments::Argument::Missing, recursion_possible=crate::arguments::Argument::Missing, max_recursive_matches=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing, aromatic_matches_conjugated=crate::arguments::Argument::Missing, aromatic_matches_single_or_double=crate::arguments::Argument::Missing, extra_atom_check_overrides_default_check=crate::arguments::Argument::Missing, extra_bond_check_overrides_default_check=crate::arguments::Argument::Missing, use_generic_matchers=crate::arguments::Argument::Missing, atom_properties=crate::arguments::Argument::Missing, bond_properties=crate::arguments::Argument::Missing, final_match=crate::arguments::Argument::Missing, atom_match=crate::arguments::Argument::Missing, bond_match=crate::arguments::Argument::Missing, extra_final_check=crate::arguments::Argument::Missing, extra_atom_check=crate::arguments::Argument::Missing, extra_bond_check=crate::arguments::Argument::Missing))]
         fn has_substruct_match(
             slf: Bound<'_, Self>,
             query: &QueryGraph,
-            params: Option<&SubstructMatchParams>,
-            max_matches: Option<usize>,
-            uniquify: Option<bool>,
-            use_chirality: Option<bool>,
-            use_enhanced_stereo: Option<bool>,
-            specified_stereo_query_matches_unspecified: Option<bool>,
-            use_query_query_matches: Option<bool>,
-            recursion_possible: Option<bool>,
-            max_recursive_matches: Option<usize>,
-            num_threads: Option<i32>,
-            aromatic_matches_conjugated: Option<bool>,
-            aromatic_matches_single_or_double: Option<bool>,
-            extra_atom_check_overrides_default_check: Option<bool>,
-            extra_bond_check_overrides_default_check: Option<bool>,
-            use_generic_matchers: Option<bool>,
-            atom_properties: Option<Vec<String>>,
-            bond_properties: Option<Vec<String>>,
-            final_match: Option<FinalMatch>,
-            atom_match: Option<AtomMatch>,
-            bond_match: Option<BondMatch>,
-            extra_final_check: Option<FinalMatch>,
-            extra_atom_check: Option<AtomMatch>,
-            extra_bond_check: Option<BondMatch>,
+            params: crate::arguments::Argument<Option<PyRef<'_, SubstructMatchParams>>>,
+            max_matches: crate::arguments::Argument<Option<usize>>,
+            uniquify: crate::arguments::Argument<Option<bool>>,
+            use_chirality: crate::arguments::Argument<Option<bool>>,
+            use_enhanced_stereo: crate::arguments::Argument<Option<bool>>,
+            specified_stereo_query_matches_unspecified: crate::arguments::Argument<Option<bool>>,
+            use_query_query_matches: crate::arguments::Argument<Option<bool>>,
+            recursion_possible: crate::arguments::Argument<Option<bool>>,
+            max_recursive_matches: crate::arguments::Argument<Option<usize>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            aromatic_matches_conjugated: crate::arguments::Argument<Option<bool>>,
+            aromatic_matches_single_or_double: crate::arguments::Argument<Option<bool>>,
+            extra_atom_check_overrides_default_check: crate::arguments::Argument<Option<bool>>,
+            extra_bond_check_overrides_default_check: crate::arguments::Argument<Option<bool>>,
+            use_generic_matchers: crate::arguments::Argument<Option<bool>>,
+            atom_properties: crate::arguments::Argument<Option<Vec<String>>>,
+            bond_properties: crate::arguments::Argument<Option<Vec<String>>>,
+            final_match: crate::arguments::Argument<Option<FinalMatch>>,
+            atom_match: crate::arguments::Argument<Option<AtomMatch>>,
+            bond_match: crate::arguments::Argument<Option<BondMatch>>,
+            extra_final_check: crate::arguments::Argument<Option<FinalMatch>>,
+            extra_atom_check: crate::arguments::Argument<Option<AtomMatch>>,
+            extra_bond_check: crate::arguments::Argument<Option<BondMatch>>,
         ) -> PyResult<bool> {
-            let keywords = max_matches.is_some()
-                || uniquify.is_some()
-                || use_chirality.is_some()
-                || use_enhanced_stereo.is_some()
-                || specified_stereo_query_matches_unspecified.is_some()
-                || use_query_query_matches.is_some()
-                || recursion_possible.is_some()
-                || max_recursive_matches.is_some()
-                || num_threads.is_some()
-                || aromatic_matches_conjugated.is_some()
-                || aromatic_matches_single_or_double.is_some()
-                || extra_atom_check_overrides_default_check.is_some()
-                || extra_bond_check_overrides_default_check.is_some()
-                || use_generic_matchers.is_some()
-                || atom_properties.is_some()
-                || bond_properties.is_some()
-                || final_match.is_some()
-                || atom_match.is_some()
-                || bond_match.is_some()
-                || extra_final_check.is_some()
-                || extra_atom_check.is_some()
-                || extra_bond_check.is_some();
-            if params.is_some() && keywords {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if keywords {
+            let keyword_form = max_matches.is_supplied()
+                || uniquify.is_supplied()
+                || use_chirality.is_supplied()
+                || use_enhanced_stereo.is_supplied()
+                || specified_stereo_query_matches_unspecified.is_supplied()
+                || use_query_query_matches.is_supplied()
+                || recursion_possible.is_supplied()
+                || max_recursive_matches.is_supplied()
+                || num_threads.is_supplied()
+                || aromatic_matches_conjugated.is_supplied()
+                || aromatic_matches_single_or_double.is_supplied()
+                || extra_atom_check_overrides_default_check.is_supplied()
+                || extra_bond_check_overrides_default_check.is_supplied()
+                || use_generic_matchers.is_supplied()
+                || atom_properties.is_supplied()
+                || bond_properties.is_supplied()
+                || final_match.is_supplied()
+                || atom_match.is_supplied()
+                || bond_match.is_supplied()
+                || extra_final_check.is_supplied()
+                || extra_atom_check.is_supplied()
+                || extra_bond_check.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_matches, uniquify, use_chirality, use_enhanced_stereo, specified_stereo_query_matches_unspecified, use_query_query_matches, recursion_possible, max_recursive_matches, num_threads, aromatic_matches_conjugated, aromatic_matches_single_or_double, extra_atom_check_overrides_default_check, extra_bond_check_overrides_default_check, use_generic_matchers, atom_properties, bond_properties, final_match, atom_match, bond_match, extra_final_check, extra_atom_check, extra_bond_check);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_has_substruct_match_keywords(
                     slf,
                     query,
@@ -6781,19 +7273,8 @@ pub mod native {
             params: Option<&SubstructMatchParams>,
         ) -> PyResult<bool> {
             let py = slf.py();
-            let target = slf.clone().unbind();
-            let holder = slf.borrow();
-            let native = &holder.inner;
-            let query = query.inner();
-            let result = match params {
-                Some(params) => params.with_callbacks(py, &target, |params| {
-                    py.detach(|| native.has_substruct_match_with_params(query, params))
-                })?,
-                None => py.detach(|| native.has_substruct_match(query)),
-            };
-            result
-                .map(|value| value)
-                .map_err(SubstructMatchError::from_rust)
+            let params = params.map(|value| value.capture(py)).transpose()?;
+            Self::_has_substruct_match_params_native(slf, query, params)
         }
 
         #[doc = r#"{"role":"overload","target":"Molecule.has_substruct_match"}"#]
@@ -6848,7 +7329,7 @@ pub mod native {
                 extra_atom_check,
                 extra_bond_check,
             )?;
-            Self::_has_substruct_match_params(slf, query, Some(&params))
+            Self::_has_substruct_match_params_native(slf, query, Some(params))
         }
 
         fn has_substruct_match_with_params(
@@ -6882,40 +7363,33 @@ pub mod native {
                 .map(|inner| Self { inner })
                 .map_err(PickleError::from_rust)
         }
-        #[pyo3(signature=(params=None,*,format=None,force_2d=None,include_stereo=None,kekulize=None,precision=None,coordinate_selection=None,include_coordinates=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
         pub(crate) fn to_mol(
             &self,
             py: Python<'_>,
-            params: Option<&crate::io_batch_params::MolBlockWriteParams>,
-            format: Option<crate::io_batch_params::SdfFormatInput>,
-            force_2d: Option<bool>,
-            include_stereo: Option<bool>,
-            kekulize: Option<bool>,
-            precision: Option<usize>,
-            coordinate_selection: Option<crate::io_batch_params::MolCoordinateSelectionInput>,
-            include_coordinates: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::MolBlockWriteParams>>,
+            >,
+            format: crate::arguments::Argument<Option<crate::io_batch_params::SdfFormatInput>>,
+            force_2d: crate::arguments::Argument<Option<bool>>,
+            include_stereo: crate::arguments::Argument<Option<bool>>,
+            kekulize: crate::arguments::Argument<Option<bool>>,
+            precision: crate::arguments::Argument<Option<usize>>,
+            coordinate_selection: crate::arguments::Argument<
+                Option<crate::io_batch_params::MolCoordinateSelectionInput>,
+            >,
+            include_coordinates: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<String> {
-            if params.is_some()
-                && (format.is_some()
-                    || force_2d.is_some()
-                    || include_stereo.is_some()
-                    || kekulize.is_some()
-                    || precision.is_some()
-                    || coordinate_selection.is_some()
-                    || include_coordinates.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if format.is_some()
-                || force_2d.is_some()
-                || include_stereo.is_some()
-                || kekulize.is_some()
-                || precision.is_some()
-                || coordinate_selection.is_some()
-                || include_coordinates.is_some()
-            {
+            let keyword_form = format.is_supplied()
+                || force_2d.is_supplied()
+                || include_stereo.is_supplied()
+                || kekulize.is_supplied()
+                || precision.is_supplied()
+                || coordinate_selection.is_supplied()
+                || include_coordinates.is_supplied();
+            crate::arguments::configuration_arguments!(params; format, force_2d, include_stereo, kekulize, precision, coordinate_selection, include_coordinates);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_to_mol_keywords(
                     py,
                     format,
@@ -6974,40 +7448,33 @@ pub mod native {
         ) -> PyResult<String> {
             self._io_to_mol_params(py, Some(params))
         }
-        #[pyo3(signature=(params=None,*,format=None,force_2d=None,include_stereo=None,kekulize=None,precision=None,coordinate_selection=None,include_coordinates=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
         pub(crate) fn to_sdf(
             &self,
             py: Python<'_>,
-            params: Option<&crate::io_batch_params::MolBlockWriteParams>,
-            format: Option<crate::io_batch_params::SdfFormatInput>,
-            force_2d: Option<bool>,
-            include_stereo: Option<bool>,
-            kekulize: Option<bool>,
-            precision: Option<usize>,
-            coordinate_selection: Option<crate::io_batch_params::MolCoordinateSelectionInput>,
-            include_coordinates: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::MolBlockWriteParams>>,
+            >,
+            format: crate::arguments::Argument<Option<crate::io_batch_params::SdfFormatInput>>,
+            force_2d: crate::arguments::Argument<Option<bool>>,
+            include_stereo: crate::arguments::Argument<Option<bool>>,
+            kekulize: crate::arguments::Argument<Option<bool>>,
+            precision: crate::arguments::Argument<Option<usize>>,
+            coordinate_selection: crate::arguments::Argument<
+                Option<crate::io_batch_params::MolCoordinateSelectionInput>,
+            >,
+            include_coordinates: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<String> {
-            if params.is_some()
-                && (format.is_some()
-                    || force_2d.is_some()
-                    || include_stereo.is_some()
-                    || kekulize.is_some()
-                    || precision.is_some()
-                    || coordinate_selection.is_some()
-                    || include_coordinates.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if format.is_some()
-                || force_2d.is_some()
-                || include_stereo.is_some()
-                || kekulize.is_some()
-                || precision.is_some()
-                || coordinate_selection.is_some()
-                || include_coordinates.is_some()
-            {
+            let keyword_form = format.is_supplied()
+                || force_2d.is_supplied()
+                || include_stereo.is_supplied()
+                || kekulize.is_supplied()
+                || precision.is_supplied()
+                || coordinate_selection.is_supplied()
+                || include_coordinates.is_supplied();
+            crate::arguments::configuration_arguments!(params; format, force_2d, include_stereo, kekulize, precision, coordinate_selection, include_coordinates);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_to_sdf_keywords(
                     py,
                     format,
@@ -7066,40 +7533,33 @@ pub mod native {
         ) -> PyResult<String> {
             self._io_to_sdf_params(py, Some(params))
         }
-        #[pyo3(signature=(params=None,*,format=None,force_2d=None,include_stereo=None,kekulize=None,precision=None,coordinate_selection=None,include_coordinates=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
         pub(crate) fn to_sdf_2d(
             &self,
             py: Python<'_>,
-            params: Option<&crate::io_batch_params::MolBlockWriteParams>,
-            format: Option<crate::io_batch_params::SdfFormatInput>,
-            force_2d: Option<bool>,
-            include_stereo: Option<bool>,
-            kekulize: Option<bool>,
-            precision: Option<usize>,
-            coordinate_selection: Option<crate::io_batch_params::MolCoordinateSelectionInput>,
-            include_coordinates: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::MolBlockWriteParams>>,
+            >,
+            format: crate::arguments::Argument<Option<crate::io_batch_params::SdfFormatInput>>,
+            force_2d: crate::arguments::Argument<Option<bool>>,
+            include_stereo: crate::arguments::Argument<Option<bool>>,
+            kekulize: crate::arguments::Argument<Option<bool>>,
+            precision: crate::arguments::Argument<Option<usize>>,
+            coordinate_selection: crate::arguments::Argument<
+                Option<crate::io_batch_params::MolCoordinateSelectionInput>,
+            >,
+            include_coordinates: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<String> {
-            if params.is_some()
-                && (format.is_some()
-                    || force_2d.is_some()
-                    || include_stereo.is_some()
-                    || kekulize.is_some()
-                    || precision.is_some()
-                    || coordinate_selection.is_some()
-                    || include_coordinates.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if format.is_some()
-                || force_2d.is_some()
-                || include_stereo.is_some()
-                || kekulize.is_some()
-                || precision.is_some()
-                || coordinate_selection.is_some()
-                || include_coordinates.is_some()
-            {
+            let keyword_form = format.is_supplied()
+                || force_2d.is_supplied()
+                || include_stereo.is_supplied()
+                || kekulize.is_supplied()
+                || precision.is_supplied()
+                || coordinate_selection.is_supplied()
+                || include_coordinates.is_supplied();
+            crate::arguments::configuration_arguments!(params; format, force_2d, include_stereo, kekulize, precision, coordinate_selection, include_coordinates);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_to_sdf_2d_keywords(
                     py,
                     format,
@@ -7158,40 +7618,33 @@ pub mod native {
         ) -> PyResult<String> {
             self._io_to_sdf_2d_params(py, Some(params))
         }
-        #[pyo3(signature=(params=None,*,format=None,force_2d=None,include_stereo=None,kekulize=None,precision=None,coordinate_selection=None,include_coordinates=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
         pub(crate) fn to_sdf_3d(
             &self,
             py: Python<'_>,
-            params: Option<&crate::io_batch_params::MolBlockWriteParams>,
-            format: Option<crate::io_batch_params::SdfFormatInput>,
-            force_2d: Option<bool>,
-            include_stereo: Option<bool>,
-            kekulize: Option<bool>,
-            precision: Option<usize>,
-            coordinate_selection: Option<crate::io_batch_params::MolCoordinateSelectionInput>,
-            include_coordinates: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::MolBlockWriteParams>>,
+            >,
+            format: crate::arguments::Argument<Option<crate::io_batch_params::SdfFormatInput>>,
+            force_2d: crate::arguments::Argument<Option<bool>>,
+            include_stereo: crate::arguments::Argument<Option<bool>>,
+            kekulize: crate::arguments::Argument<Option<bool>>,
+            precision: crate::arguments::Argument<Option<usize>>,
+            coordinate_selection: crate::arguments::Argument<
+                Option<crate::io_batch_params::MolCoordinateSelectionInput>,
+            >,
+            include_coordinates: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<String> {
-            if params.is_some()
-                && (format.is_some()
-                    || force_2d.is_some()
-                    || include_stereo.is_some()
-                    || kekulize.is_some()
-                    || precision.is_some()
-                    || coordinate_selection.is_some()
-                    || include_coordinates.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if format.is_some()
-                || force_2d.is_some()
-                || include_stereo.is_some()
-                || kekulize.is_some()
-                || precision.is_some()
-                || coordinate_selection.is_some()
-                || include_coordinates.is_some()
-            {
+            let keyword_form = format.is_supplied()
+                || force_2d.is_supplied()
+                || include_stereo.is_supplied()
+                || kekulize.is_supplied()
+                || precision.is_supplied()
+                || coordinate_selection.is_supplied()
+                || include_coordinates.is_supplied();
+            crate::arguments::configuration_arguments!(params; format, force_2d, include_stereo, kekulize, precision, coordinate_selection, include_coordinates);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_to_sdf_3d_keywords(
                     py,
                     format,
@@ -7250,41 +7703,34 @@ pub mod native {
         ) -> PyResult<String> {
             self._io_to_sdf_3d_params(py, Some(params))
         }
-        #[pyo3(signature=(path,params=None,*,format=None,force_2d=None,include_stereo=None,kekulize=None,precision=None,coordinate_selection=None,include_coordinates=None))]
+        #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
         pub(crate) fn write_mol(
             &self,
             py: Python<'_>,
             path: std::path::PathBuf,
-            params: Option<&crate::io_batch_params::MolBlockWriteParams>,
-            format: Option<crate::io_batch_params::SdfFormatInput>,
-            force_2d: Option<bool>,
-            include_stereo: Option<bool>,
-            kekulize: Option<bool>,
-            precision: Option<usize>,
-            coordinate_selection: Option<crate::io_batch_params::MolCoordinateSelectionInput>,
-            include_coordinates: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::MolBlockWriteParams>>,
+            >,
+            format: crate::arguments::Argument<Option<crate::io_batch_params::SdfFormatInput>>,
+            force_2d: crate::arguments::Argument<Option<bool>>,
+            include_stereo: crate::arguments::Argument<Option<bool>>,
+            kekulize: crate::arguments::Argument<Option<bool>>,
+            precision: crate::arguments::Argument<Option<usize>>,
+            coordinate_selection: crate::arguments::Argument<
+                Option<crate::io_batch_params::MolCoordinateSelectionInput>,
+            >,
+            include_coordinates: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<()> {
-            if params.is_some()
-                && (format.is_some()
-                    || force_2d.is_some()
-                    || include_stereo.is_some()
-                    || kekulize.is_some()
-                    || precision.is_some()
-                    || coordinate_selection.is_some()
-                    || include_coordinates.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if format.is_some()
-                || force_2d.is_some()
-                || include_stereo.is_some()
-                || kekulize.is_some()
-                || precision.is_some()
-                || coordinate_selection.is_some()
-                || include_coordinates.is_some()
-            {
+            let keyword_form = format.is_supplied()
+                || force_2d.is_supplied()
+                || include_stereo.is_supplied()
+                || kekulize.is_supplied()
+                || precision.is_supplied()
+                || coordinate_selection.is_supplied()
+                || include_coordinates.is_supplied();
+            crate::arguments::configuration_arguments!(params; format, force_2d, include_stereo, kekulize, precision, coordinate_selection, include_coordinates);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_write_mol_keywords(
                     py,
                     path,
@@ -7348,41 +7794,34 @@ pub mod native {
         ) -> PyResult<()> {
             self._io_write_mol_params(py, path, Some(params))
         }
-        #[pyo3(signature=(path,params=None,*,format=None,force_2d=None,include_stereo=None,kekulize=None,precision=None,coordinate_selection=None,include_coordinates=None))]
+        #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
         pub(crate) fn write_sdf(
             &self,
             py: Python<'_>,
             path: std::path::PathBuf,
-            params: Option<&crate::io_batch_params::MolBlockWriteParams>,
-            format: Option<crate::io_batch_params::SdfFormatInput>,
-            force_2d: Option<bool>,
-            include_stereo: Option<bool>,
-            kekulize: Option<bool>,
-            precision: Option<usize>,
-            coordinate_selection: Option<crate::io_batch_params::MolCoordinateSelectionInput>,
-            include_coordinates: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::MolBlockWriteParams>>,
+            >,
+            format: crate::arguments::Argument<Option<crate::io_batch_params::SdfFormatInput>>,
+            force_2d: crate::arguments::Argument<Option<bool>>,
+            include_stereo: crate::arguments::Argument<Option<bool>>,
+            kekulize: crate::arguments::Argument<Option<bool>>,
+            precision: crate::arguments::Argument<Option<usize>>,
+            coordinate_selection: crate::arguments::Argument<
+                Option<crate::io_batch_params::MolCoordinateSelectionInput>,
+            >,
+            include_coordinates: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<()> {
-            if params.is_some()
-                && (format.is_some()
-                    || force_2d.is_some()
-                    || include_stereo.is_some()
-                    || kekulize.is_some()
-                    || precision.is_some()
-                    || coordinate_selection.is_some()
-                    || include_coordinates.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if format.is_some()
-                || force_2d.is_some()
-                || include_stereo.is_some()
-                || kekulize.is_some()
-                || precision.is_some()
-                || coordinate_selection.is_some()
-                || include_coordinates.is_some()
-            {
+            let keyword_form = format.is_supplied()
+                || force_2d.is_supplied()
+                || include_stereo.is_supplied()
+                || kekulize.is_supplied()
+                || precision.is_supplied()
+                || coordinate_selection.is_supplied()
+                || include_coordinates.is_supplied();
+            crate::arguments::configuration_arguments!(params; format, force_2d, include_stereo, kekulize, precision, coordinate_selection, include_coordinates);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_write_sdf_keywords(
                     py,
                     path,
@@ -7446,42 +7885,35 @@ pub mod native {
         ) -> PyResult<()> {
             self._io_write_sdf_params(py, path, Some(params))
         }
-        #[pyo3(signature=(directory,file_name=None,params=None,*,format=None,force_2d=None,include_stereo=None,kekulize=None,precision=None,coordinate_selection=None,include_coordinates=None))]
+        #[pyo3(signature=(directory,file_name=None,params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
         pub(crate) fn write_sdf_files(
             &self,
             py: Python<'_>,
             directory: std::path::PathBuf,
             file_name: Option<&str>,
-            params: Option<&crate::io_batch_params::MolBlockWriteParams>,
-            format: Option<crate::io_batch_params::SdfFormatInput>,
-            force_2d: Option<bool>,
-            include_stereo: Option<bool>,
-            kekulize: Option<bool>,
-            precision: Option<usize>,
-            coordinate_selection: Option<crate::io_batch_params::MolCoordinateSelectionInput>,
-            include_coordinates: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::MolBlockWriteParams>>,
+            >,
+            format: crate::arguments::Argument<Option<crate::io_batch_params::SdfFormatInput>>,
+            force_2d: crate::arguments::Argument<Option<bool>>,
+            include_stereo: crate::arguments::Argument<Option<bool>>,
+            kekulize: crate::arguments::Argument<Option<bool>>,
+            precision: crate::arguments::Argument<Option<usize>>,
+            coordinate_selection: crate::arguments::Argument<
+                Option<crate::io_batch_params::MolCoordinateSelectionInput>,
+            >,
+            include_coordinates: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<std::path::PathBuf> {
-            if params.is_some()
-                && (format.is_some()
-                    || force_2d.is_some()
-                    || include_stereo.is_some()
-                    || kekulize.is_some()
-                    || precision.is_some()
-                    || coordinate_selection.is_some()
-                    || include_coordinates.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if format.is_some()
-                || force_2d.is_some()
-                || include_stereo.is_some()
-                || kekulize.is_some()
-                || precision.is_some()
-                || coordinate_selection.is_some()
-                || include_coordinates.is_some()
-            {
+            let keyword_form = format.is_supplied()
+                || force_2d.is_supplied()
+                || include_stereo.is_supplied()
+                || kekulize.is_supplied()
+                || precision.is_supplied()
+                || coordinate_selection.is_supplied()
+                || include_coordinates.is_supplied();
+            crate::arguments::configuration_arguments!(params; format, force_2d, include_stereo, kekulize, precision, coordinate_selection, include_coordinates);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_write_sdf_files_keywords(
                     py,
                     directory,
@@ -7552,23 +7984,25 @@ pub mod native {
         ) -> PyResult<std::path::PathBuf> {
             self._io_write_sdf_files_params(py, directory, file_name, Some(params))
         }
-        #[pyo3(signature=(params=None,*,coordinate_selection=None,all_conformers=None,flavor=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,coordinate_selection=crate::arguments::Argument::Missing,all_conformers=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing))]
         pub(crate) fn to_pdb(
             &self,
             py: Python<'_>,
-            params: Option<&crate::io_batch_params::PdbWriteParams>,
-            coordinate_selection: Option<crate::io_batch_params::MolCoordinateSelectionInput>,
-            all_conformers: Option<bool>,
-            flavor: Option<u32>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::PdbWriteParams>>,
+            >,
+            coordinate_selection: crate::arguments::Argument<
+                Option<crate::io_batch_params::MolCoordinateSelectionInput>,
+            >,
+            all_conformers: crate::arguments::Argument<Option<bool>>,
+            flavor: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<String> {
-            if params.is_some()
-                && (coordinate_selection.is_some() || all_conformers.is_some() || flavor.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if coordinate_selection.is_some() || all_conformers.is_some() || flavor.is_some() {
+            let keyword_form = coordinate_selection.is_supplied()
+                || all_conformers.is_supplied()
+                || flavor.is_supplied();
+            crate::arguments::configuration_arguments!(params; coordinate_selection, all_conformers, flavor);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_to_pdb_keywords(py, coordinate_selection, all_conformers, flavor)
             } else {
                 self._io_to_pdb_params(py, params)
@@ -7610,20 +8044,18 @@ pub mod native {
         ) -> PyResult<String> {
             self._io_to_pdb_params(py, Some(params))
         }
-        #[pyo3(signature=(params=None,*,conformer_id=None,precision=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,conformer_id=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing))]
         pub(crate) fn to_xyz(
             &self,
             py: Python<'_>,
-            params: Option<&crate::params::XyzWriteParams>,
-            conformer_id: Option<usize>,
-            precision: Option<u32>,
+            params: crate::arguments::Argument<Option<PyRef<'_, crate::params::XyzWriteParams>>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
+            precision: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<String> {
-            if params.is_some() && (conformer_id.is_some() || precision.is_some()) {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if conformer_id.is_some() || precision.is_some() {
+            let keyword_form = conformer_id.is_supplied() || precision.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id, precision);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_to_xyz_keywords(py, conformer_id, precision)
             } else {
                 self._io_to_xyz_params(py, params)
@@ -7660,21 +8092,19 @@ pub mod native {
         ) -> PyResult<String> {
             self._io_to_xyz_params(py, Some(params))
         }
-        #[pyo3(signature=(path,params=None,*,conformer_id=None,precision=None))]
+        #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,conformer_id=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing))]
         pub(crate) fn write_xyz(
             &self,
             py: Python<'_>,
             path: std::path::PathBuf,
-            params: Option<&crate::params::XyzWriteParams>,
-            conformer_id: Option<usize>,
-            precision: Option<u32>,
+            params: crate::arguments::Argument<Option<PyRef<'_, crate::params::XyzWriteParams>>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
+            precision: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<()> {
-            if params.is_some() && (conformer_id.is_some() || precision.is_some()) {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if conformer_id.is_some() || precision.is_some() {
+            let keyword_form = conformer_id.is_supplied() || precision.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id, precision);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_write_xyz_keywords(py, path, conformer_id, precision)
             } else {
                 self._io_write_xyz_params(py, path, params)
@@ -7716,31 +8146,23 @@ pub mod native {
             self._io_write_xyz_params(py, path, Some(params))
         }
         #[staticmethod]
-        #[pyo3(signature=(text,params=None,*,sanitize=None,remove_hs=None,flavor=None,proximity_bonding=None))]
+        #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing,proximity_bonding=crate::arguments::Argument::Missing))]
         pub(crate) fn from_pdb(
             py: Python<'_>,
             text: &str,
-            params: Option<&crate::params::BioMoleculeParams>,
-            sanitize: Option<bool>,
-            remove_hs: Option<bool>,
-            flavor: Option<u32>,
-            proximity_bonding: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>,
+            sanitize: crate::arguments::Argument<Option<bool>>,
+            remove_hs: crate::arguments::Argument<Option<bool>>,
+            flavor: crate::arguments::Argument<Option<u32>>,
+            proximity_bonding: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Self> {
-            if params.is_some()
-                && (sanitize.is_some()
-                    || remove_hs.is_some()
-                    || flavor.is_some()
-                    || proximity_bonding.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if sanitize.is_some()
-                || remove_hs.is_some()
-                || flavor.is_some()
-                || proximity_bonding.is_some()
-            {
+            let keyword_form = sanitize.is_supplied()
+                || remove_hs.is_supplied()
+                || flavor.is_supplied()
+                || proximity_bonding.is_supplied();
+            crate::arguments::configuration_arguments!(params; sanitize, remove_hs, flavor, proximity_bonding);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_io_from_pdb_keywords(
                     py,
                     text,
@@ -7756,7 +8178,7 @@ pub mod native {
         #[staticmethod]
         #[doc = r#"{"role":"overload","target":"Molecule.from_pdb"}"#]
         #[pyo3(signature=(text,params=None))]
-        fn _io_from_pdb_params(
+        pub(super) fn _io_from_pdb_params(
             py: Python<'_>,
             text: &str,
             params: Option<&crate::params::BioMoleculeParams>,
@@ -7771,7 +8193,7 @@ pub mod native {
         #[staticmethod]
         #[doc = r#"{"role":"overload","target":"Molecule.from_pdb"}"#]
         #[pyo3(signature=(text,*,sanitize=None,remove_hs=None,flavor=None,proximity_bonding=None))]
-        fn _io_from_pdb_keywords(
+        pub(super) fn _io_from_pdb_keywords(
             py: Python<'_>,
             text: &str,
             sanitize: Option<bool>,
@@ -7796,31 +8218,23 @@ pub mod native {
             Self::_io_from_pdb_params(py, text, Some(params))
         }
         #[staticmethod]
-        #[pyo3(signature=(text,params=None,*,sanitize=None,remove_hs=None,flavor=None,proximity_bonding=None))]
+        #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing,proximity_bonding=crate::arguments::Argument::Missing))]
         pub(crate) fn from_mmcif(
             py: Python<'_>,
             text: &str,
-            params: Option<&crate::params::BioMoleculeParams>,
-            sanitize: Option<bool>,
-            remove_hs: Option<bool>,
-            flavor: Option<u32>,
-            proximity_bonding: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>,
+            sanitize: crate::arguments::Argument<Option<bool>>,
+            remove_hs: crate::arguments::Argument<Option<bool>>,
+            flavor: crate::arguments::Argument<Option<u32>>,
+            proximity_bonding: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Self> {
-            if params.is_some()
-                && (sanitize.is_some()
-                    || remove_hs.is_some()
-                    || flavor.is_some()
-                    || proximity_bonding.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if sanitize.is_some()
-                || remove_hs.is_some()
-                || flavor.is_some()
-                || proximity_bonding.is_some()
-            {
+            let keyword_form = sanitize.is_supplied()
+                || remove_hs.is_supplied()
+                || flavor.is_supplied()
+                || proximity_bonding.is_supplied();
+            crate::arguments::configuration_arguments!(params; sanitize, remove_hs, flavor, proximity_bonding);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_io_from_mmcif_keywords(
                     py,
                     text,
@@ -7836,7 +8250,7 @@ pub mod native {
         #[staticmethod]
         #[doc = r#"{"role":"overload","target":"Molecule.from_mmcif"}"#]
         #[pyo3(signature=(text,params=None))]
-        fn _io_from_mmcif_params(
+        pub(super) fn _io_from_mmcif_params(
             py: Python<'_>,
             text: &str,
             params: Option<&crate::params::BioMoleculeParams>,
@@ -7851,7 +8265,7 @@ pub mod native {
         #[staticmethod]
         #[doc = r#"{"role":"overload","target":"Molecule.from_mmcif"}"#]
         #[pyo3(signature=(text,*,sanitize=None,remove_hs=None,flavor=None,proximity_bonding=None))]
-        fn _io_from_mmcif_keywords(
+        pub(super) fn _io_from_mmcif_keywords(
             py: Python<'_>,
             text: &str,
             sanitize: Option<bool>,
@@ -7876,31 +8290,25 @@ pub mod native {
             Self::_io_from_mmcif_params(py, text, Some(params))
         }
         #[staticmethod]
-        #[pyo3(signature=(text,params=None,*,sanitize=None,remove_hs=None,variant=None,cleanup_substructures=None))]
+        #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,variant=crate::arguments::Argument::Missing,cleanup_substructures=crate::arguments::Argument::Missing))]
         pub(crate) fn from_mol2(
             py: Python<'_>,
             text: &str,
-            params: Option<&crate::io_batch_params::Mol2ReadParams>,
-            sanitize: Option<bool>,
-            remove_hs: Option<bool>,
-            variant: Option<crate::io_batch_params::Mol2TypeInput>,
-            cleanup_substructures: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::Mol2ReadParams>>,
+            >,
+            sanitize: crate::arguments::Argument<Option<bool>>,
+            remove_hs: crate::arguments::Argument<Option<bool>>,
+            variant: crate::arguments::Argument<Option<crate::io_batch_params::Mol2TypeInput>>,
+            cleanup_substructures: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Self> {
-            if params.is_some()
-                && (sanitize.is_some()
-                    || remove_hs.is_some()
-                    || variant.is_some()
-                    || cleanup_substructures.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if sanitize.is_some()
-                || remove_hs.is_some()
-                || variant.is_some()
-                || cleanup_substructures.is_some()
-            {
+            let keyword_form = sanitize.is_supplied()
+                || remove_hs.is_supplied()
+                || variant.is_supplied()
+                || cleanup_substructures.is_supplied();
+            crate::arguments::configuration_arguments!(params; sanitize, remove_hs, variant, cleanup_substructures);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_io_from_mol2_keywords(
                     py,
                     text,
@@ -7916,7 +8324,7 @@ pub mod native {
         #[staticmethod]
         #[doc = r#"{"role":"overload","target":"Molecule.from_mol2"}"#]
         #[pyo3(signature=(text,params=None))]
-        fn _io_from_mol2_params(
+        pub(super) fn _io_from_mol2_params(
             py: Python<'_>,
             text: &str,
             params: Option<&crate::io_batch_params::Mol2ReadParams>,
@@ -7931,7 +8339,7 @@ pub mod native {
         #[staticmethod]
         #[doc = r#"{"role":"overload","target":"Molecule.from_mol2"}"#]
         #[pyo3(signature=(text,*,sanitize=None,remove_hs=None,variant=None,cleanup_substructures=None))]
-        fn _io_from_mol2_keywords(
+        pub(super) fn _io_from_mol2_keywords(
             py: Python<'_>,
             text: &str,
             sanitize: Option<bool>,
@@ -7956,31 +8364,25 @@ pub mod native {
             Self::_io_from_mol2_params(py, text, Some(params))
         }
         #[staticmethod]
-        #[pyo3(signature=(path,params=None,*,sanitize=None,remove_hs=None,variant=None,cleanup_substructures=None))]
+        #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,variant=crate::arguments::Argument::Missing,cleanup_substructures=crate::arguments::Argument::Missing))]
         pub(crate) fn read_mol2(
             py: Python<'_>,
             path: std::path::PathBuf,
-            params: Option<&crate::io_batch_params::Mol2ReadParams>,
-            sanitize: Option<bool>,
-            remove_hs: Option<bool>,
-            variant: Option<crate::io_batch_params::Mol2TypeInput>,
-            cleanup_substructures: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::io_batch_params::Mol2ReadParams>>,
+            >,
+            sanitize: crate::arguments::Argument<Option<bool>>,
+            remove_hs: crate::arguments::Argument<Option<bool>>,
+            variant: crate::arguments::Argument<Option<crate::io_batch_params::Mol2TypeInput>>,
+            cleanup_substructures: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Self> {
-            if params.is_some()
-                && (sanitize.is_some()
-                    || remove_hs.is_some()
-                    || variant.is_some()
-                    || cleanup_substructures.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if sanitize.is_some()
-                || remove_hs.is_some()
-                || variant.is_some()
-                || cleanup_substructures.is_some()
-            {
+            let keyword_form = sanitize.is_supplied()
+                || remove_hs.is_supplied()
+                || variant.is_supplied()
+                || cleanup_substructures.is_supplied();
+            crate::arguments::configuration_arguments!(params; sanitize, remove_hs, variant, cleanup_substructures);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_io_read_mol2_keywords(
                     py,
                     path,
@@ -8037,37 +8439,29 @@ pub mod native {
             Self::_io_read_mol2_params(py, path, Some(params))
         }
         #[staticmethod]
-        #[pyo3(signature=(path,params=None,*,sanitize=None,remove_hs=None,strict_parsing=None,expand_attachment_points=None,process_property_lists=None,coordinate_mode=None))]
+        #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
         pub(crate) fn read_mol(
             py: Python<'_>,
             path: std::path::PathBuf,
-            params: Option<&crate::selectors::SdfReadParams>,
-            sanitize: Option<bool>,
-            remove_hs: Option<bool>,
-            strict_parsing: Option<bool>,
-            expand_attachment_points: Option<bool>,
-            process_property_lists: Option<bool>,
-            coordinate_mode: Option<crate::selectors::SdfCoordinateModeInput>,
+            params: crate::arguments::Argument<Option<PyRef<'_, crate::selectors::SdfReadParams>>>,
+            sanitize: crate::arguments::Argument<Option<bool>>,
+            remove_hs: crate::arguments::Argument<Option<bool>>,
+            strict_parsing: crate::arguments::Argument<Option<bool>>,
+            expand_attachment_points: crate::arguments::Argument<Option<bool>>,
+            process_property_lists: crate::arguments::Argument<Option<bool>>,
+            coordinate_mode: crate::arguments::Argument<
+                Option<crate::selectors::SdfCoordinateModeInput>,
+            >,
         ) -> PyResult<Self> {
-            if params.is_some()
-                && (sanitize.is_some()
-                    || remove_hs.is_some()
-                    || strict_parsing.is_some()
-                    || expand_attachment_points.is_some()
-                    || process_property_lists.is_some()
-                    || coordinate_mode.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if sanitize.is_some()
-                || remove_hs.is_some()
-                || strict_parsing.is_some()
-                || expand_attachment_points.is_some()
-                || process_property_lists.is_some()
-                || coordinate_mode.is_some()
-            {
+            let keyword_form = sanitize.is_supplied()
+                || remove_hs.is_supplied()
+                || strict_parsing.is_supplied()
+                || expand_attachment_points.is_supplied()
+                || process_property_lists.is_supplied()
+                || coordinate_mode.is_supplied();
+            crate::arguments::configuration_arguments!(params; sanitize, remove_hs, strict_parsing, expand_attachment_points, process_property_lists, coordinate_mode);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_io_read_mol_keywords(
                     py,
                     path,
@@ -8130,37 +8524,29 @@ pub mod native {
             Self::_io_read_mol_params(py, path, Some(params))
         }
         #[staticmethod]
-        #[pyo3(signature=(path,params=None,*,sanitize=None,remove_hs=None,strict_parsing=None,expand_attachment_points=None,process_property_lists=None,coordinate_mode=None))]
+        #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
         pub(crate) fn read_sdf(
             py: Python<'_>,
             path: std::path::PathBuf,
-            params: Option<&crate::selectors::SdfReadParams>,
-            sanitize: Option<bool>,
-            remove_hs: Option<bool>,
-            strict_parsing: Option<bool>,
-            expand_attachment_points: Option<bool>,
-            process_property_lists: Option<bool>,
-            coordinate_mode: Option<crate::selectors::SdfCoordinateModeInput>,
+            params: crate::arguments::Argument<Option<PyRef<'_, crate::selectors::SdfReadParams>>>,
+            sanitize: crate::arguments::Argument<Option<bool>>,
+            remove_hs: crate::arguments::Argument<Option<bool>>,
+            strict_parsing: crate::arguments::Argument<Option<bool>>,
+            expand_attachment_points: crate::arguments::Argument<Option<bool>>,
+            process_property_lists: crate::arguments::Argument<Option<bool>>,
+            coordinate_mode: crate::arguments::Argument<
+                Option<crate::selectors::SdfCoordinateModeInput>,
+            >,
         ) -> PyResult<Self> {
-            if params.is_some()
-                && (sanitize.is_some()
-                    || remove_hs.is_some()
-                    || strict_parsing.is_some()
-                    || expand_attachment_points.is_some()
-                    || process_property_lists.is_some()
-                    || coordinate_mode.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if sanitize.is_some()
-                || remove_hs.is_some()
-                || strict_parsing.is_some()
-                || expand_attachment_points.is_some()
-                || process_property_lists.is_some()
-                || coordinate_mode.is_some()
-            {
+            let keyword_form = sanitize.is_supplied()
+                || remove_hs.is_supplied()
+                || strict_parsing.is_supplied()
+                || expand_attachment_points.is_supplied()
+                || process_property_lists.is_supplied()
+                || coordinate_mode.is_supplied();
+            crate::arguments::configuration_arguments!(params; sanitize, remove_hs, strict_parsing, expand_attachment_points, process_property_lists, coordinate_mode);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_io_read_sdf_keywords(
                     py,
                     path,
@@ -8222,21 +8608,22 @@ pub mod native {
         ) -> PyResult<Self> {
             Self::_io_read_sdf_params(py, path, Some(params))
         }
-        #[pyo3(signature=(params=None,*,n_bits=None,is_query=None,bit_flags=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,n_bits=crate::arguments::Argument::Missing,is_query=crate::arguments::Argument::Missing,bit_flags=crate::arguments::Argument::Missing))]
         pub(crate) fn fingerprint_avalon(
             &self,
             py: Python<'_>,
-            params: Option<&crate::numerical_params::AvalonFingerprintParams>,
-            n_bits: Option<u32>,
-            is_query: Option<bool>,
-            bit_flags: Option<u32>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, crate::numerical_params::AvalonFingerprintParams>>,
+            >,
+            n_bits: crate::arguments::Argument<Option<u32>>,
+            is_query: crate::arguments::Argument<Option<bool>>,
+            bit_flags: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<crate::native::Fingerprint> {
-            if params.is_some() && (n_bits.is_some() || is_query.is_some() || bit_flags.is_some()) {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "Params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if n_bits.is_some() || is_query.is_some() || bit_flags.is_some() {
+            let keyword_form =
+                n_bits.is_supplied() || is_query.is_supplied() || bit_flags.is_supplied();
+            crate::arguments::configuration_arguments!(params; n_bits, is_query, bit_flags);
+            let params = params.as_deref();
+            if keyword_form {
                 self._io_fingerprint_avalon_keywords(py, n_bits, is_query, bit_flags)
             } else {
                 self._io_fingerprint_avalon_params(py, params)
@@ -8331,6 +8718,32 @@ pub mod native {
                 .map(|data| pyo3::types::PyBytes::new(py, &data))
                 .map_err(PickleError::from_rust)
         }
+
+        fn __reduce__<'py>(
+            &self,
+            py: Python<'py>,
+        ) -> PyResult<(
+            crate::binary_archive::MoleculeRebuild,
+            (Bound<'py, pyo3::types::PyBytes>,),
+        )> {
+            let rebuild = py
+                .import("cosmolkit")?
+                .getattr("_molecule_from_binary")?
+                .extract()?;
+            Ok((rebuild, (self.to_binary(py)?,)))
+        }
+
+        fn __reduce_ex__<'py>(
+            &self,
+            py: Python<'py>,
+            protocol: crate::binary_archive::PickleProtocol,
+        ) -> PyResult<(
+            crate::binary_archive::MoleculeRebuild,
+            (Bound<'py, pyo3::types::PyBytes>,),
+        )> {
+            let _ = protocol;
+            self.__reduce__(py)
+        }
         fn atoms(&self) -> Vec<Atom> {
             self.inner
                 .atoms()
@@ -8382,21 +8795,19 @@ pub mod native {
                 .mmff_has_all_molecule_params()
                 .map_err(super::mmff_properties::MmffMolPropertiesError::from_rust)
         }
-        #[pyo3(signature=(params=None,*,mmff_variant=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mmff_variant=crate::arguments::Argument::Missing))]
         fn mmff_properties(
             &self,
-            params: Option<&MmffPropertiesParams>,
-            mmff_variant: Option<String>,
+            params: crate::arguments::Argument<Option<PyRef<'_, MmffPropertiesParams>>>,
+            mmff_variant: crate::arguments::Argument<Option<String>>,
         ) -> PyResult<super::mmff_properties::MmffProperties> {
-            if let Some(params) = params {
-                if mmff_variant.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._mmff_properties_params(Some(params))
-            } else {
+            let keyword_form = mmff_variant.is_supplied();
+            crate::arguments::configuration_arguments!(params; mmff_variant);
+            let params = params.as_deref();
+            if keyword_form {
                 self._mmff_properties_keywords(mmff_variant)
+            } else {
+                self._mmff_properties_params(params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.mmff_properties"}"#]
@@ -8450,22 +8861,20 @@ pub mod native {
                 .map_err(ValenceError::from_rust)
         }
 
-        #[pyo3(signature = (params=None, *, use_bond_order=None, use_atom_weights=None))]
+        #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, use_bond_order=crate::arguments::Argument::Missing, use_atom_weights=crate::arguments::Argument::Missing))]
         fn distance_matrix(
             &self,
-            params: Option<&DistanceMatrixParams>,
-            use_bond_order: Option<bool>,
-            use_atom_weights: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, DistanceMatrixParams>>>,
+            use_bond_order: crate::arguments::Argument<Option<bool>>,
+            use_atom_weights: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<DenseMatrix> {
-            if params.is_some() && (use_bond_order.is_some() || use_atom_weights.is_some()) {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "parameter object and configuration keywords are mutually exclusive",
-                ));
-            }
-            if params.is_some() {
-                self._distance_matrix_params(params)
-            } else {
+            let keyword_form = use_bond_order.is_supplied() || use_atom_weights.is_supplied();
+            crate::arguments::configuration_arguments!(params; use_bond_order, use_atom_weights);
+            let params = params.as_deref();
+            if keyword_form {
                 self._distance_matrix_keywords(use_bond_order, use_atom_weights)
+            } else {
+                self._distance_matrix_params(params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.distance_matrix"}"#]
@@ -8509,22 +8918,20 @@ pub mod native {
             self._distance_matrix_params(Some(params))
         }
 
-        #[pyo3(signature = (params=None, *, conformer_id=None, use_atom_weights=None))]
+        #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing, use_atom_weights=crate::arguments::Argument::Missing))]
         fn distance_matrix_3d(
             &self,
-            params: Option<&DistanceMatrix3dParams>,
-            conformer_id: Option<usize>,
-            use_atom_weights: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, DistanceMatrix3dParams>>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
+            use_atom_weights: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<DenseMatrix> {
-            if params.is_some() && (conformer_id.is_some() || use_atom_weights.is_some()) {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "parameter object and configuration keywords are mutually exclusive",
-                ));
-            }
-            if params.is_some() {
-                self._distance_matrix_3d_params(params)
-            } else {
+            let keyword_form = conformer_id.is_supplied() || use_atom_weights.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id, use_atom_weights);
+            let params = params.as_deref();
+            if keyword_form {
                 self._distance_matrix_3d_keywords(conformer_id, use_atom_weights)
+            } else {
+                self._distance_matrix_3d_params(params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.distance_matrix_3d"}"#]
@@ -8574,38 +8981,38 @@ pub mod native {
                 .map(|inner| super::property_values::PropertyValue { inner })
         }
 
-        #[pyo3(signature=(params=None,*,max_tautomers=None,max_transforms=None,remove_sp3_stereo=None,remove_bond_stereo=None,remove_isotopic_hydrogens=None,reassign_stereo=None,callback=None,scorer=None,score_params=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_tautomers=crate::arguments::Argument::Missing,max_transforms=crate::arguments::Argument::Missing,remove_sp3_stereo=crate::arguments::Argument::Missing,remove_bond_stereo=crate::arguments::Argument::Missing,remove_isotopic_hydrogens=crate::arguments::Argument::Missing,reassign_stereo=crate::arguments::Argument::Missing,callback=crate::arguments::Argument::Missing,scorer=crate::arguments::Argument::Missing,score_params=crate::arguments::Argument::Missing))]
         fn enumerate_tautomers(
             &self,
             py: Python<'_>,
-            params: Option<Py<crate::tautomer_configuration::TautomerParams>>,
-            max_tautomers: Option<u32>,
-            max_transforms: Option<u32>,
-            remove_sp3_stereo: Option<bool>,
-            remove_bond_stereo: Option<bool>,
-            remove_isotopic_hydrogens: Option<bool>,
-            reassign_stereo: Option<bool>,
-            callback: Option<crate::tautomer_callbacks::EnumerationCallback>,
-            scorer: Option<crate::tautomer_callbacks::Scorer>,
-            score_params: Option<Py<crate::tautomer_values::TautomerScoreParams>>,
+            params: crate::arguments::Argument<
+                Option<Py<crate::tautomer_configuration::TautomerParams>>,
+            >,
+            max_tautomers: crate::arguments::Argument<Option<u32>>,
+            max_transforms: crate::arguments::Argument<Option<u32>>,
+            remove_sp3_stereo: crate::arguments::Argument<Option<bool>>,
+            remove_bond_stereo: crate::arguments::Argument<Option<bool>>,
+            remove_isotopic_hydrogens: crate::arguments::Argument<Option<bool>>,
+            reassign_stereo: crate::arguments::Argument<Option<bool>>,
+            callback: crate::arguments::Argument<
+                Option<crate::tautomer_callbacks::EnumerationCallback>,
+            >,
+            scorer: crate::arguments::Argument<Option<crate::tautomer_callbacks::Scorer>>,
+            score_params: crate::arguments::Argument<
+                Option<Py<crate::tautomer_values::TautomerScoreParams>>,
+            >,
         ) -> PyResult<crate::tautomer_values::TautomerEnumeration> {
-            if params.is_some() {
-                if max_tautomers.is_some()
-                    || max_transforms.is_some()
-                    || remove_sp3_stereo.is_some()
-                    || remove_bond_stereo.is_some()
-                    || remove_isotopic_hydrogens.is_some()
-                    || reassign_stereo.is_some()
-                    || callback.is_some()
-                    || scorer.is_some()
-                    || score_params.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._enumerate_tautomers_params(py, params)
-            } else {
+            let keyword_form = max_tautomers.is_supplied()
+                || max_transforms.is_supplied()
+                || remove_sp3_stereo.is_supplied()
+                || remove_bond_stereo.is_supplied()
+                || remove_isotopic_hydrogens.is_supplied()
+                || reassign_stereo.is_supplied()
+                || callback.is_supplied()
+                || scorer.is_supplied()
+                || score_params.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_tautomers, max_transforms, remove_sp3_stereo, remove_bond_stereo, remove_isotopic_hydrogens, reassign_stereo, callback, scorer, score_params);
+            if keyword_form {
                 self._enumerate_tautomers_keywords(
                     py,
                     max_tautomers,
@@ -8618,6 +9025,8 @@ pub mod native {
                     scorer,
                     score_params,
                 )
+            } else {
+                self._enumerate_tautomers_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.enumerate_tautomers"}"#]
@@ -8629,8 +9038,9 @@ pub mod native {
         ) -> PyResult<crate::tautomer_values::TautomerEnumeration> {
             let params = params
                 .as_ref()
-                .map(|value| value.borrow(py).clone_for_call(py));
-            crate::tautomer_producers::enumerate(py, self, params.as_ref())
+                .map(|value| value.try_borrow(py)?.capture(py))
+                .transpose()?;
+            crate::tautomer_producers::enumerate(py, self, params)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.enumerate_tautomers"}"#]
         #[pyo3(signature=(*,max_tautomers=None,max_transforms=None,remove_sp3_stereo=None,remove_bond_stereo=None,remove_isotopic_hydrogens=None,reassign_stereo=None,callback=None,scorer=None,score_params=None))]
@@ -8670,8 +9080,8 @@ pub mod native {
                 callback,
                 scorer,
                 score_params,
-            );
-            crate::tautomer_producers::enumerate(py, self, Some(&params))
+            )?;
+            crate::tautomer_producers::enumerate(py, self, Some(params))
         }
         fn enumerate_tautomers_with_params(
             &self,
@@ -8681,38 +9091,38 @@ pub mod native {
             self._enumerate_tautomers_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,max_tautomers=None,max_transforms=None,remove_sp3_stereo=None,remove_bond_stereo=None,remove_isotopic_hydrogens=None,reassign_stereo=None,callback=None,scorer=None,score_params=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_tautomers=crate::arguments::Argument::Missing,max_transforms=crate::arguments::Argument::Missing,remove_sp3_stereo=crate::arguments::Argument::Missing,remove_bond_stereo=crate::arguments::Argument::Missing,remove_isotopic_hydrogens=crate::arguments::Argument::Missing,reassign_stereo=crate::arguments::Argument::Missing,callback=crate::arguments::Argument::Missing,scorer=crate::arguments::Argument::Missing,score_params=crate::arguments::Argument::Missing))]
         fn canonical_tautomer(
             &self,
             py: Python<'_>,
-            params: Option<Py<crate::tautomer_configuration::TautomerParams>>,
-            max_tautomers: Option<u32>,
-            max_transforms: Option<u32>,
-            remove_sp3_stereo: Option<bool>,
-            remove_bond_stereo: Option<bool>,
-            remove_isotopic_hydrogens: Option<bool>,
-            reassign_stereo: Option<bool>,
-            callback: Option<crate::tautomer_callbacks::EnumerationCallback>,
-            scorer: Option<crate::tautomer_callbacks::Scorer>,
-            score_params: Option<Py<crate::tautomer_values::TautomerScoreParams>>,
+            params: crate::arguments::Argument<
+                Option<Py<crate::tautomer_configuration::TautomerParams>>,
+            >,
+            max_tautomers: crate::arguments::Argument<Option<u32>>,
+            max_transforms: crate::arguments::Argument<Option<u32>>,
+            remove_sp3_stereo: crate::arguments::Argument<Option<bool>>,
+            remove_bond_stereo: crate::arguments::Argument<Option<bool>>,
+            remove_isotopic_hydrogens: crate::arguments::Argument<Option<bool>>,
+            reassign_stereo: crate::arguments::Argument<Option<bool>>,
+            callback: crate::arguments::Argument<
+                Option<crate::tautomer_callbacks::EnumerationCallback>,
+            >,
+            scorer: crate::arguments::Argument<Option<crate::tautomer_callbacks::Scorer>>,
+            score_params: crate::arguments::Argument<
+                Option<Py<crate::tautomer_values::TautomerScoreParams>>,
+            >,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if max_tautomers.is_some()
-                    || max_transforms.is_some()
-                    || remove_sp3_stereo.is_some()
-                    || remove_bond_stereo.is_some()
-                    || remove_isotopic_hydrogens.is_some()
-                    || reassign_stereo.is_some()
-                    || callback.is_some()
-                    || scorer.is_some()
-                    || score_params.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._canonical_tautomer_params(py, params)
-            } else {
+            let keyword_form = max_tautomers.is_supplied()
+                || max_transforms.is_supplied()
+                || remove_sp3_stereo.is_supplied()
+                || remove_bond_stereo.is_supplied()
+                || remove_isotopic_hydrogens.is_supplied()
+                || reassign_stereo.is_supplied()
+                || callback.is_supplied()
+                || scorer.is_supplied()
+                || score_params.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_tautomers, max_transforms, remove_sp3_stereo, remove_bond_stereo, remove_isotopic_hydrogens, reassign_stereo, callback, scorer, score_params);
+            if keyword_form {
                 self._canonical_tautomer_keywords(
                     py,
                     max_tautomers,
@@ -8725,6 +9135,8 @@ pub mod native {
                     scorer,
                     score_params,
                 )
+            } else {
+                self._canonical_tautomer_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.canonical_tautomer"}"#]
@@ -8736,8 +9148,9 @@ pub mod native {
         ) -> PyResult<Molecule> {
             let params = params
                 .as_ref()
-                .map(|value| value.borrow(py).clone_for_call(py));
-            crate::tautomer_producers::canonical(py, self, params.as_ref())
+                .map(|value| value.try_borrow(py)?.capture(py))
+                .transpose()?;
+            crate::tautomer_producers::canonical(py, self, params)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.canonical_tautomer"}"#]
         #[pyo3(signature=(*,max_tautomers=None,max_transforms=None,remove_sp3_stereo=None,remove_bond_stereo=None,remove_isotopic_hydrogens=None,reassign_stereo=None,callback=None,scorer=None,score_params=None))]
@@ -8777,8 +9190,8 @@ pub mod native {
                 callback,
                 scorer,
                 score_params,
-            );
-            crate::tautomer_producers::canonical(py, self, Some(&params))
+            )?;
+            crate::tautomer_producers::canonical(py, self, Some(params))
         }
         fn canonical_tautomer_with_params(
             &self,
@@ -8788,82 +9201,83 @@ pub mod native {
             self._canonical_tautomer_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         fn with_3d_conformer(
             &self,
             py: Python<'_>,
-            params: Option<&super::embedding_values::EmbedParams>,
-            max_iterations: Option<u32>,
-            num_threads: Option<i32>,
-            random_seed: Option<i32>,
-            clear_conformers: Option<bool>,
-            use_random_coords: Option<bool>,
-            box_size_mult: Option<f64>,
-            rand_neg_eig: Option<bool>,
-            num_zero_fail: Option<u32>,
-            coord_map: Option<std::collections::BTreeMap<i32, [f64; 3]>>,
-            optimizer_force_tol: Option<f64>,
-            ignore_smoothing_failures: Option<bool>,
-            enforce_chirality: Option<bool>,
-            use_exp_torsion_angle_prefs: Option<bool>,
-            use_basic_knowledge: Option<bool>,
-            verbose: Option<bool>,
-            basin_thresh: Option<f64>,
-            prune_rms_thresh: Option<f64>,
-            only_heavy_atoms_for_rms: Option<bool>,
-            et_version: Option<u32>,
-            embed_fragments_separately: Option<bool>,
-            use_small_ring_torsions: Option<bool>,
-            use_macrocycle_torsions: Option<bool>,
-            use_macrocycle14config: Option<bool>,
-            timeout: Option<u32>,
-            cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
-            force_trans_amides: Option<bool>,
-            use_symmetry_for_pruning: Option<bool>,
-            bounds_mat_force_scaling: Option<f64>,
-            track_failures: Option<bool>,
-            enable_sequential_random_seeds: Option<bool>,
-            symmetrize_conjugated_terminal_groups_for_pruning: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::embedding_values::EmbedParams>>,
+            >,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            random_seed: crate::arguments::Argument<Option<i32>>,
+            clear_conformers: crate::arguments::Argument<Option<bool>>,
+            use_random_coords: crate::arguments::Argument<Option<bool>>,
+            box_size_mult: crate::arguments::Argument<Option<f64>>,
+            rand_neg_eig: crate::arguments::Argument<Option<bool>>,
+            num_zero_fail: crate::arguments::Argument<Option<u32>>,
+            coord_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<i32, [f64; 3]>>,
+            >,
+            optimizer_force_tol: crate::arguments::Argument<Option<f64>>,
+            ignore_smoothing_failures: crate::arguments::Argument<Option<bool>>,
+            enforce_chirality: crate::arguments::Argument<Option<bool>>,
+            use_exp_torsion_angle_prefs: crate::arguments::Argument<Option<bool>>,
+            use_basic_knowledge: crate::arguments::Argument<Option<bool>>,
+            verbose: crate::arguments::Argument<Option<bool>>,
+            basin_thresh: crate::arguments::Argument<Option<f64>>,
+            prune_rms_thresh: crate::arguments::Argument<Option<f64>>,
+            only_heavy_atoms_for_rms: crate::arguments::Argument<Option<bool>>,
+            et_version: crate::arguments::Argument<Option<u32>>,
+            embed_fragments_separately: crate::arguments::Argument<Option<bool>>,
+            use_small_ring_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
+            timeout: crate::arguments::Argument<Option<u32>>,
+            cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
+            force_trans_amides: crate::arguments::Argument<Option<bool>>,
+            use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
+            bounds_mat_force_scaling: crate::arguments::Argument<Option<f64>>,
+            track_failures: crate::arguments::Argument<Option<bool>>,
+            enable_sequential_random_seeds: crate::arguments::Argument<Option<bool>>,
+            symmetrize_conjugated_terminal_groups_for_pruning: crate::arguments::Argument<
+                Option<bool>,
+            >,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if max_iterations.is_some()
-                    || num_threads.is_some()
-                    || random_seed.is_some()
-                    || clear_conformers.is_some()
-                    || use_random_coords.is_some()
-                    || box_size_mult.is_some()
-                    || rand_neg_eig.is_some()
-                    || num_zero_fail.is_some()
-                    || coord_map.is_some()
-                    || optimizer_force_tol.is_some()
-                    || ignore_smoothing_failures.is_some()
-                    || enforce_chirality.is_some()
-                    || use_exp_torsion_angle_prefs.is_some()
-                    || use_basic_knowledge.is_some()
-                    || verbose.is_some()
-                    || basin_thresh.is_some()
-                    || prune_rms_thresh.is_some()
-                    || only_heavy_atoms_for_rms.is_some()
-                    || et_version.is_some()
-                    || embed_fragments_separately.is_some()
-                    || use_small_ring_torsions.is_some()
-                    || use_macrocycle_torsions.is_some()
-                    || use_macrocycle14config.is_some()
-                    || timeout.is_some()
-                    || cpci.is_some()
-                    || force_trans_amides.is_some()
-                    || use_symmetry_for_pruning.is_some()
-                    || bounds_mat_force_scaling.is_some()
-                    || track_failures.is_some()
-                    || enable_sequential_random_seeds.is_some()
-                    || symmetrize_conjugated_terminal_groups_for_pruning.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._with_3d_conformer_params(py, params)
-            } else {
+            let keyword_form = max_iterations.is_supplied()
+                || num_threads.is_supplied()
+                || random_seed.is_supplied()
+                || clear_conformers.is_supplied()
+                || use_random_coords.is_supplied()
+                || box_size_mult.is_supplied()
+                || rand_neg_eig.is_supplied()
+                || num_zero_fail.is_supplied()
+                || coord_map.is_supplied()
+                || optimizer_force_tol.is_supplied()
+                || ignore_smoothing_failures.is_supplied()
+                || enforce_chirality.is_supplied()
+                || use_exp_torsion_angle_prefs.is_supplied()
+                || use_basic_knowledge.is_supplied()
+                || verbose.is_supplied()
+                || basin_thresh.is_supplied()
+                || prune_rms_thresh.is_supplied()
+                || only_heavy_atoms_for_rms.is_supplied()
+                || et_version.is_supplied()
+                || embed_fragments_separately.is_supplied()
+                || use_small_ring_torsions.is_supplied()
+                || use_macrocycle_torsions.is_supplied()
+                || use_macrocycle14config.is_supplied()
+                || timeout.is_supplied()
+                || cpci.is_supplied()
+                || force_trans_amides.is_supplied()
+                || use_symmetry_for_pruning.is_supplied()
+                || bounds_mat_force_scaling.is_supplied()
+                || track_failures.is_supplied()
+                || enable_sequential_random_seeds.is_supplied()
+                || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_3d_conformer_keywords(
                     py,
                     max_iterations,
@@ -8898,6 +9312,8 @@ pub mod native {
                     enable_sequential_random_seeds,
                     symmetrize_conjugated_terminal_groups_for_pruning,
                 )
+            } else {
+                self._with_3d_conformer_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformer"}"#]
@@ -8907,14 +9323,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::embedding_values::EmbedParams>,
         ) -> PyResult<Molecule> {
-            match params {
-                Some(params) => {
-                    py.detach(|| self.inner.with_3d_conformer_with_params(&params.inner))
-                }
-                None => py.detach(|| self.inner.with_3d_conformer()),
-            }
-            .map(|inner| Molecule { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._with_3d_conformer_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformer"}"#]
         #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
@@ -9020,7 +9430,7 @@ pub mod native {
                 enable_sequential_random_seeds,
                 symmetrize_conjugated_terminal_groups_for_pruning,
             );
-            self._with_3d_conformer_params(py, Some(&params))
+            self._with_3d_conformer_params_native(py, Some(&params))
         }
         fn with_3d_conformer_with_params(
             &self,
@@ -9030,82 +9440,83 @@ pub mod native {
             self._with_3d_conformer_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         fn embed_3d_conformer_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::embedding_values::EmbedParams>,
-            max_iterations: Option<u32>,
-            num_threads: Option<i32>,
-            random_seed: Option<i32>,
-            clear_conformers: Option<bool>,
-            use_random_coords: Option<bool>,
-            box_size_mult: Option<f64>,
-            rand_neg_eig: Option<bool>,
-            num_zero_fail: Option<u32>,
-            coord_map: Option<std::collections::BTreeMap<i32, [f64; 3]>>,
-            optimizer_force_tol: Option<f64>,
-            ignore_smoothing_failures: Option<bool>,
-            enforce_chirality: Option<bool>,
-            use_exp_torsion_angle_prefs: Option<bool>,
-            use_basic_knowledge: Option<bool>,
-            verbose: Option<bool>,
-            basin_thresh: Option<f64>,
-            prune_rms_thresh: Option<f64>,
-            only_heavy_atoms_for_rms: Option<bool>,
-            et_version: Option<u32>,
-            embed_fragments_separately: Option<bool>,
-            use_small_ring_torsions: Option<bool>,
-            use_macrocycle_torsions: Option<bool>,
-            use_macrocycle14config: Option<bool>,
-            timeout: Option<u32>,
-            cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
-            force_trans_amides: Option<bool>,
-            use_symmetry_for_pruning: Option<bool>,
-            bounds_mat_force_scaling: Option<f64>,
-            track_failures: Option<bool>,
-            enable_sequential_random_seeds: Option<bool>,
-            symmetrize_conjugated_terminal_groups_for_pruning: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::embedding_values::EmbedParams>>,
+            >,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            random_seed: crate::arguments::Argument<Option<i32>>,
+            clear_conformers: crate::arguments::Argument<Option<bool>>,
+            use_random_coords: crate::arguments::Argument<Option<bool>>,
+            box_size_mult: crate::arguments::Argument<Option<f64>>,
+            rand_neg_eig: crate::arguments::Argument<Option<bool>>,
+            num_zero_fail: crate::arguments::Argument<Option<u32>>,
+            coord_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<i32, [f64; 3]>>,
+            >,
+            optimizer_force_tol: crate::arguments::Argument<Option<f64>>,
+            ignore_smoothing_failures: crate::arguments::Argument<Option<bool>>,
+            enforce_chirality: crate::arguments::Argument<Option<bool>>,
+            use_exp_torsion_angle_prefs: crate::arguments::Argument<Option<bool>>,
+            use_basic_knowledge: crate::arguments::Argument<Option<bool>>,
+            verbose: crate::arguments::Argument<Option<bool>>,
+            basin_thresh: crate::arguments::Argument<Option<f64>>,
+            prune_rms_thresh: crate::arguments::Argument<Option<f64>>,
+            only_heavy_atoms_for_rms: crate::arguments::Argument<Option<bool>>,
+            et_version: crate::arguments::Argument<Option<u32>>,
+            embed_fragments_separately: crate::arguments::Argument<Option<bool>>,
+            use_small_ring_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
+            timeout: crate::arguments::Argument<Option<u32>>,
+            cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
+            force_trans_amides: crate::arguments::Argument<Option<bool>>,
+            use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
+            bounds_mat_force_scaling: crate::arguments::Argument<Option<f64>>,
+            track_failures: crate::arguments::Argument<Option<bool>>,
+            enable_sequential_random_seeds: crate::arguments::Argument<Option<bool>>,
+            symmetrize_conjugated_terminal_groups_for_pruning: crate::arguments::Argument<
+                Option<bool>,
+            >,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if max_iterations.is_some()
-                    || num_threads.is_some()
-                    || random_seed.is_some()
-                    || clear_conformers.is_some()
-                    || use_random_coords.is_some()
-                    || box_size_mult.is_some()
-                    || rand_neg_eig.is_some()
-                    || num_zero_fail.is_some()
-                    || coord_map.is_some()
-                    || optimizer_force_tol.is_some()
-                    || ignore_smoothing_failures.is_some()
-                    || enforce_chirality.is_some()
-                    || use_exp_torsion_angle_prefs.is_some()
-                    || use_basic_knowledge.is_some()
-                    || verbose.is_some()
-                    || basin_thresh.is_some()
-                    || prune_rms_thresh.is_some()
-                    || only_heavy_atoms_for_rms.is_some()
-                    || et_version.is_some()
-                    || embed_fragments_separately.is_some()
-                    || use_small_ring_torsions.is_some()
-                    || use_macrocycle_torsions.is_some()
-                    || use_macrocycle14config.is_some()
-                    || timeout.is_some()
-                    || cpci.is_some()
-                    || force_trans_amides.is_some()
-                    || use_symmetry_for_pruning.is_some()
-                    || bounds_mat_force_scaling.is_some()
-                    || track_failures.is_some()
-                    || enable_sequential_random_seeds.is_some()
-                    || symmetrize_conjugated_terminal_groups_for_pruning.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._embed_3d_conformer_params(py, params)
-            } else {
+            let keyword_form = max_iterations.is_supplied()
+                || num_threads.is_supplied()
+                || random_seed.is_supplied()
+                || clear_conformers.is_supplied()
+                || use_random_coords.is_supplied()
+                || box_size_mult.is_supplied()
+                || rand_neg_eig.is_supplied()
+                || num_zero_fail.is_supplied()
+                || coord_map.is_supplied()
+                || optimizer_force_tol.is_supplied()
+                || ignore_smoothing_failures.is_supplied()
+                || enforce_chirality.is_supplied()
+                || use_exp_torsion_angle_prefs.is_supplied()
+                || use_basic_knowledge.is_supplied()
+                || verbose.is_supplied()
+                || basin_thresh.is_supplied()
+                || prune_rms_thresh.is_supplied()
+                || only_heavy_atoms_for_rms.is_supplied()
+                || et_version.is_supplied()
+                || embed_fragments_separately.is_supplied()
+                || use_small_ring_torsions.is_supplied()
+                || use_macrocycle_torsions.is_supplied()
+                || use_macrocycle14config.is_supplied()
+                || timeout.is_supplied()
+                || cpci.is_supplied()
+                || force_trans_amides.is_supplied()
+                || use_symmetry_for_pruning.is_supplied()
+                || bounds_mat_force_scaling.is_supplied()
+                || track_failures.is_supplied()
+                || enable_sequential_random_seeds.is_supplied()
+                || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            let params = params.as_deref();
+            if keyword_form {
                 self._embed_3d_conformer_keywords(
                     py,
                     max_iterations,
@@ -9140,6 +9551,8 @@ pub mod native {
                     enable_sequential_random_seeds,
                     symmetrize_conjugated_terminal_groups_for_pruning,
                 )
+            } else {
+                self._embed_3d_conformer_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformer_"}"#]
@@ -9149,13 +9562,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::embedding_values::EmbedParams>,
         ) -> PyResult<()> {
-            match params {
-                Some(params) => {
-                    py.detach(|| self.inner.embed_3d_conformer_with_params_(&params.inner))
-                }
-                None => py.detach(|| self.inner.embed_3d_conformer_()),
-            }
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._embed_3d_conformer_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformer_"}"#]
         #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
@@ -9261,7 +9669,7 @@ pub mod native {
                 enable_sequential_random_seeds,
                 symmetrize_conjugated_terminal_groups_for_pruning,
             );
-            self._embed_3d_conformer_params(py, Some(&params))
+            self._embed_3d_conformer_params_native(py, Some(&params))
         }
         fn embed_3d_conformer_with_params_(
             &mut self,
@@ -9271,82 +9679,83 @@ pub mod native {
             self._embed_3d_conformer_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         fn with_3d_conformer_result(
             &self,
             py: Python<'_>,
-            params: Option<&super::embedding_values::EmbedParams>,
-            max_iterations: Option<u32>,
-            num_threads: Option<i32>,
-            random_seed: Option<i32>,
-            clear_conformers: Option<bool>,
-            use_random_coords: Option<bool>,
-            box_size_mult: Option<f64>,
-            rand_neg_eig: Option<bool>,
-            num_zero_fail: Option<u32>,
-            coord_map: Option<std::collections::BTreeMap<i32, [f64; 3]>>,
-            optimizer_force_tol: Option<f64>,
-            ignore_smoothing_failures: Option<bool>,
-            enforce_chirality: Option<bool>,
-            use_exp_torsion_angle_prefs: Option<bool>,
-            use_basic_knowledge: Option<bool>,
-            verbose: Option<bool>,
-            basin_thresh: Option<f64>,
-            prune_rms_thresh: Option<f64>,
-            only_heavy_atoms_for_rms: Option<bool>,
-            et_version: Option<u32>,
-            embed_fragments_separately: Option<bool>,
-            use_small_ring_torsions: Option<bool>,
-            use_macrocycle_torsions: Option<bool>,
-            use_macrocycle14config: Option<bool>,
-            timeout: Option<u32>,
-            cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
-            force_trans_amides: Option<bool>,
-            use_symmetry_for_pruning: Option<bool>,
-            bounds_mat_force_scaling: Option<f64>,
-            track_failures: Option<bool>,
-            enable_sequential_random_seeds: Option<bool>,
-            symmetrize_conjugated_terminal_groups_for_pruning: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::embedding_values::EmbedParams>>,
+            >,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            random_seed: crate::arguments::Argument<Option<i32>>,
+            clear_conformers: crate::arguments::Argument<Option<bool>>,
+            use_random_coords: crate::arguments::Argument<Option<bool>>,
+            box_size_mult: crate::arguments::Argument<Option<f64>>,
+            rand_neg_eig: crate::arguments::Argument<Option<bool>>,
+            num_zero_fail: crate::arguments::Argument<Option<u32>>,
+            coord_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<i32, [f64; 3]>>,
+            >,
+            optimizer_force_tol: crate::arguments::Argument<Option<f64>>,
+            ignore_smoothing_failures: crate::arguments::Argument<Option<bool>>,
+            enforce_chirality: crate::arguments::Argument<Option<bool>>,
+            use_exp_torsion_angle_prefs: crate::arguments::Argument<Option<bool>>,
+            use_basic_knowledge: crate::arguments::Argument<Option<bool>>,
+            verbose: crate::arguments::Argument<Option<bool>>,
+            basin_thresh: crate::arguments::Argument<Option<f64>>,
+            prune_rms_thresh: crate::arguments::Argument<Option<f64>>,
+            only_heavy_atoms_for_rms: crate::arguments::Argument<Option<bool>>,
+            et_version: crate::arguments::Argument<Option<u32>>,
+            embed_fragments_separately: crate::arguments::Argument<Option<bool>>,
+            use_small_ring_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
+            timeout: crate::arguments::Argument<Option<u32>>,
+            cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
+            force_trans_amides: crate::arguments::Argument<Option<bool>>,
+            use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
+            bounds_mat_force_scaling: crate::arguments::Argument<Option<f64>>,
+            track_failures: crate::arguments::Argument<Option<bool>>,
+            enable_sequential_random_seeds: crate::arguments::Argument<Option<bool>>,
+            symmetrize_conjugated_terminal_groups_for_pruning: crate::arguments::Argument<
+                Option<bool>,
+            >,
         ) -> PyResult<super::embedding_values::EmbedMoleculeResult> {
-            if params.is_some() {
-                if max_iterations.is_some()
-                    || num_threads.is_some()
-                    || random_seed.is_some()
-                    || clear_conformers.is_some()
-                    || use_random_coords.is_some()
-                    || box_size_mult.is_some()
-                    || rand_neg_eig.is_some()
-                    || num_zero_fail.is_some()
-                    || coord_map.is_some()
-                    || optimizer_force_tol.is_some()
-                    || ignore_smoothing_failures.is_some()
-                    || enforce_chirality.is_some()
-                    || use_exp_torsion_angle_prefs.is_some()
-                    || use_basic_knowledge.is_some()
-                    || verbose.is_some()
-                    || basin_thresh.is_some()
-                    || prune_rms_thresh.is_some()
-                    || only_heavy_atoms_for_rms.is_some()
-                    || et_version.is_some()
-                    || embed_fragments_separately.is_some()
-                    || use_small_ring_torsions.is_some()
-                    || use_macrocycle_torsions.is_some()
-                    || use_macrocycle14config.is_some()
-                    || timeout.is_some()
-                    || cpci.is_some()
-                    || force_trans_amides.is_some()
-                    || use_symmetry_for_pruning.is_some()
-                    || bounds_mat_force_scaling.is_some()
-                    || track_failures.is_some()
-                    || enable_sequential_random_seeds.is_some()
-                    || symmetrize_conjugated_terminal_groups_for_pruning.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._with_3d_conformer_result_params(py, params)
-            } else {
+            let keyword_form = max_iterations.is_supplied()
+                || num_threads.is_supplied()
+                || random_seed.is_supplied()
+                || clear_conformers.is_supplied()
+                || use_random_coords.is_supplied()
+                || box_size_mult.is_supplied()
+                || rand_neg_eig.is_supplied()
+                || num_zero_fail.is_supplied()
+                || coord_map.is_supplied()
+                || optimizer_force_tol.is_supplied()
+                || ignore_smoothing_failures.is_supplied()
+                || enforce_chirality.is_supplied()
+                || use_exp_torsion_angle_prefs.is_supplied()
+                || use_basic_knowledge.is_supplied()
+                || verbose.is_supplied()
+                || basin_thresh.is_supplied()
+                || prune_rms_thresh.is_supplied()
+                || only_heavy_atoms_for_rms.is_supplied()
+                || et_version.is_supplied()
+                || embed_fragments_separately.is_supplied()
+                || use_small_ring_torsions.is_supplied()
+                || use_macrocycle_torsions.is_supplied()
+                || use_macrocycle14config.is_supplied()
+                || timeout.is_supplied()
+                || cpci.is_supplied()
+                || force_trans_amides.is_supplied()
+                || use_symmetry_for_pruning.is_supplied()
+                || bounds_mat_force_scaling.is_supplied()
+                || track_failures.is_supplied()
+                || enable_sequential_random_seeds.is_supplied()
+                || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_3d_conformer_result_keywords(
                     py,
                     max_iterations,
@@ -9381,6 +9790,8 @@ pub mod native {
                     enable_sequential_random_seeds,
                     symmetrize_conjugated_terminal_groups_for_pruning,
                 )
+            } else {
+                self._with_3d_conformer_result_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformer_result"}"#]
@@ -9390,15 +9801,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::embedding_values::EmbedParams>,
         ) -> PyResult<super::embedding_values::EmbedMoleculeResult> {
-            match params {
-                Some(params) => py.detach(|| {
-                    self.inner
-                        .with_3d_conformer_result_with_params(&params.inner)
-                }),
-                None => py.detach(|| self.inner.with_3d_conformer_result()),
-            }
-            .map(|inner| super::embedding_values::EmbedMoleculeResult { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._with_3d_conformer_result_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformer_result"}"#]
         #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
@@ -9504,7 +9908,7 @@ pub mod native {
                 enable_sequential_random_seeds,
                 symmetrize_conjugated_terminal_groups_for_pruning,
             );
-            self._with_3d_conformer_result_params(py, Some(&params))
+            self._with_3d_conformer_result_params_native(py, Some(&params))
         }
         fn with_3d_conformer_result_with_params(
             &self,
@@ -9514,82 +9918,83 @@ pub mod native {
             self._with_3d_conformer_result_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         fn embed_3d_conformer_result_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::embedding_values::EmbedParams>,
-            max_iterations: Option<u32>,
-            num_threads: Option<i32>,
-            random_seed: Option<i32>,
-            clear_conformers: Option<bool>,
-            use_random_coords: Option<bool>,
-            box_size_mult: Option<f64>,
-            rand_neg_eig: Option<bool>,
-            num_zero_fail: Option<u32>,
-            coord_map: Option<std::collections::BTreeMap<i32, [f64; 3]>>,
-            optimizer_force_tol: Option<f64>,
-            ignore_smoothing_failures: Option<bool>,
-            enforce_chirality: Option<bool>,
-            use_exp_torsion_angle_prefs: Option<bool>,
-            use_basic_knowledge: Option<bool>,
-            verbose: Option<bool>,
-            basin_thresh: Option<f64>,
-            prune_rms_thresh: Option<f64>,
-            only_heavy_atoms_for_rms: Option<bool>,
-            et_version: Option<u32>,
-            embed_fragments_separately: Option<bool>,
-            use_small_ring_torsions: Option<bool>,
-            use_macrocycle_torsions: Option<bool>,
-            use_macrocycle14config: Option<bool>,
-            timeout: Option<u32>,
-            cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
-            force_trans_amides: Option<bool>,
-            use_symmetry_for_pruning: Option<bool>,
-            bounds_mat_force_scaling: Option<f64>,
-            track_failures: Option<bool>,
-            enable_sequential_random_seeds: Option<bool>,
-            symmetrize_conjugated_terminal_groups_for_pruning: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::embedding_values::EmbedParams>>,
+            >,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            random_seed: crate::arguments::Argument<Option<i32>>,
+            clear_conformers: crate::arguments::Argument<Option<bool>>,
+            use_random_coords: crate::arguments::Argument<Option<bool>>,
+            box_size_mult: crate::arguments::Argument<Option<f64>>,
+            rand_neg_eig: crate::arguments::Argument<Option<bool>>,
+            num_zero_fail: crate::arguments::Argument<Option<u32>>,
+            coord_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<i32, [f64; 3]>>,
+            >,
+            optimizer_force_tol: crate::arguments::Argument<Option<f64>>,
+            ignore_smoothing_failures: crate::arguments::Argument<Option<bool>>,
+            enforce_chirality: crate::arguments::Argument<Option<bool>>,
+            use_exp_torsion_angle_prefs: crate::arguments::Argument<Option<bool>>,
+            use_basic_knowledge: crate::arguments::Argument<Option<bool>>,
+            verbose: crate::arguments::Argument<Option<bool>>,
+            basin_thresh: crate::arguments::Argument<Option<f64>>,
+            prune_rms_thresh: crate::arguments::Argument<Option<f64>>,
+            only_heavy_atoms_for_rms: crate::arguments::Argument<Option<bool>>,
+            et_version: crate::arguments::Argument<Option<u32>>,
+            embed_fragments_separately: crate::arguments::Argument<Option<bool>>,
+            use_small_ring_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
+            timeout: crate::arguments::Argument<Option<u32>>,
+            cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
+            force_trans_amides: crate::arguments::Argument<Option<bool>>,
+            use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
+            bounds_mat_force_scaling: crate::arguments::Argument<Option<f64>>,
+            track_failures: crate::arguments::Argument<Option<bool>>,
+            enable_sequential_random_seeds: crate::arguments::Argument<Option<bool>>,
+            symmetrize_conjugated_terminal_groups_for_pruning: crate::arguments::Argument<
+                Option<bool>,
+            >,
         ) -> PyResult<super::embedding_values::EmbedMoleculeResult> {
-            if params.is_some() {
-                if max_iterations.is_some()
-                    || num_threads.is_some()
-                    || random_seed.is_some()
-                    || clear_conformers.is_some()
-                    || use_random_coords.is_some()
-                    || box_size_mult.is_some()
-                    || rand_neg_eig.is_some()
-                    || num_zero_fail.is_some()
-                    || coord_map.is_some()
-                    || optimizer_force_tol.is_some()
-                    || ignore_smoothing_failures.is_some()
-                    || enforce_chirality.is_some()
-                    || use_exp_torsion_angle_prefs.is_some()
-                    || use_basic_knowledge.is_some()
-                    || verbose.is_some()
-                    || basin_thresh.is_some()
-                    || prune_rms_thresh.is_some()
-                    || only_heavy_atoms_for_rms.is_some()
-                    || et_version.is_some()
-                    || embed_fragments_separately.is_some()
-                    || use_small_ring_torsions.is_some()
-                    || use_macrocycle_torsions.is_some()
-                    || use_macrocycle14config.is_some()
-                    || timeout.is_some()
-                    || cpci.is_some()
-                    || force_trans_amides.is_some()
-                    || use_symmetry_for_pruning.is_some()
-                    || bounds_mat_force_scaling.is_some()
-                    || track_failures.is_some()
-                    || enable_sequential_random_seeds.is_some()
-                    || symmetrize_conjugated_terminal_groups_for_pruning.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._embed_3d_conformer_result_params(py, params)
-            } else {
+            let keyword_form = max_iterations.is_supplied()
+                || num_threads.is_supplied()
+                || random_seed.is_supplied()
+                || clear_conformers.is_supplied()
+                || use_random_coords.is_supplied()
+                || box_size_mult.is_supplied()
+                || rand_neg_eig.is_supplied()
+                || num_zero_fail.is_supplied()
+                || coord_map.is_supplied()
+                || optimizer_force_tol.is_supplied()
+                || ignore_smoothing_failures.is_supplied()
+                || enforce_chirality.is_supplied()
+                || use_exp_torsion_angle_prefs.is_supplied()
+                || use_basic_knowledge.is_supplied()
+                || verbose.is_supplied()
+                || basin_thresh.is_supplied()
+                || prune_rms_thresh.is_supplied()
+                || only_heavy_atoms_for_rms.is_supplied()
+                || et_version.is_supplied()
+                || embed_fragments_separately.is_supplied()
+                || use_small_ring_torsions.is_supplied()
+                || use_macrocycle_torsions.is_supplied()
+                || use_macrocycle14config.is_supplied()
+                || timeout.is_supplied()
+                || cpci.is_supplied()
+                || force_trans_amides.is_supplied()
+                || use_symmetry_for_pruning.is_supplied()
+                || bounds_mat_force_scaling.is_supplied()
+                || track_failures.is_supplied()
+                || enable_sequential_random_seeds.is_supplied()
+                || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            let params = params.as_deref();
+            if keyword_form {
                 self._embed_3d_conformer_result_keywords(
                     py,
                     max_iterations,
@@ -9624,6 +10029,8 @@ pub mod native {
                     enable_sequential_random_seeds,
                     symmetrize_conjugated_terminal_groups_for_pruning,
                 )
+            } else {
+                self._embed_3d_conformer_result_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformer_result_"}"#]
@@ -9633,15 +10040,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::embedding_values::EmbedParams>,
         ) -> PyResult<super::embedding_values::EmbedMoleculeResult> {
-            match params {
-                Some(params) => py.detach(|| {
-                    self.inner
-                        .embed_3d_conformer_result_with_params_(&params.inner)
-                }),
-                None => py.detach(|| self.inner.embed_3d_conformer_result_()),
-            }
-            .map(|inner| super::embedding_values::EmbedMoleculeResult { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._embed_3d_conformer_result_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformer_result_"}"#]
         #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
@@ -9747,7 +10147,7 @@ pub mod native {
                 enable_sequential_random_seeds,
                 symmetrize_conjugated_terminal_groups_for_pruning,
             );
-            self._embed_3d_conformer_result_params(py, Some(&params))
+            self._embed_3d_conformer_result_params_native(py, Some(&params))
         }
         fn embed_3d_conformer_result_with_params_(
             &mut self,
@@ -9757,83 +10157,84 @@ pub mod native {
             self._embed_3d_conformer_result_params(py, Some(params))
         }
 
-        #[pyo3(signature=(num_confs,params=None,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         fn with_3d_conformers(
             &self,
             py: Python<'_>,
             num_confs: u32,
-            params: Option<&super::embedding_values::EmbedParams>,
-            max_iterations: Option<u32>,
-            num_threads: Option<i32>,
-            random_seed: Option<i32>,
-            clear_conformers: Option<bool>,
-            use_random_coords: Option<bool>,
-            box_size_mult: Option<f64>,
-            rand_neg_eig: Option<bool>,
-            num_zero_fail: Option<u32>,
-            coord_map: Option<std::collections::BTreeMap<i32, [f64; 3]>>,
-            optimizer_force_tol: Option<f64>,
-            ignore_smoothing_failures: Option<bool>,
-            enforce_chirality: Option<bool>,
-            use_exp_torsion_angle_prefs: Option<bool>,
-            use_basic_knowledge: Option<bool>,
-            verbose: Option<bool>,
-            basin_thresh: Option<f64>,
-            prune_rms_thresh: Option<f64>,
-            only_heavy_atoms_for_rms: Option<bool>,
-            et_version: Option<u32>,
-            embed_fragments_separately: Option<bool>,
-            use_small_ring_torsions: Option<bool>,
-            use_macrocycle_torsions: Option<bool>,
-            use_macrocycle14config: Option<bool>,
-            timeout: Option<u32>,
-            cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
-            force_trans_amides: Option<bool>,
-            use_symmetry_for_pruning: Option<bool>,
-            bounds_mat_force_scaling: Option<f64>,
-            track_failures: Option<bool>,
-            enable_sequential_random_seeds: Option<bool>,
-            symmetrize_conjugated_terminal_groups_for_pruning: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::embedding_values::EmbedParams>>,
+            >,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            random_seed: crate::arguments::Argument<Option<i32>>,
+            clear_conformers: crate::arguments::Argument<Option<bool>>,
+            use_random_coords: crate::arguments::Argument<Option<bool>>,
+            box_size_mult: crate::arguments::Argument<Option<f64>>,
+            rand_neg_eig: crate::arguments::Argument<Option<bool>>,
+            num_zero_fail: crate::arguments::Argument<Option<u32>>,
+            coord_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<i32, [f64; 3]>>,
+            >,
+            optimizer_force_tol: crate::arguments::Argument<Option<f64>>,
+            ignore_smoothing_failures: crate::arguments::Argument<Option<bool>>,
+            enforce_chirality: crate::arguments::Argument<Option<bool>>,
+            use_exp_torsion_angle_prefs: crate::arguments::Argument<Option<bool>>,
+            use_basic_knowledge: crate::arguments::Argument<Option<bool>>,
+            verbose: crate::arguments::Argument<Option<bool>>,
+            basin_thresh: crate::arguments::Argument<Option<f64>>,
+            prune_rms_thresh: crate::arguments::Argument<Option<f64>>,
+            only_heavy_atoms_for_rms: crate::arguments::Argument<Option<bool>>,
+            et_version: crate::arguments::Argument<Option<u32>>,
+            embed_fragments_separately: crate::arguments::Argument<Option<bool>>,
+            use_small_ring_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
+            timeout: crate::arguments::Argument<Option<u32>>,
+            cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
+            force_trans_amides: crate::arguments::Argument<Option<bool>>,
+            use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
+            bounds_mat_force_scaling: crate::arguments::Argument<Option<f64>>,
+            track_failures: crate::arguments::Argument<Option<bool>>,
+            enable_sequential_random_seeds: crate::arguments::Argument<Option<bool>>,
+            symmetrize_conjugated_terminal_groups_for_pruning: crate::arguments::Argument<
+                Option<bool>,
+            >,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if max_iterations.is_some()
-                    || num_threads.is_some()
-                    || random_seed.is_some()
-                    || clear_conformers.is_some()
-                    || use_random_coords.is_some()
-                    || box_size_mult.is_some()
-                    || rand_neg_eig.is_some()
-                    || num_zero_fail.is_some()
-                    || coord_map.is_some()
-                    || optimizer_force_tol.is_some()
-                    || ignore_smoothing_failures.is_some()
-                    || enforce_chirality.is_some()
-                    || use_exp_torsion_angle_prefs.is_some()
-                    || use_basic_knowledge.is_some()
-                    || verbose.is_some()
-                    || basin_thresh.is_some()
-                    || prune_rms_thresh.is_some()
-                    || only_heavy_atoms_for_rms.is_some()
-                    || et_version.is_some()
-                    || embed_fragments_separately.is_some()
-                    || use_small_ring_torsions.is_some()
-                    || use_macrocycle_torsions.is_some()
-                    || use_macrocycle14config.is_some()
-                    || timeout.is_some()
-                    || cpci.is_some()
-                    || force_trans_amides.is_some()
-                    || use_symmetry_for_pruning.is_some()
-                    || bounds_mat_force_scaling.is_some()
-                    || track_failures.is_some()
-                    || enable_sequential_random_seeds.is_some()
-                    || symmetrize_conjugated_terminal_groups_for_pruning.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._with_3d_conformers_params(py, num_confs, params)
-            } else {
+            let keyword_form = max_iterations.is_supplied()
+                || num_threads.is_supplied()
+                || random_seed.is_supplied()
+                || clear_conformers.is_supplied()
+                || use_random_coords.is_supplied()
+                || box_size_mult.is_supplied()
+                || rand_neg_eig.is_supplied()
+                || num_zero_fail.is_supplied()
+                || coord_map.is_supplied()
+                || optimizer_force_tol.is_supplied()
+                || ignore_smoothing_failures.is_supplied()
+                || enforce_chirality.is_supplied()
+                || use_exp_torsion_angle_prefs.is_supplied()
+                || use_basic_knowledge.is_supplied()
+                || verbose.is_supplied()
+                || basin_thresh.is_supplied()
+                || prune_rms_thresh.is_supplied()
+                || only_heavy_atoms_for_rms.is_supplied()
+                || et_version.is_supplied()
+                || embed_fragments_separately.is_supplied()
+                || use_small_ring_torsions.is_supplied()
+                || use_macrocycle_torsions.is_supplied()
+                || use_macrocycle14config.is_supplied()
+                || timeout.is_supplied()
+                || cpci.is_supplied()
+                || force_trans_amides.is_supplied()
+                || use_symmetry_for_pruning.is_supplied()
+                || bounds_mat_force_scaling.is_supplied()
+                || track_failures.is_supplied()
+                || enable_sequential_random_seeds.is_supplied()
+                || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_3d_conformers_keywords(
                     py,
                     num_confs,
@@ -9869,6 +10270,8 @@ pub mod native {
                     enable_sequential_random_seeds,
                     symmetrize_conjugated_terminal_groups_for_pruning,
                 )
+            } else {
+                self._with_3d_conformers_params(py, num_confs, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformers"}"#]
@@ -9879,15 +10282,8 @@ pub mod native {
             num_confs: u32,
             params: Option<&super::embedding_values::EmbedParams>,
         ) -> PyResult<Molecule> {
-            match params {
-                Some(params) => py.detach(|| {
-                    self.inner
-                        .with_3d_conformers_with_params(num_confs, &params.inner)
-                }),
-                None => py.detach(|| self.inner.with_3d_conformers(num_confs)),
-            }
-            .map(|inner| Molecule { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._with_3d_conformers_params_native(py, num_confs, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformers"}"#]
         #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
@@ -9994,7 +10390,7 @@ pub mod native {
                 enable_sequential_random_seeds,
                 symmetrize_conjugated_terminal_groups_for_pruning,
             );
-            self._with_3d_conformers_params(py, num_confs, Some(&params))
+            self._with_3d_conformers_params_native(py, num_confs, Some(&params))
         }
         fn with_3d_conformers_with_params(
             &self,
@@ -10005,83 +10401,84 @@ pub mod native {
             self._with_3d_conformers_params(py, num_confs, Some(params))
         }
 
-        #[pyo3(signature=(num_confs,params=None,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         fn embed_3d_conformers_(
             &mut self,
             py: Python<'_>,
             num_confs: u32,
-            params: Option<&super::embedding_values::EmbedParams>,
-            max_iterations: Option<u32>,
-            num_threads: Option<i32>,
-            random_seed: Option<i32>,
-            clear_conformers: Option<bool>,
-            use_random_coords: Option<bool>,
-            box_size_mult: Option<f64>,
-            rand_neg_eig: Option<bool>,
-            num_zero_fail: Option<u32>,
-            coord_map: Option<std::collections::BTreeMap<i32, [f64; 3]>>,
-            optimizer_force_tol: Option<f64>,
-            ignore_smoothing_failures: Option<bool>,
-            enforce_chirality: Option<bool>,
-            use_exp_torsion_angle_prefs: Option<bool>,
-            use_basic_knowledge: Option<bool>,
-            verbose: Option<bool>,
-            basin_thresh: Option<f64>,
-            prune_rms_thresh: Option<f64>,
-            only_heavy_atoms_for_rms: Option<bool>,
-            et_version: Option<u32>,
-            embed_fragments_separately: Option<bool>,
-            use_small_ring_torsions: Option<bool>,
-            use_macrocycle_torsions: Option<bool>,
-            use_macrocycle14config: Option<bool>,
-            timeout: Option<u32>,
-            cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
-            force_trans_amides: Option<bool>,
-            use_symmetry_for_pruning: Option<bool>,
-            bounds_mat_force_scaling: Option<f64>,
-            track_failures: Option<bool>,
-            enable_sequential_random_seeds: Option<bool>,
-            symmetrize_conjugated_terminal_groups_for_pruning: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::embedding_values::EmbedParams>>,
+            >,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            random_seed: crate::arguments::Argument<Option<i32>>,
+            clear_conformers: crate::arguments::Argument<Option<bool>>,
+            use_random_coords: crate::arguments::Argument<Option<bool>>,
+            box_size_mult: crate::arguments::Argument<Option<f64>>,
+            rand_neg_eig: crate::arguments::Argument<Option<bool>>,
+            num_zero_fail: crate::arguments::Argument<Option<u32>>,
+            coord_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<i32, [f64; 3]>>,
+            >,
+            optimizer_force_tol: crate::arguments::Argument<Option<f64>>,
+            ignore_smoothing_failures: crate::arguments::Argument<Option<bool>>,
+            enforce_chirality: crate::arguments::Argument<Option<bool>>,
+            use_exp_torsion_angle_prefs: crate::arguments::Argument<Option<bool>>,
+            use_basic_knowledge: crate::arguments::Argument<Option<bool>>,
+            verbose: crate::arguments::Argument<Option<bool>>,
+            basin_thresh: crate::arguments::Argument<Option<f64>>,
+            prune_rms_thresh: crate::arguments::Argument<Option<f64>>,
+            only_heavy_atoms_for_rms: crate::arguments::Argument<Option<bool>>,
+            et_version: crate::arguments::Argument<Option<u32>>,
+            embed_fragments_separately: crate::arguments::Argument<Option<bool>>,
+            use_small_ring_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
+            timeout: crate::arguments::Argument<Option<u32>>,
+            cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
+            force_trans_amides: crate::arguments::Argument<Option<bool>>,
+            use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
+            bounds_mat_force_scaling: crate::arguments::Argument<Option<f64>>,
+            track_failures: crate::arguments::Argument<Option<bool>>,
+            enable_sequential_random_seeds: crate::arguments::Argument<Option<bool>>,
+            symmetrize_conjugated_terminal_groups_for_pruning: crate::arguments::Argument<
+                Option<bool>,
+            >,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if max_iterations.is_some()
-                    || num_threads.is_some()
-                    || random_seed.is_some()
-                    || clear_conformers.is_some()
-                    || use_random_coords.is_some()
-                    || box_size_mult.is_some()
-                    || rand_neg_eig.is_some()
-                    || num_zero_fail.is_some()
-                    || coord_map.is_some()
-                    || optimizer_force_tol.is_some()
-                    || ignore_smoothing_failures.is_some()
-                    || enforce_chirality.is_some()
-                    || use_exp_torsion_angle_prefs.is_some()
-                    || use_basic_knowledge.is_some()
-                    || verbose.is_some()
-                    || basin_thresh.is_some()
-                    || prune_rms_thresh.is_some()
-                    || only_heavy_atoms_for_rms.is_some()
-                    || et_version.is_some()
-                    || embed_fragments_separately.is_some()
-                    || use_small_ring_torsions.is_some()
-                    || use_macrocycle_torsions.is_some()
-                    || use_macrocycle14config.is_some()
-                    || timeout.is_some()
-                    || cpci.is_some()
-                    || force_trans_amides.is_some()
-                    || use_symmetry_for_pruning.is_some()
-                    || bounds_mat_force_scaling.is_some()
-                    || track_failures.is_some()
-                    || enable_sequential_random_seeds.is_some()
-                    || symmetrize_conjugated_terminal_groups_for_pruning.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._embed_3d_conformers_params(py, num_confs, params)
-            } else {
+            let keyword_form = max_iterations.is_supplied()
+                || num_threads.is_supplied()
+                || random_seed.is_supplied()
+                || clear_conformers.is_supplied()
+                || use_random_coords.is_supplied()
+                || box_size_mult.is_supplied()
+                || rand_neg_eig.is_supplied()
+                || num_zero_fail.is_supplied()
+                || coord_map.is_supplied()
+                || optimizer_force_tol.is_supplied()
+                || ignore_smoothing_failures.is_supplied()
+                || enforce_chirality.is_supplied()
+                || use_exp_torsion_angle_prefs.is_supplied()
+                || use_basic_knowledge.is_supplied()
+                || verbose.is_supplied()
+                || basin_thresh.is_supplied()
+                || prune_rms_thresh.is_supplied()
+                || only_heavy_atoms_for_rms.is_supplied()
+                || et_version.is_supplied()
+                || embed_fragments_separately.is_supplied()
+                || use_small_ring_torsions.is_supplied()
+                || use_macrocycle_torsions.is_supplied()
+                || use_macrocycle14config.is_supplied()
+                || timeout.is_supplied()
+                || cpci.is_supplied()
+                || force_trans_amides.is_supplied()
+                || use_symmetry_for_pruning.is_supplied()
+                || bounds_mat_force_scaling.is_supplied()
+                || track_failures.is_supplied()
+                || enable_sequential_random_seeds.is_supplied()
+                || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            let params = params.as_deref();
+            if keyword_form {
                 self._embed_3d_conformers_keywords(
                     py,
                     num_confs,
@@ -10117,6 +10514,8 @@ pub mod native {
                     enable_sequential_random_seeds,
                     symmetrize_conjugated_terminal_groups_for_pruning,
                 )
+            } else {
+                self._embed_3d_conformers_params(py, num_confs, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformers_"}"#]
@@ -10127,14 +10526,8 @@ pub mod native {
             num_confs: u32,
             params: Option<&super::embedding_values::EmbedParams>,
         ) -> PyResult<()> {
-            match params {
-                Some(params) => py.detach(|| {
-                    self.inner
-                        .embed_3d_conformers_with_params_(num_confs, &params.inner)
-                }),
-                None => py.detach(|| self.inner.embed_3d_conformers_(num_confs)),
-            }
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._embed_3d_conformers_params_native(py, num_confs, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformers_"}"#]
         #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
@@ -10241,7 +10634,7 @@ pub mod native {
                 enable_sequential_random_seeds,
                 symmetrize_conjugated_terminal_groups_for_pruning,
             );
-            self._embed_3d_conformers_params(py, num_confs, Some(&params))
+            self._embed_3d_conformers_params_native(py, num_confs, Some(&params))
         }
         fn embed_3d_conformers_with_params_(
             &mut self,
@@ -10252,83 +10645,84 @@ pub mod native {
             self._embed_3d_conformers_params(py, num_confs, Some(params))
         }
 
-        #[pyo3(signature=(num_confs,params=None,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         fn with_3d_conformers_result(
             &self,
             py: Python<'_>,
             num_confs: u32,
-            params: Option<&super::embedding_values::EmbedParams>,
-            max_iterations: Option<u32>,
-            num_threads: Option<i32>,
-            random_seed: Option<i32>,
-            clear_conformers: Option<bool>,
-            use_random_coords: Option<bool>,
-            box_size_mult: Option<f64>,
-            rand_neg_eig: Option<bool>,
-            num_zero_fail: Option<u32>,
-            coord_map: Option<std::collections::BTreeMap<i32, [f64; 3]>>,
-            optimizer_force_tol: Option<f64>,
-            ignore_smoothing_failures: Option<bool>,
-            enforce_chirality: Option<bool>,
-            use_exp_torsion_angle_prefs: Option<bool>,
-            use_basic_knowledge: Option<bool>,
-            verbose: Option<bool>,
-            basin_thresh: Option<f64>,
-            prune_rms_thresh: Option<f64>,
-            only_heavy_atoms_for_rms: Option<bool>,
-            et_version: Option<u32>,
-            embed_fragments_separately: Option<bool>,
-            use_small_ring_torsions: Option<bool>,
-            use_macrocycle_torsions: Option<bool>,
-            use_macrocycle14config: Option<bool>,
-            timeout: Option<u32>,
-            cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
-            force_trans_amides: Option<bool>,
-            use_symmetry_for_pruning: Option<bool>,
-            bounds_mat_force_scaling: Option<f64>,
-            track_failures: Option<bool>,
-            enable_sequential_random_seeds: Option<bool>,
-            symmetrize_conjugated_terminal_groups_for_pruning: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::embedding_values::EmbedParams>>,
+            >,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            random_seed: crate::arguments::Argument<Option<i32>>,
+            clear_conformers: crate::arguments::Argument<Option<bool>>,
+            use_random_coords: crate::arguments::Argument<Option<bool>>,
+            box_size_mult: crate::arguments::Argument<Option<f64>>,
+            rand_neg_eig: crate::arguments::Argument<Option<bool>>,
+            num_zero_fail: crate::arguments::Argument<Option<u32>>,
+            coord_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<i32, [f64; 3]>>,
+            >,
+            optimizer_force_tol: crate::arguments::Argument<Option<f64>>,
+            ignore_smoothing_failures: crate::arguments::Argument<Option<bool>>,
+            enforce_chirality: crate::arguments::Argument<Option<bool>>,
+            use_exp_torsion_angle_prefs: crate::arguments::Argument<Option<bool>>,
+            use_basic_knowledge: crate::arguments::Argument<Option<bool>>,
+            verbose: crate::arguments::Argument<Option<bool>>,
+            basin_thresh: crate::arguments::Argument<Option<f64>>,
+            prune_rms_thresh: crate::arguments::Argument<Option<f64>>,
+            only_heavy_atoms_for_rms: crate::arguments::Argument<Option<bool>>,
+            et_version: crate::arguments::Argument<Option<u32>>,
+            embed_fragments_separately: crate::arguments::Argument<Option<bool>>,
+            use_small_ring_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
+            timeout: crate::arguments::Argument<Option<u32>>,
+            cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
+            force_trans_amides: crate::arguments::Argument<Option<bool>>,
+            use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
+            bounds_mat_force_scaling: crate::arguments::Argument<Option<f64>>,
+            track_failures: crate::arguments::Argument<Option<bool>>,
+            enable_sequential_random_seeds: crate::arguments::Argument<Option<bool>>,
+            symmetrize_conjugated_terminal_groups_for_pruning: crate::arguments::Argument<
+                Option<bool>,
+            >,
         ) -> PyResult<super::embedding_values::EmbedMultipleConfsResult> {
-            if params.is_some() {
-                if max_iterations.is_some()
-                    || num_threads.is_some()
-                    || random_seed.is_some()
-                    || clear_conformers.is_some()
-                    || use_random_coords.is_some()
-                    || box_size_mult.is_some()
-                    || rand_neg_eig.is_some()
-                    || num_zero_fail.is_some()
-                    || coord_map.is_some()
-                    || optimizer_force_tol.is_some()
-                    || ignore_smoothing_failures.is_some()
-                    || enforce_chirality.is_some()
-                    || use_exp_torsion_angle_prefs.is_some()
-                    || use_basic_knowledge.is_some()
-                    || verbose.is_some()
-                    || basin_thresh.is_some()
-                    || prune_rms_thresh.is_some()
-                    || only_heavy_atoms_for_rms.is_some()
-                    || et_version.is_some()
-                    || embed_fragments_separately.is_some()
-                    || use_small_ring_torsions.is_some()
-                    || use_macrocycle_torsions.is_some()
-                    || use_macrocycle14config.is_some()
-                    || timeout.is_some()
-                    || cpci.is_some()
-                    || force_trans_amides.is_some()
-                    || use_symmetry_for_pruning.is_some()
-                    || bounds_mat_force_scaling.is_some()
-                    || track_failures.is_some()
-                    || enable_sequential_random_seeds.is_some()
-                    || symmetrize_conjugated_terminal_groups_for_pruning.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._with_3d_conformers_result_params(py, num_confs, params)
-            } else {
+            let keyword_form = max_iterations.is_supplied()
+                || num_threads.is_supplied()
+                || random_seed.is_supplied()
+                || clear_conformers.is_supplied()
+                || use_random_coords.is_supplied()
+                || box_size_mult.is_supplied()
+                || rand_neg_eig.is_supplied()
+                || num_zero_fail.is_supplied()
+                || coord_map.is_supplied()
+                || optimizer_force_tol.is_supplied()
+                || ignore_smoothing_failures.is_supplied()
+                || enforce_chirality.is_supplied()
+                || use_exp_torsion_angle_prefs.is_supplied()
+                || use_basic_knowledge.is_supplied()
+                || verbose.is_supplied()
+                || basin_thresh.is_supplied()
+                || prune_rms_thresh.is_supplied()
+                || only_heavy_atoms_for_rms.is_supplied()
+                || et_version.is_supplied()
+                || embed_fragments_separately.is_supplied()
+                || use_small_ring_torsions.is_supplied()
+                || use_macrocycle_torsions.is_supplied()
+                || use_macrocycle14config.is_supplied()
+                || timeout.is_supplied()
+                || cpci.is_supplied()
+                || force_trans_amides.is_supplied()
+                || use_symmetry_for_pruning.is_supplied()
+                || bounds_mat_force_scaling.is_supplied()
+                || track_failures.is_supplied()
+                || enable_sequential_random_seeds.is_supplied()
+                || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            let params = params.as_deref();
+            if keyword_form {
                 self._with_3d_conformers_result_keywords(
                     py,
                     num_confs,
@@ -10364,6 +10758,8 @@ pub mod native {
                     enable_sequential_random_seeds,
                     symmetrize_conjugated_terminal_groups_for_pruning,
                 )
+            } else {
+                self._with_3d_conformers_result_params(py, num_confs, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformers_result"}"#]
@@ -10374,15 +10770,8 @@ pub mod native {
             num_confs: u32,
             params: Option<&super::embedding_values::EmbedParams>,
         ) -> PyResult<super::embedding_values::EmbedMultipleConfsResult> {
-            match params {
-                Some(params) => py.detach(|| {
-                    self.inner
-                        .with_3d_conformers_result_with_params(num_confs, &params.inner)
-                }),
-                None => py.detach(|| self.inner.with_3d_conformers_result(num_confs)),
-            }
-            .map(|inner| super::embedding_values::EmbedMultipleConfsResult { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._with_3d_conformers_result_params_native(py, num_confs, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformers_result"}"#]
         #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
@@ -10489,7 +10878,7 @@ pub mod native {
                 enable_sequential_random_seeds,
                 symmetrize_conjugated_terminal_groups_for_pruning,
             );
-            self._with_3d_conformers_result_params(py, num_confs, Some(&params))
+            self._with_3d_conformers_result_params_native(py, num_confs, Some(&params))
         }
         fn with_3d_conformers_result_with_params(
             &self,
@@ -10500,83 +10889,84 @@ pub mod native {
             self._with_3d_conformers_result_params(py, num_confs, Some(params))
         }
 
-        #[pyo3(signature=(num_confs,params=None,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         fn embed_3d_conformers_result_(
             &mut self,
             py: Python<'_>,
             num_confs: u32,
-            params: Option<&super::embedding_values::EmbedParams>,
-            max_iterations: Option<u32>,
-            num_threads: Option<i32>,
-            random_seed: Option<i32>,
-            clear_conformers: Option<bool>,
-            use_random_coords: Option<bool>,
-            box_size_mult: Option<f64>,
-            rand_neg_eig: Option<bool>,
-            num_zero_fail: Option<u32>,
-            coord_map: Option<std::collections::BTreeMap<i32, [f64; 3]>>,
-            optimizer_force_tol: Option<f64>,
-            ignore_smoothing_failures: Option<bool>,
-            enforce_chirality: Option<bool>,
-            use_exp_torsion_angle_prefs: Option<bool>,
-            use_basic_knowledge: Option<bool>,
-            verbose: Option<bool>,
-            basin_thresh: Option<f64>,
-            prune_rms_thresh: Option<f64>,
-            only_heavy_atoms_for_rms: Option<bool>,
-            et_version: Option<u32>,
-            embed_fragments_separately: Option<bool>,
-            use_small_ring_torsions: Option<bool>,
-            use_macrocycle_torsions: Option<bool>,
-            use_macrocycle14config: Option<bool>,
-            timeout: Option<u32>,
-            cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
-            force_trans_amides: Option<bool>,
-            use_symmetry_for_pruning: Option<bool>,
-            bounds_mat_force_scaling: Option<f64>,
-            track_failures: Option<bool>,
-            enable_sequential_random_seeds: Option<bool>,
-            symmetrize_conjugated_terminal_groups_for_pruning: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::embedding_values::EmbedParams>>,
+            >,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            random_seed: crate::arguments::Argument<Option<i32>>,
+            clear_conformers: crate::arguments::Argument<Option<bool>>,
+            use_random_coords: crate::arguments::Argument<Option<bool>>,
+            box_size_mult: crate::arguments::Argument<Option<f64>>,
+            rand_neg_eig: crate::arguments::Argument<Option<bool>>,
+            num_zero_fail: crate::arguments::Argument<Option<u32>>,
+            coord_map: crate::arguments::Argument<
+                Option<std::collections::BTreeMap<i32, [f64; 3]>>,
+            >,
+            optimizer_force_tol: crate::arguments::Argument<Option<f64>>,
+            ignore_smoothing_failures: crate::arguments::Argument<Option<bool>>,
+            enforce_chirality: crate::arguments::Argument<Option<bool>>,
+            use_exp_torsion_angle_prefs: crate::arguments::Argument<Option<bool>>,
+            use_basic_knowledge: crate::arguments::Argument<Option<bool>>,
+            verbose: crate::arguments::Argument<Option<bool>>,
+            basin_thresh: crate::arguments::Argument<Option<f64>>,
+            prune_rms_thresh: crate::arguments::Argument<Option<f64>>,
+            only_heavy_atoms_for_rms: crate::arguments::Argument<Option<bool>>,
+            et_version: crate::arguments::Argument<Option<u32>>,
+            embed_fragments_separately: crate::arguments::Argument<Option<bool>>,
+            use_small_ring_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
+            use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
+            timeout: crate::arguments::Argument<Option<u32>>,
+            cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
+            force_trans_amides: crate::arguments::Argument<Option<bool>>,
+            use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
+            bounds_mat_force_scaling: crate::arguments::Argument<Option<f64>>,
+            track_failures: crate::arguments::Argument<Option<bool>>,
+            enable_sequential_random_seeds: crate::arguments::Argument<Option<bool>>,
+            symmetrize_conjugated_terminal_groups_for_pruning: crate::arguments::Argument<
+                Option<bool>,
+            >,
         ) -> PyResult<super::embedding_values::EmbedMultipleConfsResult> {
-            if params.is_some() {
-                if max_iterations.is_some()
-                    || num_threads.is_some()
-                    || random_seed.is_some()
-                    || clear_conformers.is_some()
-                    || use_random_coords.is_some()
-                    || box_size_mult.is_some()
-                    || rand_neg_eig.is_some()
-                    || num_zero_fail.is_some()
-                    || coord_map.is_some()
-                    || optimizer_force_tol.is_some()
-                    || ignore_smoothing_failures.is_some()
-                    || enforce_chirality.is_some()
-                    || use_exp_torsion_angle_prefs.is_some()
-                    || use_basic_knowledge.is_some()
-                    || verbose.is_some()
-                    || basin_thresh.is_some()
-                    || prune_rms_thresh.is_some()
-                    || only_heavy_atoms_for_rms.is_some()
-                    || et_version.is_some()
-                    || embed_fragments_separately.is_some()
-                    || use_small_ring_torsions.is_some()
-                    || use_macrocycle_torsions.is_some()
-                    || use_macrocycle14config.is_some()
-                    || timeout.is_some()
-                    || cpci.is_some()
-                    || force_trans_amides.is_some()
-                    || use_symmetry_for_pruning.is_some()
-                    || bounds_mat_force_scaling.is_some()
-                    || track_failures.is_some()
-                    || enable_sequential_random_seeds.is_some()
-                    || symmetrize_conjugated_terminal_groups_for_pruning.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._embed_3d_conformers_result_params(py, num_confs, params)
-            } else {
+            let keyword_form = max_iterations.is_supplied()
+                || num_threads.is_supplied()
+                || random_seed.is_supplied()
+                || clear_conformers.is_supplied()
+                || use_random_coords.is_supplied()
+                || box_size_mult.is_supplied()
+                || rand_neg_eig.is_supplied()
+                || num_zero_fail.is_supplied()
+                || coord_map.is_supplied()
+                || optimizer_force_tol.is_supplied()
+                || ignore_smoothing_failures.is_supplied()
+                || enforce_chirality.is_supplied()
+                || use_exp_torsion_angle_prefs.is_supplied()
+                || use_basic_knowledge.is_supplied()
+                || verbose.is_supplied()
+                || basin_thresh.is_supplied()
+                || prune_rms_thresh.is_supplied()
+                || only_heavy_atoms_for_rms.is_supplied()
+                || et_version.is_supplied()
+                || embed_fragments_separately.is_supplied()
+                || use_small_ring_torsions.is_supplied()
+                || use_macrocycle_torsions.is_supplied()
+                || use_macrocycle14config.is_supplied()
+                || timeout.is_supplied()
+                || cpci.is_supplied()
+                || force_trans_amides.is_supplied()
+                || use_symmetry_for_pruning.is_supplied()
+                || bounds_mat_force_scaling.is_supplied()
+                || track_failures.is_supplied()
+                || enable_sequential_random_seeds.is_supplied()
+                || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            let params = params.as_deref();
+            if keyword_form {
                 self._embed_3d_conformers_result_keywords(
                     py,
                     num_confs,
@@ -10612,6 +11002,8 @@ pub mod native {
                     enable_sequential_random_seeds,
                     symmetrize_conjugated_terminal_groups_for_pruning,
                 )
+            } else {
+                self._embed_3d_conformers_result_params(py, num_confs, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformers_result_"}"#]
@@ -10622,15 +11014,8 @@ pub mod native {
             num_confs: u32,
             params: Option<&super::embedding_values::EmbedParams>,
         ) -> PyResult<super::embedding_values::EmbedMultipleConfsResult> {
-            match params {
-                Some(params) => py.detach(|| {
-                    self.inner
-                        .embed_3d_conformers_result_with_params_(num_confs, &params.inner)
-                }),
-                None => py.detach(|| self.inner.embed_3d_conformers_result_(num_confs)),
-            }
-            .map(|inner| super::embedding_values::EmbedMultipleConfsResult { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._embed_3d_conformers_result_params_native(py, num_confs, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformers_result_"}"#]
         #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
@@ -10737,7 +11122,7 @@ pub mod native {
                 enable_sequential_random_seeds,
                 symmetrize_conjugated_terminal_groups_for_pruning,
             );
-            self._embed_3d_conformers_result_params(py, num_confs, Some(&params))
+            self._embed_3d_conformers_result_params_native(py, num_confs, Some(&params))
         }
         fn embed_3d_conformers_result_with_params_(
             &mut self,
@@ -10748,32 +11133,30 @@ pub mod native {
             self._embed_3d_conformers_result_params(py, num_confs, Some(params))
         }
 
-        #[pyo3(signature=(options=None,*,try_embedding=None,only_unassigned=None,max_isomers=None,random_source=None,unique=None,only_stereo_groups=None))]
+        #[pyo3(signature=(options=crate::arguments::Argument::Missing,*,try_embedding=crate::arguments::Argument::Missing,only_unassigned=crate::arguments::Argument::Missing,max_isomers=crate::arguments::Argument::Missing,random_source=crate::arguments::Argument::Missing,unique=crate::arguments::Argument::Missing,only_stereo_groups=crate::arguments::Argument::Missing))]
         fn enumerate_stereoisomers(
             &self,
             py: Python<'_>,
-            options: Option<Py<super::stereoisomer_options::StereoisomerOptions>>,
-            try_embedding: Option<bool>,
-            only_unassigned: Option<bool>,
-            max_isomers: Option<usize>,
-            random_source: Option<Py<super::stereoisomer_options::StereoisomerRandomSource>>,
-            unique: Option<bool>,
-            only_stereo_groups: Option<bool>,
+            options: crate::arguments::Argument<
+                Option<Py<super::stereoisomer_options::StereoisomerOptions>>,
+            >,
+            try_embedding: crate::arguments::Argument<Option<bool>>,
+            only_unassigned: crate::arguments::Argument<Option<bool>>,
+            max_isomers: crate::arguments::Argument<Option<usize>>,
+            random_source: crate::arguments::Argument<
+                Option<Py<super::stereoisomer_options::StereoisomerRandomSource>>,
+            >,
+            unique: crate::arguments::Argument<Option<bool>>,
+            only_stereo_groups: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<super::stereoisomer_iterator::StereoisomerIterator> {
-            if options.is_some() {
-                if try_embedding.is_some()
-                    || only_unassigned.is_some()
-                    || max_isomers.is_some()
-                    || random_source.is_some()
-                    || unique.is_some()
-                    || only_stereo_groups.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "options and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._enumerate_stereoisomers_options(py, options)
-            } else {
+            let keyword_form = try_embedding.is_supplied()
+                || only_unassigned.is_supplied()
+                || max_isomers.is_supplied()
+                || random_source.is_supplied()
+                || unique.is_supplied()
+                || only_stereo_groups.is_supplied();
+            crate::arguments::configuration_arguments!(options; try_embedding, only_unassigned, max_isomers, random_source, unique, only_stereo_groups);
+            if keyword_form {
                 self._enumerate_stereoisomers_keywords(
                     py,
                     try_embedding,
@@ -10783,6 +11166,8 @@ pub mod native {
                     unique,
                     only_stereo_groups,
                 )
+            } else {
+                self._enumerate_stereoisomers_options(py, options)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.enumerate_stereoisomers"}"#]
@@ -10820,10 +11205,10 @@ pub mod native {
                 py,
                 try_embedding.unwrap_or(defaults.try_embedding),
                 only_unassigned.unwrap_or(defaults.only_unassigned),
-                max_isomers.unwrap_or(defaults.max_isomers),
-                random_source,
-                unique.unwrap_or(defaults.unique),
                 only_stereo_groups.unwrap_or(defaults.only_stereo_groups),
+                max_isomers.unwrap_or(defaults.max_isomers),
+                unique.unwrap_or(defaults.unique),
+                random_source,
             );
             self._enumerate_stereoisomers_options(py, Some(Py::new(py, options)?))
         }
@@ -10843,22 +11228,24 @@ pub mod native {
             super::stereoisomer_iterator::with_random_bits(py, self, options, callback)
         }
 
-        #[pyo3(signature=(params=None,*,operations=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,operations=crate::arguments::Argument::Missing))]
         fn sanitize(
             &self,
             py: Python<'_>,
-            params: Option<&super::sanitize_values::SanitizeParams>,
-            operations: Option<super::sanitize_values::SanitizeOperationsInput>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::sanitize_values::SanitizeParams>>,
+            >,
+            operations: crate::arguments::Argument<
+                Option<super::sanitize_values::SanitizeOperationsInput>,
+            >,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if operations.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_sanitize_params(py, params)
-            } else {
+            let keyword_form = operations.is_supplied();
+            crate::arguments::configuration_arguments!(params; operations);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_sanitize_keywords(py, operations)
+            } else {
+                self._chem_sanitize_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.sanitize"}"#]
@@ -10896,22 +11283,24 @@ pub mod native {
             self._chem_sanitize_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,operations=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,operations=crate::arguments::Argument::Missing))]
         fn sanitize_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::sanitize_values::SanitizeParams>,
-            operations: Option<super::sanitize_values::SanitizeOperationsInput>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::sanitize_values::SanitizeParams>>,
+            >,
+            operations: crate::arguments::Argument<
+                Option<super::sanitize_values::SanitizeOperationsInput>,
+            >,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if operations.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_sanitize_inplace_params(py, params)
-            } else {
+            let keyword_form = operations.is_supplied();
+            crate::arguments::configuration_arguments!(params; operations);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_sanitize_inplace_keywords(py, operations)
+            } else {
+                self._chem_sanitize_inplace_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.sanitize_"}"#]
@@ -10948,29 +11337,29 @@ pub mod native {
             self._chem_sanitize_inplace_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,mark_atoms_bonds=None,canonical=None,max_backtracks=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mark_atoms_bonds=crate::arguments::Argument::Missing,canonical=crate::arguments::Argument::Missing,max_backtracks=crate::arguments::Argument::Missing))]
         fn with_kekulized_bonds(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::KekulizeParams>,
-            mark_atoms_bonds: Option<bool>,
-            canonical: Option<bool>,
-            max_backtracks: Option<u32>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::params::KekulizeParams>>>,
+            mark_atoms_bonds: crate::arguments::Argument<Option<bool>>,
+            canonical: crate::arguments::Argument<Option<bool>>,
+            max_backtracks: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if mark_atoms_bonds.is_some() || canonical.is_some() || max_backtracks.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_with_kekulized_bonds_params(py, params)
-            } else {
+            let keyword_form = mark_atoms_bonds.is_supplied()
+                || canonical.is_supplied()
+                || max_backtracks.is_supplied();
+            crate::arguments::configuration_arguments!(params; mark_atoms_bonds, canonical, max_backtracks);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_with_kekulized_bonds_keywords(
                     py,
                     mark_atoms_bonds,
                     canonical,
                     max_backtracks,
                 )
+            } else {
+                self._chem_with_kekulized_bonds_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_kekulized_bonds"}"#]
@@ -11013,24 +11402,24 @@ pub mod native {
             self._chem_with_kekulized_bonds_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,mark_atoms_bonds=None,canonical=None,max_backtracks=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mark_atoms_bonds=crate::arguments::Argument::Missing,canonical=crate::arguments::Argument::Missing,max_backtracks=crate::arguments::Argument::Missing))]
         fn kekulize_bonds_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::params::KekulizeParams>,
-            mark_atoms_bonds: Option<bool>,
-            canonical: Option<bool>,
-            max_backtracks: Option<u32>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::params::KekulizeParams>>>,
+            mark_atoms_bonds: crate::arguments::Argument<Option<bool>>,
+            canonical: crate::arguments::Argument<Option<bool>>,
+            max_backtracks: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if mark_atoms_bonds.is_some() || canonical.is_some() || max_backtracks.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_kekulize_bonds_params(py, params)
-            } else {
+            let keyword_form = mark_atoms_bonds.is_supplied()
+                || canonical.is_supplied()
+                || max_backtracks.is_supplied();
+            crate::arguments::configuration_arguments!(params; mark_atoms_bonds, canonical, max_backtracks);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_kekulize_bonds_keywords(py, mark_atoms_bonds, canonical, max_backtracks)
+            } else {
+                self._chem_kekulize_bonds_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.kekulize_bonds_"}"#]
@@ -11070,22 +11459,22 @@ pub mod native {
             self._chem_kekulize_bonds_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,model=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,model=crate::arguments::Argument::Missing))]
         fn with_assigned_aromaticity(
             &self,
             py: Python<'_>,
-            params: Option<&super::selectors::AromaticityParams>,
-            model: Option<super::selectors::AromaticityModelInput>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::selectors::AromaticityParams>>,
+            >,
+            model: crate::arguments::Argument<Option<super::selectors::AromaticityModelInput>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if model.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_with_assigned_aromaticity_params(py, params)
-            } else {
+            let keyword_form = model.is_supplied();
+            crate::arguments::configuration_arguments!(params; model);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_with_assigned_aromaticity_keywords(py, model)
+            } else {
+                self._chem_with_assigned_aromaticity_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_assigned_aromaticity"}"#]
@@ -11126,22 +11515,22 @@ pub mod native {
             self._chem_with_assigned_aromaticity_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,model=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,model=crate::arguments::Argument::Missing))]
         fn assign_aromaticity_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::selectors::AromaticityParams>,
-            model: Option<super::selectors::AromaticityModelInput>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::selectors::AromaticityParams>>,
+            >,
+            model: crate::arguments::Argument<Option<super::selectors::AromaticityModelInput>>,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if model.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_assign_aromaticity_params(py, params)
-            } else {
+            let keyword_form = model.is_supplied();
+            crate::arguments::configuration_arguments!(params; model);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_assign_aromaticity_keywords(py, model)
+            } else {
+                self._chem_assign_aromaticity_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.assign_aromaticity_"}"#]
@@ -11180,23 +11569,21 @@ pub mod native {
             self._chem_assign_aromaticity_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,model=None,strict=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,model=crate::arguments::Argument::Missing,strict=crate::arguments::Argument::Missing))]
         fn with_assigned_valence(
             &self,
             py: Python<'_>,
-            params: Option<&super::selectors::ValenceParams>,
-            model: Option<super::selectors::ValenceModelInput>,
-            strict: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::selectors::ValenceParams>>>,
+            model: crate::arguments::Argument<Option<super::selectors::ValenceModelInput>>,
+            strict: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if model.is_some() || strict.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_with_assigned_valence_params(py, params)
-            } else {
+            let keyword_form = model.is_supplied() || strict.is_supplied();
+            crate::arguments::configuration_arguments!(params; model, strict);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_with_assigned_valence_keywords(py, model, strict)
+            } else {
+                self._chem_with_assigned_valence_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_assigned_valence"}"#]
@@ -11237,23 +11624,21 @@ pub mod native {
             self._chem_with_assigned_valence_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,model=None,strict=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,model=crate::arguments::Argument::Missing,strict=crate::arguments::Argument::Missing))]
         fn assign_valence_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::selectors::ValenceParams>,
-            model: Option<super::selectors::ValenceModelInput>,
-            strict: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::selectors::ValenceParams>>>,
+            model: crate::arguments::Argument<Option<super::selectors::ValenceModelInput>>,
+            strict: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if model.is_some() || strict.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_assign_valence_params(py, params)
-            } else {
+            let keyword_form = model.is_supplied() || strict.is_supplied();
+            crate::arguments::configuration_arguments!(params; model, strict);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_assign_valence_keywords(py, model, strict)
+            } else {
+                self._chem_assign_valence_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.assign_valence_"}"#]
@@ -11291,27 +11676,26 @@ pub mod native {
             self._chem_assign_valence_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,include_dative_bonds=None,include_hydrogen_bonds=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,include_dative_bonds=crate::arguments::Argument::Missing,include_hydrogen_bonds=crate::arguments::Argument::Missing))]
         fn with_assigned_ring_families(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::RingSearchParams>,
-            include_dative_bonds: Option<bool>,
-            include_hydrogen_bonds: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::params::RingSearchParams>>>,
+            include_dative_bonds: crate::arguments::Argument<Option<bool>>,
+            include_hydrogen_bonds: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if include_dative_bonds.is_some() || include_hydrogen_bonds.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_with_assigned_ring_families_params(py, params)
-            } else {
+            let keyword_form =
+                include_dative_bonds.is_supplied() || include_hydrogen_bonds.is_supplied();
+            crate::arguments::configuration_arguments!(params; include_dative_bonds, include_hydrogen_bonds);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_with_assigned_ring_families_keywords(
                     py,
                     include_dative_bonds,
                     include_hydrogen_bonds,
                 )
+            } else {
+                self._chem_with_assigned_ring_families_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_assigned_ring_families"}"#]
@@ -11354,27 +11738,26 @@ pub mod native {
             self._chem_with_assigned_ring_families_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,include_dative_bonds=None,include_hydrogen_bonds=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,include_dative_bonds=crate::arguments::Argument::Missing,include_hydrogen_bonds=crate::arguments::Argument::Missing))]
         fn assign_ring_families_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::params::RingSearchParams>,
-            include_dative_bonds: Option<bool>,
-            include_hydrogen_bonds: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::params::RingSearchParams>>>,
+            include_dative_bonds: crate::arguments::Argument<Option<bool>>,
+            include_hydrogen_bonds: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if include_dative_bonds.is_some() || include_hydrogen_bonds.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_assign_ring_families_params(py, params)
-            } else {
+            let keyword_form =
+                include_dative_bonds.is_supplied() || include_hydrogen_bonds.is_supplied();
+            crate::arguments::configuration_arguments!(params; include_dative_bonds, include_hydrogen_bonds);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_assign_ring_families_keywords(
                     py,
                     include_dative_bonds,
                     include_hydrogen_bonds,
                 )
+            } else {
+                self._chem_assign_ring_families_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.assign_ring_families_"}"#]
@@ -11415,27 +11798,27 @@ pub mod native {
             self._chem_assign_ring_families_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,conformer_id=None,replace_existing_tags=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,conformer_id=crate::arguments::Argument::Missing,replace_existing_tags=crate::arguments::Argument::Missing))]
         fn with_chiral_tags_from_structure(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::StructureTagParams>,
-            conformer_id: Option<i32>,
-            replace_existing_tags: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::StructureTagParams>>,
+            >,
+            conformer_id: crate::arguments::Argument<Option<i32>>,
+            replace_existing_tags: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if conformer_id.is_some() || replace_existing_tags.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_with_chiral_tags_from_structure_params(py, params)
-            } else {
+            let keyword_form = conformer_id.is_supplied() || replace_existing_tags.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id, replace_existing_tags);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_with_chiral_tags_from_structure_keywords(
                     py,
                     conformer_id,
                     replace_existing_tags,
                 )
+            } else {
+                self._chem_with_chiral_tags_from_structure_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_chiral_tags_from_structure"}"#]
@@ -11477,27 +11860,27 @@ pub mod native {
             self._chem_with_chiral_tags_from_structure_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,conformer_id=None,replace_existing_tags=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,conformer_id=crate::arguments::Argument::Missing,replace_existing_tags=crate::arguments::Argument::Missing))]
         fn assign_chiral_tags_from_structure_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::params::StructureTagParams>,
-            conformer_id: Option<i32>,
-            replace_existing_tags: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::StructureTagParams>>,
+            >,
+            conformer_id: crate::arguments::Argument<Option<i32>>,
+            replace_existing_tags: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if conformer_id.is_some() || replace_existing_tags.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_assign_chiral_tags_from_structure_params(py, params)
-            } else {
+            let keyword_form = conformer_id.is_supplied() || replace_existing_tags.is_supplied();
+            crate::arguments::configuration_arguments!(params; conformer_id, replace_existing_tags);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_assign_chiral_tags_from_structure_keywords(
                     py,
                     conformer_id,
                     replace_existing_tags,
                 )
+            } else {
+                self._chem_assign_chiral_tags_from_structure_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.assign_chiral_tags_from_structure_"}"#]
@@ -11538,24 +11921,26 @@ pub mod native {
             self._chem_assign_chiral_tags_from_structure_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,clean=None,flag_possible=None,allow_nontetrahedral=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,clean=crate::arguments::Argument::Missing,flag_possible=crate::arguments::Argument::Missing,allow_nontetrahedral=crate::arguments::Argument::Missing))]
         fn potential_stereo(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::PotentialStereoParams>,
-            clean: Option<bool>,
-            flag_possible: Option<bool>,
-            allow_nontetrahedral: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::PotentialStereoParams>>,
+            >,
+            clean: crate::arguments::Argument<Option<bool>>,
+            flag_possible: crate::arguments::Argument<Option<bool>>,
+            allow_nontetrahedral: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<super::stereo_values::PotentialStereoResult> {
-            if params.is_some() {
-                if clean.is_some() || flag_possible.is_some() || allow_nontetrahedral.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_potential_stereo_params(py, params)
-            } else {
+            let keyword_form = clean.is_supplied()
+                || flag_possible.is_supplied()
+                || allow_nontetrahedral.is_supplied();
+            crate::arguments::configuration_arguments!(params; clean, flag_possible, allow_nontetrahedral);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_potential_stereo_keywords(py, clean, flag_possible, allow_nontetrahedral)
+            } else {
+                self._chem_potential_stereo_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.potential_stereo"}"#]
@@ -11596,24 +11981,26 @@ pub mod native {
             self._chem_potential_stereo_params(py, Some(params))
         }
 
-        #[pyo3(signature=(options=None,*,atoms=None,bonds=None,max_recursive_iterations=None))]
+        #[pyo3(signature=(options=crate::arguments::Argument::Missing,*,atoms=crate::arguments::Argument::Missing,bonds=crate::arguments::Argument::Missing,max_recursive_iterations=crate::arguments::Argument::Missing))]
         fn with_cip_labels(
             &self,
             py: Python<'_>,
-            options: Option<&super::numerical_params::CipLabelOptions>,
-            atoms: Option<Vec<usize>>,
-            bonds: Option<Vec<usize>>,
-            max_recursive_iterations: Option<u32>,
+            options: crate::arguments::Argument<
+                Option<PyRef<'_, super::numerical_params::CipLabelOptions>>,
+            >,
+            atoms: crate::arguments::Argument<Option<Vec<usize>>>,
+            bonds: crate::arguments::Argument<Option<Vec<usize>>>,
+            max_recursive_iterations: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<Molecule> {
-            if options.is_some() {
-                if atoms.is_some() || bonds.is_some() || max_recursive_iterations.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "options and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_with_cip_labels_params(py, options)
-            } else {
+            let keyword_form = atoms.is_supplied()
+                || bonds.is_supplied()
+                || max_recursive_iterations.is_supplied();
+            crate::arguments::configuration_arguments!(options; atoms, bonds, max_recursive_iterations);
+            let options = options.as_deref();
+            if keyword_form {
                 self._chem_with_cip_labels_keywords(py, atoms, bonds, max_recursive_iterations)
+            } else {
+                self._chem_with_cip_labels_params(py, options)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_cip_labels"}"#]
@@ -11623,12 +12010,8 @@ pub mod native {
             py: Python<'_>,
             options: Option<&super::numerical_params::CipLabelOptions>,
         ) -> PyResult<Molecule> {
-            match options {
-                Some(value) => py.detach(|| self.inner.with_cip_labels_with_options(&value.inner)),
-                None => py.detach(|| self.inner.with_cip_labels()),
-            }
-            .map(|inner| Molecule { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let options = options.map(|value| value.to_rust(py)).transpose()?;
+            self._chem_with_cip_labels_params_native(py, options.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_cip_labels"}"#]
         #[pyo3(signature=(*,atoms=None,bonds=None,max_recursive_iterations=None))]
@@ -11643,7 +12026,7 @@ pub mod native {
                 return self._chem_with_cip_labels_params(py, None);
             }
             let params = super::chemistry_calls::cip(atoms, bonds, max_recursive_iterations)?;
-            self._chem_with_cip_labels_params(py, Some(&params))
+            self._chem_with_cip_labels_params_native(py, Some(&params))
         }
         fn with_cip_labels_with_options(
             &self,
@@ -11653,24 +12036,26 @@ pub mod native {
             self._chem_with_cip_labels_params(py, Some(options))
         }
 
-        #[pyo3(signature=(options=None,*,atoms=None,bonds=None,max_recursive_iterations=None))]
+        #[pyo3(signature=(options=crate::arguments::Argument::Missing,*,atoms=crate::arguments::Argument::Missing,bonds=crate::arguments::Argument::Missing,max_recursive_iterations=crate::arguments::Argument::Missing))]
         fn assign_cip_labels_(
             &mut self,
             py: Python<'_>,
-            options: Option<&super::numerical_params::CipLabelOptions>,
-            atoms: Option<Vec<usize>>,
-            bonds: Option<Vec<usize>>,
-            max_recursive_iterations: Option<u32>,
+            options: crate::arguments::Argument<
+                Option<PyRef<'_, super::numerical_params::CipLabelOptions>>,
+            >,
+            atoms: crate::arguments::Argument<Option<Vec<usize>>>,
+            bonds: crate::arguments::Argument<Option<Vec<usize>>>,
+            max_recursive_iterations: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<()> {
-            if options.is_some() {
-                if atoms.is_some() || bonds.is_some() || max_recursive_iterations.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "options and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_assign_cip_labels_params(py, options)
-            } else {
+            let keyword_form = atoms.is_supplied()
+                || bonds.is_supplied()
+                || max_recursive_iterations.is_supplied();
+            crate::arguments::configuration_arguments!(options; atoms, bonds, max_recursive_iterations);
+            let options = options.as_deref();
+            if keyword_form {
                 self._chem_assign_cip_labels_keywords(py, atoms, bonds, max_recursive_iterations)
+            } else {
+                self._chem_assign_cip_labels_params(py, options)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.assign_cip_labels_"}"#]
@@ -11680,13 +12065,8 @@ pub mod native {
             py: Python<'_>,
             options: Option<&super::numerical_params::CipLabelOptions>,
         ) -> PyResult<()> {
-            match options {
-                Some(value) => {
-                    py.detach(|| self.inner.assign_cip_labels_with_options_(&value.inner))
-                }
-                None => py.detach(|| self.inner.assign_cip_labels_()),
-            }
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let options = options.map(|value| value.to_rust(py)).transpose()?;
+            self._chem_assign_cip_labels_params_native(py, options.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.assign_cip_labels_"}"#]
         #[pyo3(signature=(*,atoms=None,bonds=None,max_recursive_iterations=None))]
@@ -11701,7 +12081,7 @@ pub mod native {
                 return self._chem_assign_cip_labels_params(py, None);
             }
             let params = super::chemistry_calls::cip(atoms, bonds, max_recursive_iterations)?;
-            self._chem_assign_cip_labels_params(py, Some(&params))
+            self._chem_assign_cip_labels_params_native(py, Some(&params))
         }
         fn assign_cip_labels_with_options_(
             &mut self,
@@ -11711,30 +12091,27 @@ pub mod native {
             self._chem_assign_cip_labels_params(py, Some(options))
         }
 
-        #[pyo3(signature=(params=None,*,explicit_only=None,add_coords=None,add_residue_info=None,skip_queries=None,only_on_atoms=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,explicit_only=crate::arguments::Argument::Missing,add_coords=crate::arguments::Argument::Missing,add_residue_info=crate::arguments::Argument::Missing,skip_queries=crate::arguments::Argument::Missing,only_on_atoms=crate::arguments::Argument::Missing))]
         fn with_hydrogens(
             &self,
             py: Python<'_>,
-            params: Option<&super::chemical_params::AddHsParams>,
-            explicit_only: Option<bool>,
-            add_coords: Option<bool>,
-            add_residue_info: Option<bool>,
-            skip_queries: Option<bool>,
-            only_on_atoms: Option<Vec<usize>>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::chemical_params::AddHsParams>>,
+            >,
+            explicit_only: crate::arguments::Argument<Option<bool>>,
+            add_coords: crate::arguments::Argument<Option<bool>>,
+            add_residue_info: crate::arguments::Argument<Option<bool>>,
+            skip_queries: crate::arguments::Argument<Option<bool>>,
+            only_on_atoms: crate::arguments::Argument<Option<Vec<usize>>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if explicit_only.is_some()
-                    || add_coords.is_some()
-                    || add_residue_info.is_some()
-                    || skip_queries.is_some()
-                    || only_on_atoms.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_with_hydrogens_params(py, params)
-            } else {
+            let keyword_form = explicit_only.is_supplied()
+                || add_coords.is_supplied()
+                || add_residue_info.is_supplied()
+                || skip_queries.is_supplied()
+                || only_on_atoms.is_supplied();
+            crate::arguments::configuration_arguments!(params; explicit_only, add_coords, add_residue_info, skip_queries, only_on_atoms);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_with_hydrogens_keywords(
                     py,
                     explicit_only,
@@ -11743,6 +12120,8 @@ pub mod native {
                     skip_queries,
                     only_on_atoms,
                 )
+            } else {
+                self._chem_with_hydrogens_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_hydrogens"}"#]
@@ -11752,12 +12131,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::chemical_params::AddHsParams>,
         ) -> PyResult<Molecule> {
-            match params {
-                Some(value) => py.detach(|| self.inner.with_hydrogens_with_params(&value.inner)),
-                None => py.detach(|| self.inner.with_hydrogens()),
-            }
-            .map(|inner| Molecule { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._chem_with_hydrogens_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_hydrogens"}"#]
         #[pyo3(signature=(*,explicit_only=None,add_coords=None,add_residue_info=None,skip_queries=None,only_on_atoms=None))]
@@ -11785,7 +12160,7 @@ pub mod native {
                 skip_queries,
                 only_on_atoms,
             )?;
-            self._chem_with_hydrogens_params(py, Some(&params))
+            self._chem_with_hydrogens_params_native(py, Some(&params))
         }
         fn with_hydrogens_with_params(
             &self,
@@ -11795,30 +12170,27 @@ pub mod native {
             self._chem_with_hydrogens_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,explicit_only=None,add_coords=None,add_residue_info=None,skip_queries=None,only_on_atoms=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,explicit_only=crate::arguments::Argument::Missing,add_coords=crate::arguments::Argument::Missing,add_residue_info=crate::arguments::Argument::Missing,skip_queries=crate::arguments::Argument::Missing,only_on_atoms=crate::arguments::Argument::Missing))]
         fn add_hydrogens_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::chemical_params::AddHsParams>,
-            explicit_only: Option<bool>,
-            add_coords: Option<bool>,
-            add_residue_info: Option<bool>,
-            skip_queries: Option<bool>,
-            only_on_atoms: Option<Vec<usize>>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::chemical_params::AddHsParams>>,
+            >,
+            explicit_only: crate::arguments::Argument<Option<bool>>,
+            add_coords: crate::arguments::Argument<Option<bool>>,
+            add_residue_info: crate::arguments::Argument<Option<bool>>,
+            skip_queries: crate::arguments::Argument<Option<bool>>,
+            only_on_atoms: crate::arguments::Argument<Option<Vec<usize>>>,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if explicit_only.is_some()
-                    || add_coords.is_some()
-                    || add_residue_info.is_some()
-                    || skip_queries.is_some()
-                    || only_on_atoms.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_add_hydrogens_params(py, params)
-            } else {
+            let keyword_form = explicit_only.is_supplied()
+                || add_coords.is_supplied()
+                || add_residue_info.is_supplied()
+                || skip_queries.is_supplied()
+                || only_on_atoms.is_supplied();
+            crate::arguments::configuration_arguments!(params; explicit_only, add_coords, add_residue_info, skip_queries, only_on_atoms);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_add_hydrogens_keywords(
                     py,
                     explicit_only,
@@ -11827,6 +12199,8 @@ pub mod native {
                     skip_queries,
                     only_on_atoms,
                 )
+            } else {
+                self._chem_add_hydrogens_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.add_hydrogens_"}"#]
@@ -11836,11 +12210,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::chemical_params::AddHsParams>,
         ) -> PyResult<()> {
-            match params {
-                Some(value) => py.detach(|| self.inner.add_hydrogens_with_params_(&value.inner)),
-                None => py.detach(|| self.inner.add_hydrogens_()),
-            }
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._chem_add_hydrogens_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.add_hydrogens_"}"#]
         #[pyo3(signature=(*,explicit_only=None,add_coords=None,add_residue_info=None,skip_queries=None,only_on_atoms=None))]
@@ -11868,7 +12239,7 @@ pub mod native {
                 skip_queries,
                 only_on_atoms,
             )?;
-            self._chem_add_hydrogens_params(py, Some(&params))
+            self._chem_add_hydrogens_params_native(py, Some(&params))
         }
         fn add_hydrogens_with_params_(
             &mut self,
@@ -11878,54 +12249,49 @@ pub mod native {
             self._chem_add_hydrogens_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,remove_degree_zero=None,remove_higher_degrees=None,remove_only_h_neighbors=None,remove_isotopes=None,remove_and_track_isotopes=None,remove_dummy_neighbors=None,remove_defining_bond_stereo=None,remove_with_wedged_bond=None,remove_with_query=None,remove_mapped=None,remove_in_sgroups=None,show_warnings=None,remove_nonimplicit=None,update_explicit_count=None,remove_hydrides=None,remove_nontetrahedral_neighbors=None,sanitize=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,remove_degree_zero=crate::arguments::Argument::Missing,remove_higher_degrees=crate::arguments::Argument::Missing,remove_only_h_neighbors=crate::arguments::Argument::Missing,remove_isotopes=crate::arguments::Argument::Missing,remove_and_track_isotopes=crate::arguments::Argument::Missing,remove_dummy_neighbors=crate::arguments::Argument::Missing,remove_defining_bond_stereo=crate::arguments::Argument::Missing,remove_with_wedged_bond=crate::arguments::Argument::Missing,remove_with_query=crate::arguments::Argument::Missing,remove_mapped=crate::arguments::Argument::Missing,remove_in_sgroups=crate::arguments::Argument::Missing,show_warnings=crate::arguments::Argument::Missing,remove_nonimplicit=crate::arguments::Argument::Missing,update_explicit_count=crate::arguments::Argument::Missing,remove_hydrides=crate::arguments::Argument::Missing,remove_nontetrahedral_neighbors=crate::arguments::Argument::Missing,sanitize=crate::arguments::Argument::Missing))]
         fn without_hydrogens(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::RemoveHsParams>,
-            remove_degree_zero: Option<bool>,
-            remove_higher_degrees: Option<bool>,
-            remove_only_h_neighbors: Option<bool>,
-            remove_isotopes: Option<bool>,
-            remove_and_track_isotopes: Option<bool>,
-            remove_dummy_neighbors: Option<bool>,
-            remove_defining_bond_stereo: Option<bool>,
-            remove_with_wedged_bond: Option<bool>,
-            remove_with_query: Option<bool>,
-            remove_mapped: Option<bool>,
-            remove_in_sgroups: Option<bool>,
-            show_warnings: Option<bool>,
-            remove_nonimplicit: Option<bool>,
-            update_explicit_count: Option<bool>,
-            remove_hydrides: Option<bool>,
-            remove_nontetrahedral_neighbors: Option<bool>,
-            sanitize: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::params::RemoveHsParams>>>,
+            remove_degree_zero: crate::arguments::Argument<Option<bool>>,
+            remove_higher_degrees: crate::arguments::Argument<Option<bool>>,
+            remove_only_h_neighbors: crate::arguments::Argument<Option<bool>>,
+            remove_isotopes: crate::arguments::Argument<Option<bool>>,
+            remove_and_track_isotopes: crate::arguments::Argument<Option<bool>>,
+            remove_dummy_neighbors: crate::arguments::Argument<Option<bool>>,
+            remove_defining_bond_stereo: crate::arguments::Argument<Option<bool>>,
+            remove_with_wedged_bond: crate::arguments::Argument<Option<bool>>,
+            remove_with_query: crate::arguments::Argument<Option<bool>>,
+            remove_mapped: crate::arguments::Argument<Option<bool>>,
+            remove_in_sgroups: crate::arguments::Argument<Option<bool>>,
+            show_warnings: crate::arguments::Argument<Option<bool>>,
+            remove_nonimplicit: crate::arguments::Argument<Option<bool>>,
+            update_explicit_count: crate::arguments::Argument<Option<bool>>,
+            remove_hydrides: crate::arguments::Argument<Option<bool>>,
+            remove_nontetrahedral_neighbors: crate::arguments::Argument<Option<bool>>,
+            sanitize: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Molecule> {
-            if params.is_some() {
-                if remove_degree_zero.is_some()
-                    || remove_higher_degrees.is_some()
-                    || remove_only_h_neighbors.is_some()
-                    || remove_isotopes.is_some()
-                    || remove_and_track_isotopes.is_some()
-                    || remove_dummy_neighbors.is_some()
-                    || remove_defining_bond_stereo.is_some()
-                    || remove_with_wedged_bond.is_some()
-                    || remove_with_query.is_some()
-                    || remove_mapped.is_some()
-                    || remove_in_sgroups.is_some()
-                    || show_warnings.is_some()
-                    || remove_nonimplicit.is_some()
-                    || update_explicit_count.is_some()
-                    || remove_hydrides.is_some()
-                    || remove_nontetrahedral_neighbors.is_some()
-                    || sanitize.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_without_hydrogens_params(py, params)
-            } else {
+            let keyword_form = remove_degree_zero.is_supplied()
+                || remove_higher_degrees.is_supplied()
+                || remove_only_h_neighbors.is_supplied()
+                || remove_isotopes.is_supplied()
+                || remove_and_track_isotopes.is_supplied()
+                || remove_dummy_neighbors.is_supplied()
+                || remove_defining_bond_stereo.is_supplied()
+                || remove_with_wedged_bond.is_supplied()
+                || remove_with_query.is_supplied()
+                || remove_mapped.is_supplied()
+                || remove_in_sgroups.is_supplied()
+                || show_warnings.is_supplied()
+                || remove_nonimplicit.is_supplied()
+                || update_explicit_count.is_supplied()
+                || remove_hydrides.is_supplied()
+                || remove_nontetrahedral_neighbors.is_supplied()
+                || sanitize.is_supplied();
+            crate::arguments::configuration_arguments!(params; remove_degree_zero, remove_higher_degrees, remove_only_h_neighbors, remove_isotopes, remove_and_track_isotopes, remove_dummy_neighbors, remove_defining_bond_stereo, remove_with_wedged_bond, remove_with_query, remove_mapped, remove_in_sgroups, show_warnings, remove_nonimplicit, update_explicit_count, remove_hydrides, remove_nontetrahedral_neighbors, sanitize);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_without_hydrogens_keywords(
                     py,
                     remove_degree_zero,
@@ -11946,6 +12312,8 @@ pub mod native {
                     remove_nontetrahedral_neighbors,
                     sanitize,
                 )
+            } else {
+                self._chem_without_hydrogens_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.without_hydrogens"}"#]
@@ -12034,54 +12402,49 @@ pub mod native {
             self._chem_without_hydrogens_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,remove_degree_zero=None,remove_higher_degrees=None,remove_only_h_neighbors=None,remove_isotopes=None,remove_and_track_isotopes=None,remove_dummy_neighbors=None,remove_defining_bond_stereo=None,remove_with_wedged_bond=None,remove_with_query=None,remove_mapped=None,remove_in_sgroups=None,show_warnings=None,remove_nonimplicit=None,update_explicit_count=None,remove_hydrides=None,remove_nontetrahedral_neighbors=None,sanitize=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,remove_degree_zero=crate::arguments::Argument::Missing,remove_higher_degrees=crate::arguments::Argument::Missing,remove_only_h_neighbors=crate::arguments::Argument::Missing,remove_isotopes=crate::arguments::Argument::Missing,remove_and_track_isotopes=crate::arguments::Argument::Missing,remove_dummy_neighbors=crate::arguments::Argument::Missing,remove_defining_bond_stereo=crate::arguments::Argument::Missing,remove_with_wedged_bond=crate::arguments::Argument::Missing,remove_with_query=crate::arguments::Argument::Missing,remove_mapped=crate::arguments::Argument::Missing,remove_in_sgroups=crate::arguments::Argument::Missing,show_warnings=crate::arguments::Argument::Missing,remove_nonimplicit=crate::arguments::Argument::Missing,update_explicit_count=crate::arguments::Argument::Missing,remove_hydrides=crate::arguments::Argument::Missing,remove_nontetrahedral_neighbors=crate::arguments::Argument::Missing,sanitize=crate::arguments::Argument::Missing))]
         fn remove_hydrogens_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::params::RemoveHsParams>,
-            remove_degree_zero: Option<bool>,
-            remove_higher_degrees: Option<bool>,
-            remove_only_h_neighbors: Option<bool>,
-            remove_isotopes: Option<bool>,
-            remove_and_track_isotopes: Option<bool>,
-            remove_dummy_neighbors: Option<bool>,
-            remove_defining_bond_stereo: Option<bool>,
-            remove_with_wedged_bond: Option<bool>,
-            remove_with_query: Option<bool>,
-            remove_mapped: Option<bool>,
-            remove_in_sgroups: Option<bool>,
-            show_warnings: Option<bool>,
-            remove_nonimplicit: Option<bool>,
-            update_explicit_count: Option<bool>,
-            remove_hydrides: Option<bool>,
-            remove_nontetrahedral_neighbors: Option<bool>,
-            sanitize: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::params::RemoveHsParams>>>,
+            remove_degree_zero: crate::arguments::Argument<Option<bool>>,
+            remove_higher_degrees: crate::arguments::Argument<Option<bool>>,
+            remove_only_h_neighbors: crate::arguments::Argument<Option<bool>>,
+            remove_isotopes: crate::arguments::Argument<Option<bool>>,
+            remove_and_track_isotopes: crate::arguments::Argument<Option<bool>>,
+            remove_dummy_neighbors: crate::arguments::Argument<Option<bool>>,
+            remove_defining_bond_stereo: crate::arguments::Argument<Option<bool>>,
+            remove_with_wedged_bond: crate::arguments::Argument<Option<bool>>,
+            remove_with_query: crate::arguments::Argument<Option<bool>>,
+            remove_mapped: crate::arguments::Argument<Option<bool>>,
+            remove_in_sgroups: crate::arguments::Argument<Option<bool>>,
+            show_warnings: crate::arguments::Argument<Option<bool>>,
+            remove_nonimplicit: crate::arguments::Argument<Option<bool>>,
+            update_explicit_count: crate::arguments::Argument<Option<bool>>,
+            remove_hydrides: crate::arguments::Argument<Option<bool>>,
+            remove_nontetrahedral_neighbors: crate::arguments::Argument<Option<bool>>,
+            sanitize: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<()> {
-            if params.is_some() {
-                if remove_degree_zero.is_some()
-                    || remove_higher_degrees.is_some()
-                    || remove_only_h_neighbors.is_some()
-                    || remove_isotopes.is_some()
-                    || remove_and_track_isotopes.is_some()
-                    || remove_dummy_neighbors.is_some()
-                    || remove_defining_bond_stereo.is_some()
-                    || remove_with_wedged_bond.is_some()
-                    || remove_with_query.is_some()
-                    || remove_mapped.is_some()
-                    || remove_in_sgroups.is_some()
-                    || show_warnings.is_some()
-                    || remove_nonimplicit.is_some()
-                    || update_explicit_count.is_some()
-                    || remove_hydrides.is_some()
-                    || remove_nontetrahedral_neighbors.is_some()
-                    || sanitize.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_remove_hydrogens_params(py, params)
-            } else {
+            let keyword_form = remove_degree_zero.is_supplied()
+                || remove_higher_degrees.is_supplied()
+                || remove_only_h_neighbors.is_supplied()
+                || remove_isotopes.is_supplied()
+                || remove_and_track_isotopes.is_supplied()
+                || remove_dummy_neighbors.is_supplied()
+                || remove_defining_bond_stereo.is_supplied()
+                || remove_with_wedged_bond.is_supplied()
+                || remove_with_query.is_supplied()
+                || remove_mapped.is_supplied()
+                || remove_in_sgroups.is_supplied()
+                || show_warnings.is_supplied()
+                || remove_nonimplicit.is_supplied()
+                || update_explicit_count.is_supplied()
+                || remove_hydrides.is_supplied()
+                || remove_nontetrahedral_neighbors.is_supplied()
+                || sanitize.is_supplied();
+            crate::arguments::configuration_arguments!(params; remove_degree_zero, remove_higher_degrees, remove_only_h_neighbors, remove_isotopes, remove_and_track_isotopes, remove_dummy_neighbors, remove_defining_bond_stereo, remove_with_wedged_bond, remove_with_query, remove_mapped, remove_in_sgroups, show_warnings, remove_nonimplicit, update_explicit_count, remove_hydrides, remove_nontetrahedral_neighbors, sanitize);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_remove_hydrogens_keywords(
                     py,
                     remove_degree_zero,
@@ -12102,6 +12465,8 @@ pub mod native {
                     remove_nontetrahedral_neighbors,
                     sanitize,
                 )
+            } else {
+                self._chem_remove_hydrogens_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.remove_hydrogens_"}"#]
@@ -12189,22 +12554,24 @@ pub mod native {
             self._chem_remove_hydrogens_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=None,*,terms=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,terms=crate::arguments::Argument::Missing))]
         fn tautomer_score(
             &self,
             py: Python<'_>,
-            params: Option<&super::tautomer_values::TautomerScoreParams>,
-            terms: Option<Vec<Py<super::tautomer_values::TautomerScoreTerm>>>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::tautomer_values::TautomerScoreParams>>,
+            >,
+            terms: crate::arguments::Argument<
+                Option<Vec<Py<super::tautomer_values::TautomerScoreTerm>>>,
+            >,
         ) -> PyResult<super::tautomer_values::TautomerScore> {
-            if params.is_some() {
-                if terms.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "params and keyword configuration are mutually exclusive",
-                    ));
-                }
-                self._chem_tautomer_score_params(py, params)
-            } else {
+            let keyword_form = terms.is_supplied();
+            crate::arguments::configuration_arguments!(params; terms);
+            let params = params.as_deref();
+            if keyword_form {
                 self._chem_tautomer_score_keywords(py, terms)
+            } else {
+                self._chem_tautomer_score_params(py, params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.tautomer_score"}"#]
@@ -12214,12 +12581,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::tautomer_values::TautomerScoreParams>,
         ) -> PyResult<super::tautomer_values::TautomerScore> {
-            match params {
-                Some(value) => py.detach(|| self.inner.tautomer_score_with_params(&value.inner)),
-                None => py.detach(|| self.inner.tautomer_score()),
-            }
-            .map(|inner| super::tautomer_values::TautomerScore { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._chem_tautomer_score_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.tautomer_score"}"#]
         #[pyo3(signature=(*,terms=None))]
@@ -12232,7 +12595,7 @@ pub mod native {
                 return self._chem_tautomer_score_params(py, None);
             }
             let params = super::chemistry_calls::tautomer_score(py, terms)?;
-            self._chem_tautomer_score_params(py, Some(&params))
+            self._chem_tautomer_score_params_native(py, Some(&params))
         }
         fn tautomer_score_with_params(
             &self,
@@ -12304,37 +12667,31 @@ pub mod native {
                 .map_err(super::forcefield_calls::UffParameterQueryError::from_rust)
         }
 
-        #[pyo3(signature=(params=None,*,vdw_threshold=None,conformer_id=None,ignore_interfragment_interactions=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,vdw_threshold=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
         fn uff_energy_gradient(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::UffEvaluationParams>,
-            vdw_threshold: Option<f64>,
-            conformer_id: Option<usize>,
-            ignore_interfragment_interactions: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::UffEvaluationParams>>,
+            >,
+            vdw_threshold: crate::arguments::Argument<Option<f64>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
+            ignore_interfragment_interactions: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<super::numerical_results::UffEnergyGradient> {
-            if params.is_some()
-                && (vdw_threshold.is_some()
-                    || conformer_id.is_some()
-                    || ignore_interfragment_interactions.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (vdw_threshold.is_none()
-                    && conformer_id.is_none()
-                    && ignore_interfragment_interactions.is_none())
-            {
-                self._ff_uff_energy_gradient_params(py, params)
-            } else {
+            let keyword_form = vdw_threshold.is_supplied()
+                || conformer_id.is_supplied()
+                || ignore_interfragment_interactions.is_supplied();
+            crate::arguments::configuration_arguments!(params; vdw_threshold, conformer_id, ignore_interfragment_interactions);
+            let params = params.as_deref();
+            if keyword_form {
                 self._ff_uff_energy_gradient_keywords(
                     py,
                     vdw_threshold,
                     conformer_id,
                     ignore_interfragment_interactions,
                 )
+            } else {
+                self._ff_uff_energy_gradient_params(py, params)
             }
         }
         fn uff_energy_gradient_with_params(
@@ -12379,34 +12736,25 @@ pub mod native {
             self._ff_uff_energy_gradient_params(py, Some(&params))
         }
 
-        #[pyo3(signature=(params=None,*,mmff_variant=None,non_bonded_threshold=None,conformer_id=None,ignore_interfragment_interactions=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mmff_variant=crate::arguments::Argument::Missing,non_bonded_threshold=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
         fn mmff_energy_gradient(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::MmffEvaluationParams>,
-            mmff_variant: Option<String>,
-            non_bonded_threshold: Option<f64>,
-            conformer_id: Option<usize>,
-            ignore_interfragment_interactions: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::MmffEvaluationParams>>,
+            >,
+            mmff_variant: crate::arguments::Argument<Option<String>>,
+            non_bonded_threshold: crate::arguments::Argument<Option<f64>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
+            ignore_interfragment_interactions: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Option<super::numerical_results::MmffEnergyGradient>> {
-            if params.is_some()
-                && (mmff_variant.is_some()
-                    || non_bonded_threshold.is_some()
-                    || conformer_id.is_some()
-                    || ignore_interfragment_interactions.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (mmff_variant.is_none()
-                    && non_bonded_threshold.is_none()
-                    && conformer_id.is_none()
-                    && ignore_interfragment_interactions.is_none())
-            {
-                self._ff_mmff_energy_gradient_params(py, params)
-            } else {
+            let keyword_form = mmff_variant.is_supplied()
+                || non_bonded_threshold.is_supplied()
+                || conformer_id.is_supplied()
+                || ignore_interfragment_interactions.is_supplied();
+            crate::arguments::configuration_arguments!(params; mmff_variant, non_bonded_threshold, conformer_id, ignore_interfragment_interactions);
+            let params = params.as_deref();
+            if keyword_form {
                 self._ff_mmff_energy_gradient_keywords(
                     py,
                     mmff_variant,
@@ -12414,6 +12762,8 @@ pub mod native {
                     conformer_id,
                     ignore_interfragment_interactions,
                 )
+            } else {
+                self._ff_mmff_energy_gradient_params(py, params)
             }
         }
         fn mmff_energy_gradient_with_params(
@@ -12462,34 +12812,25 @@ pub mod native {
             self._ff_mmff_energy_gradient_params(py, Some(&params))
         }
 
-        #[pyo3(signature=(params=None,*,max_iterations=None,vdw_threshold=None,conformer_id=None,ignore_interfragment_interactions=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,vdw_threshold=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
         fn with_uff_optimized(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::UffOptimizationParams>,
-            max_iterations: Option<i32>,
-            vdw_threshold: Option<f64>,
-            conformer_id: Option<usize>,
-            ignore_interfragment_interactions: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::UffOptimizationParams>>,
+            >,
+            max_iterations: crate::arguments::Argument<Option<i32>>,
+            vdw_threshold: crate::arguments::Argument<Option<f64>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
+            ignore_interfragment_interactions: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<super::numerical_results::UffOptimizationResult> {
-            if params.is_some()
-                && (max_iterations.is_some()
-                    || vdw_threshold.is_some()
-                    || conformer_id.is_some()
-                    || ignore_interfragment_interactions.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (max_iterations.is_none()
-                    && vdw_threshold.is_none()
-                    && conformer_id.is_none()
-                    && ignore_interfragment_interactions.is_none())
-            {
-                self._ff_with_uff_optimized_params(py, params)
-            } else {
+            let keyword_form = max_iterations.is_supplied()
+                || vdw_threshold.is_supplied()
+                || conformer_id.is_supplied()
+                || ignore_interfragment_interactions.is_supplied();
+            crate::arguments::configuration_arguments!(params; max_iterations, vdw_threshold, conformer_id, ignore_interfragment_interactions);
+            let params = params.as_deref();
+            if keyword_form {
                 self._ff_with_uff_optimized_keywords(
                     py,
                     max_iterations,
@@ -12497,6 +12838,8 @@ pub mod native {
                     conformer_id,
                     ignore_interfragment_interactions,
                 )
+            } else {
+                self._ff_with_uff_optimized_params(py, params)
             }
         }
         fn with_uff_optimized_with_params(
@@ -12543,34 +12886,25 @@ pub mod native {
             self._ff_with_uff_optimized_params(py, Some(&params))
         }
 
-        #[pyo3(signature=(params=None,*,num_threads=None,max_iterations=None,vdw_threshold=None,ignore_interfragment_interactions=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,num_threads=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing,vdw_threshold=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
         fn with_uff_optimized_conformers(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::UffConformerOptimizationParams>,
-            num_threads: Option<i32>,
-            max_iterations: Option<i32>,
-            vdw_threshold: Option<f64>,
-            ignore_interfragment_interactions: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::UffConformerOptimizationParams>>,
+            >,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            max_iterations: crate::arguments::Argument<Option<i32>>,
+            vdw_threshold: crate::arguments::Argument<Option<f64>>,
+            ignore_interfragment_interactions: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<super::numerical_results::UffConformerOptimizationResult> {
-            if params.is_some()
-                && (num_threads.is_some()
-                    || max_iterations.is_some()
-                    || vdw_threshold.is_some()
-                    || ignore_interfragment_interactions.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (num_threads.is_none()
-                    && max_iterations.is_none()
-                    && vdw_threshold.is_none()
-                    && ignore_interfragment_interactions.is_none())
-            {
-                self._ff_with_uff_optimized_conformers_params(py, params)
-            } else {
+            let keyword_form = num_threads.is_supplied()
+                || max_iterations.is_supplied()
+                || vdw_threshold.is_supplied()
+                || ignore_interfragment_interactions.is_supplied();
+            crate::arguments::configuration_arguments!(params; num_threads, max_iterations, vdw_threshold, ignore_interfragment_interactions);
+            let params = params.as_deref();
+            if keyword_form {
                 self._ff_with_uff_optimized_conformers_keywords(
                     py,
                     num_threads,
@@ -12578,6 +12912,8 @@ pub mod native {
                     vdw_threshold,
                     ignore_interfragment_interactions,
                 )
+            } else {
+                self._ff_with_uff_optimized_conformers_params(py, params)
             }
         }
         fn with_uff_optimized_conformers_with_params(
@@ -12628,37 +12964,27 @@ pub mod native {
             self._ff_with_uff_optimized_conformers_params(py, Some(&params))
         }
 
-        #[pyo3(signature=(params=None,*,mmff_variant=None,max_iterations=None,non_bonded_threshold=None,conformer_id=None,ignore_interfragment_interactions=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mmff_variant=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing,non_bonded_threshold=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
         fn with_mmff_optimized(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::MmffOptimizationParams>,
-            mmff_variant: Option<String>,
-            max_iterations: Option<i32>,
-            non_bonded_threshold: Option<f64>,
-            conformer_id: Option<usize>,
-            ignore_interfragment_interactions: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::MmffOptimizationParams>>,
+            >,
+            mmff_variant: crate::arguments::Argument<Option<String>>,
+            max_iterations: crate::arguments::Argument<Option<i32>>,
+            non_bonded_threshold: crate::arguments::Argument<Option<f64>>,
+            conformer_id: crate::arguments::Argument<Option<usize>>,
+            ignore_interfragment_interactions: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<super::numerical_results::MmffOptimizeMoleculeResult> {
-            if params.is_some()
-                && (mmff_variant.is_some()
-                    || max_iterations.is_some()
-                    || non_bonded_threshold.is_some()
-                    || conformer_id.is_some()
-                    || ignore_interfragment_interactions.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (mmff_variant.is_none()
-                    && max_iterations.is_none()
-                    && non_bonded_threshold.is_none()
-                    && conformer_id.is_none()
-                    && ignore_interfragment_interactions.is_none())
-            {
-                self._ff_with_mmff_optimized_params(py, params)
-            } else {
+            let keyword_form = mmff_variant.is_supplied()
+                || max_iterations.is_supplied()
+                || non_bonded_threshold.is_supplied()
+                || conformer_id.is_supplied()
+                || ignore_interfragment_interactions.is_supplied();
+            crate::arguments::configuration_arguments!(params; mmff_variant, max_iterations, non_bonded_threshold, conformer_id, ignore_interfragment_interactions);
+            let params = params.as_deref();
+            if keyword_form {
                 self._ff_with_mmff_optimized_keywords(
                     py,
                     mmff_variant,
@@ -12667,6 +12993,8 @@ pub mod native {
                     conformer_id,
                     ignore_interfragment_interactions,
                 )
+            } else {
+                self._ff_with_mmff_optimized_params(py, params)
             }
         }
         fn with_mmff_optimized_with_params(
@@ -12715,37 +13043,27 @@ pub mod native {
             self._ff_with_mmff_optimized_params(py, Some(&params))
         }
 
-        #[pyo3(signature=(params=None,*,num_threads=None,max_iterations=None,mmff_variant=None,non_bonded_threshold=None,ignore_interfragment_interactions=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,num_threads=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing,mmff_variant=crate::arguments::Argument::Missing,non_bonded_threshold=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
         fn with_mmff_optimized_conformers(
             &self,
             py: Python<'_>,
-            params: Option<&super::params::MmffConformerOptimizationParams>,
-            num_threads: Option<i32>,
-            max_iterations: Option<i32>,
-            mmff_variant: Option<String>,
-            non_bonded_threshold: Option<f64>,
-            ignore_interfragment_interactions: Option<bool>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::params::MmffConformerOptimizationParams>>,
+            >,
+            num_threads: crate::arguments::Argument<Option<i32>>,
+            max_iterations: crate::arguments::Argument<Option<i32>>,
+            mmff_variant: crate::arguments::Argument<Option<String>>,
+            non_bonded_threshold: crate::arguments::Argument<Option<f64>>,
+            ignore_interfragment_interactions: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<super::numerical_results::MmffOptimizeMoleculeConfsResult> {
-            if params.is_some()
-                && (num_threads.is_some()
-                    || max_iterations.is_some()
-                    || mmff_variant.is_some()
-                    || non_bonded_threshold.is_some()
-                    || ignore_interfragment_interactions.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (num_threads.is_none()
-                    && max_iterations.is_none()
-                    && mmff_variant.is_none()
-                    && non_bonded_threshold.is_none()
-                    && ignore_interfragment_interactions.is_none())
-            {
-                self._ff_with_mmff_optimized_conformers_params(py, params)
-            } else {
+            let keyword_form = num_threads.is_supplied()
+                || max_iterations.is_supplied()
+                || mmff_variant.is_supplied()
+                || non_bonded_threshold.is_supplied()
+                || ignore_interfragment_interactions.is_supplied();
+            crate::arguments::configuration_arguments!(params; num_threads, max_iterations, mmff_variant, non_bonded_threshold, ignore_interfragment_interactions);
+            let params = params.as_deref();
+            if keyword_form {
                 self._ff_with_mmff_optimized_conformers_keywords(
                     py,
                     num_threads,
@@ -12754,6 +13072,8 @@ pub mod native {
                     non_bonded_threshold,
                     ignore_interfragment_interactions,
                 )
+            } else {
+                self._ff_with_mmff_optimized_conformers_params(py, params)
             }
         }
         fn with_mmff_optimized_conformers_with_params(
@@ -12805,41 +13125,32 @@ pub mod native {
             );
             self._ff_with_mmff_optimized_conformers_params(py, Some(&params))
         }
-        #[pyo3(signature=(reference,params=None,*,probe_conformer_id=None,reference_conformer_id=None,atom_map=None,weights=None,reflect=None,max_iterations=None))]
+        #[pyo3(signature=(reference,params=crate::arguments::Argument::Missing,*,probe_conformer_id=crate::arguments::Argument::Missing,reference_conformer_id=crate::arguments::Argument::Missing,atom_map=crate::arguments::Argument::Missing,weights=crate::arguments::Argument::Missing,reflect=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing))]
         fn with_alignment_to(
             &self,
             py: Python<'_>,
             reference: &Self,
-            params: Option<&super::collection_params::AlignmentParameters>,
-            probe_conformer_id: Option<i32>,
-            reference_conformer_id: Option<i32>,
-            atom_map: Option<Vec<super::collection_params::AlignmentAtomMap>>,
-            weights: Option<Vec<f64>>,
-            reflect: Option<bool>,
-            max_iterations: Option<u32>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::collection_params::AlignmentParameters>>,
+            >,
+            probe_conformer_id: crate::arguments::Argument<Option<i32>>,
+            reference_conformer_id: crate::arguments::Argument<Option<i32>>,
+            atom_map: crate::arguments::Argument<
+                Option<Vec<super::collection_params::AlignmentAtomMap>>,
+            >,
+            weights: crate::arguments::Argument<Option<Vec<f64>>>,
+            reflect: crate::arguments::Argument<Option<bool>>,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<(Self, super::alignment_values::AlignmentResult)> {
-            if params.is_some()
-                && (probe_conformer_id.is_some()
-                    || reference_conformer_id.is_some()
-                    || atom_map.is_some()
-                    || weights.is_some()
-                    || reflect.is_some()
-                    || max_iterations.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (probe_conformer_id.is_none()
-                    && reference_conformer_id.is_none()
-                    && atom_map.is_none()
-                    && weights.is_none()
-                    && reflect.is_none()
-                    && max_iterations.is_none())
-            {
-                self._alignment_with_alignment_to_params(py, reference, params)
-            } else {
+            let keyword_form = probe_conformer_id.is_supplied()
+                || reference_conformer_id.is_supplied()
+                || atom_map.is_supplied()
+                || weights.is_supplied()
+                || reflect.is_supplied()
+                || max_iterations.is_supplied();
+            crate::arguments::configuration_arguments!(params; probe_conformer_id, reference_conformer_id, atom_map, weights, reflect, max_iterations);
+            let params = params.as_deref();
+            if keyword_form {
                 self._alignment_with_alignment_to_keywords(
                     py,
                     reference,
@@ -12850,6 +13161,8 @@ pub mod native {
                     reflect,
                     max_iterations,
                 )
+            } else {
+                self._alignment_with_alignment_to_params(py, reference, params)
             }
         }
         fn with_alignment_to_with_params(
@@ -12858,9 +13171,10 @@ pub mod native {
             reference: &Self,
             params: &super::collection_params::AlignmentParameters,
         ) -> PyResult<(Self, super::alignment_values::AlignmentResult)> {
+            let params = params.to_rust(py)?;
             py.detach(|| {
                 self.inner
-                    .with_alignment_to_with_params(&reference.inner, &params.inner)
+                    .with_alignment_to_with_params(&reference.inner, &params)
             })
             .map(|(inner, report)| {
                 (
@@ -12878,20 +13192,8 @@ pub mod native {
             reference: &Self,
             params: Option<&super::collection_params::AlignmentParameters>,
         ) -> PyResult<(Self, super::alignment_values::AlignmentResult)> {
-            match params {
-                Some(params) => py.detach(|| {
-                    self.inner
-                        .with_alignment_to_with_params(&reference.inner, &params.inner)
-                }),
-                None => py.detach(|| self.inner.with_alignment_to(&reference.inner)),
-            }
-            .map(|(inner, report)| {
-                (
-                    Self { inner },
-                    super::alignment_values::AlignmentResult { inner: report },
-                )
-            })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._alignment_with_alignment_to_params_native(py, reference, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_alignment_to"}"#]
         #[pyo3(signature=(reference,*,probe_conformer_id=None,reference_conformer_id=None,atom_map=None,weights=None,reflect=None,max_iterations=None))]
@@ -12914,44 +13216,35 @@ pub mod native {
                 reflect,
                 max_iterations,
             );
-            self._alignment_with_alignment_to_params(py, reference, Some(&params))
+            self._alignment_with_alignment_to_params_native(py, reference, Some(&params))
         }
 
-        #[pyo3(signature=(reference,params=None,*,probe_conformer_id=None,reference_conformer_id=None,atom_map=None,weights=None,reflect=None,max_iterations=None))]
+        #[pyo3(signature=(reference,params=crate::arguments::Argument::Missing,*,probe_conformer_id=crate::arguments::Argument::Missing,reference_conformer_id=crate::arguments::Argument::Missing,atom_map=crate::arguments::Argument::Missing,weights=crate::arguments::Argument::Missing,reflect=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing))]
         fn align_to_(
             &mut self,
             py: Python<'_>,
             reference: &Self,
-            params: Option<&super::collection_params::AlignmentParameters>,
-            probe_conformer_id: Option<i32>,
-            reference_conformer_id: Option<i32>,
-            atom_map: Option<Vec<super::collection_params::AlignmentAtomMap>>,
-            weights: Option<Vec<f64>>,
-            reflect: Option<bool>,
-            max_iterations: Option<u32>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::collection_params::AlignmentParameters>>,
+            >,
+            probe_conformer_id: crate::arguments::Argument<Option<i32>>,
+            reference_conformer_id: crate::arguments::Argument<Option<i32>>,
+            atom_map: crate::arguments::Argument<
+                Option<Vec<super::collection_params::AlignmentAtomMap>>,
+            >,
+            weights: crate::arguments::Argument<Option<Vec<f64>>>,
+            reflect: crate::arguments::Argument<Option<bool>>,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<super::alignment_values::AlignmentResult> {
-            if params.is_some()
-                && (probe_conformer_id.is_some()
-                    || reference_conformer_id.is_some()
-                    || atom_map.is_some()
-                    || weights.is_some()
-                    || reflect.is_some()
-                    || max_iterations.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (probe_conformer_id.is_none()
-                    && reference_conformer_id.is_none()
-                    && atom_map.is_none()
-                    && weights.is_none()
-                    && reflect.is_none()
-                    && max_iterations.is_none())
-            {
-                self._alignment_with_alignment_to_inplace_params(py, reference, params)
-            } else {
+            let keyword_form = probe_conformer_id.is_supplied()
+                || reference_conformer_id.is_supplied()
+                || atom_map.is_supplied()
+                || weights.is_supplied()
+                || reflect.is_supplied()
+                || max_iterations.is_supplied();
+            crate::arguments::configuration_arguments!(params; probe_conformer_id, reference_conformer_id, atom_map, weights, reflect, max_iterations);
+            let params = params.as_deref();
+            if keyword_form {
                 self._alignment_with_alignment_to_inplace_keywords(
                     py,
                     reference,
@@ -12962,6 +13255,8 @@ pub mod native {
                     reflect,
                     max_iterations,
                 )
+            } else {
+                self._alignment_with_alignment_to_inplace_params(py, reference, params)
             }
         }
         fn align_to_with_params_(
@@ -12970,12 +13265,10 @@ pub mod native {
             reference: &Self,
             params: &super::collection_params::AlignmentParameters,
         ) -> PyResult<super::alignment_values::AlignmentResult> {
-            py.detach(|| {
-                self.inner
-                    .align_to_with_params_(&reference.inner, &params.inner)
-            })
-            .map(|inner| super::alignment_values::AlignmentResult { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.to_rust(py)?;
+            py.detach(|| self.inner.align_to_with_params_(&reference.inner, &params))
+                .map(|inner| super::alignment_values::AlignmentResult { inner })
+                .map_err(super::operation_errors::OperationError::from_rust)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.align_to_"}"#]
         #[pyo3(signature=(reference,params=None))]
@@ -12985,15 +13278,8 @@ pub mod native {
             reference: &Self,
             params: Option<&super::collection_params::AlignmentParameters>,
         ) -> PyResult<super::alignment_values::AlignmentResult> {
-            match params {
-                Some(params) => py.detach(|| {
-                    self.inner
-                        .align_to_with_params_(&reference.inner, &params.inner)
-                }),
-                None => py.detach(|| self.inner.align_to_(&reference.inner)),
-            }
-            .map(|inner| super::alignment_values::AlignmentResult { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._alignment_with_alignment_to_inplace_params_native(py, reference, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.align_to_"}"#]
         #[pyo3(signature=(reference,*,probe_conformer_id=None,reference_conformer_id=None,atom_map=None,weights=None,reflect=None,max_iterations=None))]
@@ -13016,40 +13302,30 @@ pub mod native {
                 reflect,
                 max_iterations,
             );
-            self._alignment_with_alignment_to_inplace_params(py, reference, Some(&params))
+            self._alignment_with_alignment_to_inplace_params_native(py, reference, Some(&params))
         }
 
-        #[pyo3(signature=(params=None,*,atom_indices=None,conformer_ids=None,weights=None,reflect=None,max_iterations=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,atom_indices=crate::arguments::Argument::Missing,conformer_ids=crate::arguments::Argument::Missing,weights=crate::arguments::Argument::Missing,reflect=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing))]
         fn with_aligned_conformers(
             &self,
             py: Python<'_>,
-            params: Option<&super::numerical_params::ConformerAlignmentParameters>,
-            atom_indices: Option<Vec<usize>>,
-            conformer_ids: Option<Vec<usize>>,
-            weights: Option<Vec<f64>>,
-            reflect: Option<bool>,
-            max_iterations: Option<u32>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::numerical_params::ConformerAlignmentParameters>>,
+            >,
+            atom_indices: crate::arguments::Argument<Option<Vec<usize>>>,
+            conformer_ids: crate::arguments::Argument<Option<Vec<usize>>>,
+            weights: crate::arguments::Argument<Option<Vec<f64>>>,
+            reflect: crate::arguments::Argument<Option<bool>>,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<(Self, super::alignment_values::ConformerAlignmentReport)> {
-            if params.is_some()
-                && (atom_indices.is_some()
-                    || conformer_ids.is_some()
-                    || weights.is_some()
-                    || reflect.is_some()
-                    || max_iterations.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (atom_indices.is_none()
-                    && conformer_ids.is_none()
-                    && weights.is_none()
-                    && reflect.is_none()
-                    && max_iterations.is_none())
-            {
-                self._alignment_with_aligned_conformers_params(py, params)
-            } else {
+            let keyword_form = atom_indices.is_supplied()
+                || conformer_ids.is_supplied()
+                || weights.is_supplied()
+                || reflect.is_supplied()
+                || max_iterations.is_supplied();
+            crate::arguments::configuration_arguments!(params; atom_indices, conformer_ids, weights, reflect, max_iterations);
+            let params = params.as_deref();
+            if keyword_form {
                 self._alignment_with_aligned_conformers_keywords(
                     py,
                     atom_indices,
@@ -13058,6 +13334,8 @@ pub mod native {
                     reflect,
                     max_iterations,
                 )
+            } else {
+                self._alignment_with_aligned_conformers_params(py, params)
             }
         }
         fn with_aligned_conformers_with_params(
@@ -13065,17 +13343,15 @@ pub mod native {
             py: Python<'_>,
             params: &super::numerical_params::ConformerAlignmentParameters,
         ) -> PyResult<(Self, super::alignment_values::ConformerAlignmentReport)> {
-            py.detach(|| {
-                self.inner
-                    .with_aligned_conformers_with_params(&params.inner)
-            })
-            .map(|(inner, report)| {
-                (
-                    Self { inner },
-                    super::alignment_values::ConformerAlignmentReport { inner: report },
-                )
-            })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.to_rust(py)?;
+            py.detach(|| self.inner.with_aligned_conformers_with_params(&params))
+                .map(|(inner, report)| {
+                    (
+                        Self { inner },
+                        super::alignment_values::ConformerAlignmentReport { inner: report },
+                    )
+                })
+                .map_err(super::operation_errors::OperationError::from_rust)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_aligned_conformers"}"#]
         #[pyo3(signature=(params=None))]
@@ -13084,20 +13360,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::numerical_params::ConformerAlignmentParameters>,
         ) -> PyResult<(Self, super::alignment_values::ConformerAlignmentReport)> {
-            match params {
-                Some(params) => py.detach(|| {
-                    self.inner
-                        .with_aligned_conformers_with_params(&params.inner)
-                }),
-                None => py.detach(|| self.inner.with_aligned_conformers()),
-            }
-            .map(|(inner, report)| {
-                (
-                    Self { inner },
-                    super::alignment_values::ConformerAlignmentReport { inner: report },
-                )
-            })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._alignment_with_aligned_conformers_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_aligned_conformers"}"#]
         #[pyo3(signature=(*,atom_indices=None,conformer_ids=None,weights=None,reflect=None,max_iterations=None))]
@@ -13117,40 +13381,30 @@ pub mod native {
                 reflect,
                 max_iterations,
             );
-            self._alignment_with_aligned_conformers_params(py, Some(&params))
+            self._alignment_with_aligned_conformers_params_native(py, Some(&params))
         }
 
-        #[pyo3(signature=(params=None,*,atom_indices=None,conformer_ids=None,weights=None,reflect=None,max_iterations=None))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,atom_indices=crate::arguments::Argument::Missing,conformer_ids=crate::arguments::Argument::Missing,weights=crate::arguments::Argument::Missing,reflect=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing))]
         fn align_conformers_(
             &mut self,
             py: Python<'_>,
-            params: Option<&super::numerical_params::ConformerAlignmentParameters>,
-            atom_indices: Option<Vec<usize>>,
-            conformer_ids: Option<Vec<usize>>,
-            weights: Option<Vec<f64>>,
-            reflect: Option<bool>,
-            max_iterations: Option<u32>,
+            params: crate::arguments::Argument<
+                Option<PyRef<'_, super::numerical_params::ConformerAlignmentParameters>>,
+            >,
+            atom_indices: crate::arguments::Argument<Option<Vec<usize>>>,
+            conformer_ids: crate::arguments::Argument<Option<Vec<usize>>>,
+            weights: crate::arguments::Argument<Option<Vec<f64>>>,
+            reflect: crate::arguments::Argument<Option<bool>>,
+            max_iterations: crate::arguments::Argument<Option<u32>>,
         ) -> PyResult<super::alignment_values::ConformerAlignmentReport> {
-            if params.is_some()
-                && (atom_indices.is_some()
-                    || conformer_ids.is_some()
-                    || weights.is_some()
-                    || reflect.is_some()
-                    || max_iterations.is_some())
-            {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "params and keyword configuration are mutually exclusive",
-                ));
-            }
-            if params.is_some()
-                || (atom_indices.is_none()
-                    && conformer_ids.is_none()
-                    && weights.is_none()
-                    && reflect.is_none()
-                    && max_iterations.is_none())
-            {
-                self._alignment_with_aligned_conformers_inplace_params(py, params)
-            } else {
+            let keyword_form = atom_indices.is_supplied()
+                || conformer_ids.is_supplied()
+                || weights.is_supplied()
+                || reflect.is_supplied()
+                || max_iterations.is_supplied();
+            crate::arguments::configuration_arguments!(params; atom_indices, conformer_ids, weights, reflect, max_iterations);
+            let params = params.as_deref();
+            if keyword_form {
                 self._alignment_with_aligned_conformers_inplace_keywords(
                     py,
                     atom_indices,
@@ -13159,6 +13413,8 @@ pub mod native {
                     reflect,
                     max_iterations,
                 )
+            } else {
+                self._alignment_with_aligned_conformers_inplace_params(py, params)
             }
         }
         fn align_conformers_with_params_(
@@ -13166,7 +13422,8 @@ pub mod native {
             py: Python<'_>,
             params: &super::numerical_params::ConformerAlignmentParameters,
         ) -> PyResult<super::alignment_values::ConformerAlignmentReport> {
-            py.detach(|| self.inner.align_conformers_with_params_(&params.inner))
+            let params = params.to_rust(py)?;
+            py.detach(|| self.inner.align_conformers_with_params_(&params))
                 .map(|inner| super::alignment_values::ConformerAlignmentReport { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
@@ -13177,14 +13434,8 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::numerical_params::ConformerAlignmentParameters>,
         ) -> PyResult<super::alignment_values::ConformerAlignmentReport> {
-            match params {
-                Some(params) => {
-                    py.detach(|| self.inner.align_conformers_with_params_(&params.inner))
-                }
-                None => py.detach(|| self.inner.align_conformers_()),
-            }
-            .map(|inner| super::alignment_values::ConformerAlignmentReport { inner })
-            .map_err(super::operation_errors::OperationError::from_rust)
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            self._alignment_with_aligned_conformers_inplace_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.align_conformers_"}"#]
         #[pyo3(signature=(*,atom_indices=None,conformer_ids=None,weights=None,reflect=None,max_iterations=None))]
@@ -13204,7 +13455,7 @@ pub mod native {
                 reflect,
                 max_iterations,
             );
-            self._alignment_with_aligned_conformers_inplace_params(py, Some(&params))
+            self._alignment_with_aligned_conformers_inplace_params_native(py, Some(&params))
         }
         fn num_3d_conformers(&self) -> usize {
             self.inner.num_3d_conformers()
@@ -13216,32 +13467,30 @@ pub mod native {
         ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
             super::conformer_queries::bounds(self, py)
         }
-        #[pyo3(signature=(options=None,*,try_embedding=None,only_unassigned=None,max_isomers=None,random_source=None,unique=None,only_stereo_groups=None))]
+        #[pyo3(signature=(options=crate::arguments::Argument::Missing,*,try_embedding=crate::arguments::Argument::Missing,only_unassigned=crate::arguments::Argument::Missing,max_isomers=crate::arguments::Argument::Missing,random_source=crate::arguments::Argument::Missing,unique=crate::arguments::Argument::Missing,only_stereo_groups=crate::arguments::Argument::Missing))]
         fn stereoisomer_count(
             &self,
             py: Python<'_>,
-            options: Option<Py<super::stereoisomer_options::StereoisomerOptions>>,
-            try_embedding: Option<bool>,
-            only_unassigned: Option<bool>,
-            max_isomers: Option<usize>,
-            random_source: Option<Py<super::stereoisomer_options::StereoisomerRandomSource>>,
-            unique: Option<bool>,
-            only_stereo_groups: Option<bool>,
+            options: crate::arguments::Argument<
+                Option<Py<super::stereoisomer_options::StereoisomerOptions>>,
+            >,
+            try_embedding: crate::arguments::Argument<Option<bool>>,
+            only_unassigned: crate::arguments::Argument<Option<bool>>,
+            max_isomers: crate::arguments::Argument<Option<usize>>,
+            random_source: crate::arguments::Argument<
+                Option<Py<super::stereoisomer_options::StereoisomerRandomSource>>,
+            >,
+            unique: crate::arguments::Argument<Option<bool>>,
+            only_stereo_groups: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<num_bigint::BigUint> {
-            if options.is_some() {
-                if try_embedding.is_some()
-                    || only_unassigned.is_some()
-                    || max_isomers.is_some()
-                    || random_source.is_some()
-                    || unique.is_some()
-                    || only_stereo_groups.is_some()
-                {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "pass either options or keyword fields, not both",
-                    ));
-                }
-                self._stereoisomer_count_options(py, options)
-            } else {
+            let keyword_form = try_embedding.is_supplied()
+                || only_unassigned.is_supplied()
+                || max_isomers.is_supplied()
+                || random_source.is_supplied()
+                || unique.is_supplied()
+                || only_stereo_groups.is_supplied();
+            crate::arguments::configuration_arguments!(options; try_embedding, only_unassigned, max_isomers, random_source, unique, only_stereo_groups);
+            if keyword_form {
                 self._stereoisomer_count_keywords(
                     py,
                     try_embedding,
@@ -13251,6 +13500,8 @@ pub mod native {
                     unique,
                     only_stereo_groups,
                 )
+            } else {
+                self._stereoisomer_count_options(py, options)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.stereoisomer_count"}"#]
@@ -13373,22 +13624,20 @@ pub mod native {
             Self::_from_smiles_params(text, Some(params))
         }
         #[staticmethod]
-        #[pyo3(signature = (text, params=None, *, sanitize=None, remove_hs=None))]
+        #[pyo3(signature = (text, params=crate::arguments::Argument::Missing, *, sanitize=crate::arguments::Argument::Missing, remove_hs=crate::arguments::Argument::Missing))]
         fn from_inchi(
             text: &str,
-            params: Option<&super::params::InchiReadParams>,
-            sanitize: Option<bool>,
-            remove_hs: Option<bool>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::params::InchiReadParams>>>,
+            sanitize: crate::arguments::Argument<Option<bool>>,
+            remove_hs: crate::arguments::Argument<Option<bool>>,
         ) -> PyResult<Self> {
-            if let Some(params) = params {
-                if sanitize.is_some() || remove_hs.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                Self::_from_inchi_params(text, Some(params))
-            } else {
+            let keyword_form = sanitize.is_supplied() || remove_hs.is_supplied();
+            crate::arguments::configuration_arguments!(params; sanitize, remove_hs);
+            let params = params.as_deref();
+            if keyword_form {
                 Self::_from_inchi_keywords(text, sanitize, remove_hs)
+            } else {
+                Self::_from_inchi_params(text, params)
             }
         }
         #[staticmethod]
@@ -13432,21 +13681,19 @@ pub mod native {
                 .map(|inner| Self { inner })
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
-        #[pyo3(signature = (params=None, *, options=None))]
+        #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, options=crate::arguments::Argument::Missing))]
         fn to_inchi(
             &self,
-            params: Option<&super::params::InchiWriteParams>,
-            options: Option<String>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::params::InchiWriteParams>>>,
+            options: crate::arguments::Argument<Option<String>>,
         ) -> PyResult<String> {
-            if let Some(params) = params {
-                if options.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._to_inchi_params(Some(params))
-            } else {
+            let keyword_form = options.is_supplied();
+            crate::arguments::configuration_arguments!(params; options);
+            let params = params.as_deref();
+            if keyword_form {
                 self._to_inchi_keywords(options)
+            } else {
+                self._to_inchi_params(params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.to_inchi"}"#]
@@ -13478,21 +13725,19 @@ pub mod native {
                 .to_inchi_with_params(&params.inner)
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
-        #[pyo3(signature = (params=None, *, options=None))]
+        #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, options=crate::arguments::Argument::Missing))]
         fn to_inchi_key(
             &self,
-            params: Option<&super::params::InchiWriteParams>,
-            options: Option<String>,
+            params: crate::arguments::Argument<Option<PyRef<'_, super::params::InchiWriteParams>>>,
+            options: crate::arguments::Argument<Option<String>>,
         ) -> PyResult<String> {
-            if let Some(params) = params {
-                if options.is_some() {
-                    return Err(pyo3::exceptions::PyTypeError::new_err(
-                        "parameter object and configuration keywords are mutually exclusive",
-                    ));
-                }
-                self._to_inchi_key_params(Some(params))
-            } else {
+            let keyword_form = options.is_supplied();
+            crate::arguments::configuration_arguments!(params; options);
+            let params = params.as_deref();
+            if keyword_form {
                 self._to_inchi_key_keywords(options)
+            } else {
+                self._to_inchi_key_params(params)
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.to_inchi_key"}"#]
@@ -13572,6 +13817,7 @@ pub mod native {
         #[pyo3(signature = (params=Argument::Missing, *, n_bits=Argument::Missing))]
         fn fingerprint_maccs(
             &self,
+            py: Python<'_>,
             params: Argument<Option<PyRef<'_, MaccsFingerprintParams>>>,
             n_bits: Argument<Option<usize>>,
         ) -> PyResult<Fingerprint> {
@@ -13580,7 +13826,7 @@ pub mod native {
             if keyword_form {
                 self._fingerprint_maccs_keywords(n_bits)
             } else {
-                self._fingerprint_maccs_params(params.as_deref())
+                self._fingerprint_maccs_params(py, params.as_deref())
             }
         }
 
@@ -13588,17 +13834,15 @@ pub mod native {
         #[pyo3(signature = (params=None))]
         fn _fingerprint_maccs_params(
             &self,
+            py: Python<'_>,
             params: Option<&MaccsFingerprintParams>,
         ) -> PyResult<Fingerprint> {
-            let defaults;
-            let effective = if let Some(params) = params {
-                &params.inner
-            } else {
-                defaults = ck::MaccsFingerprintParams::default();
-                &defaults
-            };
+            let effective = params
+                .map(|params| params.to_rust(py))
+                .transpose()?
+                .unwrap_or_default();
             self.inner
-                .fingerprint_maccs_with_params(effective)
+                .fingerprint_maccs_with_params(&effective)
                 .map(|inner| Fingerprint { inner })
                 .map_err(errors::MaccsFingerprintError::from_rust)
         }
@@ -13606,19 +13850,21 @@ pub mod native {
         #[doc = r#"{"role": "overload", "target": "Molecule.fingerprint_maccs"}"#]
         #[pyo3(signature = (*, n_bits=None))]
         fn _fingerprint_maccs_keywords(&self, n_bits: Option<usize>) -> PyResult<Fingerprint> {
-            let params = MaccsFingerprintParams {
-                inner: ck::MaccsFingerprintParams {
-                    n_bits: n_bits.unwrap_or_else(|| ck::MaccsFingerprintParams::default().n_bits),
-                },
+            let params = ck::MaccsFingerprintParams {
+                n_bits: n_bits.unwrap_or_else(|| ck::MaccsFingerprintParams::default().n_bits),
             };
-            self._fingerprint_maccs_params(Some(&params))
+            self.inner
+                .fingerprint_maccs_with_params(&params)
+                .map(|inner| Fingerprint { inner })
+                .map_err(errors::MaccsFingerprintError::from_rust)
         }
         fn fingerprint_maccs_with_params(
             &self,
+            py: Python<'_>,
             params: &MaccsFingerprintParams,
         ) -> PyResult<Fingerprint> {
             self.inner
-                .fingerprint_maccs_with_params(&params.inner)
+                .fingerprint_maccs_with_params(&params.to_rust(py)?)
                 .map(|inner| Fingerprint { inner })
                 .map_err(errors::MaccsFingerprintError::from_rust)
         }
@@ -13748,8 +13994,9 @@ pub mod native {
             py: Python<'_>,
             params: Option<&CxSmilesWriteParams>,
         ) -> PyResult<String> {
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
             let value = py.detach(|| match params {
-                Some(params) => self.inner.to_cx_smiles_with_params(&params.inner),
+                Some(ref params) => self.inner.to_cx_smiles_with_params(params),
                 None => self.inner.to_cx_smiles(),
             });
             super::smiles_writer::text(py, value)
@@ -13764,20 +14011,21 @@ pub mod native {
             coordinate_selection: Option<super::notation_params::CxCoordinateSelectionInput>,
         ) -> PyResult<String> {
             let defaults = ck::CxSmilesWriteParams::default();
-            let params = CxSmilesWriteParams {
-                inner: ck::CxSmilesWriteParams {
-                    smiles: smiles.map(|value| value.inner).unwrap_or(defaults.smiles),
-                    fields: fields
-                        .map(super::notation_params::CxSmilesFieldsInput::into_rust)
-                        .transpose()?
-                        .unwrap_or(defaults.fields),
-                    coordinate_selection: coordinate_selection
-                        .map(super::notation_params::CxCoordinateSelectionInput::into_rust)
-                        .transpose()?
-                        .unwrap_or(defaults.coordinate_selection),
-                },
+            let params = ck::CxSmilesWriteParams {
+                smiles: smiles.map(|value| value.inner).unwrap_or(defaults.smiles),
+                fields: fields
+                    .map(super::notation_params::CxSmilesFieldsInput::into_rust)
+                    .transpose()?
+                    .unwrap_or(defaults.fields),
+                coordinate_selection: coordinate_selection
+                    .map(super::notation_params::CxCoordinateSelectionInput::into_rust)
+                    .transpose()?
+                    .unwrap_or(defaults.coordinate_selection),
             };
-            self._to_cx_smiles_params(py, Some(&params))
+            super::smiles_writer::text(
+                py,
+                py.detach(|| self.inner.to_cx_smiles_with_params(&params)),
+            )
         }
         fn to_cx_smiles_with_params(
             &self,
@@ -13847,9 +14095,10 @@ pub mod native {
             py: Python<'_>,
             params: &FragmentSmilesWriteParams,
         ) -> PyResult<String> {
+            let params = params.to_rust(py)?;
             super::smiles_writer::text(
                 py,
-                py.detach(|| self.inner.to_fragment_smiles_with_params(&params.inner)),
+                py.detach(|| self.inner.to_fragment_smiles_with_params(&params)),
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.to_fragment_smiles"}"#]
@@ -13874,18 +14123,19 @@ pub mod native {
                     py.detach(|| self.inner.to_fragment_smiles(&atoms)),
                 );
             }
-            let params = FragmentSmilesWriteParams {
-                inner: ck::FragmentSmilesWriteParams {
-                    atoms,
-                    smiles: smiles
-                        .map(|value| value.inner)
-                        .unwrap_or_else(|| ck::FragmentSmilesWriteParams::default().smiles),
-                    bonds: bonds.map(|values| values.into_iter().map(ck::BondId::new).collect()),
-                    atom_symbols,
-                    bond_symbols,
-                },
+            let params = ck::FragmentSmilesWriteParams {
+                atoms,
+                smiles: smiles
+                    .map(|value| value.inner)
+                    .unwrap_or_else(|| ck::FragmentSmilesWriteParams::default().smiles),
+                bonds: bonds.map(|values| values.into_iter().map(ck::BondId::new).collect()),
+                atom_symbols,
+                bond_symbols,
             };
-            self._to_fragment_smiles_params(py, &params)
+            super::smiles_writer::text(
+                py,
+                py.detach(|| self.inner.to_fragment_smiles_with_params(&params)),
+            )
         }
         fn to_fragment_smiles_with_params(
             &self,
@@ -13955,9 +14205,10 @@ pub mod native {
             py: Python<'_>,
             params: &FragmentCxSmilesWriteParams,
         ) -> PyResult<String> {
+            let params = params.to_rust(py)?;
             super::smiles_writer::text(
                 py,
-                py.detach(|| self.inner.to_fragment_cx_smiles_with_params(&params.inner)),
+                py.detach(|| self.inner.to_fragment_cx_smiles_with_params(&params)),
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.to_fragment_cx_smiles"}"#]
@@ -13978,18 +14229,20 @@ pub mod native {
                     py.detach(|| self.inner.to_fragment_cx_smiles(&atoms)),
                 );
             }
-            let params = FragmentCxSmilesWriteParams {
-                inner: ck::FragmentCxSmilesWriteParams {
-                    atoms,
-                    cx: cx
-                        .map(|value| value.inner.clone())
-                        .unwrap_or_else(|| ck::FragmentCxSmilesWriteParams::default().cx),
-                    bonds: bonds.map(|values| values.into_iter().map(ck::BondId::new).collect()),
-                    atom_symbols,
-                    bond_symbols,
-                },
+            let params = ck::FragmentCxSmilesWriteParams {
+                atoms,
+                cx: cx
+                    .map(|value| value.to_rust(py))
+                    .transpose()?
+                    .unwrap_or_else(|| ck::FragmentCxSmilesWriteParams::default().cx),
+                bonds: bonds.map(|values| values.into_iter().map(ck::BondId::new).collect()),
+                atom_symbols,
+                bond_symbols,
             };
-            self._to_fragment_cx_smiles_params(py, &params)
+            super::smiles_writer::text(
+                py,
+                py.detach(|| self.inner.to_fragment_cx_smiles_with_params(&params)),
+            )
         }
         fn to_fragment_cx_smiles_with_params(
             &self,
@@ -14108,7 +14361,7 @@ pub mod native {
         }
     }
 
-    #[pyclass(module = "fixed_projection._native", frozen)]
+    #[pyclass(module = "cosmolkit", frozen)]
     pub struct Fingerprint {
         pub(crate) inner: ck::Fingerprint,
     }
@@ -14147,7 +14400,7 @@ pub mod native {
         }
     }
 
-    #[pyclass(module = "fixed_projection._native", frozen)]
+    #[pyclass(module = "cosmolkit", frozen)]
     pub struct FingerprintBatch {
         values: Vec<Option<Py<Fingerprint>>>,
     }

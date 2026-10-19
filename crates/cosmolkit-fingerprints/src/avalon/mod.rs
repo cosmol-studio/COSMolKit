@@ -114,7 +114,8 @@ impl BitOrAssign for AvalonFingerprintFlags {
 }
 
 /// Parameters for the source-backed Avalon bit-vector API.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct AvalonFingerprintParams {
     pub n_bits: u32,
     pub is_query: bool,

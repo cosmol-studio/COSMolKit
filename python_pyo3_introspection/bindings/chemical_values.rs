@@ -28,14 +28,17 @@ pub(crate) fn spelling(name: &str) -> String {
 // Shared binding representation only. Every variant conversion remains
 // exhaustive against the canonical Rust type; metadata may escape Python keywords.
 macro_rules! enum_value {
+    ($name:ident, input = $input:ty, {$($variant:ident),+ $(,)?}) => {
+        enum_value!(@mapped $name, input = $input, { $($variant => $variant),+ });
+    };
     ($name:ident, {$($(#[$attribute:meta])* $variant:ident),+ $(,)?}) => {
         enum_value!(@mapped $name, { $($(#[$attribute])* $variant => $variant),+ });
     };
     ($name:ident, {$($variant:ident => $source:ident),+ $(,)?}) => {
         enum_value!(@mapped $name, { $($variant => $source),+ });
     };
-    (@mapped $name:ident, {$($(#[$attribute:meta])* $variant:ident => $source:ident),+ $(,)?}) => {
-        #[pyo3::pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+    (@mapped $name:ident, $(input = $input:ty,)? {$($(#[$attribute:meta])* $variant:ident => $source:ident),+ $(,)?}) => {
+        #[pyo3::pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
         #[derive(Clone, Copy, PartialEq)]
         pub enum $name { $($(#[$attribute])* $variant = const {
             let value = ck::$name::$source as i128;
@@ -52,6 +55,20 @@ macro_rules! enum_value {
             fn from(value: $name) -> Self {
                 match value { $($name::$variant => Self::$source),+ }
             }
+        }
+        impl crate::parameters::NativeEnum for $name {
+            type Native = ck::$name;
+            fn from_native(value: Self::Native) -> Self { value.into() }
+            fn into_native(self) -> Self::Native { self.into() }
+            $(
+                const INPUT: pyo3::inspect::PyStaticExpr = <$input as pyo3::FromPyObject<'_, '_>>::INPUT_TYPE;
+                fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+                    value.extract::<$input>()?.into_rust()
+                }
+            )?
+        }
+        impl crate::configuration::FieldProjection for ck::$name {
+            type Adapter = crate::parameters::EnumField<$name>;
         }
         impl crate::chemical_values::EnumValue for $name {
             fn from_name(name: &str) -> pyo3::PyResult<Self> {

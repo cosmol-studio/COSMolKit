@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 enum_value!(PropertyValueKind, { String, Int, UInt, IntVector, StringVector, Double, Bool });
 
 #[doc = r#"{"role": "error_record"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct MissingPropertyError {
     inner: ck::MissingPropertyError,
 }
@@ -34,7 +34,7 @@ impl MissingPropertyError {
 }
 
 #[doc = r#"{"role": "error_record"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct PropertyValueError {
     inner: ck::PropertyValueError,
 }
@@ -63,7 +63,7 @@ impl PropertyValueError {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct PropertyValue {
     pub(crate) inner: ck::PropertyValue,

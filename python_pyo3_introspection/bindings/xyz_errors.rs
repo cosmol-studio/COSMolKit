@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 use std::error::Error;
 
 #[doc = r#"{"role":"error_leaf"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct ParseFloatError {
     inner: std::num::ParseFloatError,
 }

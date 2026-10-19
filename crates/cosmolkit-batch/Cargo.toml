@@ -12,8 +12,9 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-model = { version = "0.5.1-rc.4", path = "../cosmolkit-model" }
-cosmolkit-io = { version = "0.5.1-rc.4", path = "../cosmolkit-io", default-features = false, features = ["molecule"] }
+cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.5.1-rc.5" }
+cosmolkit-model = { version = "0.5.1-rc.5", path = "../cosmolkit-model" }
+cosmolkit-io = { version = "0.5.1-rc.5", path = "../cosmolkit-io", default-features = false, features = ["molecule"] }
 rayon = "1.10"
 indicatif = "0.18.6"
 thiserror = "2.0.18"

@@ -28,7 +28,7 @@ let pdb=source.to_pdb().unwrap();let xyz=source.to_xyz().unwrap();
 let expected=ck::Molecule::from_pdb(&pdb).unwrap();
 let actual=py.get_type::<Molecule>().call_method1("from_pdb",(&pdb,))?.extract::<Py<Molecule>>()?;
 assert_eq!(actual.borrow(py).inner,expected);
-assert_eq!(mol_from_pdb(py,&pdb,None,None,None,None,None)?.inner,expected);
+assert_eq!(mol_from_pdb(py,&pdb,crate::arguments::Argument::Missing,crate::arguments::Argument::Missing,crate::arguments::Argument::Missing,crate::arguments::Argument::Missing,crate::arguments::Argument::Missing)?.inner,expected);
 assert_eq!(py.get_type::<Molecule>().call_method1("from_xyz_block",(&xyz,))?.extract::<Py<Molecule>>()?.borrow(py).inner,ck::Molecule::from_xyz_block(&xyz).unwrap());
 let sd=source.to_sdf().unwrap();let record=Py::new(py,crate::sdf_records::SdfRecord::from_rust(ck::SdfRecord::from_sdf(&sd).unwrap()))?;
 for name in ["to_mol","to_sdf"]{let v=record.bind(py).call_method0(name)?.extract::<String>()?;assert!(!v.is_empty());assert!(record.bind(py).call_method(name,(&p,),Some(&kw)).unwrap_err().is_instance_of::<pyo3::exceptions::PyTypeError>(py));}
@@ -187,28 +187,23 @@ pub(crate) fn sdf_keywords(
     )
 }
 #[pyfunction]
-#[pyo3(signature=(text,params=None,*,sanitize=None,remove_hs=None,flavor=None,proximity_bonding=None))]
+#[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing,proximity_bonding=crate::arguments::Argument::Missing))]
 pub fn mol_from_pdb(
     py: Python<'_>,
     text: &str,
-    params: Option<&crate::params::BioMoleculeParams>,
-    sanitize: Option<bool>,
-    remove_hs: Option<bool>,
-    flavor: Option<u32>,
-    proximity_bonding: Option<bool>,
+    params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>,
+    sanitize: crate::arguments::Argument<Option<bool>>,
+    remove_hs: crate::arguments::Argument<Option<bool>>,
+    flavor: crate::arguments::Argument<Option<u32>>,
+    proximity_bonding: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Molecule> {
-    if params.is_some()
-        && (sanitize.is_some()
-            || remove_hs.is_some()
-            || flavor.is_some()
-            || proximity_bonding.is_some())
-    {
-        return Err(pyo3::exceptions::PyTypeError::new_err(
-            "Params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if sanitize.is_some() || remove_hs.is_some() || flavor.is_some() || proximity_bonding.is_some()
-    {
+    let keyword_form = sanitize.is_supplied()
+        || remove_hs.is_supplied()
+        || flavor.is_supplied()
+        || proximity_bonding.is_supplied();
+    crate::arguments::configuration_arguments!(params; sanitize, remove_hs, flavor, proximity_bonding);
+    let params = params.as_deref();
+    if keyword_form {
         _mol_from_pdb_keywords(py, text, sanitize, remove_hs, flavor, proximity_bonding)
     } else {
         _mol_from_pdb_params(py, text, params)
@@ -222,7 +217,7 @@ pub fn _mol_from_pdb_params(
     text: &str,
     params: Option<&crate::params::BioMoleculeParams>,
 ) -> PyResult<Molecule> {
-    Molecule::from_pdb(py, text, params, None, None, None, None)
+    Molecule::_io_from_pdb_params(py, text, params)
 }
 #[pyfunction]
 #[doc = r#"{"role":"overload","target":"mol_from_pdb"}"#]
@@ -235,39 +230,26 @@ pub fn _mol_from_pdb_keywords(
     flavor: Option<u32>,
     proximity_bonding: Option<bool>,
 ) -> PyResult<Molecule> {
-    Molecule::from_pdb(
-        py,
-        text,
-        None,
-        sanitize,
-        remove_hs,
-        flavor,
-        proximity_bonding,
-    )
+    Molecule::_io_from_pdb_keywords(py, text, sanitize, remove_hs, flavor, proximity_bonding)
 }
 #[pyfunction]
-#[pyo3(signature=(text,params=None,*,sanitize=None,remove_hs=None,flavor=None,proximity_bonding=None))]
+#[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing,proximity_bonding=crate::arguments::Argument::Missing))]
 pub fn mol_from_mmcif(
     py: Python<'_>,
     text: &str,
-    params: Option<&crate::params::BioMoleculeParams>,
-    sanitize: Option<bool>,
-    remove_hs: Option<bool>,
-    flavor: Option<u32>,
-    proximity_bonding: Option<bool>,
+    params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>,
+    sanitize: crate::arguments::Argument<Option<bool>>,
+    remove_hs: crate::arguments::Argument<Option<bool>>,
+    flavor: crate::arguments::Argument<Option<u32>>,
+    proximity_bonding: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Molecule> {
-    if params.is_some()
-        && (sanitize.is_some()
-            || remove_hs.is_some()
-            || flavor.is_some()
-            || proximity_bonding.is_some())
-    {
-        return Err(pyo3::exceptions::PyTypeError::new_err(
-            "Params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if sanitize.is_some() || remove_hs.is_some() || flavor.is_some() || proximity_bonding.is_some()
-    {
+    let keyword_form = sanitize.is_supplied()
+        || remove_hs.is_supplied()
+        || flavor.is_supplied()
+        || proximity_bonding.is_supplied();
+    crate::arguments::configuration_arguments!(params; sanitize, remove_hs, flavor, proximity_bonding);
+    let params = params.as_deref();
+    if keyword_form {
         _mol_from_mmcif_keywords(py, text, sanitize, remove_hs, flavor, proximity_bonding)
     } else {
         _mol_from_mmcif_params(py, text, params)
@@ -281,7 +263,7 @@ pub fn _mol_from_mmcif_params(
     text: &str,
     params: Option<&crate::params::BioMoleculeParams>,
 ) -> PyResult<Molecule> {
-    Molecule::from_mmcif(py, text, params, None, None, None, None)
+    Molecule::_io_from_mmcif_params(py, text, params)
 }
 #[pyfunction]
 #[doc = r#"{"role":"overload","target":"mol_from_mmcif"}"#]
@@ -294,42 +276,26 @@ pub fn _mol_from_mmcif_keywords(
     flavor: Option<u32>,
     proximity_bonding: Option<bool>,
 ) -> PyResult<Molecule> {
-    Molecule::from_mmcif(
-        py,
-        text,
-        None,
-        sanitize,
-        remove_hs,
-        flavor,
-        proximity_bonding,
-    )
+    Molecule::_io_from_mmcif_keywords(py, text, sanitize, remove_hs, flavor, proximity_bonding)
 }
 #[pyfunction]
-#[pyo3(signature=(text,params=None,*,sanitize=None,remove_hs=None,variant=None,cleanup_substructures=None))]
+#[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,variant=crate::arguments::Argument::Missing,cleanup_substructures=crate::arguments::Argument::Missing))]
 pub fn mol_from_mol2(
     py: Python<'_>,
     text: &str,
-    params: Option<&crate::io_batch_params::Mol2ReadParams>,
-    sanitize: Option<bool>,
-    remove_hs: Option<bool>,
-    variant: Option<Mol2TypeInput>,
-    cleanup_substructures: Option<bool>,
+    params: crate::arguments::Argument<Option<PyRef<'_, crate::io_batch_params::Mol2ReadParams>>>,
+    sanitize: crate::arguments::Argument<Option<bool>>,
+    remove_hs: crate::arguments::Argument<Option<bool>>,
+    variant: crate::arguments::Argument<Option<Mol2TypeInput>>,
+    cleanup_substructures: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Molecule> {
-    if params.is_some()
-        && (sanitize.is_some()
-            || remove_hs.is_some()
-            || variant.is_some()
-            || cleanup_substructures.is_some())
-    {
-        return Err(pyo3::exceptions::PyTypeError::new_err(
-            "Params and keyword configuration are mutually exclusive",
-        ));
-    }
-    if sanitize.is_some()
-        || remove_hs.is_some()
-        || variant.is_some()
-        || cleanup_substructures.is_some()
-    {
+    let keyword_form = sanitize.is_supplied()
+        || remove_hs.is_supplied()
+        || variant.is_supplied()
+        || cleanup_substructures.is_supplied();
+    crate::arguments::configuration_arguments!(params; sanitize, remove_hs, variant, cleanup_substructures);
+    let params = params.as_deref();
+    if keyword_form {
         _mol_from_mol2_keywords(
             py,
             text,
@@ -350,7 +316,7 @@ pub fn _mol_from_mol2_params(
     text: &str,
     params: Option<&crate::io_batch_params::Mol2ReadParams>,
 ) -> PyResult<Molecule> {
-    Molecule::from_mol2(py, text, params, None, None, None, None)
+    Molecule::_io_from_mol2_params(py, text, params)
 }
 #[pyfunction]
 #[doc = r#"{"role":"overload","target":"mol_from_mol2"}"#]
@@ -363,10 +329,9 @@ pub fn _mol_from_mol2_keywords(
     variant: Option<Mol2TypeInput>,
     cleanup_substructures: Option<bool>,
 ) -> PyResult<Molecule> {
-    Molecule::from_mol2(
+    Molecule::_io_from_mol2_keywords(
         py,
         text,
-        None,
         sanitize,
         remove_hs,
         variant,

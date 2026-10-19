@@ -4,7 +4,7 @@ use crate::group_values::SubstanceGroup;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct TopologyBlock {
     owner: ck::Molecule,
 }

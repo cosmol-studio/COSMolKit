@@ -73,7 +73,7 @@ enum_value!(JsonErrorKind, {
     InvalidUtf16TrailSurrogate, UnknownEscape, InvalidUtf8
 });
 // Python keywords need binding-level identifier escaping, not stub rewrites.
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum MmjsonUnexpectedType {
     Null,
@@ -95,7 +95,7 @@ impl From<ck::MmjsonUnexpectedType> for MmjsonUnexpectedType {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct JsonError {
     inner: ck::JsonError,
 }

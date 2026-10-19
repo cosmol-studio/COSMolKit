@@ -9,7 +9,7 @@ use crate::topology_values::TopologyBlock;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct MoleculeBuilder {
     pub(crate) inner: ck::MoleculeBuilder,
 }

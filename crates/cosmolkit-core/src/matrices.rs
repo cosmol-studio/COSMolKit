@@ -65,7 +65,8 @@ pub struct TopologicalDistanceMatrixParams {
     pub active_bonds: Option<Vec<BondId>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct DistanceMatrix3dParams {
     pub conformer_id: Option<usize>,
     pub use_atom_weights: bool,

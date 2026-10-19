@@ -53,7 +53,7 @@ def test_batch_help_examples_match_return_and_error_behavior():
     assert original.num_atoms() == 3
     assert hydrogenated.num_atoms() == 9
 
-    fingerprints = batch.fingerprint_morgan_list(generator=ck.MorganParams(radius=2), n_jobs=1)
+    fingerprints = batch.fingerprint_morgan_list(generator=ck.MorganGeneratorParams(radius=2), n_jobs=1)
     assert len(fingerprints) == len(batch)
     assert fingerprints[0] is not None
     assert fingerprints[0].n_bits() == 2048

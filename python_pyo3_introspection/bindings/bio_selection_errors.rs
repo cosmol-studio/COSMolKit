@@ -33,7 +33,7 @@ error_projection!(BioSelectionCopyCause, BioSelectionCopyCauseKind, ck::BioSelec
 }, source = Source<Py<BioStructureError>, Py<BioRowTraverseError>>);
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioSelectionMatchError {
     inner: ck::BioSelectionMatchError,
 }
@@ -79,7 +79,7 @@ impl BioSelectionMatchError {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioSelectionCopyError {
     inner: ck::BioSelectionCopyError,
 }
@@ -102,7 +102,7 @@ impl BioSelectionCopyError {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum BioOperationErrorKind {
     Structure,
@@ -110,7 +110,7 @@ pub enum BioOperationErrorKind {
     Selection,
 }
 
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioOperationError {
     kind: BioOperationErrorKind,
     message: String,

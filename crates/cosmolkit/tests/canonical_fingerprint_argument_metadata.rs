@@ -1,13 +1,16 @@
 //! Proposal: pinned RDKit351f argument metadata and immutable public projection.
 #![cfg(feature = "cap-fingerprints")]
-use cosmolkit::{AtomPairParams, FingerprintJsonError, MorganParams, TopologicalTorsionParams};
+use cosmolkit::{
+    AtomPairGeneratorParams, FingerprintJsonError, MorganGeneratorParams,
+    TopologicalTorsionGeneratorParams,
+};
 use serde_json::{Value, json};
 
 #[test]
 fn default_source_info_and_complete_quoted_leaf_metadata() {
-    let m = MorganParams::default();
-    let a = AtomPairParams::default();
-    let t = TopologicalTorsionParams::default();
+    let m = MorganGeneratorParams::default();
+    let a = AtomPairGeneratorParams::default();
+    let t = TopologicalTorsionGeneratorParams::default();
     assert_eq!(
         m.info_string(),
         "MorganArguments onlyNonzeroInvariants=0 radius=3"
@@ -42,7 +45,7 @@ fn default_source_info_and_complete_quoted_leaf_metadata() {
 }
 #[test]
 fn omitted_morgan_policies_preserve_receiver_and_do_not_appear_in_source_json() {
-    let original = MorganParams {
+    let original = MorganGeneratorParams {
         use_bond_types: false,
         include_ring_membership: false,
         include_redundant_environments: true,
@@ -66,9 +69,11 @@ fn omitted_morgan_policies_preserve_receiver_and_do_not_appear_in_source_json() 
 #[test]
 fn common_update_and_absent_empty_bounds_have_source_semantics() {
     let full = r#"{"includeChirality":"true","countSimulation":false,"fpSize":"1000","numBitsPerFeature":3,"countBounds":[1,"3",7]}"#;
-    let m = MorganParams::default().with_json(full).unwrap();
-    let a = AtomPairParams::default().with_json(full).unwrap();
-    let t = TopologicalTorsionParams::default().with_json(full).unwrap();
+    let m = MorganGeneratorParams::default().with_json(full).unwrap();
+    let a = AtomPairGeneratorParams::default().with_json(full).unwrap();
+    let t = TopologicalTorsionGeneratorParams::default()
+        .with_json(full)
+        .unwrap();
     for (chi, sim, size, bits, bounds) in [
         (
             m.include_chirality,
@@ -100,21 +105,21 @@ fn common_update_and_absent_empty_bounds_have_source_semantics() {
     }
     for text in ["{}", r#"{"countBounds":[]}"#, r#"{"countBounds":""}"#] {
         assert!(
-            MorganParams::default()
+            MorganGeneratorParams::default()
                 .with_json(text)
                 .unwrap()
                 .count_bounds
                 .is_empty()
         );
         assert!(
-            AtomPairParams::default()
+            AtomPairGeneratorParams::default()
                 .with_json(text)
                 .unwrap()
                 .count_bounds
                 .is_empty()
         );
         assert!(
-            TopologicalTorsionParams::default()
+            TopologicalTorsionGeneratorParams::default()
                 .with_json(text)
                 .unwrap()
                 .count_bounds
@@ -123,34 +128,36 @@ fn common_update_and_absent_empty_bounds_have_source_semantics() {
     }
     for text in ["", "  \n\t"] {
         assert_eq!(
-            MorganParams::default().with_json(text).unwrap(),
-            MorganParams::default()
+            MorganGeneratorParams::default().with_json(text).unwrap(),
+            MorganGeneratorParams::default()
         );
         assert_eq!(
-            AtomPairParams::default().with_json(text).unwrap(),
-            AtomPairParams::default()
+            AtomPairGeneratorParams::default().with_json(text).unwrap(),
+            AtomPairGeneratorParams::default()
         );
         assert_eq!(
-            TopologicalTorsionParams::default().with_json(text).unwrap(),
-            TopologicalTorsionParams::default()
+            TopologicalTorsionGeneratorParams::default()
+                .with_json(text)
+                .unwrap(),
+            TopologicalTorsionGeneratorParams::default()
         );
     }
 }
 #[test]
 fn derived_updates_do_not_repeat_factory_preconditions() {
-    let a=AtomPairParams::default().with_json(r#"{"use2D":0,"minDistance":30,"maxDistance":1,"numBitsPerFeature":0,"countBounds":[]}"#).unwrap();
+    let a=AtomPairGeneratorParams::default().with_json(r#"{"use2D":0,"minDistance":30,"maxDistance":1,"numBitsPerFeature":0,"countBounds":[]}"#).unwrap();
     assert!(!a.use_2d);
     assert_eq!(a.min_distance, 30);
     assert_eq!(a.max_distance, 1);
     assert_eq!(a.bits_per_feature, 0);
     assert!(a.count_bounds.is_empty());
-    let t = TopologicalTorsionParams::default()
+    let t = TopologicalTorsionGeneratorParams::default()
         .with_json(r#"{"torsionAtomCount":"8","onlyShortestPaths":"true","numBitsPerFeature":0}"#)
         .unwrap();
     assert_eq!(t.torsion_atom_count, 8);
     assert!(t.only_shortest_paths);
     assert_eq!(t.bits_per_feature, 0);
-    let m = MorganParams::default()
+    let m = MorganGeneratorParams::default()
         .with_json(r#"{"countSimulation":true,"countBounds":[],"numBitsPerFeature":0}"#)
         .unwrap();
     assert!(m.count_simulation);
@@ -159,9 +166,9 @@ fn derived_updates_do_not_repeat_factory_preconditions() {
 }
 #[test]
 fn failure_keeps_original_input_and_has_structured_source_error() {
-    let m = MorganParams::default();
-    let a = AtomPairParams::default();
-    let t = TopologicalTorsionParams::default();
+    let m = MorganGeneratorParams::default();
+    let a = AtomPairGeneratorParams::default();
+    let t = TopologicalTorsionGeneratorParams::default();
     // Original v9 error inputs retained, corrected by actual pinned Boost helper.
     for text in [
         "[1]",
@@ -235,9 +242,9 @@ fn failure_keeps_original_input_and_has_structured_source_error() {
         .unwrap();
     assert_eq!(updated.torsion_atom_count, 7);
     assert!(!updated.only_shortest_paths);
-    assert_eq!(m, MorganParams::default());
-    assert_eq!(a, AtomPairParams::default());
-    assert_eq!(t, TopologicalTorsionParams::default());
+    assert_eq!(m, MorganGeneratorParams::default());
+    assert_eq!(a, AtomPairGeneratorParams::default());
+    assert_eq!(t, TopologicalTorsionGeneratorParams::default());
 }
 
 #[test]
@@ -252,9 +259,15 @@ fn independent_p1_seven_source_conditions_preserve_first_keys_and_arbitrary_chil
         (r#"{"fpSize":1,"fpSize":2}"#, 1, vec![]),
     ] {
         let values = [
-            MorganParams::default().with_json(text).unwrap().to_json(),
-            AtomPairParams::default().with_json(text).unwrap().to_json(),
-            TopologicalTorsionParams::default()
+            MorganGeneratorParams::default()
+                .with_json(text)
+                .unwrap()
+                .to_json(),
+            AtomPairGeneratorParams::default()
+                .with_json(text)
+                .unwrap()
+                .to_json(),
+            TopologicalTorsionGeneratorParams::default()
                 .with_json(text)
                 .unwrap()
                 .to_json(),
@@ -271,7 +284,7 @@ fn independent_p1_seven_source_conditions_preserve_first_keys_and_arbitrary_chil
             assert_eq!(value["countBounds"], expected);
         }
     }
-    let m = MorganParams {
+    let m = MorganGeneratorParams {
         fp_size: 19,
         include_chirality: true,
         ..Default::default()
@@ -288,7 +301,7 @@ fn source_lexical_numbers_and_boolean_stream_retry_are_not_json_normalized() {
         r#"{"fpSize":1e0,"includeChirality":1e0}"#,
         r#"{"fpSize":1.0,"includeChirality":1.0}"#,
     ] {
-        let m = MorganParams::default().with_json(text).unwrap();
+        let m = MorganGeneratorParams::default().with_json(text).unwrap();
         assert_eq!(m.fp_size, 2048);
         assert!(!m.include_chirality);
     }
@@ -304,19 +317,21 @@ fn source_lexical_numbers_and_boolean_stream_retry_are_not_json_normalized() {
         ("-0", false),
     ] {
         let encoded = json!({"includeChirality":text}).to_string();
-        let m = MorganParams::default().with_json(&encoded).unwrap();
+        let m = MorganGeneratorParams::default()
+            .with_json(&encoded)
+            .unwrap();
         assert_eq!(m.include_chirality, flag, "{text}");
     }
     for text in ["[1]", "true", "null", "1"] {
         assert!(
-            MorganParams::default()
+            MorganGeneratorParams::default()
                 .with_json(text)
                 .unwrap()
                 .count_bounds
                 .is_empty()
         );
     }
-    let m = MorganParams::default()
+    let m = MorganGeneratorParams::default()
         .with_json(r#"{"fpSize":"-4294967295","countBounds":["+1","-4294967295",-1]}"#)
         .unwrap();
     assert_eq!(m.fp_size, 1);

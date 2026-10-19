@@ -45,4 +45,6 @@ pub use numeric::EmbedSeedError;
 
 mod public_bounds;
 #[doc(hidden)]
+pub use params::__configuration_EmbedParams;
+#[doc(hidden)]
 pub use public_bounds::{BoundsQueryError, dg_bounds_matrix};

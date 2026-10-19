@@ -466,7 +466,7 @@ fn selected_public_methods_are_available() {
     }
     #[cfg(feature = "cap-fingerprints")]
     {
-        let _: cosmolkit::MorganParams = cosmolkit::MorganParams::default();
+        let _: cosmolkit::MorganGeneratorParams = cosmolkit::MorganGeneratorParams::default();
         let _: cosmolkit::MorganFingerprintParams = cosmolkit::MorganFingerprintParams::default();
         let _ = [
             cosmolkit::MorganInvariants::Connectivity,

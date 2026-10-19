@@ -4,7 +4,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct Utf8Error {
     inner: std::str::Utf8Error,
 }
@@ -38,7 +38,7 @@ impl Utf8Error {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module = "fixed_projection._native", extends=PyValueError)]
+#[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct FromUtf8Error {
     inner: std::string::FromUtf8Error,
 }

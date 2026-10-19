@@ -11,13 +11,16 @@ typed_callback!(
     }
 );
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct BatchQueryParams {
     inner: ck::BatchQueryParams,
     progress_callback: Option<ProgressCallback>,
 }
-#[pymethods]
-impl BatchQueryParams {
+macro_rules! batch_query_configuration {
+    ($($field:ident: $ty:ty),+ $(,)?) => {
+    paste::paste! {
+    #[pymethods]
+    impl BatchQueryParams {
     fn __traverse__(&self, visit: pyo3::gc::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
         if let Some(callback) = &self.progress_callback {
             callback.traverse(&visit)?;
@@ -28,37 +31,21 @@ impl BatchQueryParams {
         self.progress_callback = None;
     }
     #[new]
-    #[pyo3(signature=(*, n_jobs=None, progress_bar=None, progress_callback=None))]
+    #[pyo3(signature=(*, $($field=ck::BatchQueryParams::default().$field,)+ progress_callback=None))]
     fn new(
-        n_jobs: Option<usize>,
-        progress_bar: Option<bool>,
+        $($field: $ty,)+
         progress_callback: Option<ProgressCallback>,
     ) -> Self {
         Self {
             inner: ck::BatchQueryParams {
-                n_jobs,
-                progress_bar,
+                $($field,)+
                 progress_callback: None,
             },
             progress_callback,
         }
     }
-    #[getter]
-    fn n_jobs(&self) -> Option<usize> {
-        self.inner.n_jobs
-    }
-    #[setter]
-    fn set_n_jobs(&mut self, value: Option<usize>) {
-        self.inner.n_jobs = value;
-    }
-    #[getter]
-    fn progress_bar(&self) -> Option<bool> {
-        self.inner.progress_bar
-    }
-    #[setter]
-    fn set_progress_bar(&mut self, value: Option<bool>) {
-        self.inner.progress_bar = value;
-    }
+    $(#[getter] fn $field(&self) -> $ty { self.inner.$field }
+    #[setter] fn [<set_ $field>](&mut self, value: $ty) { self.inner.$field = value; })+
     #[getter]
     fn progress_callback(&self, py: Python<'_>) -> Option<ProgressCallback> {
         self.progress_callback
@@ -69,7 +56,11 @@ impl BatchQueryParams {
     fn set_progress_callback(&mut self, value: Option<ProgressCallback>) {
         self.progress_callback = value;
     }
+    }
+    }
+    };
 }
+ck::project_configuration!(ck::BatchQueryParams, using batch_query_configuration);
 impl BatchQueryParams {
     pub(crate) fn with_callback<T: Send, E: Send>(
         &self,

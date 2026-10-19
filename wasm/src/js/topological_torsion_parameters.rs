@@ -7,12 +7,12 @@ use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
-pub struct TopologicalTorsionParams {
-    pub(crate) inner: ck::TopologicalTorsionParams,
+pub struct TopologicalTorsionGeneratorParams {
+    pub(crate) inner: ck::TopologicalTorsionGeneratorParams,
 }
 #[cosmolkit_wasm::javascript_options("TopologicalTorsionParamsOptions")]
 #[wasm_bindgen]
-impl TopologicalTorsionParams {
+impl TopologicalTorsionGeneratorParams {
     #[wasm_bindgen(constructor)]
     pub fn construct(
         #[wasm_bindgen(unchecked_optional_param_type = "number")] torsion_atom_count: JsValue,
@@ -43,8 +43,8 @@ impl TopologicalTorsionParams {
         bits_per_feature: JsValue,
         count_bounds: JsValue,
     ) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: inner: ck::TopologicalTorsionParams {
-        let mut inner = ck::TopologicalTorsionParams::default();
+        // COSMolKit❗✔️: inner: ck::TopologicalTorsionGeneratorParams {
+        let mut inner = ck::TopologicalTorsionGeneratorParams::default();
         if !torsion_atom_count.is_undefined() {
             inner.torsion_atom_count = u32_value(&torsion_atom_count, "torsionAtomCount")?;
         }
@@ -116,7 +116,7 @@ extern "C" {
     #[wasm_bindgen(catch,js_name=visitTorsionParams)]
     fn visit_params(
         value: &JsValue,
-        visit: &mut dyn FnMut(&TopologicalTorsionParams),
+        visit: &mut dyn FnMut(&TopologicalTorsionGeneratorParams),
     ) -> Result<(), JsValue>;
     #[wasm_bindgen(catch,js_name=visitTorsionInvariants)]
     fn visit_invariants(
@@ -133,7 +133,7 @@ pub struct TopologicalTorsionFingerprintParams {
 impl TopologicalTorsionFingerprintParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionParams | null")]
+        #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionGeneratorParams | null")]
         generator: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type="number[] | Uint32Array | null")] from_atoms: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
@@ -151,7 +151,7 @@ impl TopologicalTorsionFingerprintParams {
         let mut inner = ck::TopologicalTorsionFingerprintParams::default();
         if !generator.is_null() && !generator.is_undefined() {
             let mut copied = None;
-            visit_params(&generator, &mut |value: &TopologicalTorsionParams| {
+            visit_params(&generator, &mut |value: &TopologicalTorsionGeneratorParams| {
                 copied = Some(value.inner.clone())
             })?;
             inner.generator = copied.ok_or_else(|| type_error("generator"))?;
@@ -180,8 +180,8 @@ impl TopologicalTorsionFingerprintParams {
         Ok(Self { inner })
     }
     #[wasm_bindgen(getter)]
-    pub fn generator(&self) -> TopologicalTorsionParams {
-        TopologicalTorsionParams {
+    pub fn generator(&self) -> TopologicalTorsionGeneratorParams {
+        TopologicalTorsionGeneratorParams {
             inner: self.inner.generator.clone(),
         }
     }
@@ -402,7 +402,7 @@ impl LegacyTopologicalTorsionParams {
 }
 
 #[wasm_bindgen]
-impl TopologicalTorsionParams {
+impl TopologicalTorsionGeneratorParams {
     #[wasm_bindgen(js_name=infoString)]
     pub fn info_string(&self) -> String {
         self.inner.info_string()

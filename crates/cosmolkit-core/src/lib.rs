@@ -338,3 +338,34 @@ pub use wedge::pick_query_bonds_to_wedge_source;
 
 #[doc(hidden)]
 pub use property_numeric::{PropertyULongReadError, property_value_to_ulong};
+
+#[doc(hidden)]
+pub use coordinate_input::__configuration_Coordinate3DInputParams;
+#[doc(hidden)]
+pub use coordinate_input::__configuration_Replace3DCoordinatesParams;
+#[doc(hidden)]
+pub use hydrogens::__configuration_RemoveHsParams;
+#[doc(hidden)]
+pub use kekulize::__configuration_KekulizeParams;
+#[doc(hidden)]
+pub use matrices::__configuration_DistanceMatrix3dParams;
+#[doc(hidden)]
+pub use potential_stereo::__configuration_PotentialStereoParams;
+#[doc(hidden)]
+pub use rings::__configuration_RingSearchParams;
+#[doc(hidden)]
+pub use structure_tags::__configuration_StructureTagParams;
+#[doc(hidden)]
+pub use transforms::__configuration_AtomPositionParams;
+
+#[doc(hidden)]
+pub use hydrogens::__configuration_AddHsParams;
+
+#[doc(hidden)]
+pub use aromaticity::__configuration_AromaticityParams;
+#[doc(hidden)]
+pub use coordinate_input::__configuration_Coordinate2DInputParams;
+#[doc(hidden)]
+pub use sanitize::__configuration_SanitizeParams;
+#[doc(hidden)]
+pub use valence::__configuration_ValenceParams;

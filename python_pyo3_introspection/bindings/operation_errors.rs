@@ -87,7 +87,7 @@ fn project_operation_source(inner: &RetainedError<ck::OperationError>) -> Option
         _ => unreachable!("native OperationError::source and projection disagree"),
     })
 }
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum MoleculeOpOutput {
     Single = ck::MoleculeOpOutput::Single as isize,
@@ -104,7 +104,7 @@ impl From<ck::MoleculeOpOutput> for MoleculeOpOutput {
     }
 }
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct UnsupportedFeatureError {
     owner: RetainedError<ck::OperationError>,
 }
@@ -127,7 +127,7 @@ impl UnsupportedFeatureError {
 }
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct OperationDerivedState {
     owner: RetainedError<ck::OperationError>,
 }
@@ -176,7 +176,7 @@ impl OperationDerivedState {
 }
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct OperationSemanticPreconditions {
     owner: RetainedError<ck::OperationError>,
 }
@@ -211,7 +211,7 @@ impl OperationSemanticPreconditions {
 }
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct OperationCipStatePolicy {
     owner: RetainedError<ck::OperationError>,
 }
@@ -242,7 +242,7 @@ impl OperationCipStatePolicy {
 }
 
 #[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct OperationMappingRequirement {
     owner: RetainedError<ck::OperationError>,
 }

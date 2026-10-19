@@ -490,7 +490,7 @@ pub fn compile_query_fixture(smarts: &str) -> Result<QueryGraph, String> {
 /// RDKit✔️✔️:   bool debugParse = false;
 /// RDKit✔️✔️:   std::map<std::string, std::string> replacements;
 /// RDKit✔️✔️: };
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, cosmolkit_macros::Configuration)]
 pub struct SmartsParseParams {
     pub allow_cxsmiles: bool,
     pub strict_cxsmiles: bool,
@@ -498,6 +498,7 @@ pub struct SmartsParseParams {
     pub merge_hs: bool,
     pub skip_cleanup: bool,
     pub debug_parse: bool,
+    #[configuration(none_default)]
     pub replacements: BTreeMap<PropertyText, PropertyText>,
 }
 

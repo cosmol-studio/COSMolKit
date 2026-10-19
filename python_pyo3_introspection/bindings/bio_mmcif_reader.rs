@@ -331,7 +331,7 @@ type MmcifReadSource = Source<
     >,
 >;
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct BioMmcifReadError {
     inner: RetainedError<ck::BioMmcifReadError>,
 }
@@ -383,7 +383,7 @@ pub fn bio_from_mmcif(py: Python<'_>, text: &str) -> PyResult<BioStructure> {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct MissingAtomSiteIdentityField {
     inner: RetainedError<ck::MissingAtomSiteIdentityField>,
 }
@@ -419,7 +419,7 @@ impl MissingAtomSiteIdentityField {
 }
 
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native",extends=PyValueError)]
+#[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct MmcifAtomSiteRowOutOfBounds {
     inner: RetainedError<ck::MmcifAtomSiteRowOutOfBounds>,
 }

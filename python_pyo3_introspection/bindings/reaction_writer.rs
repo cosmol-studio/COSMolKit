@@ -26,17 +26,22 @@ pub(crate) fn keywords(
     include_cx: Option<bool>,
     cx_fields: Option<crate::notation_params::CxSmilesFieldsInput>,
     coordinate_selections: Option<Vec<crate::construction_values::ReactionCoordinateSelection>>,
-) -> PyResult<crate::search_reaction_params::ReactionWriteParams> {
+) -> PyResult<ck::ReactionWriteParams> {
     let defaults = ck::ReactionWriteParams::default();
-    crate::search_reaction_params::ReactionWriteParams::new(
-        canonical.unwrap_or(defaults.canonical),
-        isomeric_smiles.unwrap_or(defaults.isomeric_smiles),
+    Ok(ck::ReactionWriteParams {
+        canonical: canonical.unwrap_or(defaults.canonical),
+        isomeric_smiles: isomeric_smiles.unwrap_or(defaults.isomeric_smiles),
         rooted_at_atom,
-        include_dative_bonds.unwrap_or(defaults.include_dative_bonds),
-        include_cx.unwrap_or(defaults.include_cx),
-        cx_fields,
-        coordinate_selections,
-    )
+        include_dative_bonds: include_dative_bonds.unwrap_or(defaults.include_dative_bonds),
+        include_cx: include_cx.unwrap_or(defaults.include_cx),
+        cx_fields: cx_fields
+            .map(|value| value.into_rust())
+            .transpose()?
+            .unwrap_or(defaults.cx_fields),
+        coordinate_selections: coordinate_selections
+            .map(|values| values.into_iter().map(|value| value.inner).collect())
+            .unwrap_or(defaults.coordinate_selections),
+    })
 }
 
 #[cfg(test)]
@@ -62,9 +67,7 @@ mod tests {
             };
             let params = Py::new(
                 py,
-                crate::search_reaction_params::ReactionWriteParams {
-                    inner: config.clone(),
-                },
+                crate::search_reaction_params::ReactionWriteParams::from_rust(py, config.clone())?,
             )?;
             let kw = PyDict::new(py);
             kw.set_item("canonical", true)?;

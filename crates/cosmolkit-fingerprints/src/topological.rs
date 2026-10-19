@@ -66,7 +66,7 @@ impl From<cosmolkit_model::QueryGraphError> for TopologicalFingerprintError {
         Self::Query(e)
     }
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 pub struct TopologicalFingerprintParams {
     pub min_path: u32,
     pub max_path: u32,
@@ -148,7 +148,8 @@ impl TopologicalFingerprintParams {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct TopologicalFingerprintOutputRequest {
     pub atom_bits: bool,
     pub bit_info: bool,

@@ -75,17 +75,36 @@ pub(crate) fn keywords(
     max_products: Option<u32>,
     coordinate_selections: Option<Vec<crate::construction_values::ReactionCoordinateSelection>>,
     copy_atom_properties: Option<bool>,
-) -> crate::optional_configuration::ReactionRunParams {
+) -> ck::ReactionRunParams {
     let defaults = ck::ReactionRunParams::default();
-    crate::optional_configuration::ReactionRunParams {
-        inner: ck::ReactionRunParams {
-            max_products: max_products.unwrap_or(defaults.max_products),
-            coordinate_selections: coordinate_selections
-                .map(|values| values.into_iter().map(|value| value.inner).collect())
-                .unwrap_or(defaults.coordinate_selections),
-            copy_atom_properties: copy_atom_properties.unwrap_or(defaults.copy_atom_properties),
-        },
+    ck::ReactionRunParams {
+        max_products: max_products.unwrap_or(defaults.max_products),
+        coordinate_selections: coordinate_selections
+            .map(|values| values.into_iter().map(|value| value.inner).collect())
+            .unwrap_or(defaults.coordinate_selections),
+        copy_atom_properties: copy_atom_properties.unwrap_or(defaults.copy_atom_properties),
     }
+}
+
+pub(crate) fn run_from_inputs(
+    molecule: &Molecule,
+    reaction: &mut Reaction,
+    py: Python<'_>,
+    targets: &[Py<Molecule>],
+    params: &ck::ReactionRunParams,
+) -> PyResult<Vec<Vec<Molecule>>> {
+    let owners = targets
+        .iter()
+        .map(|value| value.try_borrow(py))
+        .collect::<Result<Vec<_>, _>>()?;
+    let inputs = owners.iter().map(|value| &value.inner).collect::<Vec<_>>();
+    reaction
+        .invoke(py, &inputs, |reaction| {
+            molecule
+                .inner
+                .reaction_products_from_inputs(reaction, &inputs, params)
+        })
+        .map(products)
 }
 
 #[cfg(test)]

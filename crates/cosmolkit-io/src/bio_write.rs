@@ -24,43 +24,77 @@ use crate::cif::CifReadError;
 ///
 /// The default enables every category and `group_pdb`; `auth_all` is false.
 /// Switches are flattened into this single IO-owned parameter value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct BioMmcifWriteParams {
+    #[configuration(none_default)]
     pub atoms: bool,
+    #[configuration(none_default)]
     pub block_name: bool,
+    #[configuration(none_default)]
     pub entry: bool,
+    #[configuration(none_default)]
     pub database_status: bool,
+    #[configuration(none_default)]
     pub author: bool,
+    #[configuration(none_default)]
     pub cell: bool,
+    #[configuration(none_default)]
     pub symmetry: bool,
+    #[configuration(none_default)]
     pub entity: bool,
+    #[configuration(none_default)]
     pub entity_poly: bool,
+    #[configuration(none_default)]
     pub struct_ref: bool,
+    #[configuration(none_default)]
     pub chem_comp: bool,
+    #[configuration(none_default)]
     pub exptl: bool,
+    #[configuration(none_default)]
     pub diffrn: bool,
+    #[configuration(none_default)]
     pub reflns: bool,
+    #[configuration(none_default)]
     pub refine: bool,
+    #[configuration(none_default)]
     pub title_keywords: bool,
+    #[configuration(none_default)]
     pub ncs: bool,
+    #[configuration(none_default)]
     pub struct_asym: bool,
+    #[configuration(none_default)]
     pub origx: bool,
+    #[configuration(none_default)]
     pub struct_conf: bool,
+    #[configuration(none_default)]
     pub struct_sheet: bool,
+    #[configuration(none_default)]
     pub struct_biol: bool,
+    #[configuration(none_default)]
     pub assembly: bool,
+    #[configuration(none_default)]
     pub conn: bool,
+    #[configuration(none_default)]
     pub cis: bool,
+    #[configuration(none_default)]
     pub modres: bool,
+    #[configuration(none_default)]
     pub scale: bool,
+    #[configuration(none_default)]
     pub atom_type: bool,
+    #[configuration(none_default)]
     pub entity_poly_seq: bool,
+    #[configuration(none_default)]
     pub tls: bool,
+    #[configuration(none_default)]
     pub software: bool,
 
     /// Emit the `_atom_site.group_PDB` column (ATOM/HETATM records).
+    #[configuration(none_default)]
     pub group_pdb: bool,
     /// Emit `_atom_site.auth_atom_id`/`auth_comp_id` in addition to label ids.
+    #[configuration(none_default)]
     pub auth_all: bool,
     /// Write single-row loops as tag/value pairs.
     pub prefer_pairs: bool,

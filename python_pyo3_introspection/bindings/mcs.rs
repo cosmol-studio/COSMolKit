@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct McsResult {
     pub(crate) inner: Arc<ck::McsResult>,
 }

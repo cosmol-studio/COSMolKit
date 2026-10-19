@@ -13,12 +13,12 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use std::error::Error;
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum PropertyStringErrorKind {
     UnsupportedKind,
 }
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct PropertyStringError {
     inner: ck::PropertyStringError,
 }
@@ -63,13 +63,13 @@ pub fn property_value_to_text(py: Python<'_>, value: &PropertyValue) -> PyResult
     decode_source_text(py, &native)
 }
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum RequiredPropertyStringErrorKind {
     Missing,
     Conversion,
 }
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct RequiredPropertyStringError {
     inner: ck::RequiredPropertyStringError,
 }

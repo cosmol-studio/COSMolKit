@@ -43,7 +43,7 @@ enum_input!(BioCalcFlagInput, BioCalcFlag);
 enum_input!(EntityKindInput, EntityKind);
 enum_input!(PolymerKindInput, PolymerKind);
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone, Copy)]
 pub struct BioSiftsUnpResidue {
     pub(crate) inner: ck::BioSiftsUnpResidue,
@@ -68,7 +68,7 @@ impl BioSiftsUnpResidue {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioEntityDbRef {
     pub(crate) inner: ck::BioEntityDbRef,
@@ -162,7 +162,7 @@ impl BioEntityDbRef {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioEntityRow {
     pub(crate) inner: ck::BioEntityRow,
@@ -230,7 +230,7 @@ impl BioEntityRow {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioResidueRow {
     pub(crate) inner: ck::BioResidueRow,
@@ -307,7 +307,7 @@ impl BioResidueRow {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct BioAtomRow {
     pub(crate) inner: ck::BioAtomRow,

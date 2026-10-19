@@ -65,14 +65,14 @@ mod tests {
  let kw=PyDict::new(py);kw.set_item("max_recursive_iterations",config.max_recursive_iterations())?;
  let expected=native.with_cip_labels().unwrap().to_binary().unwrap();
  let configured=native.with_cip_labels_with_options(&config).unwrap().to_binary().unwrap();
- cases.append(("with_cip_labels","assign_cip_labels_","with_cip_labels_with_options","assign_cip_labels_with_options_",Py::new(py,crate::numerical_params::CipLabelOptions{inner:config})?,kw,expected,configured))?;
+ cases.append(("with_cip_labels","assign_cip_labels_","with_cip_labels_with_options","assign_cip_labels_with_options_",Py::new(py,crate::numerical_params::CipLabelOptions::from_rust(py, config)?)?,kw,expected,configured))?;
 }
 {
  let config=ck::AddHsParams {only_on_atoms:Some(vec![]),..Default::default()};
  let kw=PyDict::new(py);kw.set_item("only_on_atoms",Vec::<usize>::new())?;
  let expected=native.with_hydrogens().unwrap().to_binary().unwrap();
  let configured=native.with_hydrogens_with_params(&config).unwrap().to_binary().unwrap();
- cases.append(("with_hydrogens","add_hydrogens_","with_hydrogens_with_params","add_hydrogens_with_params_",Py::new(py,crate::chemical_params::AddHsParams{inner:config})?,kw,expected,configured))?;
+ cases.append(("with_hydrogens","add_hydrogens_","with_hydrogens_with_params","add_hydrogens_with_params_",Py::new(py,crate::chemical_params::AddHsParams::from_rust(py, config)?)?,kw,expected,configured))?;
 }
 {
  let config=ck::RemoveHsParams::default();
@@ -275,18 +275,16 @@ pub(crate) fn hydrogens(
     add_residue_info: Option<bool>,
     skip_queries: Option<bool>,
     only_on_atoms: Option<Vec<usize>>,
-) -> PyResult<crate::chemical_params::AddHsParams> {
+) -> PyResult<ck::AddHsParams> {
     let defaults = ck::AddHsParams::default();
-    Ok(crate::chemical_params::AddHsParams {
-        inner: ck::AddHsParams {
-            explicit_only: explicit_only.unwrap_or(defaults.explicit_only),
-            add_coords: add_coords.unwrap_or(defaults.add_coords),
-            add_residue_info: add_residue_info.unwrap_or(defaults.add_residue_info),
-            skip_queries: skip_queries.unwrap_or(defaults.skip_queries),
-            only_on_atoms: only_on_atoms
-                .map(|atoms| atoms.into_iter().map(ck::AtomId::new).collect())
-                .or(defaults.only_on_atoms),
-        },
+    Ok(ck::AddHsParams {
+        explicit_only: explicit_only.unwrap_or(defaults.explicit_only),
+        add_coords: add_coords.unwrap_or(defaults.add_coords),
+        add_residue_info: add_residue_info.unwrap_or(defaults.add_residue_info),
+        skip_queries: skip_queries.unwrap_or(defaults.skip_queries),
+        only_on_atoms: only_on_atoms
+            .map(|atoms| atoms.into_iter().map(ck::AtomId::new).collect())
+            .or(defaults.only_on_atoms),
     })
 }
 pub(crate) fn remove_hydrogens(
@@ -341,7 +339,7 @@ pub(crate) fn cip(
     atoms: Option<Vec<usize>>,
     bonds: Option<Vec<usize>>,
     max_recursive_iterations: Option<u32>,
-) -> PyResult<crate::numerical_params::CipLabelOptions> {
+) -> PyResult<ck::CipLabelOptions> {
     let defaults = ck::CipLabelOptions::default();
     let mut inner = defaults.with_max_recursive_iterations(
         max_recursive_iterations
@@ -353,20 +351,18 @@ pub(crate) fn cip(
     if let Some(bonds) = bonds {
         inner = inner.with_bonds(bonds.into_iter().map(ck::BondId::new));
     }
-    Ok(crate::numerical_params::CipLabelOptions { inner })
+    Ok(inner)
 }
 pub(crate) fn tautomer_score(
     py: Python<'_>,
     terms: Option<Vec<Py<crate::tautomer_values::TautomerScoreTerm>>>,
-) -> PyResult<crate::tautomer_values::TautomerScoreParams> {
-    Ok(crate::tautomer_values::TautomerScoreParams {
-        inner: ck::TautomerScoreParams {
-            terms: terms.map(|terms| {
-                terms
-                    .iter()
-                    .map(|term| term.borrow(py).inner.clone())
-                    .collect()
-            }),
-        },
+) -> PyResult<ck::TautomerScoreParams> {
+    Ok(ck::TautomerScoreParams {
+        terms: terms.map(|terms| {
+            terms
+                .iter()
+                .map(|term| term.borrow(py).inner.clone())
+                .collect()
+        }),
     })
 }

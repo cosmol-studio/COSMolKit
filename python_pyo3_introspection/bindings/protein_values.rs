@@ -58,7 +58,7 @@ mod error_tests {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+#[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
 pub struct ProteinSelectionSummary {
     inner: ck::ProteinSelectionSummary,
@@ -79,7 +79,7 @@ impl ProteinSelectionSummary {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", from_py_object)]
+#[pyclass(module = "cosmolkit", from_py_object)]
 #[derive(Clone)]
 pub struct Protein {
     pub(crate) inner: Arc<ck::Protein>,
@@ -87,28 +87,25 @@ pub struct Protein {
 #[pymethods]
 impl Protein {
     #[staticmethod]
-    #[pyo3(signature=(text, params=None, *, max_line_length=None, check_non_ascii=None, ignore_ter=None, split_chain_on_ter=None, skip_remarks=None))]
+    #[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, max_line_length=crate::arguments::Argument::Missing, check_non_ascii=crate::arguments::Argument::Missing, ignore_ter=crate::arguments::Argument::Missing, split_chain_on_ter=crate::arguments::Argument::Missing, skip_remarks=crate::arguments::Argument::Missing))]
     fn from_pdb(
         py: Python<'_>,
         text: &str,
-        params: Option<&crate::params::BioPdbReadParams>,
-        max_line_length: Option<i32>,
-        check_non_ascii: Option<bool>,
-        ignore_ter: Option<bool>,
-        split_chain_on_ter: Option<bool>,
-        skip_remarks: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioPdbReadParams>>>,
+        max_line_length: crate::arguments::Argument<Option<i32>>,
+        check_non_ascii: crate::arguments::Argument<Option<bool>>,
+        ignore_ter: crate::arguments::Argument<Option<bool>>,
+        split_chain_on_ter: crate::arguments::Argument<Option<bool>>,
+        skip_remarks: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<Self> {
-        let configured = max_line_length.is_some()
-            || check_non_ascii.is_some()
-            || ignore_ter.is_some()
-            || split_chain_on_ter.is_some()
-            || skip_remarks.is_some();
-        if params.is_some() && configured {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keyword configuration are mutually exclusive",
-            ));
-        }
-        if configured {
+        let keyword_form = max_line_length.is_supplied()
+            || check_non_ascii.is_supplied()
+            || ignore_ter.is_supplied()
+            || split_chain_on_ter.is_supplied()
+            || skip_remarks.is_supplied();
+        crate::arguments::configuration_arguments!(params; max_line_length, check_non_ascii, ignore_ter, split_chain_on_ter, skip_remarks);
+        let params = params.as_deref();
+        if keyword_form {
             Self::_from_pdb_keywords(
                 py,
                 text,
@@ -163,20 +160,18 @@ impl Protein {
         Self::_from_pdb_params(py, text, Some(params))
     }
     #[staticmethod]
-    #[pyo3(signature=(text, params=None, *, format=None, source_name=None))]
+    #[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, format=crate::arguments::Argument::Missing, source_name=crate::arguments::Argument::Missing))]
     fn from_text(
         py: Python<'_>,
         text: &str,
-        params: Option<&crate::bio_values::BioReadParams>,
-        format: Option<crate::bio_values::BioCoordinateFormatInput>,
-        source_name: Option<String>,
+        params: crate::arguments::Argument<Option<PyRef<'_, crate::bio_values::BioReadParams>>>,
+        format: crate::arguments::Argument<Option<crate::bio_values::BioCoordinateFormatInput>>,
+        source_name: crate::arguments::Argument<Option<String>>,
     ) -> PyResult<Self> {
-        if params.is_some() && (format.is_some() || source_name.is_some()) {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keyword configuration are mutually exclusive",
-            ));
-        }
-        if format.is_some() || source_name.is_some() {
+        let keyword_form = format.is_supplied() || source_name.is_supplied();
+        crate::arguments::configuration_arguments!(params; format, source_name);
+        let params = params.as_deref();
+        if keyword_form {
             Self::_from_text_keywords(py, text, format, source_name)
         } else {
             Self::_from_text_params(py, text, params)
@@ -250,26 +245,23 @@ impl Protein {
     fn from_mmcif(py: Python<'_>, text: &str) -> PyResult<Self> {
         crate::bio_reader_calls::protein_from_mmcif(py, text)
     }
-    #[pyo3(signature=(params=None, *, sanitize=None, remove_hs=None, flavor=None, proximity_bonding=None))]
+    #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, sanitize=crate::arguments::Argument::Missing, remove_hs=crate::arguments::Argument::Missing, flavor=crate::arguments::Argument::Missing, proximity_bonding=crate::arguments::Argument::Missing))]
     fn to_molecule(
         &self,
         py: Python<'_>,
-        params: Option<&crate::params::BioMoleculeParams>,
-        sanitize: Option<bool>,
-        remove_hs: Option<bool>,
-        flavor: Option<u32>,
-        proximity_bonding: Option<bool>,
+        params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>,
+        sanitize: crate::arguments::Argument<Option<bool>>,
+        remove_hs: crate::arguments::Argument<Option<bool>>,
+        flavor: crate::arguments::Argument<Option<u32>>,
+        proximity_bonding: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<crate::native::Molecule> {
-        let configured = sanitize.is_some()
-            || remove_hs.is_some()
-            || flavor.is_some()
-            || proximity_bonding.is_some();
-        if params.is_some() && configured {
-            return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and keyword configuration are mutually exclusive",
-            ));
-        }
-        if configured {
+        let keyword_form = sanitize.is_supplied()
+            || remove_hs.is_supplied()
+            || flavor.is_supplied()
+            || proximity_bonding.is_supplied();
+        crate::arguments::configuration_arguments!(params; sanitize, remove_hs, flavor, proximity_bonding);
+        let params = params.as_deref();
+        if keyword_form {
             self._to_molecule_keywords(py, sanitize, remove_hs, flavor, proximity_bonding)
         } else {
             self._to_molecule_params(py, params)
@@ -427,7 +419,7 @@ impl Protein {
 // lifetime extension, duplicated hierarchy storage or chemistry is needed.
 macro_rules! owned_view {
     ($name:ident, $rust:ident, $iter:ident) => {
-        #[pyclass(module = "fixed_projection._native", frozen, from_py_object)]
+        #[pyclass(module = "cosmolkit", frozen, from_py_object)]
         #[derive(Clone)]
         pub struct $name {
             owner: Arc<ck::Protein>,

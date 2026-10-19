@@ -29,23 +29,45 @@ pub(crate) fn layout(
     force_rdkit: Option<bool>,
     use_ring_templates: Option<bool>,
     use_path_angle_expansion: Option<bool>,
-) -> Coordinate2DParams {
+) -> ck::Coordinate2DParams {
     let defaults = ck::Coordinate2DParams::default();
-    Coordinate2DParams {
-        inner: ck::Coordinate2DParams {
-            coordinate_map: coordinate_map.unwrap_or(defaults.coordinate_map),
-            canonical_orientation: canonical_orientation.unwrap_or(defaults.canonical_orientation),
-            clear_existing_2d: clear_existing_2d.unwrap_or(defaults.clear_existing_2d),
-            flips_per_sample: flips_per_sample.unwrap_or(defaults.flips_per_sample),
-            samples: samples.unwrap_or(defaults.samples),
-            sample_seed: sample_seed.unwrap_or(defaults.sample_seed),
-            permute_degree_four: permute_degree_four.unwrap_or(defaults.permute_degree_four),
-            force_rdkit: force_rdkit.unwrap_or(defaults.force_rdkit),
-            use_ring_templates: use_ring_templates.unwrap_or(defaults.use_ring_templates),
-            use_path_angle_expansion: use_path_angle_expansion
-                .unwrap_or(defaults.use_path_angle_expansion),
-        },
+    ck::Coordinate2DParams {
+        coordinate_map: coordinate_map.unwrap_or(defaults.coordinate_map),
+        canonical_orientation: canonical_orientation.unwrap_or(defaults.canonical_orientation),
+        clear_existing_2d: clear_existing_2d.unwrap_or(defaults.clear_existing_2d),
+        flips_per_sample: flips_per_sample.unwrap_or(defaults.flips_per_sample),
+        samples: samples.unwrap_or(defaults.samples),
+        sample_seed: sample_seed.unwrap_or(defaults.sample_seed),
+        permute_degree_four: permute_degree_four.unwrap_or(defaults.permute_degree_four),
+        force_rdkit: force_rdkit.unwrap_or(defaults.force_rdkit),
+        use_ring_templates: use_ring_templates.unwrap_or(defaults.use_ring_templates),
+        use_path_angle_expansion: use_path_angle_expansion
+            .unwrap_or(defaults.use_path_angle_expansion),
     }
+}
+
+pub(crate) fn with_layout(
+    molecule: &crate::native::Molecule,
+    py: Python<'_>,
+    params: Option<&ck::Coordinate2DParams>,
+) -> PyResult<crate::native::Molecule> {
+    py.detach(|| match params {
+        Some(params) => molecule.inner.with_2d_coordinates_with_params(params),
+        None => molecule.inner.with_2d_coordinates(),
+    })
+    .map(|inner| crate::native::Molecule { inner })
+    .map_err(crate::operation_errors::OperationError::from_rust)
+}
+pub(crate) fn add_layout(
+    molecule: &mut crate::native::Molecule,
+    py: Python<'_>,
+    params: Option<&ck::Coordinate2DParams>,
+) -> PyResult<()> {
+    py.detach(|| match params {
+        Some(params) => molecule.inner.add_2d_coordinates_with_params_(params),
+        None => molecule.inner.add_2d_coordinates_(),
+    })
+    .map_err(crate::operation_errors::OperationError::from_rust)
 }
 
 #[cfg(test)]
@@ -93,7 +115,7 @@ mod tests {
             locals.set_item("expected",expected)?;locals.set_item("rows2",rows2)?;locals.set_item("rows3",rows3)?;
             locals.set_item("layout",layout.to_binary().unwrap())?;
             locals.set_item("positions",positions.to_binary().unwrap())?;
-            locals.set_item("layout_params",Py::new(py,Coordinate2DParams {inner:options})?)?;
+            locals.set_item("layout_params",Py::new(py,Coordinate2DParams::from_rust(py, options)?)?)?;
             locals.set_item("shared",Py::new(py,Molecule {inner:molecule.clone()})?)?;
             locals.set_item("peer",Py::new(py,Molecule {inner:molecule.clone()})?)?;
             py.run(c_str!(r#"

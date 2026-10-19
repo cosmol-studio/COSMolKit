@@ -21,7 +21,7 @@ def test_all_forms_fill_the_original_additional_output_and_preserve_input(method
     output.allocate_atom_counts()
     output.allocate_atom_to_bits()
     output.allocate_bit_info_map()
-    params = ck.MorganFingerprintParams(generator=ck.MorganParams(radius=2, fp_size=256))
+    params = ck.MorganFingerprintParams(generator=ck.MorganGeneratorParams(radius=2, fp_size=256))
     result = getattr(molecule, method + "_with_params")(params, output)
     ids = set(result.on_bits() if hasattr(result, "on_bits") else result.nonzero_elements())
     assert ids
@@ -56,7 +56,7 @@ def test_generator_errors_keep_the_source_cause_and_input():
     molecule = ck.Molecule.from_smiles("CCO")
     before = molecule.to_smiles()
     params = ck.MorganFingerprintParams(
-        generator=ck.MorganParams(count_simulation=True, count_bounds=[])
+        generator=ck.MorganGeneratorParams(count_simulation=True, count_bounds=[])
     )
     with pytest.raises(ck.MorganReadError) as caught:
         molecule.fingerprint_morgan_with_params(params, None)
@@ -73,7 +73,7 @@ def test_feature_and_custom_invariant_options_reach_the_owner():
         from_atoms=[0],
         custom_atom_invariants=[1, 2, 3],
         custom_bond_invariants=[7, 8],
-        generator=ck.MorganParams(radius=0),
+        generator=ck.MorganGeneratorParams(radius=0),
     )
     assert molecule.fingerprint_morgan_sparse_count_with_params(custom, None).nonzero_elements() == {1: 1}
     features = ck.MorganFingerprintParams(invariants=ck.MorganInvariants.features())

@@ -5,7 +5,8 @@ use cosmolkit_fingerprints::{
 };
 
 /// Immutable call configuration preserving source optional-vector semantics.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(factory)]
 pub struct LegacyTopologicalTorsionParams {
     pub torsion_atom_count: u32,
     pub include_chirality: bool,

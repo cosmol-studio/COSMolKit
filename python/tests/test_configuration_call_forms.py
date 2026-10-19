@@ -7,7 +7,7 @@ import cosmolkit as ck
 def test_morgan_short_methods_accept_generator_keywords(method):
     molecule = ck.Molecule.from_smiles("CC(C)O")
     function = getattr(molecule, method)
-    params = ck.MorganFingerprintParams(generator=ck.MorganParams(radius=2, fp_size=256, include_chirality=True), from_atoms=[0, 1])
+    params = ck.MorganFingerprintParams(generator=ck.MorganGeneratorParams(radius=2, fp_size=256, include_chirality=True), from_atoms=[0, 1])
     expected = getattr(molecule, method + "_with_params")(params, None)
     actual = function(radius=2, fp_size=256, include_chirality=True, from_atoms=[0, 1])
     project = lambda value: value.on_bits() if hasattr(value, "on_bits") else value.nonzero_elements()
@@ -18,7 +18,7 @@ def test_morgan_short_methods_accept_generator_keywords(method):
     with pytest.raises(TypeError, match="mutually exclusive"):
         function(params, radius=2)
     with pytest.raises(TypeError, match="mutually exclusive"):
-        function(generator=ck.MorganParams(), radius=2)
+        function(generator=ck.MorganGeneratorParams(), radius=2)
     with pytest.raises((TypeError, OverflowError)):
         function(radius=-1)
     with pytest.raises(TypeError):

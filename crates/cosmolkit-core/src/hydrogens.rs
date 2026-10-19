@@ -20,7 +20,7 @@ use cosmolkit_model::{
 };
 
 /// Parameters corresponding to RDKit's `MolOps::AddHsParameters`.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 pub struct AddHsParams {
     pub explicit_only: bool,
     pub add_coords: bool,
@@ -30,7 +30,8 @@ pub struct AddHsParams {
 }
 
 /// Parameters corresponding to RDKit's `MolOps::RemoveHsParameters`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct RemoveHsParams {
     pub remove_degree_zero: bool,
     pub remove_higher_degrees: bool,

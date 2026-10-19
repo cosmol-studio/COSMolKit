@@ -2,7 +2,7 @@
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", frozen)]
+#[pyclass(module = "cosmolkit", frozen)]
 pub struct FeatureSpec {
     pub(crate) inner: &'static ck::FeatureSpec,
 }
@@ -22,7 +22,7 @@ impl FeatureSpec {
     }
 }
 
-#[pyclass(module = "fixed_projection._native")]
+#[pyclass(module = "cosmolkit")]
 pub struct FeatureSpecIter {
     inner: ck::FeatureSpecIter,
 }

@@ -165,7 +165,7 @@ mod tests {
         ));
         let m = Molecule::from_smiles("CCO").unwrap();
         for p in [ck::AtomPairFingerprintParams {
-            generator: ck::AtomPairParams {
+            generator: ck::AtomPairGeneratorParams {
                 fp_size: 0,
                 ..Default::default()
             },

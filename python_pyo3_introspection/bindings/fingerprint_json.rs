@@ -5,7 +5,7 @@ use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum SerdeJsonCategory {
     Io = serde_json::error::Category::Io as isize,
@@ -24,7 +24,7 @@ impl From<serde_json::error::Category> for SerdeJsonCategory {
     }
 }
 #[doc = r#"{"role":"error_record"}"#]
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct SerdeJsonError {
     node: ErrorRef,
 }
@@ -95,14 +95,14 @@ impl SerdeJsonError {
     }
 }
 
-#[pyclass(module = "fixed_projection._native", eq, eq_int, from_py_object)]
+#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq)]
 pub enum FingerprintJsonErrorKind {
     Parse,
     Invalid,
     UnsupportedComponent,
 }
-#[pyclass(module="fixed_projection._native", extends=PyValueError)]
+#[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct FingerprintJsonError {
     inner: RetainedError<ck::FingerprintJsonError>,
 }
@@ -183,7 +183,7 @@ impl FingerprintJsonError {
 mod tests {
     use super::*;
     use crate::fingerprint_configuration::{
-        AtomPairParams, MorganParams, TopologicalTorsionParams,
+        AtomPairGeneratorParams, MorganGeneratorParams, TopologicalTorsionGeneratorParams,
     };
     #[test]
     fn three_native_json_configuration_families_preserve_updates_defaults_errors_and_owners() {
@@ -193,12 +193,7 @@ mod tests {
                 ($name:ident) => {{
                     let native = ck::$name::default();
                     let original = native.to_json();
-                    let params = Py::new(
-                        py,
-                        $name {
-                            inner: native.clone(),
-                        },
-                    )?;
+                    let params = Py::new(py, $name::from_rust(py, native.clone())?)?;
                     for text in [
                         "",
                         "   ",
@@ -212,8 +207,8 @@ mod tests {
                             .bind(py)
                             .call_method1("with_json", (text,))?
                             .extract::<Py<$name>>()?;
-                        assert_eq!(actual.borrow(py).inner, expected);
-                        assert_eq!(params.borrow(py).inner.to_json(), original);
+                        assert_eq!(actual.borrow(py).to_rust(py)?, expected);
+                        assert_eq!(params.borrow(py).to_rust(py)?.to_json(), original);
                     }
                     let parse = "{\n  bad";
                     let native_error = native.with_json(parse).unwrap_err();
@@ -252,10 +247,7 @@ mod tests {
                     drop(error);
                     drop(params);
                     assert!(!source.bind(py).str()?.is_empty()?);
-                    let error = $name { inner: native }
-                        .inner
-                        .with_json("{\"countBounds\":[\"bad\"]}")
-                        .unwrap_err();
+                    let error = native.with_json("{\"countBounds\":[\"bad\"]}").unwrap_err();
                     let error = FingerprintJsonError::from_rust(error);
                     assert!(
                         error
@@ -274,9 +266,9 @@ mod tests {
                     );
                 }};
             }
-            verify!(MorganParams);
-            verify!(AtomPairParams);
-            verify!(TopologicalTorsionParams);
+            verify!(MorganGeneratorParams);
+            verify!(AtomPairGeneratorParams);
+            verify!(TopologicalTorsionGeneratorParams);
             Ok(())
         })
         .unwrap();

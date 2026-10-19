@@ -139,8 +139,10 @@ pub enum SanitizeStage {
 }
 
 /// Parameters for the detached sanitization pipeline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct SanitizeParams {
+    #[configuration(none_default)]
     pub operations: SanitizeOperations,
 }
 

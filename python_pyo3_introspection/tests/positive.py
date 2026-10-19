@@ -6,11 +6,11 @@ Do not extend them for ordinary new APIs or move removed assertions elsewhere.
 Changing this fixed protocol set requires an explicit framework design decision.
 """
 
-from collections.abc import Mapping
 from typing import assert_type
+from collections.abc import Mapping
 
 import numpy as np
-import fixed_projection as ck
+import cosmolkit as ck
 
 
 def facade_projection(molecule: ck.Molecule) -> None:
@@ -32,7 +32,7 @@ def integer_and_slice(batch: ck.FingerprintBatch) -> None:
     assert_type(batch[1:], ck.FingerprintBatch)
 
 
-def readonly_configuration(params: ck.SmartsParseParams) -> None:
+def owned_configuration(params: ck.SmartsParseParams) -> None:
     params.replacements = {"{A}": "O"}
     assert_type(params.replacements, Mapping[str, str])
 

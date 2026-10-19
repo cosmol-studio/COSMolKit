@@ -20,7 +20,7 @@ def test_morgan_defaults_do_not_change_when_execution_options_are_supplied():
         assert result is not None
         assert result.on_bits() == expected
     for radius in (2, 3):
-        generator = ck.MorganParams(radius=radius)
+        generator = ck.MorganGeneratorParams(radius=radius)
         options = ck.MorganFingerprintParams(generator=generator)
         result = batch.fingerprint_morgan_list(generator=generator)[0]
         assert result is not None

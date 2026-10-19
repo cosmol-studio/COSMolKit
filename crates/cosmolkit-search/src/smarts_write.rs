@@ -15,7 +15,8 @@ use std::fmt::Write as _;
 mod minimal_traversal;
 
 /// Options for QueryGraph-native SMARTS serialization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
 pub struct SmartsWriteParams {
     /// Emit atom-map labels stored on query atoms.
     pub include_atom_maps: bool,

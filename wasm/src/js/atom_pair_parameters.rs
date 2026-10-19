@@ -21,12 +21,12 @@ pub(crate) fn optional_array(value: Option<&[u32]>) -> JsValue {
     })
 }
 #[wasm_bindgen]
-pub struct AtomPairParams {
-    pub(crate) inner: ck::AtomPairParams,
+pub struct AtomPairGeneratorParams {
+    pub(crate) inner: ck::AtomPairGeneratorParams,
 }
 #[cosmolkit_wasm::javascript_options("AtomPairParamsOptions")]
 #[wasm_bindgen]
-impl AtomPairParams {
+impl AtomPairGeneratorParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "number")] min_distance: JsValue,
@@ -39,11 +39,11 @@ impl AtomPairParams {
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
         count_bounds: JsValue,
     ) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: canonical_fingerprint_values.rs::AtomPairParams::new:
+        // COSMolKit❗✔️: canonical_fingerprint_values.rs::AtomPairGeneratorParams::new:
         //                 count_bounds: count_bounds
-        //                     .unwrap_or_else(|| ck::AtomPairParams::default().count_bounds),
+        //                     .unwrap_or_else(|| ck::AtomPairGeneratorParams::default().count_bounds),
         // O(fields + supplied arrays); no generator validation or chemistry duplicated.
-        let mut inner = ck::AtomPairParams::default();
+        let mut inner = ck::AtomPairGeneratorParams::default();
         if !min_distance.is_undefined() {
             inner.min_distance = u32_value(&min_distance, "minDistance")?;
         }
@@ -176,7 +176,7 @@ impl AtomPairAtomInvariantsGenerator {
 )]
 extern "C" {
     #[wasm_bindgen(catch,js_name=visitAtomPairParams)]
-    fn visit_params(value: &JsValue, visit: &mut dyn FnMut(&AtomPairParams))
+    fn visit_params(value: &JsValue, visit: &mut dyn FnMut(&AtomPairGeneratorParams))
     -> Result<(), JsValue>;
     #[wasm_bindgen(catch,js_name=visitAtomPairInvariants)]
     fn visit_invariants(
@@ -193,7 +193,7 @@ pub struct AtomPairFingerprintParams {
 impl AtomPairFingerprintParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "AtomPairParams | null")] generator: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "AtomPairGeneratorParams | null")] generator: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type="number[] | Uint32Array | null")] from_atoms:JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
         ignore_atoms: JsValue,
@@ -210,7 +210,7 @@ impl AtomPairFingerprintParams {
         let mut inner = ck::AtomPairFingerprintParams::default();
         if !generator.is_null() && !generator.is_undefined() {
             let mut copied = None;
-            visit_params(&generator, &mut |value: &AtomPairParams| {
+            visit_params(&generator, &mut |value: &AtomPairGeneratorParams| {
                 copied = Some(value.inner.clone())
             })?;
             inner.generator = copied.ok_or_else(|| type_error("generator"))?;
@@ -239,8 +239,8 @@ impl AtomPairFingerprintParams {
         Ok(Self { inner })
     }
     #[wasm_bindgen(getter)]
-    pub fn generator(&self) -> AtomPairParams {
-        AtomPairParams {
+    pub fn generator(&self) -> AtomPairGeneratorParams {
+        AtomPairGeneratorParams {
             inner: self.inner.generator.clone(),
         }
     }

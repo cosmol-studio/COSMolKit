@@ -33,3 +33,6 @@ pub fn process(records: Vec<BatchRecord>) -> Result<Vec<BatchRecord>, BatchError
 
 mod scheduler;
 pub use scheduler::run_indexed;
+
+#[doc(hidden)]
+pub use sdf_export::__configuration_BatchExportParams;

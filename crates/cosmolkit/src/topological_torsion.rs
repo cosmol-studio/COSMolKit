@@ -5,14 +5,15 @@ use crate::{
 };
 use cosmolkit_fingerprints::{
     AtomPairAtomInvariantsGenerator, AtomPairPreparedInput, TopologicalTorsionCall,
-    TopologicalTorsionError, TopologicalTorsionParams, topological_torsion_bits,
+    TopologicalTorsionError, TopologicalTorsionGeneratorParams, topological_torsion_bits,
     topological_torsion_count, topological_torsion_sparse_bits, topological_torsion_sparse_count,
 };
 use std::fmt;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct TopologicalTorsionFingerprintParams {
-    pub generator: TopologicalTorsionParams,
+    #[configuration(flatten)]
+    pub generator: TopologicalTorsionGeneratorParams,
     pub from_atoms: Option<Vec<u32>>,
     pub ignore_atoms: Option<Vec<u32>>,
     pub custom_atom_invariants: Option<Vec<u32>>,
@@ -23,18 +24,46 @@ pub struct TopologicalTorsionFingerprintParams {
 }
 impl Default for TopologicalTorsionFingerprintParams {
     fn default() -> Self {
+        Self::from(TopologicalTorsionGeneratorParams::default())
+    }
+}
+impl From<TopologicalTorsionGeneratorParams> for TopologicalTorsionFingerprintParams {
+    fn from(generator: TopologicalTorsionGeneratorParams) -> Self {
+        Self::from((generator, TopologicalTorsionCallParams::default()))
+    }
+}
+impl
+    From<(
+        TopologicalTorsionGeneratorParams,
+        TopologicalTorsionCallParams,
+    )> for TopologicalTorsionFingerprintParams
+{
+    fn from(
+        (generator, call): (
+            TopologicalTorsionGeneratorParams,
+            TopologicalTorsionCallParams,
+        ),
+    ) -> Self {
         Self {
-            generator: TopologicalTorsionParams::default(),
-            from_atoms: None,
-            ignore_atoms: None,
-            custom_atom_invariants: None,
-            custom_bond_invariants: None,
-            conformer_id: -1,
+            generator,
+            from_atoms: call.from_atoms,
+            ignore_atoms: call.ignore_atoms,
+            custom_atom_invariants: call.custom_atom_invariants,
+            custom_bond_invariants: call.custom_bond_invariants,
+            conformer_id: call.conformer_id,
             atom_invariants_generator: None,
-            use_legacy_stereo_perception: true,
+            use_legacy_stereo_perception: call.use_legacy_stereo_perception,
         }
     }
 }
+crate::fingerprint_params::generator_fields!(TopologicalTorsionFingerprintParams, TopologicalTorsionGeneratorParams, {
+    torsion_atom_count, set_torsion_atom_count: u32,
+    only_shortest_paths, set_only_shortest_paths: bool,
+    include_chirality, set_include_chirality: bool,
+    count_simulation, set_count_simulation: bool,
+    fp_size, set_fp_size: u32,
+    bits_per_feature, set_bits_per_feature: u32,
+});
 #[derive(Debug)]
 pub enum TopologicalTorsionReadError {
     Preparation(FingerprintPreparationError),
@@ -210,7 +239,7 @@ pub struct TopologicalTorsionSettings {
     inner: cosmolkit_fingerprints::TopologicalTorsionSettings,
 }
 /// Immutable call selections independent of reusable generator configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct TopologicalTorsionCallParams {
     pub from_atoms: Option<Vec<u32>>,
     pub ignore_atoms: Option<Vec<u32>>,
@@ -245,10 +274,10 @@ impl TopologicalTorsionCallParams {
 }
 impl TopologicalTorsionFingerprintGenerator {
     pub fn new(
-        params: Option<&TopologicalTorsionParams>,
+        params: Option<&TopologicalTorsionGeneratorParams>,
         atom_invariants: Option<AtomPairAtomInvariantsGenerator>,
     ) -> Result<Self, TopologicalTorsionReadError> {
-        let defaults = TopologicalTorsionParams::default();
+        let defaults = TopologicalTorsionGeneratorParams::default();
         let params = params.unwrap_or(&defaults);
         cosmolkit_fingerprints::TopologicalTorsionGenerator::new(params, atom_invariants)
             .map(|inner| Self { inner })
@@ -433,7 +462,7 @@ impl TopologicalTorsionSettings {
     settings_field!(fp_size, set_fp_size, u32);
     settings_field!(bits_per_feature, set_bits_per_feature, u32);
     settings_field!(count_bounds, set_count_bounds, Vec<u32>);
-    pub fn params(&self) -> Result<TopologicalTorsionParams, TopologicalTorsionReadError> {
+    pub fn params(&self) -> Result<TopologicalTorsionGeneratorParams, TopologicalTorsionReadError> {
         self.inner
             .snapshot()
             .map_err(TopologicalTorsionReadError::Generator)

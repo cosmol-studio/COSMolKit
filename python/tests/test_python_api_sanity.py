@@ -590,7 +590,7 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     opposite_stereo = opposite.tetrahedral_stereo()
     assert opposite_stereo == [(1, [0, 3, 2, None])]
 
-    generator = cosmolkit.MorganFingerprintGenerator(params=cosmolkit.MorganParams(radius=2, fp_size=256))
+    generator = cosmolkit.MorganFingerprintGenerator(params=cosmolkit.MorganGeneratorParams(radius=2, fp_size=256))
     fp = chiral.fingerprint_morgan_with_generator(generator)
     same = cosmolkit.Molecule.from_smiles("F[C@H](Cl)Br").fingerprint_morgan_with_generator(generator)
     other = cosmolkit.Molecule.from_smiles("CCO").fingerprint_morgan_with_generator(generator)
@@ -991,7 +991,7 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
     assert dg[2] is None
 
     fps = prepared.fingerprint_morgan_list_with_generator_params(
-        cosmolkit.MorganParams(fp_size=128), None, None,
+        cosmolkit.MorganGeneratorParams(fp_size=128), None, None,
         cosmolkit.MorganCallParams(), cosmolkit.BatchQueryParams()
     )
     assert fps[0] is not None

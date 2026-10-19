@@ -513,7 +513,7 @@ def validate(contract, module, stub):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", type=Path, default=HERE / "artifacts/smoke/package",
-                        help="directory containing the already generated fixed_projection package")
+                        help="directory containing the already generated cosmolkit package")
     parser.add_argument("--snapshot-bin", type=Path, default=HERE.parent / "target/typed_facade_projection/debug/registry_snapshot")
     parser.add_argument("--report", type=Path, default=HERE / "artifacts/registry.json")
     options = parser.parse_args()
@@ -522,10 +522,10 @@ def main():
     result = subprocess.run([str(options.snapshot_bin)], text=True, capture_output=True, check=True)
     contract = expectations(json.loads(result.stdout))
     sys.path.insert(0, str(options.package.resolve()))
-    module = importlib.import_module("fixed_projection")
+    module = importlib.import_module("cosmolkit")
     if not Path(module.__file__).resolve().is_relative_to(options.package.resolve()):
         raise ValueError("Imported a different package instead of the requested generated package")
-    stub = options.package / "fixed_projection/__init__.pyi"
+    stub = options.package / "cosmolkit/__init__.pyi"
     try:
         report = validate(contract, module, stub.read_text())
     except RegistryMismatch as error:
