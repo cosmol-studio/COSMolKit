@@ -240,6 +240,7 @@ impl UffParameterError {
     fn domain(&self) -> &'static str {
         "uff"
     }
+    #[getter]
     fn kind(&self) -> UffParameterErrorKind {
         self.inner.kind().into()
     }

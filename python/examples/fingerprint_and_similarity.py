@@ -35,33 +35,33 @@ layered = mol.fingerprint_layered_with_output(
     min_path=2,
     max_path=4,
     fp_size=257,
-    atom_counts=[10] * mol.num_atoms(),
+    atom_counts=[10] * mol.num_atoms,
     set_only_bits=layered_mask,
     branched_paths=True,
     from_atoms=[0],
 )
 
-print("fp1 bits:", fp1.on_bits()[:8])
+print("fp1 bits:", fp1.on_bits[:8])
 print("similarity:", similarity)
-print("atom counts:", additional.atom_counts())
-bit_info = additional.bit_info_map()
+print("atom counts:", additional.atom_counts)
+bit_info = additional.bit_info_map
 assert bit_info is not None
 print("bit info entries:", len(bit_info))
-print("topological bits:", topological.on_bits()[:8])
+print("topological bits:", topological.on_bits[:8])
 print(
     "topological atom provenance counts:",
-    [len(bits) for bits in topological_output.atom_bits()],
+    [len(bits) for bits in topological_output.atom_bits],
 )
-print("topological path entries:", len(topological_output.bit_info()))
-print("Avalon bits:", avalon.on_bits()[:8])
-print("Pattern bits:", pattern.on_bits()[:8])
-print("Tautomeric Pattern bits:", tautomeric_pattern.on_bits()[:8])
-print("MACCS bits:", maccs.on_bits()[:8])
-print("AtomPair bits:", atom_pair.on_bits()[:8])
+print("topological path entries:", len(topological_output.bit_info))
+print("Avalon bits:", avalon.on_bits[:8])
+print("Pattern bits:", pattern.on_bits[:8])
+print("Tautomeric Pattern bits:", tautomeric_pattern.on_bits[:8])
+print("MACCS bits:", maccs.on_bits[:8])
+print("AtomPair bits:", atom_pair.on_bits[:8])
 print(
     "AtomPair sparse counts:",
-    list(atom_pair_sparse_count.nonzero_elements().items())[:8],
+    list(atom_pair_sparse_count.nonzero_elements.items())[:8],
 )
-print("AtomPair atom counts:", atom_pair_output.atom_counts())
-print("Layered bits:", layered.fingerprint().on_bits()[:8])
-print("Layered seeded atom counts:", layered.atom_counts())
+print("AtomPair atom counts:", atom_pair_output.atom_counts)
+print("Layered bits:", layered.fingerprint.on_bits[:8])
+print("Layered seeded atom counts:", layered.atom_counts)

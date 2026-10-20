@@ -148,9 +148,12 @@ mod tests {
                 3
             );
 
-            let mapping = ck::TopologyMapping::identity(2, 1)
-                .validate_for_counts(3, 1, 2, 1)
-                .unwrap_err();
+            let mapping = ck::MappingValidationError::Length {
+                entity: "atom",
+                direction: "old-to-new",
+                actual: 2,
+                expected: 3,
+            };
             let rank = ck::CipRankError::InvalidQueryState(ck::QueryStateError::Mapping(mapping));
             assert!(rank.source().unwrap().is::<ck::MappingValidationError>());
             let error = MoleculeHashError::from_rust(ck::MoleculeHashError::CipRanks(rank));

@@ -4,13 +4,13 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 
 enum_value!(PotentialStereoType, {
-    AtomTetrahedral, AtomSquarePlanar, AtomTrigonalBipyramidal, AtomOctahedral,
-    BondDouble, BondCumuleneEven, BondAtropisomer
+    AtomTetrahedral [ATOM_TETRAHEDRAL], AtomSquarePlanar [ATOM_SQUAREPLANAR], AtomTrigonalBipyramidal [ATOM_TRIGONALBIPYRAMIDAL], AtomOctahedral [ATOM_OCTAHEDRAL],
+    BondDouble [BOND_DOUBLE], BondCumuleneEven [BOND_CUMULENE_EVEN], BondAtropisomer [BOND_ATROPISOMER]
 });
-enum_value!(PotentialStereoSpecified, { Unspecified, Specified, Unknown });
+enum_value!(PotentialStereoSpecified, { Unspecified [UNSPECIFIED], Specified [SPECIFIED], Unknown [UNKNOWN] });
 enum_value!(PotentialStereoDescriptor, {
-    #[pyo3(name="None_")] None, TetrahedralClockwise, TetrahedralCounterclockwise,
-    BondCis, BondTrans, BondAtropCw, BondAtropCcw
+    #[pyo3(name="None_")] None [NONE], TetrahedralClockwise [TETRAHEDRAL_CLOCKWISE], TetrahedralCounterclockwise [TETRAHEDRAL_COUNTERCLOCKWISE],
+    BondCis [BOND_CIS], BondTrans [BOND_TRANS], BondAtropCw [BOND_ATROP_CW], BondAtropCcw [BOND_ATROP_CCW]
 });
 
 macro_rules! enum_input {
@@ -44,10 +44,12 @@ enum_input!(StereoTypeInput, PotentialStereoType);
 enum_input!(StereoSpecifiedInput, PotentialStereoSpecified);
 enum_input!(StereoDescriptorInput, PotentialStereoDescriptor);
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct PotentialStereoCenter {
-    inner: ck::PotentialStereoCenter,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct PotentialStereoCenter {
+        inner: ck::PotentialStereoCenter,
+    }
 }
 impl From<ck::PotentialStereoCenter> for PotentialStereoCenter {
     fn from(value: ck::PotentialStereoCenter) -> Self {
@@ -84,10 +86,12 @@ impl PotentialStereoCenter {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct PotentialStereoInfo {
-    pub(crate) inner: ck::PotentialStereoInfo,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct PotentialStereoInfo {
+        pub(crate) inner: ck::PotentialStereoInfo,
+    }
 }
 #[pymethods]
 impl PotentialStereoInfo {
@@ -144,10 +148,12 @@ impl PotentialStereoInfo {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct RingStereoRelation {
-    pub(crate) inner: ck::RingStereoRelation,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct RingStereoRelation {
+        pub(crate) inner: ck::RingStereoRelation,
+    }
 }
 #[pymethods]
 impl RingStereoRelation {
@@ -175,10 +181,12 @@ impl RingStereoRelation {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct PotentialStereoResult {
-    pub(crate) inner: ck::PotentialStereoResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct PotentialStereoResult {
+        pub(crate) inner: ck::PotentialStereoResult,
+    }
 }
 #[pymethods]
 impl PotentialStereoResult {

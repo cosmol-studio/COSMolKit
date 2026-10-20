@@ -17,8 +17,16 @@ macro_rules! sanitize_flags {
         #[pymethods]
         impl SanitizeOperations {
             $(#[classattr] #[allow(non_snake_case)] fn $flag() -> Self { Self { inner: ck::SanitizeOperations::$flag } })+
+            #[staticmethod]
+            fn from_bits(bits: u32) -> PyResult<Self> {
+                ck::SanitizeOperations::from_bits(bits)
+                    .map(|inner| Self { inner })
+                    .map_err(crate::sanitize_errors::SanitizeError::from_rust)
+            }
+            #[getter]
             fn bits(&self) -> u32 { self.inner.bits() }
             fn contains(&self, operation: &Self) -> bool { self.inner.contains(operation.inner) }
+            #[getter]
             fn is_empty(&self) -> bool { self.inner.is_empty() }
             fn __index__(&self) -> u32 { self.inner.bits() }
             fn __or__(&self, other: &Self) -> Self { Self { inner: self.inner | other.inner } }
@@ -46,18 +54,20 @@ sanitize_flags! { NONE, CLEANUP, PROPERTIES, SYMM_RINGS, KEKULIZE, FIND_RADICALS
 SET_AROMATICITY, SET_CONJUGATION, SET_HYBRIDIZATION, CLEANUP_CHIRALITY,
 ADJUST_HS, CLEANUP_ORGANOMETALLICS, CLEANUP_ATROPISOMERS, ALL }
 
-impl crate::parameters::Configuration for SanitizeOperations {
-    type Native = ck::SanitizeOperations;
-    const INPUT: pyo3::inspect::PyStaticExpr =
-        <SanitizeOperationsInput as FromPyObject<'_, '_>>::INPUT_TYPE;
-    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
-        value.extract::<SanitizeOperationsInput>()?.into_rust()
-    }
-    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
-        Ok(Self { inner })
-    }
-    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
-        Ok(self.inner)
+crate::configuration::type_projection! {
+    impl Configuration for SanitizeOperations {
+        type Native = ck::SanitizeOperations;
+        const INPUT: pyo3::inspect::PyStaticExpr =
+            <SanitizeOperationsInput as FromPyObject<'_, '_>>::INPUT_TYPE;
+        fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+            value.extract::<SanitizeOperationsInput>()?.into_rust()
+        }
+        fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
+            Ok(Self { inner })
+        }
+        fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
+            Ok(self.inner)
+        }
     }
 }
 

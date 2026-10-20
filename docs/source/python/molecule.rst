@@ -60,7 +60,7 @@ Elements and Periodic-Table Metadata
 ------------------------------------
 
 ``Element`` identifies chemical elements, including the dummy atom and
-H through Og. Use ``element_info(element).atomic_number()`` for the numeric
+H through Og. Use ``element_info(element).atomic_number`` for the numeric
 atomic number. Symbol lookup is case-sensitive and metadata comes from the same source-aligned periodic table
 used by the chemistry core:
 
@@ -68,16 +68,16 @@ used by the chemistry core:
 
    import cosmolkit as ck
 
-   assert ck.element_info(ck.Element.C).atomic_number() == 6
+   assert ck.element_info(ck.Element.C).atomic_number == 6
    assert ck.Element.from_symbol("Cl") == ck.Element.CL
 
    chlorine = ck.element_info(ck.Element.CL)
-   assert chlorine.symbol() == "Cl"
-   assert chlorine.atomic_number() == 17
+   assert chlorine.symbol == "Cl"
+   assert chlorine.atomic_number == 17
 
 ``ELEMENT_MAP`` maps canonical symbols, the dummy symbol ``"*"``, and retained
 source aliases to ``Element`` values. Molecule atoms expose the same identity
-through ``atom.element()``.
+through ``atom.element``.
 
 Read Finalization
 -----------------
@@ -218,9 +218,9 @@ RDKit atoms:
 
    mol = ck.mol_from_smiles("F[C@H](Cl)Br")
 
-   for atom in mol.atoms():
-       if atom.chiral_tag() != ck.ChiralTag.CHI_UNSPECIFIED:
-           print(atom.id(), atom.chiral_tag().name)
+   for atom in mol.atoms:
+       if atom.chiral_tag != ck.ChiralTag.CHI_UNSPECIFIED:
+           print(atom.id, atom.chiral_tag.name)
 
    print(mol.find_chiral_centers(include_unassigned=False))
 
@@ -236,7 +236,7 @@ not appear in this list. This query leaves molecule state unchanged and raises
 ``StereoReadError`` if perception, CIP assignment, or label conversion fails.
 The API remains experimental and exposes perception with CIP enabled.
 
-Read ``atom.chiral_tag()`` directly when raw tags are needed.
+Read ``atom.chiral_tag`` directly when raw tags are needed.
 
 Atom and bond enum-valued fields return Python ``IntEnum`` members, so callers
 can compare or match against ``ChiralTag``, ``BondOrder``, ``BondDirection``,
@@ -341,7 +341,7 @@ unrelated properties are preserved.
    )
    assigned = mol.with_chiral_tags_from_structure()
 
-   print(assigned.atoms()[0].chiral_tag())
+   print(assigned.atoms[0].chiral_tag)
 
 The in-place form is ``assign_chiral_tags_from_structure_()``. Missing
 conformers and invalid source state raise structured Python exceptions without
@@ -369,11 +369,11 @@ completion state.
 
    mol = ck.mol_from_smiles("C[C@H](F)Cl")
    labeled = mol.with_cip_labels()
-   print(labeled.atoms()[1].cip_descriptor())
+   print(labeled.atoms[1].cip_descriptor)
 
    alkene = ck.mol_from_smiles("F/C=C/F")
    alkene.assign_cip_labels_()
-   print(alkene.bonds()[1].cip_descriptor())
+   print(alkene.bonds[1].cip_descriptor)
 
 Pass ``atoms=[...]`` or ``bonds=[...]`` for selected assignment. Priorities
 remain molecular-context dependent; selection controls which configurations
@@ -402,11 +402,18 @@ returns a new molecule value.
    params.num_threads = 1
    params.track_failures = True
 
-   embedded = mol.with_3d_conformer(params)
+   result = mol.with_3d_conformer_result(params)
+   embedded = result.molecule
 
-   print(embedded.num_3d_conformers())
+   print(embedded.num_3d_conformers)
    print(embedded.coordinates_3d())
-   print(params.failures)
+   print(result.failure_counts)
+   print(result.failure_count(ck.EmbedFailureCause.InitialCoords))
+
+Diagnostics belong to this result; the input parameters remain reusable.
+``failure_counts`` is an immutable tuple, or ``None`` when tracking is disabled.
+The counters describe intermediate failure events, not the number of missing
+conformers. ``EndOfEnum`` is a sentinel and is not a valid failure-count query.
 
 Manual Coordinate Assignment
 ----------------------------
@@ -444,11 +451,11 @@ state through Python.
    single = placed.with_only_3d_conformer(coords_3d + [0.0, 0.0, 2.0])
    cleared = placed.with_cleared_3d_conformers()
 
-   print(drawn.coordinates_2d())
-   print(placed.num_3d_conformers())
+   print(drawn.coordinates_2d)
+   print(placed.num_3d_conformers)
    print(shifted.coordinates_3d())
-   print(single.num_3d_conformers())
-   print(cleared.num_3d_conformers())
+   print(single.num_3d_conformers)
+   print(cleared.num_3d_conformers)
 
 The in-place forms follow COSMolKit's trailing-underscore convention:
 
@@ -468,13 +475,13 @@ required to be zero, or rejected:
 
 .. code-block:: python
 
-   coords_2d_with_zero_z = np.column_stack([coords_2d, np.zeros(mol.num_atoms())])
+   coords_2d_with_zero_z = np.column_stack([coords_2d, np.zeros(mol.num_atoms)])
    mol.with_2d_coordinate_block_with_params(
        coords_2d_with_zero_z, ck.Coordinate2DInputParams(z_policy="require_zero"),
    )
 
 3D assignment accepts only shape ``(num_atoms, 3)``. All coordinate values must
-be finite, and row counts must match ``mol.num_atoms()``.
+be finite, and row counts must match ``mol.num_atoms``.
 ``with_only_3d_conformer(coords)`` is the direct value-style equivalent of
 RDKit ``RemoveAllConformers(); AddConformer(conf, assignId=True)`` for manual
 coordinate assignment; the in-place form is ``set_only_3d_conformer_(coords)``
@@ -493,7 +500,7 @@ the source-ported RDKit path.
    params.enable_sequential_random_seeds = True
 
    pruned = mol.with_3d_conformers(5, params)
-   print(pruned.num_3d_conformers())
+   print(pruned.num_3d_conformers)
 
 Molecular Alignment And RMSD
 ----------------------------
@@ -523,8 +530,8 @@ their existing frames without alignment.
    aligned, applied = probe.with_alignment_to(reference, params)
 
    assert np.array_equal(probe.coordinates_3d(), probe_coords)
-   assert measured.rmsd() < 1.0e-8
-   assert applied.rmsd() < 1.0e-8
+   assert measured.rmsd < 1.0e-8
+   assert applied.rmsd < 1.0e-8
    assert np.allclose(aligned.coordinates_3d(), reference_coords)
 
 ``with_alignment_to()`` returns a new molecule and result. ``align_to_()`` is
@@ -551,21 +558,21 @@ source molecule.
 
    if mol.uff_has_all_molecule_params():
        result = mol.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=200))
-       optimized = result.molecule()
+       optimized = result.molecule
 
-       print(not result.needs_more())
-       print(result.status_code())
-       print(result.energy())
+       print(not result.needs_more)
+       print(result.status_code)
+       print(result.energy)
        print(optimized.coordinates_3d())
 
    if mol.mmff_has_all_molecule_params():
        result = mol.with_mmff_optimized_with_params(
            ck.MmffOptimizationParams(mmff_variant="MMFF94", max_iterations=200),
        )
-       optimized = result.molecule()
+       optimized = result.molecule
 
-       print(not result.needs_more())
-       print(result.status_code())
+       print(not result.needs_more)
+       print(result.status_code)
 
 Substructure And SMARTS
 -----------------------
@@ -581,7 +588,7 @@ the canonical SMARTS parser:
    query = ck.QueryGraph.from_smarts("CO")
 
    print(mol.has_substruct_match(query))
-   print(mol.substruct_match(query).atom_mapping())
+   print(mol.substruct_match(query).atom_mapping)
 
 ``ck.parse_smarts()`` and ``ck.QueryGraph.from_smarts()`` return the same
 canonical query value. Both preserve the parser's defaults and typed errors.
@@ -593,8 +600,8 @@ There is no ``ck.search`` submodule. Explicit options use
 
    smarts = ck.parse_smarts("[#6]-O")
 
-   print(smarts.num_atoms())
-   print(smarts.num_bonds())
+   print(smarts.num_atoms)
+   print(smarts.num_bonds)
    print(ck.write_smarts(smarts, ck.SmartsWriteParams()))
    print(mol.has_substruct_match(smarts))
 

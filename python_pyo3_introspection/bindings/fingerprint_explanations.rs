@@ -2,9 +2,11 @@ use super::errors::AtomCodeExplanationError;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct AtomCodeExplanation {
-    inner: ck::AtomCodeExplanation,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct AtomCodeExplanation {
+        inner: ck::AtomCodeExplanation,
+    }
 }
 
 #[pymethods]
@@ -16,15 +18,19 @@ impl AtomCodeExplanation {
             .map(|inner| Self { inner })
             .map_err(AtomCodeExplanationError::from_rust)
     }
+    #[getter]
     fn symbol(&self) -> &'static str {
         self.inner.symbol()
     }
+    #[getter]
     fn branch_count(&self) -> u32 {
         self.inner.branch_count()
     }
+    #[getter]
     fn pi_electrons(&self) -> u32 {
         self.inner.pi_electrons()
     }
+    #[getter]
     fn chirality(&self) -> Option<&'static str> {
         self.inner.chirality()
     }

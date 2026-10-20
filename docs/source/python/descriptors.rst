@@ -99,7 +99,7 @@ has ``len(bins) + 1`` entries. Scalar projections ``slogp_vsa_1()`` through
    slogp_vsa = molecule.slogp_vsa()
 
    assert len(mqns) == 42
-   assert len(atom_asa) == molecule.num_atoms()
+   assert len(atom_asa) == molecule.num_atoms
    assert len(slogp_vsa) == 12
 
 Formula Options

@@ -16,7 +16,7 @@ cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.5.1-rc.5" }
 cosmolkit-types = { version = "0.5.1-rc.5", path = "../cosmolkit-types" }
 cosmolkit-model = { version = "0.5.1-rc.5", path = "../cosmolkit-model" }
 cosmolkit-core = { version = "0.5.1-rc.5", path = "../cosmolkit-core" }
-cosmolkit-search = { version = "0.5.1-rc.5", path = "../cosmolkit-search" }
+cosmolkit-search = { version = "0.5.1-rc.5", path = "../cosmolkit-search", default-features = false, features = ["smiles-integration"] }
 cosmolkit-smiles = { version = "0.5.1-rc.5", path = "../cosmolkit-smiles" }
 cosmolkit-cx = { version = "0.5.1-rc.5", path = "../cosmolkit-cx" }
 thiserror = "2"

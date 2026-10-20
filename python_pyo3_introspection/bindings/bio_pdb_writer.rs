@@ -9,9 +9,7 @@ use pyo3::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum BioPdbWriteErrorKind {
+crate::enums::binding_enum!(BioPdbWriteErrorKind, {
     InvalidStructure,
     ChainNameTooLong,
     NegativeSerial,
@@ -20,7 +18,7 @@ pub enum BioPdbWriteErrorKind {
     NegativeBase36Value,
     UnrepresentableField,
     Io,
-}
+});
 
 #[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioPdbWriteError {
@@ -171,13 +169,13 @@ pub(crate) fn keywords(
 ) -> BioPdbWriteParams {
     let defaults = ck::BioPdbWriteParams::default();
     BioPdbWriteParams {
-        inner: ck::BioPdbWriteParams {
+        inner: crate::parameters::NativeField::Owned(ck::BioPdbWriteParams {
             ter_records: ter_records.unwrap_or(defaults.ter_records),
             numbered_ter: numbered_ter.unwrap_or(defaults.numbered_ter),
             ter_ignores_type: ter_ignores_type.unwrap_or(defaults.ter_ignores_type),
             preserve_serial: preserve_serial.unwrap_or(defaults.preserve_serial),
             end_record: end_record.unwrap_or(defaults.end_record),
-        },
+        }),
     }
 }
 
@@ -207,7 +205,7 @@ mod tests {
                     end_record: bits & 16 != 0,
                 };
                 let expected = structure.borrow(py).inner.to_pdb_with_params(&native_params).unwrap();
-                let params = Py::new(py, BioPdbWriteParams { inner: native_params })?;
+                let params = Py::new(py, BioPdbWriteParams { inner: crate::parameters::NativeField::Owned(native_params )})?;
                 let kwargs = PyDict::new(py);
                 kwargs.set_item("ter_records", native_params.ter_records)?;
                 kwargs.set_item("numbered_ter", native_params.numbered_ter)?;

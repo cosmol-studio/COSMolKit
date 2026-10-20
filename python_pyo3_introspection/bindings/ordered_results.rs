@@ -55,13 +55,23 @@ mod tests {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
-#[derive(Clone, Copy, PartialEq)]
-pub struct LigandRef {
-    inner: ck::LigandRef,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
+    #[derive(Clone, Copy, PartialEq)]
+    pub struct LigandRef {
+        inner: ck::LigandRef,
+    }
 }
 #[pymethods]
 impl LigandRef {
+    #[new]
+    #[pyo3(signature = (atom=None))]
+    fn py_new(atom: Option<usize>) -> Self {
+        match atom {
+            Some(value) => Self::atom(value),
+            None => Self::IMPLICIT_HYDROGEN,
+        }
+    }
     #[classattr]
     #[pyo3(name = "ImplicitHydrogen")]
     const IMPLICIT_HYDROGEN: Self = Self {
@@ -83,10 +93,12 @@ impl LigandRef {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct TetrahedralStereo {
-    pub(crate) inner: ck::TetrahedralStereo,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct TetrahedralStereo {
+        pub(crate) inner: ck::TetrahedralStereo,
+    }
 }
 #[pymethods]
 impl TetrahedralStereo {
@@ -109,13 +121,18 @@ impl TetrahedralStereo {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct MatchResult {
-    pub(crate) inner: ck::MatchResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct MatchResult {
+        pub(crate) inner: ck::MatchResult,
+    }
 }
 #[pymethods]
 impl MatchResult {
+    fn atom_pairs(&self) -> Vec<(usize, usize)> {
+        self.inner.atom_pairs()
+    }
     #[new]
     fn new(atom_mapping: Vec<usize>, bond_mapping: Vec<usize>) -> Self {
         Self {
@@ -132,10 +149,12 @@ impl MatchResult {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct LayeredFingerprintResult {
-    pub(crate) inner: ck::LayeredFingerprintResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct LayeredFingerprintResult {
+        pub(crate) inner: ck::LayeredFingerprintResult,
+    }
 }
 #[pymethods]
 impl LayeredFingerprintResult {
@@ -149,20 +168,24 @@ impl LayeredFingerprintResult {
             },
         }
     }
+    #[getter]
     fn fingerprint(&self) -> Fingerprint {
         Fingerprint {
             inner: self.inner.fingerprint().clone(),
         }
     }
+    #[getter]
     fn atom_counts(&self) -> Option<Vec<u32>> {
         self.inner.atom_counts().map(<[u32]>::to_vec)
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct AtomPairAtomCodeResult {
-    pub(crate) inner: ck::AtomPairAtomCodeResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct AtomPairAtomCodeResult {
+        pub(crate) inner: ck::AtomPairAtomCodeResult,
+    }
 }
 #[pymethods]
 impl AtomPairAtomCodeResult {

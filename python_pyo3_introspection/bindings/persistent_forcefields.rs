@@ -201,12 +201,13 @@ macro_rules! evaluator_methods {
             }
             #[doc = $target]
             fn $params_branch(&mut self, $($atom: usize,)+ params: &$params) -> PyResult<()> {
-                self.inner.$method($(ck::AtomId::new($atom),)+ &params.inner).map_err(ForceFieldError::from_rust)
+                let params = Python::attach(|py| params.to_rust(py))?;
+                self.inner.$method($(ck::AtomId::new($atom),)+ &params).map_err(ForceFieldError::from_rust)
             }
             #[doc = $target]
             #[pyo3(signature=($($atom,)+ *, $($field),+))]
             fn $keywords_branch(&mut self, $($atom: usize,)+ $($field: $ty),+) -> PyResult<()> {
-                let params = $params { inner: ck::$params::new($($field),+) };
+                let params = $params { inner: crate::parameters::NativeField::Owned(ck::$params::new($($field),+)) };
                 self.$params_branch($($atom,)+ &params)
             }
             )+
@@ -239,6 +240,7 @@ evaluator_methods! {
             .set_position_(ck::AtomId::new(atom_id), position)
             .map_err(ForceFieldError::from_rust)
     }
+    #[getter]
     fn positions(&self) -> Vec<[f64; 3]> {
         self.inner.positions()
     }
@@ -247,6 +249,7 @@ evaluator_methods! {
             .set_positions_(&positions)
             .map_err(ForceFieldError::from_rust)
     }
+    #[getter]
     fn fixed_atoms(&self) -> Vec<usize> {
         self.inner
             .fixed_atoms()
@@ -302,8 +305,10 @@ evaluator_methods! {
         py: Python<'_>,
         params: Option<&ForceFieldMinimizeParams>,
     ) -> PyResult<ForceFieldMinimizeOutcome> {
+let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         py.detach(|| match params {
-            Some(params) => self.inner.minimize_with_params_(&params.inner),
+            Some(params) => self.inner.minimize_with_params_(&params),
             None => self.inner.minimize_(),
         })
         .map(|inner| ForceFieldMinimizeOutcome { inner })
@@ -320,11 +325,11 @@ evaluator_methods! {
     ) -> PyResult<ForceFieldMinimizeOutcome> {
         let defaults = ck::ForceFieldMinimizeParams::default();
         let params = ForceFieldMinimizeParams {
-            inner: ck::ForceFieldMinimizeParams::new(
+            inner: crate::parameters::NativeField::Owned(ck::ForceFieldMinimizeParams::new(
                 max_iterations.unwrap_or(defaults.max_iterations()),
                 force_tolerance.unwrap_or(defaults.force_tolerance()),
                 energy_tolerance.unwrap_or(defaults.energy_tolerance()),
-            ),
+            )),
         };
         self._minimize_params(py, Some(&params))
     }
@@ -344,8 +349,10 @@ impl Molecule {
         py: Python<'_>,
         params: Option<&UffForceFieldParams>,
     ) -> PyResult<MolecularForceField> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         py.detach(|| match params {
-            Some(params) => self.inner.uff_force_field_with_params(&params.inner),
+            Some(params) => self.inner.uff_force_field_with_params(&params),
             None => self.inner.uff_force_field(),
         })
         .map(|inner| MolecularForceField { inner })
@@ -360,12 +367,12 @@ impl Molecule {
     ) -> PyResult<MolecularForceField> {
         let defaults = ck::UffForceFieldParams::default();
         let params = UffForceFieldParams {
-            inner: ck::UffForceFieldParams::new(
+            inner: crate::parameters::NativeField::Owned(ck::UffForceFieldParams::new(
                 conformer_id.or(defaults.conformer_id()),
                 vdw_threshold.unwrap_or(defaults.vdw_threshold()),
                 ignore_interfragment_interactions
                     .unwrap_or(defaults.ignore_interfragment_interactions()),
-            ),
+            )),
         };
         self.uff_field_params(py, Some(&params))
     }
@@ -374,8 +381,10 @@ impl Molecule {
         py: Python<'_>,
         params: Option<&MmffForceFieldParams>,
     ) -> PyResult<MolecularForceField> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         py.detach(|| match params {
-            Some(params) => self.inner.mmff_force_field_with_params(&params.inner),
+            Some(params) => self.inner.mmff_force_field_with_params(&params),
             None => self.inner.mmff_force_field(),
         })
         .map(|inner| MolecularForceField { inner })
@@ -391,13 +400,13 @@ impl Molecule {
     ) -> PyResult<MolecularForceField> {
         let defaults = ck::MmffForceFieldParams::default();
         let params = MmffForceFieldParams {
-            inner: ck::MmffForceFieldParams::new(
+            inner: crate::parameters::NativeField::Owned(ck::MmffForceFieldParams::new(
                 conformer_id.or(defaults.conformer_id()),
                 mmff_variant.unwrap_or_else(|| defaults.mmff_variant().to_owned()),
                 non_bonded_threshold.unwrap_or(defaults.non_bonded_threshold()),
                 ignore_interfragment_interactions
                     .unwrap_or(defaults.ignore_interfragment_interactions()),
-            ),
+            )),
         };
         self.mmff_field_params(py, Some(&params))
     }
@@ -437,7 +446,7 @@ mod tests {
             let params = Py::new(
                 py,
                 UffForceFieldParams {
-                    inner: options.clone(),
+                    inner: crate::parameters::NativeField::Owned(options.clone()),
                 },
             )?;
             let configured = mol.call_method1("uff_force_field", (&params,))?;
@@ -603,7 +612,7 @@ mod tests {
             let params = Py::new(
                 py,
                 MmffForceFieldParams {
-                    inner: selection.clone(),
+                    inner: crate::parameters::NativeField::Owned(selection.clone()),
                 },
             )?;
             let configured = mol.call_method1("mmff_force_field", (&params,))?;
@@ -667,7 +676,9 @@ mod tests {
                 let params = Py::new(
                     py,
                     ForceFieldDistanceConstraintParams {
-                        inner: ck::ForceFieldDistanceConstraintParams::new(true, -0.1, 0.1, 3.),
+                        inner: crate::parameters::NativeField::Owned(
+                            ck::ForceFieldDistanceConstraintParams::new(true, -0.1, 0.1, 3.),
+                        ),
                     },
                 )?;
                 if direct {
@@ -696,7 +707,9 @@ mod tests {
                 let params = Py::new(
                     py,
                     ForceFieldAngleConstraintParams {
-                        inner: ck::ForceFieldAngleConstraintParams::new(false, 90., 120., 2.),
+                        inner: crate::parameters::NativeField::Owned(
+                            ck::ForceFieldAngleConstraintParams::new(false, 90., 120., 2.),
+                        ),
                     },
                 )?;
                 if direct {
@@ -720,7 +733,9 @@ mod tests {
                 let params = Py::new(
                     py,
                     ForceFieldTorsionConstraintParams {
-                        inner: ck::ForceFieldTorsionConstraintParams::new(false, -30., 30., 1.),
+                        inner: crate::parameters::NativeField::Owned(
+                            ck::ForceFieldTorsionConstraintParams::new(false, -30., 30., 1.),
+                        ),
                     },
                 )?;
                 if direct {
@@ -745,7 +760,9 @@ mod tests {
                 let params = Py::new(
                     py,
                     ForceFieldPositionConstraintParams {
-                        inner: ck::ForceFieldPositionConstraintParams::new(0.2, 4.),
+                        inner: crate::parameters::NativeField::Owned(
+                            ck::ForceFieldPositionConstraintParams::new(0.2, 4.),
+                        ),
                     },
                 )?;
                 if direct {
@@ -779,7 +796,12 @@ mod tests {
                     kw.set_item("energy_tolerance", 1e-6)?;
                     field.call_method("minimize_", (), Some(&kw))?
                 } else {
-                    let params = Py::new(py, ForceFieldMinimizeParams { inner: effective })?;
+                    let params = Py::new(
+                        py,
+                        ForceFieldMinimizeParams {
+                            inner: crate::parameters::NativeField::Owned(effective),
+                        },
+                    )?;
                     field.call_method1("minimize_", (params,))?
                 };
                 let expected = native

@@ -13,8 +13,15 @@ import numpy as np
 import cosmolkit as ck
 
 
+def native_enum_protocol() -> None:
+    assert_type(ck.BondOrder.names, Mapping[str, ck.BondOrder])
+    assert_type(ck.BondOrder.values, Mapping[int, ck.BondOrder])
+    assert_type(ck.BondOrder.SINGLE.name, str)
+    assert_type(ck.BondOrder(1), ck.BondOrder)
+
+
 def facade_projection(molecule: ck.Molecule) -> None:
-    assert_type(molecule.num_atoms(), int)
+    assert_type(molecule.num_atoms, int)
     assert_type(molecule.with_hydrogens(), ck.Molecule)
 
 
@@ -27,9 +34,13 @@ def params_and_keywords(molecule: ck.Molecule) -> None:
     assert_type(molecule.fingerprint_maccs(n_bits=None), ck.Fingerprint)
 
 
-def integer_and_slice(batch: ck.FingerprintBatch) -> None:
+def integer_and_slice(batch: ck.FingerprintBatch, dataset: ck.SdfDataset) -> None:
     assert_type(batch[0], ck.Fingerprint | None)
     assert_type(batch[1:], ck.FingerprintBatch)
+    assert_type(batch[[0, -1]], ck.FingerprintBatch)
+    assert_type(batch[[True, False]], ck.FingerprintBatch)
+    assert_type(dataset[0], ck.SdfRecord)
+    assert_type(dataset[:1], ck.MoleculeBatch)
 
 
 def owned_configuration(params: ck.SmartsParseParams) -> None:

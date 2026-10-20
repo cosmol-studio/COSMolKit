@@ -14,6 +14,6 @@ _ = builder.add_bond(ck.BondSpec(0, cl, ck.BondOrder.SINGLE))
 mol2 = builder.build().sanitize()
 
 assert mol.to_smiles() == "CCO"
-assert mol2.num_atoms() == mol.num_atoms() + 1
+assert mol2.num_atoms == mol.num_atoms + 1
 print("source:", mol.to_smiles())
 print("edited:", mol2.to_smiles())

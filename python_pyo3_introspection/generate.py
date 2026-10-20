@@ -20,9 +20,9 @@ Changes to the public __init__.pyi:
    metadata docstring from the public stub, not from native runtime __doc__.
    This is a handwritten annotation, not Rust type inference; there are no
    NumPy-specific type names or conversion rules in this generator.
-4. Expand only explicit {"role": "indexing", "protocol": "integer_slice_self"}
-   declarations after validating the extracted integer-or-slice input and
-   item-or-self output. Unmarked __getitem__ declarations remain unchanged;
+4. Expand explicit integer_selection indexing declarations with a named selection
+   result (or Self), validating integer/slice/indices/mask inputs and concrete
+   item/selection outputs. Unmarked __getitem__ declarations remain unchanged;
    incompatible marked signatures fail generation. Preserve official types.
 5. Remove positional-only separators from property setters as a BasedPyright
    workaround. Qualify property decorators as builtins.property so an actual
@@ -102,10 +102,16 @@ def union_parts(node):
 
 
 def indexing_forms(owner, method):
-    """Validate the declared integer/item and slice/self correspondence."""
-    context = f"{owner}.{method.name}: integer_slice_self"
-    if projection(method) != {"role": "indexing", "protocol": "integer_slice_self"}:
+    """Validate explicit integer/item and multi-selection/result correspondence."""
+    metadata = projection(method)
+    context = f"{owner}.{method.name}: integer_selection"
+    if (set(metadata) != {"role", "protocol", "selection"}
+            or metadata["role"] != "indexing" or metadata["protocol"] != "integer_selection"
+            or not isinstance(metadata["selection"], str)
+            or not metadata["selection"].isidentifier()
+            or metadata["selection"] in {"Any", "PyAny", "Incomplete", "object", "None"}):
         raise ValueError(f"{context} requires the explicit supported indexing declaration")
+    selected = owner if metadata["selection"] == "Self" else metadata["selection"]
     args = method.args
     parameters = positional(method)
     if (method.name != "__getitem__" or len(parameters) != 2
@@ -117,13 +123,32 @@ def indexing_forms(owner, method):
     inputs = union_parts(parameters[1].annotation)
     names = {ast.unparse(node) for node in inputs}
     integer_names = {"int", "SupportsIndex", "typing.SupportsIndex"}
-    if len(inputs) != 2 or "slice" not in names or len(names & integer_names) != 1:
-        raise ValueError(f"{context} input must be int/SupportsIndex | slice")
+    sequences = []
+    sequence_items = set()
+    for node in inputs:
+        if not isinstance(node, ast.Subscript):
+            continue
+        container = ast.unparse(node.value)
+        if container in {"Sequence", "typing.Sequence", "collections.abc.Sequence"}:
+            item = node.slice
+        elif (container in {"SupportsGetItem", "_typeshed.SupportsGetItem"}
+              and isinstance(node.slice, ast.Tuple) and len(node.slice.elts) == 2
+              and ast.unparse(node.slice.elts[0]) == "int"):
+            # Official PyO3 Vec<T> input: an integer-indexed Python sequence.
+            item = node.slice.elts[1]
+        else:
+            continue
+        sequences.append(node)
+        sequence_items.add(ast.unparse(item))
+    if (len(inputs) != 4 or "slice" not in names or len(names & integer_names) != 1
+            or len(sequences) != 2 or "bool" not in sequence_items
+            or len(sequence_items & integer_names) != 1):
+        raise ValueError(f"{context} requires integer, slice, integer-sequence and boolean-mask inputs")
     integer = next(node for node in inputs if ast.unparse(node) in integer_names)
     outputs = union_parts(method.returns)
-    items = [node for node in outputs if ast.unparse(node) != owner]
+    items = [node for node in outputs if ast.unparse(node) != selected]
     if len(items) == len(outputs) or not items or len(outputs) - len(items) != 1:
-        raise ValueError(f"{context} return must contain an item type and exactly one {owner} branch")
+        raise ValueError(f"{context} return must contain an item type and exactly one {selected} branch")
     if any(isinstance(node, ast.Name) and node.id in {"Any", "PyAny", "Incomplete", "object"}
            or isinstance(node, ast.Attribute) and node.attr in {"Any", "PyAny", "Incomplete"}
            for item in items for node in ast.walk(item)):
@@ -132,7 +157,10 @@ def indexing_forms(owner, method):
     for node in items[1:]:
         item_type = ast.BinOp(left=item_type, op=ast.BitOr(), right=node)
     forms = []
-    for input_type, output_type in ((integer, item_type), (ast.Name(id="slice", ctx=ast.Load()), ast.Name(id=owner, ctx=ast.Load()))):
+    selection_input = ast.Name(id="slice", ctx=ast.Load())
+    for sequence in sequences:
+        selection_input = ast.BinOp(left=selection_input, op=ast.BitOr(), right=copy.deepcopy(sequence))
+    for input_type, output_type in ((integer, item_type), (selection_input, ast.Name(id=selected, ctx=ast.Load()))):
         form = overload(method)
         positional(form)[-1].annotation = copy.deepcopy(input_type)
         form.returns = copy.deepcopy(output_type)

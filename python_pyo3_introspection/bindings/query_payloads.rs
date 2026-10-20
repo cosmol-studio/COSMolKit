@@ -10,9 +10,7 @@ use pyo3::prelude::*;
 // keep the Python discriminants in sync with the actual native variants.
 macro_rules! value_kind {
     ($kind:ident, $rust:ident, {$($tag:ident $({$($field:ident),+ $(,)?})? $(($value:tt))?),+ $(,)?}) => {
-        #[pyclass(module="cosmolkit", eq, eq_int, from_py_object)]
-        #[derive(Clone, Copy, PartialEq)]
-        pub enum $kind { $($tag),+ }
+        $crate::enums::binding_enum!($kind, { $($tag),+ });
         impl From<&ck::$rust> for $kind {
             fn from(value: &ck::$rust) -> Self {
                 match value { $($crate::error_framework::variant_pattern!(ck::$rust, $tag $({$($field),+})? $(($value))?) => Self::$tag),+ }
@@ -312,10 +310,12 @@ impl RecursiveStructureQuery {
     }
 }
 
-#[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct AtomRangeQuery {
-    inner: ck::AtomRangeQuery,
+crate::configuration::type_projection! {
+    #[doc = r#"{"role":"error_value"}"#]
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct AtomRangeQuery {
+        inner: ck::AtomRangeQuery,
+    }
 }
 #[pymethods]
 impl AtomRangeQuery {
@@ -333,10 +333,12 @@ impl AtomRangeQuery {
     }
 }
 
-#[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct AtomRangeBounds {
-    inner: ck::AtomRangeBounds,
+crate::configuration::type_projection! {
+    #[doc = r#"{"role":"error_value"}"#]
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct AtomRangeBounds {
+        inner: ck::AtomRangeBounds,
+    }
 }
 #[pymethods]
 impl AtomRangeBounds {
@@ -381,10 +383,12 @@ impl AtomRangeBounds {
     }
 }
 
-#[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct AtomRangeDataFunction {
-    inner: ck::AtomRangeDataFunction,
+crate::configuration::type_projection! {
+    #[doc = r#"{"role":"error_value"}"#]
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct AtomRangeDataFunction {
+        inner: ck::AtomRangeDataFunction,
+    }
 }
 #[pymethods]
 impl AtomRangeDataFunction {

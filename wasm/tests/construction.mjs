@@ -18,7 +18,7 @@ test('Top-level constructors retain the original callable, configuration and err
  assert.equal('molFromBinary' in ck,false);
  assert.equal(ck.molsFromSmilesList,ck.MoleculeBatch.fromSmilesList);
  const batch=ck.molsFromSmilesList(['C','CC']);
- assert.deepEqual(batch.toSmilesList(),['C','CC']);
+ assert.deepEqual(batch.toSmiles(),['C','CC']);
  direct.free();original.free();batch.free();
 });
 

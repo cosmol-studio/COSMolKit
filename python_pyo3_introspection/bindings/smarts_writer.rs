@@ -398,12 +398,12 @@ pub(crate) fn keywords(
 ) -> SmartsWriteParams {
     let defaults = ck::SmartsWriteParams::default();
     SmartsWriteParams {
-        inner: ck::SmartsWriteParams {
+        inner: crate::parameters::NativeField::Owned(ck::SmartsWriteParams {
             include_atom_maps: include_atom_maps.unwrap_or(defaults.include_atom_maps),
             isomeric_smiles: isomeric_smiles.unwrap_or(defaults.isomeric_smiles),
             include_dative_bonds: include_dative_bonds.unwrap_or(defaults.include_dative_bonds),
             rooted_at_atom,
-        },
+        }),
     }
 }
 pub(crate) fn text(value: ck::PropertyText) -> PyResult<String> {
@@ -452,8 +452,9 @@ pub fn _write_smarts_params(
     query: &QueryGraph,
     params: Option<&SmartsWriteParams>,
 ) -> PyResult<String> {
+    let params = Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
     let defaults = ck::SmartsWriteParams::default();
-    ck::write_smarts(query.inner(), params.map_or(&defaults, |p| &p.inner))
+    ck::write_smarts(query.inner(), params.as_ref().unwrap_or(&defaults))
         .map_err(SmartsWriteError::from_rust)
         .and_then(text)
 }
@@ -512,8 +513,9 @@ pub fn _write_cx_smarts_params(
     query: &QueryGraph,
     params: Option<&SmartsWriteParams>,
 ) -> PyResult<String> {
+    let params = Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
     let defaults = ck::SmartsWriteParams::default();
-    ck::write_cx_smarts(query.inner(), params.map_or(&defaults, |p| &p.inner))
+    ck::write_cx_smarts(query.inner(), params.as_ref().unwrap_or(&defaults))
         .map_err(SmartsWriteError::from_rust)
         .and_then(text)
 }
@@ -561,7 +563,7 @@ mod tests {
                         Some(flags & 4 != 0),
                         root,
                     );
-                    let expected = ck::write_smarts(&native_query, &params.inner).unwrap();
+                    let expected = ck::write_smarts(&native_query, &params.to_rust(py)?).unwrap();
                     let expected = String::from_utf8(expected.into_bytes()).unwrap();
                     assert_eq!(_write_smarts_params(&query, Some(&params))?, expected);
                     assert_eq!(
@@ -574,7 +576,8 @@ mod tests {
                         )?,
                         expected
                     );
-                    let expected = ck::write_cx_smarts(&native_query, &params.inner).unwrap();
+                    let expected =
+                        ck::write_cx_smarts(&native_query, &params.to_rust(py)?).unwrap();
                     let expected = String::from_utf8(expected.into_bytes()).unwrap();
                     assert_eq!(_write_cx_smarts_params(&query, Some(&params))?, expected);
                     assert_eq!(
@@ -600,7 +603,7 @@ mod tests {
                             String::from_utf8(
                                 mol.borrow(py)
                                     .inner
-                                    .to_smarts_with_params(&owned_params.borrow(py).inner)
+                                    .to_smarts_with_params(&owned_params.borrow(py).to_rust(py)?)
                                     .unwrap()
                                     .into_bytes(),
                             )
@@ -612,7 +615,7 @@ mod tests {
                             String::from_utf8(
                                 mol.borrow(py)
                                     .inner
-                                    .to_cx_smarts_with_params(&owned_params.borrow(py).inner)
+                                    .to_cx_smarts_with_params(&owned_params.borrow(py).to_rust(py)?)
                                     .unwrap()
                                     .into_bytes(),
                             )
@@ -648,7 +651,7 @@ mod tests {
             }
             assert_eq!(mol.borrow(py).inner.to_binary().unwrap(), before);
             let params = keywords(None, None, None, Some(999));
-            let native = ck::write_smarts(&native_query, &params.inner).unwrap_err();
+            let native = ck::write_smarts(&native_query, &params.to_rust(py)?).unwrap_err();
             let error = _write_smarts_params(&query, Some(&params)).unwrap_err();
             assert!(error.is_instance_of::<SmartsWriteError>(py));
             assert_eq!(error.value(py).str()?.to_str()?, native.to_string());

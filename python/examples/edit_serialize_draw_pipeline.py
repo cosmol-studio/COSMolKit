@@ -32,44 +32,44 @@ print("base smiles:", base.to_smiles())
 print("edited smiles:", phenol.to_smiles())
 print("restored smiles:", restored.to_smiles())
 print("binary bytes:", len(payload))
-coordinates = prepared.coordinates_2d()
+coordinates = prepared.coordinates_2d
 assert coordinates is not None
 print("2d coords shape:", coordinates.shape)
 
-atoms = prepared.atoms()
-bonds = prepared.bonds()
+atoms = prepared.atoms
+bonds = prepared.bonds
 print("atom table:")
 for atom in atoms:
     print(
         "  atom",
-        atom.id(),
+        atom.id,
         "Z=",
-        atom.atomic_number(),
+        atom.atomic_number,
         "charge=",
-        atom.formal_charge(),
+        atom.formal_charge,
         "aromatic=",
-        atom.is_aromatic(),
+        atom.is_aromatic,
     )
 
 print("bond table:")
 for bond in bonds:
     print(
         "  bond",
-        bond.id(),
-        bond.begin(),
-        bond.end(),
-        bond.order_name(),
+        bond.id,
+        bond.begin,
+        bond.end,
+        bond.order_name,
         "aromatic=",
-        bond.is_aromatic(),
+        bond.is_aromatic,
     )
 
 additional = ck.FingerprintAdditionalOutput()
 additional.allocate_atom_counts()
 additional.allocate_bit_info_map()
 fingerprint = prepared.fingerprint_morgan(radius=2, fp_size=512, additional_output=additional)
-print("fingerprint bits:", fingerprint.on_bits()[:12])
-print("atom counts:", additional.atom_counts())
-bit_info = additional.bit_info_map()
+print("fingerprint bits:", fingerprint.on_bits[:12])
+print("atom counts:", additional.atom_counts)
+bit_info = additional.bit_info_map
 assert bit_info is not None
 print("bit info size:", len(bit_info))
 

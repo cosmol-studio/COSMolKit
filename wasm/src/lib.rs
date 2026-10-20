@@ -309,7 +309,8 @@ impl Molecule {
     pub fn atomic_numbers(&self) -> Vec<u8> {
         self.inner
             .borrow()
-            .atoms()
+            .topology()
+            .atoms
             .iter()
             .map(|atom| atom.atomic_number())
             .collect()

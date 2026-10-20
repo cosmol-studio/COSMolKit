@@ -128,10 +128,12 @@ pub fn _maximum_common_substructure_keywords(
         verbose: verbose.unwrap_or(defaults.verbose),
         initial_seed: initial_seed.unwrap_or(defaults.initial_seed),
         atom_compare_parameters: atom_compare_parameters
-            .map(|value| value.inner.clone())
+            .map(|value| value.to_rust(py))
+            .transpose()?
             .unwrap_or(defaults.atom_compare_parameters),
         bond_compare_parameters: bond_compare_parameters
-            .map(|value| value.inner.clone())
+            .map(|value| value.to_rust(py))
+            .transpose()?
             .unwrap_or(defaults.bond_compare_parameters),
         atom_comparator: atom_comparator
             .map(McsAtomComparatorInput::into_rust)
@@ -245,7 +247,9 @@ mod tests {
                     Py::new(
                         py,
                         McsAtomCompareParameters {
-                            inner: native_params.atom_compare_parameters.clone(),
+                            inner: crate::parameters::NativeField::Owned(
+                                native_params.atom_compare_parameters.clone(),
+                            ),
                         },
                     )?,
                 )?;
@@ -254,7 +258,9 @@ mod tests {
                     Py::new(
                         py,
                         McsBondCompareParameters {
-                            inner: native_params.bond_compare_parameters.clone(),
+                            inner: crate::parameters::NativeField::Owned(
+                                native_params.bond_compare_parameters.clone(),
+                            ),
                         },
                     )?,
                 )?;

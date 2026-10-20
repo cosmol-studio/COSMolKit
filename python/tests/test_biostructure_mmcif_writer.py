@@ -18,12 +18,12 @@ def test_biostructure_mmcif_string_writer_defaults_reparse_without_mutation() ->
     structure = cosmolkit.BioStructure.from_pdb(PDB)
     before = (
         repr(structure),
-        structure.name(),
-        structure.num_models(),
-        structure.num_chains(),
-        structure.num_residues(),
-        structure.num_atoms(),
-        [atom.position() for atom in structure.atoms()],
+        structure.name,
+        structure.num_models,
+        structure.num_chains,
+        structure.num_residues,
+        structure.num_atoms,
+        [atom.position() for atom in structure.atoms],
     )
 
     output = structure.to_mmcif()
@@ -31,21 +31,21 @@ def test_biostructure_mmcif_string_writer_defaults_reparse_without_mutation() ->
 
     assert output.startswith("data_")
     assert "_atom_site.Cartn_x" in output
-    assert reparsed.num_models() == structure.num_models()
-    assert reparsed.num_chains() == structure.num_chains()
-    assert reparsed.num_residues() == structure.num_residues()
-    assert reparsed.num_atoms() == structure.num_atoms()
-    assert [atom.position() for atom in reparsed.atoms()] == [
-        atom.position() for atom in structure.atoms()
+    assert reparsed.num_models == structure.num_models
+    assert reparsed.num_chains == structure.num_chains
+    assert reparsed.num_residues == structure.num_residues
+    assert reparsed.num_atoms == structure.num_atoms
+    assert [atom.position() for atom in reparsed.atoms] == [
+        atom.position() for atom in structure.atoms
     ]
     assert before == (
         repr(structure),
-        structure.name(),
-        structure.num_models(),
-        structure.num_chains(),
-        structure.num_residues(),
-        structure.num_atoms(),
-        [atom.position() for atom in structure.atoms()],
+        structure.name,
+        structure.num_models,
+        structure.num_chains,
+        structure.num_residues,
+        structure.num_atoms,
+        [atom.position() for atom in structure.atoms],
     )
 
 

@@ -18,10 +18,12 @@ impl DimensionInput {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct CoordinateBlock {
-    pub(crate) inner: ck::CoordinateBlock,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct CoordinateBlock {
+        pub(crate) inner: ck::CoordinateBlock,
+    }
 }
 #[pymethods]
 impl CoordinateBlock {
@@ -77,10 +79,12 @@ impl CoordinateBlock {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct SdfRecordMetadata {
-    pub(crate) inner: ck::SdfRecordMetadata,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct SdfRecordMetadata {
+        pub(crate) inner: ck::SdfRecordMetadata,
+    }
 }
 #[pymethods]
 impl SdfRecordMetadata {
@@ -105,21 +109,27 @@ impl SdfRecordMetadata {
             },
         }
     }
+    #[getter]
     fn index(&self) -> usize {
         self.inner.index()
     }
+    #[getter]
     fn byte_offset(&self) -> u64 {
         self.inner.byte_offset()
     }
+    #[getter]
     fn byte_len(&self) -> u64 {
         self.inner.byte_len()
     }
+    #[getter]
     fn byte_range(&self) -> (u64, u64) {
         self.inner.byte_range()
     }
+    #[getter]
     fn line_range(&self) -> (usize, usize) {
         self.inner.line_range()
     }
+    #[getter]
     fn title(&self) -> Option<&str> {
         self.inner.title()
     }

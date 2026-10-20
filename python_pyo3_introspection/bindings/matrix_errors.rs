@@ -99,7 +99,12 @@ mod tests {
                 use_bond_order: true,
             };
             let expected = native.distance_matrix_with_params(&params).unwrap();
-            let options = Py::new(py, DistanceMatrixParams { inner: params })?;
+            let options = Py::new(
+                py,
+                DistanceMatrixParams {
+                    inner: crate::parameters::NativeField::Owned(params),
+                },
+            )?;
             for result in [
                 molecule
                     .bind(py)
@@ -137,7 +142,12 @@ mod tests {
                 use_atom_weights: true,
             };
             let expected = native.distance_matrix_3d_with_params(&params).unwrap();
-            let options = Py::new(py, DistanceMatrix3dParams { inner: params })?;
+            let options = Py::new(
+                py,
+                DistanceMatrix3dParams {
+                    inner: crate::parameters::NativeField::Owned(params),
+                },
+            )?;
             let kwargs = PyDict::new(py);
             kwargs.set_item("use_atom_weights", true)?;
             for result in [

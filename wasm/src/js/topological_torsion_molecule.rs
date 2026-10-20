@@ -25,22 +25,22 @@ impl Molecule {
         generator: &TopologicalTorsionFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionCallParams | null")]
         params: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "FingerprintAdditionalOutput | null")]
-        output: JsValue,
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_optional_param_type = "FingerprintAdditionalOutput | null")]
+        additional_output: JsValue,
     ) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_fingerprint_with_generator(
-        let output = if output.is_undefined() {
+        let additional_output = if additional_output.is_undefined() {
             JsValue::NULL
         } else {
-            output
+            additional_output
         };
         with_call(&params, |params| {
-            with_output(&output, |output| {
+            with_output(&additional_output, |additional_output| {
                 self.inner
                     .fingerprint_topological_torsion_with_generator(
                         &generator.inner,
                         params,
-                        output,
+                        additional_output,
                     )
                     .map(|inner| Fingerprint { inner })
                     .map_err(error)
@@ -53,22 +53,22 @@ impl Molecule {
         generator: &TopologicalTorsionFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionCallParams | null")]
         params: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "FingerprintAdditionalOutput | null")]
-        output: JsValue,
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_optional_param_type = "FingerprintAdditionalOutput | null")]
+        additional_output: JsValue,
     ) -> Result<SparseCountFingerprint32, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_count_fingerprint_with_generator(
-        let output = if output.is_undefined() {
+        let additional_output = if additional_output.is_undefined() {
             JsValue::NULL
         } else {
-            output
+            additional_output
         };
         with_call(&params, |params| {
-            with_output(&output, |output| {
+            with_output(&additional_output, |additional_output| {
                 self.inner
                     .fingerprint_topological_torsion_count_with_generator(
                         &generator.inner,
                         params,
-                        output,
+                        additional_output,
                     )
                     .map(|inner| SparseCountFingerprint32 { inner })
                     .map_err(error)
@@ -81,22 +81,22 @@ impl Molecule {
         generator: &TopologicalTorsionFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionCallParams | null")]
         params: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "FingerprintAdditionalOutput | null")]
-        output: JsValue,
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_optional_param_type = "FingerprintAdditionalOutput | null")]
+        additional_output: JsValue,
     ) -> Result<SparseBitFingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_sparse_fingerprint_with_generator(
-        let output = if output.is_undefined() {
+        let additional_output = if additional_output.is_undefined() {
             JsValue::NULL
         } else {
-            output
+            additional_output
         };
         with_call(&params, |params| {
-            with_output(&output, |output| {
+            with_output(&additional_output, |additional_output| {
                 self.inner
                     .fingerprint_topological_torsion_sparse_with_generator(
                         &generator.inner,
                         params,
-                        output,
+                        additional_output,
                     )
                     .map(|inner| SparseBitFingerprint { inner })
                     .map_err(error)
@@ -109,22 +109,22 @@ impl Molecule {
         generator: &TopologicalTorsionFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionCallParams | null")]
         params: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "FingerprintAdditionalOutput | null")]
-        output: JsValue,
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_optional_param_type = "FingerprintAdditionalOutput | null")]
+        additional_output: JsValue,
     ) -> Result<SparseCountFingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_sparse_count_fingerprint_with_generator(
-        let output = if output.is_undefined() {
+        let additional_output = if additional_output.is_undefined() {
             JsValue::NULL
         } else {
-            output
+            additional_output
         };
         with_call(&params, |params| {
-            with_output(&output, |output| {
+            with_output(&additional_output, |additional_output| {
                 self.inner
                     .fingerprint_topological_torsion_sparse_count_with_generator(
                         &generator.inner,
                         params,
-                        output,
+                        additional_output,
                     )
                     .map(|inner| SparseCountFingerprint { inner })
                     .map_err(error)
@@ -151,7 +151,7 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_sparse_count_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
-        #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_param_type = "FingerprintAdditionalOutput | null")]
         additional_output: JsValue,
     ) -> Result<SparseCountFingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_sparse_count_fingerprint_with_params(
@@ -181,7 +181,7 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_sparse_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
-        #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_param_type = "FingerprintAdditionalOutput | null")]
         additional_output: JsValue,
     ) -> Result<SparseBitFingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_sparse_fingerprint_with_params(
@@ -212,7 +212,7 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_count_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
-        #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_param_type = "FingerprintAdditionalOutput | null")]
         additional_output: JsValue,
     ) -> Result<SparseCountFingerprint32, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_count_fingerprint_with_params(
@@ -242,7 +242,7 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
-        #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_param_type = "FingerprintAdditionalOutput | null")]
         additional_output: JsValue,
     ) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_fingerprint_with_params(

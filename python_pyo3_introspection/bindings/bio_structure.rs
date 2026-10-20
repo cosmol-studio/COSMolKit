@@ -16,9 +16,13 @@ use pyo3::prelude::*;
 // invented: the Rust type has no Default, so every field is required here.
 macro_rules! structure_values {
     (mmcif {$($mmcif:ident: $mmcif_ty:ty),+ $(,)?}, $($list:ident: $value:ident),+ $(,)?) => {
-        #[pyclass(module="cosmolkit", frozen, from_py_object)]
-        #[derive(Clone)]
-        pub struct BioStructureParts { pub(crate) inner: ck::BioStructureParts }
+        crate::configuration::type_projection! {
+            #[pyclass(module="cosmolkit", frozen, from_py_object)]
+            #[derive(Clone)]
+            pub struct BioStructureParts {
+                pub(crate) inner: ck::BioStructureParts
+            }
+        }
         #[pymethods]
         impl BioStructureParts {
             #[new]
@@ -58,7 +62,9 @@ fn from_pdb(py:Python<'_>,text:&str,params:crate::arguments::Argument<Option<PyR
     }
 #[staticmethod]
 fn from_pdb_with_params(py:Python<'_>,text:&str,params:&crate::params::BioPdbReadParams)->PyResult<Self>{
-py.detach(||ck::BioStructure::from_pdb_with_params(text,&params.inner)).map(|inner|Self{inner}).map_err(crate::bio_pdb_reader::BioPdbReadError::from_rust)
+let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+py.detach(||ck::BioStructure::from_pdb_with_params(text,&params)).map(|inner|Self{inner}).map_err(crate::bio_pdb_reader::BioPdbReadError::from_rust)
 }
 #[staticmethod]
 #[doc=r#"{"role":"overload","target":"BioStructure.from_pdb"}"#]
@@ -81,8 +87,10 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             #[doc = r#"{"role":"overload","target":"BioStructure.from_text"}"#]
             #[pyo3(signature=(text, params=None))]
             fn _from_text_params(py: Python<'_>, text: &str, params: Option<&crate::bio_values::BioReadParams>) -> PyResult<Self> {
+let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
                 py.detach(|| match params {
-                    Some(params) => ck::BioStructure::from_text_with_params(text, &params.inner),
+                    Some(params) => ck::BioStructure::from_text_with_params(text, &params),
                     None => ck::BioStructure::from_text(text),
                 }).map(|inner| Self { inner }).map_err(crate::bio_read_errors::BioReadError::from_rust)
             }
@@ -125,8 +133,10 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             #[doc = r#"{"role":"overload","target":"BioStructure.to_mmcif"}"#]
             #[pyo3(signature=(params=None))]
             fn _to_mmcif_params(&self, params: Option<&crate::bio_write_configuration::BioMmcifWriteParams>) -> PyResult<String> {
+let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
                 match params {
-                    Some(params) => self.inner.to_mmcif_with_params(&params.inner),
+                    Some(params) => self.inner.to_mmcif_with_params(&params),
                     None => self.inner.to_mmcif(),
                 }.map_err(crate::bio_mmcif_writer::BioMmcifWriteError::from_rust)
             }
@@ -134,13 +144,15 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             #[pyo3(signature=(*, $($mmcif=None),+))]
             fn _to_mmcif_keywords(&self, $($mmcif: Option<$mmcif_ty>),+) -> PyResult<String> {
                 let defaults = ck::BioMmcifWriteParams::default();
-                let params = crate::bio_write_configuration::BioMmcifWriteParams { inner: ck::BioMmcifWriteParams {
+                let params = crate::bio_write_configuration::BioMmcifWriteParams { inner: crate::parameters::NativeField::Owned(ck::BioMmcifWriteParams {
                     $($mmcif: $mmcif.unwrap_or(defaults.$mmcif)),+
-                } };
+                } )};
                 self._to_mmcif_params(Some(&params))
             }
             fn to_mmcif_with_params(&self, params: &crate::bio_write_configuration::BioMmcifWriteParams) -> PyResult<String> {
-                self.inner.to_mmcif_with_params(&params.inner).map_err(crate::bio_mmcif_writer::BioMmcifWriteError::from_rust)
+let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+                self.inner.to_mmcif_with_params(&params).map_err(crate::bio_mmcif_writer::BioMmcifWriteError::from_rust)
             }
             #[pyo3(signature=(path, params=crate::arguments::Argument::Missing, *, $($mmcif=crate::arguments::Argument::Missing),+))]
             fn write_mmcif(&self, path: std::path::PathBuf, params: crate::arguments::Argument<Option<PyRef<'_, crate::bio_write_configuration::BioMmcifWriteParams>>>, $($mmcif: crate::arguments::Argument<Option<$mmcif_ty>>),+) -> PyResult<()> {
@@ -153,8 +165,10 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             #[doc = r#"{"role":"overload","target":"BioStructure.write_mmcif"}"#]
             #[pyo3(signature=(path, params=None))]
             fn _write_mmcif_params(&self, path: std::path::PathBuf, params: Option<&crate::bio_write_configuration::BioMmcifWriteParams>) -> PyResult<()> {
+let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
                 match params {
-                    Some(params) => self.inner.write_mmcif_with_params(&path, &params.inner),
+                    Some(params) => self.inner.write_mmcif_with_params(&path, &params),
                     None => self.inner.write_mmcif(&path),
                 }.map_err(crate::bio_mmcif_writer::BioMmcifWriteError::from_rust)
             }
@@ -162,13 +176,15 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             #[pyo3(signature=(path, *, $($mmcif=None),+))]
             fn _write_mmcif_keywords(&self, path: std::path::PathBuf, $($mmcif: Option<$mmcif_ty>),+) -> PyResult<()> {
                 let defaults = ck::BioMmcifWriteParams::default();
-                let params = crate::bio_write_configuration::BioMmcifWriteParams { inner: ck::BioMmcifWriteParams {
+                let params = crate::bio_write_configuration::BioMmcifWriteParams { inner: crate::parameters::NativeField::Owned(ck::BioMmcifWriteParams {
                     $($mmcif: $mmcif.unwrap_or(defaults.$mmcif)),+
-                } };
+                } )};
                 self._write_mmcif_params(path, Some(&params))
             }
             fn write_mmcif_with_params(&self, path: std::path::PathBuf, params: &crate::bio_write_configuration::BioMmcifWriteParams) -> PyResult<()> {
-                self.inner.write_mmcif_with_params(&path, &params.inner).map_err(crate::bio_mmcif_writer::BioMmcifWriteError::from_rust)
+let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+                self.inner.write_mmcif_with_params(&path, &params).map_err(crate::bio_mmcif_writer::BioMmcifWriteError::from_rust)
             }
             #[staticmethod]
             fn from_parts(parts: BioStructureParts) -> PyResult<Self> {
@@ -202,7 +218,9 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             #[doc = r#"{"role":"overload","target":"BioStructure.to_molecule"}"#]
             #[pyo3(signature=(params=None))]
             fn _to_molecule_params(&self, py: Python<'_>, params: Option<&crate::params::BioMoleculeParams>) -> PyResult<crate::native::Molecule> {
-                py.detach(|| match params { Some(params) => self.inner.to_molecule_with_params(&params.inner), None => self.inner.to_molecule() })
+let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
+                py.detach(|| match params { Some(params) => self.inner.to_molecule_with_params(&params), None => self.inner.to_molecule() })
                     .map(|inner| crate::native::Molecule { inner }).map_err(crate::bio_molecule_conversion::BioMoleculeError::from_rust)
             }
             #[doc = r#"{"role":"overload","target":"BioStructure.to_molecule"}"#]
@@ -232,8 +250,10 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             #[doc = r#"{"role":"overload","target":"BioStructure.to_pdb"}"#]
             #[pyo3(signature=(params=None))]
             fn _to_pdb_params(&self, params: Option<&crate::params::BioPdbWriteParams>) -> PyResult<String> {
+let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
                 match params {
-                    Some(params) => self.inner.to_pdb_with_params(&params.inner),
+                    Some(params) => self.inner.to_pdb_with_params(&params),
                     None => self.inner.to_pdb(),
                 }.map_err(crate::bio_pdb_writer::BioPdbWriteError::from_rust)
             }
@@ -244,7 +264,9 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
                 self._to_pdb_params(Some(&params))
             }
             fn to_pdb_with_params(&self, params: &crate::params::BioPdbWriteParams) -> PyResult<String> {
-                self.inner.to_pdb_with_params(&params.inner).map_err(crate::bio_pdb_writer::BioPdbWriteError::from_rust)
+let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+                self.inner.to_pdb_with_params(&params).map_err(crate::bio_pdb_writer::BioPdbWriteError::from_rust)
             }
 #[pyo3(signature=(path, params=crate::arguments::Argument::Missing, *, ter_records=crate::arguments::Argument::Missing, numbered_ter=crate::arguments::Argument::Missing, ter_ignores_type=crate::arguments::Argument::Missing, preserve_serial=crate::arguments::Argument::Missing, end_record=crate::arguments::Argument::Missing))]
             fn write_pdb(&self, path: std::path::PathBuf, params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioPdbWriteParams>>>, ter_records: crate::arguments::Argument<Option<bool>>, numbered_ter: crate::arguments::Argument<Option<bool>>, ter_ignores_type: crate::arguments::Argument<Option<bool>>, preserve_serial: crate::arguments::Argument<Option<bool>>, end_record: crate::arguments::Argument<Option<bool>>) -> PyResult<()> {
@@ -256,8 +278,10 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             #[doc = r#"{"role":"overload","target":"BioStructure.write_pdb"}"#]
             #[pyo3(signature=(path, params=None))]
             fn _write_pdb_params(&self, path: std::path::PathBuf, params: Option<&crate::params::BioPdbWriteParams>) -> PyResult<()> {
+let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
                 match params {
-                    Some(params) => self.inner.write_pdb_with_params(&path, &params.inner),
+                    Some(params) => self.inner.write_pdb_with_params(&path, &params),
                     None => self.inner.write_pdb(&path),
                 }.map_err(crate::bio_pdb_writer::BioPdbWriteError::from_rust)
             }
@@ -268,7 +292,9 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
                 self._write_pdb_params(path, Some(&params))
             }
             fn write_pdb_with_params(&self, path: std::path::PathBuf, params: &crate::params::BioPdbWriteParams) -> PyResult<()> {
-                self.inner.write_pdb_with_params(&path, &params.inner).map_err(crate::bio_pdb_writer::BioPdbWriteError::from_rust)
+let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+                self.inner.write_pdb_with_params(&path, &params).map_err(crate::bio_pdb_writer::BioPdbWriteError::from_rust)
             }
             fn protein(&self) -> PyResult<crate::protein_values::Protein> {
                 self.inner.protein().map(|inner| crate::protein_values::Protein { inner: std::sync::Arc::new(inner) }).map_err(crate::protein_values::ProteinProjectionError::from_rust)
@@ -276,24 +302,45 @@ fn _from_pdb_keywords(py:Python<'_>,text:&str,max_line_length:Option<i32>,check_
             /// Return detached parts without invalidating Python aliases of this value.
             /// The canonical Rust conversion operates on a COW snapshot.
             fn into_parts(&self) -> BioStructureParts { BioStructureParts { inner: self.inner.clone().into_parts() } }
+            #[getter]
             fn input_format(&self) -> BioCoordinateFormat { self.inner.input_format().into() }
-            $(fn $list(&self) -> Vec<$value> {
+            $(#[getter] fn $list(&self) -> Vec<$value> {
                 self.inner.$list().iter().cloned().map(|inner| $value { inner }).collect()
             })+
+            #[getter]
             fn metadata(&self) -> BioMetadata { BioMetadata { inner: self.inner.metadata().clone() } }
+            #[getter]
             fn source_state(&self) -> BioStructureSourceState { BioStructureSourceState { inner: self.inner.source_state().clone() } }
+            #[getter]
             fn coordinates(&self) -> BioCoordinateBlock { BioCoordinateBlock { inner: self.inner.coordinates().clone() } }
+            #[getter]
             fn crystal(&self) -> Option<BioCrystalInfo> { self.inner.crystal().cloned().map(|inner| BioCrystalInfo { inner }) }
+            #[getter]
             fn num_models(&self) -> usize { self.inner.num_models() }
+            fn __len__(&self) -> usize { self.inner.num_models() }
+            fn __getitem__(&self, index: crate::indexing::Integer) -> PyResult<BioModelRow> {
+                let index = crate::indexing::normalize(index, self.inner.num_models())?;
+                Ok(BioModelRow { inner: self.inner.models()[index].clone() })
+            }
+            #[getter]
             fn num_chains(&self) -> usize { self.inner.num_chains() }
+            #[getter]
             fn num_residues(&self) -> usize { self.inner.num_residues() }
+            #[getter]
             fn num_atoms(&self) -> usize { self.inner.num_atoms() }
+            #[getter]
             fn num_entities(&self) -> usize { self.inner.num_entities() }
+            #[getter]
             fn name(&self) -> &str { self.inner.name() }
+            #[getter]
             fn has_origx(&self) -> bool { self.inner.has_origx() }
+            #[getter]
             fn origx(&self) -> BioTransform { BioTransform { inner: *self.inner.origx() } }
+            #[getter]
             fn ncs_oper_identity_id(&self) -> Option<&str> { self.inner.ncs_oper_identity_id() }
+            #[getter]
             fn resolution(&self) -> f64 { self.inner.resolution() }
+            #[getter]
             fn ter_status(&self) -> u8 { self.inner.ter_status() }
             fn atom_position(&self, atom: u32) -> Option<[f64;3]> { self.inner.atom_position(ck::BioAtomId::new(atom)) }
             fn residue_atoms(&self, residue: u32) -> Option<Vec<BioAtomRow>> {

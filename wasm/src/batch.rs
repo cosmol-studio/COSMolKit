@@ -415,48 +415,44 @@ mod transform_tests {
 
 impl MoleculeBatch {
     #[cfg(feature = "cap-smiles")]
-    pub fn to_smiles_list(
-        &self,
-    ) -> Result<Vec<Option<ck::PropertyText>>, ck::BatchValidationError> {
-        self.inner.to_smiles_list()
+    pub fn to_smiles(&self) -> Result<Vec<Option<ck::PropertyText>>, ck::BatchValidationError> {
+        self.inner.to_smiles()
     }
     #[cfg(feature = "cap-smiles")]
-    pub fn to_smiles_list_with_params(
+    pub fn to_smiles_with_params(
         &self,
         options: &ck::SmilesWriteParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::PropertyText>>, ck::BatchValidationError> {
-        self.inner.to_smiles_list_with_params(options, params)
+        self.inner.to_smiles_with_params(options, params)
     }
     #[cfg(feature = "cap-conformer")]
-    pub fn dg_bounds_matrix_list(
-        &self,
-    ) -> Result<Vec<Option<Vec<Vec<f64>>>>, ck::BatchValidationError> {
-        self.inner.dg_bounds_matrix_list()
+    pub fn dg_bounds_matrix(&self) -> Result<Vec<Option<Vec<Vec<f64>>>>, ck::BatchValidationError> {
+        self.inner.dg_bounds_matrix()
     }
     #[cfg(feature = "cap-conformer")]
-    pub fn dg_bounds_matrix_list_with_params(
+    pub fn dg_bounds_matrix_with_params(
         &self,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<Vec<Vec<f64>>>>, ck::BatchValidationError> {
-        self.inner.dg_bounds_matrix_list_with_params(params)
+        self.inner.dg_bounds_matrix_with_params(params)
     }
     #[cfg(feature = "cap-depict")]
-    pub fn to_svg_list(
+    pub fn to_svg(
         &self,
         width: u32,
         height: u32,
     ) -> Result<Vec<Option<String>>, ck::BatchValidationError> {
-        self.inner.to_svg_list(width, height)
+        self.inner.to_svg(width, height)
     }
     #[cfg(feature = "cap-depict")]
-    pub fn to_svg_list_with_params(
+    pub fn to_svg_with_params(
         &self,
         width: u32,
         height: u32,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<String>>, ck::BatchValidationError> {
-        self.inner.to_svg_list_with_params(width, height, params)
+        self.inner.to_svg_with_params(width, height, params)
     }
 }
 
@@ -478,17 +474,14 @@ mod query_tests {
         let batch = MoleculeBatch::from_smiles_list_with_params(&input, &parse, &keep).unwrap();
         let source =
             ck::MoleculeBatch::from_smiles_list_with_params(&input, &parse, &keep).unwrap();
+        assert_eq!(batch.to_smiles().unwrap(), source.to_smiles().unwrap());
         assert_eq!(
-            batch.to_smiles_list().unwrap(),
-            source.to_smiles_list().unwrap()
+            batch.dg_bounds_matrix().unwrap(),
+            source.dg_bounds_matrix().unwrap()
         );
         assert_eq!(
-            batch.dg_bounds_matrix_list().unwrap(),
-            source.dg_bounds_matrix_list().unwrap()
-        );
-        assert_eq!(
-            batch.to_svg_list(120, 100).unwrap(),
-            source.to_svg_list(120, 100).unwrap()
+            batch.to_svg(120, 100).unwrap(),
+            source.to_svg(120, 100).unwrap()
         );
         let ticks = Arc::new(AtomicUsize::new(0));
         let target = Arc::clone(&ticks);
@@ -503,27 +496,27 @@ mod query_tests {
             ..Default::default()
         };
         assert_eq!(
-            batch.to_smiles_list_with_params(&write, &params).unwrap(),
+            batch.to_smiles_with_params(&write, &params).unwrap(),
             source
-                .to_smiles_list_with_params(&write, &ck::BatchQueryParams::default())
+                .to_smiles_with_params(&write, &ck::BatchQueryParams::default())
                 .unwrap()
         );
         assert_eq!(ticks.swap(0, Ordering::SeqCst), 3);
         assert_eq!(
-            batch.dg_bounds_matrix_list_with_params(&params).unwrap(),
+            batch.dg_bounds_matrix_with_params(&params).unwrap(),
             source
-                .dg_bounds_matrix_list_with_params(&ck::BatchQueryParams::default())
+                .dg_bounds_matrix_with_params(&ck::BatchQueryParams::default())
                 .unwrap()
         );
         assert_eq!(ticks.swap(0, Ordering::SeqCst), 3);
         assert_eq!(
-            batch.to_svg_list_with_params(120, 100, &params).unwrap(),
+            batch.to_svg_with_params(120, 100, &params).unwrap(),
             source
-                .to_svg_list_with_params(120, 100, &ck::BatchQueryParams::default())
+                .to_svg_with_params(120, 100, &ck::BatchQueryParams::default())
                 .unwrap()
         );
         assert_eq!(ticks.swap(0, Ordering::SeqCst), 3);
-        let failure = batch.to_svg_list_with_params(0, 100, &params).unwrap_err();
+        let failure = batch.to_svg_with_params(0, 100, &params).unwrap_err();
         assert_eq!(failure.errors, 2);
         assert_eq!(
             failure
@@ -535,11 +528,11 @@ mod query_tests {
         );
         assert_eq!(ticks.load(Ordering::SeqCst), 3);
         assert_eq!(batch.valid_mask(), [true, false, true]);
-        assert!(batch.to_smiles_list().unwrap()[1].is_none());
+        assert!(batch.to_smiles().unwrap()[1].is_none());
         assert!(
             MoleculeBatch::from_smiles_list(&[])
                 .unwrap()
-                .dg_bounds_matrix_list()
+                .dg_bounds_matrix()
                 .unwrap()
                 .is_empty()
         );
@@ -707,75 +700,77 @@ mod image_tests {
 
 #[cfg(feature = "cap-fingerprints")]
 impl MoleculeBatch {
-    pub fn fingerprint_atom_pair_list(
+    pub fn fingerprint_atom_pair(
         &self,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_list()
+        self.inner
+            .fingerprint_atom_pair()
+            .map(ck::FingerprintBatch::into_values)
     }
-    pub fn fingerprint_atom_pair_list_with_params(
+    pub fn fingerprint_atom_pair_with_params(
         &self,
         options: &ck::AtomPairFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_atom_pair_list_with_params(options, params)
+            .fingerprint_atom_pair_with_params(options, params)
+            .map(ck::FingerprintBatch::into_values)
     }
-    pub fn fingerprint_atom_pair_sparse_count_list(
+    pub fn fingerprint_atom_pair_sparse_count(
         &self,
     ) -> Result<Vec<Option<ck::SparseCountFingerprint>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_sparse_count_list()
+        self.inner.fingerprint_atom_pair_sparse_count()
     }
-    pub fn fingerprint_atom_pair_sparse_count_list_with_params(
+    pub fn fingerprint_atom_pair_sparse_count_with_params(
         &self,
         options: &ck::AtomPairFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::SparseCountFingerprint>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_atom_pair_sparse_count_list_with_params(options, params)
+            .fingerprint_atom_pair_sparse_count_with_params(options, params)
     }
-    pub fn fingerprint_atom_pair_count_list(
+    pub fn fingerprint_atom_pair_count(
         &self,
     ) -> Result<Vec<Option<ck::SparseCountFingerprint32>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_count_list()
+        self.inner.fingerprint_atom_pair_count()
     }
-    pub fn fingerprint_atom_pair_count_list_with_params(
+    pub fn fingerprint_atom_pair_count_with_params(
         &self,
         options: &ck::AtomPairFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::SparseCountFingerprint32>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_atom_pair_count_list_with_params(options, params)
+            .fingerprint_atom_pair_count_with_params(options, params)
     }
-    pub fn fingerprint_atom_pair_sparse_bits_list(
+    pub fn fingerprint_atom_pair_sparse(
         &self,
     ) -> Result<Vec<Option<ck::SparseBitFingerprint>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_sparse_bits_list()
+        self.inner.fingerprint_atom_pair_sparse()
     }
-    pub fn fingerprint_atom_pair_sparse_bits_list_with_params(
+    pub fn fingerprint_atom_pair_sparse_with_params(
         &self,
         options: &ck::AtomPairFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::SparseBitFingerprint>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_atom_pair_sparse_bits_list_with_params(options, params)
+            .fingerprint_atom_pair_sparse_with_params(options, params)
     }
-    pub fn fingerprint_atom_pair_with_output_list(
+    pub fn fingerprint_atom_pair_with_output(
         &self,
     ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_with_output_list()
+        self.inner.fingerprint_atom_pair_with_output()
     }
-    pub fn fingerprint_atom_pair_with_output_list_with_params(
+    pub fn fingerprint_atom_pair_with_output_with_params(
         &self,
         options: &ck::AtomPairFingerprintParams,
         collect_additional_output: bool,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_atom_pair_with_output_list_with_params(
-                options,
-                collect_additional_output,
-                params,
-            )
+        self.inner.fingerprint_atom_pair_with_output_with_params(
+            options,
+            collect_additional_output,
+            params,
+        )
     }
 }
 
@@ -800,7 +795,7 @@ mod atom_pair_tests {
         let options = ck::AtomPairFingerprintParams::default();
         let execution = ck::BatchQueryParams::default();
         let scalar = ck::Molecule::from_smiles("CCO").unwrap();
-        let bits = batch.fingerprint_atom_pair_list().unwrap();
+        let bits = batch.fingerprint_atom_pair().unwrap();
         assert_eq!(
             bits[0].as_ref().unwrap(),
             &scalar.fingerprint_atom_pair().unwrap()
@@ -809,10 +804,10 @@ mod atom_pair_tests {
         assert_eq!(
             bits,
             batch
-                .fingerprint_atom_pair_list_with_params(&options, &execution)
+                .fingerprint_atom_pair_with_params(&options, &execution)
                 .unwrap()
         );
-        let sparse = batch.fingerprint_atom_pair_sparse_count_list().unwrap();
+        let sparse = batch.fingerprint_atom_pair_sparse_count().unwrap();
         assert_eq!(
             sparse[0].as_ref().unwrap(),
             &scalar.fingerprint_atom_pair_sparse_count().unwrap()
@@ -820,24 +815,24 @@ mod atom_pair_tests {
         assert_eq!(
             sparse,
             batch
-                .fingerprint_atom_pair_sparse_count_list_with_params(&options, &execution)
+                .fingerprint_atom_pair_sparse_count_with_params(&options, &execution)
                 .unwrap()
         );
-        let count = batch.fingerprint_atom_pair_count_list().unwrap();
+        let count = batch.fingerprint_atom_pair_count().unwrap();
         assert_eq!(
             count,
             batch
-                .fingerprint_atom_pair_count_list_with_params(&options, &execution)
+                .fingerprint_atom_pair_count_with_params(&options, &execution)
                 .unwrap()
         );
-        let sparse_bits = batch.fingerprint_atom_pair_sparse_bits_list().unwrap();
+        let sparse_bits = batch.fingerprint_atom_pair_sparse().unwrap();
         assert_eq!(
             sparse_bits,
             batch
-                .fingerprint_atom_pair_sparse_bits_list_with_params(&options, &execution)
+                .fingerprint_atom_pair_sparse_with_params(&options, &execution)
                 .unwrap()
         );
-        let outputs = batch.fingerprint_atom_pair_with_output_list().unwrap();
+        let outputs = batch.fingerprint_atom_pair_with_output().unwrap();
         assert_eq!(
             outputs[0].as_ref().unwrap().fingerprint(),
             bits[0].as_ref().unwrap()
@@ -845,14 +840,14 @@ mod atom_pair_tests {
         assert_eq!(
             outputs,
             batch
-                .fingerprint_atom_pair_with_output_list_with_params(&options, true, &execution)
+                .fingerprint_atom_pair_with_output_with_params(&options, true, &execution)
                 .unwrap()
         );
         let additional = outputs[0].as_ref().unwrap().additional_output().unwrap();
         assert_eq!(additional.atom_counts().unwrap().len(), 3);
         assert!(additional.bit_paths().is_none());
         let no_output = batch
-            .fingerprint_atom_pair_with_output_list_with_params(&options, false, &execution)
+            .fingerprint_atom_pair_with_output_with_params(&options, false, &execution)
             .unwrap();
         assert!(matches!(
             no_output[0].as_ref().unwrap().additional_output(),
@@ -869,7 +864,7 @@ mod atom_pair_tests {
             ..Default::default()
         };
         batch
-            .fingerprint_atom_pair_list_with_params(&options, &callback)
+            .fingerprint_atom_pair_with_params(&options, &callback)
             .unwrap();
         assert_eq!(ticks.load(Ordering::SeqCst), 3);
         assert_eq!(batch.valid_mask(), [true, false, true]);
@@ -878,44 +873,50 @@ mod atom_pair_tests {
 
 #[cfg(feature = "cap-fingerprints")]
 impl MoleculeBatch {
-    pub fn fingerprint_layered_list(
+    pub fn fingerprint_layered(
         &self,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner.fingerprint_layered_list()
+        self.inner
+            .fingerprint_layered()
+            .map(ck::FingerprintBatch::into_values)
     }
-    pub fn fingerprint_layered_list_with_params(
+    pub fn fingerprint_layered_with_params(
         &self,
         options: &ck::LayeredFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_layered_list_with_params(options, params)
+            .fingerprint_layered_with_params(options, params)
+            .map(ck::FingerprintBatch::into_values)
     }
-    pub fn fingerprint_layered_with_output_list(
+    pub fn fingerprint_layered_with_output(
         &self,
     ) -> Result<Vec<Option<ck::LayeredFingerprintResult>>, ck::BatchValidationError> {
-        self.inner.fingerprint_layered_with_output_list()
+        self.inner.fingerprint_layered_with_output()
     }
-    pub fn fingerprint_layered_with_output_list_with_params(
+    pub fn fingerprint_layered_with_output_with_params(
         &self,
         options: &ck::LayeredFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::LayeredFingerprintResult>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_layered_with_output_list_with_params(options, params)
+            .fingerprint_layered_with_output_with_params(options, params)
     }
-    pub fn fingerprint_pattern_list(
+    pub fn fingerprint_pattern(
         &self,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner.fingerprint_pattern_list()
+        self.inner
+            .fingerprint_pattern()
+            .map(ck::FingerprintBatch::into_values)
     }
-    pub fn fingerprint_pattern_list_with_params(
+    pub fn fingerprint_pattern_with_params(
         &self,
         options: &ck::PatternFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_pattern_list_with_params(options, params)
+            .fingerprint_pattern_with_params(options, params)
+            .map(ck::FingerprintBatch::into_values)
     }
 }
 
@@ -936,7 +937,7 @@ mod layered_pattern_tests {
         let scalar = ck::Molecule::from_smiles("CCO").unwrap();
         let options = ck::LayeredFingerprintParams::default();
         let query = ck::BatchQueryParams::default();
-        let dense = batch.fingerprint_layered_list().unwrap();
+        let dense = batch.fingerprint_layered().unwrap();
         assert_eq!(
             dense[0].as_ref().unwrap(),
             &scalar.fingerprint_layered().unwrap()
@@ -945,10 +946,10 @@ mod layered_pattern_tests {
         assert_eq!(
             dense,
             batch
-                .fingerprint_layered_list_with_params(&options, &query)
+                .fingerprint_layered_with_params(&options, &query)
                 .unwrap()
         );
-        let output = batch.fingerprint_layered_with_output_list().unwrap();
+        let output = batch.fingerprint_layered_with_output().unwrap();
         assert_eq!(
             output[0].as_ref().unwrap(),
             &scalar.fingerprint_layered_with_output().unwrap()
@@ -956,11 +957,11 @@ mod layered_pattern_tests {
         assert_eq!(
             output,
             batch
-                .fingerprint_layered_with_output_list_with_params(&options, &query)
+                .fingerprint_layered_with_output_with_params(&options, &query)
                 .unwrap()
         );
         assert!(output[0].as_ref().unwrap().atom_counts().is_none());
-        let pattern = batch.fingerprint_pattern_list().unwrap();
+        let pattern = batch.fingerprint_pattern().unwrap();
         assert_eq!(
             pattern[0].as_ref().unwrap(),
             &scalar.fingerprint_pattern().unwrap()
@@ -968,10 +969,7 @@ mod layered_pattern_tests {
         assert_eq!(
             pattern,
             batch
-                .fingerprint_pattern_list_with_params(
-                    &ck::PatternFingerprintParams::default(),
-                    &query
-                )
+                .fingerprint_pattern_with_params(&ck::PatternFingerprintParams::default(), &query)
                 .unwrap()
         );
         let single = MoleculeBatch::from_smiles_list(&["CCO".into()]).unwrap();
@@ -981,7 +979,7 @@ mod layered_pattern_tests {
             ..Default::default()
         };
         let result = single
-            .fingerprint_layered_with_output_list_with_params(&seeded, &query)
+            .fingerprint_layered_with_output_with_params(&seeded, &query)
             .unwrap();
         assert_eq!(
             result[0].as_ref().unwrap(),
@@ -1000,45 +998,49 @@ mod layered_pattern_tests {
 
 #[cfg(feature = "cap-fingerprints")]
 impl MoleculeBatch {
-    pub fn fingerprint_morgan_list(
+    pub fn fingerprint_morgan(
         &self,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner.fingerprint_morgan_list()
+        self.inner
+            .fingerprint_morgan()
+            .map(ck::FingerprintBatch::into_values)
     }
-    pub fn fingerprint_topological_torsion_list_with_params(
+    pub fn fingerprint_topological_torsion_with_params(
         &self,
         options: &ck::TopologicalTorsionFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_topological_torsion_list_with_params(options, params)
+            .fingerprint_topological_torsion_with_params(options, params)
+            .map(ck::FingerprintBatch::into_values)
     }
-    pub fn fingerprint_morgan_list_with_params(
+    pub fn fingerprint_morgan_with_params(
         &self,
         options: &ck::MorganFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_morgan_list_with_params(options, params)
+            .fingerprint_morgan_with_params(options, params)
+            .map(ck::FingerprintBatch::into_values)
     }
-    pub fn fingerprint_morgan_with_output_list(
+    pub fn fingerprint_morgan_with_output(
         &self,
     ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
-        self.inner.fingerprint_morgan_with_output_list()
+        self.inner.fingerprint_morgan_with_output()
     }
-    pub fn fingerprint_morgan_with_output_list_with_params(
+    pub fn fingerprint_morgan_with_output_with_params(
         &self,
         options: &ck::MorganFingerprintParams,
         collect_additional_output: bool,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
-        self.inner.fingerprint_morgan_with_output_list_with_params(
+        self.inner.fingerprint_morgan_with_output_with_params(
             options,
             collect_additional_output,
             params,
         )
     }
-    pub fn fingerprint_morgan_list_with_generator_params(
+    pub fn fingerprint_morgan_with_generator_params(
         &self,
         options: &ck::MorganGeneratorParams,
         atom_invariants: Option<&ck::MorganAtomInvariantsGenerator>,
@@ -1046,15 +1048,17 @@ impl MoleculeBatch {
         call: &ck::MorganCallParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner.fingerprint_morgan_list_with_generator_params(
-            options,
-            atom_invariants,
-            bond_invariants,
-            call,
-            params,
-        )
+        self.inner
+            .fingerprint_morgan_with_generator_params(
+                options,
+                atom_invariants,
+                bond_invariants,
+                call,
+                params,
+            )
+            .map(ck::FingerprintBatch::into_values)
     }
-    pub fn fingerprint_morgan_with_output_list_with_generator_params(
+    pub fn fingerprint_morgan_with_output_with_generator_params(
         &self,
         options: &ck::MorganGeneratorParams,
         atom_invariants: Option<&ck::MorganAtomInvariantsGenerator>,
@@ -1064,7 +1068,7 @@ impl MoleculeBatch {
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
         self.inner
-            .fingerprint_morgan_with_output_list_with_generator_params(
+            .fingerprint_morgan_with_output_with_generator_params(
                 options,
                 atom_invariants,
                 bond_invariants,
@@ -1100,7 +1104,7 @@ mod morgan_tests {
         };
         let call = ck::MorganCallParams::default();
         let query = ck::BatchQueryParams::default();
-        let dense = batch.fingerprint_morgan_list().unwrap();
+        let dense = batch.fingerprint_morgan().unwrap();
         assert_eq!(
             dense[0].as_ref().unwrap(),
             &scalar
@@ -1111,28 +1115,26 @@ mod morgan_tests {
         assert_eq!(
             dense,
             batch
-                .fingerprint_morgan_list_with_params(&options, &query)
+                .fingerprint_morgan_with_params(&options, &query)
                 .unwrap()
         );
         assert_eq!(
             dense,
             batch
-                .fingerprint_morgan_list_with_generator_params(
-                    &generator, None, None, &call, &query
-                )
+                .fingerprint_morgan_with_generator_params(&generator, None, None, &call, &query)
                 .unwrap()
         );
-        let output = batch.fingerprint_morgan_with_output_list().unwrap();
+        let output = batch.fingerprint_morgan_with_output().unwrap();
         assert_eq!(
             output,
             batch
-                .fingerprint_morgan_with_output_list_with_params(&options, true, &query)
+                .fingerprint_morgan_with_output_with_params(&options, true, &query)
                 .unwrap()
         );
         assert_eq!(
             output,
             batch
-                .fingerprint_morgan_with_output_list_with_generator_params(
+                .fingerprint_morgan_with_output_with_generator_params(
                     &generator, None, None, &call, true, &query
                 )
                 .unwrap()
@@ -1153,7 +1155,7 @@ mod morgan_tests {
             3
         );
         let missing = batch
-            .fingerprint_morgan_with_output_list_with_params(&options, false, &query)
+            .fingerprint_morgan_with_output_with_params(&options, false, &query)
             .unwrap();
         assert!(matches!(
             missing[0].as_ref().unwrap().additional_output(),
@@ -1169,7 +1171,7 @@ mod morgan_tests {
             ck::MorganFingerprintGenerator::new(Some(&generator), Some(&atom), Some(&bond))
                 .unwrap();
         let values = batch
-            .fingerprint_morgan_list_with_generator_params(
+            .fingerprint_morgan_with_generator_params(
                 &generator,
                 Some(&atom),
                 Some(&bond),

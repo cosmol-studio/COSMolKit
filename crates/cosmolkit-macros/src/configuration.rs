@@ -524,18 +524,20 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
         }
         inputs.insert(field.to_string(), ctor_value.clone());
         factory_inputs.push(ctor_value);
-        let location = quote!(self.inner.#native_field);
         let setter = format_ident!("set_{}", field);
         accessors.push(quote! {
             #(#docs)*
             #[getter]
-            fn #field(&self) -> crate::parameters::ContainerOutput<'_, #adapter> {
-                crate::parameters::ContainerOutput(&#location)
+            fn #field(slf: pyo3::PyRef<'_, Self>) -> crate::parameters::FieldOutput<#adapter, Self> {
+                crate::parameters::FieldOutput::new(
+                    slf.into(), |native: &#native| &native.#native_field,
+                    |native: &mut #native| &mut native.#native_field,
+                )
             }
             #[setter]
-            fn #setter(&mut self, value: #input) -> pyo3::PyResult<()> {
-                #location = #value;
-                Ok(())
+            fn #setter(slf: &pyo3::Bound<'_, Self>, value: #input) -> pyo3::PyResult<()> {
+                let value = #value;
+                slf.try_borrow_mut()?.inner.write(slf.py(), |native| native.#native_field = value)
             }
         });
     }
@@ -553,10 +555,18 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
     };
     Ok(quote! {
         #[pyo3::pyclass(module = "cosmolkit")]
-        pub struct #name { pub(crate) inner: #native }
+        pub struct #name { pub(crate) inner: crate::parameters::NativeField<#native> }
         impl #name {
-            pub(crate) fn from_rust(_py: pyo3::Python<'_>, value: #native) -> pyo3::PyResult<Self> { Ok(Self { inner: value }) }
-            pub(crate) fn to_rust(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<#native> { Ok(self.inner.clone()) }
+            pub(crate) fn from_rust(_py: pyo3::Python<'_>, value: #native) -> pyo3::PyResult<Self> { Ok(Self { inner: crate::parameters::NativeField::Owned(value) }) }
+            pub(crate) fn to_rust(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<#native> { self.inner.read(py, Clone::clone) }
+        }
+        impl crate::parameters::NativeOwner for #name {
+            type Value = #native;
+            fn read_native(&self, py: pyo3::Python<'_>, visit: &mut dyn FnMut(&Self::Value)) -> pyo3::PyResult<()> { self.inner.read(py, visit) }
+            fn write_native(&mut self, py: pyo3::Python<'_>, visit: &mut dyn FnMut(&mut Self::Value)) -> pyo3::PyResult<()> { self.inner.write(py, visit) }
+        }
+        impl crate::parameters::ConfigurationView for #name {
+            fn from_field(inner: crate::parameters::NativeField<#native>) -> Self { Self { inner } }
         }
         impl crate::parameters::Configuration for #name {
             type Native = #native;
@@ -564,7 +574,7 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
             fn to_native(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Self::Native> { self.to_rust(py) }
         }
         impl crate::configuration::FieldProjection for #native {
-            type Adapter = crate::parameters::ConfigurationField<#name>;
+            type Adapter = crate::parameters::LiveConfigurationField<#name>;
         }
         #[pyo3::pymethods]
         impl #name {
@@ -575,6 +585,9 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
                 Self::from_rust(py, Native { #inputs })
             }
             #(#accessors)*
+            fn __traverse__(&self, visit: pyo3::gc::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
+                self.inner.traverse(visit)
+            }
             #factory_method
             #methods
         }

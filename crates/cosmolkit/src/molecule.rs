@@ -892,6 +892,197 @@ impl Clone for Molecule {
     }
 }
 
+/// Read-only atom view retaining the molecular version from which it was obtained.
+///
+/// Cloning retains shared state, not a copied atom or computed metadata. Later
+/// edits of the source molecule use normal COW and do not retarget this view.
+#[derive(Clone)]
+pub struct MoleculeAtom {
+    state: Arc<MoleculeState>,
+    id: AtomId,
+}
+
+macro_rules! atom_value_accessors {
+    ($($name:ident -> $output:ty;)+) => {$(
+        #[doc = concat!("Read `Atom::", stringify!($name), "` from this molecular version.")]
+        pub fn $name(&self) -> $output {
+            self.value().$name()
+        }
+    )+};
+}
+
+impl MoleculeAtom {
+    atom_value_accessors! {
+        id -> AtomId;
+        element -> crate::Element;
+        atomic_number -> u8;
+        formal_charge -> i8;
+        chiral_tag -> crate::ChiralTag;
+        chiral_tag_code -> i64;
+        chiral_tag_name -> &'static str;
+        isotope -> Option<u16>;
+        atom_map -> Option<u32>;
+        is_aromatic -> bool;
+        explicit_hydrogens -> u8;
+        no_implicit -> bool;
+        radical_electrons -> u8;
+        hybridization -> crate::Hybridization;
+        template_attachment_order -> Option<&crate::TemplateAttachmentOrder>;
+        cip_descriptor -> Result<Option<crate::CipDescriptor>, crate::CipDescriptorError>;
+        cip_neighbor_order -> Result<Option<Vec<u32>>, crate::CipDescriptorError>;
+        cip_rank -> Result<Option<u32>, crate::PropertyValueError>;
+    }
+
+    /// Borrow the detached atom record in this retained molecular version.
+    pub fn value(&self) -> &Atom {
+        &self.state.topology.atoms[self.id.index()]
+    }
+
+    /// Number of graph neighbors, including explicit hydrogen vertices.
+    pub fn degree(&self) -> usize {
+        // RDKit✔️✔️: unsigned int Atom::getDegree() const {
+        // RDKit✔️✔️:   return dp_mol ? getOwningMol().getAtomDegree(this) : 0;
+        // RDKit✔️✔️: }
+        // An MoleculeAtom always has an owner; indexed adjacency access is O(1).
+        self.state
+            .topology
+            .adjacency
+            .neighbors_of(self.id.index())
+            .len()
+    }
+
+    /// Read cached explicit valence; never calculate or install an assignment.
+    #[cfg(feature = "cap-valence")]
+    pub fn explicit_valence(&self) -> Result<i32, crate::ValenceError> {
+        cosmolkit_core::cached_explicit_valence(
+            self.value(),
+            self.state.derived_cache.valence_assignment(),
+        )
+    }
+
+    /// Read cached implicit hydrogens, including the source no-implicit rule.
+    #[cfg(feature = "cap-valence")]
+    pub fn implicit_hydrogens(&self) -> Result<i32, crate::ValenceError> {
+        cosmolkit_core::implicit_hydrogen_count_from_cache(
+            self.value(),
+            self.state.derived_cache.valence_assignment(),
+        )
+        .map(|value| value as i32)
+    }
+
+    /// Sum atom-stored explicit hydrogens and cached implicit hydrogens.
+    #[cfg(feature = "cap-valence")]
+    pub fn total_hydrogens(&self) -> Result<i32, crate::ValenceError> {
+        cosmolkit_core::total_hydrogen_count_from_cache(
+            self.state.topology.as_ref(),
+            self.state.derived_cache.valence_assignment(),
+            self.id,
+            false,
+        )
+        .map(|value| value as i32)
+    }
+
+    /// Sum cached explicit and implicit valence.
+    #[cfg(feature = "cap-valence")]
+    pub fn total_valence(&self) -> Result<i32, crate::ValenceError> {
+        cosmolkit_core::cached_total_valence_from_assignment(
+            self.value(),
+            self.state.derived_cache.valence_assignment(),
+        )
+    }
+}
+
+impl std::ops::Deref for MoleculeAtom {
+    type Target = Atom;
+    fn deref(&self) -> &Atom {
+        self.value()
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "cap-smiles",
+    feature = "cap-hydrogens",
+    feature = "cap-valence"
+))]
+mod molecular_atom_tests {
+    use super::*;
+
+    #[test]
+    fn owned_atom_retains_shared_version_across_compacting_edit_and_owner_drop() {
+        let mut molecule = Molecule::from_smiles("CO")
+            .unwrap()
+            .with_hydrogens()
+            .unwrap();
+        let refs = molecule.atoms();
+        let oxygen = molecule.atom(AtomId::new(1)).unwrap();
+        assert!(Arc::ptr_eq(&molecule.state, &oxygen.state));
+        assert!(
+            refs.iter()
+                .all(|atom| Arc::ptr_eq(&atom.state, &oxygen.state))
+        );
+        assert_eq!(refs[1].id(), oxygen.id());
+        assert_eq!(refs[1].degree(), oxygen.degree());
+        assert!(std::ptr::eq(refs[1].value(), oxygen.value()));
+        assert!(molecule.atom(AtomId::new(999)).is_none());
+        assert_eq!(oxygen.degree(), 2);
+        assert_eq!(oxygen.explicit_valence().unwrap(), 2);
+        molecule.remove_hydrogens_().unwrap();
+        assert!(!Arc::ptr_eq(&molecule.state, &oxygen.state));
+        assert_eq!(molecule.atom(AtomId::new(1)).unwrap().degree(), 1);
+        assert_eq!(oxygen.degree(), 2);
+        assert_eq!(refs[2].atomic_number(), 1);
+        drop(molecule);
+        assert_eq!(oxygen.explicit_valence().unwrap(), 2);
+        assert_eq!(oxygen.total_valence().unwrap(), 2);
+        assert_eq!(refs[2].degree(), 1);
+    }
+
+    #[test]
+    fn atom_view_observes_missing_cache_without_recalculation() {
+        let molecule = Molecule::from_parts(
+            TopologyBlock::try_from_parts(
+                vec![Atom::from_spec(
+                    AtomId::new(0),
+                    crate::AtomSpec::new(crate::Element::C),
+                )],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .unwrap(),
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+        )
+        .unwrap();
+        let atom = molecule.atom(AtomId::new(0)).unwrap();
+        assert_eq!(atom.degree(), 0);
+        assert!(matches!(
+            atom.explicit_valence(),
+            Err(crate::ValenceError::ExplicitValenceCacheNotInitialized { .. })
+        ));
+        assert!(matches!(
+            atom.implicit_hydrogens(),
+            Err(crate::ValenceError::ImplicitValenceCacheNotInitialized { .. })
+        ));
+        assert!(Arc::ptr_eq(&molecule.state, &atom.state));
+        assert!(
+            molecule
+                .derived_cache_runtime()
+                .valence_assignment()
+                .is_none()
+        );
+    }
+}
+
+impl fmt::Debug for MoleculeAtom {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MoleculeAtom")
+            .field("atom", self.value())
+            .finish()
+    }
+}
+
 impl fmt::Debug for Molecule {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -1246,10 +1437,22 @@ impl Molecule {
         self.state.topology.bonds.len()
     }
 
-    /// Returns all atoms in canonical row order.
+    /// Returns atoms in canonical row order, retaining this molecular version.
+    ///
+    /// Each result shares storage with this molecule. Later molecular edits do
+    /// not change these atoms. Use `atom` to retrieve one atom without building
+    /// the complete collection.
     #[must_use]
-    pub fn atoms(&self) -> &[Atom] {
-        &self.state.topology.atoms
+    pub fn atoms(&self) -> Vec<MoleculeAtom> {
+        self.state
+            .topology
+            .atoms
+            .iter()
+            .map(|atom| MoleculeAtom {
+                state: Arc::clone(&self.state),
+                id: atom.id(),
+            })
+            .collect()
     }
 
     /// Returns all bonds in canonical row order.
@@ -1258,10 +1461,17 @@ impl Molecule {
         &self.state.topology.bonds
     }
 
-    /// Returns the atom with the requested stable row identifier.
+    /// Returns the requested atom, retaining its current molecular context.
+    ///
+    /// Equivalent to selecting the same row of `atoms()`, without allocating
+    /// the full collection. An absent row returns `None`.
     #[must_use]
-    pub fn atom(&self, atom_id: AtomId) -> Option<&Atom> {
-        self.state.topology.atoms.get(atom_id.index())
+    pub fn atom(&self, atom_id: AtomId) -> Option<MoleculeAtom> {
+        self.state.topology.atoms.get(atom_id.index())?;
+        Some(MoleculeAtom {
+            state: Arc::clone(&self.state),
+            id: atom_id,
+        })
     }
 
     /// Returns the bond with the requested stable row identifier.

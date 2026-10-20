@@ -37,9 +37,9 @@ def test_alignment_parameters_and_results_keep_typed_source_state():
     reference = molecule_with_coordinates(REFERENCE_COORDINATES)
     result = probe.alignment_transform_to(reference, params)
 
-    assert result.rmsd() == pytest.approx(0.0, abs=1.0e-10)
-    assert np.asarray(result.transform().matrix()).shape == (4, 4)
-    assert [(pair.probe_atom, pair.reference_atom) for pair in result.atom_map()] == [
+    assert result.rmsd == pytest.approx(0.0, abs=1.0e-10)
+    assert np.asarray(result.transform.matrix).shape == (4, 4)
+    assert [(pair.probe_atom, pair.reference_atom) for pair in result.atom_map] == [
         (0, 0),
         (1, 1),
         (2, 2),
@@ -66,7 +66,7 @@ def test_read_only_alignment_and_coordinate_rmsd_do_not_mutate_inputs():
         cosmolkit.CoordinateRmsdParameters(atom_maps=[atom_map]),
     )
 
-    assert aligned.rmsd() == pytest.approx(0.0, abs=1.0e-10)
+    assert aligned.rmsd == pytest.approx(0.0, abs=1.0e-10)
     assert best_rmsd == pytest.approx(0.0, abs=1.0e-10)
     assert coordinate_rmsd == pytest.approx(np.sqrt(14.0))
     assert np.array_equal(coordinates_of(probe), probe_before)
@@ -81,12 +81,12 @@ def test_explicit_value_and_in_place_alignment_have_unambiguous_mutation():
 
     aligned, result = probe.with_alignment_to(reference, params)
 
-    assert result.rmsd() == pytest.approx(0.0, abs=1.0e-10)
+    assert result.rmsd == pytest.approx(0.0, abs=1.0e-10)
     assert np.array_equal(coordinates_of(probe), source_before)
     assert np.allclose(coordinates_of(aligned), coordinates_of(reference))
 
     in_place_result = probe.align_to_(reference, params)
-    assert in_place_result.rmsd() == pytest.approx(0.0, abs=1.0e-10)
+    assert in_place_result.rmsd == pytest.approx(0.0, abs=1.0e-10)
     assert np.allclose(coordinates_of(probe), coordinates_of(reference))
 
 
@@ -102,15 +102,15 @@ def test_conformer_alignment_returns_source_ordered_reports():
     )
 
     assert len(pair_rmsds) == 1
-    assert pair_rmsds[0].probe_conformer_id() == 1
-    assert pair_rmsds[0].reference_conformer_id() == 0
-    assert pair_rmsds[0].rmsd() == pytest.approx(0.0, abs=1.0e-10)
-    assert report.rmsds() == pytest.approx([0.0], abs=1.0e-10)
+    assert pair_rmsds[0].probe_conformer_id == 1
+    assert pair_rmsds[0].reference_conformer_id == 0
+    assert pair_rmsds[0].rmsd == pytest.approx(0.0, abs=1.0e-10)
+    assert report.rmsds == pytest.approx([0.0], abs=1.0e-10)
     assert np.array_equal(coordinates_of(molecule, 1), source_second)
     assert np.allclose(coordinates_of(aligned, 1), coordinates_of(aligned, 0))
 
     in_place_report = molecule.align_conformers_()
-    assert in_place_report.rmsds() == pytest.approx([0.0], abs=1.0e-10)
+    assert in_place_report.rmsds == pytest.approx([0.0], abs=1.0e-10)
     assert np.allclose(coordinates_of(molecule, 1), coordinates_of(molecule, 0))
 
 
@@ -140,4 +140,4 @@ def add_conformer(molecule, coordinates):
 
 
 def coordinates_of(molecule, conformer_id=0):
-    return np.asarray(next(c.coordinates() for c in molecule.conformers_3d() if c.id() == conformer_id))
+    return np.asarray(next(c.coordinates for c in molecule.conformers_3d if c.id == conformer_id))

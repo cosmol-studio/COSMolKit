@@ -48,13 +48,13 @@ impl TopologicalTorsionFingerprintGenerator {
         params: Option<&TopologicalTorsionGeneratorParams>,
         atom_invariants: Option<&AtomPairAtomInvariantsGenerator>,
     ) -> PyResult<Self> {
+        let atom_invariants =
+            pyo3::Python::attach(|py| atom_invariants.map(|value| value.to_rust(py)).transpose())?;
+
         let params = params.map(|value| value.to_rust(py)).transpose()?;
-        ck::TopologicalTorsionFingerprintGenerator::new(
-            params.as_ref(),
-            atom_invariants.map(|v| v.inner),
-        )
-        .map(|inner| Self { inner })
-        .map_err(TopologicalTorsionReadError::from_rust)
+        ck::TopologicalTorsionFingerprintGenerator::new(params.as_ref(), atom_invariants)
+            .map(|inner| Self { inner })
+            .map_err(TopologicalTorsionReadError::from_rust)
     }
     #[staticmethod]
     #[pyo3(signature=(params=None,atom_invariants=None))]
@@ -71,6 +71,7 @@ impl TopologicalTorsionFingerprintGenerator {
             .map(|inner| Self { inner })
             .map_err(TopologicalTorsionReadError::from_rust)
     }
+    #[getter]
     fn settings(&self) -> TopologicalTorsionSettings {
         TopologicalTorsionSettings {
             inner: self.inner.settings(),
@@ -93,7 +94,7 @@ impl TopologicalTorsionFingerprintGenerator {
         py: Python<'_>,
         molecules: Vec<Option<Py<Molecule>>>,
         num_threads: i32,
-    ) -> PyResult<Vec<Option<Fingerprint>>> {
+    ) -> PyResult<crate::sequence::Output<ck::FingerprintBatch>> {
         let guards = molecules
             .iter()
             .map(|value| value.as_ref().map(|value| value.try_borrow(py)).transpose())
@@ -103,12 +104,7 @@ impl TopologicalTorsionFingerprintGenerator {
             .map(|value| value.as_ref().map(|value| &value.inner))
             .collect::<Vec<_>>();
         py.detach(|| self.inner.fingerprints(&inputs, num_threads))
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
+            .map(crate::sequence::Output)
             .map_err(TopologicalTorsionReadError::from_rust)
     }
 
@@ -203,6 +199,7 @@ macro_rules! live_settings {
                 fn [<set_ $field>](&mut self,value:$ty)->PyResult<()>{
                     self.inner.[<set_ $field>](value).map_err(TopologicalTorsionReadError::from_rust)
                 })+
+                #[getter]
                 fn params(&self, py: Python<'_>)->PyResult<TopologicalTorsionGeneratorParams>{
                     let value = self.inner.params().map_err(TopologicalTorsionReadError::from_rust)?;
                     TopologicalTorsionGeneratorParams::from_rust(py, value)
@@ -234,7 +231,7 @@ mod tests {
             let native_params=ck::TopologicalTorsionGeneratorParams{fp_size:128,include_chirality:true,..Default::default()};
             let native_provider=ck::AtomPairAtomInvariantsGenerator{include_chirality:true,topological_torsion_correction:true};
             let params=Py::new(py,TopologicalTorsionGeneratorParams::from_rust(py,native_params.clone())?)?;
-            let provider=Py::new(py,AtomPairAtomInvariantsGenerator{inner:native_provider})?;
+            let provider=Py::new(py,AtomPairAtomInvariantsGenerator{inner:crate::parameters::NativeField::Owned(native_provider)})?;
             let generator=py.get_type::<TopologicalTorsionFingerprintGenerator>()
                 .call1((&params,&provider))?.extract::<Py<TopologicalTorsionFingerprintGenerator>>()?;
             let native=ck::TopologicalTorsionFingerprintGenerator::new(Some(&native_params),Some(native_provider)).unwrap();
@@ -356,7 +353,7 @@ pub(crate) fn fingerprint_topological_torsion_with_generator(
     py: Python<'_>,
     generator: &TopologicalTorsionFingerprintGenerator,
     params: Option<&TopologicalTorsionCallParams>,
-    output: Option<&mut FingerprintAdditionalOutput>,
+    additional_output: Option<&mut FingerprintAdditionalOutput>,
 ) -> PyResult<Fingerprint> {
     let params = params.map(|value| value.to_rust(py)).transpose()?;
     py.detach(|| {
@@ -365,7 +362,7 @@ pub(crate) fn fingerprint_topological_torsion_with_generator(
             .fingerprint_topological_torsion_with_generator(
                 &generator.inner,
                 params.as_ref(),
-                output.map(|v| &mut v.inner),
+                additional_output.map(|v| &mut v.inner),
             )
     })
     .map(|inner| Fingerprint { inner })
@@ -377,7 +374,7 @@ pub(crate) fn fingerprint_topological_torsion_count_with_generator(
     py: Python<'_>,
     generator: &TopologicalTorsionFingerprintGenerator,
     params: Option<&TopologicalTorsionCallParams>,
-    output: Option<&mut FingerprintAdditionalOutput>,
+    additional_output: Option<&mut FingerprintAdditionalOutput>,
 ) -> PyResult<SparseCountFingerprint32> {
     let params = params.map(|value| value.to_rust(py)).transpose()?;
     py.detach(|| {
@@ -386,7 +383,7 @@ pub(crate) fn fingerprint_topological_torsion_count_with_generator(
             .fingerprint_topological_torsion_count_with_generator(
                 &generator.inner,
                 params.as_ref(),
-                output.map(|v| &mut v.inner),
+                additional_output.map(|v| &mut v.inner),
             )
     })
     .map(|inner| SparseCountFingerprint32 { inner })
@@ -398,7 +395,7 @@ pub(crate) fn fingerprint_topological_torsion_sparse_with_generator(
     py: Python<'_>,
     generator: &TopologicalTorsionFingerprintGenerator,
     params: Option<&TopologicalTorsionCallParams>,
-    output: Option<&mut FingerprintAdditionalOutput>,
+    additional_output: Option<&mut FingerprintAdditionalOutput>,
 ) -> PyResult<SparseBitFingerprint> {
     let params = params.map(|value| value.to_rust(py)).transpose()?;
     py.detach(|| {
@@ -407,7 +404,7 @@ pub(crate) fn fingerprint_topological_torsion_sparse_with_generator(
             .fingerprint_topological_torsion_sparse_with_generator(
                 &generator.inner,
                 params.as_ref(),
-                output.map(|v| &mut v.inner),
+                additional_output.map(|v| &mut v.inner),
             )
     })
     .map(|inner| SparseBitFingerprint { inner })
@@ -419,7 +416,7 @@ pub(crate) fn fingerprint_topological_torsion_sparse_count_with_generator(
     py: Python<'_>,
     generator: &TopologicalTorsionFingerprintGenerator,
     params: Option<&TopologicalTorsionCallParams>,
-    output: Option<&mut FingerprintAdditionalOutput>,
+    additional_output: Option<&mut FingerprintAdditionalOutput>,
 ) -> PyResult<SparseCountFingerprint> {
     let params = params.map(|value| value.to_rust(py)).transpose()?;
     py.detach(|| {
@@ -428,7 +425,7 @@ pub(crate) fn fingerprint_topological_torsion_sparse_count_with_generator(
             .fingerprint_topological_torsion_sparse_count_with_generator(
                 &generator.inner,
                 params.as_ref(),
-                output.map(|v| &mut v.inner),
+                additional_output.map(|v| &mut v.inner),
             )
     })
     .map(|inner| SparseCountFingerprint { inner })

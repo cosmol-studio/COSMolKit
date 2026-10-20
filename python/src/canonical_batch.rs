@@ -428,6 +428,7 @@ impl MoleculeBatch {
             &read.inner,
             error_mode(errors)?,
             n_jobs,
+            false,
         )
         .map(|inner| Self { inner })
         .map_err(|e| batch_error(py, e))
@@ -547,14 +548,14 @@ impl MoleculeBatch {
             .map_err(|e| batch_error(py, e))
     }
     /// Compute topological torsion fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
-    fn fingerprint_topological_torsion_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
+    fn fingerprint_topological_torsion(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
-            .fingerprint_topological_torsion_list()
+            .fingerprint_topological_torsion()
             .map_err(|e| batch_error(py, e))
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     /// Compute topological torsion fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
-    fn fingerprint_topological_torsion_list_with_params(
+    fn fingerprint_topological_torsion_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::TopologicalTorsionFingerprintParams,
@@ -563,19 +564,19 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_topological_torsion_list_with_params(&options.inner, execution)
+                    .fingerprint_topological_torsion_with_params(&options.inner, execution)
             })
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     /// Compute atom pair fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
-    fn fingerprint_atom_pair_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
+    fn fingerprint_atom_pair(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
-            .fingerprint_atom_pair_list()
+            .fingerprint_atom_pair()
             .map_err(|source| batch_error(py, source))
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     /// Compute atom pair fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
-    fn fingerprint_atom_pair_list_with_params(
+    fn fingerprint_atom_pair_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::AtomPairFingerprintParams,
@@ -583,7 +584,7 @@ impl MoleculeBatch {
     ) -> PyResult<FingerprintBatch> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn fingerprint_atom_pair_list(
+        //     fn fingerprint_atom_pair(
         //         &self,
         //         n_bits: usize,
         //         min_distance: u32,
@@ -632,18 +633,18 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_atom_pair_list_with_params(&options.inner, execution)
+                    .fingerprint_atom_pair_with_params(&options.inner, execution)
             })
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
     /// Compute atom pair sparse feature counts in original batch order, retaining None slots for failed records.
-    fn fingerprint_atom_pair_sparse_count_list(
+    fn fingerprint_atom_pair_sparse_count(
         &self,
         py: Python<'_>,
     ) -> PyResult<Vec<Option<SparseCountFingerprint>>> {
         self.inner
-            .fingerprint_atom_pair_sparse_count_list()
+            .fingerprint_atom_pair_sparse_count()
             .map(|values| {
                 values
                     .into_iter()
@@ -653,7 +654,7 @@ impl MoleculeBatch {
             .map_err(|source| batch_error(py, source))
     }
     /// Compute atom pair sparse feature counts in original batch order, retaining None slots for failed records.
-    fn fingerprint_atom_pair_sparse_count_list_with_params(
+    fn fingerprint_atom_pair_sparse_count_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::AtomPairFingerprintParams,
@@ -661,7 +662,7 @@ impl MoleculeBatch {
     ) -> PyResult<Vec<Option<SparseCountFingerprint>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn fingerprint_atom_pair_sparse_count_list(
+        //     fn fingerprint_atom_pair_sparse_count(
         //         &self,
         //         n_bits: usize,
         //         min_distance: u32,
@@ -710,7 +711,7 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_atom_pair_sparse_count_list_with_params(&options.inner, execution)
+                    .fingerprint_atom_pair_sparse_count_with_params(&options.inner, execution)
             })
             .map(|values| {
                 values
@@ -721,12 +722,12 @@ impl MoleculeBatch {
     }
 
     /// Compute atom pair folded feature counts in original batch order, retaining None slots for failed records.
-    fn fingerprint_atom_pair_count_list(
+    fn fingerprint_atom_pair_count(
         &self,
         py: Python<'_>,
     ) -> PyResult<Vec<Option<SparseCountFingerprint32>>> {
         self.inner
-            .fingerprint_atom_pair_count_list()
+            .fingerprint_atom_pair_count()
             .map(|values| {
                 values
                     .into_iter()
@@ -736,7 +737,7 @@ impl MoleculeBatch {
             .map_err(|source| batch_error(py, source))
     }
     /// Compute atom pair folded feature counts in original batch order, retaining None slots for failed records.
-    fn fingerprint_atom_pair_count_list_with_params(
+    fn fingerprint_atom_pair_count_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::AtomPairFingerprintParams,
@@ -744,7 +745,7 @@ impl MoleculeBatch {
     ) -> PyResult<Vec<Option<SparseCountFingerprint32>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn fingerprint_atom_pair_count_list(
+        //     fn fingerprint_atom_pair_count(
         //         &self,
         //         n_bits: usize,
         //         min_distance: u32,
@@ -793,7 +794,7 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_atom_pair_count_list_with_params(&options.inner, execution)
+                    .fingerprint_atom_pair_count_with_params(&options.inner, execution)
             })
             .map(|values| {
                 values
@@ -804,12 +805,12 @@ impl MoleculeBatch {
     }
 
     /// Compute atom pair sparse feature bits in original batch order, retaining None slots for failed records.
-    fn fingerprint_atom_pair_sparse_bits_list(
+    fn fingerprint_atom_pair_sparse(
         &self,
         py: Python<'_>,
     ) -> PyResult<Vec<Option<SparseBitFingerprint>>> {
         self.inner
-            .fingerprint_atom_pair_sparse_bits_list()
+            .fingerprint_atom_pair_sparse()
             .map(|values| {
                 values
                     .into_iter()
@@ -819,7 +820,7 @@ impl MoleculeBatch {
             .map_err(|source| batch_error(py, source))
     }
     /// Compute atom pair sparse feature bits in original batch order, retaining None slots for failed records.
-    fn fingerprint_atom_pair_sparse_bits_list_with_params(
+    fn fingerprint_atom_pair_sparse_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::AtomPairFingerprintParams,
@@ -827,7 +828,7 @@ impl MoleculeBatch {
     ) -> PyResult<Vec<Option<SparseBitFingerprint>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn fingerprint_atom_pair_sparse_bits_list(
+        //     fn fingerprint_atom_pair_sparse(
         //         &self,
         //         n_bits: usize,
         //         min_distance: u32,
@@ -876,7 +877,7 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_atom_pair_sparse_bits_list_with_params(&options.inner, execution)
+                    .fingerprint_atom_pair_sparse_with_params(&options.inner, execution)
             })
             .map(|values| {
                 values
@@ -887,12 +888,12 @@ impl MoleculeBatch {
     }
 
     /// Compute atom pair fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
-    fn fingerprint_atom_pair_with_output_list(
+    fn fingerprint_atom_pair_with_output(
         &self,
         py: Python<'_>,
     ) -> PyResult<Vec<Option<BatchFingerprintOutput>>> {
         self.inner
-            .fingerprint_atom_pair_with_output_list()
+            .fingerprint_atom_pair_with_output()
             .map(|values| {
                 values
                     .into_iter()
@@ -903,7 +904,7 @@ impl MoleculeBatch {
     }
     /// Compute atom pair fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
     #[pyo3(signature=(options, collect_additional_output=true, params=None))]
-    fn fingerprint_atom_pair_with_output_list_with_params(
+    fn fingerprint_atom_pair_with_output_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::AtomPairFingerprintParams,
@@ -912,7 +913,7 @@ impl MoleculeBatch {
     ) -> PyResult<Vec<Option<BatchFingerprintOutput>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn fingerprint_atom_pair_with_output_list(
+        //     fn fingerprint_atom_pair_with_output(
         //         &self,
         //         n_bits: usize,
         //         min_distance: u32,
@@ -945,7 +946,7 @@ impl MoleculeBatch {
         //             true,
         //         );
         //         self.inner
-        //             .atom_pair_fingerprint_with_output_list_with_options(
+        //             .atom_pair_fingerprint_with_output_with_options(
         //                 &params,
         //                 validate_n_jobs(n_jobs)?,
         //                 progress_bar,
@@ -962,12 +963,11 @@ impl MoleculeBatch {
         params
             .unwrap_or(&defaults)
             .execute(py, |execution| {
-                self.inner
-                    .fingerprint_atom_pair_with_output_list_with_params(
-                        &options.inner,
-                        collect_additional_output,
-                        execution,
-                    )
+                self.inner.fingerprint_atom_pair_with_output_with_params(
+                    &options.inner,
+                    collect_additional_output,
+                    execution,
+                )
             })
             .map(|values| {
                 values
@@ -978,14 +978,14 @@ impl MoleculeBatch {
     }
 
     /// Compute layered fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
-    fn fingerprint_layered_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
+    fn fingerprint_layered(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
-            .fingerprint_layered_list()
+            .fingerprint_layered()
             .map_err(|source| batch_error(py, source))
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     /// Compute layered fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
-    fn fingerprint_layered_list_with_params(
+    fn fingerprint_layered_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_layered::LayeredFingerprintParams,
@@ -993,7 +993,7 @@ impl MoleculeBatch {
     ) -> PyResult<FingerprintBatch> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn fingerprint_layered_list(
+        //     fn fingerprint_layered(
         //         &self,
         //         layers: u32,
         //         min_path: u32,
@@ -1029,18 +1029,18 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_layered_list_with_params(&options.inner, execution)
+                    .fingerprint_layered_with_params(&options.inner, execution)
             })
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
     /// Compute layered fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
-    fn fingerprint_layered_with_output_list(
+    fn fingerprint_layered_with_output(
         &self,
         py: Python<'_>,
     ) -> PyResult<Vec<Option<LayeredFingerprintResult>>> {
         self.inner
-            .fingerprint_layered_with_output_list()
+            .fingerprint_layered_with_output()
             .map(|values| {
                 values
                     .into_iter()
@@ -1050,7 +1050,7 @@ impl MoleculeBatch {
             .map_err(|source| batch_error(py, source))
     }
     /// Compute layered fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
-    fn fingerprint_layered_with_output_list_with_params(
+    fn fingerprint_layered_with_output_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_layered::LayeredFingerprintParams,
@@ -1058,7 +1058,7 @@ impl MoleculeBatch {
     ) -> PyResult<Vec<Option<LayeredFingerprintResult>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn fingerprint_layered_with_output_list(
+        //     fn fingerprint_layered_with_output(
         //         &self,
         //         layers: u32,
         //         min_path: u32,
@@ -1082,7 +1082,7 @@ impl MoleculeBatch {
         //             from_atoms,
         //         );
         //         self.inner
-        //             .layered_fingerprint_with_output_list_with_options(
+        //             .layered_fingerprint_with_output_with_options(
         //                 &params,
         //                 validate_n_jobs(n_jobs)?,
         //                 progress_bar,
@@ -1098,7 +1098,7 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_layered_with_output_list_with_params(&options.inner, execution)
+                    .fingerprint_layered_with_output_with_params(&options.inner, execution)
             })
             .map(|values| {
                 values
@@ -1109,14 +1109,14 @@ impl MoleculeBatch {
     }
 
     /// Compute pattern fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
-    fn fingerprint_pattern_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
+    fn fingerprint_pattern(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
-            .fingerprint_pattern_list()
+            .fingerprint_pattern()
             .map_err(|source| batch_error(py, source))
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     /// Compute pattern fixed-width bit fingerprints in original batch order, retaining None slots for failed records.
-    fn fingerprint_pattern_list_with_params(
+    fn fingerprint_pattern_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_pattern::PatternFingerprintParams,
@@ -1145,7 +1145,7 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_pattern_list_with_params(&options.inner, execution)
+                    .fingerprint_pattern_with_params(&options.inner, execution)
             })
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
@@ -1156,18 +1156,18 @@ impl MoleculeBatch {
     /// BatchValidationError. The source batch is unchanged.
     /// Accepts MorganFingerprintParams as options and BatchQueryParams as params,
     /// or their fields as keywords. For example:
-    /// batch.fingerprint_morgan_list(generator=ck.MorganGeneratorParams(radius=2), n_jobs=1).
+    /// batch.fingerprint_morgan(generator=ck.MorganGeneratorParams(radius=2), n_jobs=1).
     /// Omitted n_jobs uses the batch setting, or one worker if unset.
-    fn fingerprint_morgan_list(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
+    fn fingerprint_morgan(&self, py: Python<'_>) -> PyResult<FingerprintBatch> {
         self.inner
-            .fingerprint_morgan_list()
+            .fingerprint_morgan()
             .map_err(|source| batch_error(py, source))
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     /// Return ordered Morgan fingerprints using explicit options and execution params.
     /// Existing failed records produce None; new calculation errors raise
     /// BatchValidationError. Does not modify the source batch.
-    fn fingerprint_morgan_list_with_params(
+    fn fingerprint_morgan_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::MorganFingerprintParams,
@@ -1175,7 +1175,7 @@ impl MoleculeBatch {
     ) -> PyResult<FingerprintBatch> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn fingerprint_morgan_list(
+        //     fn fingerprint_morgan(
         //         &self,
         //         radius: u32,
         //         n_bits: usize,
@@ -1232,18 +1232,18 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_morgan_list_with_params(&options.inner, execution)
+                    .fingerprint_morgan_with_params(&options.inner, execution)
             })
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
 
     /// Compute morgan fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
-    fn fingerprint_morgan_with_output_list(
+    fn fingerprint_morgan_with_output(
         &self,
         py: Python<'_>,
     ) -> PyResult<Vec<Option<BatchFingerprintOutput>>> {
         self.inner
-            .fingerprint_morgan_with_output_list()
+            .fingerprint_morgan_with_output()
             .map(|values| {
                 values
                     .into_iter()
@@ -1254,7 +1254,7 @@ impl MoleculeBatch {
     }
     /// Compute morgan fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata.
     #[pyo3(signature=(options, collect_additional_output=true, params=None))]
-    fn fingerprint_morgan_with_output_list_with_params(
+    fn fingerprint_morgan_with_output_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::MorganFingerprintParams,
@@ -1263,7 +1263,7 @@ impl MoleculeBatch {
     ) -> PyResult<Vec<Option<BatchFingerprintOutput>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn fingerprint_morgan_with_output_list(
+        //     fn fingerprint_morgan_with_output(
         //         &self,
         //         radius: u32,
         //         n_bits: usize,
@@ -1308,7 +1308,7 @@ impl MoleculeBatch {
         //             true,
         //         )?;
         //         self.inner
-        //             .morgan_fingerprint_with_output_list_with_options(
+        //             .morgan_fingerprint_with_output_with_options(
         //                 &params,
         //                 validate_n_jobs(n_jobs)?,
         //                 progress_bar,
@@ -1325,7 +1325,7 @@ impl MoleculeBatch {
         params
             .unwrap_or(&defaults)
             .execute(py, |execution| {
-                self.inner.fingerprint_morgan_with_output_list_with_params(
+                self.inner.fingerprint_morgan_with_output_with_params(
                     &options.inner,
                     collect_additional_output,
                     execution,
@@ -1393,7 +1393,7 @@ impl MoleculeBatch {
     }
 
     /// Compute morgan fixed-width bit fingerprints in original batch order, retaining None slots for failed records using the supplied generator and per-call options.
-    fn fingerprint_morgan_list_with_generator_params(
+    fn fingerprint_morgan_with_generator_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::MorganGeneratorParams,
@@ -1408,7 +1408,7 @@ impl MoleculeBatch {
     ) -> PyResult<FingerprintBatch> {
         params
             .execute(py, |execution| {
-                self.inner.fingerprint_morgan_list_with_generator_params(
+                self.inner.fingerprint_morgan_with_generator_params(
                     &options.inner,
                     atom_invariants.map(|value| &value.inner),
                     bond_invariants.map(|value| &value.inner),
@@ -1419,7 +1419,7 @@ impl MoleculeBatch {
             .and_then(|values| FingerprintBatch::from_values(py, values))
     }
     /// Compute morgan fixed-width bit fingerprints in original batch order, retaining None slots for failed records; include the requested atom/bit environment metadata using the supplied generator and per-call options.
-    fn fingerprint_morgan_with_output_list_with_generator_params(
+    fn fingerprint_morgan_with_output_with_generator_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_fingerprint_values::MorganGeneratorParams,
@@ -1436,7 +1436,7 @@ impl MoleculeBatch {
         params
             .execute(py, |execution| {
                 self.inner
-                    .fingerprint_morgan_with_output_list_with_generator_params(
+                    .fingerprint_morgan_with_output_with_generator_params(
                         &options.inner,
                         atom_invariants.map(|value| &value.inner),
                         bond_invariants.map(|value| &value.inner),
@@ -1676,11 +1676,11 @@ impl MoleculeBatch {
     /// Existing failed records produce None; new writing errors raise
     /// BatchValidationError. The source batch is unchanged.
     /// Accepts SmilesWriteParams as options and BatchQueryParams as params,
-    /// or their fields as keywords: batch.to_smiles_list(canonical=False, n_jobs=1).
+    /// or their fields as keywords: batch.to_smiles(canonical=False, n_jobs=1).
     /// Omitted n_jobs uses the batch setting, or one worker if unset.
-    fn to_smiles_list(&self, py: Python<'_>) -> PyResult<Vec<Option<String>>> {
+    fn to_smiles(&self, py: Python<'_>) -> PyResult<Vec<Option<String>>> {
         self.inner
-            .to_smiles_list()
+            .to_smiles()
             .map_err(|source| batch_error(py, source))?
             .iter()
             .map(|value| {
@@ -1694,7 +1694,7 @@ impl MoleculeBatch {
     /// Return ordered SMILES strings using explicit options and execution params.
     /// Existing failed records produce None; new writing errors raise
     /// BatchValidationError. Does not modify the source batch.
-    fn to_smiles_list_with_params(
+    fn to_smiles_with_params(
         &self,
         py: Python<'_>,
         options: &crate::canonical_values::SmilesWriteParams,
@@ -1702,7 +1702,7 @@ impl MoleculeBatch {
     ) -> PyResult<Vec<Option<String>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn to_smiles_list(
+        //     fn to_smiles(
         //         &self,
         //         isomeric_smiles: bool,
         //         canonical: bool,
@@ -1737,8 +1737,7 @@ impl MoleculeBatch {
         //     }
         params
             .execute(py, |execution| {
-                self.inner
-                    .to_smiles_list_with_params(&options.inner, execution)
+                self.inner.to_smiles_with_params(&options.inner, execution)
             })?
             .iter()
             .map(|value| {
@@ -1752,27 +1751,24 @@ impl MoleculeBatch {
 
     /// Return per-record distance-geometry bounds matrices in input order, preserving None slots for failed records.
     #[gen_stub(override_return_type(type_repr="list[numpy.ndarray | None]",imports=("numpy")))]
-    fn dg_bounds_matrix_list<'py>(
-        &self,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, pyo3::types::PyList>> {
+    fn dg_bounds_matrix<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyList>> {
         bounds_values(
             py,
             self.inner
-                .dg_bounds_matrix_list()
+                .dg_bounds_matrix()
                 .map_err(|source| batch_error(py, source))?,
         )
     }
     /// Return per-record distance-geometry bounds matrices in input order, preserving None slots for failed records. Uses the supplied configuration object.
     #[gen_stub(override_return_type(type_repr="list[numpy.ndarray | None]",imports=("numpy")))]
-    fn dg_bounds_matrix_list_with_params<'py>(
+    fn dg_bounds_matrix_with_params<'py>(
         &self,
         py: Python<'py>,
         params: &crate::canonical_batch_params::BatchQueryParams,
     ) -> PyResult<Bound<'py, pyo3::types::PyList>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn dg_bounds_matrix_list<'py>(
+        //     fn dg_bounds_matrix<'py>(
         //         &self,
         //         py: Python<'py>,
         //         n_jobs: Option<usize>,
@@ -1780,14 +1776,14 @@ impl MoleculeBatch {
         //     ) -> PyResult<Bound<'py, PyList>> {
         //         let values = self
         //             .inner
-        //             .dg_bounds_matrix_list_with_options(validate_n_jobs(n_jobs)?, progress_bar)
+        //             .dg_bounds_matrix_with_options(validate_n_jobs(n_jobs)?, progress_bar)
         //             .map_err(batch_validation_pyerr)?;
         //         let out = PyList::empty(py);
         //         for value in values {
         //             if let Some(matrix) = value {
         //                 out.append(PyArray2::from_vec2(py, &matrix).map_err(|err| {
         //                     PyValueError::new_err(format!(
-        //                         "MoleculeBatch.dg_bounds_matrix_list failed: {err}"
+        //                         "MoleculeBatch.dg_bounds_matrix failed: {err}"
         //                     ))
         //                 })?)?;
         //             } else {
@@ -1799,24 +1795,19 @@ impl MoleculeBatch {
         bounds_values(
             py,
             params.execute(py, |execution| {
-                self.inner.dg_bounds_matrix_list_with_params(execution)
+                self.inner.dg_bounds_matrix_with_params(execution)
             })?,
         )
     }
 
     /// Return SVG results in original input order; retained failed records produce None rather than shifting subsequent indices.
-    fn to_svg_list(
-        &self,
-        py: Python<'_>,
-        width: u32,
-        height: u32,
-    ) -> PyResult<Vec<Option<String>>> {
+    fn to_svg(&self, py: Python<'_>, width: u32, height: u32) -> PyResult<Vec<Option<String>>> {
         self.inner
-            .to_svg_list(width, height)
+            .to_svg(width, height)
             .map_err(|source| batch_error(py, source))
     }
     /// Return SVG results in original input order; retained failed records produce None rather than shifting subsequent indices.
-    fn to_svg_list_with_params(
+    fn to_svg_with_params(
         &self,
         py: Python<'_>,
         width: u32,
@@ -1825,7 +1816,7 @@ impl MoleculeBatch {
     ) -> PyResult<Vec<Option<String>>> {
         // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855;
         // original values/defaults/order transported through canonical typed parameters.
-        //     fn to_svg_list(
+        //     fn to_svg(
         //         &self,
         //         width: u32,
         //         height: u32,
@@ -1833,11 +1824,11 @@ impl MoleculeBatch {
         //         progress_bar: Option<bool>,
         //     ) -> PyResult<Vec<Option<String>>> {
         //         self.inner
-        //             .to_svg_list_with_options(width, height, validate_n_jobs(n_jobs)?, progress_bar)
+        //             .to_svg_with_options(width, height, validate_n_jobs(n_jobs)?, progress_bar)
         //             .map_err(batch_validation_pyerr)
         //     }
         params.execute(py, |execution| {
-            self.inner.to_svg_list_with_params(width, height, execution)
+            self.inner.to_svg_with_params(width, height, execution)
         })
     }
 
@@ -1937,6 +1928,7 @@ impl MoleculeBatch {
             &ck::SdfReadParams::default(),
             error_mode(errors)?,
             self::n_jobs(n_jobs)?,
+            false,
         )
         .map(|inner| Self { inner })
         .map_err(|e| batch_error(py, e))
@@ -2689,7 +2681,7 @@ fn bounds_values<'py>(
             Some(matrix) => {
                 out.append(numpy::PyArray2::from_vec2(py, &matrix).map_err(|source| {
                     PyValueError::new_err(format!(
-                        "MoleculeBatch.dg_bounds_matrix_list failed: {source}"
+                        "MoleculeBatch.dg_bounds_matrix failed: {source}"
                     ))
                 })?)?
             }

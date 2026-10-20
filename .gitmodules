@@ -1,15 +1,20 @@
 [submodule "third_party/rdkit"]
 	path = third_party/rdkit
 	url = https://github.com/rdkit/rdkit.git
+	update = none
 [submodule "third_party/gemmi"]
 	path = third_party/gemmi
 	url = https://github.com/project-gemmi/gemmi.git
+	update = none
 [submodule "third_party/RingDecomposerLib"]
 	path = third_party/RingDecomposerLib
 	url = https://github.com/rareylab/RingDecomposerLib.git
+	update = none
 [submodule "third_party/InChI"]
 	path = third_party/InChI
 	url = https://github.com/IUPAC-InChI/InChI.git
+	update = none
 [submodule "third_party/musl"]
 	path = third_party/musl
 	url = https://git.musl-libc.org/git/musl
+	update = none

@@ -5,10 +5,12 @@ use pyo3::prelude::*;
 
 macro_rules! gradient_result {
     ($name:ident) => {
-        #[pyclass(module = "cosmolkit", frozen, from_py_object)]
-        #[derive(Clone)]
-        pub struct $name {
-            pub(crate) inner: ck::$name,
+        crate::configuration::type_projection! {
+            #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+            #[derive(Clone)]
+            pub struct $name {
+                pub(crate) inner: ck::$name,
+            }
         }
         #[pymethods]
         impl $name {
@@ -18,9 +20,11 @@ macro_rules! gradient_result {
                     inner: ck::$name { energy, gradient },
                 }
             }
+            #[getter]
             fn energy(&self) -> f64 {
                 self.inner.energy()
             }
+            #[getter]
             fn gradient(&self) -> Vec<f64> {
                 self.inner.gradient().to_vec()
             }
@@ -30,10 +34,12 @@ macro_rules! gradient_result {
 gradient_result!(UffEnergyGradient);
 gradient_result!(MmffEnergyGradient);
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct UffOptimizationResult {
-    pub(crate) inner: ck::UffOptimizationResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct UffOptimizationResult {
+        pub(crate) inner: ck::UffOptimizationResult,
+    }
 }
 #[pymethods]
 impl UffOptimizationResult {
@@ -47,26 +53,32 @@ impl UffOptimizationResult {
             },
         }
     }
+    #[getter]
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
+    #[getter]
     fn status_code(&self) -> i32 {
         self.inner.status_code()
     }
+    #[getter]
     fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
+    #[getter]
     fn energy(&self) -> f64 {
         self.inner.energy()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct UffConformerResult {
-    pub(crate) inner: ck::UffConformerResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct UffConformerResult {
+        pub(crate) inner: ck::UffConformerResult,
+    }
 }
 #[pymethods]
 impl UffConformerResult {
@@ -80,24 +92,30 @@ impl UffConformerResult {
             },
         }
     }
+    #[getter]
     fn conformer_id(&self) -> usize {
         self.inner.conformer_id()
     }
+    #[getter]
     fn status_code(&self) -> i32 {
         self.inner.status_code()
     }
+    #[getter]
     fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
+    #[getter]
     fn energy(&self) -> f64 {
         self.inner.energy()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct UffConformerOptimizationResult {
-    pub(crate) inner: ck::UffConformerOptimizationResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct UffConformerOptimizationResult {
+        pub(crate) inner: ck::UffConformerOptimizationResult,
+    }
 }
 #[pymethods]
 impl UffConformerOptimizationResult {
@@ -110,11 +128,13 @@ impl UffConformerOptimizationResult {
             },
         }
     }
+    #[getter]
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
+    #[getter]
     fn conformer_results(&self) -> Vec<UffConformerResult> {
         self.inner
             .conformer_results()
@@ -125,10 +145,12 @@ impl UffConformerOptimizationResult {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct MmffOptimizeMoleculeResult {
-    pub(crate) inner: ck::MmffOptimizeMoleculeResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct MmffOptimizeMoleculeResult {
+        pub(crate) inner: ck::MmffOptimizeMoleculeResult,
+    }
 }
 #[pymethods]
 impl MmffOptimizeMoleculeResult {
@@ -141,23 +163,28 @@ impl MmffOptimizeMoleculeResult {
             },
         }
     }
+    #[getter]
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
+    #[getter]
     fn status_code(&self) -> i32 {
         self.inner.status_code()
     }
+    #[getter]
     fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct MmffOptimizeMoleculeConfResult {
-    pub(crate) inner: ck::MmffOptimizeMoleculeConfResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct MmffOptimizeMoleculeConfResult {
+        pub(crate) inner: ck::MmffOptimizeMoleculeConfResult,
+    }
 }
 #[pymethods]
 impl MmffOptimizeMoleculeConfResult {
@@ -167,21 +194,26 @@ impl MmffOptimizeMoleculeConfResult {
             inner: ck::MmffOptimizeMoleculeConfResult { needs_more, energy },
         }
     }
+    #[getter]
     fn status_code(&self) -> i32 {
         self.inner.status_code()
     }
+    #[getter]
     fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
+    #[getter]
     fn energy(&self) -> f64 {
         self.inner.energy()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct MmffOptimizeMoleculeConfsResult {
-    pub(crate) inner: ck::MmffOptimizeMoleculeConfsResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct MmffOptimizeMoleculeConfsResult {
+        pub(crate) inner: ck::MmffOptimizeMoleculeConfsResult,
+    }
 }
 #[pymethods]
 impl MmffOptimizeMoleculeConfsResult {
@@ -197,11 +229,13 @@ impl MmffOptimizeMoleculeConfsResult {
             },
         }
     }
+    #[getter]
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
+    #[getter]
     fn conformer_results(&self) -> Vec<MmffOptimizeMoleculeConfResult> {
         self.inner
             .conformer_results()
@@ -212,10 +246,12 @@ impl MmffOptimizeMoleculeConfsResult {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct CrippenTotals {
-    pub(crate) inner: ck::CrippenTotals,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct CrippenTotals {
+        pub(crate) inner: ck::CrippenTotals,
+    }
 }
 #[pymethods]
 impl CrippenTotals {
@@ -238,10 +274,12 @@ impl CrippenTotals {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct LabuteAsaContributions {
-    pub(crate) inner: ck::LabuteAsaContributions,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct LabuteAsaContributions {
+        pub(crate) inner: ck::LabuteAsaContributions,
+    }
 }
 #[pymethods]
 impl LabuteAsaContributions {

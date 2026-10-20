@@ -23,9 +23,9 @@ def test_residue_kind_map_pickle(kind):
 @pytest.mark.parametrize("name",["ALA","GLY","MSE","HOH","DA","A","UNK"])
 def test_residue_owned_results(name):
     info=ck.find_residue_info(name)
-    assert info.code()==ck.residue_code(name)
-    assert ck.residue_info(ck.find_residue_info_index(name)).code()==info.code()
-    assert pickle.loads(pickle.dumps(info.code())) is info.code()
+    assert info.code==ck.residue_code(name)
+    assert ck.residue_info(ck.find_residue_info_index(name)).code==info.code
+    assert pickle.loads(pickle.dumps(info.code)) is info.code
     assert isinstance(repr(info),str)
     with pytest.raises(AttributeError): info.fake_field=1
 
@@ -39,70 +39,70 @@ def test_expansion_and_checked_error_boundaries():
 @pytest.mark.parametrize("name", ["ALA", "ala", "not_a_residue"])
 def test_residue_identity_preserves_input_and_returns_owned_info(name):
     identity = ck.ResidueIdentity.new(name)
-    assert identity.name() == name
-    assert identity.code() is ck.residue_code(name)
-    info = identity.info()
-    assert info.code() is identity.code()
-    assert identity.is_tabulated() == info.found()
+    assert identity.name == name
+    assert identity.code is ck.residue_code(name)
+    info = identity.info
+    assert info.code is identity.code
+    assert identity.is_tabulated == info.found
     del identity
     gc.collect()
-    assert info.code() is ck.residue_code(name)
+    assert info.code is ck.residue_code(name)
 
 def test_checked_residue_info_returns_optional_value():
     index = ck.find_residue_info_index("ALA")
-    assert ck.residue_info_checked(index).code() is ck.ResidueCode.ALA
+    assert ck.residue_info_checked(index).code is ck.ResidueCode.ALA
     assert ck.residue_info_checked(1_000_000) is None
 
 def test_structure_hierarchy_snapshot_cow_and_lifetime():
     structure=ck.BioStructure.from_pdb(PDB)
-    assert (structure.num_models(),structure.num_chains(),structure.num_residues(),structure.num_atoms())==(1,2,2,2)
-    model=structure[-1];chain=model.chains()[0];residue=chain.residues()[0];atom=residue.atoms()[0]
+    assert (structure.num_models,structure.num_chains,structure.num_residues,structure.num_atoms)==(1,2,2,2)
+    model=structure[-1];chain=model.chains[0];residue=chain.residues[0];atom=residue.atoms[0]
     original=atom.position()
     structure.translate_((2.,0.,0.))
     assert atom.position()==original
-    assert structure.atoms()[0].position()==(3.,2.,3.)
+    assert structure.atoms[0].position()==(3.,2.,3.)
     with pytest.raises(IndexError):structure[1]
     with pytest.raises(IndexError):structure[-2]
     with pytest.raises(AttributeError):atom.fake_field=1
     del structure,model,chain,residue;gc.collect()
     assert atom.position()==original
-    assert atom.source().serial()==1
+    assert atom.source.serial==1
 
 def test_protein_filtered_views_and_value_transform():
     protein=ck.Protein.from_pdb(PDB)
-    assert (protein.num_models(),protein.num_chains(),protein.num_residues(),protein.num_atoms())==(1,1,1,1)
-    chain=protein[-1];residue=chain.residues()[0];atom=residue.atoms()[0]
-    assert residue.code() is ck.ResidueCode.ALA
-    assert residue.is_standard()
+    assert (protein.num_models,protein.num_chains,protein.num_residues,protein.num_atoms)==(1,1,1,1)
+    chain=protein[-1];residue=chain.residues[0];atom=residue.atoms[0]
+    assert residue.code is ck.ResidueCode.ALA
+    assert residue.is_standard
     changed=protein.with_translated_coordinates((1.,2.,3.))
-    assert atom.position()==(1.,2.,3.)
-    assert changed.atoms()[0].position()==(2.,4.,6.)
+    assert atom.position==(1.,2.,3.)
+    assert changed.atoms[0].position==(2.,4.,6.)
     protein.translate_((3.,0.,0.))
-    assert atom.position()==(1.,2.,3.)
+    assert atom.position==(1.,2.,3.)
     with pytest.raises(IndexError):protein[1]
     del protein,chain,residue;gc.collect()
-    assert atom.name()=="CA"
+    assert atom.name=="CA"
 
 def test_selection_projection_retains_source_order():
     structure=ck.BioStructure.from_pdb(PDB)
     selection=ck.BioSelection.from_cid("/1/A/1")
     assert structure.selected_atom_ids(selection)==[0]
     selected=structure.with_selection(selection)
-    assert selected.num_atoms()==1
-    assert structure.num_atoms()==2
-    assert selected.atoms()[0].source().serial()==1
+    assert selected.num_atoms==1
+    assert structure.num_atoms==2
+    assert selected.atoms[0].source.serial==1
 
 def test_structure_optional_queries_and_atom_id_boundaries():
     structure = ck.BioStructure.from_pdb(PDB)
-    assert structure.has_origx() is False
-    assert structure.origx().approx(structure.origx(), 0.0)
-    assert structure.ncs_oper_identity_id() is None
-    assert structure.resolution() == 0.0
-    assert structure.ter_status() == 0
-    assert structure.atom_position(0) == list(structure.atoms()[0].position())
+    assert structure.has_origx is False
+    assert structure.origx.approx(structure.origx, 0.0)
+    assert structure.ncs_oper_identity_id is None
+    assert structure.resolution == 0.0
+    assert structure.ter_status == 0
+    assert structure.atom_position(0) == list(structure.atoms[0].position())
     assert structure.atom_position(2**32 - 1) is None
     atoms = structure.residue_atoms(0)
-    assert [atom.source().serial() for atom in atoms] == [1]
+    assert [atom.source.serial for atom in atoms] == [1]
     assert structure.residue_atoms(2**32 - 1) is None
     assert structure.find_entity("missing") is None
     assert structure.find_entity_of_subchain("missing") is None
@@ -115,26 +115,26 @@ def test_crystal_and_transform_snapshot_lifetimes():
     structure = ck.BioStructure.from_pdb(
         "CRYST1   10.000   11.000   12.000  90.00  90.00  90.00 P 1           1\n" + PDB
     )
-    crystal = structure.crystal()
-    transform = structure.origx()
+    crystal = structure.crystal
+    transform = structure.origx
     del structure
     gc.collect()
-    assert crystal.space_group_number() == 1
+    assert crystal.space_group_number == 1
     assert transform.approx(transform, 0.0)
     assert not transform.approx(transform, float("nan"))
 
 def test_coordinate_block_snapshot_survives_mutation_and_owner_drop():
     structure = ck.BioStructure.from_pdb(PDB)
     assert structure.validate() is None
-    coordinates = structure.coordinates()
+    coordinates = structure.coordinates
     original = coordinates.positions
-    assert len(coordinates) == structure.num_atoms()
-    assert original == [list(atom.position()) for atom in structure.atoms()]
+    assert len(coordinates) == structure.num_atoms
+    assert original == [list(atom.position()) for atom in structure.atoms]
     original[0][0] = -100.0
     assert coordinates.positions[0] == [1.0, 2.0, 3.0]
     structure.translate_((2.0, 0.0, 0.0))
     assert structure.validate() is None
-    assert structure.coordinates().positions[0] == [3.0, 2.0, 3.0]
+    assert structure.coordinates.positions[0] == [3.0, 2.0, 3.0]
     del structure
     gc.collect()
     assert coordinates.positions[0] == [1.0, 2.0, 3.0]
@@ -158,7 +158,7 @@ def test_atom_lookup_element_and_snapshot_boundaries():
     name = ck.AtomName.from_ascii(b" CA ")
     atom_id, atom = structure.find_atom(0, name, ck.AltLocRequest.Any, ck.Element.C)
     assert atom_id == 0
-    assert atom.source().serial() == 1
+    assert atom.source.serial == 1
     assert structure.find_atom(0, name, ck.AltLocRequest.Any, ck.Element.O) is None
     assert structure.find_atom(0, ck.AtomName.from_ascii(b"CA"), ck.AltLocRequest.Any, None) is None
     assert structure.find_atom(2**32 - 1, name, ck.AltLocRequest.Any, None) is None
@@ -174,7 +174,7 @@ def test_atom_lookup_exact_altloc_and_blank_compatibility():
     structure = ck.BioStructure.from_pdb(alternate_a + "\n" + alternate_b + "\nEND\n")
     name = ck.AtomName.from_ascii(b" CA ")
     label = ck.AltLocLabel(ord("B"))
-    assert label.value() == ord("B")
+    assert label.value == ord("B")
     assert structure.find_atom(0, name, ck.AltLocRequest.Any, None)[0] == 0
     assert structure.find_atom(0, name, ck.AltLocRequest.Exact(label), None)[0] == 1
     assert structure.atom_by_altloc(0, name, label)[0] == 1
@@ -188,7 +188,7 @@ def test_atom_lookup_exact_altloc_and_blank_compatibility():
 
 def test_atom_lookup_errors_retain_payload_and_structure():
     structure = ck.BioStructure.from_pdb(PDB)
-    original = structure.coordinates().positions
+    original = structure.coordinates.positions
     with pytest.raises(ck.BioStructureError) as invalid:
         structure.atom_by_altloc(2**32 - 1, ck.AtomName.from_ascii(b" CA "), None)
     error = invalid.value
@@ -197,5 +197,5 @@ def test_atom_lookup_errors_retain_payload_and_structure():
     with pytest.raises(ck.BioStructureError) as missing:
         structure.atom_by_altloc(0, ck.AtomName.from_ascii(b" N  "), None)
     assert (missing.value.domain, missing.value.kind) == ("bio", "AtomNotFound")
-    assert structure.coordinates().positions == original
+    assert structure.coordinates.positions == original
     assert structure.validate() is None

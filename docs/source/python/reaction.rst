@@ -19,7 +19,7 @@ Generate products
    product_sets = reaction.run([source], ck.ReactionRunParams())
    assert product_sets[0][0].to_smiles() == "N"
    assert source.to_smiles() == "C"
-   assert reaction.is_initialized()
+   assert reaction.is_initialized
 
 ``ck.parse_smirks`` is an equivalent factory. Explicit parse/write options use
 the ``_with_params`` methods and ``ReactionParseParams`` /

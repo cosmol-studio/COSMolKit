@@ -253,7 +253,7 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
     // empty anymore; the ordinary-rings rows are present and valid.
     assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));
 
-    assert!(source.atoms().iter().all(Atom::is_aromatic));
+    assert!(source.atoms().iter().all(|atom| atom.is_aromatic()));
     assert!(source.bonds().iter().all(Bond::is_aromatic));
     assert_eq!(
         source.property("_CIPComputed"),
@@ -280,7 +280,7 @@ fn parameterized_and_inplace_forms_match_their_frozen_semantics() {
     let expected = source
         .with_kekulized_bonds_with_params(&keep_flags)
         .unwrap();
-    assert!(expected.atoms().iter().all(Atom::is_aromatic));
+    assert!(expected.atoms().iter().all(|atom| atom.is_aromatic()));
     assert!(expected.bonds().iter().all(Bond::is_aromatic));
     assert_eq!(
         expected

@@ -124,6 +124,7 @@ impl MoleculeBatch {
                 read.into(),
                 0u32.into(),
                 JsValue::NULL,
+                false.into(),
             );
         }
         // COSMolKit❗✔️: cosmolkit_wasm::MoleculeBatch::from_sdf_records(text)
@@ -158,15 +159,22 @@ impl MoleculeBatch {
         #[wasm_bindgen(unchecked_param_type = "SdfReadParams")] read: JsValue,
         #[wasm_bindgen(unchecked_param_type = "BatchErrorMode")] error_mode: JsValue,
         #[wasm_bindgen(unchecked_param_type = "number | null")] n_jobs: JsValue,
+        #[wasm_bindgen(js_name = progressBar, unchecked_optional_param_type = "boolean")]
+        progress_bar: JsValue,
     ) -> Result<Self, JsValue> {
-        // COSMolKit❗✔️: cosmolkit_wasm::MoleculeBatch::from_sdf_records_with_params(text,&p.inner,mode,n_jobs)
+        // COSMolKit❗✔️: cosmolkit_wasm::MoleculeBatch::from_sdf_records_with_params(text,&p.inner,mode,n_jobs,progress_bar)
         let mode = mode(&error_mode)?;
         let n_jobs = jobs(&n_jobs)?;
+        let progress_bar = if progress_bar.is_undefined() {
+            false
+        } else {
+            progress_bar.as_bool().ok_or_else(|| type_error("progressBar"))?
+        };
         let mut result = None;
         visit_read(&read, &mut |p: &SdfReadParams| {
             result = Some(
                 cosmolkit_wasm::MoleculeBatch::from_sdf_records_with_params(
-                    text, &p.inner, mode, n_jobs,
+                    text, &p.inner, mode, n_jobs, progress_bar,
                 )
                 .map(|inner| Self { inner })
                 .map_err(error),

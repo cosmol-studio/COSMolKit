@@ -6,10 +6,12 @@ ck::project_configuration!(ck::BestAlignmentParameters);
 ck::project_configuration!(ck::CoordinateRmsdParameters);
 ck::project_configuration!(ck::AllConformerRmsdParameters);
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct AlignmentTransform {
-    pub(crate) inner: ck::AlignmentTransform,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct AlignmentTransform {
+        pub(crate) inner: ck::AlignmentTransform,
+    }
 }
 #[pymethods]
 impl AlignmentTransform {
@@ -19,14 +21,17 @@ impl AlignmentTransform {
             inner: ck::AlignmentTransform { matrix },
         }
     }
+    #[getter]
     fn matrix(&self) -> [[f64; 4]; 4] {
         *self.inner.matrix()
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct AlignmentResult {
-    pub(crate) inner: ck::AlignmentResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct AlignmentResult {
+        pub(crate) inner: ck::AlignmentResult,
+    }
 }
 #[pymethods]
 impl AlignmentResult {
@@ -40,14 +45,17 @@ impl AlignmentResult {
             },
         }
     }
+    #[getter]
     fn rmsd(&self) -> f64 {
         self.inner.rmsd()
     }
+    #[getter]
     fn transform(&self) -> AlignmentTransform {
         AlignmentTransform {
             inner: *self.inner.transform(),
         }
     }
+    #[getter]
     fn atom_map(&self) -> Vec<AlignmentAtomMap> {
         self.inner
             .atom_map()
@@ -57,10 +65,12 @@ impl AlignmentResult {
             .collect()
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct ConformerRmsd {
-    pub(crate) inner: ck::ConformerRmsd,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct ConformerRmsd {
+        pub(crate) inner: ck::ConformerRmsd,
+    }
 }
 #[pymethods]
 impl ConformerRmsd {
@@ -74,20 +84,25 @@ impl ConformerRmsd {
             },
         }
     }
+    #[getter]
     fn probe_conformer_id(&self) -> usize {
         self.inner.probe_conformer_id()
     }
+    #[getter]
     fn reference_conformer_id(&self) -> usize {
         self.inner.reference_conformer_id()
     }
+    #[getter]
     fn rmsd(&self) -> f64 {
         self.inner.rmsd()
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct ConformerAlignmentReport {
-    pub(crate) inner: ck::ConformerAlignmentReport,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct ConformerAlignmentReport {
+        pub(crate) inner: ck::ConformerAlignmentReport,
+    }
 }
 #[pymethods]
 impl ConformerAlignmentReport {
@@ -97,6 +112,7 @@ impl ConformerAlignmentReport {
             inner: ck::ConformerAlignmentReport { rmsds },
         }
     }
+    #[getter]
     fn rmsds(&self) -> &[f64] {
         self.inner.rmsds()
     }

@@ -3,9 +3,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::error::Error;
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum BioStructureErrorKind {
+crate::enums::binding_enum!(BioStructureErrorKind, {
     RowIndexTooLarge,
     RowSpanOverflow,
     RowSpanOutOfBounds,
@@ -19,7 +17,7 @@ pub enum BioStructureErrorKind {
     EmptyResidueSpan,
     ImpossibleCrystalAngle,
     AtomNotFound,
-}
+});
 
 #[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioStructureError {

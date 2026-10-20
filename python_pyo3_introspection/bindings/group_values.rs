@@ -3,10 +3,12 @@ use crate::property_values::decode_source_text;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct SubstanceGroupId {
-    pub(crate) inner: ck::SubstanceGroupId,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct SubstanceGroupId {
+        pub(crate) inner: ck::SubstanceGroupId,
+    }
 }
 #[pymethods]
 impl SubstanceGroupId {
@@ -20,6 +22,7 @@ impl SubstanceGroupId {
             inner: ck::SubstanceGroupId::new(index),
         }
     }
+    #[getter]
     fn index(&self) -> usize {
         self.inner.index()
     }
@@ -27,9 +30,13 @@ impl SubstanceGroupId {
 
 macro_rules! group_kinds {
     ($($variant:ident),+ $(,)?) => {
-        #[pyclass(module="cosmolkit", frozen, from_py_object, eq)]
-        #[derive(Clone, PartialEq)]
-        pub struct SubstanceGroupKind { pub(crate) inner: ck::SubstanceGroupKind }
+        crate::configuration::type_projection! {
+            #[pyclass(module="cosmolkit", frozen, from_py_object, eq)]
+            #[derive(Clone, PartialEq)]
+            pub struct SubstanceGroupKind {
+                pub(crate) inner: ck::SubstanceGroupKind
+            }
+        }
         #[pymethods]
         impl SubstanceGroupKind {
             $(#[classattr] #[allow(non_snake_case)]
@@ -65,10 +72,12 @@ pub enum SubstanceGroupKindInput {
 group_kinds! { Data, Superatom, MultipleGroup, StructuralRepeatUnit, Monomer,
 Copolymer, Crosslink, Graft, Modification, Mer, AnyPolymer, MixtureComponent, Mixture, Formulation }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct SGroupBracket {
-    pub(crate) inner: ck::SGroupBracket,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct SGroupBracket {
+        pub(crate) inner: ck::SGroupBracket,
+    }
 }
 #[pymethods]
 impl SGroupBracket {
@@ -82,14 +91,17 @@ impl SGroupBracket {
             inner: ck::SGroupBracket::new(points),
         }
     }
+    #[getter]
     fn points(&self) -> [[f64; 3]; 3] {
         *self.inner.points()
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct SGroupCState {
-    pub(crate) inner: ck::SGroupCState,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct SGroupCState {
+        pub(crate) inner: ck::SGroupCState,
+    }
 }
 #[pymethods]
 impl SGroupCState {
@@ -103,17 +115,21 @@ impl SGroupCState {
             inner: ck::SGroupCState::new(ck::BondId::new(bond), vector),
         }
     }
+    #[getter]
     fn bond(&self) -> usize {
         self.inner.bond().index()
     }
+    #[getter]
     fn vector(&self) -> [f64; 3] {
         *self.inner.vector()
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct SGroupDisplay {
-    pub(crate) inner: ck::SGroupDisplay,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct SGroupDisplay {
+        pub(crate) inner: ck::SGroupDisplay,
+    }
 }
 #[pymethods]
 impl SGroupDisplay {
@@ -134,6 +150,7 @@ impl SGroupDisplay {
             },
         }
     }
+    #[getter]
     fn brackets(&self) -> Vec<SGroupBracket> {
         self.inner
             .brackets()
@@ -155,10 +172,12 @@ impl SGroupDisplay {
             .transpose()
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct SubstanceGroup {
-    pub(crate) inner: ck::SubstanceGroup,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct SubstanceGroup {
+        pub(crate) inner: ck::SubstanceGroup,
+    }
 }
 #[pymethods]
 impl SubstanceGroup {
@@ -172,22 +191,26 @@ impl SubstanceGroup {
             inner: ck::SubstanceGroup::new(id.inner, kind.into_rust()?),
         })
     }
+    #[getter]
     fn id(&self) -> SubstanceGroupId {
         SubstanceGroupId {
             inner: self.inner.id(),
         }
     }
+    #[getter]
     fn kind(&self) -> SubstanceGroupKind {
         SubstanceGroupKind {
             inner: self.inner.kind().clone(),
         }
     }
+    #[getter]
     fn display(&self) -> Option<SGroupDisplay> {
         self.inner
             .display()
             .cloned()
             .map(|inner| SGroupDisplay { inner })
     }
+    #[getter]
     fn cstates(&self) -> Vec<SGroupCState> {
         self.inner
             .cstates()
@@ -196,6 +219,7 @@ impl SubstanceGroup {
             .map(|inner| SGroupCState { inner })
             .collect()
     }
+    #[getter]
     fn head_crossing_bonds(&self) -> Vec<usize> {
         self.inner
             .head_crossing_bonds()
@@ -204,6 +228,7 @@ impl SubstanceGroup {
             .map(ck::BondId::index)
             .collect()
     }
+    #[getter]
     fn crossing_bond_correspondence(&self) -> Vec<usize> {
         self.inner
             .crossing_bond_correspondence()

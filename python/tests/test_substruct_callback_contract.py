@@ -71,17 +71,17 @@ def test_atom_and_bond_callbacks_receive_readonly_source_values_including_wildca
     def oxygen_only(query_atom, target_atom):
         assert isinstance(query_atom, ck.QueryAtom)
         assert isinstance(target_atom, ck.Atom)
-        assert target_atom.explicit_valence() == 1
-        assert target_atom.total_hydrogens() == (1 if target_atom.atomic_number() == 8 else 3)
+        assert target_atom.explicit_valence == 1
+        assert target_atom.total_hydrogens == (1 if target_atom.atomic_number == 8 else 3)
         seen.append(query_atom)
-        return target_atom.atomic_number() == 8
+        return target_atom.atomic_number == 8
 
-    assert [list(match.atom_mapping()) for match in molecule.substruct_matches(query, atom_match=oxygen_only)] == [[1]]
-    assert seen[0].atomic_number() == 0  # Query wildcard must not become carbon.
-    assert seen[0].id() == 0 and seen[0].degree() == 0
-    assert {tuple(match.atom_mapping()) for match in ck.Molecule.from_smiles("CC=C").substruct_matches(
+    assert [list(match.atom_mapping) for match in molecule.substruct_matches(query, atom_match=oxygen_only)] == [[1]]
+    assert seen[0].atomic_number == 0  # Query wildcard must not become carbon.
+    assert seen[0].id == 0 and seen[0].degree() == 0
+    assert {tuple(match.atom_mapping) for match in ck.Molecule.from_smiles("CC=C").substruct_matches(
         ck.parse_smarts("C~C"), uniquify=False,
-        bond_match=lambda query_bond, target_bond: target_bond.order_name() == "DOUBLE",
+        bond_match=lambda query_bond, target_bond: target_bond.order_name == "DOUBLE",
     )} == {(1, 2), (2, 1)}
 
 
@@ -95,12 +95,12 @@ def test_final_callback_has_owned_cow_target_and_query_order_mapping():
         snapshots.append(target)
         return tuple(ids) == (1, 2)
 
-    assert [list(match.atom_mapping()) for match in molecule.substruct_matches(
+    assert [list(match.atom_mapping) for match in molecule.substruct_matches(
         ck.parse_smarts("CC"), uniquify=False, final_match=accept_last,
     )] == [[1, 2]]
-    assert molecule.num_atoms() == 3
+    assert molecule.num_atoms == 3
     assert molecule.to_smiles() == "CCC"
-    assert snapshots and all(target.num_atoms() == 11 for target in snapshots)
+    assert snapshots and all(target.num_atoms == 11 for target in snapshots)
 
 
 def test_callback_assignment_validation_and_cycle_collection():

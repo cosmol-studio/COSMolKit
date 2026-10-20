@@ -26,7 +26,7 @@ def _ck_matches(smiles, query):
     mol = cosmolkit.Molecule.from_smiles(smiles)
     qmol = cosmolkit.parse_smarts(query)
     return sorted(
-        tuple(match.atom_mapping()) for match in mol.substruct_matches(qmol)
+        tuple(match.atom_mapping) for match in mol.substruct_matches(qmol)
     )
 
 

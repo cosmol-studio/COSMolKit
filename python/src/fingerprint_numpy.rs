@@ -45,7 +45,7 @@ pub(crate) struct FingerprintBatch {
 impl FingerprintBatch {
     pub(crate) fn from_values(
         py: Python<'_>,
-        values: Vec<Option<ck::Fingerprint>>,
+        values: impl IntoIterator<Item = Option<ck::Fingerprint>>,
     ) -> PyResult<Self> {
         let values = values
             .into_iter()

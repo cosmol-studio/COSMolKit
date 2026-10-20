@@ -100,7 +100,11 @@ fn atom_and_bond_views_preserve_rows_and_typed_lookup_bounds() {
     assert_eq!(molecule.num_atoms(), molecule.atoms().len());
     assert_eq!(molecule.num_bonds(), molecule.bonds().len());
     assert_eq!(
-        molecule.atoms().iter().map(Atom::id).collect::<Vec<_>>(),
+        molecule
+            .atoms()
+            .iter()
+            .map(|atom| atom.id())
+            .collect::<Vec<_>>(),
         vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]
     );
     assert_eq!(
@@ -109,8 +113,8 @@ fn atom_and_bond_views_preserve_rows_and_typed_lookup_bounds() {
     );
     for (index, row) in molecule.atoms().iter().enumerate() {
         assert!(std::ptr::eq(
-            molecule.atom(AtomId::new(index)).unwrap(),
-            row
+            molecule.atom(AtomId::new(index)).unwrap().value(),
+            row.value()
         ));
     }
     for (index, row) in molecule.bonds().iter().enumerate() {
@@ -129,8 +133,8 @@ fn atom_and_bond_views_preserve_rows_and_typed_lookup_bounds() {
 fn topology_view_is_the_same_canonical_typed_state() {
     let molecule = complete_molecule();
     assert!(std::ptr::eq(
-        molecule.atoms(),
-        molecule.topology().atoms.as_slice()
+        molecule.atoms()[0].value(),
+        &molecule.topology().atoms[0]
     ));
     assert!(std::ptr::eq(
         molecule.bonds(),
@@ -275,7 +279,7 @@ fn aggregate_and_keyed_property_views_preserve_absence_and_metadata() {
 #[test]
 fn detached_builder_changes_cannot_mutate_read_views_of_the_source() {
     let source = complete_molecule();
-    let original_atoms = source.atoms().to_vec();
+    let original_atoms = source.topology().atoms.clone();
     let original_bonds = source.bonds().to_vec();
     let original_coordinates = source.to_builder().coordinates().clone();
     let original_properties = source.properties().clone();
@@ -284,7 +288,7 @@ fn detached_builder_changes_cannot_mutate_read_views_of_the_source() {
         .with_property("detached".into(), "builder-only".into())
         .unwrap();
     let changed = builder.build().unwrap();
-    assert_eq!(source.atoms(), original_atoms);
+    assert_eq!(source.topology().atoms, original_atoms);
     assert_eq!(source.bonds(), original_bonds);
     assert_eq!(source.to_builder().coordinates(), &original_coordinates);
     assert_eq!(source.properties(), &original_properties);

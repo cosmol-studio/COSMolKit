@@ -19,12 +19,12 @@ Read the complete structural value before selecting a projection:
    import cosmolkit as ck
 
    structure = ck.BioStructure.read("complex.pdb")
-   print(structure.num_models(), structure.num_entities())
+   print(structure.num_models, structure.num_entities)
 
-   for model in structure.models():
-       for chain in model.chains():
-           for residue in chain.residues():
-               print(residue.name(), residue.kind())
+   for model in structure.models:
+       for chain in model.chains:
+           for residue in chain.residues:
+               print(residue.name, residue.kind)
 
 ``structure.protein()`` returns an amino-acid-only projection without changing
 ``structure``. Structural child objects share the parent storage; traversal
@@ -55,10 +55,10 @@ Read a PDB file directly:
 
    protein = ck.Protein.read("1crn.pdb")
 
-   print(protein.num_models())
-   print(protein.num_chains())
-   print(protein.num_residues())
-   print(protein.num_atoms())
+   print(protein.num_models)
+   print(protein.num_chains)
+   print(protein.num_residues)
+   print(protein.num_atoms)
 
 Read PDB text that is already in memory:
 
@@ -86,16 +86,16 @@ number of protein chains, and ``protein[i]`` returns a ``ProteinChainRef``.
 .. code-block:: python
 
    first_chain = protein[0]
-   print(first_chain.id(), first_chain.kind(), len(first_chain))
+   print(first_chain.id, first_chain.kind, len(first_chain))
 
-   for chain in protein.chains():
-       for residue in chain.residues():
-           if residue.code() == ck.ResidueCode.MET:
-               print("methionine", residue.id(), residue.fasta_code())
-           print(residue.id(), residue.name(), residue.code(), len(residue))
+   for chain in protein.chains:
+       for residue in chain.residues:
+           if residue.code == ck.ResidueCode.MET:
+               print("methionine", residue.id, residue.fasta_code)
+           print(residue.id, residue.name, residue.code, len(residue))
 
-           for atom in residue.atoms():
-               print(atom.id(), atom.name(), atom.element(), atom.position())
+           for atom in residue.atoms:
+               print(atom.id, atom.name, atom.element, atom.position())
 
 ``atom.position()`` returns ``None`` when the atom has no Cartesian coordinate
 in the selected structure data; otherwise it returns ``(x, y, z)``.
@@ -103,9 +103,9 @@ in the selected structure data; otherwise it returns ``(x, y, z)``.
 Residue Information
 -------------------
 
-``ProteinResidueRef.name()`` returns the raw residue name from the structure.
-Use ``ProteinResidueRef.code()`` for enum matching against Gemmi's tabulated
-residue vocabulary, and ``ProteinResidueRef.info()`` when you need the
+``ProteinResidueRef.name`` returns the raw residue name from the structure.
+Use ``ProteinResidueRef.code`` for enum matching against Gemmi's tabulated
+residue vocabulary, and ``ProteinResidueRef.info`` when you need the
 source-derived classification fields. Sequence expansion follows Gemmi's
 ``expand_one_letter`` and ``expand_one_letter_sequence`` residue tables.
 
@@ -114,12 +114,12 @@ source-derived classification fields. Sequence expansion follows Gemmi's
    import cosmolkit as ck
 
    info = ck.find_residue_info("MSE")
-   assert info.code() == ck.ResidueCode.MSE
-   assert info.kind() == ck.ResidueInfoKind.AA
-   assert info.fasta_code() == "X"
-   assert info.canonical_one_letter_code() == "M"
-   assert info.parent_standard_code() == ck.ResidueCode.MET
-   assert info.is_modified_amino_acid()
+   assert info.code == ck.ResidueCode.MSE
+   assert info.kind == ck.ResidueInfoKind.AA
+   assert info.fasta_code == "X"
+   assert info.canonical_one_letter_code == "M"
+   assert info.parent_standard_code == ck.ResidueCode.MET
+   assert info.is_modified_amino_acid
    assert ck.expand_one_letter_sequence("ACD(MSE)", ck.ResidueInfoKind.AA) == [
        "ALA",
        "CYS",
@@ -131,7 +131,7 @@ source-derived classification fields. Sequence expansion follows Gemmi's
 residues. For rendering, secondary-structure logic, or residue-family tests,
 use ``canonical_one_letter_code()`` or ``parent_standard_code()`` instead. For
 example, ``HYP`` maps to ``PRO`` and ``SEP`` maps to ``SER`` without changing
-the raw residue name returned by ``ProteinResidueRef.name()``.
+the raw residue name returned by ``ProteinResidueRef.name``.
 
 BioStructure vs Protein vs Molecule
 -----------------------------------

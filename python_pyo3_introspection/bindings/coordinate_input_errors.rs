@@ -1,7 +1,6 @@
 //! Exact native coordinate input errors and selector parsing.
 use crate::error_framework::error_projection;
 use crate::model_errors::CoordinateValidationError;
-use crate::selectors::CoordinateZPolicy;
 use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -60,19 +59,10 @@ error_projection!(CoordinateInputError, CoordinateInputErrorKind, ck::Coordinate
     }
 });
 
-#[pymethods]
-impl CoordinateZPolicy {
-    #[staticmethod]
-    pub(crate) fn from_name(value: &str) -> PyResult<Self> {
-        ck::CoordinateZPolicy::from_name(value)
-            .map(Into::into)
-            .map_err(CoordinateInputError::from_rust)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::selectors::CoordinateZPolicy;
 
     #[test]
     fn native_selector_and_coordinate_payloads_preserve_exact_error_shapes() {

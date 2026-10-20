@@ -246,9 +246,12 @@ mod tests {
                     None
                 );
             }
-            let native = ck::TopologyMapping::identity(2, 1)
-                .validate_for_counts(3, 1, 2, 1)
-                .unwrap_err();
+            let native = ck::MappingValidationError::Length {
+                entity: "atom",
+                direction: "old-to-new",
+                actual: 2,
+                expected: 3,
+            };
             let display = native.to_string();
             let native = ck::QueryStateError::Mapping(native);
             assert!(native.source().unwrap().is::<ck::MappingValidationError>());

@@ -178,21 +178,27 @@ InvalidFormat(_),Write(_),
 source=Option<Py<crate::drawing_errors::DrawingWriteError>>,methods={
 #[getter]fn format(&self)->Option<&str>{match self.inner.as_ref(){ck::BatchImageError::InvalidFormat(v)=>Some(v),_=>None}}
 });
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct BatchExportReport {
-    pub(crate) inner: ck::BatchExportReport,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct BatchExportReport {
+        pub(crate) inner: ck::BatchExportReport,
+    }
 }
 #[pymethods]
 impl BatchExportReport {
+    #[getter]
     fn total(&self) -> usize {
         self.inner.total()
     }
+    #[getter]
     fn success(&self) -> usize {
         self.inner.success()
     }
+    #[getter]
     fn failed(&self) -> usize {
         self.inner.failed()
     }
+    #[getter]
     fn errors(&self, py: Python<'_>) -> PyResult<Vec<Py<BatchError>>> {
         self.inner
             .errors()

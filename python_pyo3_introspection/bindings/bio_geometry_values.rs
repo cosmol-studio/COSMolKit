@@ -4,10 +4,12 @@ use crate::coordinates;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioCoordinateBlock {
-    pub(crate) inner: ck::BioCoordinateBlock,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioCoordinateBlock {
+        pub(crate) inner: ck::BioCoordinateBlock,
+    }
 }
 #[pymethods]
 impl BioCoordinateBlock {
@@ -18,27 +20,33 @@ impl BioCoordinateBlock {
         }
     }
     #[doc = r#"{"role":"return_type","imports":["numpy"],"type":"numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]]"}"#]
+    #[getter]
     fn positions<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray2<f64>> {
         coordinates::array(py, self.inner.positions())
     }
+    #[getter]
     fn len(&self) -> usize {
         self.inner.len()
     }
+    #[getter]
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioCrystalInfo {
-    pub(crate) inner: ck::BioCrystalInfo,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioCrystalInfo {
+        pub(crate) inner: ck::BioCrystalInfo,
+    }
 }
 #[pymethods]
 impl BioCrystalInfo {
     #[new]
     #[pyo3(signature=(cell, space_group_hm, z_pdb, orthogonal, fractional, explicit_matrices, cs_count, symmetry_images))]
     fn new(
+        py: Python<'_>,
         cell: &BioCrystalCell,
         space_group_hm: Option<String>,
         z_pdb: Option<String>,
@@ -47,10 +55,10 @@ impl BioCrystalInfo {
         explicit_matrices: bool,
         cs_count: i16,
         symmetry_images: Vec<BioTransform>,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        Ok(Self {
             inner: ck::BioCrystalInfo::new(
-                cell.inner,
+                cell.to_rust(py)?,
                 space_group_hm,
                 z_pdb,
                 orthogonal.inner,
@@ -62,44 +70,53 @@ impl BioCrystalInfo {
                     .map(|value| value.inner)
                     .collect(),
             ),
-        }
+        })
     }
+    #[getter]
     fn space_group_number(&self) -> Option<i32> {
         self.inner.space_group_number()
     }
+    #[getter]
     fn is_crystal(&self) -> bool {
         self.inner.is_crystal()
     }
-    fn cell(&self) -> BioCrystalCell {
-        BioCrystalCell {
-            inner: self.inner.cell(),
-        }
+    #[getter]
+    fn cell(&self, py: Python<'_>) -> PyResult<BioCrystalCell> {
+        BioCrystalCell::from_rust(py, self.inner.cell())
     }
+    #[getter]
     fn orthogonal(&self) -> BioTransform {
         BioTransform {
             inner: *self.inner.orthogonal(),
         }
     }
+    #[getter]
     fn fractional(&self) -> BioTransform {
         BioTransform {
             inner: *self.inner.fractional(),
         }
     }
+    #[getter]
     fn volume(&self) -> f64 {
         self.inner.volume()
     }
+    #[getter]
     fn reciprocal_lengths(&self) -> Vec<f64> {
         self.inner.reciprocal_lengths().to_vec()
     }
+    #[getter]
     fn reciprocal_cosines(&self) -> Vec<f64> {
         self.inner.reciprocal_cosines().to_vec()
     }
+    #[getter]
     fn explicit_matrices(&self) -> bool {
         self.inner.explicit_matrices()
     }
+    #[getter]
     fn cs_count(&self) -> i16 {
         self.inner.cs_count()
     }
+    #[getter]
     fn symmetry_images(&self) -> Vec<BioTransform> {
         self.inner
             .symmetry_images()
@@ -108,18 +125,22 @@ impl BioCrystalInfo {
             .map(|inner| BioTransform { inner })
             .collect()
     }
+    #[getter]
     fn space_group_hm(&self) -> Option<&str> {
         self.inner.space_group_hm()
     }
+    #[getter]
     fn z_pdb(&self) -> Option<&str> {
         self.inner.z_pdb()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioNcsOperator {
-    pub(crate) inner: ck::BioNcsOperator,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioNcsOperator {
+        pub(crate) inner: ck::BioNcsOperator,
+    }
 }
 #[pymethods]
 impl BioNcsOperator {
@@ -145,10 +166,12 @@ impl BioNcsOperator {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioAssemblyOperator {
-    pub(crate) inner: ck::BioAssemblyOperator,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioAssemblyOperator {
+        pub(crate) inner: ck::BioAssemblyOperator,
+    }
 }
 #[pymethods]
 impl BioAssemblyOperator {
@@ -175,10 +198,12 @@ impl BioAssemblyOperator {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioAssemblyGenerator {
-    pub(crate) inner: ck::BioAssemblyGenerator,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioAssemblyGenerator {
+        pub(crate) inner: ck::BioAssemblyGenerator,
+    }
 }
 #[pymethods]
 impl BioAssemblyGenerator {
@@ -232,10 +257,12 @@ impl BioAssemblySpecialKindInput {
         }
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioAssembly {
-    pub(crate) inner: ck::BioAssembly,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioAssembly {
+        pub(crate) inner: ck::BioAssembly,
+    }
 }
 #[pymethods]
 impl BioAssembly {

@@ -4,10 +4,12 @@ use crate::public_selectors::ParityPolicy;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
-#[derive(Clone, Copy, PartialEq)]
-pub struct FunctionStatus {
-    inner: ck::FunctionStatus,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
+    #[derive(Clone, Copy, PartialEq)]
+    pub struct FunctionStatus {
+        inner: ck::FunctionStatus,
+    }
 }
 
 #[pymethods]

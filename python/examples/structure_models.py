@@ -18,10 +18,10 @@ mmcif_text = structure.to_mmcif()
 roundtrip = ck.BioStructure.from_mmcif(mmcif_text)
 print(roundtrip)
 
-for model in structure.models():
-    for chain in model.chains():
-        for residue in chain.residues():
-            print(residue.name(), residue.kind(), len(residue))
+for model in structure.models:
+    for chain in model.chains:
+        for residue in chain.residues:
+            print(residue.name, residue.kind, len(residue))
 
 # Projection is explicit: the complete structure above still contains water.
 protein = structure.protein()

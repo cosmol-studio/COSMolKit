@@ -6,7 +6,7 @@ import cosmolkit as ck
 
 mol = ck.mol_from_smiles("c1ccccc1O").with_2d_coordinates()
 
-coords = mol.coordinates_2d()
+coords = mol.coordinates_2d
 assert coords is not None
 bounds = mol.dg_bounds_matrix()
 

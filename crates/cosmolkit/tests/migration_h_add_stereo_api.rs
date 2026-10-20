@@ -373,7 +373,11 @@ fn default_parameterized_and_inplace_forms_have_identical_single_output_order() 
         .unwrap();
     assert_eq!(explicit, expected);
     assert_eq!(
-        explicit.atoms().iter().map(Atom::id).collect::<Vec<_>>(),
+        explicit
+            .atoms()
+            .iter()
+            .map(|atom| atom.id())
+            .collect::<Vec<_>>(),
         vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]
     );
 }

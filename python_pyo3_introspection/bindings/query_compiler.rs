@@ -170,9 +170,19 @@ impl QueryGraph {
     fn from_smarts_with_params(text: &str, params: &SmartsParseParams) -> PyResult<Self> {
         Self::_from_smarts_params(text, Some(params))
     }
+    #[getter]
     fn num_atoms(&self) -> usize {
         self.inner().num_atoms()
     }
+    #[getter]
+    fn name(&self, py: Python<'_>) -> PyResult<Option<String>> {
+        self.inner()
+            .name()
+            .map_err(crate::property_values::PropertyValueError::from_rust)?
+            .map(|text| crate::property_values::decode_source_text(py, text))
+            .transpose()
+    }
+    #[getter]
     fn num_bonds(&self) -> usize {
         self.inner().num_bonds()
     }
@@ -191,15 +201,19 @@ impl CompiledQuery {
 
 #[pymethods]
 impl CompiledQuery {
+    #[getter]
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
+    #[getter]
     fn num_bonds(&self) -> usize {
         self.inner.num_bonds()
     }
+    #[getter]
     fn atom_order(&self) -> Vec<usize> {
         self.inner.atom_order().to_vec()
     }
+    #[getter]
     fn query(&self) -> QueryGraph {
         QueryGraph {
             owner: QueryOwner::Compiled(Arc::clone(&self.inner)),

@@ -5,37 +5,48 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct QueryAtom {
-    pub(crate) inner: ck::QueryAtom,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct QueryAtom {
+        pub(crate) inner: ck::QueryAtom,
+    }
 }
 #[pymethods]
 impl QueryAtom {
+    #[getter]
     fn id(&self) -> usize {
         self.inner.id().index()
     }
+    #[getter]
     fn atomic_number(&self) -> u8 {
         self.inner.atomic_number()
     }
+    #[getter]
     fn formal_charge(&self) -> i8 {
         self.inner.formal_charge()
     }
+    #[getter]
     fn explicit_hydrogens(&self) -> u8 {
         self.inner.explicit_hydrogens()
     }
+    #[getter]
     fn isotope(&self) -> Option<u16> {
         self.inner.isotope()
     }
+    #[getter]
     fn atom_map(&self) -> Option<u32> {
         self.inner.atom_map()
     }
+    #[getter]
     fn is_aromatic(&self) -> bool {
         self.inner.is_aromatic()
     }
+    #[getter]
     fn no_implicit(&self) -> bool {
         self.inner.no_implicit()
     }
+    #[getter]
     fn radical_electrons(&self) -> u8 {
         self.inner.radical_electrons()
     }

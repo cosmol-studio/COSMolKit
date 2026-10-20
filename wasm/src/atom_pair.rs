@@ -9,12 +9,12 @@ impl Molecule {
     pub fn fingerprint_atom_pair_with_params(
         &self,
         params: &ck::AtomPairFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::Fingerprint, ck::AtomPairReadError> {
         // COSMolKit❗✔️: .atom_pair_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_atom_pair_with_params(params, output)
+            .fingerprint_atom_pair_with_params(params, additional_output)
     }
     pub fn fingerprint_atom_pair_sparse(
         &self,
@@ -25,12 +25,12 @@ impl Molecule {
     pub fn fingerprint_atom_pair_sparse_with_params(
         &self,
         params: &ck::AtomPairFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseBitFingerprint, ck::AtomPairReadError> {
         // COSMolKit❗✔️: .atom_pair_sparse_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_atom_pair_sparse_with_params(params, output)
+            .fingerprint_atom_pair_sparse_with_params(params, additional_output)
     }
     pub fn fingerprint_atom_pair_count(
         &self,
@@ -41,12 +41,12 @@ impl Molecule {
     pub fn fingerprint_atom_pair_count_with_params(
         &self,
         params: &ck::AtomPairFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint32, ck::AtomPairReadError> {
         // COSMolKit❗✔️: .atom_pair_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_atom_pair_count_with_params(params, output)
+            .fingerprint_atom_pair_count_with_params(params, additional_output)
     }
     pub fn fingerprint_atom_pair_sparse_count(
         &self,
@@ -57,12 +57,12 @@ impl Molecule {
     pub fn fingerprint_atom_pair_sparse_count_with_params(
         &self,
         params: &ck::AtomPairFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint, ck::AtomPairReadError> {
         // COSMolKit❗✔️: .atom_pair_sparse_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_atom_pair_sparse_count_with_params(params, output)
+            .fingerprint_atom_pair_sparse_count_with_params(params, additional_output)
     }
 }
 #[cfg(test)]

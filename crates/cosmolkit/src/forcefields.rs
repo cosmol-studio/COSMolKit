@@ -313,7 +313,7 @@ mod tests {
         let cache_arc = molecule.derived_cache_arc_runtime();
         let valid_states = cache.valid_states();
         let assignment = cache.valence_assignment().cloned();
-        let atoms = molecule.atoms().to_vec();
+        let atoms = molecule.topology().atoms.to_vec();
 
         assert_eq!(
             run_query(molecule).expect("prepared query succeeds"),
@@ -332,12 +332,12 @@ mod tests {
             molecule.derived_cache_runtime().valence_assignment(),
             assignment.as_ref()
         );
-        assert_eq!(molecule.atoms(), atoms);
+        assert_eq!(molecule.topology().atoms, atoms);
     }
 
     fn assert_uncached_query_fails_without_preparation(molecule: &Molecule) {
         let cache_arc = molecule.derived_cache_arc_runtime();
-        let atoms = molecule.atoms().to_vec();
+        let atoms = molecule.topology().atoms.to_vec();
         assert!(
             !molecule
                 .derived_cache_runtime()
@@ -406,7 +406,7 @@ mod tests {
                 .valence_assignment()
                 .is_none()
         );
-        assert_eq!(molecule.atoms(), atoms);
+        assert_eq!(molecule.topology().atoms, atoms);
     }
 
     fn molecule_with_cached_assignment(
@@ -647,7 +647,7 @@ mod tests {
             .expect("fixed source-aligned AtomSpec builds a valid live molecule");
             let uncached_arc = molecule.derived_cache_arc_runtime();
             let uncached_states = molecule.derived_cache_runtime().valid_states();
-            let uncached_atoms = molecule.atoms().to_vec();
+            let uncached_atoms = molecule.topology().atoms.to_vec();
             assert!(!uncached_states.contains(DerivedState::VALENCE));
             assert!(
                 molecule
@@ -673,7 +673,7 @@ mod tests {
                     .valence_assignment()
                     .is_none()
             );
-            assert_eq!(molecule.atoms(), uncached_atoms);
+            assert_eq!(molecule.topology().atoms, uncached_atoms);
 
             let prepared = molecule
                 .with_assigned_valence()
@@ -696,7 +696,7 @@ mod tests {
                 .derived_cache_runtime()
                 .valence_assignment()
                 .cloned();
-            let prepared_atoms = prepared.atoms().to_vec();
+            let prepared_atoms = prepared.topology().atoms.to_vec();
             assert!(prepared_states.contains(DerivedState::VALENCE));
             assert!(prepared_assignment.is_some());
 
@@ -717,7 +717,7 @@ mod tests {
                 prepared.derived_cache_runtime().valence_assignment(),
                 prepared_assignment.as_ref()
             );
-            assert_eq!(prepared.atoms(), prepared_atoms);
+            assert_eq!(prepared.topology().atoms, prepared_atoms);
         }
 
         let empty = Molecule::new();
@@ -760,7 +760,7 @@ mod tests {
                 molecule.derived_cache_runtime().valence_assignment(),
                 assignment.as_ref()
             );
-            assert!(molecule.atoms().is_empty());
+            assert!(molecule.topology().atoms.is_empty());
         }
 
         assert_eq!(actual_calls, 10, "8 nonempty and 2 empty public calls");

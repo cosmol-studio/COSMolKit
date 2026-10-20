@@ -33,6 +33,7 @@ fn atom_and_bond_source_strings_preserve_kinds_and_missing_lookup() {
         assert_eq!(
             molecule
                 .atom(a)
+                .as_ref()
                 .and_then(|atom| atom.prop("source"))
                 .map(property_value_to_text)
                 .transpose()
@@ -55,6 +56,7 @@ fn atom_and_bond_source_strings_preserve_kinds_and_missing_lookup() {
         assert_eq!(
             molecule
                 .atom(a)
+                .as_ref()
                 .and_then(|atom| atom.prop("missing"))
                 .map(property_value_to_text)
                 .transpose()
@@ -73,6 +75,7 @@ fn atom_and_bond_source_strings_preserve_kinds_and_missing_lookup() {
         assert_eq!(
             molecule
                 .atom(AtomId::new(19))
+                .as_ref()
                 .and_then(|atom| atom.prop("source"))
                 .map(property_value_to_text)
                 .transpose()

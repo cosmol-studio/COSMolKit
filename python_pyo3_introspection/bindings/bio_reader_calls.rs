@@ -57,8 +57,10 @@ pub fn _protein_from_pdb_params(
     text: &str,
     params: Option<&BioPdbReadParams>,
 ) -> PyResult<Protein> {
+    let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
     py.detach(|| match params {
-        Some(params) => ck::Protein::from_pdb_with_params(text, &params.inner),
+        Some(params) => ck::Protein::from_pdb_with_params(text, &params),
         None => ck::Protein::from_pdb(text),
     })
     .map(|inner| Protein {
@@ -111,23 +113,23 @@ mod tests {
             let cif=expected_bio.to_mmcif().unwrap();
             let bio=py.get_type::<BioStructure>();
             let protein=py.get_type::<Protein>();
-            let read=Py::new(py,BioReadParams{inner:ck::BioReadParams{format:ck::BioCoordinateFormat::Pdb,source_name:"explicit\0source".into()}})?;
+            let read=Py::new(py,BioReadParams{inner:crate::parameters::NativeField::Owned(ck::BioReadParams{format:ck::BioCoordinateFormat::Pdb,source_name:"explicit\0source".into()})})?;
             let options=PyDict::new(py);options.set_item("format","pdb")?;options.set_item("source_name","explicit\0source")?;
             assert_eq!(bio.call_method1("from_text",(pdb,))?.extract::<Py<BioStructure>>()?.borrow(py).inner,ck::BioStructure::from_text(pdb).unwrap());
-            let expected_named_bio=ck::BioStructure::from_text_with_params(pdb,&read.borrow(py).inner).unwrap();
+            let expected_named_bio=ck::BioStructure::from_text_with_params(pdb,&read.borrow(py).to_rust(py)?).unwrap();
             for actual in [bio.call_method1("from_text",(pdb,&read))?,bio.call_method("from_text",(pdb,),Some(&options))?,bio.call_method1("from_text_with_params",(pdb,&read))?] {
                 assert_eq!(actual.extract::<Py<BioStructure>>()?.borrow(py).inner,expected_named_bio);
             }
             assert_eq!(protein.call_method1("from_text",(pdb,))?.extract::<Py<Protein>>()?.borrow(py).inner.as_ref(),&ck::Protein::from_text(pdb).unwrap());
-            let expected_named_protein=ck::Protein::from_text_with_params(pdb,&read.borrow(py).inner).unwrap();
+            let expected_named_protein=ck::Protein::from_text_with_params(pdb,&read.borrow(py).to_rust(py)?).unwrap();
             for actual in [protein.call_method1("from_text",(pdb,&read))?,protein.call_method("from_text",(pdb,),Some(&options))?,protein.call_method1("from_text_with_params",(pdb,&read))?] {
                 assert_eq!(actual.extract::<Py<Protein>>()?.borrow(py).inner.as_ref(),&expected_named_protein);
             }
             assert_eq!(protein.call_method1("from_pdb",(pdb,))?.extract::<Py<Protein>>()?.borrow(py).inner.as_ref(),&expected_protein);
             let configured=PyDict::new(py);configured.set_item("skip_remarks",true)?;
-            let pdb_params=Py::new(py,BioPdbReadParams{inner:ck::BioPdbReadParams{skip_remarks:true,..Default::default()}})?;
+            let pdb_params=Py::new(py,BioPdbReadParams{inner:crate::parameters::NativeField::Owned(ck::BioPdbReadParams{skip_remarks:true,..Default::default()})})?;
             for actual in [protein.call_method1("from_pdb",(pdb,&pdb_params))?,protein.call_method("from_pdb",(pdb,),Some(&configured))?,protein.call_method1("from_pdb_with_params",(pdb,&pdb_params))?] {
-                assert_eq!(actual.extract::<Py<Protein>>()?.borrow(py).inner.as_ref(),&ck::Protein::from_pdb_with_params(pdb,&pdb_params.borrow(py).inner).unwrap());
+                assert_eq!(actual.extract::<Py<Protein>>()?.borrow(py).inner.as_ref(),&ck::Protein::from_pdb_with_params(pdb,&pdb_params.borrow(py).to_rust(py)?).unwrap());
             }
             assert!(protein.call_method("from_pdb",(pdb,&pdb_params),Some(&configured)).unwrap_err().is_instance_of::<PyTypeError>(py));
             let api=PyModule::new(py,"bio_reader_test")?;

@@ -44,6 +44,7 @@ impl MoleculeBatch {
             &SdfReadParams::default(),
             BatchErrorMode::Strict,
             None,
+            false,
         )
     }
     pub fn from_sdf_records_with_params(
@@ -51,9 +52,10 @@ impl MoleculeBatch {
         read: &SdfReadParams,
         mode: BatchErrorMode,
         n_jobs: Option<usize>,
+        progress_bar: bool,
     ) -> Result<Self, BatchValidationError> {
         Self::from_detached(
-            cosmolkit_batch::read_sdf_text(text, params(read), n_jobs, false)?,
+            cosmolkit_batch::read_sdf_text(text, params(read), n_jobs, progress_bar)?,
             mode,
         )
     }

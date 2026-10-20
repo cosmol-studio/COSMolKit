@@ -362,6 +362,7 @@ impl BioMmcifReadError {
     fn domain(&self) -> &'static str {
         "bio"
     }
+    #[getter]
     fn stage(&self) -> BioMmcifReadStage {
         self.inner.stage().into()
     }

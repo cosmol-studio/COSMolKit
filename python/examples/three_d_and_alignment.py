@@ -15,7 +15,7 @@ M  END
 mol = ck.mol_from_mol(molblock, coordinate_mode="require_3d")
 coords = mol.coordinates_3d()
 
-print("atoms:", mol.num_atoms())
-print("bonds:", mol.num_bonds())
+print("atoms:", mol.num_atoms)
+print("bonds:", mol.num_bonds)
 print("3d coords shape:", coords.shape)
 print("centroid:", coords.mean(axis=0))

@@ -24,19 +24,19 @@ batch = (
     .with_progress_bar(True)
 )
 print("records:", len(batch))
-print("parallel jobs:", batch.parallel_jobs())
-print("progress bar:", batch.progress_bar())
-print("valid mask:", batch.valid_mask())
-for error in batch.errors():
-    print("parse error:", error.index(), error.operation(), error.message())
+print("parallel jobs:", batch.parallel_jobs)
+print("progress bar:", batch.progress_bar)
+print("valid mask:", batch.valid_mask)
+for error in batch.errors:
+    print("parse error:", error.index, error.operation, error.message)
 
 prepared = batch.with_hydrogens(errors=ck.BatchErrorMode.KEEP).with_2d_coordinates(
     errors=ck.BatchErrorMode.KEEP
 )
 
-canonical = prepared.to_smiles_list()
-noncanonical = prepared.to_smiles_list(canonical=False)
-without_maps = prepared.to_smiles_list(ignore_atom_map_numbers=True)
+canonical = prepared.to_smiles()
+noncanonical = prepared.to_smiles(canonical=False)
+without_maps = prepared.to_smiles(ignore_atom_map_numbers=True)
 
 print("canonical:", canonical)
 print("noncanonical:", noncanonical)
@@ -48,10 +48,10 @@ for idx, molecule in enumerate(prepared):
 
 valid_molecules = [molecule for molecule in prepared.to_list() if molecule is not None]
 print("valid molecule count from to_list:", len(valid_molecules))
-print("tail smiles:", prepared[2:].to_smiles_list())
-print("valid smiles:", prepared[prepared.valid_mask()].to_smiles_list())
+print("tail smiles:", prepared[2:].to_smiles())
+print("valid smiles:", prepared[prepared.valid_mask].to_smiles())
 
-svgs = prepared.to_svg_list(width=320, height=240, progress_bar=False)
+svgs = prepared.to_svg(width=320, height=240, progress_bar=False)
 print("svg count:", sum(svg is not None for svg in svgs))
 
 image_report = prepared.write_images(

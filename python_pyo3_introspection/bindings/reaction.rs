@@ -370,6 +370,7 @@ impl Reaction {
             .map_err(crate::reaction_writer::ReactionWriteError::from_rust)?;
         crate::property_values::decode_source_text(py, &text)
     }
+    #[getter]
     fn match_params(&self, py: Python<'_>) -> PyResult<SubstructMatchParams> {
         let native = self.inner().match_params().clone();
         match self
@@ -502,8 +503,10 @@ impl Reaction {
         &self,
         params: Option<&ReactionValidationParams>,
     ) -> PyResult<ReactionValidationReport> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         match params {
-            Some(params) => self.inner().validate_with_params(&params.inner),
+            Some(params) => self.inner().validate_with_params(&params),
             None => self.inner().validate(),
         }
         .map(|inner| ReactionValidationReport { inner })
@@ -513,9 +516,9 @@ impl Reaction {
     #[pyo3(signature = (*, silent=None))]
     fn _validate_keywords(&self, silent: Option<bool>) -> PyResult<ReactionValidationReport> {
         let params = ReactionValidationParams {
-            inner: ck::ReactionValidationParams {
+            inner: crate::parameters::NativeField::Owned(ck::ReactionValidationParams {
                 silent: silent.unwrap_or_else(|| ck::ReactionValidationParams::default().silent),
-            },
+            }),
         };
         self._validate_params(Some(&params))
     }
@@ -547,8 +550,10 @@ impl Reaction {
         &self,
         params: Option<&ReactionValidationParams>,
     ) -> PyResult<Self> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         match params {
-            Some(params) => self.inner().with_initialized_with_params(&params.inner),
+            Some(params) => self.inner().with_initialized_with_params(&params),
             None => self.inner().with_initialized(),
         }
         .map(|inner| self.with_native(inner))
@@ -558,9 +563,9 @@ impl Reaction {
     #[pyo3(signature = (*, silent=None))]
     fn _with_initialized_keywords(&self, silent: Option<bool>) -> PyResult<Self> {
         let params = ReactionValidationParams {
-            inner: ck::ReactionValidationParams {
+            inner: crate::parameters::NativeField::Owned(ck::ReactionValidationParams {
                 silent: silent.unwrap_or_else(|| ck::ReactionValidationParams::default().silent),
-            },
+            }),
         };
         self._with_initialized_params(Some(&params))
     }
@@ -589,15 +594,19 @@ impl Reaction {
             .map(Self::from_rust)
             .map_err(ReactionModelError::from_rust)
     }
+    #[getter]
     fn num_reactant_templates(&self) -> usize {
         self.inner().num_reactant_templates()
     }
+    #[getter]
     fn num_product_templates(&self) -> usize {
         self.inner().num_product_templates()
     }
+    #[getter]
     fn num_agent_templates(&self) -> usize {
         self.inner().num_agent_templates()
     }
+    #[getter]
     fn reactant_templates(&self) -> Vec<QueryGraph> {
         self.inner()
             .reactant_templates()
@@ -606,6 +615,7 @@ impl Reaction {
             .map(|(index, _)| self.template_view(ck::ReactionRole::Reactant, index))
             .collect()
     }
+    #[getter]
     fn product_templates(&self) -> Vec<QueryGraph> {
         self.inner()
             .product_templates()
@@ -614,6 +624,7 @@ impl Reaction {
             .map(|(index, _)| self.template_view(ck::ReactionRole::Product, index))
             .collect()
     }
+    #[getter]
     fn agent_templates(&self) -> Vec<QueryGraph> {
         self.inner()
             .agent_templates()
@@ -658,9 +669,11 @@ impl Reaction {
             .map(|inner| self.with_native(inner))
             .map_err(ReactionModelError::from_rust)
     }
+    #[getter]
     fn is_initialized(&self) -> bool {
         self.inner().is_initialized()
     }
+    #[getter]
     fn implicit_properties(&self) -> bool {
         self.inner().implicit_properties()
     }
@@ -682,27 +695,27 @@ impl Reaction {
             threshold_unmapped_atoms.is_supplied() || move_to_agent_templates.is_supplied();
         crate::arguments::configuration_arguments!(params; threshold_unmapped_atoms, move_to_agent_templates);
         let params = params.as_deref();
-        Ok(if keyword_form {
+        if keyword_form {
             self._without_unmapped_reactants_keywords(
                 threshold_unmapped_atoms,
                 move_to_agent_templates,
             )
         } else {
             self._without_unmapped_reactants_params(params)
-        })
+        }
     }
     #[doc = r#"{"role":"overload","target":"Reaction.without_unmapped_reactants"}"#]
     #[pyo3(signature = (params=None))]
     fn _without_unmapped_reactants_params(
         &self,
         params: Option<&ReactionTemplateRemovalParams>,
-    ) -> ReactionTemplateRemoval {
-        self.with_removal(match params {
-            Some(params) => self
-                .inner()
-                .without_unmapped_reactants_with_params(&params.inner),
+    ) -> PyResult<ReactionTemplateRemoval> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
+        Ok(self.with_removal(match params {
+            Some(params) => self.inner().without_unmapped_reactants_with_params(&params),
             None => self.inner().without_unmapped_reactants(),
-        })
+        }))
     }
     #[doc = r#"{"role":"overload","target":"Reaction.without_unmapped_reactants"}"#]
     #[pyo3(signature = (*, threshold_unmapped_atoms=None, move_to_agent_templates=None))]
@@ -710,22 +723,22 @@ impl Reaction {
         &self,
         threshold_unmapped_atoms: Option<f64>,
         move_to_agent_templates: Option<bool>,
-    ) -> ReactionTemplateRemoval {
+    ) -> PyResult<ReactionTemplateRemoval> {
         let defaults = ck::ReactionTemplateRemovalParams::default();
         let params = ReactionTemplateRemovalParams {
-            inner: ck::ReactionTemplateRemovalParams {
+            inner: crate::parameters::NativeField::Owned(ck::ReactionTemplateRemovalParams {
                 threshold_unmapped_atoms: threshold_unmapped_atoms
                     .unwrap_or(defaults.threshold_unmapped_atoms),
                 move_to_agent_templates: move_to_agent_templates
                     .unwrap_or(defaults.move_to_agent_templates),
-            },
+            }),
         };
         self._without_unmapped_reactants_params(Some(&params))
     }
     fn without_unmapped_reactants_with_params(
         &self,
         params: &ReactionTemplateRemovalParams,
-    ) -> ReactionTemplateRemoval {
+    ) -> PyResult<ReactionTemplateRemoval> {
         self._without_unmapped_reactants_params(Some(params))
     }
 
@@ -740,27 +753,27 @@ impl Reaction {
             threshold_unmapped_atoms.is_supplied() || move_to_agent_templates.is_supplied();
         crate::arguments::configuration_arguments!(params; threshold_unmapped_atoms, move_to_agent_templates);
         let params = params.as_deref();
-        Ok(if keyword_form {
+        if keyword_form {
             self._without_unmapped_products_keywords(
                 threshold_unmapped_atoms,
                 move_to_agent_templates,
             )
         } else {
             self._without_unmapped_products_params(params)
-        })
+        }
     }
     #[doc = r#"{"role":"overload","target":"Reaction.without_unmapped_products"}"#]
     #[pyo3(signature = (params=None))]
     fn _without_unmapped_products_params(
         &self,
         params: Option<&ReactionTemplateRemovalParams>,
-    ) -> ReactionTemplateRemoval {
-        self.with_removal(match params {
-            Some(params) => self
-                .inner()
-                .without_unmapped_products_with_params(&params.inner),
+    ) -> PyResult<ReactionTemplateRemoval> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
+        Ok(self.with_removal(match params {
+            Some(params) => self.inner().without_unmapped_products_with_params(&params),
             None => self.inner().without_unmapped_products(),
-        })
+        }))
     }
     #[doc = r#"{"role":"overload","target":"Reaction.without_unmapped_products"}"#]
     #[pyo3(signature = (*, threshold_unmapped_atoms=None, move_to_agent_templates=None))]
@@ -768,22 +781,22 @@ impl Reaction {
         &self,
         threshold_unmapped_atoms: Option<f64>,
         move_to_agent_templates: Option<bool>,
-    ) -> ReactionTemplateRemoval {
+    ) -> PyResult<ReactionTemplateRemoval> {
         let defaults = ck::ReactionTemplateRemovalParams::default();
         let params = ReactionTemplateRemovalParams {
-            inner: ck::ReactionTemplateRemovalParams {
+            inner: crate::parameters::NativeField::Owned(ck::ReactionTemplateRemovalParams {
                 threshold_unmapped_atoms: threshold_unmapped_atoms
                     .unwrap_or(defaults.threshold_unmapped_atoms),
                 move_to_agent_templates: move_to_agent_templates
                     .unwrap_or(defaults.move_to_agent_templates),
-            },
+            }),
         };
         self._without_unmapped_products_params(Some(&params))
     }
     fn without_unmapped_products_with_params(
         &self,
         params: &ReactionTemplateRemovalParams,
-    ) -> ReactionTemplateRemoval {
+    ) -> PyResult<ReactionTemplateRemoval> {
         self._without_unmapped_products_params(Some(params))
     }
 }
@@ -969,12 +982,14 @@ for removal in (False, True):
             assert_eq!(removed_view.inner().num_atoms(), 1);
             for move_to_agent_templates in [true, false] {
                 let params = ReactionTemplateRemovalParams {
-                    inner: ck::ReactionTemplateRemovalParams {
-                        threshold_unmapped_atoms: 0.5,
-                        move_to_agent_templates,
-                    },
+                    inner: crate::parameters::NativeField::Owned(
+                        ck::ReactionTemplateRemovalParams {
+                            threshold_unmapped_atoms: 0.5,
+                            move_to_agent_templates,
+                        },
+                    ),
                 };
-                let expected = native.without_unmapped_reactants_with_params(&params.inner);
+                let expected = native.without_unmapped_reactants_with_params(&params.to_rust(py)?);
                 let via_params = reaction._without_unmapped_reactants_params(Some(&params));
                 let via_keywords = reaction
                     ._without_unmapped_reactants_keywords(Some(0.5), Some(move_to_agent_templates));
@@ -983,6 +998,7 @@ for removal in (False, True):
                     via_keywords,
                     reaction.without_unmapped_reactants_with_params(&params),
                 ] {
+                    let actual = actual?;
                     assert_eq!(
                         actual.reaction().num_reactant_templates(),
                         expected.reaction().num_reactant_templates()
@@ -1004,7 +1020,7 @@ for removal in (False, True):
                             .collect::<Vec<_>>()
                     );
                 }
-                let expected = native.without_unmapped_products_with_params(&params.inner);
+                let expected = native.without_unmapped_products_with_params(&params.to_rust(py)?);
                 for actual in [
                     reaction._without_unmapped_products_params(Some(&params)),
                     reaction._without_unmapped_products_keywords(
@@ -1013,6 +1029,7 @@ for removal in (False, True):
                     ),
                     reaction.without_unmapped_products_with_params(&params),
                 ] {
+                    let actual = actual?;
                     assert_eq!(
                         actual.reaction().num_product_templates(),
                         expected.reaction().num_product_templates()

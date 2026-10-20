@@ -6,45 +6,47 @@ impl Molecule {
         &self,
         generator: &ck::MorganFingerprintGenerator,
         params: Option<&ck::MorganCallParams>,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::Fingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_fingerprint_with_generator(
         self.inner
             .borrow()
-            .fingerprint_morgan_with_generator(generator, params, output)
+            .fingerprint_morgan_with_generator(generator, params, additional_output)
     }
     pub fn fingerprint_morgan_count_with_generator(
         &self,
         generator: &ck::MorganFingerprintGenerator,
         params: Option<&ck::MorganCallParams>,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint32, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_count_fingerprint_with_generator(
-        self.inner
-            .borrow()
-            .fingerprint_morgan_count_with_generator(generator, params, output)
+        self.inner.borrow().fingerprint_morgan_count_with_generator(
+            generator,
+            params,
+            additional_output,
+        )
     }
     pub fn fingerprint_morgan_sparse_with_generator(
         &self,
         generator: &ck::MorganFingerprintGenerator,
         params: Option<&ck::MorganCallParams>,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseBitFingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_sparse_fingerprint_with_generator(
         self.inner
             .borrow()
-            .fingerprint_morgan_sparse_with_generator(generator, params, output)
+            .fingerprint_morgan_sparse_with_generator(generator, params, additional_output)
     }
     pub fn fingerprint_morgan_sparse_count_with_generator(
         &self,
         generator: &ck::MorganFingerprintGenerator,
         params: Option<&ck::MorganCallParams>,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_sparse_count_fingerprint_with_generator(
         self.inner
             .borrow()
-            .fingerprint_morgan_sparse_count_with_generator(generator, params, output)
+            .fingerprint_morgan_sparse_count_with_generator(generator, params, additional_output)
     }
     pub fn fingerprint_morgan_sparse_count(
         &self,
@@ -55,12 +57,12 @@ impl Molecule {
     pub fn fingerprint_morgan_sparse_count_with_params(
         &self,
         params: &ck::MorganFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_sparse_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_morgan_sparse_count_with_params(params, output)
+            .fingerprint_morgan_sparse_count_with_params(params, additional_output)
     }
     pub fn fingerprint_morgan_sparse(
         &self,
@@ -71,12 +73,12 @@ impl Molecule {
     pub fn fingerprint_morgan_sparse_with_params(
         &self,
         params: &ck::MorganFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseBitFingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_sparse_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_morgan_sparse_with_params(params, output)
+            .fingerprint_morgan_sparse_with_params(params, additional_output)
     }
     pub fn fingerprint_morgan_count(
         &self,
@@ -87,12 +89,12 @@ impl Molecule {
     pub fn fingerprint_morgan_count_with_params(
         &self,
         params: &ck::MorganFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint32, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_morgan_count_with_params(params, output)
+            .fingerprint_morgan_count_with_params(params, additional_output)
     }
     pub fn fingerprint_morgan(&self) -> Result<ck::Fingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_fingerprint(
@@ -101,12 +103,12 @@ impl Molecule {
     pub fn fingerprint_morgan_with_params(
         &self,
         params: &ck::MorganFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::Fingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_morgan_with_params(params, output)
+            .fingerprint_morgan_with_params(params, additional_output)
     }
 }
 pub fn morgan_generator_fingerprints(
@@ -120,7 +122,9 @@ pub fn morgan_generator_fingerprints(
         .map(|m| m.map(|m| m.inner.borrow()))
         .collect::<Vec<_>>();
     let rows = guards.iter().map(|m| m.as_deref()).collect::<Vec<_>>();
-    generator.fingerprints(&rows, num_threads)
+    generator
+        .fingerprints(&rows, num_threads)
+        .map(ck::FingerprintBatch::into_values)
 }
 pub fn morgan_generator_counts(
     generator: &ck::MorganFingerprintGenerator,

@@ -342,6 +342,20 @@ it is not a reason to label the returned coordinates converged. For multiple
 conformers use ``with3dConformersWithParams(count, params)`` and the corresponding
 ``withUffOptimizedConformers()`` or ``withMmffOptimizedConformers()`` operation.
 
+To collect embedding diagnostics, enable tracking and request a result:
+
+.. code-block:: javascript
+
+   const params = ck.EmbedParams.etkdgV3();
+   params.trackFailures = true;
+   const result = mol.with3dConformersResultWithParams(8, params);
+   console.log(result.failureCounts);
+   console.log(result.failureCount(ck.EmbedFailureCause.InitialCoords));
+
+``failureCounts`` is a frozen array, or ``null`` when tracking is disabled.
+Counters describe intermediate failure events, not missing conformers. The
+input parameters remain unchanged. ``EndOfEnum`` is not a valid query cause.
+
 Persistent force fields and constraints
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -447,9 +461,9 @@ valid/invalid counts rather than silently dropping those positions.
 
    const batch = ck.MoleculeBatch.fromSmilesList(["CCO", "CCCO", "c1ccccc1"]);
    try {
-     console.log(batch.toSmilesList());
+     console.log(batch.toSmiles());
      console.log(batch.validCount(), batch.invalidCount()); // 3, 0
-     const fingerprints = batch.fingerprintMorganList();
+     const fingerprints = batch.fingerprintMorgan();
      try {
        console.log(fingerprints.map((fp) => fp === null ? null : fp.onBits()));
      } finally {

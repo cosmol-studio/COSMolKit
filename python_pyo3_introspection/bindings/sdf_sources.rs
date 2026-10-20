@@ -15,8 +15,39 @@ use std::{fs::File, io::BufReader, path::PathBuf};
 pub struct SdfDataset {
     pub(crate) inner: ck::SdfDataset,
 }
+impl crate::indexing::Collection for SdfDataset {
+    type Item = SdfRecord;
+    type Selected = MoleculeBatch;
+    fn length(&self) -> usize {
+        self.inner.len()
+    }
+    fn item(&self, py: Python<'_>, index: usize) -> PyResult<SdfRecord> {
+        py.detach(|| self.inner.record(index))
+            .map(SdfRecord::from_rust)
+            .map_err(SdfError::from_rust)
+    }
+    fn select(&self, py: Python<'_>, indices: &[usize]) -> PyResult<MoleculeBatch> {
+        py.detach(|| {
+            ck::MoleculeBatch::from_dataset_indices(
+                &self.inner,
+                indices,
+                ck::BatchErrorMode::Strict,
+            )
+        })
+        .map(|inner| MoleculeBatch { inner })
+        .map_err(BatchValidationError::from_rust)
+    }
+}
 #[pymethods]
 impl SdfDataset {
+    #[doc = r#"{"role":"indexing","protocol":"integer_selection","selection":"MoleculeBatch"}"#]
+    fn __getitem__(
+        &self,
+        py: Python<'_>,
+        index: crate::indexing::Index<'_>,
+    ) -> PyResult<crate::indexing::Indexed<SdfRecord, MoleculeBatch>> {
+        crate::indexing::get(self, py, index)
+    }
     #[pyo3(signature=(index,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
     fn record(
         &self,
@@ -63,8 +94,9 @@ impl SdfDataset {
         index: usize,
         params: Option<&SdfReadParams>,
     ) -> PyResult<SdfRecord> {
+        let params = params.map(|value| value.to_rust(py)).transpose()?;
         py.detach(|| match params {
-            Some(p) => self.inner.record_with_params(index, &p.inner),
+            Some(p) => self.inner.record_with_params(index, &p),
             None => self.inner.record(index),
         })
         .map(SdfRecord::from_rust)
@@ -148,9 +180,11 @@ impl SdfDataset {
         path: PathBuf,
         params: Option<&SdfReadParams>,
     ) -> PyResult<Self> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         let path = crate::molecular_io_calls::path_text(&path)?;
         py.detach(|| match params {
-            Some(p) => ck::SdfDataset::open_with_params(path, &p.inner),
+            Some(p) => ck::SdfDataset::open_with_params(path, &p),
             None => ck::SdfDataset::open(path),
         })
         .map(|inner| Self { inner })
@@ -184,15 +218,18 @@ impl SdfDataset {
         Self::_open_params(py, path, Some(params))
     }
 
+    #[getter]
     fn len(&self) -> usize {
         self.inner.len()
     }
     fn __len__(&self) -> usize {
         self.inner.len()
     }
+    #[getter]
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
+    #[getter]
     fn path(&self) -> PathBuf {
         self.inner.path().to_path_buf()
     }
@@ -310,9 +347,11 @@ impl SdfRecordStream {
         path: PathBuf,
         params: Option<&SdfReadParams>,
     ) -> PyResult<Self> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         let path = crate::molecular_io_calls::path_text(&path)?;
         py.detach(|| match params {
-            Some(p) => ck::SdfRecordStream::open_with_params(path, &p.inner),
+            Some(p) => ck::SdfRecordStream::open_with_params(path, &p),
             None => ck::SdfRecordStream::open(path),
         })
         .map(|inner| Self { inner: Some(inner) })
@@ -359,15 +398,19 @@ impl SdfRecordStream {
     fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<SdfRecord>> {
         self.next_record(py)
     }
+    #[getter]
     fn is_end(&self) -> PyResult<bool> {
         Ok(self.active()?.is_end())
     }
+    #[getter]
     fn records_consumed(&self) -> PyResult<usize> {
         Ok(self.active()?.records_consumed())
     }
+    #[getter]
     fn bytes_consumed(&self) -> PyResult<u64> {
         Ok(self.active()?.bytes_consumed())
     }
+    #[getter]
     fn lines_consumed(&self) -> PyResult<usize> {
         Ok(self.active()?.lines_consumed())
     }
@@ -444,9 +487,11 @@ impl SdfReader {
         path: PathBuf,
         params: Option<&SdfReadParams>,
     ) -> PyResult<Self> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         let path = crate::molecular_io_calls::path_text(&path)?;
         py.detach(|| match params {
-            Some(p) => ck::SdfReader::open_with_params(path, &p.inner),
+            Some(p) => ck::SdfReader::open_with_params(path, &p),
             None => ck::SdfReader::open(path),
         })
         .map(|inner| Self { inner })
@@ -480,12 +525,14 @@ impl SdfReader {
         Self::_open_params(py, path, Some(params))
     }
 
+    #[getter]
     fn path(&self) -> PathBuf {
         self.inner.path().to_path_buf()
     }
+    #[getter]
     fn params(&self) -> SdfReadParams {
         SdfReadParams {
-            inner: *self.inner.params(),
+            inner: crate::parameters::NativeField::Owned(*self.inner.params()),
         }
     }
     #[pyo3(signature=(size,mode=None,n_jobs=None))]

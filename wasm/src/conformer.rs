@@ -6,6 +6,18 @@ pub struct EmbedMoleculeResult {
     inner: ck::EmbedMoleculeResult,
 }
 impl EmbedMoleculeResult {
+    pub fn failures_tracked(&self) -> bool {
+        self.inner.failures_tracked()
+    }
+    pub fn failure_counts(&self) -> Option<&[u32]> {
+        self.inner.failure_counts()
+    }
+    pub fn failure_count(
+        &self,
+        cause: ck::EmbedFailureCause,
+    ) -> Result<Option<u32>, ck::EmbedFailureCountError> {
+        self.inner.failure_count(cause)
+    }
     pub fn molecule(&self) -> Molecule {
         // COSMolKit❗✔️: inner: self.inner.molecule().clone(),
         Molecule {
@@ -27,6 +39,18 @@ pub struct EmbedMultipleConfsResult {
     inner: ck::EmbedMultipleConfsResult,
 }
 impl EmbedMultipleConfsResult {
+    pub fn failures_tracked(&self) -> bool {
+        self.inner.failures_tracked()
+    }
+    pub fn failure_counts(&self) -> Option<&[u32]> {
+        self.inner.failure_counts()
+    }
+    pub fn failure_count(
+        &self,
+        cause: ck::EmbedFailureCause,
+    ) -> Result<Option<u32>, ck::EmbedFailureCountError> {
+        self.inner.failure_count(cause)
+    }
     pub fn molecule(&self) -> Molecule {
         // COSMolKit❗✔️: inner: self.inner.molecule().clone(),
         Molecule {

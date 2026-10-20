@@ -16,7 +16,9 @@ pub(crate) fn uff_energy_gradient_params(
     if let Some(value) = ignore_interfragment_interactions {
         inner.ignore_interfragment_interactions = value;
     }
-    crate::params::UffEvaluationParams { inner }
+    crate::params::UffEvaluationParams {
+        inner: crate::parameters::NativeField::Owned(inner),
+    }
 }
 pub(crate) fn mmff_energy_gradient_params(
     mmff_variant: Option<String>,
@@ -37,7 +39,9 @@ pub(crate) fn mmff_energy_gradient_params(
     if let Some(value) = ignore_interfragment_interactions {
         inner.ignore_interfragment_interactions = value;
     }
-    crate::params::MmffEvaluationParams { inner }
+    crate::params::MmffEvaluationParams {
+        inner: crate::parameters::NativeField::Owned(inner),
+    }
 }
 pub(crate) fn with_uff_optimized_params(
     max_iterations: Option<i32>,
@@ -58,7 +62,9 @@ pub(crate) fn with_uff_optimized_params(
     if let Some(value) = ignore_interfragment_interactions {
         inner.ignore_interfragment_interactions = value;
     }
-    crate::params::UffOptimizationParams { inner }
+    crate::params::UffOptimizationParams {
+        inner: crate::parameters::NativeField::Owned(inner),
+    }
 }
 pub(crate) fn with_uff_optimized_conformers_params(
     num_threads: Option<i32>,
@@ -79,7 +85,9 @@ pub(crate) fn with_uff_optimized_conformers_params(
     if let Some(value) = ignore_interfragment_interactions {
         inner.ignore_interfragment_interactions = value;
     }
-    crate::params::UffConformerOptimizationParams { inner }
+    crate::params::UffConformerOptimizationParams {
+        inner: crate::parameters::NativeField::Owned(inner),
+    }
 }
 pub(crate) fn with_mmff_optimized_params(
     mmff_variant: Option<String>,
@@ -104,7 +112,9 @@ pub(crate) fn with_mmff_optimized_params(
     if let Some(value) = ignore_interfragment_interactions {
         inner.ignore_interfragment_interactions = value;
     }
-    crate::params::MmffOptimizationParams { inner }
+    crate::params::MmffOptimizationParams {
+        inner: crate::parameters::NativeField::Owned(inner),
+    }
 }
 pub(crate) fn with_mmff_optimized_conformers_params(
     num_threads: Option<i32>,
@@ -129,7 +139,9 @@ pub(crate) fn with_mmff_optimized_conformers_params(
     if let Some(value) = ignore_interfragment_interactions {
         inner.ignore_interfragment_interactions = value;
     }
-    crate::params::MmffConformerOptimizationParams { inner }
+    crate::params::MmffConformerOptimizationParams {
+        inner: crate::parameters::NativeField::Owned(inner),
+    }
 }
 
 use crate::error_framework::{Source, error_projection};
@@ -222,7 +234,7 @@ mod tests {
                 config.vdw_threshold = 7.5;
                 let default = source.uff_energy_gradient().unwrap();
                 let configured = source.uff_energy_gradient_with_params(&config).unwrap();
-                let params = Py::new(py, crate::params::UffEvaluationParams { inner: config })?;
+                let params = Py::new(py, crate::params::UffEvaluationParams { inner: crate::parameters::NativeField::Owned(config )})?;
                 let keywords = PyDict::new(py);
                 keywords.set_item("vdw_threshold", 7.5)?;
                 for form in 0..4 {
@@ -272,7 +284,7 @@ mod tests {
                 config.non_bonded_threshold = 7.5;
                 let default = source.mmff_energy_gradient().unwrap();
                 let configured = source.mmff_energy_gradient_with_params(&config).unwrap();
-                let params = Py::new(py, crate::params::MmffEvaluationParams { inner: config })?;
+                let params = Py::new(py, crate::params::MmffEvaluationParams { inner: crate::parameters::NativeField::Owned(config )})?;
                 let keywords = PyDict::new(py);
                 keywords.set_item("non_bonded_threshold", 7.5)?;
                 for form in 0..4 {
@@ -328,7 +340,7 @@ mod tests {
                 config.max_iterations = 3;
                 let default = source.with_uff_optimized().unwrap();
                 let configured = source.with_uff_optimized_with_params(&config).unwrap();
-                let params = Py::new(py, crate::params::UffOptimizationParams { inner: config })?;
+                let params = Py::new(py, crate::params::UffOptimizationParams { inner: crate::parameters::NativeField::Owned(config )})?;
                 let keywords = PyDict::new(py);
                 keywords.set_item("max_iterations", 3)?;
                 for form in 0..4 {
@@ -374,7 +386,7 @@ mod tests {
                     .unwrap();
                 let params = Py::new(
                     py,
-                    crate::params::UffConformerOptimizationParams { inner: config },
+                    crate::params::UffConformerOptimizationParams { inner: crate::parameters::NativeField::Owned(config )},
                 )?;
                 let keywords = PyDict::new(py);
                 keywords.set_item("max_iterations", 3)?;
@@ -432,7 +444,7 @@ mod tests {
                 config.max_iterations = 3;
                 let default = source.with_mmff_optimized().unwrap();
                 let configured = source.with_mmff_optimized_with_params(&config).unwrap();
-                let params = Py::new(py, crate::params::MmffOptimizationParams { inner: config })?;
+                let params = Py::new(py, crate::params::MmffOptimizationParams { inner: crate::parameters::NativeField::Owned(config )})?;
                 let keywords = PyDict::new(py);
                 keywords.set_item("max_iterations", 3)?;
                 for form in 0..4 {
@@ -489,7 +501,7 @@ mod tests {
                     .unwrap();
                 let params = Py::new(
                     py,
-                    crate::params::MmffConformerOptimizationParams { inner: config },
+                    crate::params::MmffConformerOptimizationParams { inner: crate::parameters::NativeField::Owned(config )},
                 )?;
                 let keywords = PyDict::new(py);
                 keywords.set_item("max_iterations", 3)?;

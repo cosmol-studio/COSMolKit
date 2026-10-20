@@ -38,10 +38,12 @@ enum_input!(BioConnectionKindInput, BioConnectionKind);
 enum_input!(BioAsuInput, BioAsu);
 enum_input!(BioHelixClassInput, BioHelixClass);
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct ResidueAddress {
-    pub(crate) inner: ck::ResidueAddress,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct ResidueAddress {
+        pub(crate) inner: ck::ResidueAddress,
+    }
 }
 #[pymethods]
 impl ResidueAddress {
@@ -56,15 +58,19 @@ impl ResidueAddress {
         ck::ResidueAddress::new(sequence_number, insertion_code, segment.as_bytes(), name)
             .map(|inner| Self { inner })
     }
+    #[getter]
     fn sequence_number(&self) -> Option<i32> {
         self.inner.sequence_number()
     }
+    #[getter]
     fn insertion_code(&self) -> Option<u8> {
         self.inner.insertion_code()
     }
+    #[getter]
     fn segment(&self) -> &str {
         self.inner.segment()
     }
+    #[getter]
     fn name(&self) -> String {
         self.inner.name().as_str().to_owned()
     }
@@ -76,10 +82,12 @@ impl ResidueAddress {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct AtomAddress {
-    pub(crate) inner: ck::AtomAddress,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct AtomAddress {
+        pub(crate) inner: ck::AtomAddress,
+    }
 }
 #[pymethods]
 impl AtomAddress {
@@ -98,26 +106,32 @@ impl AtomAddress {
             inner: ck::AtomAddress::new(chain, residue.inner, logical_atom_name, altloc),
         })
     }
+    #[getter]
     fn chain_name(&self) -> String {
         self.inner.chain_name().as_str().to_owned()
     }
+    #[getter]
     fn residue(&self) -> ResidueAddress {
         ResidueAddress {
             inner: self.inner.residue(),
         }
     }
+    #[getter]
     fn logical_atom_name(&self) -> &str {
         self.inner.logical_atom_name()
     }
+    #[getter]
     fn altloc(&self) -> u8 {
         self.inner.altloc()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioConnection {
-    pub(crate) inner: ck::BioConnection,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioConnection {
+        pub(crate) inner: ck::BioConnection,
+    }
 }
 #[pymethods]
 impl BioConnection {
@@ -195,10 +209,12 @@ impl BioConnection {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioCisPep {
-    pub(crate) inner: ck::BioCisPep,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioCisPep {
+        pub(crate) inner: ck::BioCisPep,
+    }
 }
 #[pymethods]
 impl BioCisPep {
@@ -252,10 +268,12 @@ impl BioCisPep {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioModRes {
-    pub(crate) inner: ck::BioModRes,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioModRes {
+        pub(crate) inner: ck::BioModRes,
+    }
 }
 #[pymethods]
 impl BioModRes {
@@ -364,10 +382,12 @@ impl BioHelix {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioStrand {
-    pub(crate) inner: ck::BioStrand,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioStrand {
+        pub(crate) inner: ck::BioStrand,
+    }
 }
 #[pymethods]
 impl BioStrand {
@@ -425,10 +445,12 @@ impl BioStrand {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioSheet {
-    pub(crate) inner: ck::BioSheet,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioSheet {
+        pub(crate) inner: ck::BioSheet,
+    }
 }
 #[pymethods]
 impl BioSheet {

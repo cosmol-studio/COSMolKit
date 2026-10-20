@@ -1961,7 +1961,8 @@ pub fn atom_valence_cache_needs_update(atom: &Atom, explicit: i32, implicit: i32
     !(explicit >= 0 && (atom.no_implicit() || implicit >= 0))
 }
 
-pub(crate) fn cached_explicit_valence(
+/// Observe one atom's explicit cache entry without recalculation.
+pub fn cached_explicit_valence(
     atom: &Atom,
     assignment: Option<&ValenceAssignment>,
 ) -> Result<i32, ValenceError> {
@@ -1998,14 +1999,22 @@ pub(crate) fn cached_total_valence(
     atom: &Atom,
     assignment: &ValenceAssignment,
 ) -> Result<i32, ValenceError> {
+    cached_total_valence_from_assignment(atom, Some(assignment))
+}
+
+/// Read both cached valence components without preparing missing state.
+pub fn cached_total_valence_from_assignment(
+    atom: &Atom,
+    assignment: Option<&ValenceAssignment>,
+) -> Result<i32, ValenceError> {
     // RDKit✔️✔️: unsigned int Atom::getTotalValence() const {
     // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
     // RDKit✔️✔️: }
     // Both source getters return initialized nonnegative int8 values; their
     // sum is bounded by 254. Reuse the unique implicit getter, including its
     // noImplicit early return, with no allocation or graph traversal.
-    let explicit = cached_explicit_valence(atom, Some(assignment))?;
-    let implicit = crate::hcount::implicit_hydrogen_count(atom, assignment)? as i32;
+    let explicit = cached_explicit_valence(atom, assignment)?;
+    let implicit = crate::hcount::implicit_hydrogen_count_from_cache(atom, assignment)? as i32;
     Ok(explicit + implicit)
 }
 

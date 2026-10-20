@@ -11,14 +11,12 @@ use pyo3::prelude::*;
 use std::error::Error;
 use std::sync::Arc;
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum ThreadCountErrorKind {
+crate::enums::binding_enum!(ThreadCountErrorKind, {
     UndefinedSignedNegation,
     ObservationIo,
     InvalidCpuList,
     AutomaticObservationUnavailable,
-}
+});
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct ThreadCountError {
     node: ErrorRef,

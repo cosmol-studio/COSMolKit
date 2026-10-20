@@ -7,8 +7,8 @@ import cosmolkit as ck
 SINGLE=[("fingerprint_topological_torsion_sparse_count_with_generator","sparse_counts"),("fingerprint_topological_torsion_sparse_with_generator","sparse_fingerprints"),("fingerprint_topological_torsion_count_with_generator","counts"),("fingerprint_topological_torsion_with_generator","fingerprints")]
 
 def record(value):
-    if hasattr(value,"nonzero_elements"):return {"size":value.length(),"nonzero_elements":value.nonzero_elements()}
-    return {"size":value.n_bits(),"on_bits":value.on_bits()}
+    if hasattr(value,"nonzero_elements"):return {"size":value.length,"nonzero_elements":value.nonzero_elements}
+    return {"size":value.n_bits,"on_bits":value.on_bits}
 
 @pytest.mark.parametrize("single,bulk",SINGLE)
 def test_reusable_scalar_source_values_and_bulk_none_order(single,bulk):
@@ -22,27 +22,27 @@ def test_reusable_scalar_source_values_and_bulk_none_order(single,bulk):
         assert len(values)==5 and values[1] is None and values[4] is None
         assert [record(values[i]) for i in [0,2,3]]==[record(v) for v in expected]
     if bulk=="sparse_counts":
-        assert [v.nonzero_elements() for v in expected]==[{4437590048:1,12893306913:1},{4303372320:1},{4437590049:1}]
-        assert all(v.length()==68719476736 for v in expected)
-    if bulk=="counts":assert [v.nonzero_elements() for v in expected]==[{0:2},{15:1},{71:1}]
-    if bulk=="fingerprints":assert [v.on_bits() for v in expected]==[[0,1],[60],[284]]
+        assert [v.nonzero_elements for v in expected]==[{4437590048:1,12893306913:1},{4303372320:1},{4437590049:1}]
+        assert all(v.length==68719476736 for v in expected)
+    if bulk=="counts":assert [v.nonzero_elements for v in expected]==[{0:2},{15:1},{71:1}]
+    if bulk=="fingerprints":assert [v.on_bits for v in expected]==[[0,1],[60],[284]]
     assert list(getattr(g,bulk)([],num_threads=2))==[]
     assert list(getattr(g,bulk)([None,None],num_threads=7))==[None,None]
 
 
 def test_shared_settings_snapshot_lifetime_and_independent_atom_generator():
-    g=ck.TopologicalTorsionFingerprintGenerator();s=g.settings();alias=g.settings();m=ck.Molecule.from_smiles("CCCCO")
-    snapshot=s.params();assert snapshot.torsion_atom_count==4
+    g=ck.TopologicalTorsionFingerprintGenerator();s=g.settings;alias=g.settings;m=ck.Molecule.from_smiles("CCCCO")
+    snapshot=s.params;assert snapshot.torsion_atom_count==4
     s.torsion_atom_count=3;s.fp_size=1000;s.only_shortest_paths=True
     assert alias.torsion_atom_count==3 and alias.fp_size==1000
-    assert m.fingerprint_topological_torsion_sparse_count_with_generator(g).length()==1<<27
-    assert sum(m.fingerprint_topological_torsion_sparse_count_with_generator(g).nonzero_elements().values())==3
-    assert m.fingerprint_topological_torsion_count_with_generator(g).length()==1000
+    assert m.fingerprint_topological_torsion_sparse_count_with_generator(g).length==1<<27
+    assert sum(m.fingerprint_topological_torsion_sparse_count_with_generator(g).nonzero_elements.values())==3
+    assert m.fingerprint_topological_torsion_count_with_generator(g).length==1000
     assert snapshot.torsion_atom_count==4 and snapshot.fp_size==2048
     s.include_chirality=True
     value=json.loads(g.to_json());assert value["fingerprintArguments"]["includeChirality"]=="true"
     assert value["atomInvariantsGenerator"]["includeChirality"]=="false"
-    assert m.fingerprint_topological_torsion_sparse_count_with_generator(g).length()==1<<33
+    assert m.fingerprint_topological_torsion_sparse_count_with_generator(g).length==1<<33
     bounds=[1,3,5];s.count_bounds=bounds;bounds.append(7);assert alias.count_bounds==[1,3,5]
     copied=s.count_bounds;copied.append(9);assert s.count_bounds==[1,3,5]
     s.count_bounds=(1, 2, 4, 8);assert alias.count_bounds==[1, 2, 4, 8]
@@ -68,11 +68,11 @@ def test_source_metadata_json_roundtrip_and_call_selections():
 
 
 def test_source_live_dense_bounds_error_preserves_usable_state_and_errors():
-    g=ck.TopologicalTorsionFingerprintGenerator();m=ck.Molecule.from_smiles("CCCC");s=g.settings();s.count_bounds=[]
+    g=ck.TopologicalTorsionFingerprintGenerator();m=ck.Molecule.from_smiles("CCCC");s=g.settings;s.count_bounds=[]
     with pytest.raises(ck.TopologicalTorsionReadError,match="Count bounds are empty") as caught:g.fingerprints([None,m],num_threads=2)
     assert caught.value.kind=="Generator" and caught.value.__cause__ is not None
-    assert sum(g.sparse_counts([m],num_threads=2)[0].nonzero_elements().values())==1
-    s.count_bounds=[1,2,4,8];assert g.fingerprints([m],num_threads=2)[0].on_bits()==[60]
+    assert sum(g.sparse_counts([m],num_threads=2)[0].nonzero_elements.values())==1
+    s.count_bounds=[1,2,4,8];assert g.fingerprints([m],num_threads=2)[0].on_bits==[60]
     with pytest.raises(ck.TopologicalTorsionReadError,match="INT_MIN"):g.counts([m],num_threads=-2147483648)
     for name,value,error in [("fp_size",-1,OverflowError),("torsion_atom_count",4294967296,OverflowError),("bits_per_feature",1.5,TypeError),("count_bounds",[-1],OverflowError)]:
         old=getattr(s,name)
@@ -82,12 +82,12 @@ def test_source_live_dense_bounds_error_preserves_usable_state_and_errors():
 
 def test_source_reusable_output_is_unique_and_empty_roots_are_distinct():
     m=ck.Molecule.from_smiles("CCCCO");g=ck.TopologicalTorsionFingerprintGenerator();output=ck.FingerprintAdditionalOutput();output.allocate_bit_paths();output.allocate_atom_to_bits();output.allocate_atom_counts()
-    m.fingerprint_topological_torsion_sparse_count_with_generator(g,output=output)
-    assert set(output.bit_paths())=={4437590048,12893306913}
-    copied=output.bit_paths();copied.clear();assert output.bit_paths()
-    m.fingerprint_topological_torsion_sparse_count_with_generator(g,params=ck.TopologicalTorsionCallParams(from_atoms=[]),output=output)
-    assert output.bit_paths()=={} and output.atom_counts()==[0]*5
-    assert output.atom_to_bits()==[[]]*5
+    m.fingerprint_topological_torsion_sparse_count_with_generator(g,additional_output=output)
+    assert set(output.bit_paths)=={4437590048,12893306913}
+    copied=output.bit_paths;copied.clear();assert output.bit_paths
+    m.fingerprint_topological_torsion_sparse_count_with_generator(g,params=ck.TopologicalTorsionCallParams(from_atoms=[]),additional_output=output)
+    assert output.bit_paths=={} and output.atom_counts==[0]*5
+    assert output.atom_to_bits==[[]]*5
     assert ck.TopologicalTorsionCallParams().from_atoms is None
     assert ck.TopologicalTorsionCallParams(from_atoms=[]).from_atoms==[]
 

@@ -22,20 +22,20 @@ def collect():
     return result, output
 
 def fields(output):
-    return (output.atom_counts(), output.atom_to_bits(), output.bit_info_map(),
-            output.atoms_per_bit(), output.bit_paths())
+    return (output.atom_counts, output.atom_to_bits, output.bit_info_map,
+            output.atoms_per_bit, output.bit_paths)
 
 def test_original_fingerprint_getter_independent_owned_value_mapping():
     result, output = collect()
     assert isinstance(result, ck.Fingerprint)
-    assert result.n_bits() == 2048
-    assert result.on_bits() == BITS
-    detached = result.on_bits()
+    assert result.n_bits == 2048
+    assert result.on_bits == BITS
+    detached = result.on_bits
     detached.clear()
-    assert result.on_bits() == BITS
+    assert result.on_bits == BITS
     second = ck.Molecule.from_smiles('CCCO').fingerprint_atom_pair()
     assert second is not result
-    assert second.on_bits() == result.on_bits() == BITS
+    assert second.on_bits == result.on_bits == BITS
     assert not hasattr(ck, 'AtomPairFingerprintResult')
 
 def test_original_additional_output_getter_collected_and_absent_mapping():
@@ -50,7 +50,7 @@ def test_original_additional_output_getter_collected_and_absent_mapping():
     absent = None
     plain = ck.Molecule.from_smiles('CCCO').fingerprint_atom_pair_with_params(
         ck.AtomPairFingerprintParams(), absent)
-    assert plain.on_bits() == BITS
+    assert plain.on_bits == BITS
     assert absent is None
     assert fields(ck.FingerprintAdditionalOutput()) == (None, None, None, None, None)
     # Old wrapper ValueError accessor is replaced by explicit optional caller
@@ -70,13 +70,13 @@ def test_original_repr_width_and_collected_flag_information_mapping():
 def test_original_result_snapshot_remains_independent_after_caller_AO_reuse():
     first, output = collect()
     snapshot = fields(output)
-    first_bits = first.on_bits()
+    first_bits = first.on_bits
     second = ck.Molecule.from_smiles('CCO').fingerprint_atom_pair_with_params(
         ck.AtomPairFingerprintParams(), output)
-    assert output.atom_counts() == [2, 2, 2]
-    assert len(output.atom_to_bits()) == 3
+    assert output.atom_counts == [2, 2, 2]
+    assert len(output.atom_to_bits) == 3
     assert snapshot == ([3, 3, 3, 3], TO_BITS, PAIRS, ATOMS, None)
-    assert first.on_bits() == first_bits == BITS
+    assert first.on_bits == first_bits == BITS
     assert second is not first
 
 
@@ -88,9 +88,9 @@ def test_caller_output_presence_distinguishes_unallocated_collected_from_absent(
         ck.AtomPairFingerprintParams(), output)
     assert output is not None
     assert fields(output) == (None, None, None, None, None)
-    assert fingerprint.on_bits() == BITS
+    assert fingerprint.on_bits == BITS
     absent = None
     second = ck.Molecule.from_smiles('CCCO').fingerprint_atom_pair_with_params(
         ck.AtomPairFingerprintParams(), absent)
     assert absent is None
-    assert second.on_bits() == fingerprint.on_bits()
+    assert second.on_bits == fingerprint.on_bits

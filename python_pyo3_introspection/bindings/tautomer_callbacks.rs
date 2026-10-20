@@ -178,9 +178,11 @@ impl TautomerMoleculeView {
             storage: ViewStorage::Owned(Mutex::new(value)),
         })
     }
+    #[getter]
     fn num_atoms(&self) -> PyResult<usize> {
         self.with_native(|native| native.num_atoms())
     }
+    #[getter]
     fn num_bonds(&self) -> PyResult<usize> {
         self.with_native(|native| native.num_bonds())
     }
@@ -211,6 +213,7 @@ impl TautomerMoleculeView {
             .map_err(ValenceError::from_rust)
     }
     /// Return detached atom values, not borrowed Python views.
+    #[getter]
     fn atoms(&self) -> PyResult<Vec<Atom>> {
         self.with_native(|native| {
             native
@@ -221,6 +224,7 @@ impl TautomerMoleculeView {
                 .collect()
         })
     }
+    #[getter]
     fn bonds(&self) -> PyResult<Vec<Bond>> {
         self.with_native(|native| {
             native
@@ -248,6 +252,7 @@ impl TautomerMoleculeView {
         })
     }
     /// Copy the detached property value; this is not a zero-copy query.
+    #[getter]
     fn properties(&self) -> PyResult<MoleculeProperties> {
         self.with_native(|native| MoleculeProperties {
             inner: native.properties().clone(),
@@ -273,18 +278,23 @@ impl TautomerProgress {
             storage: ProgressStorage::Owned(Arc::new(Mutex::new(native))),
         })
     }
+    #[getter]
     fn len(&self) -> PyResult<usize> {
         self.storage.with_native(|native| native.len())
     }
+    #[getter]
     fn is_empty(&self) -> PyResult<bool> {
         self.storage.with_native(|native| native.is_empty())
     }
+    #[getter]
     fn status(&self) -> PyResult<TautomerEnumerationStatus> {
         self.storage.with_native(|native| native.status().into())
     }
+    #[getter]
     fn num_transforms(&self) -> PyResult<u32> {
         self.storage.with_native(|native| native.num_transforms())
     }
+    #[getter]
     fn modified_atoms(&self) -> PyResult<BTreeSet<usize>> {
         self.storage.with_native(|native| {
             native
@@ -294,6 +304,7 @@ impl TautomerProgress {
                 .collect()
         })
     }
+    #[getter]
     fn modified_bonds(&self) -> PyResult<BTreeSet<usize>> {
         self.storage.with_native(|native| {
             native

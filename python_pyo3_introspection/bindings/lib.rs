@@ -63,10 +63,13 @@ mod drawing_errors;
 mod elements;
 mod embedding_calls;
 mod embedding_values;
+#[path = "../framework/enums.rs"]
+mod enums;
 #[path = "../framework/errors.rs"]
 mod error_framework;
 mod errors;
 mod feature_metadata;
+mod fingerprint_batch;
 mod fingerprint_calls;
 mod fingerprint_configuration;
 mod fingerprint_explanations;
@@ -162,6 +165,8 @@ mod sdf_values;
 mod search_callbacks;
 mod search_reaction_params;
 mod selectors;
+#[path = "../framework/sequence.rs"]
+mod sequence;
 mod smarts_errors;
 mod smarts_factory;
 mod smarts_writer;
@@ -582,7 +587,7 @@ pub mod native {
     use super::valence_errors::{ValenceError, ValenceErrorKind, ValencePhase};
     #[pymodule_export]
     use super::xyz_errors::{ParseFloatError, XyzReadError, XyzReadErrorKind};
-    use super::{arguments::Argument, coordinates, errors, indexing};
+    use super::{arguments::Argument, coordinates, errors};
     use cosmolkit as ck;
     use numpy::IntoPyArray;
     use pyo3::prelude::*;
@@ -592,7 +597,8 @@ pub mod native {
     #[pymodule_export]
     use super::embedding_values::{
         ConformerError, ConformerErrorKind, CoordinateDimension, EmbedMoleculeResult,
-        EmbedMultipleConfsResult, EmbedParams,
+        EmbedMultipleConfsResult, EmbedParams, EmbedFailureCause,
+        EmbedFailureCountError, EmbedFailureCountErrorKind,
     };
     #[pymodule_export]
     use super::io_source_errors::{ExternalError, IoError, IoErrorKind};
@@ -676,7 +682,7 @@ pub mod native {
 
     #[pymodule_export]
     use super::atom_bond_values::{
-        Atom, Bond, CipDescriptor, CipDescriptorError, CipDescriptorErrorKind,
+        Atom, MoleculeAtom, Bond, CipDescriptor, CipDescriptorError, CipDescriptorErrorKind,
     };
 
     #[pymodule_export]
@@ -1272,22 +1278,22 @@ pub mod native {
 
         fn _fingerprint_topological_with_output_params_native(
             &self,
-            py: Python<'_>,
+            _py: Python<'_>,
             params: Option<&ck::TopologicalFingerprintParams>,
-            request: Option<&TopologicalFingerprintOutputRequest>,
+            request: Option<ck::TopologicalFingerprintOutputRequest>,
         ) -> PyResult<TopologicalFingerprintResult> {
             match (params, request) {
                 (None, None) => self.inner.fingerprint_topological_with_output(),
                 (Some(params), request) => {
                     self.inner.fingerprint_topological_with_output_with_params(
                         &params,
-                        request.map(|value| value.inner).unwrap_or_default(),
+                        request.unwrap_or_default(),
                     )
                 }
                 (None, Some(request)) => {
                     self.inner.fingerprint_topological_with_output_with_params(
                         &ck::TopologicalFingerprintParams::default(),
-                        request.inner,
+                        request,
                     )
                 }
             }
@@ -1493,16 +1499,17 @@ pub mod native {
             reactant_template: usize,
             params: Option<&super::search_reaction_params::ReactionSingleRunParams>,
         ) -> PyResult<Vec<Vec<Molecule>>> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let py = slf.py();
             let owner = slf.borrow();
             let native = &owner.inner;
             reaction
                 .invoke(py, &[native], |reaction| match params {
-                    Some(params) => native.reaction_products_with_params(
-                        reaction,
-                        reactant_template,
-                        &params.inner,
-                    ),
+                    Some(params) => {
+                        native.reaction_products_with_params(reaction, reactant_template, &params)
+                    }
                     None => native.reaction_products(reaction, reactant_template),
                 })
                 .map(super::reaction_calls::products)
@@ -1516,13 +1523,13 @@ pub mod native {
             coordinate_selection: Option<&super::construction_values::ReactionCoordinateSelection>,
         ) -> PyResult<Vec<Vec<Molecule>>> {
             let params = super::search_reaction_params::ReactionSingleRunParams {
-                inner: ck::ReactionSingleRunParams {
+                inner: crate::parameters::NativeField::Owned(ck::ReactionSingleRunParams {
                     coordinate_selection: coordinate_selection
                         .map(|value| value.inner)
                         .unwrap_or_else(|| {
                             ck::ReactionSingleRunParams::default().coordinate_selection
                         }),
-                },
+                }),
             };
             Self::_reaction_products_params(slf, reaction, reactant_template, Some(&params))
         }
@@ -1636,12 +1643,15 @@ pub mod native {
             reaction: &mut super::reaction::Reaction,
             params: Option<&super::params::ReactionApplyParams>,
         ) -> PyResult<super::reaction_values::ReactionApplyResult> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let py = slf.py();
             let owner = slf.borrow();
             let native = &owner.inner;
             reaction
                 .invoke(py, &[native], |reaction| match params {
-                    Some(params) => native.apply_reaction_with_params(reaction, &params.inner),
+                    Some(params) => native.apply_reaction_with_params(reaction, &params),
                     None => native.apply_reaction(reaction),
                 })
                 .map(|inner| super::reaction_values::ReactionApplyResult { inner })
@@ -1654,11 +1664,11 @@ pub mod native {
             remove_unmatched_atoms: Option<bool>,
         ) -> PyResult<super::reaction_values::ReactionApplyResult> {
             let params = super::params::ReactionApplyParams {
-                inner: ck::ReactionApplyParams {
+                inner: crate::parameters::NativeField::Owned(ck::ReactionApplyParams {
                     remove_unmatched_atoms: remove_unmatched_atoms.unwrap_or_else(|| {
                         ck::ReactionApplyParams::default().remove_unmatched_atoms
                     }),
-                },
+                }),
             };
             Self::_apply_reaction_params(slf, reaction, Some(&params))
         }
@@ -1695,6 +1705,9 @@ pub mod native {
             reaction: &mut super::reaction::Reaction,
             params: Option<&super::params::ReactionApplyParams>,
         ) -> PyResult<bool> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let py = slf.py();
             // Only callbacks requesting a target need a retained input value.
             // This is callback ownership, not a rollback snapshot or writeback.
@@ -1707,7 +1720,7 @@ pub mod native {
             let mut receiver = slf.try_borrow_mut()?;
             let native = &mut receiver.inner;
             reaction.invoke(py, &targets, |reaction| match params {
-                Some(params) => native.apply_reaction_with_params_(reaction, &params.inner),
+                Some(params) => native.apply_reaction_with_params_(reaction, &params),
                 None => native.apply_reaction_(reaction),
             })
         }
@@ -1719,11 +1732,11 @@ pub mod native {
             remove_unmatched_atoms: Option<bool>,
         ) -> PyResult<bool> {
             let params = super::params::ReactionApplyParams {
-                inner: ck::ReactionApplyParams {
+                inner: crate::parameters::NativeField::Owned(ck::ReactionApplyParams {
                     remove_unmatched_atoms: remove_unmatched_atoms.unwrap_or_else(|| {
                         ck::ReactionApplyParams::default().remove_unmatched_atoms
                     }),
-                },
+                }),
             };
             Self::_apply_reaction_inplace_params(slf, reaction, Some(&params))
         }
@@ -1992,11 +2005,14 @@ pub mod native {
             position: [f64; 3],
             params: Option<&AtomPositionParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self.inner.with_atom_position_with_params(
                     ck::AtomId::new(atom),
                     position,
-                    &params.inner,
+                    &params,
                 ),
                 None => self
                     .inner
@@ -2015,7 +2031,9 @@ pub mod native {
             conformer_id: Option<usize>,
         ) -> PyResult<Molecule> {
             let params = AtomPositionParams {
-                inner: ck::AtomPositionParams { conformer_id },
+                inner: crate::parameters::NativeField::Owned(ck::AtomPositionParams {
+                    conformer_id,
+                }),
             };
             self._with_atom_position_params(py, atom, position, Some(&params))
         }
@@ -2026,12 +2044,11 @@ pub mod native {
             position: [f64; 3],
             params: &AtomPositionParams,
         ) -> PyResult<Molecule> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
-                self.inner.with_atom_position_with_params(
-                    ck::AtomId::new(atom),
-                    position,
-                    &params.inner,
-                )
+                self.inner
+                    .with_atom_position_with_params(ck::AtomId::new(atom), position, &params)
             })
             .map(|inner| Molecule { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -2064,11 +2081,14 @@ pub mod native {
             position: [f64; 3],
             params: Option<&AtomPositionParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self.inner.set_atom_position_with_params_(
                     ck::AtomId::new(atom),
                     position,
-                    &params.inner,
+                    &params,
                 ),
                 None => self
                     .inner
@@ -2086,7 +2106,9 @@ pub mod native {
             conformer_id: Option<usize>,
         ) -> PyResult<()> {
             let params = AtomPositionParams {
-                inner: ck::AtomPositionParams { conformer_id },
+                inner: crate::parameters::NativeField::Owned(ck::AtomPositionParams {
+                    conformer_id,
+                }),
             };
             self._set_atom_position_params(py, atom, position, Some(&params))
         }
@@ -2097,12 +2119,11 @@ pub mod native {
             position: [f64; 3],
             params: &AtomPositionParams,
         ) -> PyResult<()> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
-                self.inner.set_atom_position_with_params_(
-                    ck::AtomId::new(atom),
-                    position,
-                    &params.inner,
-                )
+                self.inner
+                    .set_atom_position_with_params_(ck::AtomId::new(atom), position, &params)
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
@@ -2324,10 +2345,13 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: Option<&Coordinate2DInputParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self
                     .inner
-                    .with_2d_coordinate_block_with_params(coordinates, &params.inner),
+                    .with_2d_coordinate_block_with_params(coordinates, &params),
                 None => self.inner.with_2d_coordinate_block(coordinates),
             })
             .map(|inner| Molecule { inner })
@@ -2350,9 +2374,11 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: &Coordinate2DInputParams,
         ) -> PyResult<Molecule> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .with_2d_coordinate_block_with_params(coordinates, &params.inner)
+                    .with_2d_coordinate_block_with_params(coordinates, &params)
             })
             .map(|inner| Molecule { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -2383,10 +2409,13 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: Option<&Coordinate2DInputParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self
                     .inner
-                    .set_2d_coordinates_with_params_(coordinates, &params.inner),
+                    .set_2d_coordinates_with_params_(coordinates, &params),
                 None => self.inner.set_2d_coordinates_(coordinates),
             })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -2408,9 +2437,11 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: &Coordinate2DInputParams,
         ) -> PyResult<()> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .set_2d_coordinates_with_params_(coordinates, &params.inner)
+                    .set_2d_coordinates_with_params_(coordinates, &params)
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
@@ -2440,10 +2471,13 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: Option<&Replace3DCoordinatesParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self
                     .inner
-                    .with_3d_coordinates_with_params(coordinates, &params.inner),
+                    .with_3d_coordinates_with_params(coordinates, &params),
                 None => self.inner.with_3d_coordinates(coordinates),
             })
             .map(|inner| Molecule { inner })
@@ -2458,10 +2492,10 @@ pub mod native {
             conformer_id: Option<usize>,
         ) -> PyResult<Molecule> {
             let params = Replace3DCoordinatesParams {
-                inner: ck::Replace3DCoordinatesParams {
+                inner: crate::parameters::NativeField::Owned(ck::Replace3DCoordinatesParams {
                     conformer_id: conformer_id
                         .unwrap_or(ck::Replace3DCoordinatesParams::default().conformer_id),
-                },
+                }),
             };
             self._with_3d_coordinates_input_params(py, coordinates, Some(&params))
         }
@@ -2471,9 +2505,11 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: &Replace3DCoordinatesParams,
         ) -> PyResult<Molecule> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .with_3d_coordinates_with_params(coordinates, &params.inner)
+                    .with_3d_coordinates_with_params(coordinates, &params)
             })
             .map(|inner| Molecule { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -2504,10 +2540,13 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: Option<&Replace3DCoordinatesParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self
                     .inner
-                    .set_3d_coordinates_with_params_(coordinates, &params.inner),
+                    .set_3d_coordinates_with_params_(coordinates, &params),
                 None => self.inner.set_3d_coordinates_(coordinates),
             })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -2521,10 +2560,10 @@ pub mod native {
             conformer_id: Option<usize>,
         ) -> PyResult<()> {
             let params = Replace3DCoordinatesParams {
-                inner: ck::Replace3DCoordinatesParams {
+                inner: crate::parameters::NativeField::Owned(ck::Replace3DCoordinatesParams {
                     conformer_id: conformer_id
                         .unwrap_or(ck::Replace3DCoordinatesParams::default().conformer_id),
-                },
+                }),
             };
             self._set_3d_coordinates_input_params(py, coordinates, Some(&params))
         }
@@ -2534,9 +2573,11 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: &Replace3DCoordinatesParams,
         ) -> PyResult<()> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .set_3d_coordinates_with_params_(coordinates, &params.inner)
+                    .set_3d_coordinates_with_params_(coordinates, &params)
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
@@ -2566,10 +2607,13 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: Option<&Coordinate3DInputParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self
                     .inner
-                    .with_added_3d_conformer_with_params(coordinates, &params.inner),
+                    .with_added_3d_conformer_with_params(coordinates, &params),
                 None => self.inner.with_added_3d_conformer(coordinates),
             })
             .map(|inner| Molecule { inner })
@@ -2584,9 +2628,9 @@ pub mod native {
             is_3d: Option<bool>,
         ) -> PyResult<Molecule> {
             let params = Coordinate3DInputParams {
-                inner: ck::Coordinate3DInputParams {
+                inner: crate::parameters::NativeField::Owned(ck::Coordinate3DInputParams {
                     is_3d: is_3d.unwrap_or(ck::Coordinate3DInputParams::default().is_3d),
-                },
+                }),
             };
             self._with_added_3d_conformer_input_params(py, coordinates, Some(&params))
         }
@@ -2596,9 +2640,11 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: &Coordinate3DInputParams,
         ) -> PyResult<Molecule> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .with_added_3d_conformer_with_params(coordinates, &params.inner)
+                    .with_added_3d_conformer_with_params(coordinates, &params)
             })
             .map(|inner| Molecule { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -2629,10 +2675,13 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: Option<&Coordinate3DInputParams>,
         ) -> PyResult<usize> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self
                     .inner
-                    .add_3d_conformer_with_params_(coordinates, &params.inner),
+                    .add_3d_conformer_with_params_(coordinates, &params),
                 None => self.inner.add_3d_conformer_(coordinates),
             })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -2646,9 +2695,9 @@ pub mod native {
             is_3d: Option<bool>,
         ) -> PyResult<usize> {
             let params = Coordinate3DInputParams {
-                inner: ck::Coordinate3DInputParams {
+                inner: crate::parameters::NativeField::Owned(ck::Coordinate3DInputParams {
                     is_3d: is_3d.unwrap_or(ck::Coordinate3DInputParams::default().is_3d),
-                },
+                }),
             };
             self._add_3d_conformer_input_params(py, coordinates, Some(&params))
         }
@@ -2658,9 +2707,11 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: &Coordinate3DInputParams,
         ) -> PyResult<usize> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .add_3d_conformer_with_params_(coordinates, &params.inner)
+                    .add_3d_conformer_with_params_(coordinates, &params)
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
@@ -2690,10 +2741,13 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: Option<&Coordinate3DInputParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self
                     .inner
-                    .with_only_3d_conformer_with_params(coordinates, &params.inner),
+                    .with_only_3d_conformer_with_params(coordinates, &params),
                 None => self.inner.with_only_3d_conformer(coordinates),
             })
             .map(|inner| Molecule { inner })
@@ -2708,9 +2762,9 @@ pub mod native {
             is_3d: Option<bool>,
         ) -> PyResult<Molecule> {
             let params = Coordinate3DInputParams {
-                inner: ck::Coordinate3DInputParams {
+                inner: crate::parameters::NativeField::Owned(ck::Coordinate3DInputParams {
                     is_3d: is_3d.unwrap_or(ck::Coordinate3DInputParams::default().is_3d),
-                },
+                }),
             };
             self._with_only_3d_conformer_input_params(py, coordinates, Some(&params))
         }
@@ -2720,9 +2774,11 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: &Coordinate3DInputParams,
         ) -> PyResult<Molecule> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .with_only_3d_conformer_with_params(coordinates, &params.inner)
+                    .with_only_3d_conformer_with_params(coordinates, &params)
             })
             .map(|inner| Molecule { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -2753,10 +2809,13 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: Option<&Coordinate3DInputParams>,
         ) -> PyResult<usize> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
                 Some(params) => self
                     .inner
-                    .set_only_3d_conformer_with_params_(coordinates, &params.inner),
+                    .set_only_3d_conformer_with_params_(coordinates, &params),
                 None => self.inner.set_only_3d_conformer_(coordinates),
             })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -2770,9 +2829,9 @@ pub mod native {
             is_3d: Option<bool>,
         ) -> PyResult<usize> {
             let params = Coordinate3DInputParams {
-                inner: ck::Coordinate3DInputParams {
+                inner: crate::parameters::NativeField::Owned(ck::Coordinate3DInputParams {
                     is_3d: is_3d.unwrap_or(ck::Coordinate3DInputParams::default().is_3d),
-                },
+                }),
             };
             self._set_only_3d_conformer_input_params(py, coordinates, Some(&params))
         }
@@ -2782,9 +2841,11 @@ pub mod native {
             coordinates: Vec<Vec<f64>>,
             params: &Coordinate3DInputParams,
         ) -> PyResult<usize> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .set_only_3d_conformer_with_params_(coordinates, &params.inner)
+                    .set_only_3d_conformer_with_params_(coordinates, &params)
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
@@ -3169,13 +3230,13 @@ pub mod native {
             })
             .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
         }
-        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,additional_output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_with_generator(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
             params: crate::arguments::Argument<Option<PyRef<'_, TopologicalTorsionCallParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
             ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
             custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
@@ -3195,7 +3256,7 @@ pub mod native {
                 self._fingerprint_topological_torsion_with_generator_keywords(
                     py,
                     generator,
-                    output,
+                    additional_output,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3205,30 +3266,37 @@ pub mod native {
                 )
             } else {
                 self._fingerprint_topological_torsion_with_generator_params(
-                    py, generator, params, output,
+                    py,
+                    generator,
+                    params,
+                    additional_output,
                 )
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_with_generator"}"#]
-        #[pyo3(signature=(generator,params=None,output=None))]
+        #[pyo3(signature=(generator,params=None,additional_output=None))]
         fn _fingerprint_topological_torsion_with_generator_params(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
             params: Option<&TopologicalTorsionCallParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
             crate::torsion_reusable::fingerprint_topological_torsion_with_generator(
-                self, py, generator, params, output,
+                self,
+                py,
+                generator,
+                params,
+                additional_output,
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_with_generator"}"#]
-        #[pyo3(signature=(generator,output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(generator,additional_output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
         fn _fingerprint_topological_torsion_with_generator_keywords(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Option<Vec<u32>>,
             ignore_atoms: Option<Vec<u32>>,
             custom_atom_invariants: Option<Vec<u32>>,
@@ -3249,17 +3317,17 @@ pub mod native {
                 py,
                 generator,
                 Some(&params),
-                output,
+                additional_output,
             )
         }
 
-        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,additional_output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_count_with_generator(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
             params: crate::arguments::Argument<Option<PyRef<'_, TopologicalTorsionCallParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
             ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
             custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
@@ -3279,7 +3347,7 @@ pub mod native {
                 self._fingerprint_topological_torsion_count_with_generator_keywords(
                     py,
                     generator,
-                    output,
+                    additional_output,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3289,30 +3357,37 @@ pub mod native {
                 )
             } else {
                 self._fingerprint_topological_torsion_count_with_generator_params(
-                    py, generator, params, output,
+                    py,
+                    generator,
+                    params,
+                    additional_output,
                 )
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_count_with_generator"}"#]
-        #[pyo3(signature=(generator,params=None,output=None))]
+        #[pyo3(signature=(generator,params=None,additional_output=None))]
         fn _fingerprint_topological_torsion_count_with_generator_params(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
             params: Option<&TopologicalTorsionCallParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
             crate::torsion_reusable::fingerprint_topological_torsion_count_with_generator(
-                self, py, generator, params, output,
+                self,
+                py,
+                generator,
+                params,
+                additional_output,
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_count_with_generator"}"#]
-        #[pyo3(signature=(generator,output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(generator,additional_output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
         fn _fingerprint_topological_torsion_count_with_generator_keywords(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Option<Vec<u32>>,
             ignore_atoms: Option<Vec<u32>>,
             custom_atom_invariants: Option<Vec<u32>>,
@@ -3333,17 +3408,17 @@ pub mod native {
                 py,
                 generator,
                 Some(&params),
-                output,
+                additional_output,
             )
         }
 
-        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,additional_output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_sparse_with_generator(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
             params: crate::arguments::Argument<Option<PyRef<'_, TopologicalTorsionCallParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
             ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
             custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
@@ -3363,7 +3438,7 @@ pub mod native {
                 self._fingerprint_topological_torsion_sparse_with_generator_keywords(
                     py,
                     generator,
-                    output,
+                    additional_output,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3373,30 +3448,37 @@ pub mod native {
                 )
             } else {
                 self._fingerprint_topological_torsion_sparse_with_generator_params(
-                    py, generator, params, output,
+                    py,
+                    generator,
+                    params,
+                    additional_output,
                 )
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse_with_generator"}"#]
-        #[pyo3(signature=(generator,params=None,output=None))]
+        #[pyo3(signature=(generator,params=None,additional_output=None))]
         fn _fingerprint_topological_torsion_sparse_with_generator_params(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
             params: Option<&TopologicalTorsionCallParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
             crate::torsion_reusable::fingerprint_topological_torsion_sparse_with_generator(
-                self, py, generator, params, output,
+                self,
+                py,
+                generator,
+                params,
+                additional_output,
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse_with_generator"}"#]
-        #[pyo3(signature=(generator,output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(generator,additional_output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
         fn _fingerprint_topological_torsion_sparse_with_generator_keywords(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Option<Vec<u32>>,
             ignore_atoms: Option<Vec<u32>>,
             custom_atom_invariants: Option<Vec<u32>>,
@@ -3417,17 +3499,17 @@ pub mod native {
                 py,
                 generator,
                 Some(&params),
-                output,
+                additional_output,
             )
         }
 
-        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,additional_output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_torsion_sparse_count_with_generator(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
             params: crate::arguments::Argument<Option<PyRef<'_, TopologicalTorsionCallParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
             ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
             custom_atom_invariants: crate::arguments::Argument<Option<Vec<u32>>>,
@@ -3447,7 +3529,7 @@ pub mod native {
                 self._fingerprint_topological_torsion_sparse_count_with_generator_keywords(
                     py,
                     generator,
-                    output,
+                    additional_output,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -3457,30 +3539,37 @@ pub mod native {
                 )
             } else {
                 self._fingerprint_topological_torsion_sparse_count_with_generator_params(
-                    py, generator, params, output,
+                    py,
+                    generator,
+                    params,
+                    additional_output,
                 )
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse_count_with_generator"}"#]
-        #[pyo3(signature=(generator,params=None,output=None))]
+        #[pyo3(signature=(generator,params=None,additional_output=None))]
         fn _fingerprint_topological_torsion_sparse_count_with_generator_params(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
             params: Option<&TopologicalTorsionCallParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
             crate::torsion_reusable::fingerprint_topological_torsion_sparse_count_with_generator(
-                self, py, generator, params, output,
+                self,
+                py,
+                generator,
+                params,
+                additional_output,
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse_count_with_generator"}"#]
-        #[pyo3(signature=(generator,output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
+        #[pyo3(signature=(generator,additional_output=None,*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=None,use_legacy_stereo_perception=None))]
         fn _fingerprint_topological_torsion_sparse_count_with_generator_keywords(
             &self,
             py: Python<'_>,
             generator: &TopologicalTorsionFingerprintGenerator,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Option<Vec<u32>>,
             ignore_atoms: Option<Vec<u32>>,
             custom_atom_invariants: Option<Vec<u32>>,
@@ -3501,15 +3590,15 @@ pub mod native {
                 py,
                 generator,
                 Some(&params),
-                output,
+                additional_output,
             )
         }
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
         fn fingerprint_morgan(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, MorganFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             radius: Argument<FieldInput<Scalar<u32>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
             use_bond_types: Argument<FieldInput<Scalar<bool>>>,
@@ -3529,11 +3618,11 @@ pub mod native {
         ) -> PyResult<Fingerprint> {
             crate::arguments::configuration_arguments!(params; radius, include_chirality, use_bond_types, include_ring_membership, only_nonzero_invariants, include_redundant_environments, fp_size, count_simulation, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_morgan_params(py, Some(params), output)
+                self._fingerprint_morgan_params(py, Some(params), additional_output)
             } else {
                 self._fingerprint_morgan_keywords(
                     py,
-                    output,
+                    additional_output,
                     radius,
                     include_chirality,
                     use_bond_types,
@@ -3554,25 +3643,25 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_morgan_params(
             &self,
             py: Python<'_>,
             params: Option<&MorganFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_morgan(self, py, &effective, output)
+            crate::fingerprint_calls::run_morgan(self, py, &effective, additional_output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan"}"#]
-        #[pyo3(signature=(output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
         fn _fingerprint_morgan_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             radius: FieldInput<Scalar<u32>>,
             include_chirality: FieldInput<Scalar<bool>>,
             use_bond_types: FieldInput<Scalar<bool>>,
@@ -3608,24 +3697,24 @@ pub mod native {
                 conformer_id,
                 invariants,
             );
-            crate::fingerprint_calls::run_morgan(self, py, &params, output)
+            crate::fingerprint_calls::run_morgan(self, py, &params, additional_output)
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_morgan_with_params(
             &self,
             py: Python<'_>,
             params: &MorganFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
-            self._fingerprint_morgan_params(py, Some(params), output)
+            self._fingerprint_morgan_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
         fn fingerprint_morgan_count(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, MorganFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             radius: Argument<FieldInput<Scalar<u32>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
             use_bond_types: Argument<FieldInput<Scalar<bool>>>,
@@ -3645,11 +3734,11 @@ pub mod native {
         ) -> PyResult<SparseCountFingerprint32> {
             crate::arguments::configuration_arguments!(params; radius, include_chirality, use_bond_types, include_ring_membership, only_nonzero_invariants, include_redundant_environments, fp_size, count_simulation, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_morgan_count_params(py, Some(params), output)
+                self._fingerprint_morgan_count_params(py, Some(params), additional_output)
             } else {
                 self._fingerprint_morgan_count_keywords(
                     py,
-                    output,
+                    additional_output,
                     radius,
                     include_chirality,
                     use_bond_types,
@@ -3670,25 +3759,25 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_count"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_morgan_count_params(
             &self,
             py: Python<'_>,
             params: Option<&MorganFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_morgan_count(self, py, &effective, output)
+            crate::fingerprint_calls::run_morgan_count(self, py, &effective, additional_output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_count"}"#]
-        #[pyo3(signature=(output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
         fn _fingerprint_morgan_count_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             radius: FieldInput<Scalar<u32>>,
             include_chirality: FieldInput<Scalar<bool>>,
             use_bond_types: FieldInput<Scalar<bool>>,
@@ -3724,24 +3813,24 @@ pub mod native {
                 conformer_id,
                 invariants,
             );
-            crate::fingerprint_calls::run_morgan_count(self, py, &params, output)
+            crate::fingerprint_calls::run_morgan_count(self, py, &params, additional_output)
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_morgan_count_with_params(
             &self,
             py: Python<'_>,
             params: &MorganFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
-            self._fingerprint_morgan_count_params(py, Some(params), output)
+            self._fingerprint_morgan_count_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
         fn fingerprint_morgan_sparse(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, MorganFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             radius: Argument<FieldInput<Scalar<u32>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
             use_bond_types: Argument<FieldInput<Scalar<bool>>>,
@@ -3761,11 +3850,11 @@ pub mod native {
         ) -> PyResult<SparseBitFingerprint> {
             crate::arguments::configuration_arguments!(params; radius, include_chirality, use_bond_types, include_ring_membership, only_nonzero_invariants, include_redundant_environments, fp_size, count_simulation, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_morgan_sparse_params(py, Some(params), output)
+                self._fingerprint_morgan_sparse_params(py, Some(params), additional_output)
             } else {
                 self._fingerprint_morgan_sparse_keywords(
                     py,
-                    output,
+                    additional_output,
                     radius,
                     include_chirality,
                     use_bond_types,
@@ -3786,25 +3875,25 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_morgan_sparse_params(
             &self,
             py: Python<'_>,
             params: Option<&MorganFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_morgan_sparse(self, py, &effective, output)
+            crate::fingerprint_calls::run_morgan_sparse(self, py, &effective, additional_output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse"}"#]
-        #[pyo3(signature=(output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
         fn _fingerprint_morgan_sparse_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             radius: FieldInput<Scalar<u32>>,
             include_chirality: FieldInput<Scalar<bool>>,
             use_bond_types: FieldInput<Scalar<bool>>,
@@ -3840,24 +3929,24 @@ pub mod native {
                 conformer_id,
                 invariants,
             );
-            crate::fingerprint_calls::run_morgan_sparse(self, py, &params, output)
+            crate::fingerprint_calls::run_morgan_sparse(self, py, &params, additional_output)
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_morgan_sparse_with_params(
             &self,
             py: Python<'_>,
             params: &MorganFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
-            self._fingerprint_morgan_sparse_params(py, Some(params), output)
+            self._fingerprint_morgan_sparse_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, invariants=Argument::Missing))]
         fn fingerprint_morgan_sparse_count(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, MorganFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             radius: Argument<FieldInput<Scalar<u32>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
             use_bond_types: Argument<FieldInput<Scalar<bool>>>,
@@ -3877,11 +3966,11 @@ pub mod native {
         ) -> PyResult<SparseCountFingerprint> {
             crate::arguments::configuration_arguments!(params; radius, include_chirality, use_bond_types, include_ring_membership, only_nonzero_invariants, include_redundant_environments, fp_size, count_simulation, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, invariants);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_morgan_sparse_count_params(py, Some(params), output)
+                self._fingerprint_morgan_sparse_count_params(py, Some(params), additional_output)
             } else {
                 self._fingerprint_morgan_sparse_count_keywords(
                     py,
-                    output,
+                    additional_output,
                     radius,
                     include_chirality,
                     use_bond_types,
@@ -3902,25 +3991,30 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse_count"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_morgan_sparse_count_params(
             &self,
             py: Python<'_>,
             params: Option<&MorganFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_morgan_sparse_count(self, py, &effective, output)
+            crate::fingerprint_calls::run_morgan_sparse_count(
+                self,
+                py,
+                &effective,
+                additional_output,
+            )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse_count"}"#]
-        #[pyo3(signature=(output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, radius=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_bond_types=FieldInput::<Scalar<bool>>::Default, include_ring_membership=FieldInput::<Scalar<bool>>::Default, only_nonzero_invariants=FieldInput::<Scalar<bool>>::Default, include_redundant_environments=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, invariants=FieldInput::<ConfigurationField<MorganInvariants>>::Default))]
         fn _fingerprint_morgan_sparse_count_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             radius: FieldInput<Scalar<u32>>,
             include_chirality: FieldInput<Scalar<bool>>,
             use_bond_types: FieldInput<Scalar<bool>>,
@@ -3956,24 +4050,24 @@ pub mod native {
                 conformer_id,
                 invariants,
             );
-            crate::fingerprint_calls::run_morgan_sparse_count(self, py, &params, output)
+            crate::fingerprint_calls::run_morgan_sparse_count(self, py, &params, additional_output)
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_morgan_sparse_count_with_params(
             &self,
             py: Python<'_>,
             params: &MorganFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
-            self._fingerprint_morgan_sparse_count_params(py, Some(params), output)
+            self._fingerprint_morgan_sparse_count_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_atom_pair(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, AtomPairFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             min_distance: Argument<FieldInput<Scalar<u32>>>,
             max_distance: Argument<FieldInput<Scalar<u32>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
@@ -3994,11 +4088,11 @@ pub mod native {
         ) -> PyResult<Fingerprint> {
             crate::arguments::configuration_arguments!(params; min_distance, max_distance, include_chirality, use_2d, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_atom_pair_params(py, Some(params), output)
+                self._fingerprint_atom_pair_params(py, Some(params), additional_output)
             } else {
                 self._fingerprint_atom_pair_keywords(
                     py,
-                    output,
+                    additional_output,
                     min_distance,
                     max_distance,
                     include_chirality,
@@ -4018,25 +4112,25 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_atom_pair_params(
             &self,
             py: Python<'_>,
             params: Option<&AtomPairFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_atom_pair(self, py, &effective, output)
+            crate::fingerprint_calls::run_atom_pair(self, py, &effective, additional_output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair"}"#]
-        #[pyo3(signature=(output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_atom_pair_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             min_distance: FieldInput<Scalar<u32>>,
             max_distance: FieldInput<Scalar<u32>>,
             include_chirality: FieldInput<Scalar<bool>>,
@@ -4072,24 +4166,24 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            crate::fingerprint_calls::run_atom_pair(self, py, &params, output)
+            crate::fingerprint_calls::run_atom_pair(self, py, &params, additional_output)
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_atom_pair_with_params(
             &self,
             py: Python<'_>,
             params: &AtomPairFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
-            self._fingerprint_atom_pair_params(py, Some(params), output)
+            self._fingerprint_atom_pair_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_atom_pair_count(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, AtomPairFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             min_distance: Argument<FieldInput<Scalar<u32>>>,
             max_distance: Argument<FieldInput<Scalar<u32>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
@@ -4110,11 +4204,11 @@ pub mod native {
         ) -> PyResult<SparseCountFingerprint32> {
             crate::arguments::configuration_arguments!(params; min_distance, max_distance, include_chirality, use_2d, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_atom_pair_count_params(py, Some(params), output)
+                self._fingerprint_atom_pair_count_params(py, Some(params), additional_output)
             } else {
                 self._fingerprint_atom_pair_count_keywords(
                     py,
-                    output,
+                    additional_output,
                     min_distance,
                     max_distance,
                     include_chirality,
@@ -4134,25 +4228,25 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair_count"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_atom_pair_count_params(
             &self,
             py: Python<'_>,
             params: Option<&AtomPairFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_atom_pair_count(self, py, &effective, output)
+            crate::fingerprint_calls::run_atom_pair_count(self, py, &effective, additional_output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair_count"}"#]
-        #[pyo3(signature=(output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_atom_pair_count_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             min_distance: FieldInput<Scalar<u32>>,
             max_distance: FieldInput<Scalar<u32>>,
             include_chirality: FieldInput<Scalar<bool>>,
@@ -4188,24 +4282,24 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            crate::fingerprint_calls::run_atom_pair_count(self, py, &params, output)
+            crate::fingerprint_calls::run_atom_pair_count(self, py, &params, additional_output)
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_atom_pair_count_with_params(
             &self,
             py: Python<'_>,
             params: &AtomPairFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
-            self._fingerprint_atom_pair_count_params(py, Some(params), output)
+            self._fingerprint_atom_pair_count_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_atom_pair_sparse(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, AtomPairFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             min_distance: Argument<FieldInput<Scalar<u32>>>,
             max_distance: Argument<FieldInput<Scalar<u32>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
@@ -4226,11 +4320,11 @@ pub mod native {
         ) -> PyResult<SparseBitFingerprint> {
             crate::arguments::configuration_arguments!(params; min_distance, max_distance, include_chirality, use_2d, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_atom_pair_sparse_params(py, Some(params), output)
+                self._fingerprint_atom_pair_sparse_params(py, Some(params), additional_output)
             } else {
                 self._fingerprint_atom_pair_sparse_keywords(
                     py,
-                    output,
+                    additional_output,
                     min_distance,
                     max_distance,
                     include_chirality,
@@ -4250,25 +4344,25 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair_sparse"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_atom_pair_sparse_params(
             &self,
             py: Python<'_>,
             params: Option<&AtomPairFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_atom_pair_sparse(self, py, &effective, output)
+            crate::fingerprint_calls::run_atom_pair_sparse(self, py, &effective, additional_output)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair_sparse"}"#]
-        #[pyo3(signature=(output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_atom_pair_sparse_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             min_distance: FieldInput<Scalar<u32>>,
             max_distance: FieldInput<Scalar<u32>>,
             include_chirality: FieldInput<Scalar<bool>>,
@@ -4304,24 +4398,24 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            crate::fingerprint_calls::run_atom_pair_sparse(self, py, &params, output)
+            crate::fingerprint_calls::run_atom_pair_sparse(self, py, &params, additional_output)
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_atom_pair_sparse_with_params(
             &self,
             py: Python<'_>,
             params: &AtomPairFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
-            self._fingerprint_atom_pair_sparse_params(py, Some(params), output)
+            self._fingerprint_atom_pair_sparse_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_atom_pair_sparse_count(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, AtomPairFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             min_distance: Argument<FieldInput<Scalar<u32>>>,
             max_distance: Argument<FieldInput<Scalar<u32>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
@@ -4342,11 +4436,11 @@ pub mod native {
         ) -> PyResult<SparseCountFingerprint> {
             crate::arguments::configuration_arguments!(params; min_distance, max_distance, include_chirality, use_2d, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_atom_pair_sparse_count_params(py, Some(params), output)
+                self._fingerprint_atom_pair_sparse_count_params(py, Some(params), additional_output)
             } else {
                 self._fingerprint_atom_pair_sparse_count_keywords(
                     py,
-                    output,
+                    additional_output,
                     min_distance,
                     max_distance,
                     include_chirality,
@@ -4366,25 +4460,30 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair_sparse_count"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_atom_pair_sparse_count_params(
             &self,
             py: Python<'_>,
             params: Option<&AtomPairFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_atom_pair_sparse_count(self, py, &effective, output)
+            crate::fingerprint_calls::run_atom_pair_sparse_count(
+                self,
+                py,
+                &effective,
+                additional_output,
+            )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_atom_pair_sparse_count"}"#]
-        #[pyo3(signature=(output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, min_distance=FieldInput::<Scalar<u32>>::Default, max_distance=FieldInput::<Scalar<u32>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, use_2d=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_atom_pair_sparse_count_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             min_distance: FieldInput<Scalar<u32>>,
             max_distance: FieldInput<Scalar<u32>>,
             include_chirality: FieldInput<Scalar<bool>>,
@@ -4420,24 +4519,29 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            crate::fingerprint_calls::run_atom_pair_sparse_count(self, py, &params, output)
+            crate::fingerprint_calls::run_atom_pair_sparse_count(
+                self,
+                py,
+                &params,
+                additional_output,
+            )
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_atom_pair_sparse_count_with_params(
             &self,
             py: Python<'_>,
             params: &AtomPairFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
-            self._fingerprint_atom_pair_sparse_count_params(py, Some(params), output)
+            self._fingerprint_atom_pair_sparse_count_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_topological_torsion(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, TopologicalTorsionFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             torsion_atom_count: Argument<FieldInput<Scalar<u32>>>,
             only_shortest_paths: Argument<FieldInput<Scalar<bool>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
@@ -4457,11 +4561,11 @@ pub mod native {
         ) -> PyResult<Fingerprint> {
             crate::arguments::configuration_arguments!(params; torsion_atom_count, only_shortest_paths, include_chirality, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_topological_torsion_params(py, Some(params), output)
+                self._fingerprint_topological_torsion_params(py, Some(params), additional_output)
             } else {
                 self._fingerprint_topological_torsion_keywords(
                     py,
-                    output,
+                    additional_output,
                     torsion_atom_count,
                     only_shortest_paths,
                     include_chirality,
@@ -4480,25 +4584,30 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_topological_torsion_params(
             &self,
             py: Python<'_>,
             params: Option<&TopologicalTorsionFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_topological_torsion(self, py, &effective, output)
+            crate::fingerprint_calls::run_topological_torsion(
+                self,
+                py,
+                &effective,
+                additional_output,
+            )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion"}"#]
-        #[pyo3(signature=(output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_topological_torsion_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             torsion_atom_count: FieldInput<Scalar<u32>>,
             only_shortest_paths: FieldInput<Scalar<bool>>,
             include_chirality: FieldInput<Scalar<bool>>,
@@ -4532,24 +4641,24 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            crate::fingerprint_calls::run_topological_torsion(self, py, &params, output)
+            crate::fingerprint_calls::run_topological_torsion(self, py, &params, additional_output)
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_topological_torsion_with_params(
             &self,
             py: Python<'_>,
             params: &TopologicalTorsionFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
-            self._fingerprint_topological_torsion_params(py, Some(params), output)
+            self._fingerprint_topological_torsion_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_topological_torsion_count(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, TopologicalTorsionFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             torsion_atom_count: Argument<FieldInput<Scalar<u32>>>,
             only_shortest_paths: Argument<FieldInput<Scalar<bool>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
@@ -4569,11 +4678,15 @@ pub mod native {
         ) -> PyResult<SparseCountFingerprint32> {
             crate::arguments::configuration_arguments!(params; torsion_atom_count, only_shortest_paths, include_chirality, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_topological_torsion_count_params(py, Some(params), output)
+                self._fingerprint_topological_torsion_count_params(
+                    py,
+                    Some(params),
+                    additional_output,
+                )
             } else {
                 self._fingerprint_topological_torsion_count_keywords(
                     py,
-                    output,
+                    additional_output,
                     torsion_atom_count,
                     only_shortest_paths,
                     include_chirality,
@@ -4592,25 +4705,30 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_count"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_topological_torsion_count_params(
             &self,
             py: Python<'_>,
             params: Option<&TopologicalTorsionFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_topological_torsion_count(self, py, &effective, output)
+            crate::fingerprint_calls::run_topological_torsion_count(
+                self,
+                py,
+                &effective,
+                additional_output,
+            )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_count"}"#]
-        #[pyo3(signature=(output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_topological_torsion_count_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             torsion_atom_count: FieldInput<Scalar<u32>>,
             only_shortest_paths: FieldInput<Scalar<bool>>,
             include_chirality: FieldInput<Scalar<bool>>,
@@ -4644,24 +4762,29 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            crate::fingerprint_calls::run_topological_torsion_count(self, py, &params, output)
+            crate::fingerprint_calls::run_topological_torsion_count(
+                self,
+                py,
+                &params,
+                additional_output,
+            )
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_topological_torsion_count_with_params(
             &self,
             py: Python<'_>,
             params: &TopologicalTorsionFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
-            self._fingerprint_topological_torsion_count_params(py, Some(params), output)
+            self._fingerprint_topological_torsion_count_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_topological_torsion_sparse(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, TopologicalTorsionFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             torsion_atom_count: Argument<FieldInput<Scalar<u32>>>,
             only_shortest_paths: Argument<FieldInput<Scalar<bool>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
@@ -4681,11 +4804,15 @@ pub mod native {
         ) -> PyResult<SparseBitFingerprint> {
             crate::arguments::configuration_arguments!(params; torsion_atom_count, only_shortest_paths, include_chirality, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_topological_torsion_sparse_params(py, Some(params), output)
+                self._fingerprint_topological_torsion_sparse_params(
+                    py,
+                    Some(params),
+                    additional_output,
+                )
             } else {
                 self._fingerprint_topological_torsion_sparse_keywords(
                     py,
-                    output,
+                    additional_output,
                     torsion_atom_count,
                     only_shortest_paths,
                     include_chirality,
@@ -4704,25 +4831,30 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_topological_torsion_sparse_params(
             &self,
             py: Python<'_>,
             params: Option<&TopologicalTorsionFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
-            crate::fingerprint_calls::run_topological_torsion_sparse(self, py, &effective, output)
+            crate::fingerprint_calls::run_topological_torsion_sparse(
+                self,
+                py,
+                &effective,
+                additional_output,
+            )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse"}"#]
-        #[pyo3(signature=(output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_topological_torsion_sparse_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             torsion_atom_count: FieldInput<Scalar<u32>>,
             only_shortest_paths: FieldInput<Scalar<bool>>,
             include_chirality: FieldInput<Scalar<bool>>,
@@ -4756,24 +4888,29 @@ pub mod native {
                 atom_invariants_generator,
                 use_legacy_stereo_perception,
             );
-            crate::fingerprint_calls::run_topological_torsion_sparse(self, py, &params, output)
+            crate::fingerprint_calls::run_topological_torsion_sparse(
+                self,
+                py,
+                &params,
+                additional_output,
+            )
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_topological_torsion_sparse_with_params(
             &self,
             py: Python<'_>,
             params: &TopologicalTorsionFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
-            self._fingerprint_topological_torsion_sparse_params(py, Some(params), output)
+            self._fingerprint_topological_torsion_sparse_params(py, Some(params), additional_output)
         }
 
-        #[pyo3(signature=(params=Argument::Missing, output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
         fn fingerprint_topological_torsion_sparse_count(
             &self,
             py: Python<'_>,
             params: Argument<Option<PyRef<'_, TopologicalTorsionFingerprintParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             torsion_atom_count: Argument<FieldInput<Scalar<u32>>>,
             only_shortest_paths: Argument<FieldInput<Scalar<bool>>>,
             include_chirality: Argument<FieldInput<Scalar<bool>>>,
@@ -4793,11 +4930,15 @@ pub mod native {
         ) -> PyResult<SparseCountFingerprint> {
             crate::arguments::configuration_arguments!(params; torsion_atom_count, only_shortest_paths, include_chirality, count_simulation, fp_size, bits_per_feature, count_bounds, from_atoms, ignore_atoms, custom_atom_invariants, custom_bond_invariants, conformer_id, atom_invariants_generator, use_legacy_stereo_perception);
             if let Some(params) = params.as_deref() {
-                self._fingerprint_topological_torsion_sparse_count_params(py, Some(params), output)
+                self._fingerprint_topological_torsion_sparse_count_params(
+                    py,
+                    Some(params),
+                    additional_output,
+                )
             } else {
                 self._fingerprint_topological_torsion_sparse_count_keywords(
                     py,
-                    output,
+                    additional_output,
                     torsion_atom_count,
                     only_shortest_paths,
                     include_chirality,
@@ -4816,27 +4957,30 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse_count"}"#]
-        #[pyo3(signature=(params=None, output=None))]
+        #[pyo3(signature=(params=None, additional_output=None))]
         fn _fingerprint_topological_torsion_sparse_count_params(
             &self,
             py: Python<'_>,
             params: Option<&TopologicalTorsionFingerprintParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
             let effective = params
                 .map(|value| value.to_rust(py))
                 .transpose()?
                 .unwrap_or_default();
             crate::fingerprint_calls::run_topological_torsion_sparse_count(
-                self, py, &effective, output,
+                self,
+                py,
+                &effective,
+                additional_output,
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_torsion_sparse_count"}"#]
-        #[pyo3(signature=(output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
+        #[pyo3(signature=(additional_output=None, *, torsion_atom_count=FieldInput::<Scalar<u32>>::Default, only_shortest_paths=FieldInput::<Scalar<bool>>::Default, include_chirality=FieldInput::<Scalar<bool>>::Default, count_simulation=FieldInput::<Scalar<bool>>::Default, fp_size=FieldInput::<Scalar<u32>>::Default, bits_per_feature=FieldInput::<Scalar<u32>>::Default, count_bounds=FieldInput::<Vec<u32>>::Default, from_atoms=FieldInput::<Option<Vec<u32>>>::Default, ignore_atoms=FieldInput::<Option<Vec<u32>>>::Default, custom_atom_invariants=FieldInput::<Option<Vec<u32>>>::Default, custom_bond_invariants=FieldInput::<Option<Vec<u32>>>::Default, conformer_id=FieldInput::<Scalar<i32>>::Default, atom_invariants_generator=FieldInput::<Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>>::Default, use_legacy_stereo_perception=FieldInput::<Scalar<bool>>::Default))]
         fn _fingerprint_topological_torsion_sparse_count_keywords(
             &self,
             py: Python<'_>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             torsion_atom_count: FieldInput<Scalar<u32>>,
             only_shortest_paths: FieldInput<Scalar<bool>>,
             include_chirality: FieldInput<Scalar<bool>>,
@@ -4871,25 +5015,32 @@ pub mod native {
                 use_legacy_stereo_perception,
             );
             crate::fingerprint_calls::run_topological_torsion_sparse_count(
-                self, py, &params, output,
+                self,
+                py,
+                &params,
+                additional_output,
             )
         }
-        #[pyo3(signature=(params, output=None))]
+        #[pyo3(signature=(params, additional_output=None))]
         fn fingerprint_topological_torsion_sparse_count_with_params(
             &self,
             py: Python<'_>,
             params: &TopologicalTorsionFingerprintParams,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
-            self._fingerprint_topological_torsion_sparse_count_params(py, Some(params), output)
+            self._fingerprint_topological_torsion_sparse_count_params(
+                py,
+                Some(params),
+                additional_output,
+            )
         }
-        #[pyo3(signature=(generator, params=Argument::Missing, output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing))]
+        #[pyo3(signature=(generator, params=Argument::Missing, additional_output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing))]
         fn fingerprint_morgan_with_generator(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
             params: Argument<Option<PyRef<'_, MorganCallParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Argument<Option<Vec<u32>>>,
             ignore_atoms: Argument<Option<Vec<u32>>>,
             custom_atom_invariants: Argument<Option<Vec<u32>>>,
@@ -4907,7 +5058,7 @@ pub mod native {
                 self._fingerprint_morgan_with_generator_keywords(
                     py,
                     generator,
-                    output,
+                    additional_output,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -4915,29 +5066,38 @@ pub mod native {
                     conformer_id,
                 )
             } else {
-                self._fingerprint_morgan_with_generator_params(py, generator, params, output)
+                self._fingerprint_morgan_with_generator_params(
+                    py,
+                    generator,
+                    params,
+                    additional_output,
+                )
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_with_generator"}"#]
-        #[pyo3(signature=(generator, params=None, output=None))]
+        #[pyo3(signature=(generator, params=None, additional_output=None))]
         fn _fingerprint_morgan_with_generator_params(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
             params: Option<&MorganCallParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<Fingerprint> {
             crate::morgan_reusable::fingerprint_morgan_with_generator(
-                self, py, generator, params, output,
+                self,
+                py,
+                generator,
+                params,
+                additional_output,
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_with_generator"}"#]
-        #[pyo3(signature=(generator, output=None, *, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None))]
+        #[pyo3(signature=(generator, additional_output=None, *, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None))]
         fn _fingerprint_morgan_with_generator_keywords(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Option<Vec<u32>>,
             ignore_atoms: Option<Vec<u32>>,
             custom_atom_invariants: Option<Vec<u32>>,
@@ -4952,16 +5112,21 @@ pub mod native {
                 custom_bond_invariants,
                 conformer_id,
             )?;
-            self._fingerprint_morgan_with_generator_params(py, generator, Some(&params), output)
+            self._fingerprint_morgan_with_generator_params(
+                py,
+                generator,
+                Some(&params),
+                additional_output,
+            )
         }
 
-        #[pyo3(signature=(generator, params=Argument::Missing, output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing))]
+        #[pyo3(signature=(generator, params=Argument::Missing, additional_output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing))]
         fn fingerprint_morgan_count_with_generator(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
             params: Argument<Option<PyRef<'_, MorganCallParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Argument<Option<Vec<u32>>>,
             ignore_atoms: Argument<Option<Vec<u32>>>,
             custom_atom_invariants: Argument<Option<Vec<u32>>>,
@@ -4979,7 +5144,7 @@ pub mod native {
                 self._fingerprint_morgan_count_with_generator_keywords(
                     py,
                     generator,
-                    output,
+                    additional_output,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -4987,29 +5152,38 @@ pub mod native {
                     conformer_id,
                 )
             } else {
-                self._fingerprint_morgan_count_with_generator_params(py, generator, params, output)
+                self._fingerprint_morgan_count_with_generator_params(
+                    py,
+                    generator,
+                    params,
+                    additional_output,
+                )
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_count_with_generator"}"#]
-        #[pyo3(signature=(generator, params=None, output=None))]
+        #[pyo3(signature=(generator, params=None, additional_output=None))]
         fn _fingerprint_morgan_count_with_generator_params(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
             params: Option<&MorganCallParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint32> {
             crate::morgan_reusable::fingerprint_morgan_count_with_generator(
-                self, py, generator, params, output,
+                self,
+                py,
+                generator,
+                params,
+                additional_output,
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_count_with_generator"}"#]
-        #[pyo3(signature=(generator, output=None, *, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None))]
+        #[pyo3(signature=(generator, additional_output=None, *, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None))]
         fn _fingerprint_morgan_count_with_generator_keywords(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Option<Vec<u32>>,
             ignore_atoms: Option<Vec<u32>>,
             custom_atom_invariants: Option<Vec<u32>>,
@@ -5028,17 +5202,17 @@ pub mod native {
                 py,
                 generator,
                 Some(&params),
-                output,
+                additional_output,
             )
         }
 
-        #[pyo3(signature=(generator, params=Argument::Missing, output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing))]
+        #[pyo3(signature=(generator, params=Argument::Missing, additional_output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing))]
         fn fingerprint_morgan_sparse_with_generator(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
             params: Argument<Option<PyRef<'_, MorganCallParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Argument<Option<Vec<u32>>>,
             ignore_atoms: Argument<Option<Vec<u32>>>,
             custom_atom_invariants: Argument<Option<Vec<u32>>>,
@@ -5056,7 +5230,7 @@ pub mod native {
                 self._fingerprint_morgan_sparse_with_generator_keywords(
                     py,
                     generator,
-                    output,
+                    additional_output,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -5064,29 +5238,38 @@ pub mod native {
                     conformer_id,
                 )
             } else {
-                self._fingerprint_morgan_sparse_with_generator_params(py, generator, params, output)
+                self._fingerprint_morgan_sparse_with_generator_params(
+                    py,
+                    generator,
+                    params,
+                    additional_output,
+                )
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse_with_generator"}"#]
-        #[pyo3(signature=(generator, params=None, output=None))]
+        #[pyo3(signature=(generator, params=None, additional_output=None))]
         fn _fingerprint_morgan_sparse_with_generator_params(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
             params: Option<&MorganCallParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseBitFingerprint> {
             crate::morgan_reusable::fingerprint_morgan_sparse_with_generator(
-                self, py, generator, params, output,
+                self,
+                py,
+                generator,
+                params,
+                additional_output,
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse_with_generator"}"#]
-        #[pyo3(signature=(generator, output=None, *, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None))]
+        #[pyo3(signature=(generator, additional_output=None, *, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None))]
         fn _fingerprint_morgan_sparse_with_generator_keywords(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Option<Vec<u32>>,
             ignore_atoms: Option<Vec<u32>>,
             custom_atom_invariants: Option<Vec<u32>>,
@@ -5105,17 +5288,17 @@ pub mod native {
                 py,
                 generator,
                 Some(&params),
-                output,
+                additional_output,
             )
         }
 
-        #[pyo3(signature=(generator, params=Argument::Missing, output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing))]
+        #[pyo3(signature=(generator, params=Argument::Missing, additional_output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing))]
         fn fingerprint_morgan_sparse_count_with_generator(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
             params: Argument<Option<PyRef<'_, MorganCallParams>>>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Argument<Option<Vec<u32>>>,
             ignore_atoms: Argument<Option<Vec<u32>>>,
             custom_atom_invariants: Argument<Option<Vec<u32>>>,
@@ -5133,7 +5316,7 @@ pub mod native {
                 self._fingerprint_morgan_sparse_count_with_generator_keywords(
                     py,
                     generator,
-                    output,
+                    additional_output,
                     from_atoms,
                     ignore_atoms,
                     custom_atom_invariants,
@@ -5142,30 +5325,37 @@ pub mod native {
                 )
             } else {
                 self._fingerprint_morgan_sparse_count_with_generator_params(
-                    py, generator, params, output,
+                    py,
+                    generator,
+                    params,
+                    additional_output,
                 )
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse_count_with_generator"}"#]
-        #[pyo3(signature=(generator, params=None, output=None))]
+        #[pyo3(signature=(generator, params=None, additional_output=None))]
         fn _fingerprint_morgan_sparse_count_with_generator_params(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
             params: Option<&MorganCallParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<SparseCountFingerprint> {
             crate::morgan_reusable::fingerprint_morgan_sparse_count_with_generator(
-                self, py, generator, params, output,
+                self,
+                py,
+                generator,
+                params,
+                additional_output,
             )
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_morgan_sparse_count_with_generator"}"#]
-        #[pyo3(signature=(generator, output=None, *, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None))]
+        #[pyo3(signature=(generator, additional_output=None, *, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None))]
         fn _fingerprint_morgan_sparse_count_with_generator_keywords(
             &self,
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
             from_atoms: Option<Vec<u32>>,
             ignore_atoms: Option<Vec<u32>>,
             custom_atom_invariants: Option<Vec<u32>>,
@@ -5184,7 +5374,7 @@ pub mod native {
                 py,
                 generator,
                 Some(&params),
-                output,
+                additional_output,
             )
         }
 
@@ -5217,9 +5407,11 @@ pub mod native {
         #[doc = r#"{"role":"overload","target":"Molecule.to_smarts"}"#]
         #[pyo3(signature=(params=None))]
         fn _to_smarts_params(&self, params: Option<&SmartsWriteParams>) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
             let defaults = ck::SmartsWriteParams::default();
             self.inner
-                .to_smarts_with_params(params.map_or(&defaults, |p| &p.inner))
+                .to_smarts_with_params(params.as_ref().unwrap_or(&defaults))
                 .map_err(SmartsWriteError::from_rust)
                 .and_then(crate::smarts_writer::text)
         }
@@ -5272,9 +5464,11 @@ pub mod native {
         #[doc = r#"{"role":"overload","target":"Molecule.to_cx_smarts"}"#]
         #[pyo3(signature=(params=None))]
         fn _to_cx_smarts_params(&self, params: Option<&SmartsWriteParams>) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
             let defaults = ck::SmartsWriteParams::default();
             self.inner
-                .to_cx_smarts_with_params(params.map_or(&defaults, |p| &p.inner))
+                .to_cx_smarts_with_params(params.as_ref().unwrap_or(&defaults))
                 .map_err(SmartsWriteError::from_rust)
                 .and_then(crate::smarts_writer::text)
         }
@@ -5834,12 +6028,16 @@ pub mod native {
                 .map(|inner| Fingerprint { inner })
                 .map_err(TopologicalFingerprintError::from_rust)
         }
-        #[pyo3(signature=(params=crate::arguments::Argument::Missing, request=None, *, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, num_bits_per_feature=crate::arguments::Argument::Missing, use_hs=crate::arguments::Argument::Missing, target_density=crate::arguments::Argument::Missing, min_size=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, use_bond_order=crate::arguments::Argument::Missing, atom_invariants=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing, ignore_atoms=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing, request=crate::arguments::Argument::Missing, *, atom_bits=crate::arguments::Argument::Missing, bit_info=crate::arguments::Argument::Missing, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, num_bits_per_feature=crate::arguments::Argument::Missing, use_hs=crate::arguments::Argument::Missing, target_density=crate::arguments::Argument::Missing, min_size=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, use_bond_order=crate::arguments::Argument::Missing, atom_invariants=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing, ignore_atoms=crate::arguments::Argument::Missing))]
         fn fingerprint_topological_with_output(
             &self,
             py: Python<'_>,
             params: crate::arguments::Argument<Option<PyRef<'_, TopologicalFingerprintParams>>>,
-            request: Option<&TopologicalFingerprintOutputRequest>,
+            request: crate::arguments::Argument<
+                Option<PyRef<'_, TopologicalFingerprintOutputRequest>>,
+            >,
+            atom_bits: crate::arguments::Argument<Option<bool>>,
+            bit_info: crate::arguments::Argument<Option<bool>>,
             min_path: crate::arguments::Argument<Option<u32>>,
             max_path: crate::arguments::Argument<Option<u32>>,
             fp_size: crate::arguments::Argument<Option<u32>>,
@@ -5853,6 +6051,9 @@ pub mod native {
             from_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
             ignore_atoms: crate::arguments::Argument<Option<Vec<u32>>>,
         ) -> PyResult<TopologicalFingerprintResult> {
+            let request_keyword_form = atom_bits.is_supplied() || bit_info.is_supplied();
+            crate::arguments::configuration_arguments!(request; atom_bits, bit_info);
+            let request = request.as_deref();
             let keyword_form = min_path.is_supplied()
                 || max_path.is_supplied()
                 || fp_size.is_supplied()
@@ -5867,6 +6068,31 @@ pub mod native {
                 || ignore_atoms.is_supplied();
             crate::arguments::configuration_arguments!(params; min_path, max_path, fp_size, num_bits_per_feature, use_hs, target_density, min_size, branched_paths, use_bond_order, atom_invariants, from_atoms, ignore_atoms);
             let params = params.as_deref();
+            if request_keyword_form {
+                return if keyword_form {
+                    self._fingerprint_topological_with_output_keywords_request_keywords(
+                        py,
+                        atom_bits,
+                        bit_info,
+                        min_path,
+                        max_path,
+                        fp_size,
+                        num_bits_per_feature,
+                        use_hs,
+                        target_density,
+                        min_size,
+                        branched_paths,
+                        use_bond_order,
+                        atom_invariants,
+                        from_atoms,
+                        ignore_atoms,
+                    )
+                } else {
+                    self._fingerprint_topological_with_output_params_request_keywords(
+                        py, params, atom_bits, bit_info,
+                    )
+                };
+            }
             if keyword_form {
                 self._fingerprint_topological_with_output_keywords(
                     py,
@@ -5897,6 +6123,7 @@ pub mod native {
             request: Option<&TopologicalFingerprintOutputRequest>,
         ) -> PyResult<TopologicalFingerprintResult> {
             let params = params.map(|value| value.to_rust(py)).transpose()?;
+            let request = request.map(|value| value.to_rust(py)).transpose()?;
             self._fingerprint_topological_with_output_params_native(py, params.as_ref(), request)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_with_output"}"#]
@@ -5932,7 +6159,66 @@ pub mod native {
                 from_atoms,
                 ignore_atoms,
             );
+            let request = request.map(|value| value.to_rust(py)).transpose()?;
             self._fingerprint_topological_with_output_params_native(py, Some(&params), request)
+        }
+        #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_with_output"}"#]
+        #[pyo3(signature=(params=None, *, atom_bits=None, bit_info=None))]
+        fn _fingerprint_topological_with_output_params_request_keywords(
+            &self,
+            py: Python<'_>,
+            params: Option<&TopologicalFingerprintParams>,
+            atom_bits: Option<bool>,
+            bit_info: Option<bool>,
+        ) -> PyResult<TopologicalFingerprintResult> {
+            let params = params.map(|value| value.to_rust(py)).transpose()?;
+            let request = super::topological_producers::request_keywords(atom_bits, bit_info);
+            self._fingerprint_topological_with_output_params_native(
+                py,
+                params.as_ref(),
+                Some(request),
+            )
+        }
+        #[doc = r#"{"role":"overload","target":"Molecule.fingerprint_topological_with_output"}"#]
+        #[pyo3(signature=(*, atom_bits=None, bit_info=None, min_path=None, max_path=None, fp_size=None, num_bits_per_feature=None, use_hs=None, target_density=None, min_size=None, branched_paths=None, use_bond_order=None, atom_invariants=None, from_atoms=None, ignore_atoms=None))]
+        fn _fingerprint_topological_with_output_keywords_request_keywords(
+            &self,
+            py: Python<'_>,
+            atom_bits: Option<bool>,
+            bit_info: Option<bool>,
+            min_path: Option<u32>,
+            max_path: Option<u32>,
+            fp_size: Option<u32>,
+            num_bits_per_feature: Option<u32>,
+            use_hs: Option<bool>,
+            target_density: Option<f64>,
+            min_size: Option<u32>,
+            branched_paths: Option<bool>,
+            use_bond_order: Option<bool>,
+            atom_invariants: Option<Vec<u32>>,
+            from_atoms: Option<Vec<u32>>,
+            ignore_atoms: Option<Vec<u32>>,
+        ) -> PyResult<TopologicalFingerprintResult> {
+            let params = super::topological_producers::keyword_params(
+                min_path,
+                max_path,
+                fp_size,
+                num_bits_per_feature,
+                use_hs,
+                target_density,
+                min_size,
+                branched_paths,
+                use_bond_order,
+                atom_invariants,
+                from_atoms,
+                ignore_atoms,
+            );
+            let request = super::topological_producers::request_keywords(atom_bits, bit_info);
+            self._fingerprint_topological_with_output_params_native(
+                py,
+                Some(&params),
+                Some(request),
+            )
         }
         fn fingerprint_topological_with_output_with_params(
             &self,
@@ -5940,9 +6226,11 @@ pub mod native {
             params: &TopologicalFingerprintParams,
             request: &TopologicalFingerprintOutputRequest,
         ) -> PyResult<TopologicalFingerprintResult> {
+            let request = pyo3::Python::attach(|py| request.to_rust(py))?;
+
             let params = params.to_rust(py)?;
             self.inner
-                .fingerprint_topological_with_output_with_params(&params, request.inner)
+                .fingerprint_topological_with_output_with_params(&params, request)
                 .map(TopologicalFingerprintResult::from_rust)
                 .map_err(TopologicalFingerprintError::from_rust)
         }
@@ -6144,8 +6432,11 @@ pub mod native {
             &self,
             params: Option<&PatternFingerprintParams>,
         ) -> PyResult<Fingerprint> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(params) => self.inner.fingerprint_pattern_with_params(&params.inner),
+                Some(params) => self.inner.fingerprint_pattern_with_params(&params),
                 None => self.inner.fingerprint_pattern(),
             }
             .map(|inner| Fingerprint { inner })
@@ -6165,8 +6456,10 @@ pub mod native {
             &self,
             params: &PatternFingerprintParams,
         ) -> PyResult<Fingerprint> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             self.inner
-                .fingerprint_pattern_with_params(&params.inner)
+                .fingerprint_pattern_with_params(&params)
                 .map(|inner| Fingerprint { inner })
                 .map_err(PatternFingerprintError::from_rust)
         }
@@ -6193,10 +6486,11 @@ pub mod native {
             &self,
             params: Option<&SanitizeParams>,
         ) -> PyResult<ChemistryProblemReport> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(params) => self
-                    .inner
-                    .detect_chemistry_problems_with_params(&params.inner),
+                Some(params) => self.inner.detect_chemistry_problems_with_params(&params),
                 None => self.inner.detect_chemistry_problems(),
             }
             .map(|inner| ChemistryProblemReport { inner })
@@ -6209,12 +6503,12 @@ pub mod native {
             operations: Option<super::sanitize_values::SanitizeOperationsInput>,
         ) -> PyResult<ChemistryProblemReport> {
             let params = SanitizeParams {
-                inner: ck::SanitizeParams {
+                inner: crate::parameters::NativeField::Owned(ck::SanitizeParams {
                     operations: operations
                         .map(super::sanitize_values::SanitizeOperationsInput::into_rust)
                         .transpose()?
                         .unwrap_or_else(|| ck::SanitizeParams::default().operations),
-                },
+                }),
             };
             self._detect_chemistry_problems_params(Some(&params))
         }
@@ -6222,8 +6516,10 @@ pub mod native {
             &self,
             params: &SanitizeParams,
         ) -> PyResult<ChemistryProblemReport> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             self.inner
-                .detect_chemistry_problems_with_params(&params.inner)
+                .detect_chemistry_problems_with_params(&params)
                 .map(|inner| ChemistryProblemReport { inner })
                 .map_err(SanitizeError::from_rust)
         }
@@ -7411,8 +7707,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&crate::io_batch_params::MolBlockWriteParams>,
         ) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => self.inner.to_mol_with_params(&params.inner),
+                Some(params) => self.inner.to_mol_with_params(&params),
                 None => self.inner.to_mol(),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -7496,8 +7795,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&crate::io_batch_params::MolBlockWriteParams>,
         ) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => self.inner.to_sdf_with_params(&params.inner),
+                Some(params) => self.inner.to_sdf_with_params(&params),
                 None => self.inner.to_sdf(),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -7581,8 +7883,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&crate::io_batch_params::MolBlockWriteParams>,
         ) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => self.inner.to_sdf_2d_with_params(&params.inner),
+                Some(params) => self.inner.to_sdf_2d_with_params(&params),
                 None => self.inner.to_sdf_2d(),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -7666,8 +7971,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&crate::io_batch_params::MolBlockWriteParams>,
         ) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => self.inner.to_sdf_3d_with_params(&params.inner),
+                Some(params) => self.inner.to_sdf_3d_with_params(&params),
                 None => self.inner.to_sdf_3d(),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -7754,9 +8062,12 @@ pub mod native {
             path: std::path::PathBuf,
             params: Option<&crate::io_batch_params::MolBlockWriteParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let path_text = crate::molecular_io_calls::path_text(&path)?;
             py.detach(|| match params {
-                Some(params) => self.inner.write_mol_with_params(path_text, &params.inner),
+                Some(params) => self.inner.write_mol_with_params(path_text, &params),
                 None => self.inner.write_mol(path_text),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -7845,9 +8156,12 @@ pub mod native {
             path: std::path::PathBuf,
             params: Option<&crate::io_batch_params::MolBlockWriteParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let path_text = crate::molecular_io_calls::path_text(&path)?;
             py.detach(|| match params {
-                Some(params) => self.inner.write_sdf_with_params(path_text, &params.inner),
+                Some(params) => self.inner.write_sdf_with_params(path_text, &params),
                 None => self.inner.write_sdf(path_text),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -7939,12 +8253,14 @@ pub mod native {
             file_name: Option<&str>,
             params: Option<&crate::io_batch_params::MolBlockWriteParams>,
         ) -> PyResult<std::path::PathBuf> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let path_text = crate::molecular_io_calls::path_text(&directory)?;
             py.detach(|| match params {
-                Some(params) => {
-                    self.inner
-                        .write_sdf_files_with_params(path_text, file_name, &params.inner)
-                }
+                Some(params) => self
+                    .inner
+                    .write_sdf_files_with_params(path_text, file_name, &params),
                 None => self.inner.write_sdf_files(path_text, file_name),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -8015,8 +8331,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&crate::io_batch_params::PdbWriteParams>,
         ) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => self.inner.to_pdb_with_params(&params.inner),
+                Some(params) => self.inner.to_pdb_with_params(&params),
                 None => self.inner.to_pdb(),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -8068,8 +8387,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&crate::params::XyzWriteParams>,
         ) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => self.inner.to_xyz_with_params(&params.inner),
+                Some(params) => self.inner.to_xyz_with_params(&params),
                 None => self.inner.to_xyz(),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -8118,9 +8440,12 @@ pub mod native {
             path: std::path::PathBuf,
             params: Option<&crate::params::XyzWriteParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let path_text = crate::molecular_io_calls::path_text(&path)?;
             py.detach(|| match params {
-                Some(params) => self.inner.write_xyz_with_params(path_text, &params.inner),
+                Some(params) => self.inner.write_xyz_with_params(path_text, &params),
                 None => self.inner.write_xyz(path_text),
             })
             .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -8183,8 +8508,11 @@ pub mod native {
             text: &str,
             params: Option<&crate::params::BioMoleculeParams>,
         ) -> PyResult<Self> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => ck::Molecule::from_pdb_with_params(text, &params.inner),
+                Some(params) => ck::Molecule::from_pdb_with_params(text, &params),
                 None => ck::Molecule::from_pdb(text),
             })
             .map(|inner| Self { inner })
@@ -8255,8 +8583,11 @@ pub mod native {
             text: &str,
             params: Option<&crate::params::BioMoleculeParams>,
         ) -> PyResult<Self> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => ck::Molecule::from_mmcif_with_params(text, &params.inner),
+                Some(params) => ck::Molecule::from_mmcif_with_params(text, &params),
                 None => ck::Molecule::from_mmcif(text),
             })
             .map(|inner| Self { inner })
@@ -8329,8 +8660,11 @@ pub mod native {
             text: &str,
             params: Option<&crate::io_batch_params::Mol2ReadParams>,
         ) -> PyResult<Self> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => ck::Molecule::from_mol2_with_params(text, &params.inner),
+                Some(params) => ck::Molecule::from_mol2_with_params(text, &params),
                 None => ck::Molecule::from_mol2(text),
             })
             .map(|inner| Self { inner })
@@ -8403,9 +8737,12 @@ pub mod native {
             path: std::path::PathBuf,
             params: Option<&crate::io_batch_params::Mol2ReadParams>,
         ) -> PyResult<Self> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let path_text = crate::molecular_io_calls::path_text(&path)?;
             py.detach(|| match params {
-                Some(params) => ck::Molecule::read_mol2_with_params(path_text, &params.inner),
+                Some(params) => ck::Molecule::read_mol2_with_params(path_text, &params),
                 None => ck::Molecule::read_mol2(path_text),
             })
             .map(|inner| Self { inner })
@@ -8484,9 +8821,12 @@ pub mod native {
             path: std::path::PathBuf,
             params: Option<&crate::selectors::SdfReadParams>,
         ) -> PyResult<Self> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let path_text = crate::molecular_io_calls::path_text(&path)?;
             py.detach(|| match params {
-                Some(params) => ck::Molecule::read_mol_with_params(path_text, &params.inner),
+                Some(params) => ck::Molecule::read_mol_with_params(path_text, &params),
                 None => ck::Molecule::read_mol(path_text),
             })
             .map(|inner| Self { inner })
@@ -8569,9 +8909,12 @@ pub mod native {
             path: std::path::PathBuf,
             params: Option<&crate::selectors::SdfReadParams>,
         ) -> PyResult<Self> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let path_text = crate::molecular_io_calls::path_text(&path)?;
             py.detach(|| match params {
-                Some(params) => ck::Molecule::read_sdf_with_params(path_text, &params.inner),
+                Some(params) => ck::Molecule::read_sdf_with_params(path_text, &params),
                 None => ck::Molecule::read_sdf(path_text),
             })
             .map(|inner| Self { inner })
@@ -8636,8 +8979,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&crate::numerical_params::AvalonFingerprintParams>,
         ) -> PyResult<crate::native::Fingerprint> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             py.detach(|| match params {
-                Some(params) => self.inner.fingerprint_avalon_with_params(&params.inner),
+                Some(params) => self.inner.fingerprint_avalon_with_params(&params),
                 None => self.inner.fingerprint_avalon(),
             })
             .map(|inner| crate::native::Fingerprint { inner })
@@ -8744,14 +9090,15 @@ pub mod native {
             let _ = protocol;
             self.__reduce__(py)
         }
-        fn atoms(&self) -> Vec<Atom> {
+        #[getter]
+        fn atoms(&self) -> Vec<MoleculeAtom> {
             self.inner
                 .atoms()
-                .iter()
-                .cloned()
-                .map(|inner| Atom { inner })
+                .into_iter()
+                .map(|inner| MoleculeAtom { inner })
                 .collect()
         }
+        #[getter]
         fn bonds(&self) -> Vec<Bond> {
             self.inner
                 .bonds()
@@ -8760,11 +9107,10 @@ pub mod native {
                 .map(|inner| Bond { inner })
                 .collect()
         }
-        fn atom(&self, atom_id: usize) -> Option<Atom> {
+        fn atom(&self, atom_id: usize) -> Option<MoleculeAtom> {
             self.inner
                 .atom(ck::AtomId::new(atom_id))
-                .cloned()
-                .map(|inner| Atom { inner })
+                .map(|inner| MoleculeAtom { inner })
         }
         fn bond(&self, bond_id: usize) -> Option<Bond> {
             self.inner
@@ -8772,16 +9118,19 @@ pub mod native {
                 .cloned()
                 .map(|inner| Bond { inner })
         }
+        #[getter]
         fn cip_computed(&self) -> PyResult<bool> {
             self.inner
                 .cip_computed()
                 .map_err(super::property_values::PropertyValueError::from_rust)
         }
+        #[getter]
         fn properties(&self) -> MoleculeProperties {
             MoleculeProperties {
                 inner: self.inner.properties().clone(),
             }
         }
+        #[getter]
         fn topology(&self) -> TopologyBlock {
             TopologyBlock::from_molecule(&self.inner)
         }
@@ -8816,8 +9165,11 @@ pub mod native {
             &self,
             params: Option<&MmffPropertiesParams>,
         ) -> PyResult<super::mmff_properties::MmffProperties> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let result = match params {
-                Some(params) => self.inner.mmff_properties_with_params(&params.inner),
+                Some(params) => self.inner.mmff_properties_with_params(&params),
                 None => self.inner.mmff_properties(),
             };
             result
@@ -8832,7 +9184,9 @@ pub mod native {
         ) -> PyResult<super::mmff_properties::MmffProperties> {
             if let Some(mmff_variant) = mmff_variant {
                 self._mmff_properties_params(Some(&MmffPropertiesParams {
-                    inner: ck::MmffPropertiesParams { mmff_variant },
+                    inner: crate::parameters::NativeField::Owned(ck::MmffPropertiesParams {
+                        mmff_variant,
+                    }),
                 }))
             } else {
                 self._mmff_properties_params(None)
@@ -8883,9 +9237,12 @@ pub mod native {
             &self,
             params: Option<&DistanceMatrixParams>,
         ) -> PyResult<DenseMatrix> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let defaults;
-            let params = if let Some(params) = params {
-                &params.inner
+            let params = if let Some(params) = params.as_ref() {
+                params
             } else {
                 defaults = ck::DistanceMatrixParams::default();
                 &defaults
@@ -8904,10 +9261,10 @@ pub mod native {
         ) -> PyResult<DenseMatrix> {
             let defaults = ck::DistanceMatrixParams::default();
             let params = DistanceMatrixParams {
-                inner: ck::DistanceMatrixParams {
+                inner: crate::parameters::NativeField::Owned(ck::DistanceMatrixParams {
                     use_bond_order: use_bond_order.unwrap_or(defaults.use_bond_order),
                     use_atom_weights: use_atom_weights.unwrap_or(defaults.use_atom_weights),
-                },
+                }),
             };
             self._distance_matrix_params(Some(&params))
         }
@@ -8940,9 +9297,12 @@ pub mod native {
             &self,
             params: Option<&DistanceMatrix3dParams>,
         ) -> PyResult<DenseMatrix> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let defaults;
-            let params = if let Some(params) = params {
-                &params.inner
+            let params = if let Some(params) = params.as_ref() {
+                params
             } else {
                 defaults = ck::DistanceMatrix3dParams::default();
                 &defaults
@@ -8961,10 +9321,10 @@ pub mod native {
         ) -> PyResult<DenseMatrix> {
             let defaults = ck::DistanceMatrix3dParams::default();
             let params = DistanceMatrix3dParams {
-                inner: ck::DistanceMatrix3dParams {
+                inner: crate::parameters::NativeField::Owned(ck::DistanceMatrix3dParams {
                     conformer_id,
                     use_atom_weights: use_atom_weights.unwrap_or(defaults.use_atom_weights),
-                },
+                }),
             };
             self._distance_matrix_3d_params(Some(&params))
         }
@@ -11255,8 +11615,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::sanitize_values::SanitizeParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| self.inner.sanitize_with_params(&value.inner)),
+                Some(value) => py.detach(|| self.inner.sanitize_with_params(&value)),
                 None => py.detach(|| self.inner.sanitize()),
             }
             .map(|inner| Molecule { inner })
@@ -11310,8 +11673,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::sanitize_values::SanitizeParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| self.inner.sanitize_with_params_(&value.inner)),
+                Some(value) => py.detach(|| self.inner.sanitize_with_params_(&value)),
                 None => py.detach(|| self.inner.sanitize_()),
             }
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -11369,10 +11735,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::KekulizeParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => {
-                    py.detach(|| self.inner.with_kekulized_bonds_with_params(&value.inner))
-                }
+                Some(value) => py.detach(|| self.inner.with_kekulized_bonds_with_params(&value)),
                 None => py.detach(|| self.inner.with_kekulized_bonds()),
             }
             .map(|inner| Molecule { inner })
@@ -11429,8 +11796,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::KekulizeParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| self.inner.kekulize_bonds_with_params_(&value.inner)),
+                Some(value) => py.detach(|| self.inner.kekulize_bonds_with_params_(&value)),
                 None => py.detach(|| self.inner.kekulize_bonds_()),
             }
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -11484,11 +11854,13 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::selectors::AromaticityParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| {
-                    self.inner
-                        .with_assigned_aromaticity_with_params(&value.inner)
-                }),
+                Some(value) => {
+                    py.detach(|| self.inner.with_assigned_aromaticity_with_params(&value))
+                }
                 None => py.detach(|| self.inner.with_assigned_aromaticity()),
             }
             .map(|inner| Molecule { inner })
@@ -11540,10 +11912,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::selectors::AromaticityParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => {
-                    py.detach(|| self.inner.assign_aromaticity_with_params_(&value.inner))
-                }
+                Some(value) => py.detach(|| self.inner.assign_aromaticity_with_params_(&value)),
                 None => py.detach(|| self.inner.assign_aromaticity_()),
             }
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -11593,10 +11966,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::selectors::ValenceParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => {
-                    py.detach(|| self.inner.with_assigned_valence_with_params(&value.inner))
-                }
+                Some(value) => py.detach(|| self.inner.with_assigned_valence_with_params(&value)),
                 None => py.detach(|| self.inner.with_assigned_valence()),
             }
             .map(|inner| Molecule { inner })
@@ -11648,8 +12022,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::selectors::ValenceParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| self.inner.assign_valence_with_params_(&value.inner)),
+                Some(value) => py.detach(|| self.inner.assign_valence_with_params_(&value)),
                 None => py.detach(|| self.inner.assign_valence_()),
             }
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -11705,11 +12082,13 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::RingSearchParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| {
-                    self.inner
-                        .with_assigned_ring_families_with_params(&value.inner)
-                }),
+                Some(value) => {
+                    py.detach(|| self.inner.with_assigned_ring_families_with_params(&value))
+                }
                 None => py.detach(|| self.inner.with_assigned_ring_families()),
             }
             .map(|inner| Molecule { inner })
@@ -11767,10 +12146,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::RingSearchParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => {
-                    py.detach(|| self.inner.assign_ring_families_with_params_(&value.inner))
-                }
+                Some(value) => py.detach(|| self.inner.assign_ring_families_with_params_(&value)),
                 None => py.detach(|| self.inner.assign_ring_families_()),
             }
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -11828,10 +12208,13 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::StructureTagParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
                 Some(value) => py.detach(|| {
                     self.inner
-                        .with_chiral_tags_from_structure_with_params(&value.inner)
+                        .with_chiral_tags_from_structure_with_params(&value)
                 }),
                 None => py.detach(|| self.inner.with_chiral_tags_from_structure()),
             }
@@ -11890,10 +12273,13 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::StructureTagParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
                 Some(value) => py.detach(|| {
                     self.inner
-                        .assign_chiral_tags_from_structure_with_params_(&value.inner)
+                        .assign_chiral_tags_from_structure_with_params_(&value)
                 }),
                 None => py.detach(|| self.inner.assign_chiral_tags_from_structure_()),
             }
@@ -11950,8 +12336,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::PotentialStereoParams>,
         ) -> PyResult<super::stereo_values::PotentialStereoResult> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| self.inner.potential_stereo_with_params(&value.inner)),
+                Some(value) => py.detach(|| self.inner.potential_stereo_with_params(&value)),
                 None => py.detach(|| self.inner.potential_stereo()),
             }
             .map(|inner| super::stereo_values::PotentialStereoResult { inner })
@@ -12323,8 +12712,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::RemoveHsParams>,
         ) -> PyResult<Molecule> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| self.inner.without_hydrogens_with_params(&value.inner)),
+                Some(value) => py.detach(|| self.inner.without_hydrogens_with_params(&value)),
                 None => py.detach(|| self.inner.without_hydrogens()),
             }
             .map(|inner| Molecule { inner })
@@ -12476,8 +12868,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::RemoveHsParams>,
         ) -> PyResult<()> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| self.inner.remove_hydrogens_with_params_(&value.inner)),
+                Some(value) => py.detach(|| self.inner.remove_hydrogens_with_params_(&value)),
                 None => py.detach(|| self.inner.remove_hydrogens_()),
             }
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -12699,7 +13094,9 @@ pub mod native {
             py: Python<'_>,
             params: &super::params::UffEvaluationParams,
         ) -> PyResult<super::numerical_results::UffEnergyGradient> {
-            py.detach(|| self.inner.uff_energy_gradient_with_params(&params.inner))
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+            py.detach(|| self.inner.uff_energy_gradient_with_params(&params))
                 .map(|inner| super::numerical_results::UffEnergyGradient { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
@@ -12710,10 +13107,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::UffEvaluationParams>,
         ) -> PyResult<super::numerical_results::UffEnergyGradient> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => {
-                    py.detach(|| self.inner.uff_energy_gradient_with_params(&value.inner))
-                }
+                Some(value) => py.detach(|| self.inner.uff_energy_gradient_with_params(&value)),
                 None => py.detach(|| self.inner.uff_energy_gradient()),
             }
             .map(|inner| super::numerical_results::UffEnergyGradient { inner })
@@ -12771,7 +13169,9 @@ pub mod native {
             py: Python<'_>,
             params: &super::params::MmffEvaluationParams,
         ) -> PyResult<Option<super::numerical_results::MmffEnergyGradient>> {
-            py.detach(|| self.inner.mmff_energy_gradient_with_params(&params.inner))
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+            py.detach(|| self.inner.mmff_energy_gradient_with_params(&params))
                 .map(|value| {
                     value.map(|inner| super::numerical_results::MmffEnergyGradient { inner })
                 })
@@ -12784,10 +13184,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::MmffEvaluationParams>,
         ) -> PyResult<Option<super::numerical_results::MmffEnergyGradient>> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => {
-                    py.detach(|| self.inner.mmff_energy_gradient_with_params(&value.inner))
-                }
+                Some(value) => py.detach(|| self.inner.mmff_energy_gradient_with_params(&value)),
                 None => py.detach(|| self.inner.mmff_energy_gradient()),
             }
             .map(|value| value.map(|inner| super::numerical_results::MmffEnergyGradient { inner }))
@@ -12847,7 +13248,9 @@ pub mod native {
             py: Python<'_>,
             params: &super::params::UffOptimizationParams,
         ) -> PyResult<super::numerical_results::UffOptimizationResult> {
-            py.detach(|| self.inner.with_uff_optimized_with_params(&params.inner))
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+            py.detach(|| self.inner.with_uff_optimized_with_params(&params))
                 .map(|inner| super::numerical_results::UffOptimizationResult { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
@@ -12858,10 +13261,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::UffOptimizationParams>,
         ) -> PyResult<super::numerical_results::UffOptimizationResult> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => {
-                    py.detach(|| self.inner.with_uff_optimized_with_params(&value.inner))
-                }
+                Some(value) => py.detach(|| self.inner.with_uff_optimized_with_params(&value)),
                 None => py.detach(|| self.inner.with_uff_optimized()),
             }
             .map(|inner| super::numerical_results::UffOptimizationResult { inner })
@@ -12921,9 +13325,11 @@ pub mod native {
             py: Python<'_>,
             params: &super::params::UffConformerOptimizationParams,
         ) -> PyResult<super::numerical_results::UffConformerOptimizationResult> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .with_uff_optimized_conformers_with_params(&params.inner)
+                    .with_uff_optimized_conformers_with_params(&params)
             })
             .map(|inner| super::numerical_results::UffConformerOptimizationResult { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -12935,11 +13341,13 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::UffConformerOptimizationParams>,
         ) -> PyResult<super::numerical_results::UffConformerOptimizationResult> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => py.detach(|| {
-                    self.inner
-                        .with_uff_optimized_conformers_with_params(&value.inner)
-                }),
+                Some(value) => {
+                    py.detach(|| self.inner.with_uff_optimized_conformers_with_params(&value))
+                }
                 None => py.detach(|| self.inner.with_uff_optimized_conformers()),
             }
             .map(|inner| super::numerical_results::UffConformerOptimizationResult { inner })
@@ -13002,7 +13410,9 @@ pub mod native {
             py: Python<'_>,
             params: &super::params::MmffOptimizationParams,
         ) -> PyResult<super::numerical_results::MmffOptimizeMoleculeResult> {
-            py.detach(|| self.inner.with_mmff_optimized_with_params(&params.inner))
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+            py.detach(|| self.inner.with_mmff_optimized_with_params(&params))
                 .map(|inner| super::numerical_results::MmffOptimizeMoleculeResult { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
@@ -13013,10 +13423,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::MmffOptimizationParams>,
         ) -> PyResult<super::numerical_results::MmffOptimizeMoleculeResult> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
-                Some(value) => {
-                    py.detach(|| self.inner.with_mmff_optimized_with_params(&value.inner))
-                }
+                Some(value) => py.detach(|| self.inner.with_mmff_optimized_with_params(&value)),
                 None => py.detach(|| self.inner.with_mmff_optimized()),
             }
             .map(|inner| super::numerical_results::MmffOptimizeMoleculeResult { inner })
@@ -13081,9 +13492,11 @@ pub mod native {
             py: Python<'_>,
             params: &super::params::MmffConformerOptimizationParams,
         ) -> PyResult<super::numerical_results::MmffOptimizeMoleculeConfsResult> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             py.detach(|| {
                 self.inner
-                    .with_mmff_optimized_conformers_with_params(&params.inner)
+                    .with_mmff_optimized_conformers_with_params(&params)
             })
             .map(|inner| super::numerical_results::MmffOptimizeMoleculeConfsResult { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
@@ -13095,10 +13508,13 @@ pub mod native {
             py: Python<'_>,
             params: Option<&super::params::MmffConformerOptimizationParams>,
         ) -> PyResult<super::numerical_results::MmffOptimizeMoleculeConfsResult> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             match params {
                 Some(value) => py.detach(|| {
                     self.inner
-                        .with_mmff_optimized_conformers_with_params(&value.inner)
+                        .with_mmff_optimized_conformers_with_params(&value)
                 }),
                 None => py.detach(|| self.inner.with_mmff_optimized_conformers()),
             }
@@ -13457,6 +13873,7 @@ pub mod native {
             );
             self._alignment_with_aligned_conformers_inplace_params_native(py, Some(&params))
         }
+        #[getter]
         fn num_3d_conformers(&self) -> usize {
             self.inner.num_3d_conformers()
         }
@@ -13542,6 +13959,10 @@ pub mod native {
             options: Py<super::stereoisomer_options::StereoisomerOptions>,
         ) -> PyResult<num_bigint::BigUint> {
             self._stereoisomer_count_options(py, Some(options))
+        }
+        #[new]
+        fn py_new() -> Self {
+            Self::new()
         }
         #[staticmethod]
         fn new() -> Self {
@@ -13647,13 +14068,13 @@ pub mod native {
             text: &str,
             params: Option<&super::params::InchiReadParams>,
         ) -> PyResult<Self> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let defaults = ck::InchiReadParams::default();
-            ck::Molecule::from_inchi_with_params(
-                text,
-                params.map(|value| &value.inner).unwrap_or(&defaults),
-            )
-            .map(|inner| Self { inner })
-            .map_err(super::inchi_values::InchiError::from_rust)
+            ck::Molecule::from_inchi_with_params(text, params.as_ref().unwrap_or(&defaults))
+                .map(|inner| Self { inner })
+                .map_err(super::inchi_values::InchiError::from_rust)
         }
         #[staticmethod]
         #[doc = r#"{"role":"overload","target":"Molecule.from_inchi"}"#]
@@ -13665,10 +14086,10 @@ pub mod native {
         ) -> PyResult<Self> {
             let defaults = ck::InchiReadParams::default();
             let params = super::params::InchiReadParams {
-                inner: ck::InchiReadParams {
+                inner: crate::parameters::NativeField::Owned(ck::InchiReadParams {
                     sanitize: sanitize.unwrap_or(defaults.sanitize),
                     remove_hs: remove_hs.unwrap_or(defaults.remove_hs),
-                },
+                }),
             };
             Self::_from_inchi_params(text, Some(&params))
         }
@@ -13677,7 +14098,9 @@ pub mod native {
             text: &str,
             params: &super::params::InchiReadParams,
         ) -> PyResult<Self> {
-            ck::Molecule::from_inchi_with_params(text, &params.inner)
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+            ck::Molecule::from_inchi_with_params(text, &params)
                 .map(|inner| Self { inner })
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
@@ -13702,18 +14125,21 @@ pub mod native {
             &self,
             params: Option<&super::params::InchiWriteParams>,
         ) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let defaults = ck::InchiWriteParams::default();
             self.inner
-                .to_inchi_with_params(params.map(|value| &value.inner).unwrap_or(&defaults))
+                .to_inchi_with_params(params.as_ref().unwrap_or(&defaults))
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.to_inchi"}"#]
         #[pyo3(signature = (*, options=None))]
         fn _to_inchi_keywords(&self, options: Option<String>) -> PyResult<String> {
             let params = super::params::InchiWriteParams {
-                inner: ck::InchiWriteParams {
+                inner: crate::parameters::NativeField::Owned(ck::InchiWriteParams {
                     options: options.unwrap_or_else(|| ck::InchiWriteParams::default().options),
-                },
+                }),
             };
             self._to_inchi_params(Some(&params))
         }
@@ -13721,8 +14147,10 @@ pub mod native {
             &self,
             params: &super::params::InchiWriteParams,
         ) -> PyResult<String> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             self.inner
-                .to_inchi_with_params(&params.inner)
+                .to_inchi_with_params(&params)
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
         #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, options=crate::arguments::Argument::Missing))]
@@ -13746,18 +14174,21 @@ pub mod native {
             &self,
             params: Option<&super::params::InchiWriteParams>,
         ) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let defaults = ck::InchiWriteParams::default();
             self.inner
-                .to_inchi_key_with_params(params.map(|value| &value.inner).unwrap_or(&defaults))
+                .to_inchi_key_with_params(params.as_ref().unwrap_or(&defaults))
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
         #[doc = r#"{"role":"overload","target":"Molecule.to_inchi_key"}"#]
         #[pyo3(signature = (*, options=None))]
         fn _to_inchi_key_keywords(&self, options: Option<String>) -> PyResult<String> {
             let params = super::params::InchiWriteParams {
-                inner: ck::InchiWriteParams {
+                inner: crate::parameters::NativeField::Owned(ck::InchiWriteParams {
                     options: options.unwrap_or_else(|| ck::InchiWriteParams::default().options),
-                },
+                }),
             };
             self._to_inchi_key_params(Some(&params))
         }
@@ -13765,13 +14196,17 @@ pub mod native {
             &self,
             params: &super::params::InchiWriteParams,
         ) -> PyResult<String> {
+            let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
             self.inner
-                .to_inchi_key_with_params(&params.inner)
+                .to_inchi_key_with_params(&params)
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
+        #[getter]
         fn num_atoms(&self) -> usize {
             self.inner.num_atoms()
         }
+        #[getter]
         fn num_bonds(&self) -> usize {
             self.inner.num_bonds()
         }
@@ -13785,10 +14220,12 @@ pub mod native {
                 .molecular_hash_with_ranks(&ranks)
                 .map_err(MoleculeHashError::from_rust)
         }
+        #[getter]
         fn has_2d_coordinates(&self) -> bool {
             self.inner.has_2d_coordinates()
         }
         #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]] | None"}"#]
+        #[getter]
         fn coordinates_2d<'py>(&self, py: Python<'py>) -> Option<Bound<'py, numpy::PyArray2<f64>>> {
             self.inner
                 .coordinates_2d()
@@ -13806,6 +14243,7 @@ pub mod native {
                 .map(|rows| coordinates::array(py, rows))
                 .map_err(errors::Coordinate3DReadError::from_rust)
         }
+        #[getter]
         fn conformers_3d(&self) -> Vec<Conformer3D> {
             self.inner
                 .conformers_3d()
@@ -13924,8 +14362,11 @@ pub mod native {
             py: Python<'_>,
             params: Option<&SmilesWriteParams>,
         ) -> PyResult<String> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let value = py.detach(|| match params {
-                Some(params) => self.inner.to_smiles_with_params(&params.inner),
+                Some(params) => self.inner.to_smiles_with_params(&params),
                 None => self.inner.to_smiles(),
             });
             super::smiles_writer::text(py, value)
@@ -14010,9 +14451,12 @@ pub mod native {
             fields: Option<super::notation_params::CxSmilesFieldsInput>,
             coordinate_selection: Option<super::notation_params::CxCoordinateSelectionInput>,
         ) -> PyResult<String> {
+            let smiles =
+                pyo3::Python::attach(|py| smiles.map(|value| value.to_rust(py)).transpose())?;
+
             let defaults = ck::CxSmilesWriteParams::default();
             let params = ck::CxSmilesWriteParams {
-                smiles: smiles.map(|value| value.inner).unwrap_or(defaults.smiles),
+                smiles: smiles.unwrap_or(defaults.smiles),
                 fields: fields
                     .map(super::notation_params::CxSmilesFieldsInput::into_rust)
                     .transpose()?
@@ -14112,6 +14556,9 @@ pub mod native {
             atom_symbols: Option<Vec<String>>,
             bond_symbols: Option<Vec<String>>,
         ) -> PyResult<String> {
+            let smiles =
+                pyo3::Python::attach(|py| smiles.map(|value| value.to_rust(py)).transpose())?;
+
             let atoms = atoms.into_iter().map(ck::AtomId::new).collect::<Vec<_>>();
             if smiles.is_none()
                 && bonds.is_none()
@@ -14125,9 +14572,7 @@ pub mod native {
             }
             let params = ck::FragmentSmilesWriteParams {
                 atoms,
-                smiles: smiles
-                    .map(|value| value.inner)
-                    .unwrap_or_else(|| ck::FragmentSmilesWriteParams::default().smiles),
+                smiles: smiles.unwrap_or_else(|| ck::FragmentSmilesWriteParams::default().smiles),
                 bonds: bonds.map(|values| values.into_iter().map(ck::BondId::new).collect()),
                 atom_symbols,
                 bond_symbols,
@@ -14293,10 +14738,13 @@ pub mod native {
             seed: u32,
             params: Option<&RandomSmilesWriteParams>,
         ) -> PyResult<Vec<String>> {
+            let params =
+                pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
             let value = py.detach(|| match params {
                 Some(params) => self
                     .inner
-                    .to_random_smiles_with_params(count, seed, &params.inner),
+                    .to_random_smiles_with_params(count, seed, &params),
                 None => self.inner.to_random_smiles(count, seed),
             });
             super::smiles_writer::texts(py, value)
@@ -14315,13 +14763,13 @@ pub mod native {
         ) -> PyResult<Vec<String>> {
             let defaults = ck::RandomSmilesWriteParams::default();
             let params = RandomSmilesWriteParams {
-                inner: ck::RandomSmilesWriteParams {
+                inner: crate::parameters::NativeField::Owned(ck::RandomSmilesWriteParams {
                     isomeric_smiles: isomeric_smiles.unwrap_or(defaults.isomeric_smiles),
                     kekule: kekule.unwrap_or(defaults.kekule),
                     all_bonds_explicit: all_bonds_explicit.unwrap_or(defaults.all_bonds_explicit),
                     all_hydrogens_explicit: all_hydrogens_explicit
                         .unwrap_or(defaults.all_hydrogens_explicit),
-                },
+                }),
             };
             self._to_random_smiles_params(py, count, seed, Some(&params))
         }
@@ -14361,10 +14809,8 @@ pub mod native {
         }
     }
 
-    #[pyclass(module = "cosmolkit", frozen)]
-    pub struct Fingerprint {
-        pub(crate) inner: ck::Fingerprint,
-    }
+    #[pymodule_export]
+    pub use crate::fingerprint_values::Fingerprint;
 
     #[pymethods]
     impl Fingerprint {
@@ -14374,6 +14820,7 @@ pub mod native {
                 .map(|inner| Self { inner })
                 .map_err(errors::FingerprintError::from_rust)
         }
+        #[getter]
         fn n_bits(&self) -> u32 {
             self.inner.n_bits()
         }
@@ -14382,6 +14829,7 @@ pub mod native {
                 .tanimoto(&other.inner)
                 .map_err(errors::FingerprintError::from_rust)
         }
+        #[getter]
         fn on_bits(&self) -> Vec<u32> {
             self.inner.on_bits()
         }
@@ -14400,63 +14848,10 @@ pub mod native {
         }
     }
 
-    #[pyclass(module = "cosmolkit", frozen)]
-    pub struct FingerprintBatch {
-        values: Vec<Option<Py<Fingerprint>>>,
-    }
-
-    #[pymethods]
-    impl FingerprintBatch {
-        #[new]
-        fn new(values: Vec<Option<Py<Fingerprint>>>) -> Self {
-            Self { values }
-        }
-        fn __len__(&self) -> usize {
-            self.values.len()
-        }
-        #[doc = r#"{"role":"indexing","protocol":"integer_slice_self"}"#]
-        fn __getitem__(
-            &self,
-            py: Python<'_>,
-            index: indexing::Index<'_>,
-        ) -> PyResult<indexing::Indexed<Option<Py<Fingerprint>>, Py<Self>>> {
-            indexing::get(py, index, &self.values, |values| Self { values })
-        }
-        #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]"}"#]
-        fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray2<u8>>> {
-            let width = self
-                .values
-                .first()
-                .and_then(Option::as_ref)
-                .map_or(0, |fp| fp.borrow(py).inner.n_bits() as usize);
-            let mut data = numpy::ndarray::Array2::zeros((self.values.len(), width));
-            for (row_index, (item, mut row)) in self.values.iter().zip(data.rows_mut()).enumerate()
-            {
-                let fingerprint = item
-                    .as_ref()
-                    .ok_or_else(|| {
-                        pyo3::exceptions::PyValueError::new_err(format!(
-                            "fingerprint row {row_index} is None"
-                        ))
-                    })?
-                    .borrow(py);
-                if fingerprint.inner.n_bits() as usize != width {
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "fingerprint row {row_index} has a different width"
-                    )));
-                }
-                for (bit, value) in row.iter_mut().enumerate() {
-                    *value = u8::from(
-                        fingerprint
-                            .inner
-                            .get_bit(bit as u32)
-                            .map_err(errors::FingerprintError::from_rust)?,
-                    );
-                }
-            }
-            Ok(data.into_pyarray(py))
-        }
-    }
+    #[pymodule_export]
+    use super::fingerprint_batch::{
+        FingerprintBatch, FingerprintBatchError, FingerprintBatchErrorKind,
+    };
 
     // Register SMILES configuration calls and the molecule collection.
     #[pymodule_export]
@@ -14484,7 +14879,11 @@ pub mod native {
     };
 
     #[pymodule_export]
-    use super::batch_calls::{mols_from_records, mols_from_sdf_records, mols_from_smiles_list};
+    use super::batch_calls::{
+        _mols_from_sdf_records_keywords, _mols_from_sdf_records_params,
+        _mols_from_smiles_list_keywords, _mols_from_smiles_list_params, mols_from_records,
+        mols_from_sdf_records, mols_from_smiles_list,
+    };
 
     #[pymodule_export]
     use super::molecular_io_calls::{

@@ -156,10 +156,10 @@ def test_layered_fingerprint_methods_match_generated_stub_and_runtime_surface() 
         ("Molecule", "fingerprint_layered_with_params", ["self", "params"], "Fingerprint"),
         ("Molecule", "fingerprint_layered_with_output", ["self"], "LayeredFingerprintResult"),
         ("Molecule", "fingerprint_layered_with_output_with_params", ["self", "params"], "LayeredFingerprintResult"),
-        ("MoleculeBatch", "fingerprint_layered_list", ["self"], "FingerprintBatch"),
-        ("MoleculeBatch", "fingerprint_layered_list_with_params", ["self", "options", "params"], "FingerprintBatch"),
-        ("MoleculeBatch", "fingerprint_layered_with_output_list", ["self"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
-        ("MoleculeBatch", "fingerprint_layered_with_output_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
+        ("MoleculeBatch", "fingerprint_layered", ["self"], "FingerprintBatch"),
+        ("MoleculeBatch", "fingerprint_layered_with_params", ["self", "options", "params"], "FingerprintBatch"),
+        ("MoleculeBatch", "fingerprint_layered_with_output", ["self"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
+        ("MoleculeBatch", "fingerprint_layered_with_output_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
     ]:
         _assert_registered_method_surface(module, class_name, name, arguments, result)
 
@@ -172,8 +172,8 @@ def test_pattern_fingerprint_methods_match_generated_stub_and_runtime_surface() 
     for class_name, name, arguments, result in [
         ("Molecule", "fingerprint_pattern", ["self"], "Fingerprint"),
         ("Molecule", "fingerprint_pattern_with_params", ["self", "params"], "Fingerprint"),
-        ("MoleculeBatch", "fingerprint_pattern_list", ["self"], "FingerprintBatch"),
-        ("MoleculeBatch", "fingerprint_pattern_list_with_params", ["self", "options", "params"], "FingerprintBatch"),
+        ("MoleculeBatch", "fingerprint_pattern", ["self"], "FingerprintBatch"),
+        ("MoleculeBatch", "fingerprint_pattern_with_params", ["self", "options", "params"], "FingerprintBatch"),
     ]:
         _assert_registered_method_surface(module, class_name, name, arguments, result)
 

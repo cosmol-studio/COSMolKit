@@ -5,10 +5,10 @@ test('All four AtomPair batch outputs equal scalar outputs', () => {
  for (const text of ['CCO', 'c1ccncc1', 'F[C@](Cl)(Br)I']) {
   const molecule = b.Molecule.fromSmiles(text), values = b.MoleculeBatch.fromSmilesList([text]);
   for (const [scalar, batched, read] of [
-   ['fingerprintAtomPair', 'fingerprintAtomPairList', 'onBits'],
-   ['fingerprintAtomPairSparse', 'fingerprintAtomPairSparseBitsList', 'onBits'],
-   ['fingerprintAtomPairCount', 'fingerprintAtomPairCountList', 'nonzeroElements'],
-   ['fingerprintAtomPairSparseCount', 'fingerprintAtomPairSparseCountList', 'nonzeroElements'],
+   ['fingerprintAtomPair', 'fingerprintAtomPair', 'onBits'],
+   ['fingerprintAtomPairSparse', 'fingerprintAtomPairSparse', 'onBits'],
+   ['fingerprintAtomPairCount', 'fingerprintAtomPairCount', 'nonzeroElements'],
+   ['fingerprintAtomPairSparseCount', 'fingerprintAtomPairSparseCount', 'nonzeroElements'],
   ]) assert.deepEqual(molecule[scalar]()[read](), values[batched]()[0][read]());
   molecule.free(); values.free();
  }
@@ -28,28 +28,28 @@ test('AtomPair complete parameter fields preserve defaults, borrowed objects and
 });
 test('all ten batch AtomPair calls preserve order, real output types and sparse value shapes',()=>{
  const value=batch(),options=new b.AtomPairFingerprintParams(),query=new b.BatchQueryParams();
- const families=[['fingerprintAtomPairList','Fingerprint','onBits'],['fingerprintAtomPairSparseCountList','SparseCountFingerprint','nonzeroElements'],['fingerprintAtomPairCountList','SparseCountFingerprint32','nonzeroElements'],['fingerprintAtomPairSparseBitsList','SparseBitFingerprint','onBits']];
+ const families=[['fingerprintAtomPair','Fingerprint','onBits'],['fingerprintAtomPairSparseCount','SparseCountFingerprint','nonzeroElements'],['fingerprintAtomPairCount','SparseCountFingerprint32','nonzeroElements'],['fingerprintAtomPairSparse','SparseBitFingerprint','onBits']];
  for(const [name,Class,read] of families){const implicit=value[name](),explicit=value[name+'WithParams'](options,query);assert.equal(implicit.length,3);assert.equal(implicit[1],null);assert.ok(implicit[0] instanceof b[Class]);assert.deepEqual(explicit.map(v=>v?.[read]()??null),implicit.map(v=>v?.[read]()??null));assert.deepEqual(b.MoleculeBatch.fromSmilesList([])[name](),[]);}
- const sparse=value.fingerprintAtomPairSparseCountList()[0];assert.equal(typeof sparse.length(),'bigint');for(const [key,v] of sparse.nonzeroElements()){assert.equal(typeof key,'bigint');assert.equal(typeof v,'number');}
- const signed=value.fingerprintAtomPairSparseBitsList()[0];assert.equal(typeof signed.nBits(),'number');assert.ok(signed.onBits().every(Number.isInteger));
- const outputs=value.fingerprintAtomPairWithOutputList(),explicit=value.fingerprintAtomPairWithOutputListWithParams(options,true,query);assert.equal(outputs[1],null);assert.ok(outputs[0] instanceof b.BatchFingerprintOutput);assert.deepEqual(outputs[0].fingerprint().onBits(),explicit[0].fingerprint().onBits());assert.deepEqual(outputs[0].fingerprint().onBits(),value.fingerprintAtomPairList()[0].onBits());
+ const sparse=value.fingerprintAtomPairSparseCount()[0];assert.equal(typeof sparse.length(),'bigint');for(const [key,v] of sparse.nonzeroElements()){assert.equal(typeof key,'bigint');assert.equal(typeof v,'number');}
+ const signed=value.fingerprintAtomPairSparse()[0];assert.equal(typeof signed.nBits(),'number');assert.ok(signed.onBits().every(Number.isInteger));
+ const outputs=value.fingerprintAtomPairWithOutput(),explicit=value.fingerprintAtomPairWithOutputWithParams(options,true,query);assert.equal(outputs[1],null);assert.ok(outputs[0] instanceof b.BatchFingerprintOutput);assert.deepEqual(outputs[0].fingerprint().onBits(),explicit[0].fingerprint().onBits());assert.deepEqual(outputs[0].fingerprint().onBits(),value.fingerprintAtomPair()[0].onBits());
  assert.deepEqual(value.validMask(),[true,false,true]);
 });
 test('batch fingerprint additional output is detached and missing collection retains a typed failure',()=>{
- const value=batch(),options=new b.AtomPairFingerprintParams(),query=new b.BatchQueryParams(),result=value.fingerprintAtomPairWithOutputList()[0],out=result.additionalOutput();
+ const value=batch(),options=new b.AtomPairFingerprintParams(),query=new b.BatchQueryParams(),result=value.fingerprintAtomPairWithOutput()[0],out=result.additionalOutput();
  assert.ok(out instanceof b.BatchFingerprintAdditionalOutput);const counts=out.atomCounts();assert.equal(counts.length,3);counts[0]=999;assert.notEqual(out.atomCounts()[0],999);
  const atomBits=out.atomToBits();assert.equal(atomBits.length,3);assert.ok(atomBits.flat().every(v=>typeof v==='bigint'));atomBits[0].push(999n);assert.ok(!out.atomToBits()[0].includes(999n));
  const info=out.bitInfoMap();assert.ok(info instanceof Map);for(const [key,pairs] of info){assert.equal(typeof key,'bigint');assert.ok(pairs.every(v=>v.length===2&&v.every(Number.isInteger)));}info.set(999n,[[9,9]]);assert.ok(!out.bitInfoMap().has(999n));
  assert.equal(out.bitPaths(),null);assert.ok(out.atomsPerBit() instanceof Map);
- const missing=value.fingerprintAtomPairWithOutputListWithParams(options,false,query)[0];assert.throws(()=>missing.additionalOutput(),e=>e.name==='BatchFingerprintOutputError'&&e.kind==='MissingAdditionalOutput'&&e.fingerprintKind==='AtomPair'&&e.detail instanceof b.BatchFingerprintOutputError);
- assert.throws(()=>value.fingerprintAtomPairWithOutputListWithParams(options,'false',query),TypeError);
+ const missing=value.fingerprintAtomPairWithOutputWithParams(options,false,query)[0];assert.throws(()=>missing.additionalOutput(),e=>e.name==='BatchFingerprintOutputError'&&e.kind==='MissingAdditionalOutput'&&e.fingerprintKind==='AtomPair'&&e.detail instanceof b.BatchFingerprintOutputError);
+ assert.throws(()=>value.fingerprintAtomPairWithOutputWithParams(options,'false',query),TypeError);
 });
 test('AtomPair batch callbacks and source failures preserve row indices and original exception identity',()=>{
- const value=batch(),options=new b.AtomPairFingerprintParams();let ticks=0;const query=new b.BatchQueryParams(null,false,()=>{ticks++;});value.fingerprintAtomPairListWithParams(options,query);assert.equal(ticks,3);
- const thrown=Symbol('callback');ticks=0;assert.throws(()=>value.fingerprintAtomPairListWithParams(options,new b.BatchQueryParams(null,false,()=>{ticks++;throw thrown;})),e=>e===thrown);assert.equal(ticks,3);
- const zero=new b.AtomPairFingerprintParams(new b.AtomPairGeneratorParams(undefined,undefined,undefined,undefined,undefined,0));ticks=0;assert.throws(()=>value.fingerprintAtomPairListWithParams(zero,query),e=>e.domain==='batch'&&e.cause.cause.kind==='EmptyFingerprint');assert.equal(ticks,0);
+ const value=batch(),options=new b.AtomPairFingerprintParams();let ticks=0;const query=new b.BatchQueryParams(null,false,()=>{ticks++;});value.fingerprintAtomPairWithParams(options,query);assert.equal(ticks,3);
+ const thrown=Symbol('callback');ticks=0;assert.throws(()=>value.fingerprintAtomPairWithParams(options,new b.BatchQueryParams(null,false,()=>{ticks++;throw thrown;})),e=>e===thrown);assert.equal(ticks,3);
+ const zero=new b.AtomPairFingerprintParams(new b.AtomPairGeneratorParams(undefined,undefined,undefined,undefined,undefined,0));ticks=0;assert.throws(()=>value.fingerprintAtomPairWithParams(zero,query),e=>e.domain==='batch'&&e.cause.cause.kind==='EmptyFingerprint');assert.equal(ticks,0);
  // Both switches must be off: sanitize=false alone retains the default
  // remove-hydrogens path and is not a promise of an uninitialized cache.
  const unprepared=b.Molecule.fromSmilesWithParams('CC',new b.SmilesParseParams(false,undefined,undefined,undefined,false)),raw=b.MoleculeBatch.fromRecords([b.BatchRecord.molecule(unprepared)],b.BatchErrorMode.Strict);
- assert.throws(()=>raw.fingerprintAtomPairList(),e=>{assert.deepEqual(e.recordErrors.map(v=>v.index()),[0]);assert.equal(e.cause.cause.kind,'Preparation');assert.ok(e.cause.cause.detail instanceof b.AtomPairReadError);assert.equal(e.cause.cause.cause.kind,'MissingPreparedValence');assert.ok(e.cause.cause.cause.detail instanceof b.FingerprintPreparationError);return true;});
+ assert.throws(()=>raw.fingerprintAtomPair(),e=>{assert.deepEqual(e.recordErrors.map(v=>v.index()),[0]);assert.equal(e.cause.cause.kind,'Preparation');assert.ok(e.cause.cause.detail instanceof b.AtomPairReadError);assert.equal(e.cause.cause.cause.kind,'MissingPreparedValence');assert.ok(e.cause.cause.cause.detail instanceof b.FingerprintPreparationError);return true;});
 });

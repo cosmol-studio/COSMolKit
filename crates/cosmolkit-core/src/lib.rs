@@ -251,6 +251,7 @@ pub use transforms::{
     with_dihedral_degrees, with_dihedral_radians,
 };
 
+pub use hcount::{implicit_hydrogen_count_from_cache, total_hydrogen_count_from_cache};
 pub use valence::{
     AtomMetadata, AtomicSymbolLookupError, SymbolValenceLookupError, ValenceAssignment,
     ValenceError, ValenceModel, ValenceParams, ValencePhase,
@@ -260,11 +261,11 @@ pub use valence::{
     assign_valence_with_options_for_topology, assign_valence_with_options_from_parts,
     atom_has_valence_violation_for_topology, atom_has_valence_violation_from_parts, atom_metadata,
     atom_metadata_from_assignment, atom_valence_cache_needs_update, bond_type_as_double,
-    bond_valence_contrib, calculate_explicit_valence_for_topology,
-    calculate_explicit_valence_from_parts, calculate_implicit_valence_for_topology,
-    calculate_implicit_valence_from_parts, can_be_hypervalent, explicit_valence_for_atom,
-    get_effective_atomic_num, has_valence_violation, implicit_valence_for_atom,
-    num_pi_electrons_for_topology, periodic_table_more_electronegative,
+    bond_valence_contrib, cached_explicit_valence, cached_total_valence_from_assignment,
+    calculate_explicit_valence_for_topology, calculate_explicit_valence_from_parts,
+    calculate_implicit_valence_for_topology, calculate_implicit_valence_from_parts,
+    can_be_hypervalent, explicit_valence_for_atom, get_effective_atomic_num, has_valence_violation,
+    implicit_valence_for_atom, num_pi_electrons_for_topology, periodic_table_more_electronegative,
     periodic_table_outer_electrons, periodic_table_row, rdkit_atomic_number_from_c_symbol,
     rdkit_atomic_number_from_symbol, rdkit_default_valence, rdkit_default_valence_from_c_symbol,
     rdkit_default_valence_from_symbol, rdkit_element_symbol, rdkit_rb0, rdkit_valence_list,

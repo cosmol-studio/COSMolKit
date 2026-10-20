@@ -892,7 +892,7 @@ fn multiply_matrices(first: [[f64; 3]; 3], second: [[f64; 3]; 3]) -> [[f64; 3]; 
     result
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, cosmolkit_macros::Configuration)]
 pub struct BioCrystalCell {
     pub a: f64,
     pub b: f64,

@@ -22,10 +22,10 @@ def test_inchi_python_four_entry_points_match_exact_methane_results() -> None:
 
     parsed = cosmolkit.Molecule.from_inchi(inchi, sanitize=False, remove_hs=False)
     assert parsed is not None
-    assert parsed.num_atoms() == 1
-    assert parsed.num_bonds() == 0
-    assert parsed.atoms()[0].atomic_number() == 6
-    assert parsed.atoms()[0].explicit_hydrogens() == 4
+    assert parsed.num_atoms == 1
+    assert parsed.num_bonds == 0
+    assert parsed.atoms[0].atomic_number == 6
+    assert parsed.atoms[0].explicit_hydrogens == 4
 
     assert source.to_smiles() == before
 
@@ -35,12 +35,12 @@ def test_inchi_python_matches_source_stereo_cleanup_for_isotopic_center() -> Non
         STEREO_ISOTOPE_INCHI, sanitize=False, remove_hs=False
     )
     assert parsed is not None
-    assert parsed.num_atoms() == 4
-    assert parsed.num_bonds() == 3
-    carbon = parsed.atoms()[0]
-    assert carbon.atomic_number() == 6
-    assert carbon.isotope() == 13
-    assert carbon.chiral_tag_name() == "CHI_UNSPECIFIED"
+    assert parsed.num_atoms == 4
+    assert parsed.num_bonds == 3
+    carbon = parsed.atoms[0]
+    assert carbon.atomic_number == 6
+    assert carbon.isotope == 13
+    assert carbon.chiral_tag_name == "CHI_UNSPECIFIED"
 
 
 def test_inchi_python_preserves_relative_and_racemic_stereo_options() -> None:
@@ -60,8 +60,8 @@ def test_inchi_python_preserves_cationic_aromatic_nitrogen_charge() -> None:
 
     parsed = cosmolkit.Molecule.from_inchi(inchi, sanitize=False, remove_hs=False)
     assert parsed is not None
-    nitrogen = next(atom for atom in parsed.atoms() if atom.atomic_number() == 7)
-    assert nitrogen.formal_charge() == 1
+    nitrogen = next(atom for atom in parsed.atoms if atom.atomic_number == 7)
+    assert nitrogen.formal_charge == 1
 
 
 def test_from_inchi_covers_all_sanitize_remove_hs_valence_branches() -> None:
@@ -73,11 +73,11 @@ def test_from_inchi_covers_all_sanitize_remove_hs_valence_branches() -> None:
                 inchi, sanitize=sanitize, remove_hs=remove_hs
             )
             assert parsed is not None
-            nitrogen = next(atom for atom in parsed.atoms() if atom.atomic_number() == 7)
-            cached_nitrogen = parsed.atom_metadata(recalculate=False)[nitrogen.id()]
+            nitrogen = next(atom for atom in parsed.atoms if atom.atomic_number == 7)
+            cached_nitrogen = parsed.atom_metadata(recalculate=False)[nitrogen.id]
             expected_valence = 4 if sanitize else 5
-            assert cached_nitrogen.explicit_valence() == expected_valence
-            assert cached_nitrogen.total_valence() == expected_valence
+            assert cached_nitrogen.explicit_valence == expected_valence
+            assert cached_nitrogen.total_valence == expected_valence
 
 
 def test_inchi_python_invalid_key_input_has_canonical_structured_error() -> None:

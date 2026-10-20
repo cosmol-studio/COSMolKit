@@ -12,7 +12,7 @@ let source=ck::Molecule::from_smiles("CO").unwrap().with_added_3d_conformer(vec!
 let before=source.to_binary().unwrap();
 let mol=Py::new(py,Molecule{inner:source.clone()})?;
 let write=ck::MolBlockWriteParams{precision:3,include_coordinates:false,..Default::default()};
-let p=Py::new(py,crate::io_batch_params::MolBlockWriteParams{inner:write})?;
+let p=Py::new(py,crate::io_batch_params::MolBlockWriteParams{inner:crate::parameters::NativeField::Owned(write)})?;
 let kw=PyDict::new(py);kw.set_item("precision",3)?;kw.set_item("include_coordinates",false)?;
 macro_rules! configured{($name:ident,$alias:ident)=>{{
 let expected=source.$alias(&write);
@@ -75,7 +75,7 @@ pub(crate) fn mol_write_keywords(
 ) -> PyResult<crate::io_batch_params::MolBlockWriteParams> {
     let defaults = ck::MolBlockWriteParams::default();
     Ok(crate::io_batch_params::MolBlockWriteParams {
-        inner: ck::MolBlockWriteParams {
+        inner: crate::parameters::NativeField::Owned(ck::MolBlockWriteParams {
             format: format
                 .map(SdfFormatInput::into_rust)
                 .transpose()?
@@ -89,7 +89,7 @@ pub(crate) fn mol_write_keywords(
                 .transpose()?
                 .unwrap_or(defaults.coordinate_selection),
             include_coordinates: include_coordinates.unwrap_or(defaults.include_coordinates),
-        },
+        }),
     })
 }
 pub(crate) fn pdb_write_keywords(
@@ -99,14 +99,14 @@ pub(crate) fn pdb_write_keywords(
 ) -> PyResult<crate::io_batch_params::PdbWriteParams> {
     let defaults = ck::PdbWriteParams::default();
     Ok(crate::io_batch_params::PdbWriteParams {
-        inner: ck::PdbWriteParams {
+        inner: crate::parameters::NativeField::Owned(ck::PdbWriteParams {
             coordinate_selection: coordinate_selection
                 .map(MolCoordinateSelectionInput::into_rust)
                 .transpose()?
                 .unwrap_or(defaults.coordinate_selection),
             all_conformers: all_conformers.unwrap_or(defaults.all_conformers),
             flavor: flavor.unwrap_or(defaults.flavor),
-        },
+        }),
     })
 }
 pub(crate) fn mol2_read_keywords(
@@ -117,7 +117,7 @@ pub(crate) fn mol2_read_keywords(
 ) -> PyResult<crate::io_batch_params::Mol2ReadParams> {
     let defaults = ck::Mol2ReadParams::default();
     Ok(crate::io_batch_params::Mol2ReadParams {
-        inner: ck::Mol2ReadParams {
+        inner: crate::parameters::NativeField::Owned(ck::Mol2ReadParams {
             sanitize: sanitize.unwrap_or(defaults.sanitize),
             remove_hs: remove_hs.unwrap_or(defaults.remove_hs),
             variant: variant
@@ -125,7 +125,7 @@ pub(crate) fn mol2_read_keywords(
                 .transpose()?
                 .unwrap_or(defaults.variant),
             cleanup_substructures: cleanup_substructures.unwrap_or(defaults.cleanup_substructures),
-        },
+        }),
     })
 }
 pub(crate) fn xyz_write_keywords(
@@ -134,10 +134,10 @@ pub(crate) fn xyz_write_keywords(
 ) -> PyResult<crate::params::XyzWriteParams> {
     let defaults = ck::XyzWriteParams::default();
     Ok(crate::params::XyzWriteParams {
-        inner: ck::XyzWriteParams {
+        inner: crate::parameters::NativeField::Owned(ck::XyzWriteParams {
             conformer_id: conformer_id.or(defaults.conformer_id),
             precision: precision.unwrap_or(defaults.precision),
-        },
+        }),
     })
 }
 pub(crate) fn avalon_keywords(
@@ -147,13 +147,13 @@ pub(crate) fn avalon_keywords(
 ) -> PyResult<crate::numerical_params::AvalonFingerprintParams> {
     let defaults = ck::AvalonFingerprintParams::default();
     Ok(crate::numerical_params::AvalonFingerprintParams {
-        inner: ck::AvalonFingerprintParams {
+        inner: crate::parameters::NativeField::Owned(ck::AvalonFingerprintParams {
             n_bits: n_bits.unwrap_or(defaults.n_bits),
             is_query: is_query.unwrap_or(defaults.is_query),
             bit_flags: ck::AvalonFingerprintFlags::from_bits_retain(
                 bit_flags.unwrap_or(defaults.bit_flags.bits()),
             ),
-        },
+        }),
     })
 }
 pub(crate) fn bio_keywords(

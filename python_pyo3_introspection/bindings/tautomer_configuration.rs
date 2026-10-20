@@ -1,6 +1,6 @@
 //! Tautomer configuration forwards native policy and reuses scoped callbacks.
 use crate::callbacks::CallbackErrors;
-use crate::parameters::{ConfigurationField, ContainerOutput};
+use crate::parameters::{FieldOutput, LiveConfigurationField, NativeOwner};
 use crate::tautomer_callbacks::{EnumerationAdapter, EnumerationCallback, Scorer, ScorerAdapter};
 use crate::tautomer_values::TautomerScoreParams;
 use cosmolkit as ck;
@@ -13,6 +13,21 @@ pub struct TautomerParams {
     inner: ck::TautomerParams,
     callback: Option<EnumerationCallback>,
     scorer: Option<Scorer>,
+}
+impl NativeOwner for TautomerParams {
+    type Value = ck::TautomerParams;
+    fn read_native(&self, _py: Python<'_>, visit: &mut dyn FnMut(&Self::Value)) -> PyResult<()> {
+        visit(&self.inner);
+        Ok(())
+    }
+    fn write_native(
+        &mut self,
+        _py: Python<'_>,
+        visit: &mut dyn FnMut(&mut Self::Value),
+    ) -> PyResult<()> {
+        visit(&mut self.inner);
+        Ok(())
+    }
 }
 
 // These methods only forward native policy access. Callback ownership and
@@ -47,6 +62,7 @@ macro_rules! policy_fields {
                         Ok(result)
                     }
                 )+
+                #[getter]
                 fn transform_count(&self) -> usize { self.inner.transform_count() }
                 #[staticmethod]
                 fn v1(py: Python<'_>) -> PyResult<Self> { crate::tautomer_catalog::v1(py) }
@@ -59,11 +75,13 @@ macro_rules! policy_fields {
                     crate::tautomer_catalog::from_transform_file(py, path)
                 }
                 #[getter]
-                fn score_params(&self) -> ContainerOutput<'_, ConfigurationField<TautomerScoreParams>> { ContainerOutput(&self.inner.score_params) }
+                fn score_params(slf: PyRef<'_, Self>) -> FieldOutput<LiveConfigurationField<TautomerScoreParams>, Self> {
+                    FieldOutput::new(slf.into(), |native: &ck::TautomerParams| &native.score_params, |native: &mut ck::TautomerParams| &mut native.score_params)
+                }
                 #[setter]
-                fn set_score_params(&mut self, py: Python<'_>, value: Option<&TautomerScoreParams>) -> PyResult<()> {
-                    let value = value.map(|params| params.to_rust(py)).transpose()?.unwrap_or_default();
-                    self.inner.score_params = value;
+                fn set_score_params(slf: &Bound<'_, Self>, value: Option<&TautomerScoreParams>) -> PyResult<()> {
+                    let value = value.map(|params| params.to_rust(slf.py())).transpose()?.unwrap_or_default();
+                    slf.try_borrow_mut()?.inner.score_params = value;
                     Ok(())
                 }
                 #[getter]

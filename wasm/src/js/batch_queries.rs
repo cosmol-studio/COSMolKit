@@ -125,8 +125,8 @@ fn matrices(values: Vec<Option<Vec<Vec<f64>>>>) -> Array {
 }
 #[wasm_bindgen]
 impl MoleculeBatch {
-    #[wasm_bindgen(js_name=toSmilesList,unchecked_return_type="(string | null)[]")]
-    pub fn to_smiles_list(
+    #[wasm_bindgen(js_name=toSmiles,unchecked_return_type="(string | null)[]")]
+    pub fn to_smiles(
         &self,
         #[wasm_bindgen(
             unchecked_optional_param_type = "SmilesWriteParams | SmilesWriteParamsOptions"
@@ -140,7 +140,7 @@ impl MoleculeBatch {
         if options.is_undefined() && params.is_undefined() {
             return {
                 self.inner
-                    .to_smiles_list()
+                    .to_smiles()
                     .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
                     .and_then(strings)
             };
@@ -149,21 +149,21 @@ impl MoleculeBatch {
             crate::smiles_parameters::SmilesWriteParams::from_js_configuration(&options)?;
         let configuration_1 =
             crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
-        self.to_smiles_list_with_params(&configuration_0, &configuration_1)
+        self.to_smiles_with_params(&configuration_0, &configuration_1)
     }
-    #[wasm_bindgen(js_name=toSmilesListWithParams,unchecked_return_type="(string | null)[]")]
-    pub fn to_smiles_list_with_params(
+    #[wasm_bindgen(js_name=toSmilesWithParams,unchecked_return_type="(string | null)[]")]
+    pub fn to_smiles_with_params(
         &self,
         options: &SmilesWriteParams,
         params: &BatchQueryParams,
     ) -> Result<Array, JsValue> {
         params
-            .execute(|p| self.inner.to_smiles_list_with_params(&options.inner, p))
+            .execute(|p| self.inner.to_smiles_with_params(&options.inner, p))
             .and_then(strings)
     }
     #[cfg(feature = "cap-conformer")]
-    #[wasm_bindgen(js_name=dgBoundsMatrixList,unchecked_return_type="(number[][] | null)[]")]
-    pub fn dg_bounds_matrix_list(
+    #[wasm_bindgen(js_name=dgBoundsMatrix,unchecked_return_type="(number[][] | null)[]")]
+    pub fn dg_bounds_matrix(
         &self,
         #[wasm_bindgen(
             unchecked_optional_param_type = "BatchQueryParams | BatchQueryParamsOptions"
@@ -173,28 +173,28 @@ impl MoleculeBatch {
         if params.is_undefined() {
             return {
                 self.inner
-                    .dg_bounds_matrix_list()
+                    .dg_bounds_matrix()
                     .map(matrices)
                     .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
             };
         }
         let configuration_0 =
             crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
-        self.dg_bounds_matrix_list_with_params(&configuration_0)
+        self.dg_bounds_matrix_with_params(&configuration_0)
     }
     #[cfg(feature = "cap-conformer")]
-    #[wasm_bindgen(js_name=dgBoundsMatrixListWithParams,unchecked_return_type="(number[][] | null)[]")]
-    pub fn dg_bounds_matrix_list_with_params(
+    #[wasm_bindgen(js_name=dgBoundsMatrixWithParams,unchecked_return_type="(number[][] | null)[]")]
+    pub fn dg_bounds_matrix_with_params(
         &self,
         params: &BatchQueryParams,
     ) -> Result<Array, JsValue> {
         params
-            .execute(|p| self.inner.dg_bounds_matrix_list_with_params(p))
+            .execute(|p| self.inner.dg_bounds_matrix_with_params(p))
             .map(matrices)
     }
     #[cfg(feature = "cap-depict")]
-    #[wasm_bindgen(js_name=toSvgList,unchecked_return_type="(string | null)[]")]
-    pub fn to_svg_list(
+    #[wasm_bindgen(js_name=toSvg,unchecked_return_type="(string | null)[]")]
+    pub fn to_svg(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number")] width: JsValue,
         #[wasm_bindgen(unchecked_param_type = "number")] height: JsValue,
@@ -206,7 +206,7 @@ impl MoleculeBatch {
         if params.is_undefined() {
             return {
                 self.inner
-                    .to_svg_list(u32_value(&width, "width")?, u32_value(&height, "height")?)
+                    .to_svg(u32_value(&width, "width")?, u32_value(&height, "height")?)
                     .map(|values| {
                         values
                             .into_iter()
@@ -218,11 +218,11 @@ impl MoleculeBatch {
         }
         let configuration_0 =
             crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
-        self.to_svg_list_with_params(width, height, &configuration_0)
+        self.to_svg_with_params(width, height, &configuration_0)
     }
     #[cfg(feature = "cap-depict")]
-    #[wasm_bindgen(js_name=toSvgListWithParams,unchecked_return_type="(string | null)[]")]
-    pub fn to_svg_list_with_params(
+    #[wasm_bindgen(js_name=toSvgWithParams,unchecked_return_type="(string | null)[]")]
+    pub fn to_svg_with_params(
         &self,
         #[wasm_bindgen(unchecked_param_type = "number")] width: JsValue,
         #[wasm_bindgen(unchecked_param_type = "number")] height: JsValue,
@@ -231,7 +231,7 @@ impl MoleculeBatch {
         let width = u32_value(&width, "width")?;
         let height = u32_value(&height, "height")?;
         params
-            .execute(|p| self.inner.to_svg_list_with_params(width, height, p))
+            .execute(|p| self.inner.to_svg_with_params(width, height, p))
             .map(|values| {
                 values
                     .into_iter()

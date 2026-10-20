@@ -253,6 +253,14 @@ pub(crate) fn implicit_hydrogen_count<A: StereoAtomAccess>(
     atom: &A,
     valence: &ValenceAssignment,
 ) -> Result<u32, ValenceError> {
+    implicit_hydrogen_count_from_cache(atom, Some(valence))
+}
+
+/// Read one atom's cached implicit hydrogen count, without calculation.
+pub fn implicit_hydrogen_count_from_cache<A: StereoAtomAccess>(
+    atom: &A,
+    valence: Option<&ValenceAssignment>,
+) -> Result<u32, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION Atom::getNumImplicitHs
     // RDKit✔️✔️: unsigned int Atom::getNumImplicitHs() const {
     // RDKit✔️✔️:   if (df_noImplicit) {
@@ -295,8 +303,7 @@ pub(crate) fn implicit_hydrogen_count<A: StereoAtomAccess>(
     // observes the signed eight-bit field before its initialization check.
     // One indexed read and cast, with no allocation or repeated graph scan.
     let implicit = valence
-        .implicit_hydrogens
-        .get(atom.id().index())
+        .and_then(|value| value.implicit_hydrogens.get(atom.id().index()))
         .copied()
         .map(|value| i32::from(value as i8))
         .filter(|value| *value >= 0)
@@ -324,6 +331,16 @@ pub fn total_hydrogen_count_from_validated<G: StereoGraphAccess>(
     atom_id: AtomId,
     include_neighbors: bool,
 ) -> Result<u32, ValenceError> {
+    total_hydrogen_count_from_cache(topology, Some(valence), atom_id, include_neighbors)
+}
+
+/// Read a retained topology's hydrogen counts without filling a missing cache.
+pub fn total_hydrogen_count_from_cache<G: StereoGraphAccess>(
+    topology: &G,
+    valence: Option<&ValenceAssignment>,
+    atom_id: AtomId,
+    include_neighbors: bool,
+) -> Result<u32, ValenceError> {
     let atom = topology
         .atoms()
         .get(atom_id.index())
@@ -347,7 +364,7 @@ pub fn total_hydrogen_count_from_validated<G: StereoGraphAccess>(
     // Atom and cache access below enforce the source getter's local
     // preconditions; complete topology auditing belongs to the ops boundary.
     let explicit = explicit_hydrogen_count(atom);
-    let implicit = implicit_hydrogen_count(atom, valence)?;
+    let implicit = implicit_hydrogen_count_from_cache(atom, valence)?;
     let neighbor_hydrogens = if include_neighbors {
         topology
             .adjacency()

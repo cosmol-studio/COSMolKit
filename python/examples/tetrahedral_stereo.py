@@ -18,9 +18,9 @@ mol = ck.mol_from_smiles("[13CH3:7][C@H](F)Cl")
 print("isomeric smiles:", mol.to_smiles())
 print("non-isomeric smiles:", mol.to_smiles(isomeric_smiles=False))
 
-for atom in mol.atoms():
-    if atom.chiral_tag() != ck.ChiralTag.CHI_UNSPECIFIED:
-        print("chiral atom:", atom.id(), atom.chiral_tag().name)
+for atom in mol.atoms:
+    if atom.chiral_tag != ck.ChiralTag.CHI_UNSPECIFIED:
+        print("chiral atom:", atom.id, atom.chiral_tag.name)
 
 print("chiral centers:", mol.find_chiral_centers(include_unassigned=False))
 

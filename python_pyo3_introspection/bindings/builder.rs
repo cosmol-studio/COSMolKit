@@ -111,6 +111,7 @@ impl MoleculeBuilder {
             .add_stereo_group(group.inner.clone())
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    #[getter]
     fn atoms(&self) -> Vec<Atom> {
         self.inner
             .atoms()
@@ -119,6 +120,7 @@ impl MoleculeBuilder {
             .map(|inner| Atom { inner })
             .collect()
     }
+    #[getter]
     fn bonds(&self) -> Vec<Bond> {
         self.inner
             .bonds()
@@ -127,6 +129,7 @@ impl MoleculeBuilder {
             .map(|inner| Bond { inner })
             .collect()
     }
+    #[getter]
     fn substance_groups(&self) -> Vec<SubstanceGroup> {
         self.inner
             .substance_groups()
@@ -135,6 +138,7 @@ impl MoleculeBuilder {
             .map(|inner| SubstanceGroup { inner })
             .collect()
     }
+    #[getter]
     fn stereo_groups(&self) -> Vec<StereoGroup> {
         self.inner
             .stereo_groups()
@@ -143,11 +147,13 @@ impl MoleculeBuilder {
             .map(|inner| StereoGroup { inner })
             .collect()
     }
+    #[getter]
     fn coordinates(&self) -> CoordinateBlock {
         CoordinateBlock {
             inner: self.inner.coordinates().clone(),
         }
     }
+    #[getter]
     fn properties(&self) -> MoleculeProperties {
         MoleculeProperties {
             inner: self.inner.properties().clone(),

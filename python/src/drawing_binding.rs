@@ -1289,13 +1289,13 @@ impl Molecule {
             .map_err(|error| operation_pyerr(py, error))
     }
     /// Compute morgan fixed-width bit fingerprints for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
-    #[pyo3(signature=(generator,*,params=None,output=None))]
+    #[pyo3(signature=(generator,*,params=None,additional_output=None))]
     fn fingerprint_morgan_with_generator(
         &self,
         py: Python<'_>,
         generator: &crate::canonical_fingerprint_values::MorganFingerprintGenerator,
         params: Option<&crate::canonical_fingerprint_values::MorganCallParams>,
-        mut output: Option<
+        mut additional_output: Option<
             PyRefMut<'_, crate::canonical_fingerprint_values::FingerprintAdditionalOutput>,
         >,
     ) -> PyResult<crate::canonical_values::Fingerprint> {
@@ -1303,19 +1303,19 @@ impl Molecule {
             .fingerprint_morgan_with_generator(
                 &generator.inner,
                 params.map(|p| &p.inner),
-                output.as_deref_mut().map(|o| &mut o.inner),
+                additional_output.as_deref_mut().map(|o| &mut o.inner),
             )
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
     /// Compute morgan folded feature counts for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
-    #[pyo3(signature=(generator,*,params=None,output=None))]
+    #[pyo3(signature=(generator,*,params=None,additional_output=None))]
     fn fingerprint_morgan_count_with_generator(
         &self,
         py: Python<'_>,
         generator: &crate::canonical_fingerprint_values::MorganFingerprintGenerator,
         params: Option<&crate::canonical_fingerprint_values::MorganCallParams>,
-        mut output: Option<
+        mut additional_output: Option<
             PyRefMut<'_, crate::canonical_fingerprint_values::FingerprintAdditionalOutput>,
         >,
     ) -> PyResult<crate::canonical_values::SparseCountFingerprint32> {
@@ -1323,19 +1323,19 @@ impl Molecule {
             .fingerprint_morgan_count_with_generator(
                 &generator.inner,
                 params.map(|p| &p.inner),
-                output.as_deref_mut().map(|o| &mut o.inner),
+                additional_output.as_deref_mut().map(|o| &mut o.inner),
             )
             .map(|inner| crate::canonical_values::SparseCountFingerprint32 { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
     /// Compute morgan sparse feature bits for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
-    #[pyo3(signature=(generator,*,params=None,output=None))]
+    #[pyo3(signature=(generator,*,params=None,additional_output=None))]
     fn fingerprint_morgan_sparse_with_generator(
         &self,
         py: Python<'_>,
         generator: &crate::canonical_fingerprint_values::MorganFingerprintGenerator,
         params: Option<&crate::canonical_fingerprint_values::MorganCallParams>,
-        mut output: Option<
+        mut additional_output: Option<
             PyRefMut<'_, crate::canonical_fingerprint_values::FingerprintAdditionalOutput>,
         >,
     ) -> PyResult<crate::canonical_values::SparseBitFingerprint> {
@@ -1343,19 +1343,19 @@ impl Molecule {
             .fingerprint_morgan_sparse_with_generator(
                 &generator.inner,
                 params.map(|p| &p.inner),
-                output.as_deref_mut().map(|o| &mut o.inner),
+                additional_output.as_deref_mut().map(|o| &mut o.inner),
             )
             .map(|inner| crate::canonical_values::SparseBitFingerprint { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
     /// Compute morgan sparse feature counts for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
-    #[pyo3(signature=(generator,*,params=None,output=None))]
+    #[pyo3(signature=(generator,*,params=None,additional_output=None))]
     fn fingerprint_morgan_sparse_count_with_generator(
         &self,
         py: Python<'_>,
         generator: &crate::canonical_fingerprint_values::MorganFingerprintGenerator,
         params: Option<&crate::canonical_fingerprint_values::MorganCallParams>,
-        mut output: Option<
+        mut additional_output: Option<
             PyRefMut<'_, crate::canonical_fingerprint_values::FingerprintAdditionalOutput>,
         >,
     ) -> PyResult<crate::canonical_values::SparseCountFingerprint> {
@@ -1363,82 +1363,82 @@ impl Molecule {
             .fingerprint_morgan_sparse_count_with_generator(
                 &generator.inner,
                 params.map(|p| &p.inner),
-                output.as_deref_mut().map(|o| &mut o.inner),
+                additional_output.as_deref_mut().map(|o| &mut o.inner),
             )
             .map(|inner| crate::canonical_values::SparseCountFingerprint { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
     /// Compute topological torsion fixed-width bit fingerprints for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
-    #[pyo3(signature=(generator,*,params=None,output=None))]
+    #[pyo3(signature=(generator,*,params=None,additional_output=None))]
     fn fingerprint_topological_torsion_with_generator(
         &self,
         py: Python<'_>,
         generator: &TopologicalTorsionFingerprintGenerator,
         params: Option<&TopologicalTorsionCallParams>,
-        mut output: Option<PyRefMut<'_, FingerprintAdditionalOutput>>,
+        mut additional_output: Option<PyRefMut<'_, FingerprintAdditionalOutput>>,
     ) -> PyResult<Fingerprint> {
         self.inner
             .fingerprint_topological_torsion_with_generator(
                 &generator.inner,
                 params.map(|p| &p.inner),
-                output.as_deref_mut().map(|o| &mut o.inner),
+                additional_output.as_deref_mut().map(|o| &mut o.inner),
             )
             .map(|inner| Fingerprint { inner })
             .map_err(|e| topological_torsion_pyerr(py, e))
     }
 
     /// Compute topological torsion sparse feature bits for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
-    #[pyo3(signature=(generator,*,params=None,output=None))]
+    #[pyo3(signature=(generator,*,params=None,additional_output=None))]
     fn fingerprint_topological_torsion_sparse_with_generator(
         &self,
         py: Python<'_>,
         generator: &TopologicalTorsionFingerprintGenerator,
         params: Option<&TopologicalTorsionCallParams>,
-        mut output: Option<PyRefMut<'_, FingerprintAdditionalOutput>>,
+        mut additional_output: Option<PyRefMut<'_, FingerprintAdditionalOutput>>,
     ) -> PyResult<SparseBitFingerprint> {
         self.inner
             .fingerprint_topological_torsion_sparse_with_generator(
                 &generator.inner,
                 params.map(|p| &p.inner),
-                output.as_deref_mut().map(|o| &mut o.inner),
+                additional_output.as_deref_mut().map(|o| &mut o.inner),
             )
             .map(|inner| SparseBitFingerprint { inner })
             .map_err(|e| topological_torsion_pyerr(py, e))
     }
 
     /// Compute topological torsion folded feature counts for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
-    #[pyo3(signature=(generator,*,params=None,output=None))]
+    #[pyo3(signature=(generator,*,params=None,additional_output=None))]
     fn fingerprint_topological_torsion_count_with_generator(
         &self,
         py: Python<'_>,
         generator: &TopologicalTorsionFingerprintGenerator,
         params: Option<&TopologicalTorsionCallParams>,
-        mut output: Option<PyRefMut<'_, FingerprintAdditionalOutput>>,
+        mut additional_output: Option<PyRefMut<'_, FingerprintAdditionalOutput>>,
     ) -> PyResult<SparseCountFingerprint32> {
         self.inner
             .fingerprint_topological_torsion_count_with_generator(
                 &generator.inner,
                 params.map(|p| &p.inner),
-                output.as_deref_mut().map(|o| &mut o.inner),
+                additional_output.as_deref_mut().map(|o| &mut o.inner),
             )
             .map(|inner| SparseCountFingerprint32 { inner })
             .map_err(|e| topological_torsion_pyerr(py, e))
     }
 
     /// Compute topological torsion sparse feature counts for this molecule without changing its graph or coordinates using the supplied generator and per-call options.
-    #[pyo3(signature=(generator,*,params=None,output=None))]
+    #[pyo3(signature=(generator,*,params=None,additional_output=None))]
     fn fingerprint_topological_torsion_sparse_count_with_generator(
         &self,
         py: Python<'_>,
         generator: &TopologicalTorsionFingerprintGenerator,
         params: Option<&TopologicalTorsionCallParams>,
-        mut output: Option<PyRefMut<'_, FingerprintAdditionalOutput>>,
+        mut additional_output: Option<PyRefMut<'_, FingerprintAdditionalOutput>>,
     ) -> PyResult<SparseCountFingerprint> {
         self.inner
             .fingerprint_topological_torsion_sparse_count_with_generator(
                 &generator.inner,
                 params.map(|p| &p.inner),
-                output.as_deref_mut().map(|o| &mut o.inner),
+                additional_output.as_deref_mut().map(|o| &mut o.inner),
             )
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(|e| topological_torsion_pyerr(py, e))
@@ -2017,7 +2017,7 @@ impl Molecule {
             .iter()
             .enumerate()
             .map(|(index, atom)| crate::canonical_atom_bond::Atom {
-                inner: atom.clone(),
+                inner: atom.value().clone(),
                 degree: self.inner.topology().adjacency.neighbors_of(index).len(),
                 metadata: metadata
                     .as_ref()
@@ -2029,7 +2029,7 @@ impl Molecule {
 
     /// Return the read-only Atom at the zero-based graph index, or None if the index is out of range.
     fn atom(&self, atom_id: usize) -> Option<crate::canonical_atom_bond::Atom> {
-        let inner = self.inner.atom(ck::AtomId::new(atom_id))?.clone();
+        let inner = self.inner.atom(ck::AtomId::new(atom_id))?.value().clone();
         let metadata = self.inner.atom_metadata(true);
         Some(crate::canonical_atom_bond::Atom {
             inner,

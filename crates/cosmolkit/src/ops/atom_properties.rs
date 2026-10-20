@@ -15,10 +15,14 @@ impl Molecule {
         atom: AtomId,
         key: &str,
     ) -> Result<Option<&PropertyValue>, OperationError> {
-        let row = self.atom(atom).ok_or(OperationError::AtomPropertyIndex {
-            atom,
-            atom_count: self.num_atoms(),
-        })?;
+        let row =
+            self.topology()
+                .atoms
+                .get(atom.index())
+                .ok_or(OperationError::AtomPropertyIndex {
+                    atom,
+                    atom_count: self.num_atoms(),
+                })?;
         Ok(row.prop(key))
     }
 }

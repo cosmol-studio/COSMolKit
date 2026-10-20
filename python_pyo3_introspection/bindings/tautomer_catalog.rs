@@ -11,16 +11,14 @@ use pyo3::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum TautomerCatalogErrorKind {
+crate::enums::binding_enum!(TautomerCatalogErrorKind, {
     BadInputFile,
     BadStreamContents,
     InvalidUtf8,
     Transform,
     TransformIndexOutOfRange,
     DeserializationUnderConstruction,
-}
+});
 
 #[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct TautomerCatalogError {

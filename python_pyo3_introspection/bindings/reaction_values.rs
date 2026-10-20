@@ -41,10 +41,12 @@ input!(RoleInput, ReactionRole);
 input!(SeverityInput, ReactionValidationSeverity);
 input!(IssueKindInput, ReactionValidationIssueKind);
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct ReactionValidationIssue {
-    pub(crate) inner: ck::ReactionValidationIssue,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct ReactionValidationIssue {
+        pub(crate) inner: ck::ReactionValidationIssue,
+    }
 }
 #[pymethods]
 impl ReactionValidationIssue {
@@ -107,10 +109,12 @@ impl ReactionValidationIssue {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct ReactionValidationReport {
-    pub(crate) inner: ck::ReactionValidationReport,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct ReactionValidationReport {
+        pub(crate) inner: ck::ReactionValidationReport,
+    }
 }
 #[pymethods]
 impl ReactionValidationReport {
@@ -155,10 +159,12 @@ impl ReactionValidationReport {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct ReactionApplyResult {
-    pub(crate) inner: ck::ReactionApplyResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct ReactionApplyResult {
+        pub(crate) inner: ck::ReactionApplyResult,
+    }
 }
 #[pymethods]
 impl ReactionApplyResult {

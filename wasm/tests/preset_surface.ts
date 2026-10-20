@@ -6,7 +6,7 @@ const text: string = molecule.toSdfWithParams(params);
 const record: SdfRecord = SdfRecord.fromSdf(text);
 const restored: Molecule = record.molecule();
 const batch: MoleculeBatch = MoleculeBatch.fromSmilesList(["CCO"]);
-batch.toSmilesList();
+batch.toSmiles();
 
 // Native archives are absent even from the full WASM distribution.
 // @ts-expect-error platform-excluded native serialization

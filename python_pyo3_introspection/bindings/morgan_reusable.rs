@@ -18,14 +18,14 @@ macro_rules! molecule_call {
             py: Python<'_>,
             generator: &MorganFingerprintGenerator,
             params: Option<&crate::params::MorganCallParams>,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<$result> {
             let params = params.map(|value| value.to_rust(py)).transpose()?;
-            let output = output.map(|value| &mut value.inner);
+            let additional_output = additional_output.map(|value| &mut value.inner);
             py.detach(|| {
                 molecule
                     .inner
-                    .$name(&generator.inner, params.as_ref(), output)
+                    .$name(&generator.inner, params.as_ref(), additional_output)
             })
             .map(|inner| $result { inner })
             .map_err(MorganReadError::from_rust)
@@ -82,11 +82,14 @@ impl MorganFingerprintGenerator {
         atom_invariants: Option<&MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&MorganBondInvariantsGenerator>,
     ) -> PyResult<Self> {
+        let bond_invariants =
+            pyo3::Python::attach(|py| bond_invariants.map(|value| value.to_rust(py)).transpose())?;
+
         let params = params.map(|value| value.to_rust(py)).transpose()?;
         ck::MorganFingerprintGenerator::new(
             params.as_ref(),
             atom_invariants.map(|value| &value.inner),
-            bond_invariants.map(|value| &value.inner),
+            bond_invariants.as_ref(),
         )
         .map(|inner| Self { inner })
         .map_err(MorganReadError::from_rust)
@@ -107,6 +110,7 @@ impl MorganFingerprintGenerator {
             .map(|inner| Self { inner })
             .map_err(MorganReadError::from_rust)
     }
+    #[getter]
     fn settings(&self) -> MorganSettings {
         MorganSettings {
             inner: self.inner.settings(),
@@ -127,7 +131,7 @@ impl MorganFingerprintGenerator {
         py: Python<'_>,
         molecules: Vec<Option<Py<Molecule>>>,
         num_threads: i32,
-    ) -> PyResult<Vec<Option<Fingerprint>>> {
+    ) -> PyResult<crate::sequence::Output<ck::FingerprintBatch>> {
         let guards = molecules
             .iter()
             .map(|value| value.as_ref().map(|value| value.try_borrow(py)).transpose())
@@ -137,12 +141,7 @@ impl MorganFingerprintGenerator {
             .map(|value| value.as_ref().map(|value| &value.inner))
             .collect::<Vec<_>>();
         py.detach(|| self.inner.fingerprints(&inputs, num_threads))
-            .map(|values| {
-                values
-                    .into_iter()
-                    .map(|value| value.map(|inner| Fingerprint { inner }))
-                    .collect()
-            })
+            .map(crate::sequence::Output)
             .map_err(MorganReadError::from_rust)
     }
     #[pyo3(signature = (molecules, num_threads=1))]
@@ -240,6 +239,7 @@ macro_rules! live_settings {
                 fn [<set_ $field>](&mut self, value: $ty) -> PyResult<()> {
                     self.inner.[<set_ $field>](value).map_err(MorganReadError::from_rust)
                 })+
+                #[getter]
                 fn params(&self, py: Python<'_>) -> PyResult<MorganGeneratorParams> {
                     let value = self.inner.params().map_err(MorganReadError::from_rust)?;
                     MorganGeneratorParams::from_rust(py, value)

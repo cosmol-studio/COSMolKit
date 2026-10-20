@@ -2,15 +2,63 @@
 
 use cosmolkit_macros::binding_contract;
 
-/// Python-only, Rust-backed collection projections of canonical Rust results.
-/// Rust and JavaScript retain their existing collection representations.
-pub static BINDING_CONTRACT_PYTHON_COLLECTIONS: &[(&str, &str)] = &[
-    #[cfg(feature = "cap-fingerprints")]
-    ("FingerprintBatch", "Vec<Option<crate::Fingerprint>>"),
-];
+/// Additional language-only collections (native collections use canonical records).
+pub static BINDING_CONTRACT_PYTHON_COLLECTIONS: &[(&str, &str)] = &[];
 
 binding_contract! {
     pub static BINDING_CONTRACT = [
+        {semantic_id:"types.MoleculeAtom",item:type,owner:type_,rust:crate::MoleculeAtom,
+            python:"MoleculeAtom",javascript:"MoleculeAtom",feature:"runtime",status:native,role:result,},
+        {semantic_id:"MoleculeAtom.template_attachment_order",item:callable,owner:type_,rust:crate::MoleculeAtom::template_attachment_order,
+            python:"template_attachment_order", python_property: getter,javascript:"templateAttachmentOrder",feature:"runtime",status:native,kind:instance,
+            parameters:[],output:Option<&crate::TemplateAttachmentOrder>,error:none,state:read_only,operation:none,
+            signature:for<'a> fn(&'a crate::MoleculeAtom)->Option<&'a crate::TemplateAttachmentOrder>,},
+        {semantic_id:"MoleculeAtom.value",item:callable,owner:type_,rust:crate::MoleculeAtom::value,
+            python:"value",javascript:"value",feature:"runtime",status:native,kind:instance,
+            parameters:[],output:&crate::Atom,error:none,state:read_only,operation:none,
+            signature:fn(&crate::MoleculeAtom)->&crate::Atom,},
+        {semantic_id:"MoleculeAtom.degree",item:callable,owner:type_,rust:crate::MoleculeAtom::degree,
+            python:"degree", python_property: getter,javascript:"degree",feature:"runtime",status:native,kind:instance,
+            parameters:[],output:usize,error:none,state:read_only,operation:none,
+            signature:fn(&crate::MoleculeAtom)->usize,},
+        #[cfg(feature = "cap-valence")]
+        {semantic_id:"MoleculeAtom.explicit_valence",item:callable,owner:type_,rust:crate::MoleculeAtom::explicit_valence,
+            python:"explicit_valence", python_property: getter,javascript:"explicitValence",feature:"cap-valence",status:native,kind:instance,
+            parameters:[],output:i32,error:crate::ValenceError,state:read_only,operation:none,
+            signature:fn(&crate::MoleculeAtom)->Result<i32,crate::ValenceError>,},
+        #[cfg(feature = "cap-valence")]
+        {semantic_id:"MoleculeAtom.implicit_hydrogens",item:callable,owner:type_,rust:crate::MoleculeAtom::implicit_hydrogens,
+            python:"implicit_hydrogens", python_property: getter,javascript:"implicitHydrogens",feature:"cap-valence",status:native,kind:instance,
+            parameters:[],output:i32,error:crate::ValenceError,state:read_only,operation:none,
+            signature:fn(&crate::MoleculeAtom)->Result<i32,crate::ValenceError>,},
+        #[cfg(feature = "cap-valence")]
+        {semantic_id:"MoleculeAtom.total_hydrogens",item:callable,owner:type_,rust:crate::MoleculeAtom::total_hydrogens,
+            python:"total_hydrogens", python_property: getter,javascript:"totalHydrogens",feature:"cap-valence",status:native,kind:instance,
+            parameters:[],output:i32,error:crate::ValenceError,state:read_only,operation:none,
+            signature:fn(&crate::MoleculeAtom)->Result<i32,crate::ValenceError>,},
+        #[cfg(feature = "cap-valence")]
+        {semantic_id:"MoleculeAtom.total_valence",item:callable,owner:type_,rust:crate::MoleculeAtom::total_valence,
+            python:"total_valence", python_property: getter,javascript:"totalValence",feature:"cap-valence",status:native,kind:instance,
+            parameters:[],output:i32,error:crate::ValenceError,state:read_only,operation:none,
+            signature:fn(&crate::MoleculeAtom)->Result<i32,crate::ValenceError>,},
+        #[cfg(feature = "cap-batch")]
+        {semantic_id:"MoleculeBatch.select",item:callable,owner:type_,rust:crate::MoleculeBatch::select,python:"select",javascript:"select",feature:"cap-batch",status:experimental,kind:instance,receiver:shared,
+            parameters:[{name:indices,type:&[usize],default:required}],output:Option<crate::MoleculeBatch>,error:none,state:value_returning,operation:none,
+            signature:fn(&crate::MoleculeBatch,&[usize])->Option<crate::MoleculeBatch>,},
+        #[cfg(feature = "cap-fingerprints")]
+        {semantic_id:"types.FingerprintBatchError",item:type,owner:type_,rust:crate::FingerprintBatchError,
+            python:"FingerprintBatchError",javascript:"FingerprintBatchError",feature:"cap-fingerprints",status:experimental,role:error,},
+        #[cfg(feature = "cap-fingerprints")]
+        {semantic_id:"types.FingerprintBatch", item:type, owner:type_, rust:crate::FingerprintBatch,
+            python:"FingerprintBatch", javascript:"FingerprintBatch", feature:"cap-fingerprints", status:experimental, role:result,
+            python_adapters: [{name:to_numpy, targets:["Fingerprint.n_bits", "Fingerprint.on_bits"]}],},
+        #[cfg(feature = "cap-fingerprints")]
+        {semantic_id:"FingerprintBatch.new",item:callable,owner:type_,rust:crate::FingerprintBatch::new,python:"__new__",javascript:"new",feature:"cap-fingerprints",status:experimental,kind:constructor,
+            parameters:[{name:values,type:Vec<Option<crate::Fingerprint>>,default:required}],output:crate::FingerprintBatch,error:none,state:value_returning,operation:none,
+            signature:fn(Vec<Option<crate::Fingerprint>>)->crate::FingerprintBatch,},
+        #[cfg(feature = "cap-fingerprints")]
+        {semantic_id:"FingerprintBatch.len",item:callable,owner:type_,rust:crate::FingerprintBatch::len,python:"len", python_property:getter,javascript:"len",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,
+            parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::FingerprintBatch)->usize,},
         {
             semantic_id: "types.Element", item: type, owner: type_,
             rust: crate::Element, python: "Element", javascript: "Element",
@@ -36,7 +84,7 @@ binding_contract! {
         },
         {
             semantic_id: "Element.atomic_number", item: callable, owner: type_,
-            rust: crate::Element::atomic_number, python: "atomic_number", javascript: "atomicNumber",
+            rust: crate::Element::atomic_number, python: "atomic_number", python_property: getter, javascript: "atomicNumber",
             feature: "metadata", status: experimental, kind: instance, receiver: owned,
             parameters: [], output: u8, error: none,
             state: value_returning, operation: none,
@@ -44,7 +92,7 @@ binding_contract! {
         },
         {
             semantic_id: "Element.symbol", item: callable, owner: type_,
-            rust: crate::Element::symbol, python: "symbol", javascript: "symbol",
+            rust: crate::Element::symbol, python: "symbol", python_property: getter, javascript: "symbol",
             feature: "metadata", status: experimental, kind: instance, receiver: owned,
             parameters: [], output: &'static str, error: none,
             state: value_returning, operation: none,
@@ -69,6 +117,14 @@ binding_contract! {
             semantic_id: "types.QueryGraph", item: type, owner: type_,
             rust: crate::QueryGraph, python: "QueryGraph", javascript: "QueryGraph",
             feature: "metadata", status: experimental, role: value,
+        },
+        {
+            semantic_id: "QueryGraph.name", item: callable, owner: type_,
+            rust: crate::QueryGraph::name, python: "name", python_property: getter, javascript: "name",
+            feature: "metadata", status: experimental, kind: instance,
+            parameters: [], output: Option<&'a crate::PropertyText>, error: crate::PropertyValueError,
+            state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::QueryGraph) -> Result<Option<&'a crate::PropertyText>, crate::PropertyValueError>,
         },
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"errors.TopologicalTorsionPathScoreError",item:type,owner:type_,rust:crate::TopologicalTorsionPathScoreError,python:"TopologicalTorsionPathScoreError",javascript:"TopologicalTorsionPathScoreError",feature:"cap-fingerprints",status:experimental,role:error,},
@@ -176,27 +232,27 @@ binding_contract! {
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganFingerprintGenerator.from_json",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::from_json,python:"from_json",javascript:"fromJson",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:json,type:&'a str,default:required}],output:crate::MorganFingerprintGenerator,error:crate::MorganReadError,state:value_returning,operation:none,signature:for<'a> fn(&'a str)->Result<crate::MorganFingerprintGenerator,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganFingerprintGenerator.settings",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::settings,python:"settings",javascript:"settings",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:crate::MorganSettings,error:none,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator)->crate::MorganSettings,},
+        {semantic_id:"MorganFingerprintGenerator.settings",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::settings,python:"settings", python_property: getter,javascript:"settings",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:crate::MorganSettings,error:none,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator)->crate::MorganSettings,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganFingerprintGenerator.info_string",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::info_string,python:"info_string",javascript:"infoString",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:String,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator)->Result<String,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganFingerprintGenerator.to_json",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::to_json,python:"to_json",javascript:"toJson",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:cosmolkit_model::PropertyText,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator)->Result<cosmolkit_model::PropertyText,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganFingerprintGenerator.fingerprints",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::fingerprints,python:"fingerprints",javascript:"fingerprints",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:"1"}],output:Vec<Option<crate::Fingerprint>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::Fingerprint>>,crate::MorganReadError>,},
+        {semantic_id:"MorganFingerprintGenerator.fingerprints",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::fingerprints,python:"fingerprints",javascript:"fingerprints",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:"1"}],output:crate::FingerprintBatch,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<crate::FingerprintBatch,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"Molecule.fingerprint_morgan_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_with_generator,python:"fingerprint_morgan_with_generator",javascript:"fingerprintMorganWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::Fingerprint,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::Fingerprint,crate::MorganReadError>,},
+        {semantic_id:"Molecule.fingerprint_morgan_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_with_generator,python:"fingerprint_morgan_with_generator",javascript:"fingerprintMorganWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:additional_output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::Fingerprint,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::Fingerprint,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganFingerprintGenerator.counts",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::counts,python:"counts",javascript:"counts",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:"1"}],output:Vec<Option<crate::SparseCountFingerprint32>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::SparseCountFingerprint32>>,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"Molecule.fingerprint_morgan_count_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_count_with_generator,python:"fingerprint_morgan_count_with_generator",javascript:"fingerprintMorganCountWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::SparseCountFingerprint32,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseCountFingerprint32,crate::MorganReadError>,},
+        {semantic_id:"Molecule.fingerprint_morgan_count_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_count_with_generator,python:"fingerprint_morgan_count_with_generator",javascript:"fingerprintMorganCountWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:additional_output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::SparseCountFingerprint32,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseCountFingerprint32,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganFingerprintGenerator.sparse_fingerprints",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::sparse_fingerprints,python:"sparse_fingerprints",javascript:"sparseFingerprints",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:"1"}],output:Vec<Option<crate::SparseBitFingerprint>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::SparseBitFingerprint>>,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"Molecule.fingerprint_morgan_sparse_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_sparse_with_generator,python:"fingerprint_morgan_sparse_with_generator",javascript:"fingerprintMorganSparseWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::SparseBitFingerprint,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseBitFingerprint,crate::MorganReadError>,},
+        {semantic_id:"Molecule.fingerprint_morgan_sparse_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_sparse_with_generator,python:"fingerprint_morgan_sparse_with_generator",javascript:"fingerprintMorganSparseWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:additional_output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::SparseBitFingerprint,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseBitFingerprint,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganFingerprintGenerator.sparse_counts",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::sparse_counts,python:"sparse_counts",javascript:"sparseCounts",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:"1"}],output:Vec<Option<crate::SparseCountFingerprint>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::SparseCountFingerprint>>,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"Molecule.fingerprint_morgan_sparse_count_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_sparse_count_with_generator,python:"fingerprint_morgan_sparse_count_with_generator",javascript:"fingerprintMorganSparseCountWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::SparseCountFingerprint,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseCountFingerprint,crate::MorganReadError>,},
+        {semantic_id:"Molecule.fingerprint_morgan_sparse_count_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_sparse_count_with_generator,python:"fingerprint_morgan_sparse_count_with_generator",javascript:"fingerprintMorganSparseCountWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:additional_output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::SparseCountFingerprint,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseCountFingerprint,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganSettings.radius",item:callable,owner:type_,rust:crate::MorganSettings::radius,python:"radius", python_property:getter,javascript:"radius",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:u32,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganSettings)->Result<u32,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
@@ -230,7 +286,7 @@ binding_contract! {
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganSettings.set_count_bounds",item:callable,owner:type_,rust:crate::MorganSettings::set_count_bounds,python:"set_count_bounds",javascript:"setCountBounds",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:mutable,parameters:[{name:value,type:Vec<u32>,default:required}],output:(),error:crate::MorganReadError,state:in_place,operation:none,signature:for<'a,'b,'c,'d> fn(&'a mut crate::MorganSettings,Vec<u32>)->Result<(),crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganSettings.params",item:callable,owner:type_,rust:crate::MorganSettings::params,python:"params",javascript:"params",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:crate::MorganGeneratorParams,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganSettings)->Result<crate::MorganGeneratorParams,crate::MorganReadError>,},
+        {semantic_id:"MorganSettings.params",item:callable,owner:type_,rust:crate::MorganSettings::params,python:"params", python_property: getter,javascript:"params",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:crate::MorganGeneratorParams,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganSettings)->Result<crate::MorganGeneratorParams,crate::MorganReadError>,},
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "types.FingerprintPreparationError", item: type, owner: type_,
@@ -252,30 +308,30 @@ binding_contract! {
 #[cfg(feature="cap-forcefields")]
 {semantic_id:"Molecule.uff_energy_gradient_with_params",item:callable,owner:molecule,rust:crate::Molecule::uff_energy_gradient_with_params,python:"uff_energy_gradient_with_params",javascript:"uffEnergyGradientWithParams",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[{name:params,type:&crate::UffEvaluationParams,default:required}],output:crate::UffEnergyGradient,error:crate::OperationError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::UffEvaluationParams)->Result<crate::UffEnergyGradient,crate::OperationError>,},
 #[cfg(feature="cap-forcefields")]
-{semantic_id:"UffEnergyGradient.energy",item:callable,owner:type_,rust:crate::UffEnergyGradient::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::UffEnergyGradient)->f64,},
+{semantic_id:"UffEnergyGradient.energy",item:callable,owner:type_,rust:crate::UffEnergyGradient::energy,python:"energy", python_property: getter,javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::UffEnergyGradient)->f64,},
 #[cfg(feature="cap-forcefields")]
-{semantic_id:"UffEnergyGradient.gradient",item:callable,owner:type_,rust:crate::UffEnergyGradient::gradient,python:"gradient",javascript:"gradient",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [f64],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffEnergyGradient)->&'a [f64],},
+{semantic_id:"UffEnergyGradient.gradient",item:callable,owner:type_,rust:crate::UffEnergyGradient::gradient,python:"gradient", python_property: getter,javascript:"gradient",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [f64],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffEnergyGradient)->&'a [f64],},
 
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffOptimizationResult.molecule",item:callable,owner:type_,rust:crate::UffOptimizationResult::molecule,python:"molecule",javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffOptimizationResult)->&'a crate::Molecule,},
+        {semantic_id:"UffOptimizationResult.molecule",item:callable,owner:type_,rust:crate::UffOptimizationResult::molecule,python:"molecule", python_property: getter,javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffOptimizationResult)->&'a crate::Molecule,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffOptimizationResult.status_code",item:callable,owner:type_,rust:crate::UffOptimizationResult::status_code,python:"status_code",javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(& crate::UffOptimizationResult)->i32,},
+        {semantic_id:"UffOptimizationResult.status_code",item:callable,owner:type_,rust:crate::UffOptimizationResult::status_code,python:"status_code", python_property: getter,javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(& crate::UffOptimizationResult)->i32,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffOptimizationResult.needs_more",item:callable,owner:type_,rust:crate::UffOptimizationResult::needs_more,python:"needs_more",javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(& crate::UffOptimizationResult)->bool,},
+        {semantic_id:"UffOptimizationResult.needs_more",item:callable,owner:type_,rust:crate::UffOptimizationResult::needs_more,python:"needs_more", python_property: getter,javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(& crate::UffOptimizationResult)->bool,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffOptimizationResult.energy",item:callable,owner:type_,rust:crate::UffOptimizationResult::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(& crate::UffOptimizationResult)->f64,},
+        {semantic_id:"UffOptimizationResult.energy",item:callable,owner:type_,rust:crate::UffOptimizationResult::energy,python:"energy", python_property: getter,javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(& crate::UffOptimizationResult)->f64,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffConformerResult.conformer_id",item:callable,owner:type_,rust:crate::UffConformerResult::conformer_id,python:"conformer_id",javascript:"conformerId",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(& crate::UffConformerResult)->usize,},
+        {semantic_id:"UffConformerResult.conformer_id",item:callable,owner:type_,rust:crate::UffConformerResult::conformer_id,python:"conformer_id", python_property: getter,javascript:"conformerId",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(& crate::UffConformerResult)->usize,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffConformerResult.status_code",item:callable,owner:type_,rust:crate::UffConformerResult::status_code,python:"status_code",javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(& crate::UffConformerResult)->i32,},
+        {semantic_id:"UffConformerResult.status_code",item:callable,owner:type_,rust:crate::UffConformerResult::status_code,python:"status_code", python_property: getter,javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(& crate::UffConformerResult)->i32,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffConformerResult.needs_more",item:callable,owner:type_,rust:crate::UffConformerResult::needs_more,python:"needs_more",javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(& crate::UffConformerResult)->bool,},
+        {semantic_id:"UffConformerResult.needs_more",item:callable,owner:type_,rust:crate::UffConformerResult::needs_more,python:"needs_more", python_property: getter,javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(& crate::UffConformerResult)->bool,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffConformerResult.energy",item:callable,owner:type_,rust:crate::UffConformerResult::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(& crate::UffConformerResult)->f64,},
+        {semantic_id:"UffConformerResult.energy",item:callable,owner:type_,rust:crate::UffConformerResult::energy,python:"energy", python_property: getter,javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(& crate::UffConformerResult)->f64,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffConformerOptimizationResult.molecule",item:callable,owner:type_,rust:crate::UffConformerOptimizationResult::molecule,python:"molecule",javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffConformerOptimizationResult)->&'a crate::Molecule,},
+        {semantic_id:"UffConformerOptimizationResult.molecule",item:callable,owner:type_,rust:crate::UffConformerOptimizationResult::molecule,python:"molecule", python_property: getter,javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffConformerOptimizationResult)->&'a crate::Molecule,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"UffConformerOptimizationResult.conformer_results",item:callable,owner:type_,rust:crate::UffConformerOptimizationResult::conformer_results,python:"conformer_results",javascript:"conformerResults",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [crate::UffConformerResult],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffConformerOptimizationResult)->&'a [crate::UffConformerResult],},
+        {semantic_id:"UffConformerOptimizationResult.conformer_results",item:callable,owner:type_,rust:crate::UffConformerOptimizationResult::conformer_results,python:"conformer_results", python_property: getter,javascript:"conformerResults",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [crate::UffConformerResult],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffConformerOptimizationResult)->&'a [crate::UffConformerResult],},
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "types.AtomPairAtomCodeResult", item: type, owner: type_,
@@ -299,11 +355,11 @@ binding_contract! {
         },
 
 #[cfg(feature="cap-forcefields")]
-{semantic_id:"MmffAtomProperties.atom_type",item:callable,owner:type_,rust:crate::MmffAtomProperties::atom_type,python:"atom_type",javascript:"atomType",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->u8,},
+{semantic_id:"MmffAtomProperties.atom_type",item:callable,owner:type_,rust:crate::MmffAtomProperties::atom_type,python:"atom_type", python_property: getter,javascript:"atomType",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->u8,},
 #[cfg(feature="cap-forcefields")]
-{semantic_id:"MmffAtomProperties.formal_charge",item:callable,owner:type_,rust:crate::MmffAtomProperties::formal_charge,python:"formal_charge",javascript:"formalCharge",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->f64,},
+{semantic_id:"MmffAtomProperties.formal_charge",item:callable,owner:type_,rust:crate::MmffAtomProperties::formal_charge,python:"formal_charge", python_property: getter,javascript:"formalCharge",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->f64,},
 #[cfg(feature="cap-forcefields")]
-{semantic_id:"MmffAtomProperties.partial_charge",item:callable,owner:type_,rust:crate::MmffAtomProperties::partial_charge,python:"partial_charge",javascript:"partialCharge",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->f64,},
+{semantic_id:"MmffAtomProperties.partial_charge",item:callable,owner:type_,rust:crate::MmffAtomProperties::partial_charge,python:"partial_charge", python_property: getter,javascript:"partialCharge",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->f64,},
 
 #[cfg(feature="cap-forcefields")]
 {semantic_id:"types.MmffEvaluationParams",item:type,owner:type_,rust:crate::MmffEvaluationParams,python:"MmffEvaluationParams",javascript:"MmffEvaluationParams",feature:"cap-forcefields",status:experimental,
@@ -320,32 +376,32 @@ binding_contract! {
 #[cfg(feature="cap-forcefields")]
 {semantic_id:"Molecule.mmff_energy_gradient_with_params",item:callable,owner:molecule,rust:crate::Molecule::mmff_energy_gradient_with_params,python:"mmff_energy_gradient_with_params",javascript:"mmffEnergyGradientWithParams",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[{name:params,type:&crate::MmffEvaluationParams,default:required}],output:Option<crate::MmffEnergyGradient>,error:crate::OperationError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::MmffEvaluationParams)->Result<Option<crate::MmffEnergyGradient>,crate::OperationError>,},
 #[cfg(feature="cap-forcefields")]
-{semantic_id:"MmffEnergyGradient.energy",item:callable,owner:type_,rust:crate::MmffEnergyGradient::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffEnergyGradient)->f64,},
+{semantic_id:"MmffEnergyGradient.energy",item:callable,owner:type_,rust:crate::MmffEnergyGradient::energy,python:"energy", python_property: getter,javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffEnergyGradient)->f64,},
 #[cfg(feature="cap-forcefields")]
-{semantic_id:"MmffEnergyGradient.gradient",item:callable,owner:type_,rust:crate::MmffEnergyGradient::gradient,python:"gradient",javascript:"gradient",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [f64],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffEnergyGradient)->&'a [f64],},
+{semantic_id:"MmffEnergyGradient.gradient",item:callable,owner:type_,rust:crate::MmffEnergyGradient::gradient,python:"gradient", python_property: getter,javascript:"gradient",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [f64],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffEnergyGradient)->&'a [f64],},
 
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffOptimizeMoleculeResult.molecule",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeResult::molecule,python:"molecule",javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffOptimizeMoleculeResult)->&'a crate::Molecule,},
+        {semantic_id:"MmffOptimizeMoleculeResult.molecule",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeResult::molecule,python:"molecule", python_property: getter,javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffOptimizeMoleculeResult)->&'a crate::Molecule,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffOptimizeMoleculeResult.needs_more",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeResult::needs_more,python:"needs_more",javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeResult)->bool,},
+        {semantic_id:"MmffOptimizeMoleculeResult.needs_more",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeResult::needs_more,python:"needs_more", python_property: getter,javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeResult)->bool,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffOptimizeMoleculeResult.status_code",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeResult::status_code,python:"status_code",javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeResult)->i32,},
+        {semantic_id:"MmffOptimizeMoleculeResult.status_code",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeResult::status_code,python:"status_code", python_property: getter,javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeResult)->i32,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffOptimizeMoleculeConfsResult.molecule",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfsResult::molecule,python:"molecule",javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffOptimizeMoleculeConfsResult)->&'a crate::Molecule,},
+        {semantic_id:"MmffOptimizeMoleculeConfsResult.molecule",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfsResult::molecule,python:"molecule", python_property: getter,javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffOptimizeMoleculeConfsResult)->&'a crate::Molecule,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffOptimizeMoleculeConfsResult.conformer_results",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfsResult::conformer_results,python:"conformer_results",javascript:"conformerResults",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [crate::MmffOptimizeMoleculeConfResult],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffOptimizeMoleculeConfsResult)->&'a [crate::MmffOptimizeMoleculeConfResult],},
+        {semantic_id:"MmffOptimizeMoleculeConfsResult.conformer_results",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfsResult::conformer_results,python:"conformer_results", python_property: getter,javascript:"conformerResults",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [crate::MmffOptimizeMoleculeConfResult],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffOptimizeMoleculeConfsResult)->&'a [crate::MmffOptimizeMoleculeConfResult],},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffOptimizeMoleculeConfResult.needs_more",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfResult::needs_more,python:"needs_more",javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeConfResult)->bool,},
+        {semantic_id:"MmffOptimizeMoleculeConfResult.needs_more",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfResult::needs_more,python:"needs_more", python_property: getter,javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeConfResult)->bool,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffOptimizeMoleculeConfResult.status_code",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfResult::status_code,python:"status_code",javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeConfResult)->i32,},
+        {semantic_id:"MmffOptimizeMoleculeConfResult.status_code",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfResult::status_code,python:"status_code", python_property: getter,javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeConfResult)->i32,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffOptimizeMoleculeConfResult.energy",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfResult::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeConfResult)->f64,},
+        {semantic_id:"MmffOptimizeMoleculeConfResult.energy",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfResult::energy,python:"energy", python_property: getter,javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeConfResult)->f64,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffProperties.is_valid",item:callable,owner:type_,rust:crate::MmffProperties::is_valid,python:"is_valid",javascript:"isValid",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MmffProperties)->bool,},
+        {semantic_id:"MmffProperties.is_valid",item:callable,owner:type_,rust:crate::MmffProperties::is_valid,python:"is_valid", python_property: getter,javascript:"isValid",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MmffProperties)->bool,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffProperties.variant",item:callable,owner:type_,rust:crate::MmffProperties::variant,python:"variant",javascript:"variant",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:crate::MmffVariant,error:none,state:read_only,operation:none,signature:fn(&crate::MmffProperties)->crate::MmffVariant,},
+        {semantic_id:"MmffProperties.variant",item:callable,owner:type_,rust:crate::MmffProperties::variant,python:"variant", python_property: getter,javascript:"variant",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:crate::MmffVariant,error:none,state:read_only,operation:none,signature:fn(&crate::MmffProperties)->crate::MmffVariant,},
         #[cfg(feature="cap-forcefields")]
-        {semantic_id:"MmffProperties.atoms",item:callable,owner:type_,rust:crate::MmffProperties::atoms,python:"atoms",javascript:"atoms",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [crate::MmffAtomProperties],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffProperties)->&'a [crate::MmffAtomProperties],},
+        {semantic_id:"MmffProperties.atoms",item:callable,owner:type_,rust:crate::MmffProperties::atoms,python:"atoms", python_property: getter,javascript:"atoms",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [crate::MmffAtomProperties],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffProperties)->&'a [crate::MmffAtomProperties],},
         #[cfg(feature="cap-forcefields")]
         {semantic_id:"MmffProperties.atom_type",item:callable,owner:type_,rust:crate::MmffProperties::atom_type,python:"atom_type",javascript:"atomType",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[{ name: atom_index, type: usize, default: required }],output:u8,error:crate::MmffMolPropertiesError,state:read_only,operation:none,signature:fn(&crate::MmffProperties,usize)->Result<u8,crate::MmffMolPropertiesError>,},
         #[cfg(feature="cap-forcefields")]
@@ -477,7 +533,7 @@ binding_contract! {
           parameters:[{name:path,type:&'a str,default:required}], output:crate::TautomerParams, error:crate::TautomerCatalogError, state:value_returning, operation:none,
           signature:for<'a> fn(&'a str) -> Result<crate::TautomerParams,crate::TautomerCatalogError>, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerParams.transform_count", item:callable, owner:type_, rust:crate::TautomerParams::transform_count, python:"transform_count", javascript:"transformCount", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerParams.transform_count", item:callable, owner:type_, rust:crate::TautomerParams::transform_count, python:"transform_count", python_property: getter, javascript:"transformCount", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:usize, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerParams) -> usize, },
         #[cfg(feature="cap-tautomer")]
@@ -497,27 +553,27 @@ binding_contract! {
           parameters:[{name:scorer,type:Option<std::sync::Arc<dyn crate::TautomerScorer>>,default:required}], output:(), error:none, state:in_place, operation:none,
           signature:for<'a> fn(&'a mut crate::TautomerParams, Option<std::sync::Arc<dyn crate::TautomerScorer>>) -> (), },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerEnumeration.len", item:callable, owner:type_, rust:crate::TautomerEnumeration::len, python:"len", javascript:"len", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerEnumeration.len", item:callable, owner:type_, rust:crate::TautomerEnumeration::len, python:"len", python_property:getter, javascript:"len", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:usize, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerEnumeration) -> usize, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerEnumeration.is_empty", item:callable, owner:type_, rust:crate::TautomerEnumeration::is_empty, python:"is_empty", javascript:"isEmpty", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerEnumeration.is_empty", item:callable, owner:type_, rust:crate::TautomerEnumeration::is_empty, python:"is_empty", python_property: getter, javascript:"isEmpty", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:bool, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerEnumeration) -> bool, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerEnumeration.status", item:callable, owner:type_, rust:crate::TautomerEnumeration::status, python:"status", javascript:"status", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerEnumeration.status", item:callable, owner:type_, rust:crate::TautomerEnumeration::status, python:"status", python_property: getter, javascript:"status", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:crate::TautomerEnumerationStatus, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerEnumeration) -> crate::TautomerEnumerationStatus, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerEnumeration.modified_atoms", item:callable, owner:type_, rust:crate::TautomerEnumeration::modified_atoms, python:"modified_atoms", javascript:"modifiedAtoms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerEnumeration.modified_atoms", item:callable, owner:type_, rust:crate::TautomerEnumeration::modified_atoms, python:"modified_atoms", python_property: getter, javascript:"modifiedAtoms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:&'a std::collections::BTreeSet<crate::AtomId>, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerEnumeration) -> &'a std::collections::BTreeSet<crate::AtomId>, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerEnumeration.modified_bonds", item:callable, owner:type_, rust:crate::TautomerEnumeration::modified_bonds, python:"modified_bonds", javascript:"modifiedBonds", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerEnumeration.modified_bonds", item:callable, owner:type_, rust:crate::TautomerEnumeration::modified_bonds, python:"modified_bonds", python_property: getter, javascript:"modifiedBonds", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:&'a std::collections::BTreeSet<crate::BondId>, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerEnumeration) -> &'a std::collections::BTreeSet<crate::BondId>, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerEnumeration.canonical_smiles", item:callable, owner:type_, rust:crate::TautomerEnumeration::canonical_smiles, python:"canonical_smiles", javascript:"canonicalSmiles", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerEnumeration.canonical_smiles", item:callable, owner:type_, rust:crate::TautomerEnumeration::canonical_smiles, python:"canonical_smiles", python_property:getter, javascript:"canonicalSmiles", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:Vec<&'a cosmolkit_model::PropertyText>, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerEnumeration) -> Vec<&'a cosmolkit_model::PropertyText>, },
         #[cfg(feature="cap-tautomer")]
@@ -549,11 +605,11 @@ binding_contract! {
           parameters:[], output:crate::TautomerMoleculeView<'static>, error:none, state:value_returning, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>) -> crate::TautomerMoleculeView<'static>, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerMoleculeView.num_atoms", item:callable, owner:type_, rust:crate::TautomerMoleculeView::num_atoms, python:"num_atoms", javascript:"numAtoms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerMoleculeView.num_atoms", item:callable, owner:type_, rust:crate::TautomerMoleculeView::num_atoms, python:"num_atoms", python_property: getter, javascript:"numAtoms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:usize, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>) -> usize, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerMoleculeView.num_bonds", item:callable, owner:type_, rust:crate::TautomerMoleculeView::num_bonds, python:"num_bonds", javascript:"numBonds", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerMoleculeView.num_bonds", item:callable, owner:type_, rust:crate::TautomerMoleculeView::num_bonds, python:"num_bonds", python_property: getter, javascript:"numBonds", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:usize, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>) -> usize, },
         #[cfg(feature="cap-tautomer")]
@@ -565,15 +621,15 @@ binding_contract! {
           parameters:[{name:id,type:crate::AtomId,default:required}], output:Option<usize>, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>,crate::AtomId) -> Option<usize>, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerMoleculeView.atoms", item:callable, owner:type_, rust:crate::TautomerMoleculeView::atoms, python:"atoms", javascript:"atoms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerMoleculeView.atoms", item:callable, owner:type_, rust:crate::TautomerMoleculeView::atoms, python:"atoms", python_property: getter, javascript:"atoms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:&'a [crate::Atom], error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>) -> &'a [crate::Atom], },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerMoleculeView.bonds", item:callable, owner:type_, rust:crate::TautomerMoleculeView::bonds, python:"bonds", javascript:"bonds", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerMoleculeView.bonds", item:callable, owner:type_, rust:crate::TautomerMoleculeView::bonds, python:"bonds", python_property: getter, javascript:"bonds", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:&'a [crate::Bond], error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>) -> &'a [crate::Bond], },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerMoleculeView.properties", item:callable, owner:type_, rust:crate::TautomerMoleculeView::properties, python:"properties", javascript:"properties", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerMoleculeView.properties", item:callable, owner:type_, rust:crate::TautomerMoleculeView::properties, python:"properties", python_property: getter, javascript:"properties", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:&'a crate::MoleculeProperties, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerMoleculeView<'b>) -> &'a crate::MoleculeProperties, },
         #[cfg(feature="cap-tautomer")]
@@ -605,27 +661,27 @@ binding_contract! {
           parameters:[{name:index,type:usize,default:required}], output:Option<(&'a cosmolkit_model::PropertyText,crate::TautomerMoleculeView<'a>)>, error:none, state:in_place, operation:none,
           signature:for<'a,'b:'a> fn(&'a mut crate::TautomerProgress<'b>,usize) -> Option<(&'a cosmolkit_model::PropertyText,crate::TautomerMoleculeView<'a>)>, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerProgress.len", item:callable, owner:type_, rust:crate::TautomerProgress::len, python:"len", javascript:"len", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerProgress.len", item:callable, owner:type_, rust:crate::TautomerProgress::len, python:"len", python_property:getter, javascript:"len", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:usize, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerProgress<'b>) -> usize, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerProgress.is_empty", item:callable, owner:type_, rust:crate::TautomerProgress::is_empty, python:"is_empty", javascript:"isEmpty", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerProgress.is_empty", item:callable, owner:type_, rust:crate::TautomerProgress::is_empty, python:"is_empty", python_property: getter, javascript:"isEmpty", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:bool, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerProgress<'b>) -> bool, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerProgress.status", item:callable, owner:type_, rust:crate::TautomerProgress::status, python:"status", javascript:"status", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerProgress.status", item:callable, owner:type_, rust:crate::TautomerProgress::status, python:"status", python_property: getter, javascript:"status", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:crate::TautomerEnumerationStatus, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerProgress<'b>) -> crate::TautomerEnumerationStatus, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerProgress.num_transforms", item:callable, owner:type_, rust:crate::TautomerProgress::num_transforms, python:"num_transforms", javascript:"numTransforms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerProgress.num_transforms", item:callable, owner:type_, rust:crate::TautomerProgress::num_transforms, python:"num_transforms", python_property: getter, javascript:"numTransforms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:u32, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerProgress<'b>) -> u32, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerProgress.modified_atoms", item:callable, owner:type_, rust:crate::TautomerProgress::modified_atoms, python:"modified_atoms", javascript:"modifiedAtoms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerProgress.modified_atoms", item:callable, owner:type_, rust:crate::TautomerProgress::modified_atoms, python:"modified_atoms", python_property: getter, javascript:"modifiedAtoms", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:&'a std::collections::BTreeSet<crate::AtomId>, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerProgress<'b>) -> &'a std::collections::BTreeSet<crate::AtomId>, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerProgress.modified_bonds", item:callable, owner:type_, rust:crate::TautomerProgress::modified_bonds, python:"modified_bonds", javascript:"modifiedBonds", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerProgress.modified_bonds", item:callable, owner:type_, rust:crate::TautomerProgress::modified_bonds, python:"modified_bonds", python_property: getter, javascript:"modifiedBonds", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:&'a std::collections::BTreeSet<crate::BondId>, error:none, state:read_only, operation:none,
           signature:for<'a,'b:'a> fn(&'a crate::TautomerProgress<'b>) -> &'a std::collections::BTreeSet<crate::BondId>, },
         #[cfg(feature="cap-tautomer")]
@@ -637,31 +693,31 @@ binding_contract! {
           parameters:[{name:name,type:String,default:required}, {name:smarts,type:String,default:required}, {name:score,type:i32,default:required}], output:crate::TautomerScoreTerm, error:none, state:value_returning, operation:none,
           signature: fn(String, String, i32) -> crate::TautomerScoreTerm, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerScoreTerm.name", item:callable, owner:type_, rust:crate::TautomerScoreTerm::name, python:"name", javascript:"name", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerScoreTerm.name", item:callable, owner:type_, rust:crate::TautomerScoreTerm::name, python:"name", python_property: getter, javascript:"name", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:&'a str, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerScoreTerm) -> &'a str, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerScoreTerm.smarts", item:callable, owner:type_, rust:crate::TautomerScoreTerm::smarts, python:"smarts", javascript:"smarts", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerScoreTerm.smarts", item:callable, owner:type_, rust:crate::TautomerScoreTerm::smarts, python:"smarts", python_property: getter, javascript:"smarts", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:&'a str, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerScoreTerm) -> &'a str, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerScoreTerm.score", item:callable, owner:type_, rust:crate::TautomerScoreTerm::score, python:"score", javascript:"score", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
+        { semantic_id:"TautomerScoreTerm.score", item:callable, owner:type_, rust:crate::TautomerScoreTerm::score, python:"score", python_property: getter, javascript:"score", feature:"cap-tautomer", status:experimental, kind:instance, receiver:shared,
           parameters:[], output:i32, error:none, state:read_only, operation:none,
           signature:for<'a> fn(&'a crate::TautomerScoreTerm) -> i32, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerScore.ring", item:callable, owner:type_, rust:crate::TautomerScore::ring, python:"ring", javascript:"ring", feature:"cap-tautomer", status:experimental, kind:instance, receiver:owned,
+        { semantic_id:"TautomerScore.ring", item:callable, owner:type_, rust:crate::TautomerScore::ring, python:"ring", python_property: getter, javascript:"ring", feature:"cap-tautomer", status:experimental, kind:instance, receiver:owned,
           parameters:[], output:i32, error:none, state:value_returning, operation:none,
           signature: fn(crate::TautomerScore) -> i32, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerScore.substructure", item:callable, owner:type_, rust:crate::TautomerScore::substructure, python:"substructure", javascript:"substructure", feature:"cap-tautomer", status:experimental, kind:instance, receiver:owned,
+        { semantic_id:"TautomerScore.substructure", item:callable, owner:type_, rust:crate::TautomerScore::substructure, python:"substructure", python_property: getter, javascript:"substructure", feature:"cap-tautomer", status:experimental, kind:instance, receiver:owned,
           parameters:[], output:i32, error:none, state:value_returning, operation:none,
           signature: fn(crate::TautomerScore) -> i32, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerScore.hetero_hydrogen", item:callable, owner:type_, rust:crate::TautomerScore::hetero_hydrogen, python:"hetero_hydrogen", javascript:"heteroHydrogen", feature:"cap-tautomer", status:experimental, kind:instance, receiver:owned,
+        { semantic_id:"TautomerScore.hetero_hydrogen", item:callable, owner:type_, rust:crate::TautomerScore::hetero_hydrogen, python:"hetero_hydrogen", python_property: getter, javascript:"heteroHydrogen", feature:"cap-tautomer", status:experimental, kind:instance, receiver:owned,
           parameters:[], output:i32, error:none, state:value_returning, operation:none,
           signature: fn(crate::TautomerScore) -> i32, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerScore.total", item:callable, owner:type_, rust:crate::TautomerScore::total, python:"total", javascript:"total", feature:"cap-tautomer", status:experimental, kind:instance, receiver:owned,
+        { semantic_id:"TautomerScore.total", item:callable, owner:type_, rust:crate::TautomerScore::total, python:"total", python_property: getter, javascript:"total", feature:"cap-tautomer", status:experimental, kind:instance, receiver:owned,
           parameters:[], output:i32, error:none, state:value_returning, operation:none,
           signature: fn(crate::TautomerScore) -> i32, },
         #[cfg(feature="cap-tautomer")]
@@ -794,6 +850,15 @@ binding_contract! {
         },
         #[cfg(feature = "cap-search")]
         {
+            semantic_id: "MatchResult.atom_pairs", item: callable, owner: type_,
+            rust: crate::MatchResult::atom_pairs, python: "atom_pairs", javascript: "atomPairs",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [], output: Vec<(usize, usize)>, error: none,
+            state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::MatchResult) -> Vec<(usize, usize)>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
             semantic_id: "types.QueryAtom", item: type, owner: type_,
             rust: crate::QueryAtom, python: "QueryAtom", javascript: "QueryAtom",
             feature: "cap-search", status: experimental, role: value,
@@ -801,7 +866,7 @@ binding_contract! {
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "QueryAtom.id", item: callable, owner: type_,
-            rust: crate::QueryAtom::id, python: "id", javascript: "id",
+            rust: crate::QueryAtom::id, python: "id", python_property: getter, javascript: "id",
             feature: "cap-search", status: experimental, kind: instance,
             parameters: [], output: crate::AtomId, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::QueryAtom) -> crate::AtomId,
@@ -809,7 +874,7 @@ binding_contract! {
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "QueryAtom.atomic_number", item: callable, owner: type_,
-            rust: crate::QueryAtom::atomic_number, python: "atomic_number", javascript: "atomicNumber",
+            rust: crate::QueryAtom::atomic_number, python: "atomic_number", python_property: getter, javascript: "atomicNumber",
             feature: "cap-search", status: experimental, kind: instance,
             parameters: [], output: u8, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::QueryAtom) -> u8,
@@ -817,7 +882,7 @@ binding_contract! {
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "QueryAtom.formal_charge", item: callable, owner: type_,
-            rust: crate::QueryAtom::formal_charge, python: "formal_charge", javascript: "formalCharge",
+            rust: crate::QueryAtom::formal_charge, python: "formal_charge", python_property: getter, javascript: "formalCharge",
             feature: "cap-search", status: experimental, kind: instance,
             parameters: [], output: i8, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::QueryAtom) -> i8,
@@ -825,7 +890,7 @@ binding_contract! {
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "QueryAtom.explicit_hydrogens", item: callable, owner: type_,
-            rust: crate::QueryAtom::explicit_hydrogens, python: "explicit_hydrogens", javascript: "explicitHydrogens",
+            rust: crate::QueryAtom::explicit_hydrogens, python: "explicit_hydrogens", python_property: getter, javascript: "explicitHydrogens",
             feature: "cap-search", status: experimental, kind: instance,
             parameters: [], output: u8, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::QueryAtom) -> u8,
@@ -833,7 +898,7 @@ binding_contract! {
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "QueryAtom.isotope", item: callable, owner: type_,
-            rust: crate::QueryAtom::isotope, python: "isotope", javascript: "isotope",
+            rust: crate::QueryAtom::isotope, python: "isotope", python_property: getter, javascript: "isotope",
             feature: "cap-search", status: experimental, kind: instance,
             parameters: [], output: Option<u16>, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::QueryAtom) -> Option<u16>,
@@ -841,7 +906,7 @@ binding_contract! {
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "QueryAtom.atom_map", item: callable, owner: type_,
-            rust: crate::QueryAtom::atom_map, python: "atom_map", javascript: "atomMap",
+            rust: crate::QueryAtom::atom_map, python: "atom_map", python_property: getter, javascript: "atomMap",
             feature: "cap-search", status: experimental, kind: instance,
             parameters: [], output: Option<u32>, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::QueryAtom) -> Option<u32>,
@@ -849,7 +914,7 @@ binding_contract! {
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "QueryAtom.is_aromatic", item: callable, owner: type_,
-            rust: crate::QueryAtom::is_aromatic, python: "is_aromatic", javascript: "isAromatic",
+            rust: crate::QueryAtom::is_aromatic, python: "is_aromatic", python_property: getter, javascript: "isAromatic",
             feature: "cap-search", status: experimental, kind: instance,
             parameters: [], output: bool, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::QueryAtom) -> bool,
@@ -857,7 +922,7 @@ binding_contract! {
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "QueryAtom.no_implicit", item: callable, owner: type_,
-            rust: crate::QueryAtom::no_implicit, python: "no_implicit", javascript: "noImplicit",
+            rust: crate::QueryAtom::no_implicit, python: "no_implicit", python_property: getter, javascript: "noImplicit",
             feature: "cap-search", status: experimental, kind: instance,
             parameters: [], output: bool, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::QueryAtom) -> bool,
@@ -865,7 +930,7 @@ binding_contract! {
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "QueryAtom.radical_electrons", item: callable, owner: type_,
-            rust: crate::QueryAtom::radical_electrons, python: "radical_electrons", javascript: "radicalElectrons",
+            rust: crate::QueryAtom::radical_electrons, python: "radical_electrons", python_property: getter, javascript: "radicalElectrons",
             feature: "cap-search", status: experimental, kind: instance,
             parameters: [], output: u8, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::QueryAtom) -> u8,
@@ -1624,7 +1689,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioCrystalInfo.space_group_number", item: callable, owner: type_,
-            rust: crate::BioCrystalInfo::space_group_number, python: "space_group_number", javascript: "spaceGroupNumber",
+            rust: crate::BioCrystalInfo::space_group_number, python: "space_group_number", python_property: getter, javascript: "spaceGroupNumber",
             feature: "cap-bio", status: experimental, kind: instance, parameters: [],
             output: Option<i32>, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioCrystalInfo) -> Option<i32>,
@@ -1910,7 +1975,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioPdbReadError.stage", item: callable, owner: type_,
-            rust: crate::BioPdbReadError::stage, python: "stage", javascript: "stage",
+            rust: crate::BioPdbReadError::stage, python: "stage", python_property: getter, javascript: "stage",
             feature: "cap-bio", status: experimental, kind: instance, parameters: [],
             output: crate::BioPdbReadStage, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioPdbReadError) -> crate::BioPdbReadStage,
@@ -1918,7 +1983,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioPdbReadError.line_number", item: callable, owner: type_,
-            rust: crate::BioPdbReadError::line_number, python: "line_number", javascript: "lineNumber",
+            rust: crate::BioPdbReadError::line_number, python: "line_number", python_property: getter, javascript: "lineNumber",
             feature: "cap-bio", status: experimental, kind: instance, parameters: [],
             output: Option<i32>, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioPdbReadError) -> Option<i32>,
@@ -1926,7 +1991,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioPdbReadError.record_tag", item: callable, owner: type_,
-            rust: crate::BioPdbReadError::record_tag, python: "record_tag", javascript: "recordTag",
+            rust: crate::BioPdbReadError::record_tag, python: "record_tag", python_property: getter, javascript: "recordTag",
             feature: "cap-bio", status: experimental, kind: instance, parameters: [],
             output: Option<[u8; 4]>, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioPdbReadError) -> Option<[u8; 4]>,
@@ -1934,7 +1999,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioMmcifReadError.stage", item: callable, owner: type_,
-            rust: crate::BioMmcifReadError::stage, python: "stage", javascript: "stage",
+            rust: crate::BioMmcifReadError::stage, python: "stage", python_property: getter, javascript: "stage",
             feature: "cap-bio", status: experimental, kind: instance, parameters: [],
             output: crate::BioMmcifReadStage, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioMmcifReadError) -> crate::BioMmcifReadStage,
@@ -2403,7 +2468,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "FingerprintAdditionalOutput.atom_counts", item: callable, owner: type_,
-            rust: crate::FingerprintAdditionalOutput::atom_counts, python: "atom_counts", javascript: "atomCounts",
+            rust: crate::FingerprintAdditionalOutput::atom_counts, python: "atom_counts", python_property: getter, javascript: "atomCounts",
             feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: Option<&[u32]>, error: none,
             state: read_only, operation: none,
@@ -2412,7 +2477,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "FingerprintAdditionalOutput.atom_to_bits", item: callable, owner: type_,
-            rust: crate::FingerprintAdditionalOutput::atom_to_bits, python: "atom_to_bits", javascript: "atomToBits",
+            rust: crate::FingerprintAdditionalOutput::atom_to_bits, python: "atom_to_bits", python_property: getter, javascript: "atomToBits",
             feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: Option<&[Vec<u64>]>, error: none,
             state: read_only, operation: none,
@@ -2421,7 +2486,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "FingerprintAdditionalOutput.bit_info_map", item: callable, owner: type_,
-            rust: crate::FingerprintAdditionalOutput::bit_info_map, python: "bit_info_map", javascript: "bitInfoMap",
+            rust: crate::FingerprintAdditionalOutput::bit_info_map, python: "bit_info_map", python_property: getter, javascript: "bitInfoMap",
             feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: Option<&std::collections::BTreeMap<u64, Vec<(u32, u32)>>>, error: none,
             state: read_only, operation: none,
@@ -2430,7 +2495,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "FingerprintAdditionalOutput.bit_paths", item: callable, owner: type_,
-            rust: crate::FingerprintAdditionalOutput::bit_paths, python: "bit_paths", javascript: "bitPaths",
+            rust: crate::FingerprintAdditionalOutput::bit_paths, python: "bit_paths", python_property: getter, javascript: "bitPaths",
             feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: Option<&std::collections::BTreeMap<u64, Vec<Vec<i32>>>>, error: none,
             state: read_only, operation: none,
@@ -2439,7 +2504,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "FingerprintAdditionalOutput.atoms_per_bit", item: callable, owner: type_,
-            rust: crate::FingerprintAdditionalOutput::atoms_per_bit, python: "atoms_per_bit", javascript: "atomsPerBit",
+            rust: crate::FingerprintAdditionalOutput::atoms_per_bit, python: "atoms_per_bit", python_property: getter, javascript: "atomsPerBit",
             feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: Option<&std::collections::BTreeMap<u64, Vec<Vec<i32>>>>, error: none,
             state: read_only, operation: none,
@@ -2448,7 +2513,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "Fingerprint.n_bits", item: callable, owner: type_,
-            rust: crate::Fingerprint::n_bits, python: "n_bits", javascript: "nBits",
+            rust: crate::Fingerprint::n_bits, python: "n_bits", python_property: getter, javascript: "nBits",
             feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: u32, error: none,
             state: read_only, operation: none,
@@ -2457,7 +2522,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "Fingerprint.on_bits", item: callable, owner: type_,
-            rust: crate::Fingerprint::on_bits, python: "on_bits", javascript: "onBits",
+            rust: crate::Fingerprint::on_bits, python: "on_bits", python_property: getter, javascript: "onBits",
             feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: Vec<u32>, error: none,
             state: read_only, operation: none,
@@ -2466,7 +2531,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseBitFingerprint.n_bits", item: callable, owner: type_,
-            rust: crate::SparseBitFingerprint::n_bits, python: "n_bits", javascript: "nBits",
+            rust: crate::SparseBitFingerprint::n_bits, python: "n_bits", python_property: getter, javascript: "nBits",
             feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: u32, error: none,
             state: read_only, operation: none,
@@ -2475,7 +2540,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseBitFingerprint.on_bits", item: callable, owner: type_,
-            rust: crate::SparseBitFingerprint::on_bits, python: "on_bits", javascript: "onBits",
+            rust: crate::SparseBitFingerprint::on_bits, python: "on_bits", python_property: getter, javascript: "onBits",
             feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: Vec<i32>, error: none,
             state: read_only, operation: none,
@@ -2494,7 +2559,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.length", item: callable, owner: type_,
-            rust: crate::SparseCountFingerprint::length, python: "length", javascript: "length",
+            rust: crate::SparseCountFingerprint::length, python: "length", python_property: getter, javascript: "length",
             feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [],
             output: u64, error: none,
@@ -2524,7 +2589,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint.nonzero_elements", item: callable, owner: type_,
-            rust: crate::SparseCountFingerprint::nonzero_elements, python: "nonzero_elements", javascript: "nonzeroElements",
+            rust: crate::SparseCountFingerprint::nonzero_elements, python: "nonzero_elements", python_property: getter, javascript: "nonzeroElements",
             feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [],
             output: &std::collections::BTreeMap<u64, i32>, error: none,
@@ -2634,7 +2699,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.length", item: callable, owner: type_,
-            rust: crate::SparseCountFingerprint32::length, python: "length", javascript: "length",
+            rust: crate::SparseCountFingerprint32::length, python: "length", python_property: getter, javascript: "length",
             feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [],
             output: u32, error: none,
@@ -2664,7 +2729,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "SparseCountFingerprint32.nonzero_elements", item: callable, owner: type_,
-            rust: crate::SparseCountFingerprint32::nonzero_elements, python: "nonzero_elements", javascript: "nonzeroElements",
+            rust: crate::SparseCountFingerprint32::nonzero_elements, python: "nonzero_elements", python_property: getter, javascript: "nonzeroElements",
             feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [],
             output: &std::collections::BTreeMap<u32, i32>, error: none,
@@ -2890,7 +2955,7 @@ binding_contract! {
             item: callable,
             owner: molecule,
             rust: crate::Molecule::num_atoms,
-            python: "num_atoms",
+            python: "num_atoms", python_property: getter,
             javascript: "numAtoms",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -2906,7 +2971,7 @@ binding_contract! {
             item: callable,
             owner: molecule,
             rust: crate::Molecule::num_bonds,
-            python: "num_bonds",
+            python: "num_bonds", python_property: getter,
             javascript: "numBonds",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -2922,23 +2987,23 @@ binding_contract! {
             item: callable,
             owner: molecule,
             rust: crate::Molecule::atoms,
-            python: "atoms",
+            python: "atoms", python_property: getter,
             javascript: "atoms",
             feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
-            output: &[crate::Atom],
+            output: Vec<crate::MoleculeAtom>,
             error: none,
             state: read_only,
             operation: none,
-            signature: fn(&crate::Molecule) -> &[crate::Atom],
+            signature: fn(&crate::Molecule) -> Vec<crate::MoleculeAtom>,
         },
         {
             semantic_id: "Molecule.bonds",
             item: callable,
             owner: molecule,
             rust: crate::Molecule::bonds,
-            python: "bonds",
+            python: "bonds", python_property: getter,
             javascript: "bonds",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -2959,11 +3024,11 @@ binding_contract! {
             feature: "runtime", status: experimental,
             kind: instance,
             parameters: [{ name: atom_id, type: crate::AtomId, default: required }],
-            output: Option<&crate::Atom>,
+            output: Option<crate::MoleculeAtom>,
             error: none,
             state: read_only,
             operation: none,
-            signature: fn(&crate::Molecule, crate::AtomId) -> Option<&crate::Atom>,
+            signature: fn(&crate::Molecule, crate::AtomId) -> Option<crate::MoleculeAtom>,
         },
         {
             semantic_id: "Molecule.bond",
@@ -2986,7 +3051,7 @@ binding_contract! {
             item: callable,
             owner: molecule,
             rust: crate::Molecule::topology,
-            python: "topology",
+            python: "topology", python_property: getter,
             javascript: "topology",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3002,7 +3067,7 @@ binding_contract! {
             item: callable,
             owner: molecule,
             rust: crate::Molecule::coordinates_2d,
-            python: "coordinates_2d",
+            python: "coordinates_2d", python_property: getter,
             javascript: "coordinates2d",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3018,7 +3083,7 @@ binding_contract! {
             item: callable,
             owner: molecule,
             rust: crate::Molecule::conformers_3d,
-            python: "conformers_3d",
+            python: "conformers_3d", python_property: getter,
             javascript: "conformers3d",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3034,7 +3099,7 @@ binding_contract! {
             item: callable,
             owner: molecule,
             rust: crate::Molecule::properties,
-            python: "properties",
+            python: "properties", python_property: getter,
             javascript: "properties",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3266,7 +3331,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::MoleculeBuilder::atoms,
-            python: "atoms",
+            python: "atoms", python_property: getter,
             javascript: "atoms",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3282,7 +3347,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::MoleculeBuilder::bonds,
-            python: "bonds",
+            python: "bonds", python_property: getter,
             javascript: "bonds",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3298,7 +3363,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::MoleculeBuilder::substance_groups,
-            python: "substance_groups",
+            python: "substance_groups", python_property: getter,
             javascript: "substanceGroups",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3314,7 +3379,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::MoleculeBuilder::stereo_groups,
-            python: "stereo_groups",
+            python: "stereo_groups", python_property: getter,
             javascript: "stereoGroups",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3330,7 +3395,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::MoleculeBuilder::coordinates,
-            python: "coordinates",
+            python: "coordinates", python_property: getter,
             javascript: "coordinates",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3346,7 +3411,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::MoleculeBuilder::properties,
-            python: "properties",
+            python: "properties", python_property: getter,
             javascript: "properties",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3541,13 +3606,13 @@ binding_contract! {
         },
         {
             semantic_id: "StereoGroup.id", item:callable, owner:type_, rust:crate::StereoGroup::id,
-            python:"id",javascript:"id",feature:"runtime",status:experimental,kind:instance,
+            python:"id", python_property: getter,javascript:"id",feature:"runtime",status:experimental,kind:instance,
             parameters:[],output:Option<u32>,error:none,state:read_only,operation:none,
             signature:fn(&crate::StereoGroup)->Option<u32>,
         },
         {
             semantic_id: "StereoGroup.write_id", item:callable, owner:type_,rust:crate::StereoGroup::write_id,
-            python:"write_id",javascript:"writeId",feature:"runtime",status:experimental,kind:instance,
+            python:"write_id", python_property: getter,javascript:"writeId",feature:"runtime",status:experimental,kind:instance,
             parameters:[],output:u32,error:none,state:read_only,operation:none,
             signature:fn(&crate::StereoGroup)->u32,
         },
@@ -3559,19 +3624,19 @@ binding_contract! {
         },
         {
             semantic_id:"StereoGroup.kind",item:callable,owner:type_,rust:crate::StereoGroup::kind,
-            python:"kind",javascript:"kind",feature:"runtime",status:experimental,kind:instance,
+            python:"kind", python_property: getter,javascript:"kind",feature:"runtime",status:experimental,kind:instance,
             parameters:[],output:crate::StereoGroupKind,error:none,state:read_only,operation:none,
             signature:fn(&crate::StereoGroup)->crate::StereoGroupKind,
         },
         {
             semantic_id:"StereoGroup.atoms",item:callable,owner:type_,rust:crate::StereoGroup::atoms,
-            python:"atoms",javascript:"atoms",feature:"runtime",status:experimental,kind:instance,
+            python:"atoms", python_property: getter,javascript:"atoms",feature:"runtime",status:experimental,kind:instance,
             parameters:[],output:&[crate::AtomId],error:none,state:read_only,operation:none,
             signature:fn(&crate::StereoGroup)->&[crate::AtomId],
         },
         {
             semantic_id:"StereoGroup.bonds",item:callable,owner:type_,rust:crate::StereoGroup::bonds,
-            python:"bonds",javascript:"bonds",feature:"runtime",status:experimental,kind:instance,
+            python:"bonds", python_property: getter,javascript:"bonds",feature:"runtime",status:experimental,kind:instance,
             parameters:[],output:&[crate::BondId],error:none,state:read_only,operation:none,
             signature:fn(&crate::StereoGroup)->&[crate::BondId],
         },
@@ -3676,7 +3741,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SubstanceGroupId::index,
-            python: "index",
+            python: "index", python_property: getter,
             javascript: "index",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3727,7 +3792,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SGroupBracket::points,
-            python: "points",
+            python: "points", python_property: getter,
             javascript: "points",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3743,7 +3808,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SGroupCState::bond,
-            python: "bond",
+            python: "bond", python_property: getter,
             javascript: "bond",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3759,7 +3824,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SGroupCState::vector,
-            python: "vector",
+            python: "vector", python_property: getter,
             javascript: "vector",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3775,7 +3840,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SGroupDisplay::brackets,
-            python: "brackets",
+            python: "brackets", python_property: getter,
             javascript: "brackets",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3791,7 +3856,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SubstanceGroup::id,
-            python: "id",
+            python: "id", python_property: getter,
             javascript: "id",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3807,7 +3872,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SubstanceGroup::kind,
-            python: "kind",
+            python: "kind", python_property: getter,
             javascript: "kind",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3823,7 +3888,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SubstanceGroup::display,
-            python: "display",
+            python: "display", python_property: getter,
             javascript: "display",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3839,7 +3904,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SubstanceGroup::cstates,
-            python: "cstates",
+            python: "cstates", python_property: getter,
             javascript: "cstates",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3855,7 +3920,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SubstanceGroup::head_crossing_bonds,
-            python: "head_crossing_bonds",
+            python: "head_crossing_bonds", python_property: getter,
             javascript: "headCrossingBonds",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3871,7 +3936,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SubstanceGroup::crossing_bond_correspondence,
-            python: "crossing_bond_correspondence",
+            python: "crossing_bond_correspondence", python_property: getter,
             javascript: "crossingBondCorrespondence",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -3934,7 +3999,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::UffParameterError::kind,
-            python: "kind",
+            python: "kind", python_property: getter,
             javascript: "kind",
             feature: "cap-forcefields",
             status: experimental,
@@ -3953,16 +4018,16 @@ binding_contract! {
         {semantic_id:"types.MoleculeProperties",item:type,owner:type_,rust:crate::MoleculeProperties,python:"MoleculeProperties",javascript:"MoleculeProperties",feature:"metadata",status:experimental,role:value,},
         {semantic_id:"types.SdfPropertyList",item:type,owner:type_,rust:crate::SdfPropertyList,python:"SdfPropertyList",javascript:"SdfPropertyList",feature:"metadata",status:experimental,role:value,},
         {semantic_id:"types.SdfPropertyListTarget",item:type,owner:type_,rust:crate::SdfPropertyListTarget,python:"SdfPropertyListTarget",javascript:"SdfPropertyListTarget",feature:"metadata",status:experimental,role:value,},
-        {semantic_id:"MoleculeProperties.name",item:callable,owner:type_,rust:crate::MoleculeProperties::name,python:"name",javascript:"name",feature:"metadata",status:experimental,kind:instance,parameters:[],output:Option<&'a crate::PropertyText>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->Option<&'a crate::PropertyText>,},
-        {semantic_id:"MoleculeProperties.sdf_data_fields",item:callable,owner:type_,rust:crate::MoleculeProperties::sdf_data_fields,python:"sdf_data_fields",javascript:"sdfDataFields",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a [(crate::PropertyText,crate::PropertyText)],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->&'a [(crate::PropertyText,crate::PropertyText)],},
-        {semantic_id:"MoleculeProperties.sdf_property_lists",item:callable,owner:type_,rust:crate::MoleculeProperties::sdf_property_lists,python:"sdf_property_lists",javascript:"sdfPropertyLists",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a [crate::SdfPropertyList],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->&'a [crate::SdfPropertyList],},
-        {semantic_id:"MoleculeProperties.props",item:callable,owner:type_,rust:crate::MoleculeProperties::props,python:"props",javascript:"props",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a std::collections::BTreeMap<crate::PropertyText,crate::PropertyValue>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->&'a std::collections::BTreeMap<crate::PropertyText,crate::PropertyValue>,},
+        {semantic_id:"MoleculeProperties.name",item:callable,owner:type_,rust:crate::MoleculeProperties::name,python:"name", python_property: getter,javascript:"name",feature:"metadata",status:experimental,kind:instance,parameters:[],output:Option<&'a crate::PropertyText>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->Option<&'a crate::PropertyText>,},
+        {semantic_id:"MoleculeProperties.sdf_data_fields",item:callable,owner:type_,rust:crate::MoleculeProperties::sdf_data_fields,python:"sdf_data_fields", python_property: getter,javascript:"sdfDataFields",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a [(crate::PropertyText,crate::PropertyText)],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->&'a [(crate::PropertyText,crate::PropertyText)],},
+        {semantic_id:"MoleculeProperties.sdf_property_lists",item:callable,owner:type_,rust:crate::MoleculeProperties::sdf_property_lists,python:"sdf_property_lists", python_property: getter,javascript:"sdfPropertyLists",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a [crate::SdfPropertyList],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->&'a [crate::SdfPropertyList],},
+        {semantic_id:"MoleculeProperties.props",item:callable,owner:type_,rust:crate::MoleculeProperties::props,python:"props", python_property: getter,javascript:"props",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a std::collections::BTreeMap<crate::PropertyText,crate::PropertyValue>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->&'a std::collections::BTreeMap<crate::PropertyText,crate::PropertyValue>,},
         {semantic_id:"MoleculeProperties.prop",item:callable,owner:type_,rust:crate::MoleculeProperties::prop,python:"prop",javascript:"prop",feature:"metadata",status:experimental,kind:instance,parameters:[{name:key,type:&str,default:required}],output:Option<&'a crate::PropertyValue>,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeProperties,&'b str)->Option<&'a crate::PropertyValue>,},
         {semantic_id:"MoleculeProperties.is_prop_computed",item:callable,owner:type_,rust:crate::MoleculeProperties::is_prop_computed,python:"is_prop_computed",javascript:"isPropComputed",feature:"metadata",status:experimental,kind:instance,parameters:[{name:key,type:&str,default:required}],output:bool,error:crate::PropertyValueError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeProperties,&'b str)->Result<bool,crate::PropertyValueError>,},
-        {semantic_id:"MoleculeProperties.computed_prop_names",item:callable,owner:type_,rust:crate::MoleculeProperties::computed_prop_names,python:"computed_prop_names",javascript:"computedPropNames",feature:"metadata",status:experimental,kind:instance,parameters:[],output:Option<&'a [crate::PropertyText]>,error:crate::PropertyValueError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->Result<Option<&'a [crate::PropertyText]>,crate::PropertyValueError>,},
-        {semantic_id:"SdfPropertyList.target",item:callable,owner:type_,rust:crate::SdfPropertyList::target,python:"target",javascript:"target",feature:"metadata",status:experimental,kind:instance,parameters:[],output:crate::SdfPropertyListTarget,error:none,state:read_only,operation:none,signature:fn(&crate::SdfPropertyList)->crate::SdfPropertyListTarget,},
-        {semantic_id:"SdfPropertyList.name",item:callable,owner:type_,rust:crate::SdfPropertyList::name,python:"name",javascript:"name",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a crate::PropertyText,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfPropertyList)->&'a crate::PropertyText,},
-        {semantic_id:"SdfPropertyList.values",item:callable,owner:type_,rust:crate::SdfPropertyList::values,python:"values",javascript:"values",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a [Option<crate::PropertyValue>],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfPropertyList)->&'a [Option<crate::PropertyValue>],},
+        {semantic_id:"MoleculeProperties.computed_prop_names",item:callable,owner:type_,rust:crate::MoleculeProperties::computed_prop_names,python:"computed_prop_names", python_property: getter,javascript:"computedPropNames",feature:"metadata",status:experimental,kind:instance,parameters:[],output:Option<&'a [crate::PropertyText]>,error:crate::PropertyValueError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeProperties)->Result<Option<&'a [crate::PropertyText]>,crate::PropertyValueError>,},
+        {semantic_id:"SdfPropertyList.target",item:callable,owner:type_,rust:crate::SdfPropertyList::target,python:"target", python_property: getter,javascript:"target",feature:"metadata",status:experimental,kind:instance,parameters:[],output:crate::SdfPropertyListTarget,error:none,state:read_only,operation:none,signature:fn(&crate::SdfPropertyList)->crate::SdfPropertyListTarget,},
+        {semantic_id:"SdfPropertyList.name",item:callable,owner:type_,rust:crate::SdfPropertyList::name,python:"name", python_property: getter,javascript:"name",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a crate::PropertyText,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfPropertyList)->&'a crate::PropertyText,},
+        {semantic_id:"SdfPropertyList.values",item:callable,owner:type_,rust:crate::SdfPropertyList::values,python:"values", python_property: getter,javascript:"values",feature:"metadata",status:experimental,kind:instance,parameters:[],output:&'a [Option<crate::PropertyValue>],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfPropertyList)->&'a [Option<crate::PropertyValue>],},
         {
             semantic_id: "types.PropertyValue",
             item: type,
@@ -3998,7 +4063,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::PropertyValueError::expected,
-            python: "expected",
+            python: "expected", python_property: getter,
             javascript: "expected",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -4014,7 +4079,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::PropertyValueError::actual,
-            python: "actual",
+            python: "actual", python_property: getter,
             javascript: "actual",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -4031,6 +4096,7 @@ binding_contract! {
             owner: type_,
             rust: crate::PropertyValue::kind,
             python: "kind",
+            python_property: getter,
             javascript: "kind",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -4179,7 +4245,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::TemplateAttachment::target,
-            python: "target",
+            python: "target", python_property: getter,
             javascript: "target",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -4195,7 +4261,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::TemplateAttachment::label,
-            python: "label",
+            python: "label", python_property: getter,
             javascript: "label",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -4212,6 +4278,7 @@ binding_contract! {
             owner: type_,
             rust: crate::TemplateAttachmentOrder::entries,
             python: "entries",
+            python_property: getter,
             javascript: "entries",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -4229,7 +4296,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::Atom::template_attachment_order,
-            python: "template_attachment_order",
+            python: "template_attachment_order", python_property: getter,
             javascript: "templateAttachmentOrder",
             feature: "runtime", status: experimental,
             kind: instance,
@@ -4682,7 +4749,7 @@ binding_contract! {
         },
         {
             semantic_id: "Molecule.has_2d_coordinates", item: callable, owner: molecule,
-            rust: crate::Molecule::has_2d_coordinates, python: "has_2d_coordinates", javascript: "has2dCoordinates",
+            rust: crate::Molecule::has_2d_coordinates, python: "has_2d_coordinates", python_property: getter, javascript: "has2dCoordinates",
             feature: "runtime", status: experimental, kind: instance,
             parameters: [], output: bool, error: none, state: read_only, operation: none,
             signature: fn(&crate::Molecule) -> bool,
@@ -4958,6 +5025,43 @@ binding_contract! {
             javascript: "SanitizeOperations",
             feature: "cap-sanitize", status: experimental,
             role: parameter_selector,
+        },
+        #[cfg(feature = "cap-sanitize")]
+        {
+            semantic_id: "SanitizeOperations.from_bits", item: callable, owner: type_,
+            rust: crate::SanitizeOperations::from_bits, python: "from_bits", javascript: "fromBits",
+            feature: "cap-sanitize", status: experimental, kind: static_,
+            parameters: [{ name: bits, type: u32, default: required }],
+            output: crate::SanitizeOperations, error: crate::SanitizeError,
+            state: value_returning, operation: none,
+            signature: fn(u32) -> Result<crate::SanitizeOperations, crate::SanitizeError>,
+        },
+        #[cfg(feature = "cap-sanitize")]
+        {
+            semantic_id: "SanitizeOperations.bits", item: callable, owner: type_,
+            rust: crate::SanitizeOperations::bits, python: "bits", python_property: getter, javascript: "bits",
+            feature: "cap-sanitize", status: experimental, kind: instance, receiver: owned,
+            parameters: [], output: u32, error: none,
+            state: value_returning, operation: none,
+            signature: fn(crate::SanitizeOperations) -> u32,
+        },
+        #[cfg(feature = "cap-sanitize")]
+        {
+            semantic_id: "SanitizeOperations.contains", item: callable, owner: type_,
+            rust: crate::SanitizeOperations::contains, python: "contains", javascript: "contains",
+            feature: "cap-sanitize", status: experimental, kind: instance, receiver: owned,
+            parameters: [{ name: operation, type: crate::SanitizeOperations, default: required }],
+            output: bool, error: none, state: value_returning, operation: none,
+            signature: fn(crate::SanitizeOperations, crate::SanitizeOperations) -> bool,
+        },
+        #[cfg(feature = "cap-sanitize")]
+        {
+            semantic_id: "SanitizeOperations.is_empty", item: callable, owner: type_,
+            rust: crate::SanitizeOperations::is_empty, python: "is_empty", python_property: getter, javascript: "isEmpty",
+            feature: "cap-sanitize", status: experimental, kind: instance, receiver: owned,
+            parameters: [], output: bool, error: none,
+            state: value_returning, operation: none,
+            signature: fn(crate::SanitizeOperations) -> bool,
         },
         #[cfg(feature = "cap-sanitize")]
         {
@@ -6898,7 +7002,7 @@ binding_contract! {
         #[cfg(feature = "cap-forcefields")]
         {
             semantic_id: "UffOptimizationError.kind", item: callable, owner: type_,
-            rust: crate::UffOptimizationError::kind, python: "kind", javascript: "kind",
+            rust: crate::UffOptimizationError::kind, python: "kind", python_property: getter, javascript: "kind",
             feature: "cap-forcefields", status: experimental, kind: instance,
             parameters: [], output: crate::UffOptimizationErrorKind, error: none,
             state: read_only, operation: none,
@@ -7213,7 +7317,7 @@ binding_contract! {
         {
             semantic_id: "ResidueCodeParseError.input", item: callable,
             owner: type_, rust: crate::ResidueCodeParseError::input,
-            python: "input", javascript: "input",
+            python: "input", python_property: getter, javascript: "input",
             feature: "cap-bio", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: &str, error: none,
             state: read_only, operation: none,
@@ -7245,7 +7349,7 @@ binding_contract! {
         {
             semantic_id: "ResidueIdentity.name", item: callable,
             owner: type_, rust: crate::ResidueIdentity::name,
-            python: "name", javascript: "name",
+            python: "name", python_property: getter, javascript: "name",
             feature: "cap-bio", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: &str, error: none,
             state: read_only, operation: none,
@@ -7255,7 +7359,7 @@ binding_contract! {
         {
             semantic_id: "ResidueIdentity.code", item: callable,
             owner: type_, rust: crate::ResidueIdentity::code,
-            python: "code", javascript: "code",
+            python: "code", python_property: getter, javascript: "code",
             feature: "cap-bio", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: crate::ResidueCode, error: none,
             state: read_only, operation: none,
@@ -7265,7 +7369,7 @@ binding_contract! {
         {
             semantic_id: "ResidueIdentity.info", item: callable,
             owner: type_, rust: crate::ResidueIdentity::info,
-            python: "info", javascript: "info",
+            python: "info", python_property: getter, javascript: "info",
             feature: "cap-bio", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: crate::ResidueInfo, error: none,
             state: read_only, operation: none,
@@ -7275,7 +7379,7 @@ binding_contract! {
         {
             semantic_id: "ResidueIdentity.is_tabulated", item: callable,
             owner: type_, rust: crate::ResidueIdentity::is_tabulated,
-            python: "is_tabulated", javascript: "isTabulated",
+            python: "is_tabulated", python_property: getter, javascript: "isTabulated",
             feature: "cap-bio", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: bool, error: none,
             state: read_only, operation: none,
@@ -7296,7 +7400,7 @@ binding_contract! {
         {
             semantic_id: "ResidueInfo.canonical_one_letter_code", item: callable,
             owner: type_, rust: crate::ResidueInfo::canonical_one_letter_code,
-            python: "canonical_one_letter_code", javascript: "canonicalOneLetterCode",
+            python: "canonical_one_letter_code", python_property: getter, javascript: "canonicalOneLetterCode",
             feature: "cap-bio", status: experimental, kind: instance, receiver: owned,
             parameters: [], output: Option<char>, error: none,
             state: value_returning, operation: none,
@@ -7306,7 +7410,7 @@ binding_contract! {
         {
             semantic_id: "ResidueInfo.parent_standard_code", item: callable,
             owner: type_, rust: crate::ResidueInfo::parent_standard_code,
-            python: "parent_standard_code", javascript: "parentStandardCode",
+            python: "parent_standard_code", python_property: getter, javascript: "parentStandardCode",
             feature: "cap-bio", status: experimental, kind: instance, receiver: owned,
             parameters: [], output: Option<crate::ResidueCode>, error: none,
             state: value_returning, operation: none,
@@ -7316,7 +7420,7 @@ binding_contract! {
         {
             semantic_id: "ResidueInfo.is_modified_amino_acid", item: callable,
             owner: type_, rust: crate::ResidueInfo::is_modified_amino_acid,
-            python: "is_modified_amino_acid", javascript: "isModifiedAminoAcid",
+            python: "is_modified_amino_acid", python_property: getter, javascript: "isModifiedAminoAcid",
             feature: "cap-bio", status: experimental, kind: instance, receiver: owned,
             parameters: [], output: bool, error: none,
             state: value_returning, operation: none,
@@ -8079,7 +8183,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.input_format", item: callable, owner: type_,
-            rust: crate::BioStructure::input_format, python: "input_format", javascript: "inputFormat",
+            rust: crate::BioStructure::input_format, python: "input_format", python_property: getter, javascript: "inputFormat",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: crate::BioCoordinateFormat, error: none, state: read_only, operation: none,
@@ -8088,7 +8192,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.models", item: callable, owner: type_,
-            rust: crate::BioStructure::models, python: "models", javascript: "models",
+            rust: crate::BioStructure::models, python: "models", python_property: getter, javascript: "models",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioModelRow], error: none, state: read_only, operation: none,
@@ -8097,7 +8201,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.chains", item: callable, owner: type_,
-            rust: crate::BioStructure::chains, python: "chains", javascript: "chains",
+            rust: crate::BioStructure::chains, python: "chains", python_property: getter, javascript: "chains",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioChainRow], error: none, state: read_only, operation: none,
@@ -8106,7 +8210,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.residues", item: callable, owner: type_,
-            rust: crate::BioStructure::residues, python: "residues", javascript: "residues",
+            rust: crate::BioStructure::residues, python: "residues", python_property: getter, javascript: "residues",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioResidueRow], error: none, state: read_only, operation: none,
@@ -8115,7 +8219,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.atoms", item: callable, owner: type_,
-            rust: crate::BioStructure::atoms, python: "atoms", javascript: "atoms",
+            rust: crate::BioStructure::atoms, python: "atoms", python_property: getter, javascript: "atoms",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioAtomRow], error: none, state: read_only, operation: none,
@@ -8124,7 +8228,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.entities", item: callable, owner: type_,
-            rust: crate::BioStructure::entities, python: "entities", javascript: "entities",
+            rust: crate::BioStructure::entities, python: "entities", python_property: getter, javascript: "entities",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioEntityRow], error: none, state: read_only, operation: none,
@@ -8133,7 +8237,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.connections", item: callable, owner: type_,
-            rust: crate::BioStructure::connections, python: "connections", javascript: "connections",
+            rust: crate::BioStructure::connections, python: "connections", python_property: getter, javascript: "connections",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioConnection], error: none, state: read_only, operation: none,
@@ -8142,7 +8246,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.cispeps", item: callable, owner: type_,
-            rust: crate::BioStructure::cispeps, python: "cispeps", javascript: "cispeps",
+            rust: crate::BioStructure::cispeps, python: "cispeps", python_property: getter, javascript: "cispeps",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioCisPep], error: none, state: read_only, operation: none,
@@ -8151,7 +8255,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.mod_residues", item: callable, owner: type_,
-            rust: crate::BioStructure::mod_residues, python: "mod_residues", javascript: "modResidues",
+            rust: crate::BioStructure::mod_residues, python: "mod_residues", python_property: getter, javascript: "modResidues",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioModRes], error: none, state: read_only, operation: none,
@@ -8160,7 +8264,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.helices", item: callable, owner: type_,
-            rust: crate::BioStructure::helices, python: "helices", javascript: "helices",
+            rust: crate::BioStructure::helices, python: "helices", python_property: getter, javascript: "helices",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioHelix], error: none, state: read_only, operation: none,
@@ -8169,7 +8273,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.sheets", item: callable, owner: type_,
-            rust: crate::BioStructure::sheets, python: "sheets", javascript: "sheets",
+            rust: crate::BioStructure::sheets, python: "sheets", python_property: getter, javascript: "sheets",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioSheet], error: none, state: read_only, operation: none,
@@ -8178,7 +8282,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.ncs_operators", item: callable, owner: type_,
-            rust: crate::BioStructure::ncs_operators, python: "ncs_operators", javascript: "ncsOperators",
+            rust: crate::BioStructure::ncs_operators, python: "ncs_operators", python_property: getter, javascript: "ncsOperators",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioNcsOperator], error: none, state: read_only, operation: none,
@@ -8187,7 +8291,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.assemblies", item: callable, owner: type_,
-            rust: crate::BioStructure::assemblies, python: "assemblies", javascript: "assemblies",
+            rust: crate::BioStructure::assemblies, python: "assemblies", python_property: getter, javascript: "assemblies",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &[crate::BioAssembly], error: none, state: read_only, operation: none,
@@ -8196,7 +8300,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.metadata", item: callable, owner: type_,
-            rust: crate::BioStructure::metadata, python: "metadata", javascript: "metadata",
+            rust: crate::BioStructure::metadata, python: "metadata", python_property: getter, javascript: "metadata",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &crate::BioMetadata, error: none, state: read_only, operation: none,
@@ -8205,7 +8309,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.source_state", item: callable, owner: type_,
-            rust: crate::BioStructure::source_state, python: "source_state", javascript: "sourceState",
+            rust: crate::BioStructure::source_state, python: "source_state", python_property: getter, javascript: "sourceState",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &crate::BioStructureSourceState, error: none, state: read_only, operation: none,
@@ -8214,7 +8318,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.coordinates", item: callable, owner: type_,
-            rust: crate::BioStructure::coordinates, python: "coordinates", javascript: "coordinates",
+            rust: crate::BioStructure::coordinates, python: "coordinates", python_property: getter, javascript: "coordinates",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: &crate::BioCoordinateBlock, error: none, state: read_only, operation: none,
@@ -8223,7 +8327,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.crystal", item: callable, owner: type_,
-            rust: crate::BioStructure::crystal, python: "crystal", javascript: "crystal",
+            rust: crate::BioStructure::crystal, python: "crystal", python_property: getter, javascript: "crystal",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
             output: Option<&crate::BioCrystalInfo>, error: none, state: read_only, operation: none,
@@ -8338,7 +8442,7 @@ binding_contract! {
         {
             semantic_id: "BioStructure.num_models",
             item: callable, owner: type_, rust: crate::BioStructure::num_models,
-            python: "num_models", javascript: "numModels", feature: "cap-bio", status: experimental,
+            python: "num_models", python_property: getter, javascript: "numModels", feature: "cap-bio", status: experimental,
             kind: instance, parameters: [], output: usize, error: none,
             state: read_only, operation: none,
             signature: fn(&crate::BioStructure) -> usize,
@@ -8346,42 +8450,42 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.name", item: callable, owner: type_, rust: crate::BioStructure::name,
-            python: "name", javascript: "name", feature: "cap-bio", status: experimental, kind: instance,
+            python: "name", python_property: getter, javascript: "name", feature: "cap-bio", status: experimental, kind: instance,
             parameters: [], output: &str, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::BioStructure) -> &'a str,
         },
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.has_origx", item: callable, owner: type_, rust: crate::BioStructure::has_origx,
-            python: "has_origx", javascript: "hasOrigx", feature: "cap-bio", status: experimental, kind: instance,
+            python: "has_origx", python_property: getter, javascript: "hasOrigx", feature: "cap-bio", status: experimental, kind: instance,
             parameters: [], output: bool, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioStructure) -> bool,
         },
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.origx", item: callable, owner: type_, rust: crate::BioStructure::origx,
-            python: "origx", javascript: "origx", feature: "cap-bio", status: experimental, kind: instance,
+            python: "origx", python_property: getter, javascript: "origx", feature: "cap-bio", status: experimental, kind: instance,
             parameters: [], output: &crate::BioTransform, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::BioStructure) -> &'a crate::BioTransform,
         },
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.ncs_oper_identity_id", item: callable, owner: type_, rust: crate::BioStructure::ncs_oper_identity_id,
-            python: "ncs_oper_identity_id", javascript: "ncsOperIdentityId", feature: "cap-bio", status: experimental, kind: instance,
+            python: "ncs_oper_identity_id", python_property: getter, javascript: "ncsOperIdentityId", feature: "cap-bio", status: experimental, kind: instance,
             parameters: [], output: Option<&str>, error: none, state: read_only, operation: none,
             signature: for<'a> fn(&'a crate::BioStructure) -> Option<&'a str>,
         },
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.resolution", item: callable, owner: type_, rust: crate::BioStructure::resolution,
-            python: "resolution", javascript: "resolution", feature: "cap-bio", status: experimental, kind: instance,
+            python: "resolution", python_property: getter, javascript: "resolution", feature: "cap-bio", status: experimental, kind: instance,
             parameters: [], output: f64, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioStructure) -> f64,
         },
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.ter_status", item: callable, owner: type_, rust: crate::BioStructure::ter_status,
-            python: "ter_status", javascript: "terStatus", feature: "cap-bio", status: experimental, kind: instance,
+            python: "ter_status", python_property: getter, javascript: "terStatus", feature: "cap-bio", status: experimental, kind: instance,
             parameters: [], output: u8, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioStructure) -> u8,
         },
@@ -8389,7 +8493,7 @@ binding_contract! {
         {
             semantic_id: "BioStructure.num_chains",
             item: callable, owner: type_, rust: crate::BioStructure::num_chains,
-            python: "num_chains", javascript: "numChains", feature: "cap-bio", status: experimental,
+            python: "num_chains", python_property: getter, javascript: "numChains", feature: "cap-bio", status: experimental,
             kind: instance, parameters: [], output: usize, error: none,
             state: read_only, operation: none,
             signature: fn(&crate::BioStructure) -> usize,
@@ -8398,7 +8502,7 @@ binding_contract! {
         {
             semantic_id: "BioStructure.num_residues",
             item: callable, owner: type_, rust: crate::BioStructure::num_residues,
-            python: "num_residues", javascript: "numResidues", feature: "cap-bio", status: experimental,
+            python: "num_residues", python_property: getter, javascript: "numResidues", feature: "cap-bio", status: experimental,
             kind: instance, parameters: [], output: usize, error: none,
             state: read_only, operation: none,
             signature: fn(&crate::BioStructure) -> usize,
@@ -8407,7 +8511,7 @@ binding_contract! {
         {
             semantic_id: "BioStructure.num_atoms",
             item: callable, owner: type_, rust: crate::BioStructure::num_atoms,
-            python: "num_atoms", javascript: "numAtoms", feature: "cap-bio", status: experimental,
+            python: "num_atoms", python_property: getter, javascript: "numAtoms", feature: "cap-bio", status: experimental,
             kind: instance, parameters: [], output: usize, error: none,
             state: read_only, operation: none,
             signature: fn(&crate::BioStructure) -> usize,
@@ -8416,7 +8520,7 @@ binding_contract! {
         {
             semantic_id: "BioStructure.num_entities",
             item: callable, owner: type_, rust: crate::BioStructure::num_entities,
-            python: "num_entities", javascript: "numEntities", feature: "cap-bio", status: experimental,
+            python: "num_entities", python_property: getter, javascript: "numEntities", feature: "cap-bio", status: experimental,
             kind: instance, parameters: [], output: usize, error: none,
             state: read_only, operation: none,
             signature: fn(&crate::BioStructure) -> usize,
@@ -8462,7 +8566,7 @@ binding_contract! {
         {
             semantic_id: "Protein.input_format",
             item: callable, owner: type_, rust: crate::Protein::input_format,
-            python: "input_format", javascript: "inputFormat", feature: "cap-bio", status: experimental,
+            python: "input_format", python_property: getter, javascript: "inputFormat", feature: "cap-bio", status: experimental,
             kind: instance, parameters: [], output: crate::BioCoordinateFormat,
             error: none, state: read_only, operation: none,
             signature: fn(&crate::Protein) -> crate::BioCoordinateFormat,
@@ -8524,7 +8628,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::Protein::num_models,
-            python: "num_models",
+            python: "num_models", python_property: getter,
             javascript: "numModels",
             feature: "cap-bio", status: experimental,
             kind: instance,
@@ -8541,7 +8645,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::Protein::num_chains,
-            python: "num_chains",
+            python: "num_chains", python_property: getter,
             javascript: "numChains",
             feature: "cap-bio", status: experimental,
             kind: instance,
@@ -8558,7 +8662,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::Protein::num_residues,
-            python: "num_residues",
+            python: "num_residues", python_property: getter,
             javascript: "numResidues",
             feature: "cap-bio", status: experimental,
             kind: instance,
@@ -8575,7 +8679,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::Protein::num_atoms,
-            python: "num_atoms",
+            python: "num_atoms", python_property: getter,
             javascript: "numAtoms",
             feature: "cap-bio", status: experimental,
             kind: instance,
@@ -8592,7 +8696,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::Protein::chains,
-            python: "chains",
+            python: "chains", python_property: getter,
             javascript: "chains",
             feature: "cap-bio", status: experimental,
             kind: instance,
@@ -8628,7 +8732,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::Protein::residues,
-            python: "residues",
+            python: "residues", python_property: getter,
             javascript: "residues",
             feature: "cap-bio", status: experimental,
             kind: instance,
@@ -8645,7 +8749,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::Protein::atoms,
-            python: "atoms",
+            python: "atoms", python_property: getter,
             javascript: "atoms",
             feature: "cap-bio", status: experimental,
             kind: instance,
@@ -8662,7 +8766,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinChainRef::id,
-            python: "id",
+            python: "id", python_property: getter,
             javascript: "id",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8679,7 +8783,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinChainRef::row,
-            python: "row",
+            python: "row", python_property: getter,
             javascript: "row",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8696,7 +8800,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinChainRef::kind,
-            python: "kind",
+            python: "kind", python_property: getter,
             javascript: "kind",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8713,7 +8817,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinChainRef::source,
-            python: "source",
+            python: "source", python_property: getter,
             javascript: "source",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8730,7 +8834,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinChainRef::residues,
-            python: "residues",
+            python: "residues", python_property: getter,
             javascript: "residues",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8747,7 +8851,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinChainRef::atoms,
-            python: "atoms",
+            python: "atoms", python_property: getter,
             javascript: "atoms",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8764,7 +8868,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::id,
-            python: "id",
+            python: "id", python_property: getter,
             javascript: "id",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8781,7 +8885,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::row,
-            python: "row",
+            python: "row", python_property: getter,
             javascript: "row",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8798,7 +8902,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::name,
-            python: "name",
+            python: "name", python_property: getter,
             javascript: "name",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8815,7 +8919,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::kind,
-            python: "kind",
+            python: "kind", python_property: getter,
             javascript: "kind",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8832,7 +8936,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::info,
-            python: "info",
+            python: "info", python_property: getter,
             javascript: "info",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8849,7 +8953,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::code,
-            python: "code",
+            python: "code", python_property: getter,
             javascript: "code",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8866,7 +8970,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::one_letter_code,
-            python: "one_letter_code",
+            python: "one_letter_code", python_property: getter,
             javascript: "oneLetterCode",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8883,7 +8987,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::fasta_code,
-            python: "fasta_code",
+            python: "fasta_code", python_property: getter,
             javascript: "fastaCode",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8900,7 +9004,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::is_standard,
-            python: "is_standard",
+            python: "is_standard", python_property: getter,
             javascript: "isStandard",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8917,7 +9021,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::chain,
-            python: "chain",
+            python: "chain", python_property: getter,
             javascript: "chain",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8934,7 +9038,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinResidueRef::atoms,
-            python: "atoms",
+            python: "atoms", python_property: getter,
             javascript: "atoms",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8951,7 +9055,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinAtomRef::id,
-            python: "id",
+            python: "id", python_property: getter,
             javascript: "id",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8968,7 +9072,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinAtomRef::row,
-            python: "row",
+            python: "row", python_property: getter,
             javascript: "row",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -8985,7 +9089,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinAtomRef::name,
-            python: "name",
+            python: "name", python_property: getter,
             javascript: "name",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -9002,7 +9106,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinAtomRef::element,
-            python: "element",
+            python: "element", python_property: getter,
             javascript: "element",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -9019,7 +9123,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinAtomRef::altloc,
-            python: "altloc",
+            python: "altloc", python_property: getter,
             javascript: "altloc",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -9036,7 +9140,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinAtomRef::residue,
-            python: "residue",
+            python: "residue", python_property: getter,
             javascript: "residue",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -9053,7 +9157,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::ProteinAtomRef::position,
-            python: "position",
+            python: "position", python_property: getter,
             javascript: "position",
             feature: "cap-bio", status: experimental,
             kind: instance, receiver: owned,
@@ -9124,7 +9228,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::graph,
-            python: "graph",
+            python: "graph", python_property: getter,
             javascript: "graph",
             feature: "cap-io", status: experimental,
             kind: instance,
@@ -9141,7 +9245,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::molecule,
-            python: "molecule",
+            python: "molecule", python_property: getter,
             javascript: "molecule",
             feature: "cap-io", status: experimental,
             kind: instance,
@@ -9158,7 +9262,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::query_graph,
-            python: "query_graph",
+            python: "query_graph", python_property: getter,
             javascript: "queryGraph",
             feature: "cap-io", status: experimental,
             kind: instance,
@@ -9175,7 +9279,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::data_fields,
-            python: "data_fields",
+            python: "data_fields", python_property: getter,
             javascript: "dataFields",
             feature: "cap-io", status: experimental,
             kind: instance,
@@ -9192,7 +9296,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::properties,
-            python: "properties",
+            python: "properties", python_property: getter,
             javascript: "properties",
             feature: "cap-io", status: experimental,
             kind: instance,
@@ -9209,7 +9313,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::substance_groups,
-            python: "substance_groups",
+            python: "substance_groups", python_property: getter,
             javascript: "substanceGroups",
             feature: "cap-io", status: experimental,
             kind: instance,
@@ -9226,7 +9330,7 @@ binding_contract! {
             item: callable,
             owner: type_,
             rust: crate::SdfRecord::source_coordinate_dim,
-            python: "source_coordinate_dim",
+            python: "source_coordinate_dim", python_property: getter,
             javascript: "sourceCoordinateDim",
             feature: "cap-io", status: experimental,
             kind: instance,
@@ -9870,48 +9974,65 @@ binding_contract! {
         { semantic_id:"types.Atom",item:type,owner:type_,rust:crate::Atom,python:"Atom",javascript:"Atom",feature:"metadata",status:experimental,role:value, },
         { semantic_id:"types.Bond",item:type,owner:type_,rust:crate::Bond,python:"Bond",javascript:"Bond",feature:"metadata",status:experimental,role:value, },
         {semantic_id:"types.Hybridization",item:type,owner:type_,rust:crate::Hybridization,python:"Hybridization",javascript:"Hybridization",feature:"metadata",status:experimental,role:value,},
-        {semantic_id:"Atom.hybridization",item:callable,owner:type_,rust:crate::Atom::hybridization,python:"hybridization",javascript:"hybridization",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::Hybridization,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->crate::Hybridization,},
+        {semantic_id:"Atom.hybridization",item:callable,owner:type_,rust:crate::Atom::hybridization,python:"hybridization", python_property: getter,javascript:"hybridization",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::Hybridization,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->crate::Hybridization,},
+        {semantic_id:"MoleculeAtom.hybridization",item:callable,owner:type_,rust:crate::MoleculeAtom::hybridization,python:"hybridization", python_property: getter,javascript:"hybridization",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::Hybridization,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->crate::Hybridization,},
         { semantic_id:"types.BondOrder",item:type,owner:type_,rust:crate::BondOrder,python:"BondOrder",javascript:"BondOrder",feature:"metadata",status:experimental,role:value, },
         { semantic_id:"types.BondDirection",item:type,owner:type_,rust:crate::BondDirection,python:"BondDirection",javascript:"BondDirection",feature:"metadata",status:experimental,role:value, },
         { semantic_id:"types.BondStereo",item:type,owner:type_,rust:crate::BondStereo,python:"BondStereo",javascript:"BondStereo",feature:"metadata",status:experimental,role:value, },
         { semantic_id:"types.ChiralTag",item:type,owner:type_,rust:crate::ChiralTag,python:"ChiralTag",javascript:"ChiralTag",feature:"metadata",status:experimental,role:value, },
         { semantic_id:"types.AtomSpec",item:type,owner:type_,rust:crate::AtomSpec,python:"AtomSpec",javascript:"AtomSpec",feature:"metadata",status:experimental,role:value, },
         { semantic_id:"types.BondSpec",item:type,owner:type_,rust:crate::BondSpec,python:"BondSpec",javascript:"BondSpec",feature:"metadata",status:experimental,role:value, },
-        { semantic_id:"Atom.id",item:callable,owner:type_,rust:crate::Atom::id,python:"id",javascript:"id",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::AtomId,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->crate::AtomId, },
-        { semantic_id:"Atom.element",item:callable,owner:type_,rust:crate::Atom::element,python:"element",javascript:"element",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::Element,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->crate::Element, },
-        { semantic_id:"Atom.atomic_number",item:callable,owner:type_,rust:crate::Atom::atomic_number,python:"atomic_number",javascript:"atomicNumber",feature:"runtime",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->u8, },
-        { semantic_id:"Atom.formal_charge",item:callable,owner:type_,rust:crate::Atom::formal_charge,python:"formal_charge",javascript:"formalCharge",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i8,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->i8, },
-        { semantic_id:"Atom.chiral_tag",item:callable,owner:type_,rust:crate::Atom::chiral_tag,python:"chiral_tag",javascript:"chiralTag",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::ChiralTag,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->crate::ChiralTag, },
-        { semantic_id:"Atom.chiral_tag_code",item:callable,owner:type_,rust:crate::Atom::chiral_tag_code,python:"chiral_tag_code",javascript:"chiralTagCode",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i64,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->i64, },
-        { semantic_id:"Atom.chiral_tag_name",item:callable,owner:type_,rust:crate::Atom::chiral_tag_name,python:"chiral_tag_name",javascript:"chiralTagName",feature:"runtime",status:experimental,kind:instance,parameters:[],output:&'static str,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->&'static str, },
-        { semantic_id:"Atom.isotope",item:callable,owner:type_,rust:crate::Atom::isotope,python:"isotope",javascript:"isotope",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<u16>,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->Option<u16>, },
-        { semantic_id:"Atom.atom_map",item:callable,owner:type_,rust:crate::Atom::atom_map,python:"atom_map",javascript:"atomMap",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<u32>,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->Option<u32>, },
-        { semantic_id:"Atom.is_aromatic",item:callable,owner:type_,rust:crate::Atom::is_aromatic,python:"is_aromatic",javascript:"isAromatic",feature:"runtime",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->bool, },
-        { semantic_id:"Atom.explicit_hydrogens",item:callable,owner:type_,rust:crate::Atom::explicit_hydrogens,python:"explicit_hydrogens",javascript:"explicitHydrogens",feature:"runtime",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->u8, },
-        { semantic_id:"Atom.no_implicit",item:callable,owner:type_,rust:crate::Atom::no_implicit,python:"no_implicit",javascript:"noImplicit",feature:"runtime",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->bool, },
-        { semantic_id:"Atom.radical_electrons",item:callable,owner:type_,rust:crate::Atom::radical_electrons,python:"radical_electrons",javascript:"radicalElectrons",feature:"runtime",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->u8, },
-        { semantic_id:"Bond.id",item:callable,owner:type_,rust:crate::Bond::id,python:"id",javascript:"id",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::BondId,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::BondId, },
-        { semantic_id:"Bond.begin",item:callable,owner:type_,rust:crate::Bond::begin,python:"begin",javascript:"begin",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::AtomId,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::AtomId, },
-        { semantic_id:"Bond.end",item:callable,owner:type_,rust:crate::Bond::end,python:"end",javascript:"end",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::AtomId,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::AtomId, },
-        { semantic_id:"Bond.order",item:callable,owner:type_,rust:crate::Bond::order,python:"order",javascript:"order",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::BondOrder,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::BondOrder, },
-        { semantic_id:"Bond.order_code",item:callable,owner:type_,rust:crate::Bond::order_code,python:"order_code",javascript:"orderCode",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i64,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->i64, },
-        { semantic_id:"Bond.order_name",item:callable,owner:type_,rust:crate::Bond::order_name,python:"order_name",javascript:"orderName",feature:"runtime",status:experimental,kind:instance,parameters:[],output:&'static str,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->&'static str, },
-        { semantic_id:"Bond.direction",item:callable,owner:type_,rust:crate::Bond::direction,python:"direction",javascript:"direction",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::BondDirection,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::BondDirection, },
-        { semantic_id:"Bond.direction_code",item:callable,owner:type_,rust:crate::Bond::direction_code,python:"direction_code",javascript:"directionCode",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i64,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->i64, },
-        { semantic_id:"Bond.direction_name",item:callable,owner:type_,rust:crate::Bond::direction_name,python:"direction_name",javascript:"directionName",feature:"runtime",status:experimental,kind:instance,parameters:[],output:&'static str,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->&'static str, },
-        { semantic_id:"Bond.stereo",item:callable,owner:type_,rust:crate::Bond::stereo,python:"stereo",javascript:"stereo",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::BondStereo,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::BondStereo, },
-        { semantic_id:"Bond.stereo_code",item:callable,owner:type_,rust:crate::Bond::stereo_code,python:"stereo_code",javascript:"stereoCode",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i64,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->i64, },
-        { semantic_id:"Bond.stereo_name",item:callable,owner:type_,rust:crate::Bond::stereo_name,python:"stereo_name",javascript:"stereoName",feature:"runtime",status:experimental,kind:instance,parameters:[],output:&'static str,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->&'static str, },
-        { semantic_id:"Bond.stereo_atoms",item:callable,owner:type_,rust:crate::Bond::stereo_atoms,python:"stereo_atoms",javascript:"stereoAtoms",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<[crate::AtomId; 2]>,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->Option<[crate::AtomId; 2]>, },
-        { semantic_id:"Bond.is_aromatic",item:callable,owner:type_,rust:crate::Bond::is_aromatic,python:"is_aromatic",javascript:"isAromatic",feature:"runtime",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->bool, },
-        { semantic_id:"Atom.cip_descriptor",item:callable,owner:type_,rust:crate::Atom::cip_descriptor,python:"cip_descriptor",javascript:"cipDescriptor",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<crate::CipDescriptor>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::Atom)->Result<Option<crate::CipDescriptor>,crate::CipDescriptorError>, },
-        { semantic_id:"Atom.cip_neighbor_order",item:callable,owner:type_,rust:crate::Atom::cip_neighbor_order,python:"cip_neighbor_order",javascript:"cipNeighborOrder",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<Vec<u32>>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::Atom)->Result<Option<Vec<u32>>,crate::CipDescriptorError>, },
-        { semantic_id:"Atom.cip_rank",item:callable,owner:type_,rust:crate::Atom::cip_rank,python:"cip_rank",javascript:"cipRank",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<u32>,error:crate::PropertyValueError,state:read_only,operation:none,signature:fn(&crate::Atom)->Result<Option<u32>,crate::PropertyValueError>, },
-        { semantic_id:"Bond.cip_descriptor",item:callable,owner:type_,rust:crate::Bond::cip_descriptor,python:"cip_descriptor",javascript:"cipDescriptor",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<crate::CipDescriptor>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::Bond)->Result<Option<crate::CipDescriptor>,crate::CipDescriptorError>, },
-        { semantic_id:"Bond.cip_neighbor_order",item:callable,owner:type_,rust:crate::Bond::cip_neighbor_order,python:"cip_neighbor_order",javascript:"cipNeighborOrder",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<Vec<u32>>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::Bond)->Result<Option<Vec<u32>>,crate::CipDescriptorError>, },
+        { semantic_id:"Atom.id",item:callable,owner:type_,rust:crate::Atom::id,python:"id", python_property: getter,javascript:"id",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::AtomId,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->crate::AtomId, },
+        { semantic_id:"MoleculeAtom.id",item:callable,owner:type_,rust:crate::MoleculeAtom::id,python:"id", python_property: getter,javascript:"id",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::AtomId,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->crate::AtomId, },
+        { semantic_id:"Atom.element",item:callable,owner:type_,rust:crate::Atom::element,python:"element", python_property: getter,javascript:"element",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::Element,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->crate::Element, },
+        { semantic_id:"MoleculeAtom.element",item:callable,owner:type_,rust:crate::MoleculeAtom::element,python:"element", python_property: getter,javascript:"element",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::Element,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->crate::Element, },
+        { semantic_id:"Atom.atomic_number",item:callable,owner:type_,rust:crate::Atom::atomic_number,python:"atomic_number", python_property: getter,javascript:"atomicNumber",feature:"runtime",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->u8, },
+        { semantic_id:"MoleculeAtom.atomic_number",item:callable,owner:type_,rust:crate::MoleculeAtom::atomic_number,python:"atomic_number", python_property: getter,javascript:"atomicNumber",feature:"runtime",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->u8, },
+        { semantic_id:"Atom.formal_charge",item:callable,owner:type_,rust:crate::Atom::formal_charge,python:"formal_charge", python_property: getter,javascript:"formalCharge",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i8,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->i8, },
+        { semantic_id:"MoleculeAtom.formal_charge",item:callable,owner:type_,rust:crate::MoleculeAtom::formal_charge,python:"formal_charge", python_property: getter,javascript:"formalCharge",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i8,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->i8, },
+        { semantic_id:"Atom.chiral_tag",item:callable,owner:type_,rust:crate::Atom::chiral_tag,python:"chiral_tag", python_property: getter,javascript:"chiralTag",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::ChiralTag,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->crate::ChiralTag, },
+        { semantic_id:"MoleculeAtom.chiral_tag",item:callable,owner:type_,rust:crate::MoleculeAtom::chiral_tag,python:"chiral_tag", python_property: getter,javascript:"chiralTag",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::ChiralTag,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->crate::ChiralTag, },
+        { semantic_id:"Atom.chiral_tag_code",item:callable,owner:type_,rust:crate::Atom::chiral_tag_code,python:"chiral_tag_code", python_property: getter,javascript:"chiralTagCode",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i64,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->i64, },
+        { semantic_id:"MoleculeAtom.chiral_tag_code",item:callable,owner:type_,rust:crate::MoleculeAtom::chiral_tag_code,python:"chiral_tag_code", python_property: getter,javascript:"chiralTagCode",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i64,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->i64, },
+        { semantic_id:"Atom.chiral_tag_name",item:callable,owner:type_,rust:crate::Atom::chiral_tag_name,python:"chiral_tag_name", python_property: getter,javascript:"chiralTagName",feature:"runtime",status:experimental,kind:instance,parameters:[],output:&'static str,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->&'static str, },
+        { semantic_id:"MoleculeAtom.chiral_tag_name",item:callable,owner:type_,rust:crate::MoleculeAtom::chiral_tag_name,python:"chiral_tag_name", python_property: getter,javascript:"chiralTagName",feature:"runtime",status:experimental,kind:instance,parameters:[],output:&'static str,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->&'static str, },
+        { semantic_id:"Atom.isotope",item:callable,owner:type_,rust:crate::Atom::isotope,python:"isotope", python_property: getter,javascript:"isotope",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<u16>,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->Option<u16>, },
+        { semantic_id:"MoleculeAtom.isotope",item:callable,owner:type_,rust:crate::MoleculeAtom::isotope,python:"isotope", python_property: getter,javascript:"isotope",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<u16>,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->Option<u16>, },
+        { semantic_id:"Atom.atom_map",item:callable,owner:type_,rust:crate::Atom::atom_map,python:"atom_map", python_property: getter,javascript:"atomMap",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<u32>,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->Option<u32>, },
+        { semantic_id:"MoleculeAtom.atom_map",item:callable,owner:type_,rust:crate::MoleculeAtom::atom_map,python:"atom_map", python_property: getter,javascript:"atomMap",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<u32>,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->Option<u32>, },
+        { semantic_id:"Atom.is_aromatic",item:callable,owner:type_,rust:crate::Atom::is_aromatic,python:"is_aromatic", python_property: getter,javascript:"isAromatic",feature:"runtime",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->bool, },
+        { semantic_id:"MoleculeAtom.is_aromatic",item:callable,owner:type_,rust:crate::MoleculeAtom::is_aromatic,python:"is_aromatic", python_property: getter,javascript:"isAromatic",feature:"runtime",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->bool, },
+        { semantic_id:"Atom.explicit_hydrogens",item:callable,owner:type_,rust:crate::Atom::explicit_hydrogens,python:"explicit_hydrogens", python_property: getter,javascript:"explicitHydrogens",feature:"runtime",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->u8, },
+        { semantic_id:"MoleculeAtom.explicit_hydrogens",item:callable,owner:type_,rust:crate::MoleculeAtom::explicit_hydrogens,python:"explicit_hydrogens", python_property: getter,javascript:"explicitHydrogens",feature:"runtime",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->u8, },
+        { semantic_id:"Atom.no_implicit",item:callable,owner:type_,rust:crate::Atom::no_implicit,python:"no_implicit", python_property: getter,javascript:"noImplicit",feature:"runtime",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->bool, },
+        { semantic_id:"MoleculeAtom.no_implicit",item:callable,owner:type_,rust:crate::MoleculeAtom::no_implicit,python:"no_implicit", python_property: getter,javascript:"noImplicit",feature:"runtime",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->bool, },
+        { semantic_id:"Atom.radical_electrons",item:callable,owner:type_,rust:crate::Atom::radical_electrons,python:"radical_electrons", python_property: getter,javascript:"radicalElectrons",feature:"runtime",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::Atom)->u8, },
+        { semantic_id:"MoleculeAtom.radical_electrons",item:callable,owner:type_,rust:crate::MoleculeAtom::radical_electrons,python:"radical_electrons", python_property: getter,javascript:"radicalElectrons",feature:"runtime",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->u8, },
+        { semantic_id:"Bond.id",item:callable,owner:type_,rust:crate::Bond::id,python:"id", python_property: getter,javascript:"id",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::BondId,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::BondId, },
+        { semantic_id:"Bond.begin",item:callable,owner:type_,rust:crate::Bond::begin,python:"begin", python_property: getter,javascript:"begin",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::AtomId,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::AtomId, },
+        { semantic_id:"Bond.end",item:callable,owner:type_,rust:crate::Bond::end,python:"end", python_property: getter,javascript:"end",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::AtomId,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::AtomId, },
+        { semantic_id:"Bond.order",item:callable,owner:type_,rust:crate::Bond::order,python:"order", python_property: getter,javascript:"order",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::BondOrder,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::BondOrder, },
+        { semantic_id:"Bond.order_code",item:callable,owner:type_,rust:crate::Bond::order_code,python:"order_code", python_property: getter,javascript:"orderCode",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i64,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->i64, },
+        { semantic_id:"Bond.order_name",item:callable,owner:type_,rust:crate::Bond::order_name,python:"order_name", python_property: getter,javascript:"orderName",feature:"runtime",status:experimental,kind:instance,parameters:[],output:&'static str,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->&'static str, },
+        { semantic_id:"Bond.direction",item:callable,owner:type_,rust:crate::Bond::direction,python:"direction", python_property: getter,javascript:"direction",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::BondDirection,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::BondDirection, },
+        { semantic_id:"Bond.direction_code",item:callable,owner:type_,rust:crate::Bond::direction_code,python:"direction_code", python_property: getter,javascript:"directionCode",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i64,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->i64, },
+        { semantic_id:"Bond.direction_name",item:callable,owner:type_,rust:crate::Bond::direction_name,python:"direction_name", python_property: getter,javascript:"directionName",feature:"runtime",status:experimental,kind:instance,parameters:[],output:&'static str,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->&'static str, },
+        { semantic_id:"Bond.stereo",item:callable,owner:type_,rust:crate::Bond::stereo,python:"stereo", python_property: getter,javascript:"stereo",feature:"runtime",status:experimental,kind:instance,parameters:[],output:crate::BondStereo,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->crate::BondStereo, },
+        { semantic_id:"Bond.stereo_code",item:callable,owner:type_,rust:crate::Bond::stereo_code,python:"stereo_code", python_property: getter,javascript:"stereoCode",feature:"runtime",status:experimental,kind:instance,parameters:[],output:i64,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->i64, },
+        { semantic_id:"Bond.stereo_name",item:callable,owner:type_,rust:crate::Bond::stereo_name,python:"stereo_name", python_property: getter,javascript:"stereoName",feature:"runtime",status:experimental,kind:instance,parameters:[],output:&'static str,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->&'static str, },
+        { semantic_id:"Bond.stereo_atoms",item:callable,owner:type_,rust:crate::Bond::stereo_atoms,python:"stereo_atoms", python_property: getter,javascript:"stereoAtoms",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<[crate::AtomId; 2]>,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->Option<[crate::AtomId; 2]>, },
+        { semantic_id:"Bond.is_aromatic",item:callable,owner:type_,rust:crate::Bond::is_aromatic,python:"is_aromatic", python_property: getter,javascript:"isAromatic",feature:"runtime",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::Bond)->bool, },
+        { semantic_id:"Atom.cip_descriptor",item:callable,owner:type_,rust:crate::Atom::cip_descriptor,python:"cip_descriptor", python_property: getter,javascript:"cipDescriptor",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<crate::CipDescriptor>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::Atom)->Result<Option<crate::CipDescriptor>,crate::CipDescriptorError>, },
+        { semantic_id:"MoleculeAtom.cip_descriptor",item:callable,owner:type_,rust:crate::MoleculeAtom::cip_descriptor,python:"cip_descriptor", python_property: getter,javascript:"cipDescriptor",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<crate::CipDescriptor>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->Result<Option<crate::CipDescriptor>,crate::CipDescriptorError>, },
+        { semantic_id:"Atom.cip_neighbor_order",item:callable,owner:type_,rust:crate::Atom::cip_neighbor_order,python:"cip_neighbor_order", python_property: getter,javascript:"cipNeighborOrder",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<Vec<u32>>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::Atom)->Result<Option<Vec<u32>>,crate::CipDescriptorError>, },
+        { semantic_id:"MoleculeAtom.cip_neighbor_order",item:callable,owner:type_,rust:crate::MoleculeAtom::cip_neighbor_order,python:"cip_neighbor_order", python_property: getter,javascript:"cipNeighborOrder",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<Vec<u32>>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->Result<Option<Vec<u32>>,crate::CipDescriptorError>, },
+        { semantic_id:"Atom.cip_rank",item:callable,owner:type_,rust:crate::Atom::cip_rank,python:"cip_rank", python_property: getter,javascript:"cipRank",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<u32>,error:crate::PropertyValueError,state:read_only,operation:none,signature:fn(&crate::Atom)->Result<Option<u32>,crate::PropertyValueError>, },
+        { semantic_id:"MoleculeAtom.cip_rank",item:callable,owner:type_,rust:crate::MoleculeAtom::cip_rank,python:"cip_rank", python_property: getter,javascript:"cipRank",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<u32>,error:crate::PropertyValueError,state:read_only,operation:none,signature:fn(&crate::MoleculeAtom)->Result<Option<u32>,crate::PropertyValueError>, },
+        { semantic_id:"Bond.cip_descriptor",item:callable,owner:type_,rust:crate::Bond::cip_descriptor,python:"cip_descriptor", python_property: getter,javascript:"cipDescriptor",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<crate::CipDescriptor>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::Bond)->Result<Option<crate::CipDescriptor>,crate::CipDescriptorError>, },
+        { semantic_id:"Bond.cip_neighbor_order",item:callable,owner:type_,rust:crate::Bond::cip_neighbor_order,python:"cip_neighbor_order", python_property: getter,javascript:"cipNeighborOrder",feature:"runtime",status:experimental,kind:instance,parameters:[],output:Option<Vec<u32>>,error:crate::CipDescriptorError,state:read_only,operation:none,signature:fn(&crate::Bond)->Result<Option<Vec<u32>>,crate::CipDescriptorError>, },
         #[cfg(feature="cap-stereo")]
         { semantic_id:"Molecule.cip_computed",item:callable,owner:molecule,rust:crate::Molecule::cip_computed,
-          python:"cip_computed",javascript:"cipComputed",feature:"cap-stereo",status:experimental,kind:instance,
+          python:"cip_computed", python_property: getter,javascript:"cipComputed",feature:"cap-stereo",status:experimental,kind:instance,
           parameters:[],output:bool,error:crate::PropertyValueError,state:read_only,operation:none,signature:fn(&crate::Molecule)->Result<bool,crate::PropertyValueError>, },
         {semantic_id:"AtomSpec.new",item:callable,owner:type_,rust:crate::AtomSpec::new,python:"new",javascript:"new",feature:"runtime",status:experimental,kind:static_,parameters:[{name:element,type:crate::Element,default:required},],output:crate::AtomSpec,error:none,state:value_returning,operation:none,signature:fn(crate::Element)->crate::AtomSpec,},
         {semantic_id:"BondSpec.new",item:callable,owner:type_,rust:crate::BondSpec::new,python:"new",javascript:"new",feature:"runtime",status:experimental,kind:static_,parameters:[{name:begin,type:crate::AtomId,default:required},{name:end,type:crate::AtomId,default:required},{name:order,type:crate::BondOrder,default:required},],output:crate::BondSpec,error:none,state:value_returning,operation:none,signature:fn(crate::AtomId,crate::AtomId,crate::BondOrder)->crate::BondSpec,},
@@ -9968,7 +10089,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "TopologicalTorsionFingerprintGenerator.settings", item: callable, owner: type_,
-            rust: crate::TopologicalTorsionFingerprintGenerator::settings, python: "settings", javascript: "settings",
+            rust: crate::TopologicalTorsionFingerprintGenerator::settings, python: "settings", python_property: getter, javascript: "settings",
             feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [], output: crate::TopologicalTorsionSettings, error: none,
             state: read_only, operation: none, signature: for<'a> fn(&'a crate::TopologicalTorsionFingerprintGenerator)->crate::TopologicalTorsionSettings,
@@ -9994,8 +10115,8 @@ binding_contract! {
             semantic_id: "TopologicalTorsionFingerprintGenerator.fingerprints", item: callable, owner: type_,
             rust: crate::TopologicalTorsionFingerprintGenerator::fingerprints, python: "fingerprints", javascript: "fingerprints",
             feature: "cap-fingerprints", status: experimental, kind: instance,
-            parameters: [{ name: molecules, type: &[Option<&crate::Molecule>], default: required }, { name: num_threads, type: i32, default: literal(1) }], output: Vec<Option<crate::Fingerprint>>, error: crate::TopologicalTorsionReadError,
-            state: read_only, operation: none, signature: for<'a,'b> fn(&'a crate::TopologicalTorsionFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::Fingerprint>>,crate::TopologicalTorsionReadError>,
+            parameters: [{ name: molecules, type: &[Option<&crate::Molecule>], default: required }, { name: num_threads, type: i32, default: literal(1) }], output: crate::FingerprintBatch, error: crate::TopologicalTorsionReadError,
+            state: read_only, operation: none, signature: for<'a,'b> fn(&'a crate::TopologicalTorsionFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<crate::FingerprintBatch,crate::TopologicalTorsionReadError>,
         },
         #[cfg(feature = "cap-fingerprints")]
         {
@@ -10136,7 +10257,7 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         {
             semantic_id: "TopologicalTorsionSettings.params", item: callable, owner: type_,
-            rust: crate::TopologicalTorsionSettings::params, python: "params", javascript: "params",
+            rust: crate::TopologicalTorsionSettings::params, python: "params", python_property: getter, javascript: "params",
             feature: "cap-fingerprints", status: experimental, kind: instance,
             parameters: [], output: crate::TopologicalTorsionGeneratorParams, error: crate::TopologicalTorsionReadError,
             state: read_only, operation: none, signature: for<'a> fn(&'a crate::TopologicalTorsionSettings)->Result<crate::TopologicalTorsionGeneratorParams,crate::TopologicalTorsionReadError>,
@@ -10146,7 +10267,7 @@ binding_contract! {
             semantic_id: "Molecule.fingerprint_topological_torsion_with_generator", item: callable, owner: molecule,
             rust: crate::Molecule::fingerprint_topological_torsion_with_generator, python: "fingerprint_topological_torsion_with_generator", javascript: "fingerprintTopologicalTorsionWithGenerator",
             feature: "cap-fingerprints", status: experimental, kind: instance,
-            parameters: [{ name: generator, type: &crate::TopologicalTorsionFingerprintGenerator, default: required }, { name: params, type: Option<&crate::TopologicalTorsionCallParams>, default: none }, { name: output, type: Option<&mut crate::FingerprintAdditionalOutput>, default: none }], output: crate::Fingerprint, error: crate::TopologicalTorsionReadError,
+            parameters: [{ name: generator, type: &crate::TopologicalTorsionFingerprintGenerator, default: required }, { name: params, type: Option<&crate::TopologicalTorsionCallParams>, default: none }, { name: additional_output, type: Option<&mut crate::FingerprintAdditionalOutput>, default: none }], output: crate::Fingerprint, error: crate::TopologicalTorsionReadError,
             state: read_only, operation: none, signature: for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::TopologicalTorsionFingerprintGenerator,Option<&'c crate::TopologicalTorsionCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::Fingerprint,crate::TopologicalTorsionReadError>,
         },
         #[cfg(feature = "cap-fingerprints")]
@@ -10154,7 +10275,7 @@ binding_contract! {
             semantic_id: "Molecule.fingerprint_topological_torsion_sparse_with_generator", item: callable, owner: molecule,
             rust: crate::Molecule::fingerprint_topological_torsion_sparse_with_generator, python: "fingerprint_topological_torsion_sparse_with_generator", javascript: "fingerprintTopologicalTorsionSparseWithGenerator",
             feature: "cap-fingerprints", status: experimental, kind: instance,
-            parameters: [{ name: generator, type: &crate::TopologicalTorsionFingerprintGenerator, default: required }, { name: params, type: Option<&crate::TopologicalTorsionCallParams>, default: none }, { name: output, type: Option<&mut crate::FingerprintAdditionalOutput>, default: none }], output: crate::SparseBitFingerprint, error: crate::TopologicalTorsionReadError,
+            parameters: [{ name: generator, type: &crate::TopologicalTorsionFingerprintGenerator, default: required }, { name: params, type: Option<&crate::TopologicalTorsionCallParams>, default: none }, { name: additional_output, type: Option<&mut crate::FingerprintAdditionalOutput>, default: none }], output: crate::SparseBitFingerprint, error: crate::TopologicalTorsionReadError,
             state: read_only, operation: none, signature: for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::TopologicalTorsionFingerprintGenerator,Option<&'c crate::TopologicalTorsionCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseBitFingerprint,crate::TopologicalTorsionReadError>,
         },
         #[cfg(feature = "cap-fingerprints")]
@@ -10162,7 +10283,7 @@ binding_contract! {
             semantic_id: "Molecule.fingerprint_topological_torsion_count_with_generator", item: callable, owner: molecule,
             rust: crate::Molecule::fingerprint_topological_torsion_count_with_generator, python: "fingerprint_topological_torsion_count_with_generator", javascript: "fingerprintTopologicalTorsionCountWithGenerator",
             feature: "cap-fingerprints", status: experimental, kind: instance,
-            parameters: [{ name: generator, type: &crate::TopologicalTorsionFingerprintGenerator, default: required }, { name: params, type: Option<&crate::TopologicalTorsionCallParams>, default: none }, { name: output, type: Option<&mut crate::FingerprintAdditionalOutput>, default: none }], output: crate::SparseCountFingerprint32, error: crate::TopologicalTorsionReadError,
+            parameters: [{ name: generator, type: &crate::TopologicalTorsionFingerprintGenerator, default: required }, { name: params, type: Option<&crate::TopologicalTorsionCallParams>, default: none }, { name: additional_output, type: Option<&mut crate::FingerprintAdditionalOutput>, default: none }], output: crate::SparseCountFingerprint32, error: crate::TopologicalTorsionReadError,
             state: read_only, operation: none, signature: for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::TopologicalTorsionFingerprintGenerator,Option<&'c crate::TopologicalTorsionCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseCountFingerprint32,crate::TopologicalTorsionReadError>,
         },
         #[cfg(feature = "cap-fingerprints")]
@@ -10170,7 +10291,7 @@ binding_contract! {
             semantic_id: "Molecule.fingerprint_topological_torsion_sparse_count_with_generator", item: callable, owner: molecule,
             rust: crate::Molecule::fingerprint_topological_torsion_sparse_count_with_generator, python: "fingerprint_topological_torsion_sparse_count_with_generator", javascript: "fingerprintTopologicalTorsionSparseCountWithGenerator",
             feature: "cap-fingerprints", status: experimental, kind: instance,
-            parameters: [{ name: generator, type: &crate::TopologicalTorsionFingerprintGenerator, default: required }, { name: params, type: Option<&crate::TopologicalTorsionCallParams>, default: none }, { name: output, type: Option<&mut crate::FingerprintAdditionalOutput>, default: none }], output: crate::SparseCountFingerprint, error: crate::TopologicalTorsionReadError,
+            parameters: [{ name: generator, type: &crate::TopologicalTorsionFingerprintGenerator, default: required }, { name: params, type: Option<&crate::TopologicalTorsionCallParams>, default: none }, { name: additional_output, type: Option<&mut crate::FingerprintAdditionalOutput>, default: none }], output: crate::SparseCountFingerprint, error: crate::TopologicalTorsionReadError,
             state: read_only, operation: none, signature: for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::TopologicalTorsionFingerprintGenerator,Option<&'c crate::TopologicalTorsionCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseCountFingerprint,crate::TopologicalTorsionReadError>,
         },
         #[cfg(feature = "cap-fingerprints")]
@@ -10194,13 +10315,13 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "AtomCodeExplanation.from_code", item: callable, owner: type_, rust: crate::AtomCodeExplanation::from_code, python: "from_code", javascript: "fromCode", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [{ name: code, type: u64, default: required }, { name: branch_subtract, type: i64, default: integer(0) }, { name: include_chirality, type: bool, default: boolean(false) }], output: crate::AtomCodeExplanation, error: crate::AtomCodeExplanationError, state: value_returning, operation: none, signature: fn(u64,i64,bool)->Result<crate::AtomCodeExplanation,crate::AtomCodeExplanationError>, },
         #[cfg(feature = "cap-fingerprints")]
-        { semantic_id: "AtomCodeExplanation.symbol", item: callable, owner: type_, rust: crate::AtomCodeExplanation::symbol, python: "symbol", javascript: "symbol", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: &'static str, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->&'static str, },
+        { semantic_id: "AtomCodeExplanation.symbol", item: callable, owner: type_, rust: crate::AtomCodeExplanation::symbol, python: "symbol", python_property: getter, javascript: "symbol", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: &'static str, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->&'static str, },
         #[cfg(feature = "cap-fingerprints")]
-        { semantic_id: "AtomCodeExplanation.branch_count", item: callable, owner: type_, rust: crate::AtomCodeExplanation::branch_count, python: "branch_count", javascript: "branchCount", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->u32, },
+        { semantic_id: "AtomCodeExplanation.branch_count", item: callable, owner: type_, rust: crate::AtomCodeExplanation::branch_count, python: "branch_count", python_property: getter, javascript: "branchCount", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->u32, },
         #[cfg(feature = "cap-fingerprints")]
-        { semantic_id: "AtomCodeExplanation.pi_electrons", item: callable, owner: type_, rust: crate::AtomCodeExplanation::pi_electrons, python: "pi_electrons", javascript: "piElectrons", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->u32, },
+        { semantic_id: "AtomCodeExplanation.pi_electrons", item: callable, owner: type_, rust: crate::AtomCodeExplanation::pi_electrons, python: "pi_electrons", python_property: getter, javascript: "piElectrons", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->u32, },
         #[cfg(feature = "cap-fingerprints")]
-        { semantic_id: "AtomCodeExplanation.chirality", item: callable, owner: type_, rust: crate::AtomCodeExplanation::chirality, python: "chirality", javascript: "chirality", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: Option<&'static str>, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->Option<&'static str>, },
+        { semantic_id: "AtomCodeExplanation.chirality", item: callable, owner: type_, rust: crate::AtomCodeExplanation::chirality, python: "chirality", python_property: getter, javascript: "chirality", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: Option<&'static str>, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->Option<&'static str>, },
         #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
         { semantic_id:"types.PickleError", item:type, owner:type_,
           rust:crate::PickleError, python:"PickleError", javascript:"PickleError",
@@ -10385,21 +10506,21 @@ binding_contract! {
 #[cfg(feature="cap-alignment")]
 {semantic_id:"Molecule.align_conformers_with_params_",item:callable,owner:molecule,rust:crate::Molecule::align_conformers_with_params_,python:"align_conformers_with_params_",javascript:"alignConformersWithParams_",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:params,type:&crate::ConformerAlignmentParameters,default:required}],output:crate::ConformerAlignmentReport,error:crate::OperationError,state:in_place,operation:"align_conformers_with_params_",signature:fn(&mut crate::Molecule,&crate::ConformerAlignmentParameters)->Result<crate::ConformerAlignmentReport,crate::OperationError>,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"AlignmentResult.rmsd",item:callable,owner:type_,rust:crate::AlignmentResult::rmsd,python:"rmsd",javascript:"rmsd",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::AlignmentResult)->f64,},
+{semantic_id:"AlignmentResult.rmsd",item:callable,owner:type_,rust:crate::AlignmentResult::rmsd,python:"rmsd", python_property: getter,javascript:"rmsd",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::AlignmentResult)->f64,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"AlignmentResult.transform",item:callable,owner:type_,rust:crate::AlignmentResult::transform,python:"transform",javascript:"transform",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a crate::AlignmentTransform,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AlignmentResult)->&'a crate::AlignmentTransform,},
+{semantic_id:"AlignmentResult.transform",item:callable,owner:type_,rust:crate::AlignmentResult::transform,python:"transform", python_property: getter,javascript:"transform",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a crate::AlignmentTransform,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AlignmentResult)->&'a crate::AlignmentTransform,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"AlignmentResult.atom_map",item:callable,owner:type_,rust:crate::AlignmentResult::atom_map,python:"atom_map",javascript:"atomMap",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a [crate::AlignmentAtomMap],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AlignmentResult)->&'a [crate::AlignmentAtomMap],},
+{semantic_id:"AlignmentResult.atom_map",item:callable,owner:type_,rust:crate::AlignmentResult::atom_map,python:"atom_map", python_property: getter,javascript:"atomMap",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a [crate::AlignmentAtomMap],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AlignmentResult)->&'a [crate::AlignmentAtomMap],},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"AlignmentTransform.matrix",item:callable,owner:type_,rust:crate::AlignmentTransform::matrix,python:"matrix",javascript:"matrix",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a [[f64;4];4],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AlignmentTransform)->&'a [[f64;4];4],},
+{semantic_id:"AlignmentTransform.matrix",item:callable,owner:type_,rust:crate::AlignmentTransform::matrix,python:"matrix", python_property: getter,javascript:"matrix",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a [[f64;4];4],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AlignmentTransform)->&'a [[f64;4];4],},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"ConformerRmsd.rmsd",item:callable,owner:type_,rust:crate::ConformerRmsd::rmsd,python:"rmsd",javascript:"rmsd",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::ConformerRmsd)->f64,},
+{semantic_id:"ConformerRmsd.rmsd",item:callable,owner:type_,rust:crate::ConformerRmsd::rmsd,python:"rmsd", python_property: getter,javascript:"rmsd",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::ConformerRmsd)->f64,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"ConformerRmsd.probe_conformer_id",item:callable,owner:type_,rust:crate::ConformerRmsd::probe_conformer_id,python:"probe_conformer_id",javascript:"probeConformerId",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::ConformerRmsd)->usize,},
+{semantic_id:"ConformerRmsd.probe_conformer_id",item:callable,owner:type_,rust:crate::ConformerRmsd::probe_conformer_id,python:"probe_conformer_id", python_property: getter,javascript:"probeConformerId",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::ConformerRmsd)->usize,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"ConformerRmsd.reference_conformer_id",item:callable,owner:type_,rust:crate::ConformerRmsd::reference_conformer_id,python:"reference_conformer_id",javascript:"referenceConformerId",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::ConformerRmsd)->usize,},
+{semantic_id:"ConformerRmsd.reference_conformer_id",item:callable,owner:type_,rust:crate::ConformerRmsd::reference_conformer_id,python:"reference_conformer_id", python_property: getter,javascript:"referenceConformerId",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::ConformerRmsd)->usize,},
 #[cfg(feature="cap-alignment")]
-{semantic_id:"ConformerAlignmentReport.rmsds",item:callable,owner:type_,rust:crate::ConformerAlignmentReport::rmsds,python:"rmsds",javascript:"rmsds",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a [f64],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::ConformerAlignmentReport)->&'a [f64],},
+{semantic_id:"ConformerAlignmentReport.rmsds",item:callable,owner:type_,rust:crate::ConformerAlignmentReport::rmsds,python:"rmsds", python_property: getter,javascript:"rmsds",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a [f64],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::ConformerAlignmentReport)->&'a [f64],},
 #[cfg(feature="cap-alignment")]
 {semantic_id:"AlignmentAtomMap.new",item:callable,owner:type_,rust:crate::AlignmentAtomMap::new,python:"new",javascript:"new",feature:"cap-alignment",status:experimental,kind:static_,parameters:[{name:probe_atom,type: usize,default:required},{name:reference_atom,type: usize,default:required}],output:crate::AlignmentAtomMap,error:none,state:value_returning,operation:none,signature:fn( usize, usize)->crate::AlignmentAtomMap,},
 #[cfg(feature="cap-alignment")]
@@ -10472,11 +10593,11 @@ binding_contract! {
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"fingerprint_layered_query_with_output_with_params",item:callable,owner:module,rust:crate::fingerprint_layered_query_with_output_with_params,python:"fingerprint_layered_query_with_output_with_params",javascript:"fingerprintLayeredQueryWithOutputWithParams",feature:"cap-fingerprints",status:experimental,kind:module,parameters:[{name:query,type:&crate::QueryGraph,default:required},{name:params,type:&crate::LayeredFingerprintParams,default:required}],output:crate::LayeredFingerprintResult,error:crate::LayeredFingerprintError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::QueryGraph,&'b crate::LayeredFingerprintParams)->Result<crate::LayeredFingerprintResult,crate::LayeredFingerprintError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"LayeredFingerprintResult.fingerprint",item:callable,owner:type_,rust:crate::LayeredFingerprintResult::fingerprint,python:"fingerprint",javascript:"fingerprint",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a crate::Fingerprint,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::LayeredFingerprintResult)->&'a crate::Fingerprint,},
+        {semantic_id:"LayeredFingerprintResult.fingerprint",item:callable,owner:type_,rust:crate::LayeredFingerprintResult::fingerprint,python:"fingerprint", python_property: getter,javascript:"fingerprint",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a crate::Fingerprint,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::LayeredFingerprintResult)->&'a crate::Fingerprint,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"LayeredFingerprintResult.atom_counts",item:callable,owner:type_,rust:crate::LayeredFingerprintResult::atom_counts,python:"atom_counts",javascript:"atomCounts",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:Option<&'a [u32]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::LayeredFingerprintResult)->Option<&'a [u32]>,},
+        {semantic_id:"LayeredFingerprintResult.atom_counts",item:callable,owner:type_,rust:crate::LayeredFingerprintResult::atom_counts,python:"atom_counts", python_property: getter,javascript:"atomCounts",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:Option<&'a [u32]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::LayeredFingerprintResult)->Option<&'a [u32]>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"LayeredFingerprintLayers.bits",item:callable,owner:type_,rust:crate::LayeredFingerprintLayers::bits,python:"bits",javascript:"bits",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:owned,parameters:[],output:u32,error:none,state:value_returning,operation:none,signature:fn(crate::LayeredFingerprintLayers)->u32,},
+        {semantic_id:"LayeredFingerprintLayers.bits",item:callable,owner:type_,rust:crate::LayeredFingerprintLayers::bits,python:"bits", python_property: getter,javascript:"bits",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:owned,parameters:[],output:u32,error:none,state:value_returning,operation:none,signature:fn(crate::LayeredFingerprintLayers)->u32,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"LayeredFingerprintLayers.from_bits_retain",item:callable,owner:type_,rust:crate::LayeredFingerprintLayers::from_bits_retain,python:"from_bits_retain",javascript:"fromBitsRetain",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:bits,type:u32,default:required}],output:crate::LayeredFingerprintLayers,error:none,state:value_returning,operation:none,signature:fn(u32)->crate::LayeredFingerprintLayers,},
         #[cfg(feature = "cap-fingerprints")]
@@ -10563,25 +10684,41 @@ binding_contract! {
 #[cfg(feature="cap-conformer")]
 {semantic_id:"types.EmbedMoleculeResult",item:type,owner:type_,rust:crate::EmbedMoleculeResult,python:"EmbedMoleculeResult",javascript:"EmbedMoleculeResult",feature:"cap-conformer",status:experimental,role:result,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"EmbedMoleculeResult.molecule",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::molecule,python:"molecule",javascript:"molecule",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMoleculeResult)->&'a crate::Molecule,},
+{semantic_id:"types.EmbedFailureCause",item:type,owner:type_,rust:crate::EmbedFailureCause,python:"EmbedFailureCause",javascript:"EmbedFailureCause",feature:"cap-conformer",status:experimental,role:value,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"EmbedMoleculeResult.params",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::params,python:"params",javascript:"params",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a crate::EmbedParams,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMoleculeResult)->&'a crate::EmbedParams,},
+{semantic_id:"types.EmbedFailureCountError",item:type,owner:type_,rust:crate::EmbedFailureCountError,python:"EmbedFailureCountError",javascript:"EmbedFailureCountError",feature:"cap-conformer",status:experimental,role:error,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedMoleculeResult.failures_tracked",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::failures_tracked,python:"failures_tracked",python_property:getter,javascript:"failuresTracked",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMoleculeResult)->bool,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedMoleculeResult.failure_counts",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::failure_counts,python:"failure_counts",python_property:getter,javascript:"failureCounts",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:Option<&'a [u32]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMoleculeResult)->Option<&'a [u32]>,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedMoleculeResult.failure_count",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::failure_count,python:"failure_count",javascript:"failureCount",feature:"cap-conformer",status:experimental,kind:instance,parameters:[{name:cause,type:crate::EmbedFailureCause,default:required}],output:Option<u32>,error:crate::EmbedFailureCountError,state:read_only,operation:none,signature:fn(&crate::EmbedMoleculeResult,crate::EmbedFailureCause)->Result<Option<u32>,crate::EmbedFailureCountError>,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedMultipleConfsResult.failures_tracked",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::failures_tracked,python:"failures_tracked",python_property:getter,javascript:"failuresTracked",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMultipleConfsResult)->bool,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedMultipleConfsResult.failure_counts",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::failure_counts,python:"failure_counts",python_property:getter,javascript:"failureCounts",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:Option<&'a [u32]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMultipleConfsResult)->Option<&'a [u32]>,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedMultipleConfsResult.failure_count",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::failure_count,python:"failure_count",javascript:"failureCount",feature:"cap-conformer",status:experimental,kind:instance,parameters:[{name:cause,type:crate::EmbedFailureCause,default:required}],output:Option<u32>,error:crate::EmbedFailureCountError,state:read_only,operation:none,signature:fn(&crate::EmbedMultipleConfsResult,crate::EmbedFailureCause)->Result<Option<u32>,crate::EmbedFailureCountError>,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedMoleculeResult.molecule",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::molecule,python:"molecule", python_property: getter,javascript:"molecule",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMoleculeResult)->&'a crate::Molecule,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedMoleculeResult.params",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::params,python:"params", python_property: getter,javascript:"params",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a crate::EmbedParams,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMoleculeResult)->&'a crate::EmbedParams,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"types.EmbedMultipleConfsResult",item:type,owner:type_,rust:crate::EmbedMultipleConfsResult,python:"EmbedMultipleConfsResult",javascript:"EmbedMultipleConfsResult",feature:"cap-conformer",status:experimental,role:result,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"EmbedMultipleConfsResult.molecule",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::molecule,python:"molecule",javascript:"molecule",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMultipleConfsResult)->&'a crate::Molecule,},
+{semantic_id:"EmbedMultipleConfsResult.molecule",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::molecule,python:"molecule", python_property: getter,javascript:"molecule",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMultipleConfsResult)->&'a crate::Molecule,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"EmbedMultipleConfsResult.params",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::params,python:"params",javascript:"params",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a crate::EmbedParams,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMultipleConfsResult)->&'a crate::EmbedParams,},
+{semantic_id:"EmbedMultipleConfsResult.params",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::params,python:"params", python_property: getter,javascript:"params",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a crate::EmbedParams,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMultipleConfsResult)->&'a crate::EmbedParams,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"EmbedMoleculeResult.conf_id",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::conf_id,python:"conf_id",javascript:"confId",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMoleculeResult)->i32,},
+{semantic_id:"EmbedMoleculeResult.conf_id",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::conf_id,python:"conf_id", python_property: getter,javascript:"confId",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMoleculeResult)->i32,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"EmbedMoleculeResult.ok",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::ok,python:"ok",javascript:"ok",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMoleculeResult)->bool,},
+{semantic_id:"EmbedMoleculeResult.ok",item:callable,owner:type_,rust:crate::EmbedMoleculeResult::ok,python:"ok", python_property: getter,javascript:"ok",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMoleculeResult)->bool,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"EmbedMultipleConfsResult.conf_ids",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::conf_ids,python:"conf_ids",javascript:"confIds",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a [i32],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMultipleConfsResult)->&'a [i32],},
+{semantic_id:"EmbedMultipleConfsResult.conf_ids",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::conf_ids,python:"conf_ids", python_property: getter,javascript:"confIds",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a [i32],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedMultipleConfsResult)->&'a [i32],},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"EmbedMultipleConfsResult.requested_num_confs",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::requested_num_confs,python:"requested_num_confs",javascript:"requestedNumConfs",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:u32,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMultipleConfsResult)->u32,},
+{semantic_id:"EmbedMultipleConfsResult.requested_num_confs",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::requested_num_confs,python:"requested_num_confs", python_property: getter,javascript:"requestedNumConfs",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:u32,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMultipleConfsResult)->u32,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"EmbedMultipleConfsResult.generated_count",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::generated_count,python:"generated_count",javascript:"generatedCount",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMultipleConfsResult)->usize,},
+{semantic_id:"EmbedMultipleConfsResult.generated_count",item:callable,owner:type_,rust:crate::EmbedMultipleConfsResult::generated_count,python:"generated_count", python_property: getter,javascript:"generatedCount",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedMultipleConfsResult)->usize,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"Molecule.with_3d_conformer",item:callable,owner:molecule,rust:crate::Molecule::with_3d_conformer,python:"with_3d_conformer",javascript:"with3dConformer",feature:"cap-conformer",kind:instance,parameters:[],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_3d_conformer",signature:fn(&crate::Molecule)->Result<crate::Molecule,crate::OperationError>,},
 #[cfg(feature="cap-conformer")]
@@ -10736,7 +10873,7 @@ binding_contract! {
 #[cfg(feature="cap-conformer")]
 {semantic_id:"EmbedParams.with_json",item:callable,owner:type_,rust:crate::EmbedParams::with_json,python:"with_json",javascript:"withJson",feature:"cap-conformer",status:experimental,kind:instance,parameters:[{name:json,type:&str,default:required}],output:crate::EmbedParams,error:crate::ConformerError,state:read_only,operation:none,signature:fn(&crate::EmbedParams,&str)->Result<crate::EmbedParams,crate::ConformerError>,},
 #[cfg(feature="cap-conformer")]
-{semantic_id:"Molecule.num_3d_conformers",item:callable,owner:molecule,rust:crate::Molecule::num_3d_conformers,python:"num_3d_conformers",javascript:"num3dConformers",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::Molecule)->usize,},
+{semantic_id:"Molecule.num_3d_conformers",item:callable,owner:molecule,rust:crate::Molecule::num_3d_conformers,python:"num_3d_conformers", python_property: getter,javascript:"num3dConformers",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::Molecule)->usize,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"Molecule.dg_bounds_matrix",item:callable,owner:molecule,rust:crate::Molecule::dg_bounds_matrix,python:"dg_bounds_matrix",javascript:"dgBoundsMatrix",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:Vec<Vec<f64>>,error:crate::ConformerRunError,state:read_only,operation:none,signature:fn(&crate::Molecule)->Result<Vec<Vec<f64>>,crate::ConformerRunError>,},
         #[cfg(feature="cap-fingerprints")]
@@ -10796,11 +10933,11 @@ binding_contract! {
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"fingerprint_topological_query_with_output_with_params",item:callable,owner:module,rust:crate::fingerprint_topological_query_with_output_with_params,python:"fingerprint_topological_query_with_output_with_params",javascript:"fingerprintTopologicalQueryWithOutputWithParams",feature:"cap-fingerprints",status:experimental,kind:module,parameters:[{name:query,type:&crate::QueryGraph,default:required},{name:params,type:&crate::TopologicalFingerprintParams,default:required},{name:request,type:crate::TopologicalFingerprintOutputRequest,default:required}],output:crate::TopologicalFingerprintResult,error:crate::TopologicalFingerprintError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::QueryGraph,&'b crate::TopologicalFingerprintParams,crate::TopologicalFingerprintOutputRequest)->Result<crate::TopologicalFingerprintResult,crate::TopologicalFingerprintError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"TopologicalFingerprintResult.fingerprint",item:callable,owner:type_,rust:crate::TopologicalFingerprintResult::fingerprint,python:"fingerprint",javascript:"fingerprint",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a crate::Fingerprint,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalFingerprintResult)->&'a crate::Fingerprint,},
+        {semantic_id:"TopologicalFingerprintResult.fingerprint",item:callable,owner:type_,rust:crate::TopologicalFingerprintResult::fingerprint,python:"fingerprint", python_property: getter,javascript:"fingerprint",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a crate::Fingerprint,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalFingerprintResult)->&'a crate::Fingerprint,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"TopologicalFingerprintResult.atom_bits",item:callable,owner:type_,rust:crate::TopologicalFingerprintResult::atom_bits,python:"atom_bits",javascript:"atomBits",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a [Vec<u32>],error:crate::TopologicalFingerprintError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalFingerprintResult)->Result<&'a [Vec<u32>],crate::TopologicalFingerprintError>,},
+        {semantic_id:"TopologicalFingerprintResult.atom_bits",item:callable,owner:type_,rust:crate::TopologicalFingerprintResult::atom_bits,python:"atom_bits", python_property: getter,javascript:"atomBits",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a [Vec<u32>],error:crate::TopologicalFingerprintError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalFingerprintResult)->Result<&'a [Vec<u32>],crate::TopologicalFingerprintError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"TopologicalFingerprintResult.bit_info",item:callable,owner:type_,rust:crate::TopologicalFingerprintResult::bit_info,python:"bit_info",javascript:"bitInfo",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a std::collections::BTreeMap<u32,Vec<Vec<i32>>>,error:crate::TopologicalFingerprintError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalFingerprintResult)->Result<&'a std::collections::BTreeMap<u32,Vec<Vec<i32>>>,crate::TopologicalFingerprintError>,},
+        {semantic_id:"TopologicalFingerprintResult.bit_info",item:callable,owner:type_,rust:crate::TopologicalFingerprintResult::bit_info,python:"bit_info", python_property: getter,javascript:"bitInfo",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a std::collections::BTreeMap<u32,Vec<Vec<i32>>>,error:crate::TopologicalFingerprintError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::TopologicalFingerprintResult)->Result<&'a std::collections::BTreeMap<u32,Vec<Vec<i32>>>,crate::TopologicalFingerprintError>,},
 
         #[cfg(feature="cap-io")]
         {semantic_id:"SdfRecord.from_query_graph",item:callable,owner:type_,rust:crate::SdfRecord::from_query_graph,python:"from_query_graph",javascript:"fromQueryGraph",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:query,type:crate::QueryGraph,default:required},{name:properties,type:crate::MoleculeProperties,default:required}],output:crate::SdfRecord,error:crate::SdfError,state:value_returning,operation:none,signature:fn(crate::QueryGraph,crate::MoleculeProperties)->Result<crate::SdfRecord,crate::SdfError>,},
@@ -10815,7 +10952,7 @@ binding_contract! {
 #[cfg(feature="cap-io")]
 {semantic_id:"types.PropertyStringError",item:type,owner:type_,rust:crate::PropertyStringError,python:"PropertyStringError",javascript:"PropertyStringError",feature:"cap-io",status:experimental,role:error,},
 #[cfg(feature="cap-io")]
-{semantic_id:"PropertyStringError.kind",item:callable,owner:type_,rust:crate::PropertyStringError::kind,python:"kind",javascript:"kind",feature:"cap-io",status:experimental,kind:instance,receiver:owned,parameters:[],output:crate::PropertyValueKind,error:none,state:value_returning,operation:none,signature:fn(crate::PropertyStringError)->crate::PropertyValueKind,},
+{semantic_id:"PropertyStringError.kind",item:callable,owner:type_,rust:crate::PropertyStringError::kind,python:"kind", python_property: getter,javascript:"kind",feature:"cap-io",status:experimental,kind:instance,receiver:owned,parameters:[],output:crate::PropertyValueKind,error:none,state:value_returning,operation:none,signature:fn(crate::PropertyStringError)->crate::PropertyValueKind,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.atom_property_string",item:callable,owner:molecule,rust:crate::Molecule::atom_property_string,python:"atom_property_string",javascript:"atomPropertyString",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:id,type:crate::AtomId,default:required},{name:key,type:&str,default:required}],output:Option<crate::PropertyText>,error:crate::PropertyStringError,state:read_only,operation:none,signature:fn(&crate::Molecule,crate::AtomId,&str)->Result<Option<crate::PropertyText>,crate::PropertyStringError>,},
         #[cfg(feature = "cap-io")]
@@ -10916,11 +11053,11 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"SdfRecordStream.open_with_params",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::open_with_params,python:"open_with_params",javascript:"openWithParams",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::SdfReadParams,default:required}],output:crate::SdfRecordStream<std::io::BufReader<std::fs::File>>,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams)->Result<crate::SdfRecordStream<std::io::BufReader<std::fs::File>>,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfDataset.len",item:callable,owner:type_,rust:crate::SdfDataset::len,python:"len",javascript:"len",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfDataset)->usize,},
+        {semantic_id:"SdfDataset.len",item:callable,owner:type_,rust:crate::SdfDataset::len,python:"len", python_property:getter,javascript:"len",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfDataset)->usize,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfDataset.is_empty",item:callable,owner:type_,rust:crate::SdfDataset::is_empty,python:"is_empty",javascript:"isEmpty",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::SdfDataset)->bool,},
+        {semantic_id:"SdfDataset.is_empty",item:callable,owner:type_,rust:crate::SdfDataset::is_empty,python:"is_empty", python_property: getter,javascript:"isEmpty",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::SdfDataset)->bool,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfDataset.path",item:callable,owner:type_,rust:crate::SdfDataset::path,python:"path",javascript:"path",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:&'a std::path::Path,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfDataset)->&'a std::path::Path,},
+        {semantic_id:"SdfDataset.path",item:callable,owner:type_,rust:crate::SdfDataset::path,python:"path", python_property: getter,javascript:"path",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:&'a std::path::Path,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfDataset)->&'a std::path::Path,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"SdfDataset.iter",item:callable,owner:type_,rust:crate::SdfDataset::iter,python:"iter",javascript:"iter",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:crate::SdfDatasetIterator,error:none,state:read_only,operation:none,signature:fn(&crate::SdfDataset)->crate::SdfDatasetIterator,},
         #[cfg(feature = "cap-io")]
@@ -10934,29 +11071,29 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"SdfRecordStream.next_record",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::next_record,python:"next_record",javascript:"nextRecord",feature:"cap-io",status:experimental,kind:instance,receiver:mutable,parameters:[],output:Option<crate::SdfRecord>,error:crate::SdfError,state:in_place,operation:none,signature:fn(&mut crate::SdfRecordStream<std::io::BufReader<std::fs::File>>)->Result<Option<crate::SdfRecord>,crate::SdfError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordStream.is_end",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::is_end,python:"is_end",javascript:"isEnd",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordStream<std::io::BufReader<std::fs::File>>)->bool,},
+        {semantic_id:"SdfRecordStream.is_end",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::is_end,python:"is_end", python_property: getter,javascript:"isEnd",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordStream<std::io::BufReader<std::fs::File>>)->bool,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordStream.records_consumed",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::records_consumed,python:"records_consumed",javascript:"recordsConsumed",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordStream<std::io::BufReader<std::fs::File>>)->usize,},
+        {semantic_id:"SdfRecordStream.records_consumed",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::records_consumed,python:"records_consumed", python_property: getter,javascript:"recordsConsumed",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordStream<std::io::BufReader<std::fs::File>>)->usize,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordStream.bytes_consumed",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::bytes_consumed,python:"bytes_consumed",javascript:"bytesConsumed",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:u64,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordStream<std::io::BufReader<std::fs::File>>)->u64,},
+        {semantic_id:"SdfRecordStream.bytes_consumed",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::bytes_consumed,python:"bytes_consumed", python_property: getter,javascript:"bytesConsumed",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:u64,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordStream<std::io::BufReader<std::fs::File>>)->u64,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordStream.lines_consumed",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::lines_consumed,python:"lines_consumed",javascript:"linesConsumed",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordStream<std::io::BufReader<std::fs::File>>)->usize,},
+        {semantic_id:"SdfRecordStream.lines_consumed",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::lines_consumed,python:"lines_consumed", python_property: getter,javascript:"linesConsumed",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordStream<std::io::BufReader<std::fs::File>>)->usize,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordMetadata.index",item:callable,owner:type_,rust:crate::SdfRecordMetadata::index,python:"index",javascript:"index",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->usize,},
+        {semantic_id:"SdfRecordMetadata.index",item:callable,owner:type_,rust:crate::SdfRecordMetadata::index,python:"index", python_property: getter,javascript:"index",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->usize,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordMetadata.byte_offset",item:callable,owner:type_,rust:crate::SdfRecordMetadata::byte_offset,python:"byte_offset",javascript:"byteOffset",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:u64,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->u64,},
+        {semantic_id:"SdfRecordMetadata.byte_offset",item:callable,owner:type_,rust:crate::SdfRecordMetadata::byte_offset,python:"byte_offset", python_property: getter,javascript:"byteOffset",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:u64,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->u64,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordMetadata.byte_len",item:callable,owner:type_,rust:crate::SdfRecordMetadata::byte_len,python:"byte_len",javascript:"byteLen",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:u64,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->u64,},
+        {semantic_id:"SdfRecordMetadata.byte_len",item:callable,owner:type_,rust:crate::SdfRecordMetadata::byte_len,python:"byte_len", python_property: getter,javascript:"byteLen",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:u64,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->u64,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordMetadata.byte_range",item:callable,owner:type_,rust:crate::SdfRecordMetadata::byte_range,python:"byte_range",javascript:"byteRange",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:(u64,u64),error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->(u64,u64),},
+        {semantic_id:"SdfRecordMetadata.byte_range",item:callable,owner:type_,rust:crate::SdfRecordMetadata::byte_range,python:"byte_range", python_property: getter,javascript:"byteRange",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:(u64,u64),error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->(u64,u64),},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordMetadata.line_range",item:callable,owner:type_,rust:crate::SdfRecordMetadata::line_range,python:"line_range",javascript:"lineRange",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:(usize,usize),error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->(usize,usize),},
+        {semantic_id:"SdfRecordMetadata.line_range",item:callable,owner:type_,rust:crate::SdfRecordMetadata::line_range,python:"line_range", python_property: getter,javascript:"lineRange",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:(usize,usize),error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecordMetadata)->(usize,usize),},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecordMetadata.title",item:callable,owner:type_,rust:crate::SdfRecordMetadata::title,python:"title",javascript:"title",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:Option<&'a str>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfRecordMetadata)->Option<&'a str>,},
+        {semantic_id:"SdfRecordMetadata.title",item:callable,owner:type_,rust:crate::SdfRecordMetadata::title,python:"title", python_property: getter,javascript:"title",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:Option<&'a str>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfRecordMetadata)->Option<&'a str>,},
         #[cfg(feature="cap-io")]
-        {semantic_id:"SdfRecord.title",item:callable,owner:type_,rust:crate::SdfRecord::title,python:"title",javascript:"title",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:Option<&'a crate::PropertyText>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfRecord)->Option<&'a crate::PropertyText>,},
+        {semantic_id:"SdfRecord.title",item:callable,owner:type_,rust:crate::SdfRecord::title,python:"title", python_property: getter,javascript:"title",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:Option<&'a crate::PropertyText>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfRecord)->Option<&'a crate::PropertyText>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfRecord.index",item:callable,owner:type_,rust:crate::SdfRecord::index,python:"index",javascript:"index",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecord)->usize,},
+        {semantic_id:"SdfRecord.index",item:callable,owner:type_,rust:crate::SdfRecord::index,python:"index", python_property: getter,javascript:"index",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::SdfRecord)->usize,},
         #[cfg(feature="cap-io")]
         {semantic_id:"SdfRecord.data_field",item:callable,owner:type_,rust:crate::SdfRecord::data_field,python:"data_field",javascript:"dataField",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:name,type:&'b str,default:required}],output:Option<&'a crate::PropertyText>,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::SdfRecord,&'b str)->Option<&'a crate::PropertyText>,},
         #[cfg(feature = "cap-io")]
@@ -10966,7 +11103,7 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"MoleculeBatch.from_sdf_records", convenience: mols_from_sdf_records,item:callable,owner:type_,rust:crate::MoleculeBatch::from_sdf_records,python:"from_sdf_records",javascript:"fromSdfRecords",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.from_sdf_records_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::from_sdf_records_with_params,python:"from_sdf_records_with_params",javascript:"fromSdfRecordsWithParams",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:read,type:&crate::SdfReadParams,default:required},{name:mode,type:crate::BatchErrorMode,default:required},{name:n_jobs,type:Option<usize>,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams,crate::BatchErrorMode,Option<usize>)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+        {semantic_id:"MoleculeBatch.from_sdf_records_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::from_sdf_records_with_params,python:"from_sdf_records_with_params",javascript:"fromSdfRecordsWithParams",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:read,type:&crate::SdfReadParams,default:required},{name:mode,type:crate::BatchErrorMode,default:required},{name:n_jobs,type:Option<usize>,default:required},{name:progress_bar,type:bool,default:boolean(false)}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams,crate::BatchErrorMode,Option<usize>,bool)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"MoleculeBatch.read_sdf",item:callable,owner:type_,rust:crate::MoleculeBatch::read_sdf,python:"read_sdf",javascript:"readSdf",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
@@ -10976,7 +11113,7 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"MoleculeBatch.get",item:callable,owner:type_,rust:crate::MoleculeBatch::get,python:"get",javascript:"get",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:index,type:usize,default:required}],output:Option<&'a crate::BatchRecord>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch,usize)->Option<&'a crate::BatchRecord>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.records",item:callable,owner:type_,rust:crate::MoleculeBatch::records,python:"records",javascript:"records",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:&'a [crate::BatchRecord],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->&'a [crate::BatchRecord],},
+        {semantic_id:"MoleculeBatch.records",item:callable,owner:type_,rust:crate::MoleculeBatch::records,python:"records", python_property: getter,javascript:"records",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:&'a [crate::BatchRecord],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->&'a [crate::BatchRecord],},
 #[cfg(feature="cap-io")]
         {semantic_id:"SdfDataset.batches",item:callable,owner:type_,rust:crate::SdfDataset::batches,python:"batches",javascript:"batches",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:size,type:usize,default:required},{name:mode,type:crate::BatchErrorMode,default:required},{name:n_jobs,type:Option<usize>,default:required},{name:progress_bar,type:bool,default:required}],output:crate::SdfBatchIterator,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::SdfDataset,usize,crate::BatchErrorMode,Option<usize>,bool)->Result<crate::SdfBatchIterator,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
@@ -10990,9 +11127,9 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"SdfReader.open_with_params",item:callable,owner:type_,rust:crate::SdfReader::open_with_params,python:"open_with_params",javascript:"openWithParams",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::SdfReadParams,default:required}],output:crate::SdfReader,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams)->Result<crate::SdfReader,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfReader.path",item:callable,owner:type_,rust:crate::SdfReader::path,python:"path",javascript:"path",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:&'a std::path::Path,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfReader)->&'a std::path::Path,},
+        {semantic_id:"SdfReader.path",item:callable,owner:type_,rust:crate::SdfReader::path,python:"path", python_property: getter,javascript:"path",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:&'a std::path::Path,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfReader)->&'a std::path::Path,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"SdfReader.params",item:callable,owner:type_,rust:crate::SdfReader::params,python:"params",javascript:"params",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:&'a crate::SdfReadParams,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfReader)->&'a crate::SdfReadParams,},
+        {semantic_id:"SdfReader.params",item:callable,owner:type_,rust:crate::SdfReader::params,python:"params", python_property: getter,javascript:"params",feature:"cap-io",status:experimental,kind:instance,parameters:[],output:&'a crate::SdfReadParams,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::SdfReader)->&'a crate::SdfReadParams,},
 #[cfg(feature="cap-io")]
         {semantic_id:"SdfReader.batches",item:callable,owner:type_,rust:crate::SdfReader::batches,python:"batches",javascript:"batches",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:size,type:usize,default:integer(1024)},{name:mode,type:crate::BatchErrorMode,default:crate::BatchErrorMode::Strict},{name:n_jobs,type:Option<usize>,default:none}],output:crate::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&crate::SdfReader,usize,crate::BatchErrorMode,Option<usize>)->Result<crate::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
@@ -11057,13 +11194,13 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"MoleculeBatch.write_sdf_files_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::write_sdf_files_with_params,python:"write_sdf_files_with_params",javascript:"writeSdfFilesWithParams",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:directory,type:&str,default:required},{name:params,type:&crate::BatchExportParams,default:required},{name:filenames,type:Option<&[Option<String>]>,default:required},{name:report_path,type:Option<&str>,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::MoleculeBatch,&str,&crate::BatchExportParams,Option<&[Option<String>]>,Option<&str>)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"BatchExportReport.total",item:callable,owner:type_,rust:crate::BatchExportReport::total,python:"total",javascript:"total",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BatchExportReport)->usize,},
+        {semantic_id:"BatchExportReport.total",item:callable,owner:type_,rust:crate::BatchExportReport::total,python:"total", python_property: getter,javascript:"total",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BatchExportReport)->usize,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"BatchExportReport.success",item:callable,owner:type_,rust:crate::BatchExportReport::success,python:"success",javascript:"success",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BatchExportReport)->usize,},
+        {semantic_id:"BatchExportReport.success",item:callable,owner:type_,rust:crate::BatchExportReport::success,python:"success", python_property: getter,javascript:"success",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BatchExportReport)->usize,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"BatchExportReport.failed",item:callable,owner:type_,rust:crate::BatchExportReport::failed,python:"failed",javascript:"failed",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BatchExportReport)->usize,},
+        {semantic_id:"BatchExportReport.failed",item:callable,owner:type_,rust:crate::BatchExportReport::failed,python:"failed", python_property: getter,javascript:"failed",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BatchExportReport)->usize,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"BatchExportReport.errors",item:callable,owner:type_,rust:crate::BatchExportReport::errors,python:"errors",javascript:"errors",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:&'a [crate::BatchError],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchExportReport)->&'a [crate::BatchError],},
+        {semantic_id:"BatchExportReport.errors",item:callable,owner:type_,rust:crate::BatchExportReport::errors,python:"errors", python_property: getter,javascript:"errors",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:&'a [crate::BatchError],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchExportReport)->&'a [crate::BatchError],},
 #[cfg(feature="cap-io")]
         {semantic_id:"SdfRecordStream.batches",item:callable,owner:type_,rust:crate::SdfRecordStream::<std::io::BufReader<std::fs::File>>::batches,python:"batches",javascript:"batches",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,receiver:owned,parameters:[{name:size,type:usize,default:required},{name:mode,type:crate::BatchErrorMode,default:required},{name:n_jobs,type:Option<usize>,default:required}],output:crate::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(crate::SdfRecordStream<std::io::BufReader<std::fs::File>>,usize,crate::BatchErrorMode,Option<usize>)->Result<crate::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>,crate::BatchValidationError>,},
         #[cfg(feature = "cap-batch")]
@@ -11088,25 +11225,25 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 { semantic_id:"types.BatchExportReport", item:type, owner:type_, rust:crate::BatchExportReport, python:"BatchExportReport", javascript:"BatchExportReport", feature:"cap-batch", status:native, role:result, },
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.len",item:callable,owner:type_,rust:crate::MoleculeBatch::len,python:"len",javascript:"len",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->usize,},
+{semantic_id:"MoleculeBatch.len",item:callable,owner:type_,rust:crate::MoleculeBatch::len,python:"len", python_property:getter,javascript:"len",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->usize,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.error_mode",item:callable,owner:type_,rust:crate::MoleculeBatch::error_mode,python:"error_mode",javascript:"errorMode",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:crate::BatchErrorMode,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->crate::BatchErrorMode,},
+{semantic_id:"MoleculeBatch.error_mode",item:callable,owner:type_,rust:crate::MoleculeBatch::error_mode,python:"error_mode", python_property: getter,javascript:"errorMode",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:crate::BatchErrorMode,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->crate::BatchErrorMode,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.is_empty",item:callable,owner:type_,rust:crate::MoleculeBatch::is_empty,python:"is_empty",javascript:"isEmpty",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->bool,},
+{semantic_id:"MoleculeBatch.is_empty",item:callable,owner:type_,rust:crate::MoleculeBatch::is_empty,python:"is_empty", python_property: getter,javascript:"isEmpty",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->bool,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.valid_mask",item:callable,owner:type_,rust:crate::MoleculeBatch::valid_mask,python:"valid_mask",javascript:"validMask",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Vec<bool>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Vec<bool>,},
+{semantic_id:"MoleculeBatch.valid_mask",item:callable,owner:type_,rust:crate::MoleculeBatch::valid_mask,python:"valid_mask", python_property: getter,javascript:"validMask",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Vec<bool>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Vec<bool>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.invalid_mask",item:callable,owner:type_,rust:crate::MoleculeBatch::invalid_mask,python:"invalid_mask",javascript:"invalidMask",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Vec<bool>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Vec<bool>,},
+{semantic_id:"MoleculeBatch.invalid_mask",item:callable,owner:type_,rust:crate::MoleculeBatch::invalid_mask,python:"invalid_mask", python_property: getter,javascript:"invalidMask",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Vec<bool>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Vec<bool>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.valid_count",item:callable,owner:type_,rust:crate::MoleculeBatch::valid_count,python:"valid_count",javascript:"validCount",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->usize,},
+{semantic_id:"MoleculeBatch.valid_count",item:callable,owner:type_,rust:crate::MoleculeBatch::valid_count,python:"valid_count", python_property: getter,javascript:"validCount",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->usize,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.invalid_count",item:callable,owner:type_,rust:crate::MoleculeBatch::invalid_count,python:"invalid_count",javascript:"invalidCount",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->usize,},
+{semantic_id:"MoleculeBatch.invalid_count",item:callable,owner:type_,rust:crate::MoleculeBatch::invalid_count,python:"invalid_count", python_property: getter,javascript:"invalidCount",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->usize,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.errors",item:callable,owner:type_,rust:crate::MoleculeBatch::errors,python:"errors",javascript:"errors",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Vec<crate::BatchError>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Vec<crate::BatchError>,},
+{semantic_id:"MoleculeBatch.errors",item:callable,owner:type_,rust:crate::MoleculeBatch::errors,python:"errors", python_property: getter,javascript:"errors",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Vec<crate::BatchError>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Vec<crate::BatchError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.parallel_jobs",item:callable,owner:type_,rust:crate::MoleculeBatch::parallel_jobs,python:"parallel_jobs",javascript:"parallelJobs",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Option<usize>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Option<usize>,},
+{semantic_id:"MoleculeBatch.parallel_jobs",item:callable,owner:type_,rust:crate::MoleculeBatch::parallel_jobs,python:"parallel_jobs", python_property: getter,javascript:"parallelJobs",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Option<usize>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Option<usize>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.progress_bar",item:callable,owner:type_,rust:crate::MoleculeBatch::progress_bar,python:"progress_bar",javascript:"progressBar",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Option<bool>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Option<bool>,},
+{semantic_id:"MoleculeBatch.progress_bar",item:callable,owner:type_,rust:crate::MoleculeBatch::progress_bar,python:"progress_bar", python_property: getter,javascript:"progressBar",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Option<bool>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Option<bool>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.to_list",item:callable,owner:type_,rust:crate::MoleculeBatch::to_list,python:"to_list",javascript:"toList",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::Molecule>>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Vec<Option<crate::Molecule>>,},
 #[cfg(feature="cap-batch")]
@@ -11149,17 +11286,17 @@ binding_contract! {
                 { name: progress_callback, python_type: "typing.Optional[typing.Any]", default: "None" },
             ], role:parameter,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.to_smiles_list",item:callable,owner:type_,rust:crate::MoleculeBatch::to_smiles_list,python:"to_smiles_list",javascript:"toSmilesList",feature:"cap-batch",requires:["cap-smiles"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::PropertyText>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::PropertyText>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.to_smiles",item:callable,owner:type_,rust:crate::MoleculeBatch::to_smiles,python:"to_smiles",javascript:"toSmiles",feature:"cap-batch",requires:["cap-smiles"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::PropertyText>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::PropertyText>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.to_smiles_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::to_smiles_list_with_params,python:"to_smiles_list_with_params",javascript:"toSmilesListWithParams",feature:"cap-batch",requires:["cap-smiles"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::SmilesWriteParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::PropertyText>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::SmilesWriteParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::PropertyText>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.to_smiles_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::to_smiles_with_params,python:"to_smiles_with_params",javascript:"toSmilesWithParams",feature:"cap-batch",requires:["cap-smiles"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::SmilesWriteParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::PropertyText>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::SmilesWriteParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::PropertyText>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.dg_bounds_matrix_list",item:callable,owner:type_,rust:crate::MoleculeBatch::dg_bounds_matrix_list,python:"dg_bounds_matrix_list",javascript:"dgBoundsMatrixList",feature:"cap-batch",requires:["cap-conformer"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<Vec<Vec<f64>>>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<Vec<Vec<f64>>>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.dg_bounds_matrix",item:callable,owner:type_,rust:crate::MoleculeBatch::dg_bounds_matrix,python:"dg_bounds_matrix",javascript:"dgBoundsMatrix",feature:"cap-batch",requires:["cap-conformer"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<Vec<Vec<f64>>>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<Vec<Vec<f64>>>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.dg_bounds_matrix_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::dg_bounds_matrix_list_with_params,python:"dg_bounds_matrix_list_with_params",javascript:"dgBoundsMatrixListWithParams",feature:"cap-batch",requires:["cap-conformer"],status:native,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<Vec<Vec<f64>>>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeBatch,&'b crate::BatchQueryParams)->Result<Vec<Option<Vec<Vec<f64>>>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.dg_bounds_matrix_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::dg_bounds_matrix_with_params,python:"dg_bounds_matrix_with_params",javascript:"dgBoundsMatrixWithParams",feature:"cap-batch",requires:["cap-conformer"],status:native,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<Vec<Vec<f64>>>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeBatch,&'b crate::BatchQueryParams)->Result<Vec<Option<Vec<Vec<f64>>>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.to_svg_list",item:callable,owner:type_,rust:crate::MoleculeBatch::to_svg_list,python:"to_svg_list",javascript:"toSvgList",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:width,type:u32,default:required},{name:height,type:u32,default:required}],output:Vec<Option<String>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch,u32,u32)->Result<Vec<Option<String>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.to_svg",item:callable,owner:type_,rust:crate::MoleculeBatch::to_svg,python:"to_svg",javascript:"toSvg",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:width,type:u32,default:required},{name:height,type:u32,default:required}],output:Vec<Option<String>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch,u32,u32)->Result<Vec<Option<String>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.to_svg_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::to_svg_list_with_params,python:"to_svg_list_with_params",javascript:"toSvgListWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:width,type:u32,default:required},{name:height,type:u32,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<String>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeBatch,u32,u32,&'b crate::BatchQueryParams)->Result<Vec<Option<String>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.to_svg_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::to_svg_with_params,python:"to_svg_with_params",javascript:"toSvgWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:width,type:u32,default:required},{name:height,type:u32,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<String>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeBatch,u32,u32,&'b crate::BatchQueryParams)->Result<Vec<Option<String>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"types.BatchImageParams",item:type,owner:type_,rust:crate::BatchImageParams,python:"BatchImageParams",javascript:"BatchImageParams",feature:"cap-batch",requires:["cap-depict"],status:native,
             python_configuration: [
@@ -11177,73 +11314,73 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.write_images_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::write_images_with_params,python:"write_images_with_params",javascript:"writeImagesWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:directory,type:&std::path::Path,default:required},{name:options,type:&crate::BatchImageParams,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b std::path::Path,&'c crate::BatchImageParams)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_list,python:"fingerprint_atom_pair_list",javascript:"fingerprintAtomPairList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair,python:"fingerprint_atom_pair",javascript:"fingerprintAtomPair",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_list_with_params,python:"fingerprint_atom_pair_list_with_params",javascript:"fingerprintAtomPairListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_with_params,python:"fingerprint_atom_pair_with_params",javascript:"fingerprintAtomPairWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,&'c crate::BatchQueryParams)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_sparse_count_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_sparse_count_list,python:"fingerprint_atom_pair_sparse_count_list",javascript:"fingerprintAtomPairSparseCountList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::SparseCountFingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::SparseCountFingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_sparse_count",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_sparse_count,python:"fingerprint_atom_pair_sparse_count",javascript:"fingerprintAtomPairSparseCount",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::SparseCountFingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::SparseCountFingerprint>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_sparse_count_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_sparse_count_list_with_params,python:"fingerprint_atom_pair_sparse_count_list_with_params",javascript:"fingerprintAtomPairSparseCountListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::SparseCountFingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::SparseCountFingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_sparse_count_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_sparse_count_with_params,python:"fingerprint_atom_pair_sparse_count_with_params",javascript:"fingerprintAtomPairSparseCountWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::SparseCountFingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::SparseCountFingerprint>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_count_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_count_list,python:"fingerprint_atom_pair_count_list",javascript:"fingerprintAtomPairCountList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::SparseCountFingerprint32>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::SparseCountFingerprint32>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_count",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_count,python:"fingerprint_atom_pair_count",javascript:"fingerprintAtomPairCount",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::SparseCountFingerprint32>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::SparseCountFingerprint32>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_count_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_count_list_with_params,python:"fingerprint_atom_pair_count_list_with_params",javascript:"fingerprintAtomPairCountListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::SparseCountFingerprint32>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::SparseCountFingerprint32>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_count_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_count_with_params,python:"fingerprint_atom_pair_count_with_params",javascript:"fingerprintAtomPairCountWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::SparseCountFingerprint32>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::SparseCountFingerprint32>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_sparse_bits_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_sparse_bits_list,python:"fingerprint_atom_pair_sparse_bits_list",javascript:"fingerprintAtomPairSparseBitsList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::SparseBitFingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::SparseBitFingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_sparse",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_sparse,python:"fingerprint_atom_pair_sparse",javascript:"fingerprintAtomPairSparse",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::SparseBitFingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::SparseBitFingerprint>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_sparse_bits_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_sparse_bits_list_with_params,python:"fingerprint_atom_pair_sparse_bits_list_with_params",javascript:"fingerprintAtomPairSparseBitsListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::SparseBitFingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::SparseBitFingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_sparse_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_sparse_with_params,python:"fingerprint_atom_pair_sparse_with_params",javascript:"fingerprintAtomPairSparseWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::SparseBitFingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::SparseBitFingerprint>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_layered_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_layered_list,python:"fingerprint_layered_list",javascript:"fingerprintLayeredList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_layered",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_layered,python:"fingerprint_layered",javascript:"fingerprintLayered",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_layered_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_layered_list_with_params,python:"fingerprint_layered_list_with_params",javascript:"fingerprintLayeredListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::LayeredFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::LayeredFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_layered_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_layered_with_params,python:"fingerprint_layered_with_params",javascript:"fingerprintLayeredWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::LayeredFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::LayeredFingerprintParams,&'c crate::BatchQueryParams)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_layered_with_output_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_layered_with_output_list,python:"fingerprint_layered_with_output_list",javascript:"fingerprintLayeredWithOutputList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::LayeredFingerprintResult>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::LayeredFingerprintResult>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_layered_with_output",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_layered_with_output,python:"fingerprint_layered_with_output",javascript:"fingerprintLayeredWithOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::LayeredFingerprintResult>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::LayeredFingerprintResult>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_layered_with_output_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_layered_with_output_list_with_params,python:"fingerprint_layered_with_output_list_with_params",javascript:"fingerprintLayeredWithOutputListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::LayeredFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::LayeredFingerprintResult>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::LayeredFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::LayeredFingerprintResult>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_layered_with_output_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_layered_with_output_with_params,python:"fingerprint_layered_with_output_with_params",javascript:"fingerprintLayeredWithOutputWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::LayeredFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::LayeredFingerprintResult>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::LayeredFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::LayeredFingerprintResult>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_pattern_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_pattern_list,python:"fingerprint_pattern_list",javascript:"fingerprintPatternList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_pattern",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_pattern,python:"fingerprint_pattern",javascript:"fingerprintPattern",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_pattern_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_pattern_list_with_params,python:"fingerprint_pattern_list_with_params",javascript:"fingerprintPatternListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::PatternFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::PatternFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_pattern_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_pattern_with_params,python:"fingerprint_pattern_with_params",javascript:"fingerprintPatternWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::PatternFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::PatternFingerprintParams,&'c crate::BatchQueryParams)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_morgan_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_list,python:"fingerprint_morgan_list",javascript:"fingerprintMorganList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_morgan",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan,python:"fingerprint_morgan",javascript:"fingerprintMorgan",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_morgan_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_list_with_params,python:"fingerprint_morgan_list_with_params",javascript:"fingerprintMorganListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::MorganFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_morgan_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_params,python:"fingerprint_morgan_with_params",javascript:"fingerprintMorganWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::MorganFingerprintParams,&'c crate::BatchQueryParams)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"types.BatchFingerprintOutput",item:type,owner:type_,rust:crate::BatchFingerprintOutput,python:"BatchFingerprintOutput",javascript:"BatchFingerprintOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,role:value,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_with_output_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_with_output_list,python:"fingerprint_atom_pair_with_output_list",javascript:"fingerprintAtomPairWithOutputList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_with_output",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_with_output,python:"fingerprint_atom_pair_with_output",javascript:"fingerprintAtomPairWithOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_with_output_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_with_output_list_with_params,python:"fingerprint_atom_pair_with_output_list_with_params",javascript:"fingerprintAtomPairWithOutputListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:collect_additional_output,type:bool,default:true},{name:params,type:&crate::BatchQueryParams,default:crate::BatchQueryParams::default()}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,bool,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_with_output_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_with_output_with_params,python:"fingerprint_atom_pair_with_output_with_params",javascript:"fingerprintAtomPairWithOutputWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:collect_additional_output,type:bool,default:true},{name:params,type:&crate::BatchQueryParams,default:crate::BatchQueryParams::default()}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,bool,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_list,python:"fingerprint_morgan_with_output_list",javascript:"fingerprintMorganWithOutputList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output,python:"fingerprint_morgan_with_output",javascript:"fingerprintMorganWithOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_list_with_params,python:"fingerprint_morgan_with_output_list_with_params",javascript:"fingerprintMorganWithOutputListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganFingerprintParams,default:required},{name:collect_additional_output,type:bool,default:true},{name:params,type:&crate::BatchQueryParams,default:crate::BatchQueryParams::default()}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::MorganFingerprintParams,bool,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_with_params,python:"fingerprint_morgan_with_output_with_params",javascript:"fingerprintMorganWithOutputWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganFingerprintParams,default:required},{name:collect_additional_output,type:bool,default:true},{name:params,type:&crate::BatchQueryParams,default:crate::BatchQueryParams::default()}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::MorganFingerprintParams,bool,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_morgan_list_with_generator_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_list_with_generator_params,python:"fingerprint_morgan_list_with_generator_params",javascript:"fingerprintMorganListWithGeneratorParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganGeneratorParams,default:required},{name:atom_invariants,type:Option<&crate::MorganAtomInvariantsGenerator>,default:required},{name:bond_invariants,type:Option<&crate::MorganBondInvariantsGenerator>,default:required},{name:call,type:&crate::MorganCallParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c,'d,'e,'f> fn(&'a crate::MoleculeBatch,&'b crate::MorganGeneratorParams,Option<&'c crate::MorganAtomInvariantsGenerator>,Option<&'d crate::MorganBondInvariantsGenerator>,&'e crate::MorganCallParams,&'f crate::BatchQueryParams)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_morgan_with_generator_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_generator_params,python:"fingerprint_morgan_with_generator_params",javascript:"fingerprintMorganWithGeneratorParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganGeneratorParams,default:required},{name:atom_invariants,type:Option<&crate::MorganAtomInvariantsGenerator>,default:required},{name:bond_invariants,type:Option<&crate::MorganBondInvariantsGenerator>,default:required},{name:call,type:&crate::MorganCallParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c,'d,'e,'f> fn(&'a crate::MoleculeBatch,&'b crate::MorganGeneratorParams,Option<&'c crate::MorganAtomInvariantsGenerator>,Option<&'d crate::MorganBondInvariantsGenerator>,&'e crate::MorganCallParams,&'f crate::BatchQueryParams)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_list_with_generator_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_list_with_generator_params,python:"fingerprint_morgan_with_output_list_with_generator_params",javascript:"fingerprintMorganWithOutputListWithGeneratorParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganGeneratorParams,default:required},{name:atom_invariants,type:Option<&crate::MorganAtomInvariantsGenerator>,default:required},{name:bond_invariants,type:Option<&crate::MorganBondInvariantsGenerator>,default:required},{name:call,type:&crate::MorganCallParams,default:required},{name:collect_additional_output,type:bool,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c,'d,'e,'f> fn(&'a crate::MoleculeBatch,&'b crate::MorganGeneratorParams,Option<&'c crate::MorganAtomInvariantsGenerator>,Option<&'d crate::MorganBondInvariantsGenerator>,&'e crate::MorganCallParams,bool,&'f crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_with_generator_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_with_generator_params,python:"fingerprint_morgan_with_output_with_generator_params",javascript:"fingerprintMorganWithOutputWithGeneratorParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganGeneratorParams,default:required},{name:atom_invariants,type:Option<&crate::MorganAtomInvariantsGenerator>,default:required},{name:bond_invariants,type:Option<&crate::MorganBondInvariantsGenerator>,default:required},{name:call,type:&crate::MorganCallParams,default:required},{name:collect_additional_output,type:bool,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c,'d,'e,'f> fn(&'a crate::MoleculeBatch,&'b crate::MorganGeneratorParams,Option<&'c crate::MorganAtomInvariantsGenerator>,Option<&'d crate::MorganBondInvariantsGenerator>,&'e crate::MorganCallParams,bool,&'f crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"types.BatchFingerprintAdditionalOutput",item:type,owner:type_,rust:crate::BatchFingerprintAdditionalOutput,python:"BatchFingerprintAdditionalOutput",javascript:"BatchFingerprintAdditionalOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,role:value,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"types.BatchFingerprintOutputError",item:type,owner:type_,rust:crate::BatchFingerprintOutputError,python:"BatchFingerprintOutputError",javascript:"BatchFingerprintOutputError",feature:"cap-batch",requires:["cap-fingerprints"],status:native,role:error,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"BatchFingerprintAdditionalOutput.atom_counts",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::atom_counts,python:"atom_counts",javascript:"atomCounts",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&[u32]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a [u32]>,},
+{semantic_id:"BatchFingerprintAdditionalOutput.atom_counts",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::atom_counts,python:"atom_counts", python_property: getter,javascript:"atomCounts",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&[u32]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a [u32]>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"BatchFingerprintAdditionalOutput.atom_to_bits",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::atom_to_bits,python:"atom_to_bits",javascript:"atomToBits",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&[Vec<u64>]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a [Vec<u64>]>,},
+{semantic_id:"BatchFingerprintAdditionalOutput.atom_to_bits",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::atom_to_bits,python:"atom_to_bits", python_property: getter,javascript:"atomToBits",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&[Vec<u64>]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a [Vec<u64>]>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"BatchFingerprintAdditionalOutput.bit_info_map",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::bit_info_map,python:"bit_info_map",javascript:"bitInfoMap",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&std::collections::BTreeMap<u64,Vec<(u32,u32)>>>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a std::collections::BTreeMap<u64,Vec<(u32,u32)>>>,},
+{semantic_id:"BatchFingerprintAdditionalOutput.bit_info_map",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::bit_info_map,python:"bit_info_map", python_property: getter,javascript:"bitInfoMap",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&std::collections::BTreeMap<u64,Vec<(u32,u32)>>>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a std::collections::BTreeMap<u64,Vec<(u32,u32)>>>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"BatchFingerprintAdditionalOutput.bit_paths",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::bit_paths,python:"bit_paths",javascript:"bitPaths",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&std::collections::BTreeMap<u64,Vec<Vec<i32>>>>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a std::collections::BTreeMap<u64,Vec<Vec<i32>>>>,},
+{semantic_id:"BatchFingerprintAdditionalOutput.bit_paths",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::bit_paths,python:"bit_paths", python_property: getter,javascript:"bitPaths",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&std::collections::BTreeMap<u64,Vec<Vec<i32>>>>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a std::collections::BTreeMap<u64,Vec<Vec<i32>>>>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"BatchFingerprintAdditionalOutput.atoms_per_bit",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::atoms_per_bit,python:"atoms_per_bit",javascript:"atomsPerBit",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&std::collections::BTreeMap<u64,Vec<Vec<i32>>>>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a std::collections::BTreeMap<u64,Vec<Vec<i32>>>>,},
+{semantic_id:"BatchFingerprintAdditionalOutput.atoms_per_bit",item:callable,owner:type_,rust:crate::BatchFingerprintAdditionalOutput::atoms_per_bit,python:"atoms_per_bit", python_property: getter,javascript:"atomsPerBit",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Option<&std::collections::BTreeMap<u64,Vec<Vec<i32>>>>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintAdditionalOutput)->Option<&'a std::collections::BTreeMap<u64,Vec<Vec<i32>>>>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"BatchFingerprintOutput.fingerprint",item:callable,owner:type_,rust:crate::BatchFingerprintOutput::fingerprint,python:"fingerprint",javascript:"fingerprint",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:&crate::Fingerprint,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintOutput)->&'a crate::Fingerprint,},
+{semantic_id:"BatchFingerprintOutput.fingerprint",item:callable,owner:type_,rust:crate::BatchFingerprintOutput::fingerprint,python:"fingerprint", python_property: getter,javascript:"fingerprint",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:&crate::Fingerprint,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintOutput)->&'a crate::Fingerprint,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"BatchFingerprintOutput.additional_output",item:callable,owner:type_,rust:crate::BatchFingerprintOutput::additional_output,python:"additional_output",javascript:"additionalOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:&crate::BatchFingerprintAdditionalOutput,error:crate::BatchFingerprintOutputError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintOutput)->Result<&'a crate::BatchFingerprintAdditionalOutput,crate::BatchFingerprintOutputError>,},
+{semantic_id:"BatchFingerprintOutput.additional_output",item:callable,owner:type_,rust:crate::BatchFingerprintOutput::additional_output,python:"additional_output", python_property: getter,javascript:"additionalOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:&crate::BatchFingerprintAdditionalOutput,error:crate::BatchFingerprintOutputError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::BatchFingerprintOutput)->Result<&'a crate::BatchFingerprintAdditionalOutput,crate::BatchFingerprintOutputError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_topological_torsion_list",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_topological_torsion_list,python:"fingerprint_topological_torsion_list",javascript:"fingerprintTopologicalTorsionList",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_topological_torsion",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_topological_torsion,python:"fingerprint_topological_torsion",javascript:"fingerprintTopologicalTorsion",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_topological_torsion_list_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_topological_torsion_list_with_params,python:"fingerprint_topological_torsion_list_with_params",javascript:"fingerprintTopologicalTorsionListWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::TopologicalTorsionFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<crate::Fingerprint>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::TopologicalTorsionFingerprintParams,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::Fingerprint>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_topological_torsion_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_topological_torsion_with_params,python:"fingerprint_topological_torsion_with_params",javascript:"fingerprintTopologicalTorsionWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::TopologicalTorsionFingerprintParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::TopologicalTorsionFingerprintParams,&'c crate::BatchQueryParams)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-io")]
 {semantic_id:"module.property_value_to_text",item:callable,owner:module,rust:crate::property_value_to_text,python:"property_value_to_text",javascript:"propertyValueToText",feature:"cap-io",status:experimental,kind:module,parameters:[{name:value,type:&crate::PropertyValue,default:required}],output:crate::PropertyText,error:crate::PropertyStringError,state:read_only,operation:none,signature:fn(&crate::PropertyValue)->Result<crate::PropertyText,crate::PropertyStringError>,},
         #[cfg(feature="cap-stereoisomers")]
@@ -11367,9 +11504,9 @@ binding_contract! {
         #[cfg(feature="cap-forcefields")] {semantic_id:"Molecule.uff_force_field_with_params",item:callable,owner:molecule,rust:crate::Molecule::uff_force_field_with_params,python:"uff_force_field_with_params",javascript:"uffForceFieldWithParams",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::UffForceFieldParams,default:required}],output:crate::MolecularForceField,error:crate::UffForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::Molecule, &crate::UffForceFieldParams)->Result<crate::MolecularForceField,crate::UffForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.position",item:callable,owner:type_,rust:crate::MolecularForceField::position,python:"position",javascript:"position",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[{name:atom_id,type:crate::AtomId,default:required}],output:[f64;3],error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField, crate::AtomId)->Result<[f64;3],crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_position_",item:callable,owner:type_,rust:crate::MolecularForceField::set_position_,python:"set_position_",javascript:"setPosition_",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:atom_id,type:crate::AtomId,default:required},{name:position,type:[f64;3],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, crate::AtomId,[f64;3])->Result<(),crate::ForceFieldError>},
-        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.positions",item:callable,owner:type_,rust:crate::MolecularForceField::positions,python:"positions",javascript:"positions",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:Vec<[f64;3]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Vec<[f64;3]>},
+        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.positions",item:callable,owner:type_,rust:crate::MolecularForceField::positions,python:"positions", python_property: getter,javascript:"positions",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:Vec<[f64;3]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Vec<[f64;3]>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_positions_",item:callable,owner:type_,rust:crate::MolecularForceField::set_positions_,python:"set_positions_",javascript:"setPositions_",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:positions,type:&[[f64;3]],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &[[f64;3]])->Result<(),crate::ForceFieldError>},
-        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.fixed_atoms",item:callable,owner:type_,rust:crate::MolecularForceField::fixed_atoms,python:"fixed_atoms",javascript:"fixedAtoms",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:Vec<crate::AtomId>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Vec<crate::AtomId>},
+        #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.fixed_atoms",item:callable,owner:type_,rust:crate::MolecularForceField::fixed_atoms,python:"fixed_atoms", python_property: getter,javascript:"fixedAtoms",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:Vec<crate::AtomId>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Vec<crate::AtomId>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.set_fixed_atoms_",item:callable,owner:type_,rust:crate::MolecularForceField::set_fixed_atoms_,python:"set_fixed_atoms_",javascript:"setFixedAtoms_",feature:"cap-forcefields",status:experimental,kind:instance,receiver:mutable,parameters:[{name:atom_ids,type:&[crate::AtomId],default:required}],output:(),error:crate::ForceFieldError,state:in_place,operation:none,signature:for<'a> fn(&'a mut crate::MolecularForceField, &[crate::AtomId])->Result<(),crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.energy",item:callable,owner:type_,rust:crate::MolecularForceField::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:f64,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<f64,crate::ForceFieldError>},
         #[cfg(feature="cap-forcefields")] {semantic_id:"MolecularForceField.gradient",item:callable,owner:type_,rust:crate::MolecularForceField::gradient,python:"gradient",javascript:"gradient",feature:"cap-forcefields",status:experimental,kind:instance,receiver:shared,parameters:[],output:Vec<[f64;3]>,error:crate::ForceFieldError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MolecularForceField)->Result<Vec<[f64;3]>,crate::ForceFieldError>},
@@ -11518,37 +11655,37 @@ binding_contract! {
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.without_agents",item:callable,owner:type_,rust:crate::Reaction::without_agents,python:"without_agents",javascript:"withoutAgents",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:crate::ReactionTemplateRemoval,error:none,state:value_returning,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->crate::ReactionTemplateRemoval,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.num_reactant_templates",item:callable,owner:type_,rust:crate::Reaction::num_reactant_templates,python:"num_reactant_templates",javascript:"numReactantTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->usize,},
+{semantic_id:"Reaction.num_reactant_templates",item:callable,owner:type_,rust:crate::Reaction::num_reactant_templates,python:"num_reactant_templates", python_property: getter,javascript:"numReactantTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->usize,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.reactant_templates",item:callable,owner:type_,rust:crate::Reaction::reactant_templates,python:"reactant_templates",javascript:"reactantTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a [crate::QueryGraph],error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->&'a [crate::QueryGraph],},
+{semantic_id:"Reaction.reactant_templates",item:callable,owner:type_,rust:crate::Reaction::reactant_templates,python:"reactant_templates", python_property: getter,javascript:"reactantTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a [crate::QueryGraph],error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->&'a [crate::QueryGraph],},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.reactant_template",item:callable,owner:type_,rust:crate::Reaction::reactant_template,python:"reactant_template",javascript:"reactantTemplate",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[{name:index,type:usize,default:required}],output:&'a crate::QueryGraph,error:crate::ReactionModelError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction,usize)->Result<&'a crate::QueryGraph,crate::ReactionModelError>,},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.with_reactant_template",item:callable,owner:type_,rust:crate::Reaction::with_reactant_template,python:"with_reactant_template",javascript:"withReactantTemplate",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[{name:template,type:crate::QueryGraph,default:required}],output:crate::Reaction,error:crate::ReactionModelError,state:value_returning,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction,crate::QueryGraph)->Result<crate::Reaction,crate::ReactionModelError>,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.num_product_templates",item:callable,owner:type_,rust:crate::Reaction::num_product_templates,python:"num_product_templates",javascript:"numProductTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->usize,},
+{semantic_id:"Reaction.num_product_templates",item:callable,owner:type_,rust:crate::Reaction::num_product_templates,python:"num_product_templates", python_property: getter,javascript:"numProductTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->usize,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.product_templates",item:callable,owner:type_,rust:crate::Reaction::product_templates,python:"product_templates",javascript:"productTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a [crate::QueryGraph],error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->&'a [crate::QueryGraph],},
+{semantic_id:"Reaction.product_templates",item:callable,owner:type_,rust:crate::Reaction::product_templates,python:"product_templates", python_property: getter,javascript:"productTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a [crate::QueryGraph],error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->&'a [crate::QueryGraph],},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.product_template",item:callable,owner:type_,rust:crate::Reaction::product_template,python:"product_template",javascript:"productTemplate",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[{name:index,type:usize,default:required}],output:&'a crate::QueryGraph,error:crate::ReactionModelError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction,usize)->Result<&'a crate::QueryGraph,crate::ReactionModelError>,},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.with_product_template",item:callable,owner:type_,rust:crate::Reaction::with_product_template,python:"with_product_template",javascript:"withProductTemplate",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[{name:template,type:crate::QueryGraph,default:required}],output:crate::Reaction,error:crate::ReactionModelError,state:value_returning,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction,crate::QueryGraph)->Result<crate::Reaction,crate::ReactionModelError>,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.num_agent_templates",item:callable,owner:type_,rust:crate::Reaction::num_agent_templates,python:"num_agent_templates",javascript:"numAgentTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->usize,},
+{semantic_id:"Reaction.num_agent_templates",item:callable,owner:type_,rust:crate::Reaction::num_agent_templates,python:"num_agent_templates", python_property: getter,javascript:"numAgentTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->usize,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.agent_templates",item:callable,owner:type_,rust:crate::Reaction::agent_templates,python:"agent_templates",javascript:"agentTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a [crate::QueryGraph],error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->&'a [crate::QueryGraph],},
+{semantic_id:"Reaction.agent_templates",item:callable,owner:type_,rust:crate::Reaction::agent_templates,python:"agent_templates", python_property: getter,javascript:"agentTemplates",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a [crate::QueryGraph],error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->&'a [crate::QueryGraph],},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.agent_template",item:callable,owner:type_,rust:crate::Reaction::agent_template,python:"agent_template",javascript:"agentTemplate",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[{name:index,type:usize,default:required}],output:&'a crate::QueryGraph,error:crate::ReactionModelError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction,usize)->Result<&'a crate::QueryGraph,crate::ReactionModelError>,},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.with_agent_template",item:callable,owner:type_,rust:crate::Reaction::with_agent_template,python:"with_agent_template",javascript:"withAgentTemplate",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[{name:template,type:crate::QueryGraph,default:required}],output:crate::Reaction,error:crate::ReactionModelError,state:value_returning,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction,crate::QueryGraph)->Result<crate::Reaction,crate::ReactionModelError>,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.is_initialized",item:callable,owner:type_,rust:crate::Reaction::is_initialized,python:"is_initialized",javascript:"isInitialized",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->bool,},
+{semantic_id:"Reaction.is_initialized",item:callable,owner:type_,rust:crate::Reaction::is_initialized,python:"is_initialized", python_property: getter,javascript:"isInitialized",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->bool,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.implicit_properties",item:callable,owner:type_,rust:crate::Reaction::implicit_properties,python:"implicit_properties",javascript:"implicitProperties",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->bool,},
+{semantic_id:"Reaction.implicit_properties",item:callable,owner:type_,rust:crate::Reaction::implicit_properties,python:"implicit_properties", python_property: getter,javascript:"implicitProperties",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->bool,},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.with_implicit_properties",item:callable,owner:type_,rust:crate::Reaction::with_implicit_properties,python:"with_implicit_properties",javascript:"withImplicitProperties",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[{name:enabled,type:bool,default:required}],output:crate::Reaction,error:none,state:value_returning,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction,bool)->crate::Reaction,},
 #[cfg(feature="cap-reaction")]
-{semantic_id:"Reaction.match_params",item:callable,owner:type_,rust:crate::Reaction::match_params,python:"match_params",javascript:"matchParams",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a crate::SubstructMatchParams,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->&'a crate::SubstructMatchParams,},
+{semantic_id:"Reaction.match_params",item:callable,owner:type_,rust:crate::Reaction::match_params,python:"match_params", python_property: getter,javascript:"matchParams",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a crate::SubstructMatchParams,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction)->&'a crate::SubstructMatchParams,},
 #[cfg(feature="cap-reaction")]
 {semantic_id:"Reaction.with_match_params",item:callable,owner:type_,rust:crate::Reaction::with_match_params,python:"with_match_params",javascript:"withMatchParams",feature:"cap-reaction",status:experimental,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::SubstructMatchParams,default:required}],output:crate::Reaction,error:crate::ReactionModelError,state:value_returning,operation:none,signature:for<'a,'b> fn(&'a crate::Reaction,&'b crate::SubstructMatchParams)->Result<crate::Reaction,crate::ReactionModelError>,},
 #[cfg(feature="cap-reaction")]

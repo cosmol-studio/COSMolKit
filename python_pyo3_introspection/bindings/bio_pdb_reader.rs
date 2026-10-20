@@ -1064,12 +1064,15 @@ impl BioPdbReadError {
     fn domain(&self) -> &'static str {
         "bio"
     }
+    #[getter]
     fn line_number(&self) -> Option<i32> {
         self.inner.line_number()
     }
+    #[getter]
     fn stage(&self) -> BioPdbReadStage {
         self.inner.stage().into()
     }
+    #[getter]
     fn record_tag(&self) -> Option<[u8; 4]> {
         self.inner.record_tag()
     }
@@ -1092,13 +1095,13 @@ pub(crate) fn keywords(
 ) -> crate::params::BioPdbReadParams {
     let defaults = ck::BioPdbReadParams::default();
     crate::params::BioPdbReadParams {
-        inner: ck::BioPdbReadParams {
+        inner: crate::parameters::NativeField::Owned(ck::BioPdbReadParams {
             max_line_length: max_line_length.unwrap_or(defaults.max_line_length),
             check_non_ascii: check_non_ascii.unwrap_or(defaults.check_non_ascii),
             ignore_ter: ignore_ter.unwrap_or(defaults.ignore_ter),
             split_chain_on_ter: split_chain_on_ter.unwrap_or(defaults.split_chain_on_ter),
             skip_remarks: skip_remarks.unwrap_or(defaults.skip_remarks),
-        },
+        }),
     }
 }
 #[pyfunction]
@@ -1142,8 +1145,10 @@ pub fn _bio_from_pdb_params(
     text: &str,
     params: Option<&crate::params::BioPdbReadParams>,
 ) -> PyResult<BioStructure> {
+    let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
     py.detach(|| match params {
-        Some(params) => ck::BioStructure::from_pdb_with_params(text, &params.inner),
+        Some(params) => ck::BioStructure::from_pdb_with_params(text, &params),
         None => ck::bio_from_pdb(text),
     })
     .map(|inner| BioStructure { inner })
@@ -1189,7 +1194,7 @@ assert_eq!(bio_from_pdb(py,text,Missing,Missing,Missing,Missing,Missing,Missing)
 for flags in 0..16{
 let native=ck::BioPdbReadParams{max_line_length:80,check_non_ascii:flags&1!=0,ignore_ter:flags&2!=0,split_chain_on_ter:flags&4!=0,skip_remarks:flags&8!=0};
 let expected=ck::BioStructure::from_pdb_with_params(text,&native).unwrap().to_mmcif().unwrap();
-let params=Py::new(py,crate::params::BioPdbReadParams{inner:native})?;
+let params=Py::new(py,crate::params::BioPdbReadParams{inner:crate::parameters::NativeField::Owned(native)})?;
 let kw=PyDict::new(py);
 kw.set_item("max_line_length",native.max_line_length)?;
 kw.set_item("check_non_ascii",native.check_non_ascii)?;
@@ -1200,7 +1205,7 @@ for form in 0..3{
 let output=match form{0=>py.get_type::<BioStructure>().call_method1("from_pdb",(text,params.clone_ref(py)))?,1=>py.get_type::<BioStructure>().call_method("from_pdb",(text,),Some(&kw))?,_=>py.get_type::<BioStructure>().call_method1("from_pdb_with_params",(text,params.clone_ref(py)))?}.extract::<Py<BioStructure>>()?;
 assert_eq!(output.borrow(py).inner.to_mmcif().unwrap(),expected);
 }
-let native_params=Py::new(py,crate::params::BioPdbReadParams{inner:native})?;
+let native_params=Py::new(py,crate::params::BioPdbReadParams{inner:crate::parameters::NativeField::Owned(native)})?;
 let free=bio_from_pdb(py,text,Value(Some(native_params.borrow(py))),Missing,Missing,Missing,Missing,Missing)?;
 assert_eq!(free.inner.to_mmcif().unwrap(),expected);
 let free=bio_from_pdb(py,text,Missing,Value(Some(80)),Value(Some(native.check_non_ascii)),Value(Some(native.ignore_ter)),Value(Some(native.split_chain_on_ter)),Value(Some(native.skip_remarks)))?;

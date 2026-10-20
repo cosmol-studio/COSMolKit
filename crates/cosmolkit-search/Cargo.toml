@@ -13,10 +13,12 @@ documentation = "https://docs.rs/cosmolkit"
 
 [features]
 # Complete concrete/CX writer paths reuse the sole SMILES implementation.
-# Parsing, matching, MCS and ordinary/recursive SMARTS writing remain available
+# Parsing, matching and ordinary/recursive SMARTS writing remain available
 # to lightweight internal consumers without this optional dependency.
-default = ["smiles-integration"]
+default = ["smiles-integration", "mcs"]
 smiles-integration = ["dep:cosmolkit-smiles"]
+# Internal matcher consumers do not need maximum-common-substructure search.
+mcs = ["smiles-integration"]
 
 [dependencies]
 cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.5.1-rc.5" }
@@ -32,6 +34,10 @@ web-time = "1.1"
 [[test]]
 name = "migration_q_writer"
 required-features = ["smiles-integration"]
+
+[[test]]
+name = "migration_q_mcs"
+required-features = ["mcs"]
 
 [dev-dependencies]
 cosmolkit-model = { version = "0.5.1-rc.5", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }

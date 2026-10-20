@@ -30,7 +30,7 @@ SMILES = [
 
 
 def first_valid_fingerprint(batch: ck.MoleculeBatch):
-    for fingerprint in batch.fingerprint_morgan_list(radius=2, fp_size=1024):
+    for fingerprint in batch.fingerprint_morgan(radius=2, fp_size=1024):
         if fingerprint is not None:
             return fingerprint
     raise RuntimeError("batch does not contain any valid molecules")
@@ -55,10 +55,10 @@ prepared = (
     .with_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
 )
 
-fingerprints = prepared.fingerprint_morgan_list(radius=2, fp_size=1024)
+fingerprints = prepared.fingerprint_morgan(radius=2, fp_size=1024)
 ranked: list[tuple[float, int, str]] = []
 for index, (fingerprint, smiles) in enumerate(
-    zip(fingerprints, prepared.to_smiles_list(), strict=True)
+    zip(fingerprints, prepared.to_smiles(), strict=True)
 ):
     if fingerprint is None or smiles is None:
         continue
@@ -67,10 +67,10 @@ for index, (fingerprint, smiles) in enumerate(
 ranked.sort(reverse=True)
 
 print("input records:", len(prepared))
-print("valid records:", prepared.valid_count())
-print("invalid records:", prepared.invalid_count())
-for error in prepared.errors():
-    print("error:", error.index(), error.operation(), error.message())
+print("valid records:", prepared.valid_count)
+print("invalid records:", prepared.invalid_count)
+for error in prepared.errors:
+    print("error:", error.index, error.operation, error.message)
 
 print("top hits:")
 for score, index, smiles in ranked[:5]:
@@ -78,7 +78,7 @@ for score, index, smiles in ranked[:5]:
 
 hit_indices = [index for _, index, _ in ranked[:3]]
 hits = prepared[hit_indices]
-print("hit smiles:", hits.to_smiles_list())
+print("hit smiles:", hits.to_smiles())
 
 image_report = hits.write_images(
     str(OUTPUT_DIR / "hits"),

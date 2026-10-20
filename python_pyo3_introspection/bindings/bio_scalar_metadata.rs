@@ -8,9 +8,13 @@ use std::collections::BTreeMap;
 // getters avoid cloning Rust strings before Python creates its own value.
 macro_rules! scalar_record {
     ($name:ident, {$($field:ident: $ty:ty),+ $(,)?}) => {
-        #[pyclass(module="cosmolkit", frozen, from_py_object)]
-        #[derive(Clone)]
-        pub struct $name { pub(crate) inner: ck::$name }
+        crate::configuration::type_projection! {
+            #[pyclass(module="cosmolkit", frozen, from_py_object)]
+            #[derive(Clone)]
+            pub struct $name {
+                pub(crate) inner: ck::$name
+            }
+        }
         #[pymethods]
         impl $name {
             #[new]
@@ -43,10 +47,12 @@ scalar_record!(BioDiffractionInfo, {
     optics: String, detector: String, detector_make: String,
 });
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioStructureSourceState {
-    pub(crate) inner: ck::BioStructureSourceState,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioStructureSourceState {
+        pub(crate) inner: ck::BioStructureSourceState,
+    }
 }
 #[pymethods]
 impl BioStructureSourceState {

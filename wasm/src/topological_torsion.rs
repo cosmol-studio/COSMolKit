@@ -6,45 +6,57 @@ impl Molecule {
         &self,
         generator: &ck::TopologicalTorsionFingerprintGenerator,
         params: Option<&ck::TopologicalTorsionCallParams>,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::Fingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_fingerprint_with_generator(
         self.inner
             .borrow()
-            .fingerprint_topological_torsion_with_generator(generator, params, output)
+            .fingerprint_topological_torsion_with_generator(generator, params, additional_output)
     }
     pub fn fingerprint_topological_torsion_count_with_generator(
         &self,
         generator: &ck::TopologicalTorsionFingerprintGenerator,
         params: Option<&ck::TopologicalTorsionCallParams>,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint32, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_count_fingerprint_with_generator(
         self.inner
             .borrow()
-            .fingerprint_topological_torsion_count_with_generator(generator, params, output)
+            .fingerprint_topological_torsion_count_with_generator(
+                generator,
+                params,
+                additional_output,
+            )
     }
     pub fn fingerprint_topological_torsion_sparse_with_generator(
         &self,
         generator: &ck::TopologicalTorsionFingerprintGenerator,
         params: Option<&ck::TopologicalTorsionCallParams>,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseBitFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_sparse_fingerprint_with_generator(
         self.inner
             .borrow()
-            .fingerprint_topological_torsion_sparse_with_generator(generator, params, output)
+            .fingerprint_topological_torsion_sparse_with_generator(
+                generator,
+                params,
+                additional_output,
+            )
     }
     pub fn fingerprint_topological_torsion_sparse_count_with_generator(
         &self,
         generator: &ck::TopologicalTorsionFingerprintGenerator,
         params: Option<&ck::TopologicalTorsionCallParams>,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_sparse_count_fingerprint_with_generator(
         self.inner
             .borrow()
-            .fingerprint_topological_torsion_sparse_count_with_generator(generator, params, output)
+            .fingerprint_topological_torsion_sparse_count_with_generator(
+                generator,
+                params,
+                additional_output,
+            )
     }
     pub fn fingerprint_topological_torsion_sparse_count(
         &self,
@@ -57,12 +69,12 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_sparse_count_with_params(
         &self,
         params: &ck::TopologicalTorsionFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_sparse_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_topological_torsion_sparse_count_with_params(params, output)
+            .fingerprint_topological_torsion_sparse_count_with_params(params, additional_output)
     }
     pub fn fingerprint_topological_torsion_sparse(
         &self,
@@ -73,12 +85,12 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_sparse_with_params(
         &self,
         params: &ck::TopologicalTorsionFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseBitFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_sparse_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_topological_torsion_sparse_with_params(params, output)
+            .fingerprint_topological_torsion_sparse_with_params(params, additional_output)
     }
     pub fn fingerprint_topological_torsion_count(
         &self,
@@ -89,12 +101,12 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_count_with_params(
         &self,
         params: &ck::TopologicalTorsionFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::SparseCountFingerprint32, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_topological_torsion_count_with_params(params, output)
+            .fingerprint_topological_torsion_count_with_params(params, additional_output)
     }
     pub fn fingerprint_topological_torsion(
         &self,
@@ -105,12 +117,12 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_with_params(
         &self,
         params: &ck::TopologicalTorsionFingerprintParams,
-        output: Option<&mut ck::FingerprintAdditionalOutput>,
+        additional_output: Option<&mut ck::FingerprintAdditionalOutput>,
     ) -> Result<ck::Fingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_fingerprint_with_params(
         self.inner
             .borrow()
-            .fingerprint_topological_torsion_with_params(params, output)
+            .fingerprint_topological_torsion_with_params(params, additional_output)
     }
 }
 pub fn topological_torsion_generator_fingerprints(
@@ -124,7 +136,9 @@ pub fn topological_torsion_generator_fingerprints(
         .map(|m| m.map(|m| m.inner.borrow()))
         .collect::<Vec<_>>();
     let rows = guards.iter().map(|m| m.as_deref()).collect::<Vec<_>>();
-    generator.fingerprints(&rows, num_threads)
+    generator
+        .fingerprints(&rows, num_threads)
+        .map(ck::FingerprintBatch::into_values)
 }
 pub fn topological_torsion_generator_counts(
     generator: &ck::TopologicalTorsionFingerprintGenerator,

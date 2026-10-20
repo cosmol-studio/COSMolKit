@@ -431,14 +431,12 @@ error_projection!(retained MmffOptimizationFailure,MmffOptimizationFailureKind,c
     }}
 });
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum UffEvaluationFailureKind {
+crate::enums::binding_enum!(UffEvaluationFailureKind, {
     MissingConformer,
     Preparation,
     Construction,
     Kernel,
-}
+});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
 pub struct UffEvaluationFailure {
@@ -617,6 +615,7 @@ impl UffOptimizationError {
     fn domain(&self) -> &'static str {
         "uff"
     }
+    #[getter]
     fn kind(&self) -> UffOptimizationErrorKind {
         UffOptimizationErrorKind {
             inner: self.inner.kind(),

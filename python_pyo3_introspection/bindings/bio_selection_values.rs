@@ -2,12 +2,10 @@ use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum BioSelectionParseErrorKind {
+crate::enums::binding_enum!(BioSelectionParseErrorKind, {
     Syntax,
     SeqidRange,
-}
+});
 
 #[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioSelectionParseError {

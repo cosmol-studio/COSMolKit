@@ -137,7 +137,11 @@ pub use reaction::{
     Reaction, ReactionApplyResult, ReactionTemplateRemoval, parse_smirks, parse_smirks_with_params,
 };
 #[cfg(feature = "cap-fingerprints")]
+mod fingerprint_batch;
+#[cfg(feature = "cap-fingerprints")]
 mod fingerprint_params;
+#[cfg(feature = "cap-fingerprints")]
+pub use fingerprint_batch::{FingerprintBatch, FingerprintBatchError};
 #[cfg(feature = "cap-fingerprints")]
 mod morgan;
 #[cfg(feature = "cap-fingerprints")]
@@ -211,6 +215,9 @@ pub use binding_contract::{
 mod bio;
 #[cfg(feature = "cap-bio")]
 pub use bio::{BioOperationError, BioSelection, BioStructure, Protein, ProteinReadError};
+#[cfg(feature = "cap-bio")]
+#[doc(hidden)]
+pub use cosmolkit_bio::__ck_configuration_BioCrystalCell;
 #[cfg(feature = "cap-bio")]
 pub use cosmolkit_bio::{
     AltLocLabel, AltLocRequest, AtomAddress, AtomName, AtomSourceIds, BioAltLocGroupId,
@@ -297,7 +304,7 @@ pub use cosmolkit_smiles::{
 pub use cosmolkit_stereo::{CipLabelOptions, CipLabelerError, StereoReadError};
 #[cfg(feature = "cap-matrices")]
 pub use matrices::DistanceMatrixParams;
-pub use molecule::Molecule;
+pub use molecule::{Molecule, MoleculeAtom};
 pub use molecule_builder::MoleculeBuilder;
 #[cfg(feature = "cap-fingerprints")]
 pub use morgan::{MorganFingerprintParams, MorganInvariants, MorganReadError};
@@ -570,7 +577,9 @@ mod conformer_projection;
 #[cfg(feature = "cap-conformer")]
 mod conformer;
 #[cfg(feature = "cap-conformer")]
-pub use conformer::{ConformerError, ConformerRunError, EmbedFailureCause, EmbedParams};
+pub use conformer::{
+    ConformerError, ConformerRunError, EmbedFailureCause, EmbedFailureCountError, EmbedParams,
+};
 #[cfg(feature = "cap-conformer")]
 pub use cosmolkit_conformer::{
     BoundKind, BoundsMatrixError, BoundsQueryError, EmbedSeedError, GenerationError,
@@ -757,7 +766,7 @@ pub use ops::__configuration_UffConformerOptimizationParams;
 #[doc(hidden)]
 pub use ops::__configuration_UffOptimizationParams;
 
-#[cfg(feature = "cap-batch")]
+#[cfg(all(feature = "cap-batch", feature = "cap-depict"))]
 #[doc(hidden)]
 pub use batch::__configuration_BatchImageParams;
 #[cfg(feature = "cap-alignment")]

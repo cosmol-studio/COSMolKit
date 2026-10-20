@@ -12,11 +12,9 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use std::error::Error;
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum PeriodicTableErrorKind {
+crate::enums::binding_enum!(PeriodicTableErrorKind, {
     UnknownIsotope,
-}
+});
 
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct PeriodicTableError {

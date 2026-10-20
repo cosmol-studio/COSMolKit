@@ -60,6 +60,20 @@ impl MoleculeBatch {
     pub fn get(&self, index: usize) -> Option<&BatchRecord> {
         self.records.get(index)
     }
+    /// Select ordered records, retaining duplicates, errors and execution settings.
+    /// Returns None if any index is out of bounds.
+    pub fn select(&self, indices: &[usize]) -> Option<Self> {
+        let records = indices
+            .iter()
+            .map(|&index| self.records.get(index).cloned())
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self {
+            records,
+            error_mode: self.error_mode,
+            n_jobs: self.n_jobs,
+            progress_bar: self.progress_bar,
+        })
+    }
     pub fn records(&self) -> &[BatchRecord] {
         &self.records
     }
@@ -594,21 +608,21 @@ impl MoleculeBatch {
     }
     #[cfg(feature = "cap-fingerprints")]
     /// Ordered source torsion fingerprints using the batch's stored runtime policy.
-    pub fn fingerprint_topological_torsion_list(
+    pub fn fingerprint_topological_torsion(
         &self,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
-        self.fingerprint_topological_torsion_list_with_params(
+    ) -> Result<crate::FingerprintBatch, BatchValidationError> {
+        self.fingerprint_topological_torsion_with_params(
             &crate::TopologicalTorsionFingerprintParams::default(),
             &BatchQueryParams::default(),
         )
     }
     #[cfg(feature = "cap-fingerprints")]
     /// Per-call overrides share the canonical ordered scheduler and typed errors.
-    pub fn fingerprint_topological_torsion_list_with_params(
+    pub fn fingerprint_topological_torsion_with_params(
         &self,
         options: &crate::TopologicalTorsionFingerprintParams,
         params: &BatchQueryParams,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+    ) -> Result<crate::FingerprintBatch, BatchValidationError> {
         // ROOT CK-d41: project-defined thin batch query. Chemistry remains in
         // Molecule's canonical torsion query and the sole fingerprints owner.
         // One immutable borrow per input; collection/error/tick costs are the
@@ -619,17 +633,18 @@ impl MoleculeBatch {
             params,
             |m| m.fingerprint_topological_torsion_with_params(options, None),
         )
+        .map(crate::FingerprintBatch::from)
     }
 
     #[cfg(feature = "cap-smiles")]
-    pub fn to_smiles_list(&self) -> Result<Vec<Option<crate::PropertyText>>, BatchValidationError> {
-        self.to_smiles_list_with_params(
+    pub fn to_smiles(&self) -> Result<Vec<Option<crate::PropertyText>>, BatchValidationError> {
+        self.to_smiles_with_params(
             &crate::SmilesWriteParams::default(),
             &BatchQueryParams::default(),
         )
     }
     #[cfg(feature = "cap-smiles")]
-    pub fn to_smiles_list_with_params(
+    pub fn to_smiles_with_params(
         &self,
         options: &crate::SmilesWriteParams,
         params: &BatchQueryParams,
@@ -658,18 +673,16 @@ impl MoleculeBatch {
         })
     }
     #[cfg(feature = "cap-conformer")]
-    pub fn dg_bounds_matrix_list(
-        &self,
-    ) -> Result<Vec<Option<Vec<Vec<f64>>>>, BatchValidationError> {
-        self.dg_bounds_matrix_list_with_params(&BatchQueryParams::default())
+    pub fn dg_bounds_matrix(&self) -> Result<Vec<Option<Vec<Vec<f64>>>>, BatchValidationError> {
+        self.dg_bounds_matrix_with_params(&BatchQueryParams::default())
     }
     #[cfg(feature = "cap-conformer")]
-    pub fn dg_bounds_matrix_list_with_params(
+    pub fn dg_bounds_matrix_with_params(
         &self,
         params: &BatchQueryParams,
     ) -> Result<Vec<Option<Vec<Vec<f64>>>>, BatchValidationError> {
-        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::dg_bounds_matrix_list_with_runtime; same indexed order/all-result collection and scalar owner calls.
-        // fn dg_bounds_matrix_list_with_runtime(
+        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::dg_bounds_matrix_with_runtime; same indexed order/all-result collection and scalar owner calls.
+        // fn dg_bounds_matrix_with_runtime(
         //         &self,
         //         progress: BatchProgress<'_>,
         //         n_jobs: Option<usize>,
@@ -694,22 +707,22 @@ impl MoleculeBatch {
         )
     }
     #[cfg(feature = "cap-depict")]
-    pub fn to_svg_list(
+    pub fn to_svg(
         &self,
         width: u32,
         height: u32,
     ) -> Result<Vec<Option<String>>, BatchValidationError> {
-        self.to_svg_list_with_params(width, height, &BatchQueryParams::default())
+        self.to_svg_with_params(width, height, &BatchQueryParams::default())
     }
     #[cfg(feature = "cap-depict")]
-    pub fn to_svg_list_with_params(
+    pub fn to_svg_with_params(
         &self,
         width: u32,
         height: u32,
         params: &BatchQueryParams,
     ) -> Result<Vec<Option<String>>, BatchValidationError> {
-        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::to_svg_list_with_runtime; same indexed order/all-result collection and scalar owner calls.
-        // fn to_svg_list_with_runtime(
+        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::to_svg_with_runtime; same indexed order/all-result collection and scalar owner calls.
+        // fn to_svg_with_runtime(
         //         &self,
         //         width: u32,
         //         height: u32,
@@ -1001,19 +1014,17 @@ impl MoleculeBatch {
             BatchValidationError::from_record_errors(vec![error])
         })
     }
-    pub fn fingerprint_atom_pair_list(
-        &self,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
-        self.fingerprint_atom_pair_list_with_params(
+    pub fn fingerprint_atom_pair(&self) -> Result<crate::FingerprintBatch, BatchValidationError> {
+        self.fingerprint_atom_pair_with_params(
             &crate::AtomPairFingerprintParams::default(),
             &BatchQueryParams::default(),
         )
     }
-    pub fn fingerprint_atom_pair_list_with_params(
+    pub fn fingerprint_atom_pair_with_params(
         &self,
         options: &crate::AtomPairFingerprintParams,
         params: &BatchQueryParams,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+    ) -> Result<crate::FingerprintBatch, BatchValidationError> {
         // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::atom_pair_fingerprint_list_with_runtime.
         // Cost: one immutable owner argument construction before scheduling;
         // count_bounds is copied once, O(bounds_length), and borrowed by every
@@ -1051,16 +1062,17 @@ impl MoleculeBatch {
                 })
             },
         )
+        .map(crate::FingerprintBatch::from)
     }
-    pub fn fingerprint_atom_pair_sparse_count_list(
+    pub fn fingerprint_atom_pair_sparse_count(
         &self,
     ) -> Result<Vec<Option<crate::SparseCountFingerprint>>, BatchValidationError> {
-        self.fingerprint_atom_pair_sparse_count_list_with_params(
+        self.fingerprint_atom_pair_sparse_count_with_params(
             &crate::AtomPairFingerprintParams::default(),
             &BatchQueryParams::default(),
         )
     }
-    pub fn fingerprint_atom_pair_sparse_count_list_with_params(
+    pub fn fingerprint_atom_pair_sparse_count_with_params(
         &self,
         options: &crate::AtomPairFingerprintParams,
         params: &BatchQueryParams,
@@ -1105,15 +1117,15 @@ impl MoleculeBatch {
             },
         )
     }
-    pub fn fingerprint_atom_pair_count_list(
+    pub fn fingerprint_atom_pair_count(
         &self,
     ) -> Result<Vec<Option<crate::SparseCountFingerprint32>>, BatchValidationError> {
-        self.fingerprint_atom_pair_count_list_with_params(
+        self.fingerprint_atom_pair_count_with_params(
             &crate::AtomPairFingerprintParams::default(),
             &BatchQueryParams::default(),
         )
     }
-    pub fn fingerprint_atom_pair_count_list_with_params(
+    pub fn fingerprint_atom_pair_count_with_params(
         &self,
         options: &crate::AtomPairFingerprintParams,
         params: &BatchQueryParams,
@@ -1156,15 +1168,15 @@ impl MoleculeBatch {
             },
         )
     }
-    pub fn fingerprint_atom_pair_sparse_bits_list(
+    pub fn fingerprint_atom_pair_sparse(
         &self,
     ) -> Result<Vec<Option<crate::SparseBitFingerprint>>, BatchValidationError> {
-        self.fingerprint_atom_pair_sparse_bits_list_with_params(
+        self.fingerprint_atom_pair_sparse_with_params(
             &crate::AtomPairFingerprintParams::default(),
             &BatchQueryParams::default(),
         )
     }
-    pub fn fingerprint_atom_pair_sparse_bits_list_with_params(
+    pub fn fingerprint_atom_pair_sparse_with_params(
         &self,
         options: &crate::AtomPairFingerprintParams,
         params: &BatchQueryParams,
@@ -1209,19 +1221,17 @@ impl MoleculeBatch {
             },
         )
     }
-    pub fn fingerprint_layered_list(
-        &self,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
-        self.fingerprint_layered_list_with_params(
+    pub fn fingerprint_layered(&self) -> Result<crate::FingerprintBatch, BatchValidationError> {
+        self.fingerprint_layered_with_params(
             &crate::LayeredFingerprintParams::default(),
             &BatchQueryParams::default(),
         )
     }
-    pub fn fingerprint_layered_list_with_params(
+    pub fn fingerprint_layered_with_params(
         &self,
         options: &crate::LayeredFingerprintParams,
         params: &BatchQueryParams,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+    ) -> Result<crate::FingerprintBatch, BatchValidationError> {
         // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::layered_fingerprint_list_with_runtime; same indexed order/all-result collection and scalar owner calls.
         // fn layered_fingerprint_list_with_runtime(
         //         &self,
@@ -1246,22 +1256,23 @@ impl MoleculeBatch {
             params,
             |m| m.fingerprint_layered_with_params(options),
         )
+        .map(crate::FingerprintBatch::from)
     }
-    pub fn fingerprint_layered_with_output_list(
+    pub fn fingerprint_layered_with_output(
         &self,
     ) -> Result<Vec<Option<crate::LayeredFingerprintResult>>, BatchValidationError> {
-        self.fingerprint_layered_with_output_list_with_params(
+        self.fingerprint_layered_with_output_with_params(
             &crate::LayeredFingerprintParams::default(),
             &BatchQueryParams::default(),
         )
     }
-    pub fn fingerprint_layered_with_output_list_with_params(
+    pub fn fingerprint_layered_with_output_with_params(
         &self,
         options: &crate::LayeredFingerprintParams,
         params: &BatchQueryParams,
     ) -> Result<Vec<Option<crate::LayeredFingerprintResult>>, BatchValidationError> {
-        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::layered_fingerprint_with_output_list_with_runtime; same indexed order/all-result collection and scalar owner calls.
-        // fn layered_fingerprint_with_output_list_with_runtime(
+        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::layered_fingerprint_with_output_with_runtime; same indexed order/all-result collection and scalar owner calls.
+        // fn layered_fingerprint_with_output_with_runtime(
         //         &self,
         //         params: &crate::LayeredFingerprintParams,
         //         progress: BatchProgress<'_>,
@@ -1285,19 +1296,17 @@ impl MoleculeBatch {
             |m| m.fingerprint_layered_with_output_with_params(options),
         )
     }
-    pub fn fingerprint_pattern_list(
-        &self,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
-        self.fingerprint_pattern_list_with_params(
+    pub fn fingerprint_pattern(&self) -> Result<crate::FingerprintBatch, BatchValidationError> {
+        self.fingerprint_pattern_with_params(
             &crate::PatternFingerprintParams::default(),
             &BatchQueryParams::default(),
         )
     }
-    pub fn fingerprint_pattern_list_with_params(
+    pub fn fingerprint_pattern_with_params(
         &self,
         options: &crate::PatternFingerprintParams,
         params: &BatchQueryParams,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+    ) -> Result<crate::FingerprintBatch, BatchValidationError> {
         // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::pattern_fingerprint_list_with_runtime; same indexed order/all-result collection and scalar owner calls.
         // fn pattern_fingerprint_list_with_runtime(
         //         &self,
@@ -1322,18 +1331,17 @@ impl MoleculeBatch {
             params,
             |m| m.fingerprint_pattern_with_params(options),
         )
+        .map(crate::FingerprintBatch::from)
     }
-    pub fn fingerprint_morgan_list(
-        &self,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+    pub fn fingerprint_morgan(&self) -> Result<crate::FingerprintBatch, BatchValidationError> {
         let options = crate::MorganFingerprintParams::default();
-        self.fingerprint_morgan_list_with_params(&options, &BatchQueryParams::default())
+        self.fingerprint_morgan_with_params(&options, &BatchQueryParams::default())
     }
-    pub fn fingerprint_morgan_list_with_params(
+    pub fn fingerprint_morgan_with_params(
         &self,
         options: &crate::MorganFingerprintParams,
         params: &BatchQueryParams,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+    ) -> Result<crate::FingerprintBatch, BatchValidationError> {
         // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::morgan_fingerprint_list_with_runtime; same indexed order/all-result collection and scalar owner calls.
         // fn morgan_fingerprint_list_with_runtime(
         //         &self,
@@ -1353,7 +1361,7 @@ impl MoleculeBatch {
         //         )
         //     }
         let (atom, call) = Self::morgan_batch_arguments(options);
-        self.fingerprint_morgan_list_with_generator_params(
+        self.fingerprint_morgan_with_generator_params(
             &options.generator,
             Some(&atom),
             None,
@@ -1397,27 +1405,27 @@ impl MoleculeBatch {
             output
         })
     }
-    pub fn fingerprint_atom_pair_with_output_list(
+    pub fn fingerprint_atom_pair_with_output(
         &self,
     ) -> Result<Vec<Option<BatchFingerprintOutput>>, BatchValidationError> {
-        self.fingerprint_atom_pair_with_output_list_with_params(
+        self.fingerprint_atom_pair_with_output_with_params(
             &crate::AtomPairFingerprintParams::default(),
             true,
             &BatchQueryParams::default(),
         )
     }
-    pub fn fingerprint_atom_pair_with_output_list_with_params(
+    pub fn fingerprint_atom_pair_with_output_with_params(
         &self,
         options: &crate::AtomPairFingerprintParams,
         collect_additional_output: bool,
         params: &BatchQueryParams,
     ) -> Result<Vec<Option<BatchFingerprintOutput>>, BatchValidationError> {
-        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::atom_pair_fingerprint_with_output_list_with_runtime.
+        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::atom_pair_fingerprint_with_output_with_runtime.
         // Cost: one immutable owner argument construction before scheduling;
         // count_bounds is copied once, O(bounds_length), and borrowed by every
         // row. Per-record chemistry and separately marked AO snapshot costs
         // remain in their existing detached owners.
-        // fn atom_pair_fingerprint_with_output_list_with_runtime(
+        // fn atom_pair_fingerprint_with_output_with_runtime(
         //         &self,
         //         params: &crate::AtomPairFingerprintParams,
         //         progress: BatchProgress<'_>,
@@ -1461,24 +1469,24 @@ impl MoleculeBatch {
             },
         )
     }
-    pub fn fingerprint_morgan_with_output_list(
+    pub fn fingerprint_morgan_with_output(
         &self,
     ) -> Result<Vec<Option<BatchFingerprintOutput>>, BatchValidationError> {
         let options = crate::MorganFingerprintParams::default();
-        self.fingerprint_morgan_with_output_list_with_params(
+        self.fingerprint_morgan_with_output_with_params(
             &options,
             true,
             &BatchQueryParams::default(),
         )
     }
-    pub fn fingerprint_morgan_with_output_list_with_params(
+    pub fn fingerprint_morgan_with_output_with_params(
         &self,
         options: &crate::MorganFingerprintParams,
         collect_additional_output: bool,
         params: &BatchQueryParams,
     ) -> Result<Vec<Option<BatchFingerprintOutput>>, BatchValidationError> {
-        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::morgan_fingerprint_with_output_list_with_runtime; same indexed order/all-result collection and scalar owner calls.
-        // fn morgan_fingerprint_with_output_list_with_runtime(
+        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::morgan_fingerprint_with_output_with_runtime; same indexed order/all-result collection and scalar owner calls.
+        // fn morgan_fingerprint_with_output_with_runtime(
         //         &self,
         //         params: &crate::MorganFingerprintParams,
         //         progress: BatchProgress<'_>,
@@ -1497,7 +1505,7 @@ impl MoleculeBatch {
         //     }
 
         let (atom, call) = Self::morgan_batch_arguments(options);
-        self.fingerprint_morgan_with_output_list_with_generator_params(
+        self.fingerprint_morgan_with_output_with_generator_params(
             &options.generator,
             Some(&atom),
             None,
@@ -1630,14 +1638,14 @@ impl MoleculeBatch {
             .set_bits_per_feature(options.bits_per_feature)?;
         Ok(generator)
     }
-    pub fn fingerprint_morgan_list_with_generator_params(
+    pub fn fingerprint_morgan_with_generator_params(
         &self,
         options: &crate::MorganGeneratorParams,
         atom_invariants: Option<&crate::MorganAtomInvariantsGenerator>,
         bond_invariants: Option<&crate::MorganBondInvariantsGenerator>,
         call: &crate::MorganCallParams,
         params: &BatchQueryParams,
-    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+    ) -> Result<crate::FingerprintBatch, BatchValidationError> {
         // COSMolKit❗✔️: pinned d892ec3 fingerprint.rs::morgan_fingerprint_with_output; reuse canonical owner, preserve allocation mask and per-record preflight.
         // pub fn morgan_fingerprint_with_output(
         //     molecule: &Molecule,
@@ -1718,8 +1726,9 @@ impl MoleculeBatch {
                 m.fingerprint_morgan_with_generator(&generator, Some(call), None)
             },
         )
+        .map(crate::FingerprintBatch::from)
     }
-    pub fn fingerprint_morgan_with_output_list_with_generator_params(
+    pub fn fingerprint_morgan_with_output_with_generator_params(
         &self,
         options: &crate::MorganGeneratorParams,
         atom_invariants: Option<&crate::MorganAtomInvariantsGenerator>,

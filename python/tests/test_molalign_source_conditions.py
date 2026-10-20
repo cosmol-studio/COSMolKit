@@ -52,18 +52,18 @@ def test_empty_optional_sequences_follow_source_wrapper_without_changing_fields(
         else:
             assert params.weights == []
         if operation in ["alignment_transform", "alignment_empty_map"]:
-            assert molecule.alignment_transform_to(molecule, params).rmsd() == 0.
-            assert molecule.alignment_transform_to_with_params(molecule, params).rmsd() == 0.
+            assert molecule.alignment_transform_to(molecule, params).rmsd == 0.
+            assert molecule.alignment_transform_to_with_params(molecule, params).rmsd == 0.
         else:
-            assert molecule.with_alignment_to(molecule, params)[1].rmsd() == 0.
-            assert molecule.with_alignment_to_with_params(molecule, params)[1].rmsd() == 0.
-            assert molecule.align_to_(molecule, params).rmsd() == 0.
-            assert molecule.align_to_with_params_(molecule, params).rmsd() == 0.
+            assert molecule.with_alignment_to(molecule, params)[1].rmsd == 0.
+            assert molecule.with_alignment_to_with_params(molecule, params)[1].rmsd == 0.
+            assert molecule.align_to_(molecule, params).rmsd == 0.
+            assert molecule.align_to_with_params_(molecule, params).rmsd == 0.
     elif operation == "best_alignment":
         params = ck.BestAlignmentParameters(weights=[])
         assert params.weights == []
-        assert molecule.best_alignment_to(molecule, params).rmsd() == 0.
-        assert molecule.best_alignment_to_with_params(molecule, params).rmsd() == 0.
+        assert molecule.best_alignment_to(molecule, params).rmsd == 0.
+        assert molecule.best_alignment_to_with_params(molecule, params).rmsd == 0.
         assert molecule.best_rmsd_to(molecule, params) == 0.
         assert molecule.best_rmsd_to_with_params(molecule, params) == 0.
     elif operation == "coordinate_rmsd":
@@ -74,15 +74,15 @@ def test_empty_optional_sequences_follow_source_wrapper_without_changing_fields(
     elif operation == "all_conformers":
         params = ck.AllConformerRmsdParameters(weights=[])
         assert params.weights == []
-        assert [row.rmsd() for row in molecule.all_conformer_best_rmsds(params)] == [0.]
-        assert [row.rmsd() for row in molecule.all_conformer_best_rmsds_with_params(params)] == [0.]
+        assert [row.rmsd for row in molecule.all_conformer_best_rmsds(params)] == [0.]
+        assert [row.rmsd for row in molecule.all_conformer_best_rmsds_with_params(params)] == [0.]
     else:
         params = ck.ConformerAlignmentParameters(weights=[])
         assert params.weights == []
-        assert molecule.with_aligned_conformers(params)[1].rmsds() == [0.]
-        assert molecule.with_aligned_conformers_with_params(params)[1].rmsds() == [0.]
-        assert molecule.align_conformers_(params).rmsds() == [0.]
-        assert molecule.align_conformers_with_params_(params).rmsds() == [0.]
+        assert molecule.with_aligned_conformers(params)[1].rmsds == [0.]
+        assert molecule.with_aligned_conformers_with_params(params)[1].rmsds == [0.]
+        assert molecule.align_conformers_(params).rmsds == [0.]
+        assert molecule.align_conformers_with_params_(params).rmsds == [0.]
 
 
 @pytest.mark.parametrize("count", [1, 2])
@@ -95,12 +95,12 @@ def test_empty_atom_indices_select_all_like_pinned_source_wrapper(count):
     before = source.to_binary()
     params = ck.ConformerAlignmentParameters(atom_indices=[])
     aligned, report = source.with_aligned_conformers(params)
-    assert report.rmsds() == [0.] * (count - 1)
+    assert report.rmsds == [0.] * (count - 1)
     expected = [[[0., 0., 0.], [1., 0., 0.]]] * count
-    np.testing.assert_array_equal([c.coordinates() for c in aligned.conformers_3d()], expected)
+    np.testing.assert_array_equal([c.coordinates for c in aligned.conformers_3d], expected)
     assert source.to_binary() == before
-    assert source.align_conformers_with_params_(params).rmsds() == report.rmsds()
-    np.testing.assert_array_equal([c.coordinates() for c in source.conformers_3d()], expected)
+    assert source.align_conformers_with_params_(params).rmsds == report.rmsds
+    np.testing.assert_array_equal([c.coordinates for c in source.conformers_3d], expected)
     with pytest.raises(ck.OperationError) as error:
         source.align_conformers_(ck.ConformerAlignmentParameters(atom_indices=[2]))
     assert isinstance(error.value.__cause__, ck.AlignmentError)
@@ -116,8 +116,8 @@ def test_positive_infinite_weight_preserves_pinned_jacobi_nan_branch_rotation():
         weights=[math.inf, 1.0],
     )
     result = molecule.alignment_transform_to(molecule, params)
-    assert math.isnan(result.rmsd())
-    matrix = result.transform().matrix()
+    assert math.isnan(result.rmsd)
+    matrix = result.transform.matrix
     # AlignPoints.cpp:195 rotates only when fabs(b)>0, false for NaN.
     assert [row[:3] for row in matrix[:3]] == [
         [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]

@@ -55,18 +55,18 @@ def test_result_types_reprs_and_returned_molecule_params_are_detached_snapshots(
     assert isinstance(multiple, ck.EmbedMultipleConfsResult)
     assert repr(single) == "EmbedMoleculeResult(conf_id=0, ok=true)"
     assert repr(multiple) == "EmbedMultipleConfsResult(requested_num_confs=2, generated_count=2)"
-    assert source.num_3d_conformers() == 0
+    assert source.num_3d_conformers == 0
     for result, count in [(single, 1), (multiple, 2)]:
-        returned = result.molecule()
+        returned = result.molecule
         returned.clear_3d_conformers_()
-        assert result.molecule().num_3d_conformers() == count
-        copied = result.params()
+        assert result.molecule.num_3d_conformers == count
+        copied = result.params
         copied = configured(copied, random_seed=987)
         assert copied.random_seed == 987
-        assert result.params().random_seed == 42
-    ids = multiple.conf_ids()
+        assert result.params.random_seed == 42
+    ids = multiple.conf_ids
     ids.append(99)
-    assert multiple.conf_ids() == [0, 1]
+    assert multiple.conf_ids == [0, 1]
 
 
 def configured(params, **changes):

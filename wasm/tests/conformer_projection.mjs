@@ -1,5 +1,31 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
+
+test('embedding result diagnostics are direct, optional and immutable', () => {
+ const mol=b.Molecule.fromSmiles('CC').withHydrogens();
+ const params=b.EmbedParams.etkdgV3();
+ params.randomSeed=17;
+ for (const multiple of [false,true]) {
+  const run=()=>multiple
+   ? mol.with3dConformersResultWithParams(2,params)
+   : mol.with3dConformerResultWithParams(params);
+  params.trackFailures=false;
+  const untracked=run();
+  assert.equal(untracked.failuresTracked,false);
+  assert.equal(untracked.failureCounts,null);
+  assert.equal(untracked.failureCount(b.EmbedFailureCause.InitialCoords),null);
+  assert.throws(()=>untracked.failureCount(b.EmbedFailureCause.EndOfEnum),
+   e=>e.name==='EmbedFailureCountError' && e.variant==='InvalidCause');
+  params.trackFailures=true;
+  const tracked=run();
+  assert.equal(tracked.failuresTracked,true);
+  assert.ok(Object.isFrozen(tracked.failureCounts));
+  assert.equal(tracked.failureCounts.length,b.EmbedFailureCause.EndOfEnum);
+  assert.equal(tracked.failureCount(b.EmbedFailureCause.InitialCoords),tracked.failureCounts[0]);
+  assert.throws(()=>{tracked.failureCounts[0]=123;},TypeError);
+  assert.deepEqual([...params.failures()],[]);
+ }
+});
 const calls=[{"name": "with3dConformer", "params": false, "multiple": false, "report": false, "inplace": false}, {"name": "with3dConformerWithParams", "params": true, "multiple": false, "report": false, "inplace": false}, {"name": "embed3dConformer_", "params": false, "multiple": false, "report": false, "inplace": true}, {"name": "embed3dConformerWithParams_", "params": true, "multiple": false, "report": false, "inplace": true}, {"name": "with3dConformerResult", "params": false, "multiple": false, "report": true, "inplace": false}, {"name": "with3dConformerResultWithParams", "params": true, "multiple": false, "report": true, "inplace": false}, {"name": "embed3dConformerResult_", "params": false, "multiple": false, "report": true, "inplace": true}, {"name": "embed3dConformerResultWithParams_", "params": true, "multiple": false, "report": true, "inplace": true}, {"name": "with3dConformers", "params": false, "multiple": true, "report": false, "inplace": false}, {"name": "with3dConformersWithParams", "params": true, "multiple": true, "report": false, "inplace": false}, {"name": "embed3dConformers_", "params": false, "multiple": true, "report": false, "inplace": true}, {"name": "embed3dConformersWithParams_", "params": true, "multiple": true, "report": false, "inplace": true}, {"name": "with3dConformersResult", "params": false, "multiple": true, "report": true, "inplace": false}, {"name": "with3dConformersResultWithParams", "params": true, "multiple": true, "report": true, "inplace": false}, {"name": "embed3dConformersResult_", "params": false, "multiple": true, "report": true, "inplace": true}, {"name": "embed3dConformersResultWithParams_", "params": true, "multiple": true, "report": true, "inplace": true}];
 
 test('EmbedParams all factories, writable constructor fields, JSON and checked widths',()=>{

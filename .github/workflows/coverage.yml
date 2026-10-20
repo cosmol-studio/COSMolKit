@@ -73,7 +73,7 @@ jobs:
                       --features cosmolkit/op-contracts-strict
 
             - name: Fetch pinned test sources only after successful compilation
-              run: git submodule update --init --depth 1 third_party/gemmi third_party/rdkit
+              run: git submodule update --init --checkout --depth 1 third_party/gemmi third_party/rdkit
 
             - name: Run all default crate regression suites with coverage
               id: regression

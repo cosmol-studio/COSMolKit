@@ -7,9 +7,7 @@ use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-enum_value!(CipDescriptor, { R, S, LowerR, LowerS, E, Z, LowerE, LowerZ, M, P, LowerM, LowerP });
-#[pymethods]
-impl CipDescriptor {
+enum_value!(CipDescriptor, { R, S, LowerR [r], LowerS [s], E, Z, LowerE [e], LowerZ [z], M, P, LowerM [m], LowerP [p] }, constructor = custom, methods = {
     #[new]
     fn new(value: &str) -> PyResult<Self> {
         value
@@ -20,15 +18,13 @@ impl CipDescriptor {
     fn as_str(&self) -> &'static str {
         ck::CipDescriptor::from(*self).as_str()
     }
-}
+});
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum CipDescriptorErrorKind {
+crate::enums::binding_enum!(CipDescriptorErrorKind, {
     InvalidNeighborOrder,
     Property,
     InvalidStoredDescriptor,
-}
+});
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct CipDescriptorError {
     inner: ck::CipDescriptorError,
@@ -152,57 +148,76 @@ mod source_tests {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct Atom {
-    pub(crate) inner: ck::Atom,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct Atom {
+        pub(crate) inner: ck::Atom,
+    }
 }
+macro_rules! atom_accessors {
+    ($type:ident $(, $extra:item)*) => {
 #[pymethods]
-impl Atom {
+impl $type {
+    #[getter]
     fn id(&self) -> usize {
         self.inner.id().index()
     }
+    #[getter]
     fn element(&self) -> Element {
         Element {
             inner: self.inner.element(),
         }
     }
+    #[getter]
     fn atomic_number(&self) -> u8 {
         self.inner.atomic_number()
     }
+    #[getter]
     fn formal_charge(&self) -> i8 {
         self.inner.formal_charge()
     }
+    #[getter]
     fn chiral_tag(&self) -> ChiralTag {
         self.inner.chiral_tag().into()
     }
+    #[getter]
     fn chiral_tag_code(&self) -> i64 {
         self.inner.chiral_tag_code()
     }
+    #[getter]
     fn chiral_tag_name(&self) -> &'static str {
         self.inner.chiral_tag_name()
     }
+    #[getter]
     fn isotope(&self) -> Option<u16> {
         self.inner.isotope()
     }
+    #[getter]
     fn atom_map(&self) -> Option<u32> {
         self.inner.atom_map()
     }
+    #[getter]
     fn is_aromatic(&self) -> bool {
         self.inner.is_aromatic()
     }
+    #[getter]
     fn explicit_hydrogens(&self) -> u8 {
         self.inner.explicit_hydrogens()
     }
+    #[getter]
     fn no_implicit(&self) -> bool {
         self.inner.no_implicit()
     }
+    #[getter]
     fn radical_electrons(&self) -> u8 {
         self.inner.radical_electrons()
     }
+    #[getter]
     fn hybridization(&self) -> Hybridization {
         self.inner.hybridization().into()
     }
+    #[getter]
     fn template_attachment_order(
         &self,
     ) -> Option<crate::attachment_values::TemplateAttachmentOrder> {
@@ -211,82 +226,164 @@ impl Atom {
             .cloned()
             .map(|inner| crate::attachment_values::TemplateAttachmentOrder { inner })
     }
+    #[getter]
     fn cip_descriptor(&self) -> PyResult<Option<CipDescriptor>> {
         self.inner
             .cip_descriptor()
             .map(|value| value.map(Into::into))
             .map_err(CipDescriptorError::from_rust)
     }
+    #[getter]
     fn cip_neighbor_order(&self) -> PyResult<Option<Vec<u32>>> {
         self.inner
             .cip_neighbor_order()
             .map_err(CipDescriptorError::from_rust)
     }
+    #[getter]
     fn cip_rank(&self) -> PyResult<Option<u32>> {
         self.inner.cip_rank().map_err(PropertyValueError::from_rust)
     }
+    $($extra)*
 }
+    };
+}
+atom_accessors!(Atom);
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct Bond {
-    pub(crate) inner: ck::Bond,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct MoleculeAtom {
+        pub(crate) inner: ck::MoleculeAtom,
+    }
+}
+atom_accessors!(MoleculeAtom,
+    fn value(&self) -> Atom {
+        Atom { inner: self.inner.value().clone() }
+    },
+    #[getter]
+    fn degree(&self) -> usize {
+        self.inner.degree()
+    },
+    #[getter]
+    fn explicit_valence(&self) -> PyResult<i32> {
+        self.inner.explicit_valence().map_err(crate::valence_errors::ValenceError::from_rust)
+    },
+    #[getter]
+    fn implicit_hydrogens(&self) -> PyResult<i32> {
+        self.inner.implicit_hydrogens().map_err(crate::valence_errors::ValenceError::from_rust)
+    },
+    #[getter]
+    fn total_hydrogens(&self) -> PyResult<i32> {
+        self.inner.total_hydrogens().map_err(crate::valence_errors::ValenceError::from_rust)
+    },
+    #[getter]
+    fn total_valence(&self) -> PyResult<i32> {
+        self.inner.total_valence().map_err(crate::valence_errors::ValenceError::from_rust)
+    }
+);
+
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct Bond {
+        pub(crate) inner: ck::Bond,
+    }
 }
 #[pymethods]
 impl Bond {
+    #[getter]
     fn id(&self) -> usize {
         self.inner.id().index()
     }
+    #[getter]
     fn begin(&self) -> usize {
         self.inner.begin().index()
     }
+    #[getter]
     fn end(&self) -> usize {
         self.inner.end().index()
     }
+    #[getter]
     fn order(&self) -> BondOrder {
         self.inner.order().into()
     }
+    #[getter]
     fn order_code(&self) -> i64 {
         self.inner.order_code()
     }
+    #[getter]
     fn order_name(&self) -> &'static str {
         self.inner.order_name()
     }
+    #[getter]
     fn direction(&self) -> BondDirection {
         self.inner.direction().into()
     }
+    #[getter]
     fn direction_code(&self) -> i64 {
         self.inner.direction_code()
     }
+    #[getter]
     fn direction_name(&self) -> &'static str {
         self.inner.direction_name()
     }
+    #[getter]
     fn stereo(&self) -> BondStereo {
         self.inner.stereo().into()
     }
+    #[getter]
     fn stereo_code(&self) -> i64 {
         self.inner.stereo_code()
     }
+    #[getter]
     fn stereo_name(&self) -> &'static str {
         self.inner.stereo_name()
     }
+    #[getter]
     fn stereo_atoms(&self) -> Option<[usize; 2]> {
         self.inner
             .stereo_atoms()
             .map(|atoms| atoms.map(ck::AtomId::index))
     }
+    #[getter]
     fn is_aromatic(&self) -> bool {
         self.inner.is_aromatic()
     }
+    #[getter]
     fn cip_descriptor(&self) -> PyResult<Option<CipDescriptor>> {
         self.inner
             .cip_descriptor()
             .map(|value| value.map(Into::into))
             .map_err(CipDescriptorError::from_rust)
     }
+    #[getter]
     fn cip_neighbor_order(&self) -> PyResult<Option<Vec<u32>>> {
         self.inner
             .cip_neighbor_order()
             .map_err(CipDescriptorError::from_rust)
+    }
+}
+
+crate::configuration::type_projection! {
+    impl NativeScalar for cosmolkit::AtomId {
+        type Repr = usize;
+        fn from_scalar(index: usize) -> Self {
+            Self::new(index)
+        }
+        fn scalar(self) -> usize {
+            self.index()
+        }
+    }
+}
+
+crate::configuration::type_projection! {
+    impl NativeScalar for cosmolkit::BondId {
+        type Repr = usize;
+        fn from_scalar(index: usize) -> Self {
+            Self::new(index)
+        }
+        fn scalar(self) -> usize {
+            self.index()
+        }
     }
 }

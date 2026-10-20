@@ -3,13 +3,19 @@ use crate::elements::Element;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct AtomSpec {
-    pub(crate) inner: ck::AtomSpec,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct AtomSpec {
+        pub(crate) inner: ck::AtomSpec,
+    }
 }
 
 #[pymethods]
 impl AtomSpec {
+    #[new]
+    fn py_new(element: &Element) -> Self {
+        Self::new(element)
+    }
     #[staticmethod]
     fn new(element: &Element) -> Self {
         Self {
@@ -43,13 +49,19 @@ impl AtomSpec {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct BondSpec {
-    pub(crate) inner: ck::BondSpec,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct BondSpec {
+        pub(crate) inner: ck::BondSpec,
+    }
 }
 
 #[pymethods]
 impl BondSpec {
+    #[new]
+    fn py_new(begin: usize, end: usize, order: BondOrderInput) -> PyResult<Self> {
+        Self::new(begin, end, order)
+    }
     #[staticmethod]
     fn new(begin: usize, end: usize, order: BondOrderInput) -> PyResult<Self> {
         Ok(Self {
@@ -62,19 +74,11 @@ impl BondSpec {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct ReactionCoordinateSelection {
-    pub(crate) inner: ck::ReactionCoordinateSelection,
-}
-
-impl crate::parameters::Configuration for ReactionCoordinateSelection {
-    type Native = ck::ReactionCoordinateSelection;
-    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
-        Ok(Self { inner })
-    }
-    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
-        Ok(self.inner)
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct ReactionCoordinateSelection {
+        pub(crate) inner: ck::ReactionCoordinateSelection,
     }
 }
 

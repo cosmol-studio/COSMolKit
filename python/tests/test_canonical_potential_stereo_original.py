@@ -8,7 +8,7 @@ def test_potential_stereo_analysis_returns_typed_isolated_state():
 
     analysis = molecule.potential_stereo_with_params(cosmolkit.PotentialStereoParams(clean=True))
     assert isinstance(analysis, cosmolkit.PotentialStereoResult)
-    assert len(analysis) == 1
+    assert len(analysis.stereo) == 1
     assert analysis.cleaned_molecule is not molecule
     assert analysis.cleaned_molecule.to_smiles() == before
     assert molecule.to_smiles() == before
@@ -41,7 +41,7 @@ def test_potential_stereo_default_canonical_cleanup_option_and_ordered_values():
     result=molecule.potential_stereo()
     explicit=molecule.potential_stereo_with_params(params)
     assert result.cleaned_molecule is None and explicit.cleaned_molecule is None
-    assert len(result)==len(explicit)==1
+    assert len(result.stereo)==len(explicit.stereo)==1
     assert len(result.atom_ranks)==4
     assert result.ring_relations==[]
     assert repr(result.stereo[0])==repr(explicit.stereo[0])
@@ -91,7 +91,7 @@ def test_potential_stereo_public_error_retains_property_kind_and_source_atomicit
     )
     params = cosmolkit.SmilesWriteParams(clean_stereo=False)
     before = molecule.to_smiles_with_params(params)
-    tags = [atom.chiral_tag_code() for atom in molecule.atoms()]
+    tags = [atom.chiral_tag_code for atom in molecule.atoms]
     assert issubclass(cosmolkit.PotentialStereoError, ValueError)
     for clean in [False, True]:
         with pytest.raises(cosmolkit.OperationError) as caught:
@@ -107,4 +107,4 @@ def test_potential_stereo_public_error_retains_property_kind_and_source_atomicit
         assert str(cause) == "atom 1 property _ringStereochemCand has invalid kind String"
         assert cause.__cause__ is None
         assert molecule.to_smiles_with_params(params) == before
-        assert [atom.chiral_tag_code() for atom in molecule.atoms()] == tags
+        assert [atom.chiral_tag_code for atom in molecule.atoms] == tags

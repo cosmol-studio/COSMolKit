@@ -55,19 +55,28 @@ enum_value!(ResidueCode, {
     AG, AL, BA, BR, CA, CD, CL, CM, CN,
     CO, CS, CU, FE, HG, LI, MG, MN, NA,
     NI, NO, PB, RB, SR, Y1, ZN, UNKNOWN,
+}, constructor = custom, methods = {
+    #[new]
+    fn new(value: ResidueCodeInput) -> PyResult<Self> {
+        match value {
+            ResidueCodeInput::Name(name) => name
+                .parse::<ck::ResidueCode>()
+                .map(Into::into)
+                .map_err(ResidueCodeParseError::from_rust),
+            ResidueCodeInput::Code(code) => ck::residue_info_checked(usize::from(code))
+                .map(|info| info.code.into())
+                .ok_or_else(|| PyValueError::new_err(format!("invalid ResidueCode: {code}"))),
+        }
+    }
+    fn as_u16(&self) -> u16 {
+        ck::ResidueCode::from(*self).as_u16()
+    }
 });
 enum_value!(ResidueInfoKind, {
     UNKNOWN => Unknown, AA => Aa, AAD => Aad, PAA => Paa, MAA => Maa,
     RNA => Rna, DNA => Dna, BUF => Buf, HOH => Hoh, PYR => Pyr,
     KET => Ket, ELS => Els,
 });
-#[pymethods]
-impl ResidueInfoKind {
-    #[getter]
-    fn name(&self) -> &'static str {
-        ck::ResidueInfoKind::from(*self).name()
-    }
-}
 
 #[derive(FromPyObject, IntoPyObject)]
 pub enum ResidueInfoKindInput {
@@ -112,6 +121,7 @@ impl ResidueCodeParseError {
     fn domain(&self) -> &'static str {
         "bio"
     }
+    #[getter]
     fn input(&self) -> &str {
         self.inner.input()
     }
@@ -133,28 +143,12 @@ pub enum ResidueCodeInput {
     Name(String),
     Code(u16),
 }
-#[pymethods]
-impl ResidueCode {
-    #[new]
-    fn new(value: ResidueCodeInput) -> PyResult<Self> {
-        match value {
-            ResidueCodeInput::Name(name) => name
-                .parse::<ck::ResidueCode>()
-                .map(Into::into)
-                .map_err(ResidueCodeParseError::from_rust),
-            ResidueCodeInput::Code(code) => ck::residue_info_checked(usize::from(code))
-                .map(|info| info.code.into())
-                .ok_or_else(|| PyValueError::new_err(format!("invalid ResidueCode: {code}"))),
-        }
-    }
-    fn as_u16(&self) -> u16 {
-        ck::ResidueCode::from(*self).as_u16()
-    }
-}
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct ResidueInfo {
-    pub(crate) inner: ck::ResidueInfo,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct ResidueInfo {
+        pub(crate) inner: ck::ResidueInfo,
+    }
 }
 #[pymethods]
 impl ResidueInfo {
@@ -186,32 +180,41 @@ impl ResidueInfo {
     fn weight(&self) -> f32 {
         self.inner.weight
     }
+    #[getter]
     fn canonical_one_letter_code(&self) -> Option<char> {
         self.inner.canonical_one_letter_code()
     }
+    #[getter]
     fn parent_standard_code(&self) -> Option<ResidueCode> {
         self.inner.parent_standard_code().map(Into::into)
     }
+    #[getter]
     fn is_modified_amino_acid(&self) -> bool {
         self.inner.is_modified_amino_acid()
     }
+    #[getter]
     fn found(&self) -> bool {
         self.inner.found()
     }
+    #[getter]
     fn is_water(&self) -> bool {
         self.inner.is_water()
     }
+    #[getter]
     fn is_dna(&self) -> bool {
         self.inner.is_dna()
     }
+    #[getter]
     fn is_rna(&self) -> bool {
         self.inner.is_rna()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct ResidueIdentity {
-    pub(crate) inner: ck::ResidueIdentity,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct ResidueIdentity {
+        pub(crate) inner: ck::ResidueIdentity,
+    }
 }
 #[pymethods]
 impl ResidueIdentity {
@@ -225,17 +228,21 @@ impl ResidueIdentity {
             inner: ck::ResidueIdentity::new(name),
         }
     }
+    #[getter]
     fn name(&self) -> &str {
         self.inner.name()
     }
+    #[getter]
     fn code(&self) -> ResidueCode {
         self.inner.code().into()
     }
+    #[getter]
     fn info(&self) -> ResidueInfo {
         ResidueInfo {
             inner: self.inner.info(),
         }
     }
+    #[getter]
     fn is_tabulated(&self) -> bool {
         self.inner.is_tabulated()
     }

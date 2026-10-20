@@ -107,7 +107,7 @@ impl Molecule {
     pub fn fingerprint_atom_pair_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<Fingerprint, AtomPairReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(AtomPairReadError::Preparation)?;
@@ -128,7 +128,7 @@ impl Molecule {
             conformer_id: params.conformer_id,
             atom_invariants_generator: params.atom_invariants_generator,
         };
-        atom_pair_bits(&input, &params.generator, &call, output)
+        atom_pair_bits(&input, &params.generator, &call, additional_output)
             .map_err(AtomPairReadError::Generator)
     }
     pub fn fingerprint_atom_pair_sparse(&self) -> Result<SparseBitFingerprint, AtomPairReadError> {
@@ -137,7 +137,7 @@ impl Molecule {
     pub fn fingerprint_atom_pair_sparse_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseBitFingerprint, AtomPairReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(AtomPairReadError::Preparation)?;
@@ -158,7 +158,7 @@ impl Molecule {
             conformer_id: params.conformer_id,
             atom_invariants_generator: params.atom_invariants_generator,
         };
-        atom_pair_sparse_bits(&input, &params.generator, &call, output)
+        atom_pair_sparse_bits(&input, &params.generator, &call, additional_output)
             .map_err(AtomPairReadError::Generator)
     }
     pub fn fingerprint_atom_pair_count(
@@ -169,7 +169,7 @@ impl Molecule {
     pub fn fingerprint_atom_pair_count_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint32, AtomPairReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(AtomPairReadError::Preparation)?;
@@ -190,7 +190,7 @@ impl Molecule {
             conformer_id: params.conformer_id,
             atom_invariants_generator: params.atom_invariants_generator,
         };
-        atom_pair_count(&input, &params.generator, &call, output)
+        atom_pair_count(&input, &params.generator, &call, additional_output)
             .map_err(AtomPairReadError::Generator)
     }
     pub fn fingerprint_atom_pair_sparse_count(
@@ -204,7 +204,7 @@ impl Molecule {
     pub fn fingerprint_atom_pair_sparse_count_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint, AtomPairReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(AtomPairReadError::Preparation)?;
@@ -225,7 +225,7 @@ impl Molecule {
             conformer_id: params.conformer_id,
             atom_invariants_generator: params.atom_invariants_generator,
         };
-        atom_pair_sparse_count(&input, &params.generator, &call, output)
+        atom_pair_sparse_count(&input, &params.generator, &call, additional_output)
             .map_err(AtomPairReadError::Generator)
     }
 }

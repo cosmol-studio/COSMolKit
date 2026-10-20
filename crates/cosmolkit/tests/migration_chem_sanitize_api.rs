@@ -343,7 +343,7 @@ fn value_sanitize_preserves_identity_coordinates_and_ordinary_properties() {
     assert_eq!(output.property("_CIPComputed"), None);
     assert_eq!(output.atoms()[0].prop("_CIPCode"), None);
     assert_eq!(output.bonds()[0].prop("_CIPCode"), None);
-    assert!(output.atoms().iter().all(Atom::is_aromatic));
+    assert!(output.atoms().iter().all(|atom| atom.is_aromatic()));
     assert!(output.bonds().iter().all(Bond::is_aromatic));
     // The final PROPERTIES stage now transports its existing assignment into
     // the runtime cache instead of discarding it after successful sanitization.

@@ -27,7 +27,7 @@ T_SHAPED_COORDINATES = np.array(
 
 
 def _center_tag(molecule: cosmolkit.Molecule) -> cosmolkit.ChiralTag:
-    return molecule.atoms()[0].chiral_tag()
+    return molecule.atoms[0].chiral_tag
 
 
 def _tetrahedral_molecule() -> cosmolkit.Molecule:
@@ -49,7 +49,7 @@ def test_default_and_specific_conformer_selection_are_distinct() -> None:
     assert _center_tag(first_result) != cosmolkit.ChiralTag.CHI_UNSPECIFIED
     assert _center_tag(second_result) != cosmolkit.ChiralTag.CHI_UNSPECIFIED
     assert _center_tag(first_result) != _center_tag(second_result)
-    for conformer_index in range(molecule.num_3d_conformers()):
+    for conformer_index in range(molecule.num_3d_conformers):
         assert np.array_equal(
             default_result.coordinates_3d(conformer_index),
             molecule.coordinates_3d(conformer_index),

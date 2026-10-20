@@ -51,7 +51,7 @@ def summarize_batches(batches: Iterable[ck.MoleculeBatch]) -> tuple[int, int, in
     for batch in batches:
         batch_count += 1
         record_count += len(batch)
-        valid_count += sum(batch.valid_mask())
+        valid_count += sum(batch.valid_mask)
     return batch_count, record_count, valid_count
 
 
@@ -72,19 +72,19 @@ def main() -> None:
     print("indexed records:", len(dataset))
 
     first_meta = dataset.metadata(0)
-    print("first metadata index:", first_meta.index())
-    print("first byte offset:", first_meta.byte_offset())
-    print("first byte length:", first_meta.byte_len())
+    print("first metadata index:", first_meta.index)
+    print("first byte offset:", first_meta.byte_offset)
+    print("first byte length:", first_meta.byte_len)
 
     first = dataset[0]
     last = dataset[-1]
-    print("first record index:", first.index())
-    print("last record index:", last.index())
+    print("first record index:", first.index)
+    print("last record index:", last.index)
     print("first supplier_id:", first.data_field("supplier_id"))
 
     head = dataset[: min(2, len(dataset))]
     print("slice batch records:", len(head))
-    print("slice valid mask:", head.valid_mask())
+    print("slice valid mask:", head.valid_mask)
 
     dataset_batches = dataset.batches(
         size=batch_size,
@@ -113,7 +113,7 @@ def main() -> None:
             coordinate_mode="preserve",
         )
         print("whole-file batch records:", len(all_records))
-        print("whole-file valid records:", sum(all_records.valid_mask()))
+        print("whole-file valid records:", sum(all_records.valid_mask))
     else:
         print("whole-file batch skipped for large file")
 

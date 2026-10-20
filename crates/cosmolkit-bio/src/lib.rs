@@ -188,6 +188,9 @@ pub mod __bio_rows_probe {
     }
 }
 
+#[doc(hidden)]
+pub use hierarchy::__configuration_BioCrystalCell;
+
 pub use hierarchy::{
     AltLocRequest, BioAltLocGroupId, BioAssembly, BioAssemblyGenerator, BioAssemblyId,
     BioAssemblyOperator, BioAssemblySpecialKind, BioAtomId, BioAtomRow, BioCalcFlag, BioChainId,

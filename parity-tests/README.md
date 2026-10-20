@@ -23,6 +23,7 @@ Append these options to **both** commands:
 | One task | `--task fingerprint_morgan` |
 | Several tasks | `--task cip,valence` |
 | A family | `--suite fingerprints` |
+| InChI on 5,000 bundled inputs | `--suite inchi --corpus smiles_5000` |
 | Several families | `--suite cip,valence,rings` |
 | Fixed special regressions | `--suite special` |
 | First 5,000 records of a file | `--corpus /data/chembl37.smi --limit 5000` |
@@ -77,6 +78,18 @@ rounding or numeric hash-only acceptance. Exception wrapping may differ only
 for explicitly paired native diagnostics and concrete Rust error kinds.
 Declared representation projections (such as MACCS's unused zero bit and
 typed property slots) are explicit in adapters/profiles, not chemical fitting.
+
+The `inchi` suite compares exact InChI strings and both molecule-to-key and
+identifier-to-key calls with default, `/FixedH` and `/SNon` options. Its
+roundtrip task compares the generated identifier and every atom/bond field
+used by the core state adapter after reading it with all four
+`sanitize`/`remove_hs` combinations. This is a SMILES → InChI → molecule chain,
+not an independent parser test using a shared external InChI input. Native
+InChI calls use the existing crash/timeout isolation.
+RDKit's Python reader turns sanitization exceptions into `None`; this recorded
+read rejection matches CK's typed `mol_from_inchi` `SanitizeFailed` outcome.
+Both diagnostics remain in the report. Internal exception fields are not
+compared when the reference API does not expose them; unrelated errors do not match.
 
 MMFF optimizers run directly on the current state. Native MMFF property
 construction mutates its molecule, so energy observations prepare a temporary

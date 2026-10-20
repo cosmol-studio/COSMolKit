@@ -58,9 +58,9 @@ fn read_fixture() -> Molecule {
 fn all_eleven_canonical_read_signatures_compile_from_the_public_crate() {
     let _: fn(&Molecule) -> usize = Molecule::num_atoms;
     let _: fn(&Molecule) -> usize = Molecule::num_bonds;
-    let _: for<'a> fn(&'a Molecule) -> &'a [Atom] = Molecule::atoms;
+    let _: fn(&Molecule) -> Vec<cosmolkit::MoleculeAtom> = Molecule::atoms;
     let _: for<'a> fn(&'a Molecule) -> &'a [Bond] = Molecule::bonds;
-    let _: for<'a> fn(&'a Molecule, AtomId) -> Option<&'a Atom> = Molecule::atom;
+    let _: fn(&Molecule, AtomId) -> Option<cosmolkit::MoleculeAtom> = Molecule::atom;
     let _: for<'a> fn(&'a Molecule, BondId) -> Option<&'a Bond> = Molecule::bond;
     let _: for<'a> fn(&'a Molecule) -> &'a TopologyBlock = Molecule::topology;
     let _: for<'a> fn(&'a Molecule) -> Option<&'a [[f64; 2]]> = Molecule::coordinates_2d;
@@ -87,9 +87,19 @@ fn binding_rows_exactly_match_names_signatures_and_read_only_semantics() {
     let expected = [
         ("Molecule.num_atoms", "num_atoms", "numAtoms", "usize"),
         ("Molecule.num_bonds", "num_bonds", "numBonds", "usize"),
-        ("Molecule.atoms", "atoms", "atoms", "&[crate::Atom]"),
+        (
+            "Molecule.atoms",
+            "atoms",
+            "atoms",
+            "Vec<crate::MoleculeAtom>",
+        ),
         ("Molecule.bonds", "bonds", "bonds", "&[crate::Bond]"),
-        ("Molecule.atom", "atom", "atom", "Option<&crate::Atom>"),
+        (
+            "Molecule.atom",
+            "atom",
+            "atom",
+            "Option<crate::MoleculeAtom>",
+        ),
         ("Molecule.bond", "bond", "bond", "Option<&crate::Bond>"),
         (
             "Molecule.topology",
@@ -178,7 +188,11 @@ fn public_views_preserve_canonical_rows_typed_state_and_absence() {
     assert_eq!(molecule.num_atoms(), 2);
     assert_eq!(molecule.num_bonds(), 1);
     assert_eq!(
-        molecule.atoms().iter().map(Atom::id).collect::<Vec<_>>(),
+        molecule
+            .atoms()
+            .iter()
+            .map(|atom| atom.id())
+            .collect::<Vec<_>>(),
         [AtomId::new(0), AtomId::new(1)]
     );
     assert_eq!(
@@ -186,18 +200,18 @@ fn public_views_preserve_canonical_rows_typed_state_and_absence() {
         [BondId::new(0)]
     );
     assert!(std::ptr::eq(
-        molecule.atom(AtomId::new(1)).unwrap(),
-        &molecule.atoms()[1]
+        molecule.atom(AtomId::new(1)).unwrap().value(),
+        molecule.atoms()[1].value()
     ));
     assert!(std::ptr::eq(
         molecule.bond(BondId::new(0)).unwrap(),
         &molecule.bonds()[0]
     ));
-    assert_eq!(molecule.atom(AtomId::new(2)), None);
+    assert!(molecule.atom(AtomId::new(2)).is_none());
     assert_eq!(molecule.bond(BondId::new(1)), None);
     assert!(std::ptr::eq(
-        molecule.atoms(),
-        molecule.topology().atoms.as_slice()
+        molecule.atoms()[0].value(),
+        &molecule.topology().atoms[0]
     ));
     assert_eq!(
         molecule.topology().substance_groups[0].atoms(),

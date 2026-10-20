@@ -13,9 +13,13 @@ macro_rules! metadata_record {
     ($name:ident, scalars {$($field:ident: $ty:ty),+ $(,)?},
         values {$($value:ident: $value_ty:ident),* $(,)?},
         lists {$($list:ident: $list_ty:ident),* $(,)?}) => {
-        #[pyclass(module="cosmolkit", frozen, from_py_object)]
-        #[derive(Clone)]
-        pub struct $name { pub(crate) inner: ck::$name }
+        crate::configuration::type_projection! {
+            #[pyclass(module="cosmolkit", frozen, from_py_object)]
+            #[derive(Clone)]
+            pub struct $name {
+                pub(crate) inner: ck::$name
+            }
+        }
         #[pymethods]
         impl $name {
             #[new]
@@ -55,10 +59,12 @@ impl BioSoftwareClassificationInput {
         }
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioSoftwareItem {
-    pub(crate) inner: ck::BioSoftwareItem,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioSoftwareItem {
+        pub(crate) inner: ck::BioSoftwareItem,
+    }
 }
 #[pymethods]
 impl BioSoftwareItem {
@@ -119,10 +125,12 @@ impl BioSoftwareItem {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioTlsSelection {
-    pub(crate) inner: ck::BioTlsSelection,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioTlsSelection {
+        pub(crate) inner: ck::BioTlsSelection,
+    }
 }
 #[pymethods]
 impl BioTlsSelection {

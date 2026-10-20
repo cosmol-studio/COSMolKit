@@ -16,8 +16,8 @@ def test_editing_commit_boundary_matches_sanitize_behavior():
     assert error.value.__cause__ is not None
 
     edited = invalid_editor.build()
-    assert len(edited) == 4
-    assert [bond.order() for bond in edited.bonds()][-2:] == [
+    assert edited.num_atoms == 4
+    assert [bond.order for bond in edited.bonds][-2:] == [
         cosmolkit.BondOrder.DOUBLE,
         cosmolkit.BondOrder.DOUBLE,
     ]
@@ -31,4 +31,4 @@ def test_editing_commit_boundary_matches_sanitize_behavior():
     metal_editor = cosmolkit.Molecule.from_smiles("C").to_builder()
     hg = metal_editor.add_atom(cosmolkit.AtomSpec(cosmolkit.Element.HG))
     metal = metal_editor.build()
-    assert metal.atoms()[hg].atomic_number() == 80
+    assert metal.atoms[hg].atomic_number == 80

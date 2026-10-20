@@ -25,7 +25,7 @@ def test_scoring_cold_input_does_not_publish_ring_cache():
     before = source.to_binary()
     with pytest.raises(ValueError):
         source.num_rings()
-    assert source.tautomer_score().ring() == 250
+    assert source.tautomer_score().ring == 250
     assert source.to_binary() == before
     with pytest.raises(ValueError):
         source.num_rings()
@@ -35,7 +35,7 @@ def test_repeated_iterable_inputs_do_not_publish_ring_cache():
     source = cold_benzene()
     before = source.to_binary()
     selected = ck.canonical_tautomer_from_molecules([source, source])
-    assert selected.num_atoms() == 6
+    assert selected.num_atoms == 6
     assert source.to_binary() == before
     with pytest.raises(ValueError):
         source.num_rings()
@@ -52,7 +52,7 @@ def test_callback_error_retains_local_score_but_never_writes_input(entry):
     failure = ValueError("after local ring scoring")
 
     def callback(view, progress):
-        assert view.tautomer_score().ring() == 250
+        assert view.tautomer_score().ring == 250
         raise failure
 
     with pytest.raises(ValueError) as caught:
@@ -65,8 +65,8 @@ def test_callback_error_retains_local_score_but_never_writes_input(entry):
 
 def test_default_and_v1_parameter_factories():
     current, v1 = ck.TautomerParams(), ck.TautomerParams.v1()
-    assert current.transform_count() == 37
-    assert v1.transform_count() == 36
+    assert current.transform_count == 37
+    assert v1.transform_count == 36
     for params in current, v1:
         assert params.max_tautomers == params.max_transforms == 1000
         assert params.remove_sp3_stereo
@@ -103,13 +103,13 @@ def test_unsigned_limit_conversion_raises(field, value):
 def test_rich_result_order_index_and_independent_ownership():
     source = acetone()
     result = source.enumerate_tautomers()
-    assert result.status() == ck.TautomerEnumerationStatus.Completed
-    assert len(result) == result.len() == 2
-    assert not result.is_empty()
-    assert result.canonical_smiles() == ["C=C(C)O", "CC(C)=O"]
-    assert result.modified_atoms() == [0, 2, 3]
-    assert result.modified_bonds() == [0, 1, 2]
-    assert [m.to_smiles() for m in result] == result.canonical_smiles()
+    assert result.status == ck.TautomerEnumerationStatus.Completed
+    assert len(result) == result.len == 2
+    assert not result.is_empty
+    assert result.canonical_smiles == ["C=C(C)O", "CC(C)=O"]
+    assert result.modified_atoms == [0, 2, 3]
+    assert result.modified_bonds == [0, 1, 2]
+    assert [m.to_smiles() for m in result] == result.canonical_smiles
     assert [(k, m.to_smiles()) for k, m in result.entries()] == [
         ("C=C(C)O", "C=C(C)O"), ("CC(C)=O", "CC(C)=O")
     ]
@@ -138,31 +138,31 @@ def test_callback_pre_application_snapshot_survives_return_and_cancellation():
     assert params.callback is cancel
     source = acetone()
     result = source.enumerate_tautomers_with_params(params)
-    assert result.status() == ck.TautomerEnumerationStatus.Canceled
+    assert result.status == ck.TautomerEnumerationStatus.Canceled
     assert len(result) == len(saved) == 1
     assert source.to_smiles() == "CC(C)=O"
     del source, result, params
     gc.collect()
     source, progress = saved[0]
     assert source.to_smiles() == "CC(C)=O"
-    assert source.to_owned().tautomer_score().total() == 5
-    assert progress.status() == ck.TautomerEnumerationStatus.Completed
-    assert progress.num_transforms() == 1
-    assert len(progress) == 1 and not progress.is_empty()
-    assert progress.modified_atoms() == progress.modified_bonds() == []
+    assert source.to_owned().tautomer_score().total == 5
+    assert progress.status == ck.TautomerEnumerationStatus.Completed
+    assert progress.num_transforms == 1
+    assert len(progress) == 1 and not progress.is_empty
+    assert progress.modified_atoms == progress.modified_bonds == []
     assert [(key, value.to_smiles()) for key, value in progress.to_owned().entries()] == [
         ("CC(C)=O", "CC(C)=O")
     ]
-    atoms, bonds = source.atoms(), source.bonds()
+    atoms, bonds = source.atoms, source.bonds
     assert all(isinstance(atom, ck.Atom) for atom in atoms)
     assert all(isinstance(bond, ck.Bond) for bond in bonds)
-    assert [atom.atomic_number() for atom in atoms] == [6, 6, 6, 8]
+    assert [atom.atomic_number for atom in atoms] == [6, 6, 6, 8]
     assert [atom.degree() for atom in atoms] == [1, 3, 1, 1]
-    assert [row.total_hydrogens() for row in source.atom_metadata()] == [3, 0, 3, 0]
+    assert [row.total_hydrogens for row in source.atom_metadata()] == [3, 0, 3, 0]
     assert source.atom(4) is None and source.bond(3) is None
     assert source.atom_degree(4) is None
-    assert source.atom(0).total_hydrogens() == 3
-    assert source.bond(2).stereo_code() == 0
+    assert source.atom(0).total_hydrogens == 3
+    assert source.bond(2).stereo_code == 0
     with pytest.raises(AttributeError):
         source.num_atoms = 0
 
@@ -197,7 +197,7 @@ def test_custom_signed_scorer_exact_inputs_and_retention(entry):
     assert [m.to_smiles() for m in saved] == ["C=C(C)O", "CC(C)=O"]
     del receiver, selected, params
     gc.collect()
-    assert saved[0].tautomer_score().total() == 1
+    assert saved[0].tautomer_score().total == 1
     assert source.to_smiles() == "CC(C)=O"
 
 
@@ -247,13 +247,13 @@ def test_explicit_score_terms_are_detached_and_signed():
     default = ck.default_tautomer_score_terms()
     assert len(default) == 12
     term = ck.TautomerScoreTerm("negative carbonyl", "[C]=[O]", -9)
-    assert term.name() == "negative carbonyl" and term.smarts() == "[C]=[O]" and term.score() == -9
+    assert term.name == "negative carbonyl" and term.smarts == "[C]=[O]" and term.score == -9
     assert term == ck.TautomerScoreTerm("negative carbonyl", "[C]=[O]", -9)
     params = ck.TautomerScoreParams([term])
     score = source.tautomer_score_with_params(params)
-    assert (score.ring(), score.substructure(), score.hetero_hydrogen(), score.total()) == (0, -9, 0, -9)
-    assert source.tautomer_score_with_params(ck.TautomerScoreParams([])).total() == 0
-    assert source.tautomer_score().total() == 5
+    assert (score.ring, score.substructure, score.hetero_hydrogen, score.total) == (0, -9, 0, -9)
+    assert source.tautomer_score_with_params(ck.TautomerScoreParams([])).total == 0
+    assert source.tautomer_score().total == 5
     assert ck.TautomerScoreParams().terms is None
 
 
@@ -280,13 +280,13 @@ def test_iterable_selection_preserves_input_order_duplicates_and_first_tie():
     values = [ck.Molecule.from_smiles("C first"), ck.Molecule.from_smiles("C second"), ck.Molecule.from_smiles("CC third")]
     observed = []
     def score(value):
-        observed.append(value.properties().name())
+        observed.append(value.properties.name)
         return -9
     selected = ck.canonical_tautomer_from_molecules_with_params(iter(values), ck.TautomerParams(scorer=score))
     assert observed == ["first", "second", "third"]
     assert selected.to_smiles() == "C"
-    assert selected.properties().name() == "first"
-    assert [m.properties().name() for m in values] == observed
+    assert selected.properties.name == "first"
+    assert [m.properties.name for m in values] == observed
     result = acetone().enumerate_tautomers()
     assert ck.canonical_tautomer_from_molecules(result).to_smiles() == result.canonical_tautomer().to_smiles()
 
@@ -316,20 +316,20 @@ def test_iterable_generator_exception_keeps_identity():
 def test_callback_property_values_are_owned_read_only_and_keep_computed_state():
     captured = []
     def callback(source, progress):
-        captured.append(source.properties())
+        captured.append(source.properties)
         return False
     source = ck.Molecule.from_smiles("CC(C)=O original")
     source.enumerate_tautomers_with_params(ck.TautomerParams(callback=callback))
     props = captured[0]
     assert isinstance(props, ck.MoleculeProperties)
-    assert props.name() == "original"
+    assert props.name == "original"
     # Pinned Chirality.cpp:2904 writes an int, not a string property.
-    assert props.prop("_StereochemDone").kind() == ck.PropertyValueKind.Int
+    assert props.prop("_StereochemDone").kind == ck.PropertyValueKind.Int
     assert props.prop("_StereochemDone").as_int() == 1
     assert props.is_prop_computed("_StereochemDone")
-    assert "_StereochemDone" in props.computed_prop_names()
-    assert props.sdf_data_fields() == props.sdf_property_lists() == []
-    returned = props.props()
+    assert "_StereochemDone" in props.computed_prop_names
+    assert props.sdf_data_fields == props.sdf_property_lists == []
+    returned = props.props
     returned["_StereochemDone"] = "changed copy"
     del source, captured
     gc.collect()
@@ -340,9 +340,9 @@ def test_callback_property_values_are_owned_read_only_and_keep_computed_state():
 
 def test_atom_hybridization_is_the_shared_read_only_source_vocabulary():
     source = acetone()
-    assert [atom.hybridization() for atom in source.atoms()] == [
+    assert [atom.hybridization for atom in source.atoms] == [
         ck.Hybridization.SP3, ck.Hybridization.SP2,
         ck.Hybridization.SP3, ck.Hybridization.SP2,
     ]
-    assert [atom.hybridization().name for atom in source.atoms()] == ["SP3", "SP2", "SP3", "SP2"]
+    assert [atom.hybridization.name for atom in source.atoms] == ["SP3", "SP2", "SP3", "SP2"]
     assert source.to_smiles() == "CC(C)=O"

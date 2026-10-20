@@ -8,7 +8,7 @@ ORIGINAL_SMOKE_CASES = [('CCO', [81, 108, 113, 138, 152, 154, 156, 159, 163]), (
 def test_maccs_fingerprint_is_rdkit_bit_identical(smiles, expected):
     molecule = cosmolkit.Molecule.from_smiles(smiles)
     actual = molecule.fingerprint_maccs_with_params(cosmolkit.MaccsFingerprintParams(n_bits=166))
-    assert set(actual.on_bits()) == set(expected)
+    assert set(actual.on_bits) == set(expected)
 
 def test_maccs_fingerprint_rejects_non_rdkit_bit_length():
     molecule = cosmolkit.Molecule.from_smiles("NCCO")

@@ -7,11 +7,11 @@ import cosmolkit as ck
 def metadata_values(rows: list[ck.AtomMetadata]) -> list[tuple[int, int, int, int, int]]:
     return [
         (
-            row.degree(),
-            row.explicit_valence(),
-            row.implicit_hydrogens(),
-            row.total_hydrogens(),
-            row.total_valence(),
+            row.degree,
+            row.explicit_valence,
+            row.implicit_hydrogens,
+            row.total_hydrogens,
+            row.total_valence,
         )
         for row in rows
     ]
@@ -32,8 +32,8 @@ def test_atom_metadata_default_recalculates_without_installing_cache() -> None:
     with pytest.raises(ck.ValenceError) as caught:
         _ = molecule.atom_metadata(recalculate=False)
     assert caught.value.kind == "ExplicitValenceCacheNotInitialized"
-    assert molecule.num_atoms() == 1
-    assert molecule.num_bonds() == 0
+    assert molecule.num_atoms == 1
+    assert molecule.num_bonds == 0
     assert metadata_values(molecule.atom_metadata()) == expected
 
 
@@ -46,8 +46,8 @@ def test_atom_metadata_cached_query_uses_prepared_assignment_and_keeps_source_co
     assert metadata_values(prepared.atom_metadata()) == expected
     with pytest.raises(ck.ValenceError):
         _ = source.atom_metadata(False)
-    assert source.num_atoms() == prepared.num_atoms() == 1
-    assert source.num_bonds() == prepared.num_bonds() == 0
+    assert source.num_atoms == prepared.num_atoms == 1
+    assert source.num_bonds == prepared.num_bonds == 0
 
 
 def test_atom_metadata_empty_molecule_both_modes() -> None:

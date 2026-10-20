@@ -30,6 +30,7 @@ pub fn available() -> Vec<(&'static str, &'static str)> {
         .iter()
         .chain(crate::descriptors::TASKS)
         .chain(crate::chemistry::TASKS)
+        .chain(crate::inchi::TASKS)
         .chain(crate::search_tautomer::TASKS)
         .chain(crate::geometry::TASKS)
         .chain(crate::bio::TASKS)
@@ -81,6 +82,9 @@ impl WriterProfile {
 }
 
 pub fn profiles(task: &str) -> Result<Vec<serde_json::Value>> {
+    if crate::inchi::TASKS.iter().any(|(name, _)| *name == task) {
+        return crate::inchi::profiles(task);
+    }
     if crate::special::input(task).is_some() {
         return Ok(crate::special::profiles(task));
     }
@@ -131,6 +135,9 @@ pub fn profiles(task: &str) -> Result<Vec<serde_json::Value>> {
 }
 
 pub fn normalize_profile(task: &str, profile: serde_json::Value) -> Result<serde_json::Value> {
+    if crate::inchi::TASKS.iter().any(|(name, _)| *name == task) {
+        return crate::inchi::normalize(task, profile);
+    }
     if crate::special::input(task).is_some() {
         return crate::special::normalize(task, profile);
     }
@@ -209,6 +216,20 @@ pub(crate) fn failed_error(error: &(dyn std::error::Error + 'static)) -> Vec<u8>
     let mut cause = Some(error);
     let mut optimizer_domain = false;
     while let Some(inner) = cause {
+        if let Some(cosmolkit::InchiError {
+            operation: "mol_from_inchi",
+            kind: cosmolkit::InchiErrorKind::SanitizeFailed,
+            ..
+        }) = inner.downcast_ref::<cosmolkit::InchiError>()
+        {
+            return outcome(
+                1,
+                Value::List(vec![
+                    Value::Text("InchiReadSanitizeFailed".into()),
+                    Value::Text(error.to_string()),
+                ]),
+            );
+        }
         optimizer_domain |= inner.is::<cosmolkit::ConformerRunError>()
             || inner.is::<cosmolkit::UffOptimizationError>();
         // The kernel enum is deliberately private. Require the real public
@@ -322,6 +343,18 @@ pub fn matching_error(task: &str, expected: &[u8], actual: &[u8]) -> bool {
         return false;
     };
     match task {
+        "inchi_roundtrip" => {
+            // rdkit/Chem/inchi.py::MolFromInchi:
+            // RDKit✔️✔️:   except ValueError as e:
+            // RDKit✔️✔️:     logger.error(str(e))
+            // RDKit✔️✔️:     return None
+            // The reference adapter records that exact None result. Compare
+            // read rejection only; the Python API does not expose its original
+            // exception fields. Never accept a writer error or a toolkit defect.
+            native == "ValueError: MolFromInchi returned no molecule"
+                && matches!(ck.as_slice(), [Value::Text(kind), Value::Text(_)]
+                    if kind == "InchiReadSanitizeFailed")
+        }
         "embedding" | "uff_optimize" | "uff_optimize_conformers" => {
             // BFGSOpt.h::minimize, after linearSearch:
             // RDKit✔️✔️:     CHECK_INVARIANT(status >= 0, "bad direction in linearSearch");
@@ -410,6 +443,9 @@ pub(crate) fn parse_failure(error: &cosmolkit::SmilesError) -> Vec<u8> {
 
 fn scalar(mol: &Molecule, task: &str, profile: &serde_json::Value) -> Result<Value> {
     Ok(match task {
+        "inchi_write" | "inchi_key" | "inchi_roundtrip" => {
+            crate::inchi::scalar(mol, task, profile)?
+        }
         "fingerprint_morgan" => crate::fingerprints::morgan(mol, profile)?,
         "fingerprint_atom_pair" | "fingerprint_torsion" => {
             crate::pair_fingerprints::scalar(mol, task, profile)?
@@ -679,7 +715,7 @@ pub fn evaluate(
                         };
                         let values = if let Some(writer) = &writer {
                             batch
-                                .to_smiles_list_with_params(&writer.params(atom_count)?, &runtime)
+                                .to_smiles_with_params(&writer.params(atom_count)?, &runtime)
                                 .map(|values| {
                                     values
                                         .into_iter()
@@ -943,6 +979,55 @@ mod tests {
         assert_eq!(unpack_row(&row, 2).unwrap(), outputs);
         assert!(unpack_row(&row, 1).is_err());
         assert!(unpack_row(&row[..row.len() - 1], 2).is_err());
+    }
+
+    #[test]
+    fn inchi_read_rejection_matches_only_the_typed_sanitization_failure() {
+        let native = outcome(
+            5,
+            Value::Text("ValueError: MolFromInchi returned no molecule".into()),
+        );
+        let error = cosmolkit::InchiError {
+            operation: "mol_from_inchi",
+            kind: cosmolkit::InchiErrorKind::SanitizeFailed,
+            detail: "MolSanitizeException: invalid valence".into(),
+        };
+        assert!(matching_error(
+            "inchi_roundtrip",
+            &native,
+            &failed_error(&error)
+        ));
+        assert!(!matching_error(
+            "inchi_write",
+            &native,
+            &failed_error(&error)
+        ));
+        assert!(!matching_error(
+            "inchi_roundtrip",
+            &native,
+            &failed_error(&cosmolkit::InchiError {
+                operation: "mol_to_inchi",
+                ..error.clone()
+            })
+        ));
+        assert!(!matching_error(
+            "inchi_roundtrip",
+            &native,
+            &failed_error(&cosmolkit::InchiError {
+                kind: cosmolkit::InchiErrorKind::Toolkit,
+                ..error.clone()
+            })
+        ));
+        assert!(!matching_error(
+            "inchi_roundtrip",
+            &outcome(5, Value::Text("ValueError: other failure".into())),
+            &failed_error(&error)
+        ));
+        assert!(!matching_error(
+            "inchi_roundtrip",
+            &native,
+            &success(Value::Text("molecule".into()))
+        ));
     }
 
     #[test]

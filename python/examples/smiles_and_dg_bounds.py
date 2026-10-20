@@ -11,9 +11,9 @@ print("non-isomeric smiles:", mol.to_smiles(isomeric_smiles=False))
 print(
     "chiral tags:",
     [
-        (atom.id(), atom.chiral_tag().name)
-        for atom in mol.atoms()
-        if atom.chiral_tag() != ck.ChiralTag.CHI_UNSPECIFIED
+        (atom.id, atom.chiral_tag.name)
+        for atom in mol.atoms
+        if atom.chiral_tag != ck.ChiralTag.CHI_UNSPECIFIED
     ],
 )
 

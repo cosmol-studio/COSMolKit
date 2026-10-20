@@ -2,16 +2,20 @@
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct DenseMatrix {
-    pub(crate) inner: ck::DenseMatrix,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct DenseMatrix {
+        pub(crate) inner: ck::DenseMatrix,
+    }
 }
 
 #[pymethods]
 impl DenseMatrix {
+    #[getter]
     fn dimension(&self) -> usize {
         self.inner.dimension()
     }
+    #[getter]
     fn values(&self) -> Vec<f64> {
         self.inner.values().to_vec()
     }
@@ -20,9 +24,11 @@ impl DenseMatrix {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct ForceFieldEnergyGradient {
-    pub(crate) inner: ck::ForceFieldEnergyGradient,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct ForceFieldEnergyGradient {
+        pub(crate) inner: ck::ForceFieldEnergyGradient,
+    }
 }
 
 #[pymethods]
@@ -37,9 +43,11 @@ impl ForceFieldEnergyGradient {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct ForceFieldMinimizeOutcome {
-    pub(crate) inner: ck::ForceFieldMinimizeOutcome,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct ForceFieldMinimizeOutcome {
+        pub(crate) inner: ck::ForceFieldMinimizeOutcome,
+    }
 }
 
 #[pymethods]

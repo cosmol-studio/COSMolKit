@@ -19,10 +19,12 @@ impl SdfPropertyListTargetInput {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct SdfPropertyList {
-    pub(crate) inner: ck::SdfPropertyList,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct SdfPropertyList {
+        pub(crate) inner: ck::SdfPropertyList,
+    }
 }
 #[pymethods]
 impl SdfPropertyList {
@@ -43,12 +45,15 @@ impl SdfPropertyList {
             ),
         })
     }
+    #[getter]
     fn target(&self) -> SdfPropertyListTarget {
         self.inner.target().into()
     }
+    #[getter]
     fn name(&self, py: Python<'_>) -> PyResult<String> {
         decode_source_text(py, self.inner.name())
     }
+    #[getter]
     fn values(&self) -> Vec<Option<PropertyValue>> {
         self.inner
             .values()
@@ -58,9 +63,11 @@ impl SdfPropertyList {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct MoleculeProperties {
-    pub(crate) inner: ck::MoleculeProperties,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct MoleculeProperties {
+        pub(crate) inner: ck::MoleculeProperties,
+    }
 }
 #[pymethods]
 impl MoleculeProperties {
@@ -70,12 +77,14 @@ impl MoleculeProperties {
             inner: ck::MoleculeProperties::default(),
         }
     }
+    #[getter]
     fn name(&self, py: Python<'_>) -> PyResult<Option<String>> {
         self.inner
             .name()
             .map(|text| decode_source_text(py, text))
             .transpose()
     }
+    #[getter]
     fn sdf_data_fields(&self, py: Python<'_>) -> PyResult<Vec<(String, String)>> {
         self.inner
             .sdf_data_fields()
@@ -83,6 +92,7 @@ impl MoleculeProperties {
             .map(|(key, value)| Ok((decode_source_text(py, key)?, decode_source_text(py, value)?)))
             .collect()
     }
+    #[getter]
     fn sdf_property_lists(&self) -> Vec<SdfPropertyList> {
         self.inner
             .sdf_property_lists()
@@ -91,6 +101,7 @@ impl MoleculeProperties {
             .map(|inner| SdfPropertyList { inner })
             .collect()
     }
+    #[getter]
     fn props(&self, py: Python<'_>) -> PyResult<BTreeMap<String, PropertyValue>> {
         self.inner
             .props()
@@ -116,6 +127,7 @@ impl MoleculeProperties {
             .is_prop_computed(key)
             .map_err(PropertyValueError::from_rust)
     }
+    #[getter]
     fn computed_prop_names(&self, py: Python<'_>) -> PyResult<Option<Vec<String>>> {
         self.inner
             .computed_prop_names()

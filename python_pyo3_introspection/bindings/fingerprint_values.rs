@@ -50,12 +50,21 @@ impl AtomPairsParameters {
 
 use crate::errors::FingerprintError;
 use cosmolkit as ck;
+
+crate::configuration::type_projection! {
+    #[pyo3::pyclass(module = "cosmolkit", frozen)]
+    pub struct Fingerprint {
+        pub(crate) inner: ck::Fingerprint,
+    }
+}
 use pyo3::prelude::*;
 use std::collections::BTreeMap;
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct SparseBitFingerprint {
-    pub(crate) inner: ck::SparseBitFingerprint,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct SparseBitFingerprint {
+        pub(crate) inner: ck::SparseBitFingerprint,
+    }
 }
 
 #[pymethods]
@@ -66,9 +75,11 @@ impl SparseBitFingerprint {
             inner: ck::SparseBitFingerprint::new(n_bits),
         }
     }
+    #[getter]
     fn n_bits(&self) -> u32 {
         self.inner.n_bits()
     }
+    #[getter]
     fn on_bits(&self) -> Vec<i32> {
         self.inner.on_bits()
     }
@@ -81,12 +92,17 @@ pub struct SparseCountFingerprint {
 
 #[pymethods]
 impl SparseCountFingerprint {
+    #[new]
+    fn py_new(length: u64) -> Self {
+        Self::new(length)
+    }
     #[staticmethod]
     fn new(length: u64) -> Self {
         Self {
             inner: ck::SparseCountFingerprint::new(length),
         }
     }
+    #[getter]
     fn length(&self) -> u64 {
         self.inner.length()
     }
@@ -98,6 +114,7 @@ impl SparseCountFingerprint {
             .set_value(index, value)
             .map_err(FingerprintError::from_rust)
     }
+    #[getter]
     fn nonzero_elements(&self) -> BTreeMap<u64, i32> {
         self.inner.nonzero_elements().clone()
     }
@@ -164,12 +181,17 @@ pub struct SparseCountFingerprint32 {
 
 #[pymethods]
 impl SparseCountFingerprint32 {
+    #[new]
+    fn py_new(length: u32) -> Self {
+        Self::new(length)
+    }
     #[staticmethod]
     fn new(length: u32) -> Self {
         Self {
             inner: ck::SparseCountFingerprint32::new(length),
         }
     }
+    #[getter]
     fn length(&self) -> u32 {
         self.inner.length()
     }
@@ -181,6 +203,7 @@ impl SparseCountFingerprint32 {
             .set_value(index, value)
             .map_err(FingerprintError::from_rust)
     }
+    #[getter]
     fn nonzero_elements(&self) -> BTreeMap<u32, i32> {
         self.inner.nonzero_elements().clone()
     }

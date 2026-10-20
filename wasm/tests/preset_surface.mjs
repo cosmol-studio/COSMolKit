@@ -43,9 +43,9 @@ test("preset exports exactly its selected optional domains", () => {
         assert.equal(typeof ck.PickleError, "undefined");
         const batch = ck.MoleculeBatch.fromSmilesList(["CCO"]);
         try {
-            assert.deepEqual(batch.toSmilesList(), ["CCO"]);
-            assert.equal(typeof batch.toSvgList, ["full", "core-depict"].includes(preset) ? "function" : "undefined");
-            assert.equal(typeof batch.dgBoundsMatrixList, ["full", "core-3d"].includes(preset) ? "function" : "undefined");
+            assert.deepEqual(batch.toSmiles(), ["CCO"]);
+            assert.equal(typeof batch.toSvg, ["full", "core-depict"].includes(preset) ? "function" : "undefined");
+            assert.equal(typeof batch.dgBoundsMatrix, ["full", "core-3d"].includes(preset) ? "function" : "undefined");
         } finally { batch.free(); }
     } finally {
         molecule.free();

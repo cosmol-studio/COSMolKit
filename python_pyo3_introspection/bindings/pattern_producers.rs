@@ -13,10 +13,10 @@ pub(crate) fn keyword_params(
 ) -> PatternFingerprintParams {
     let defaults = ck::PatternFingerprintParams::default();
     PatternFingerprintParams {
-        inner: ck::PatternFingerprintParams {
+        inner: crate::parameters::NativeField::Owned(ck::PatternFingerprintParams {
             n_bits: n_bits.unwrap_or(defaults.n_bits),
             tautomeric: tautomeric.unwrap_or(defaults.tautomeric),
-        },
+        }),
     }
 }
 
@@ -44,8 +44,10 @@ pub fn _fingerprint_pattern_query_params(
     query: &QueryGraph,
     params: Option<&PatternFingerprintParams>,
 ) -> PyResult<Fingerprint> {
+    let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
     match params {
-        Some(params) => ck::fingerprint_pattern_query_with_params(query.inner(), &params.inner),
+        Some(params) => ck::fingerprint_pattern_query_with_params(query.inner(), &params),
         None => ck::fingerprint_pattern_query(query.inner()),
     }
     .map(|inner| Fingerprint { inner })
@@ -67,7 +69,9 @@ pub fn fingerprint_pattern_query_with_params(
     query: &QueryGraph,
     params: &PatternFingerprintParams,
 ) -> PyResult<Fingerprint> {
-    ck::fingerprint_pattern_query_with_params(query.inner(), &params.inner)
+    let params = pyo3::Python::attach(|py| params.to_rust(py))?;
+
+    ck::fingerprint_pattern_query_with_params(query.inner(), &params)
         .map(|inner| Fingerprint { inner })
         .map_err(PatternFingerprintError::from_rust)
 }
@@ -132,7 +136,9 @@ mod tests {
                             let params = Py::new(
                                 py,
                                 PatternFingerprintParams {
-                                    inner: ck::PatternFingerprintParams { n_bits, tautomeric },
+                                    inner: crate::parameters::NativeField::Owned(
+                                        ck::PatternFingerprintParams { n_bits, tautomeric },
+                                    ),
                                 },
                             )?;
                             let kwargs = PyDict::new(py);
@@ -141,7 +147,7 @@ mod tests {
                             let expected = molecule
                                 .borrow(py)
                                 .inner
-                                .fingerprint_pattern_with_params(&params.borrow(py).inner)
+                                .fingerprint_pattern_with_params(&params.borrow(py).to_rust(py)?)
                                 .unwrap();
                             for actual in [
                                 molecule
@@ -161,7 +167,7 @@ mod tests {
                             }
                             let expected = ck::fingerprint_pattern_query_with_params(
                                 query.borrow(py).inner(),
-                                &params.borrow(py).inner,
+                                &params.borrow(py).to_rust(py)?,
                             )
                             .unwrap();
                             for actual in [

@@ -2,11 +2,9 @@ use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum QueryCompileErrorKind {
+crate::enums::binding_enum!(QueryCompileErrorKind, {
     InvalidGraph,
-}
+});
 
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct QueryCompileError {
@@ -43,12 +41,10 @@ impl QueryCompileError {
     }
 }
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum AvalonEngineErrorKind {
+crate::enums::binding_enum!(AvalonEngineErrorKind, {
     InvalidArguments,
     AvalonConversion,
-}
+});
 
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct AvalonEngineError {

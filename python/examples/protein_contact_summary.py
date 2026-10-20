@@ -38,42 +38,42 @@ HETATM   14  C1  LIG C   1      18.500  11.000   8.500  1.00 10.00           C
 
 
 def atom_position(atom: ck.ProteinAtomRef) -> tuple[float, float, float]:
-    position = atom.position()
+    position = atom.position
     if position is None:
-        raise ValueError(f"atom {atom.name()} has no coordinates")
+        raise ValueError(f"atom {atom.name} has no coordinates")
     return position
 
 
 def residue_centroid(residue: ck.ProteinResidueRef) -> npt.NDArray[np.float64]:
-    coords = np.array([atom_position(atom) for atom in residue.atoms()])
+    coords = np.array([atom_position(atom) for atom in residue.atoms])
     return cast(npt.NDArray[np.float64], coords.mean(axis=0))
 
 
 protein = ck.Protein.from_pdb(PDB)
 
-print("models:", protein.num_models())
-print("chains:", protein.num_chains())
-print("residues:", protein.num_residues())
-print("atoms:", protein.num_atoms())
+print("models:", protein.num_models)
+print("chains:", protein.num_chains)
+print("residues:", protein.num_residues)
+print("atoms:", protein.num_atoms)
 
-for chain in protein.chains():
-    residues = chain.residues()
-    print("chain:", chain.id(), chain.kind(), "residues=", len(residues))
+for chain in protein.chains:
+    residues = chain.residues
+    print("chain:", chain.id, chain.kind, "residues=", len(residues))
     for residue in residues:
         centroid = residue_centroid(residue)
-        atom_names = [atom.name() for atom in residue.atoms()]
+        atom_names = [atom.name for atom in residue.atoms]
         print(
             "  residue:",
-            residue.id(),
-            residue.name(),
-            residue.kind(),
+            residue.id,
+            residue.name,
+            residue.kind,
             "atoms=",
             atom_names,
             "centroid=",
             centroid.round(3).tolist(),
         )
 
-all_residues = protein.residues()
+all_residues = protein.residues
 centroids = [residue_centroid(residue) for residue in all_residues]
 print("nearby residue centroids:")
 for left_index, left in enumerate(all_residues):
@@ -82,6 +82,6 @@ for left_index, left in enumerate(all_residues):
         if distance <= 6.0:
             right = all_residues[right_index]
             print(
-                f"  {left.name()}#{left.id()} - "
-                f"{right.name()}#{right.id()}: {distance:.2f} A"
+                f"  {left.name}#{left.id} - "
+                f"{right.name}#{right.id}: {distance:.2f} A"
             )

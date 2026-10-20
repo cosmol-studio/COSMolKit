@@ -25,7 +25,7 @@ M  END
 """
 
 mol = ck.mol_from_smiles("CCO", sanitize=True).with_2d_coordinates()
-coords = mol.coordinates_2d()
+coords = mol.coordinates_2d
 assert coords is not None
 print("coords shape:", coords.shape)
 print("centroid:", coords.mean(axis=0))
@@ -45,7 +45,7 @@ print("Saved:", saved_path)
 
 lig = ck.Molecule.read_sdf(str(saved_path), sanitize=True, coordinate_mode="require_2d")
 print("Loaded:", lig)
-lig_coords = lig.coordinates_2d()
+lig_coords = lig.coordinates_2d
 assert lig_coords is not None
 print("loaded coords shape:", lig_coords.shape)
 print("max coordinate delta after SDF roundtrip:", np.abs(coords - lig_coords).max())
@@ -56,7 +56,7 @@ raw_benzene = ck.mol_from_mol(
     sanitize=False,
 )
 sanitized_benzene = raw_benzene.sanitize()
-print("raw MolBlock bond orders:", [bond.order().name for bond in raw_benzene.bonds()])
+print("raw MolBlock bond orders:", [bond.order.name for bond in raw_benzene.bonds])
 print("delayed sanitize smiles:", sanitized_benzene.to_smiles())
 
 explicit_h_mol = ck.mol_from_smiles("CCO").with_hydrogens().with_2d_coordinates()
@@ -67,5 +67,5 @@ kept_h = ck.mol_from_sdf(
     remove_hs=False,
 )
 heavy_atoms = kept_h.without_hydrogens()
-print("SDF atoms before delayed hydrogen removal:", len(kept_h))
-print("SDF atoms after delayed hydrogen removal:", len(heavy_atoms))
+print("SDF atoms before delayed hydrogen removal:", kept_h.num_atoms)
+print("SDF atoms after delayed hydrogen removal:", heavy_atoms.num_atoms)

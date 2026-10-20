@@ -22,13 +22,13 @@ pub(crate) fn keywords(
 ) -> PyResult<BioReadParams> {
     let defaults = ck::BioReadParams::default();
     Ok(BioReadParams {
-        inner: ck::BioReadParams {
+        inner: crate::parameters::NativeField::Owned(ck::BioReadParams {
             format: match format {
                 Some(format) => format.into_rust()?,
                 None => defaults.format,
             },
             source_name: source_name.unwrap_or(defaults.source_name),
-        },
+        }),
     })
 }
 
@@ -73,26 +73,9 @@ enum_value!(JsonErrorKind, {
     InvalidUtf16TrailSurrogate, UnknownEscape, InvalidUtf8
 });
 // Python keywords need binding-level identifier escaping, not stub rewrites.
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum MmjsonUnexpectedType {
-    Null,
-    False_,
-    True_,
-    Array,
-    Object,
-}
-impl From<ck::MmjsonUnexpectedType> for MmjsonUnexpectedType {
-    fn from(value: ck::MmjsonUnexpectedType) -> Self {
-        match value {
-            ck::MmjsonUnexpectedType::Null => Self::Null,
-            ck::MmjsonUnexpectedType::False => Self::False_,
-            ck::MmjsonUnexpectedType::True => Self::True_,
-            ck::MmjsonUnexpectedType::Array => Self::Array,
-            ck::MmjsonUnexpectedType::Object => Self::Object,
-        }
-    }
-}
+enum_value!(MmjsonUnexpectedType, {
+    Null => Null, False_ => False, True_ => True, Array => Array, Object => Object
+});
 
 #[doc = r#"{"role":"error_record"}"#]
 #[pyclass(module="cosmolkit", extends=PyValueError)]

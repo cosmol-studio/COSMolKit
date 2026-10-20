@@ -1,19 +1,59 @@
-use crate::chemical_values::enum_value;
+use crate::chemical_values::{EnumValue, enum_value};
 use crate::native::Molecule;
 use cosmolkit as ck;
 use pyo3::prelude::*;
+use pyo3::exceptions::PyValueError;
 use std::collections::BTreeMap;
+use std::error::Error;
 
 enum_value!(CoordinateDimension, { TwoD, ThreeD });
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum ConformerErrorKind {
+enum_value!(EmbedFailureCause, {
+    InitialCoords, FirstMinimization, CheckTetrahedralCenters, CheckChiralCenters,
+    MinimizeFourthDimension, EtkMinimization, FinalChiralBounds, FinalCenterInVolume,
+    LinearDoubleBond, BadDoubleBondStereo, CheckChiralCenters2, ExceededTimeout,
+    Minimization, KtermViolation, Clash, EndOfEnum
+});
+
+#[derive(FromPyObject)]
+pub enum EmbedFailureCauseInput {
+    Enum(EmbedFailureCause),
+    Name(String),
+}
+impl EmbedFailureCauseInput {
+    fn into_rust(self) -> PyResult<ck::EmbedFailureCause> {
+        match self {
+            Self::Enum(value) => Ok(value.into()),
+            Self::Name(name) => EmbedFailureCause::from_name(&name).map(Into::into),
+        }
+    }
+}
+
+crate::error_framework::error_projection!(
+    EmbedFailureCountError, EmbedFailureCountErrorKind, ck::EmbedFailureCountError, "conformer", {
+        InvalidCause,
+        MissingCounter { index: usize, available: usize },
+    }, cause = |_: &ck::EmbedFailureCountError| None::<PyErr>
+);
+
+pub struct FailureCounts<'a>(&'a [u32]);
+impl<'py> IntoPyObject<'py> for FailureCounts<'_> {
+    type Target = pyo3::types::PyTuple;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+    const OUTPUT_TYPE: pyo3::inspect::PyStaticExpr =
+        <Vec<u32> as crate::parameters::Container>::TYPE;
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        pyo3::types::PyTuple::new(py, self.0.iter().copied())
+    }
+}
+
+crate::enums::binding_enum!(ConformerErrorKind, {
     Unsupported,
     CannotNormalizeZeroLengthVector,
     GenerationFailed,
     InvalidEmbedParametersJson,
-}
+});
 
 #[pyclass(module="cosmolkit", extends=pyo3::exceptions::PyValueError)]
 pub struct ConformerError {
@@ -122,13 +162,26 @@ macro_rules! embedding_parameters {
 }
 ck::project_configuration!(ck::EmbedParams, using embedding_parameters);
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct EmbedMoleculeResult {
-    pub(crate) inner: ck::EmbedMoleculeResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct EmbedMoleculeResult {
+        pub(crate) inner: ck::EmbedMoleculeResult,
+    }
 }
 #[pymethods]
 impl EmbedMoleculeResult {
+    #[getter]
+    fn failures_tracked(&self) -> bool {
+        self.inner.failures_tracked()
+    }
+    #[getter]
+    fn failure_counts(&self) -> Option<FailureCounts<'_>> {
+        self.inner.failure_counts().map(FailureCounts)
+    }
+    fn failure_count(&self, cause: EmbedFailureCauseInput) -> PyResult<Option<u32>> {
+        self.inner.failure_count(cause.into_rust()?).map_err(EmbedFailureCountError::from_rust)
+    }
     #[new]
     fn new(
         py: Python<'_>,
@@ -144,28 +197,45 @@ impl EmbedMoleculeResult {
             },
         })
     }
+    #[getter]
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
+    #[getter]
     fn conf_id(&self) -> i32 {
         self.inner.conf_id()
     }
+    #[getter]
     fn params(&self, py: Python<'_>) -> PyResult<EmbedParams> {
         EmbedParams::from_rust(py, self.inner.params().clone())
     }
+    #[getter]
     fn ok(&self) -> bool {
         self.inner.ok()
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct EmbedMultipleConfsResult {
-    pub(crate) inner: ck::EmbedMultipleConfsResult,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct EmbedMultipleConfsResult {
+        pub(crate) inner: ck::EmbedMultipleConfsResult,
+    }
 }
 #[pymethods]
 impl EmbedMultipleConfsResult {
+    #[getter]
+    fn failures_tracked(&self) -> bool {
+        self.inner.failures_tracked()
+    }
+    #[getter]
+    fn failure_counts(&self) -> Option<FailureCounts<'_>> {
+        self.inner.failure_counts().map(FailureCounts)
+    }
+    fn failure_count(&self, cause: EmbedFailureCauseInput) -> PyResult<Option<u32>> {
+        self.inner.failure_count(cause.into_rust()?).map_err(EmbedFailureCountError::from_rust)
+    }
     #[new]
     fn new(
         py: Python<'_>,
@@ -183,20 +253,25 @@ impl EmbedMultipleConfsResult {
             },
         })
     }
+    #[getter]
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
+    #[getter]
     fn conf_ids(&self) -> &[i32] {
         self.inner.conf_ids()
     }
+    #[getter]
     fn requested_num_confs(&self) -> u32 {
         self.inner.requested_num_confs()
     }
+    #[getter]
     fn generated_count(&self) -> usize {
         self.inner.generated_count()
     }
+    #[getter]
     fn params(&self, py: Python<'_>) -> PyResult<EmbedParams> {
         EmbedParams::from_rust(py, self.inner.params().clone())
     }

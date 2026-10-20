@@ -45,10 +45,7 @@ fn torsion_defaults_overrides_order_invalid_rows_and_progress_preserve_inputs() 
             BatchRecord::Error(_) => None,
         })
         .collect::<Vec<_>>();
-    assert_eq!(
-        batch.fingerprint_topological_torsion_list().unwrap(),
-        expected
-    );
+    assert_eq!(batch.fingerprint_topological_torsion().unwrap(), expected);
     for jobs in [1, 2] {
         let ticks = Arc::new(AtomicUsize::new(0));
         let worker = Arc::clone(&ticks);
@@ -61,7 +58,7 @@ fn torsion_defaults_overrides_order_invalid_rows_and_progress_preserve_inputs() 
         };
         assert_eq!(
             batch
-                .fingerprint_topological_torsion_list_with_params(&options, &params)
+                .fingerprint_topological_torsion_with_params(&options, &params)
                 .unwrap(),
             expected
         );
@@ -90,7 +87,7 @@ fn torsion_collects_every_typed_failure_in_original_order_without_skipping_work(
         })),
     };
     let error = batch
-        .fingerprint_topological_torsion_list_with_params(&options, &params)
+        .fingerprint_topological_torsion_with_params(&options, &params)
         .unwrap_err();
     assert_eq!(error.errors, 2);
     assert_eq!(ticks.load(Ordering::SeqCst), 3);
@@ -141,17 +138,12 @@ fn zero_threads_reject_before_work_and_empty_batches_keep_source_shape() {
         })),
     };
     let error = batch
-        .fingerprint_topological_torsion_list_with_params(&Default::default(), &params)
+        .fingerprint_topological_torsion_with_params(&Default::default(), &params)
         .unwrap_err();
     assert_eq!(error.record_errors[0].operation, "n_jobs");
     assert_eq!(ticks.load(Ordering::SeqCst), 0);
     let empty = MoleculeBatch::from_records(vec![], BatchErrorMode::Strict).unwrap();
-    assert!(
-        empty
-            .fingerprint_topological_torsion_list()
-            .unwrap()
-            .is_empty()
-    );
+    assert!(empty.fingerprint_topological_torsion().unwrap().is_empty());
 }
 
 #[test]
@@ -172,10 +164,10 @@ fn oversized_fixed_bit_path_retains_source_empty_bits_and_original_invalid_row()
         })),
     };
     let values = batch
-        .fingerprint_topological_torsion_list_with_params(&options, &params)
+        .fingerprint_topological_torsion_with_params(&options, &params)
         .unwrap();
     let empty = Fingerprint::from_on_bits(2048, vec![]).unwrap();
-    assert_eq!(values, [Some(empty.clone()), None, Some(empty)]);
+    assert_eq!(values.values(), &[Some(empty.clone()), None, Some(empty)]);
     assert_eq!(ticks.load(Ordering::SeqCst), 3);
     assert_eq!(batch.to_list(), before);
 }

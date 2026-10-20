@@ -16,8 +16,8 @@ _spec.loader.exec_module(_checker)
 DOCUMENT = {
     "entries": [
         {"item": "type", "semantic_id": "types.MoleculeBatch", "python_name": "MoleculeBatch"},
-        {"item": "callable", "semantic_id": "MoleculeBatch.fingerprint_morgan_list",
-         "python_name": "fingerprint_morgan_list", "output": "Vec<Option<crate::Fingerprint>>"},
+        {"item": "callable", "semantic_id": "MoleculeBatch.fingerprint_morgan",
+         "python_name": "fingerprint_morgan", "output": "Vec<Option<crate::Fingerprint>>"},
     ],
     "python_collections": [{"name": "FingerprintBatch", "rust_output": "Vec<Option<crate::Fingerprint>>"}],
 }
@@ -34,16 +34,16 @@ class FingerprintBatch:
     def __getitem__(self, key: slice) -> FingerprintBatch: ...
     def to_numpy(self) -> numpy.typing.NDArray[numpy.uint8]: ...
 class MoleculeBatch:
-    def fingerprint_morgan_list(self) -> FingerprintBatch: ...
+    def fingerprint_morgan(self) -> FingerprintBatch: ...
 """
 
 
 def test_numpy_collection_gate_rejects_missing_class_list_return_and_wrong_dtype():
     check = _checker.check_collection_declarations
     assert check(ast.parse(STUB), DOCUMENT) == []
-    missing = "class MoleculeBatch:\n    def fingerprint_morgan_list(self) -> list: ..."
+    missing = "class MoleculeBatch:\n    def fingerprint_morgan(self) -> list: ..."
     assert any("collection missing" in error for error in check(ast.parse(missing), DOCUMENT))
-    wrong_return = STUB.replace("fingerprint_morgan_list(self) -> FingerprintBatch", "fingerprint_morgan_list(self) -> list")
+    wrong_return = STUB.replace("fingerprint_morgan(self) -> FingerprintBatch", "fingerprint_morgan(self) -> list")
     assert any("expected registered FingerprintBatch" in error for error in check(ast.parse(wrong_return), DOCUMENT))
     wrong_dtype = STUB.replace("numpy.uint8", "numpy.float64")
     assert any("uint8" in error for error in check(ast.parse(wrong_dtype), DOCUMENT))

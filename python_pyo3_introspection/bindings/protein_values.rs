@@ -58,10 +58,12 @@ mod error_tests {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct ProteinSelectionSummary {
-    inner: ck::ProteinSelectionSummary,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct ProteinSelectionSummary {
+        inner: ck::ProteinSelectionSummary,
+    }
 }
 #[pymethods]
 impl ProteinSelectionSummary {
@@ -185,8 +187,10 @@ impl Protein {
         text: &str,
         params: Option<&crate::bio_values::BioReadParams>,
     ) -> PyResult<Self> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         py.detach(|| match params {
-            Some(params) => ck::Protein::from_text_with_params(text, &params.inner),
+            Some(params) => ck::Protein::from_text_with_params(text, &params),
             None => ck::Protein::from_text(text),
         })
         .map(|inner| Self {
@@ -274,8 +278,10 @@ impl Protein {
         py: Python<'_>,
         params: Option<&crate::params::BioMoleculeParams>,
     ) -> PyResult<crate::native::Molecule> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         py.detach(|| match params {
-            Some(params) => self.inner.to_molecule_with_params(&params.inner),
+            Some(params) => self.inner.to_molecule_with_params(&params),
             None => self.inner.to_molecule(),
         })
         .map(|inner| crate::native::Molecule { inner })
@@ -347,6 +353,7 @@ impl Protein {
             .retain_selection_(&selection.inner)
             .map_err(crate::bio_selection_errors::BioOperationError::from_rust)
     }
+    #[getter]
     fn input_format(&self) -> BioCoordinateFormat {
         self.inner.input_format().into()
     }
@@ -361,15 +368,19 @@ impl Protein {
             inner: self.inner.as_ref().clone().into_bio_structure(),
         }
     }
+    #[getter]
     fn num_models(&self) -> usize {
         self.inner.num_models()
     }
+    #[getter]
     fn num_chains(&self) -> usize {
         self.inner.num_chains()
     }
+    #[getter]
     fn num_residues(&self) -> usize {
         self.inner.num_residues()
     }
+    #[getter]
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
@@ -378,6 +389,7 @@ impl Protein {
             inner: self.inner.selection_summary(),
         }
     }
+    #[getter]
     fn chains(&self) -> Vec<ProteinChainRef> {
         self.inner
             .chains()
@@ -387,6 +399,7 @@ impl Protein {
             })
             .collect()
     }
+    #[getter]
     fn residues(&self) -> Vec<ProteinResidueRef> {
         self.inner
             .residues()
@@ -396,6 +409,7 @@ impl Protein {
             })
             .collect()
     }
+    #[getter]
     fn atoms(&self) -> Vec<ProteinAtomRef> {
         self.inner
             .atoms()
@@ -410,6 +424,14 @@ impl Protein {
             owner: self.inner.clone(),
             index: value.id().value() as usize,
         })
+    }
+    fn __len__(&self) -> usize {
+        self.inner.num_chains()
+    }
+    fn __getitem__(&self, index: crate::indexing::Integer) -> PyResult<ProteinChainRef> {
+        let index = crate::indexing::normalize(index, self.inner.num_chains())?;
+        self.chain(index)
+            .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err(index))
     }
 }
 
@@ -441,22 +463,27 @@ owned_view!(ProteinAtomRef, ProteinAtomRef, atoms);
 
 #[pymethods]
 impl ProteinChainRef {
+    #[getter]
     fn id(&self) -> u32 {
         self.view().id().value()
     }
+    #[getter]
     fn row(&self) -> BioChainRow {
         BioChainRow {
             inner: self.view().row().clone(),
         }
     }
+    #[getter]
     fn kind(&self) -> ChainKind {
         self.view().kind().into()
     }
+    #[getter]
     fn source(&self) -> ChainSourceIds {
         ChainSourceIds {
             inner: self.view().source().clone(),
         }
     }
+    #[getter]
     fn residues(&self) -> Vec<ProteinResidueRef> {
         self.view()
             .residues()
@@ -466,6 +493,7 @@ impl ProteinChainRef {
             })
             .collect()
     }
+    #[getter]
     fn atoms(&self) -> Vec<ProteinAtomRef> {
         self.view()
             .atoms()
@@ -478,43 +506,54 @@ impl ProteinChainRef {
 }
 #[pymethods]
 impl ProteinResidueRef {
+    #[getter]
     fn id(&self) -> u32 {
         self.view().id().value()
     }
+    #[getter]
     fn row(&self) -> BioResidueRow {
         BioResidueRow {
             inner: self.view().row().clone(),
         }
     }
+    #[getter]
     fn name(&self) -> String {
         self.view().name().as_str().to_owned()
     }
+    #[getter]
     fn kind(&self) -> ResidueKind {
         self.view().kind().into()
     }
+    #[getter]
     fn info(&self) -> ResidueInfo {
         ResidueInfo {
             inner: self.view().info(),
         }
     }
+    #[getter]
     fn code(&self) -> ResidueCode {
         self.view().code().into()
     }
+    #[getter]
     fn one_letter_code(&self) -> char {
         self.view().one_letter_code()
     }
+    #[getter]
     fn fasta_code(&self) -> char {
         self.view().fasta_code()
     }
+    #[getter]
     fn is_standard(&self) -> bool {
         self.view().is_standard()
     }
+    #[getter]
     fn chain(&self) -> ProteinChainRef {
         ProteinChainRef {
             owner: self.owner.clone(),
             index: self.view().chain().id().value() as usize,
         }
     }
+    #[getter]
     fn atoms(&self) -> Vec<ProteinAtomRef> {
         self.view()
             .atoms()
@@ -527,33 +566,40 @@ impl ProteinResidueRef {
 }
 #[pymethods]
 impl ProteinAtomRef {
+    #[getter]
     fn id(&self) -> u32 {
         self.view().id().value()
     }
+    #[getter]
     fn row(&self) -> BioAtomRow {
         BioAtomRow {
             inner: self.view().row().clone(),
         }
     }
+    #[getter]
     fn name(&self) -> AtomName {
         AtomName {
             inner: self.view().name(),
         }
     }
+    #[getter]
     fn element(&self) -> Element {
         Element {
             inner: self.view().element(),
         }
     }
+    #[getter]
     fn altloc(&self) -> Option<AltLocLabel> {
         self.view().altloc().map(|inner| AltLocLabel { inner })
     }
+    #[getter]
     fn residue(&self) -> ProteinResidueRef {
         ProteinResidueRef {
             owner: self.owner.clone(),
             index: self.view().residue().id().value() as usize,
         }
     }
+    #[getter]
     fn position(&self) -> [f64; 3] {
         self.view().position()
     }

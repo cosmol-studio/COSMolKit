@@ -59,7 +59,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         ..Default::default()
     });
     let sparse_count = batch
-        .fingerprint_atom_pair_sparse_count_list_with_params(&params, &execution(4))
+        .fingerprint_atom_pair_sparse_count_with_params(&params, &execution(4))
         .unwrap();
     let expected_sparse_count: Vec<_> = molecules
         .iter()
@@ -72,7 +72,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .collect();
     assert_eq!(sparse_count, expected_sparse_count);
     let count = batch
-        .fingerprint_atom_pair_count_list_with_params(&params, &execution(3))
+        .fingerprint_atom_pair_count_with_params(&params, &execution(3))
         .unwrap();
     let expected_count: Vec<_> = molecules
         .iter()
@@ -85,7 +85,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .collect();
     assert_eq!(count, expected_count);
     let sparse_bits = batch
-        .fingerprint_atom_pair_sparse_bits_list_with_params(&params, &execution(2))
+        .fingerprint_atom_pair_sparse_with_params(&params, &execution(2))
         .unwrap();
     let expected_sparse_bits: Vec<_> = molecules
         .iter()
@@ -98,7 +98,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .collect();
     assert_eq!(sparse_bits, expected_sparse_bits);
     let fingerprints = batch
-        .fingerprint_atom_pair_list_with_params(&params, &execution(4))
+        .fingerprint_atom_pair_with_params(&params, &execution(4))
         .unwrap();
     let expected_fingerprints: Vec<_> = molecules
         .iter()
@@ -106,7 +106,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .collect();
     assert_eq!(fingerprints, expected_fingerprints);
     let outputs = batch
-        .fingerprint_atom_pair_with_output_list_with_params(&params, true, &execution(4))
+        .fingerprint_atom_pair_with_output_with_params(&params, true, &execution(4))
         .unwrap();
     let expected_outputs: Vec<_> = molecules
         .iter()
@@ -154,7 +154,7 @@ fn unfolded_extra_bits_preserve_source_index_errors_and_batch_positions() {
         );
     }
     let error = batch
-        .fingerprint_atom_pair_sparse_count_list_with_params(&params, &execution(4))
+        .fingerprint_atom_pair_sparse_count_with_params(&params, &execution(4))
         .expect_err("batch collection must retain every source-defined index error");
     assert_eq!(error.errors, 3);
     assert_eq!(
@@ -184,13 +184,13 @@ fn batch_order_thread_count_progress_and_repeated_calls_are_deterministic() {
         .unwrap();
     let params = AtomPairFingerprintParams::default();
     let baseline = batch
-        .fingerprint_atom_pair_list_with_params(&params, &execution(1))
+        .fingerprint_atom_pair_with_params(&params, &execution(1))
         .unwrap();
     for n_jobs in [1, 2, 4] {
         for _ in 0..3 {
             assert_eq!(
                 batch
-                    .fingerprint_atom_pair_list_with_params(&params, &execution(n_jobs))
+                    .fingerprint_atom_pair_with_params(&params, &execution(n_jobs))
                     .unwrap(),
                 baseline
             );
@@ -206,7 +206,7 @@ fn batch_order_thread_count_progress_and_repeated_calls_are_deterministic() {
     };
     assert_eq!(
         batch
-            .fingerprint_atom_pair_list_with_params(&params, &progress)
+            .fingerprint_atom_pair_with_params(&params, &progress)
             .unwrap(),
         baseline
     );
@@ -219,7 +219,7 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
     assert_eq!(batch.errors().len(), 1);
     assert_eq!(batch.errors()[0].index, 1);
     let values = batch
-        .fingerprint_atom_pair_list_with_params(&Default::default(), &execution(2))
+        .fingerprint_atom_pair_with_params(&Default::default(), &execution(2))
         .unwrap();
     assert!(values[0].is_some());
     assert!(values[1].is_none());
@@ -229,7 +229,7 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
         ..Default::default()
     });
     let error = batch
-        .fingerprint_atom_pair_list_with_params(&no_conformer, &execution(2))
+        .fingerprint_atom_pair_with_params(&no_conformer, &execution(2))
         .unwrap_err();
     assert_eq!(
         error
@@ -250,7 +250,7 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
         ..Default::default()
     });
     let error = batch
-        .fingerprint_atom_pair_list_with_params(&bad_config, &execution(2))
+        .fingerprint_atom_pair_with_params(&bad_config, &execution(2))
         .unwrap_err();
     assert_eq!(error.record_errors[0].index, 0);
     assert_eq!(
@@ -264,18 +264,18 @@ fn shared_batch_is_immutable_and_safe_across_mixed_family_threads() {
     let batch = Arc::new(MoleculeBatch::from_smiles_list(&source).unwrap());
     let snapshot = batch.to_list();
     let expected = batch
-        .fingerprint_atom_pair_list_with_params(&Default::default(), &execution(2))
+        .fingerprint_atom_pair_with_params(&Default::default(), &execution(2))
         .unwrap();
     let atom_pair_batch = Arc::clone(&batch);
     let atom_pair = std::thread::spawn(move || {
         atom_pair_batch
-            .fingerprint_atom_pair_list_with_params(&Default::default(), &execution(4))
+            .fingerprint_atom_pair_with_params(&Default::default(), &execution(4))
             .unwrap()
     });
     let morgan_batch = Arc::clone(&batch);
     let morgan = std::thread::spawn(move || {
         morgan_batch
-            .fingerprint_morgan_list_with_params(&Default::default(), &execution(3))
+            .fingerprint_morgan_with_params(&Default::default(), &execution(3))
             .unwrap()
     });
     assert_eq!(atom_pair.join().unwrap(), expected);
@@ -313,10 +313,10 @@ fn all_families_return_full_ordered_bits_counts_and_metadata_masks() {
         let query = execution(jobs);
         for collect in [false, true] {
             let ap_results = batch
-                .fingerprint_atom_pair_with_output_list_with_params(&ap, collect, &query)
+                .fingerprint_atom_pair_with_output_with_params(&ap, collect, &query)
                 .unwrap();
             let mo_results = batch
-                .fingerprint_morgan_with_output_list_with_params(&morgan, collect, &query)
+                .fingerprint_morgan_with_output_with_params(&morgan, collect, &query)
                 .unwrap();
             for (index, molecule) in originals.iter().enumerate() {
                 if let Some(m) = molecule {
@@ -362,13 +362,13 @@ fn all_families_return_full_ordered_bits_counts_and_metadata_masks() {
             }
         }
         let bits = batch
-            .fingerprint_layered_list_with_params(&layered, &query)
+            .fingerprint_layered_with_params(&layered, &query)
             .unwrap();
         let output = batch
-            .fingerprint_layered_with_output_list_with_params(&layered, &query)
+            .fingerprint_layered_with_output_with_params(&layered, &query)
             .unwrap();
         let pattern_bits = batch
-            .fingerprint_pattern_list_with_params(&pattern, &query)
+            .fingerprint_pattern_with_params(&pattern, &query)
             .unwrap();
         for (index, molecule) in originals.iter().enumerate() {
             if let Some(m) = molecule {
@@ -407,7 +407,7 @@ fn ap_preflight_runs_on_empty_invalid_rows_before_scheduling_and_morgan_preserve
             ..Default::default()
         });
         let error = batch
-            .fingerprint_atom_pair_list_with_params(&params, &execution(0))
+            .fingerprint_atom_pair_with_params(&params, &execution(0))
             .unwrap_err();
         let owner = cosmolkit_fingerprints::validate_atom_pair_params(params.as_ref()).unwrap_err();
         assert_eq!(error.record_errors[0].index, 0);
@@ -429,7 +429,7 @@ fn ap_preflight_runs_on_empty_invalid_rows_before_scheduling_and_morgan_preserve
         });
         assert_eq!(
             batch
-                .fingerprint_morgan_list_with_params(&bad, &execution(1))
+                .fingerprint_morgan_with_params(&bad, &execution(1))
                 .unwrap()
                 .len(),
             values.len()
@@ -438,7 +438,7 @@ fn ap_preflight_runs_on_empty_invalid_rows_before_scheduling_and_morgan_preserve
     let valid = batch(&["CCO"]);
     assert!(
         valid
-            .fingerprint_morgan_list_with_params(
+            .fingerprint_morgan_with_params(
                 &MorganFingerprintParams::from(MorganGeneratorParams {
                     fp_size: 0,
                     ..Default::default()
@@ -470,7 +470,7 @@ fn original_morgan_explicit_providers_defaults_and_empty_options_match_scalar_ow
             let generator =
                 MorganFingerprintGenerator::new(Some(&params), Some(&atom), bond.as_ref()).unwrap();
             let outputs = batch
-                .fingerprint_morgan_with_output_list_with_generator_params(
+                .fingerprint_morgan_with_output_with_generator_params(
                     &params,
                     Some(&atom),
                     bond.as_ref(),
@@ -480,7 +480,7 @@ fn original_morgan_explicit_providers_defaults_and_empty_options_match_scalar_ow
                 )
                 .unwrap();
             let bits = batch
-                .fingerprint_morgan_list_with_generator_params(
+                .fingerprint_morgan_with_generator_params(
                     &params,
                     Some(&atom),
                     bond.as_ref(),
@@ -512,9 +512,9 @@ fn original_morgan_explicit_providers_defaults_and_empty_options_match_scalar_ow
     }
     let defaults = MorganFingerprintParams::default();
     assert_eq!(
-        batch.fingerprint_morgan_list().unwrap(),
+        batch.fingerprint_morgan().unwrap(),
         batch
-            .fingerprint_morgan_list_with_params(&defaults, &execution(1))
+            .fingerprint_morgan_with_params(&defaults, &execution(1))
             .unwrap()
     );
 }
@@ -538,8 +538,8 @@ fn morgan_defaults_match_scalar_with_omitted_or_explicit_workers() {
         expected[0].as_ref().unwrap().on_bits(),
         vec![389, 1088, 1232, 1873]
     );
-    assert_eq!(batch.fingerprint_morgan_list().unwrap(), expected);
-    let default_output = batch.fingerprint_morgan_with_output_list().unwrap();
+    assert_eq!(batch.fingerprint_morgan().unwrap(), expected);
+    let default_output = batch.fingerprint_morgan_with_output().unwrap();
     for jobs in [None, Some(1), Some(2)] {
         let execution = BatchQueryParams {
             n_jobs: jobs,
@@ -547,12 +547,12 @@ fn morgan_defaults_match_scalar_with_omitted_or_explicit_workers() {
         };
         assert_eq!(
             batch
-                .fingerprint_morgan_list_with_params(&Default::default(), &execution)
+                .fingerprint_morgan_with_params(&Default::default(), &execution)
                 .unwrap(),
             expected
         );
         let output = batch
-            .fingerprint_morgan_with_output_list_with_params(&Default::default(), true, &execution)
+            .fingerprint_morgan_with_output_with_params(&Default::default(), true, &execution)
             .unwrap();
         assert_eq!(output, default_output);
         for (value, fingerprint) in output.iter().zip(&expected) {
@@ -566,7 +566,7 @@ fn morgan_defaults_match_scalar_with_omitted_or_explicit_workers() {
         let mut options = MorganFingerprintParams::default();
         options.set_radius(radius);
         let actual = batch
-            .fingerprint_morgan_list_with_params(&options, &execution(1))
+            .fingerprint_morgan_with_params(&options, &execution(1))
             .unwrap();
         for (value, text) in actual.iter().zip(&source) {
             assert_eq!(
@@ -589,7 +589,7 @@ fn legacy_morgan_batch_zero_size_and_zero_extra_bits_follow_wrapper_order() {
         ..Default::default()
     });
     let error = batch
-        .fingerprint_morgan_list_with_params(&zero, &execution(2))
+        .fingerprint_morgan_with_params(&zero, &execution(2))
         .unwrap_err();
     assert_eq!(
         error
@@ -611,7 +611,7 @@ fn legacy_morgan_batch_zero_size_and_zero_extra_bits_follow_wrapper_order() {
         ..Default::default()
     });
     let actual = batch
-        .fingerprint_morgan_list_with_params(&zero_bits, &execution(2))
+        .fingerprint_morgan_with_params(&zero_bits, &execution(2))
         .unwrap();
     let generator = cosmolkit::MorganFingerprintGenerator::new(
         Some(&MorganGeneratorParams {

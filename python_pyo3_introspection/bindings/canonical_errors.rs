@@ -13,11 +13,9 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use std::error::Error;
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum PropertyStringErrorKind {
+crate::enums::binding_enum!(PropertyStringErrorKind, {
     UnsupportedKind,
-}
+});
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct PropertyStringError {
     inner: ck::PropertyStringError,
@@ -40,6 +38,7 @@ impl PropertyStringError {
         }
     }
     /// Preserve the actual canonical Rust method; this is not a discriminator.
+    #[getter]
     fn kind(&self) -> PropertyValueKind {
         self.inner.kind().into()
     }
@@ -63,12 +62,10 @@ pub fn property_value_to_text(py: Python<'_>, value: &PropertyValue) -> PyResult
     decode_source_text(py, &native)
 }
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum RequiredPropertyStringErrorKind {
+crate::enums::binding_enum!(RequiredPropertyStringErrorKind, {
     Missing,
     Conversion,
-}
+});
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct RequiredPropertyStringError {
     inner: ck::RequiredPropertyStringError,

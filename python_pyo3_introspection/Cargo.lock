@@ -186,6 +186,7 @@ name = "cosmolkit-bio"
 version = "0.5.1-rc.5"
 dependencies = [
  "compact_str",
+ "cosmolkit-macros",
  "cosmolkit-model",
  "cosmolkit-types",
  "serde",

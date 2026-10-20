@@ -9,12 +9,12 @@ pub(crate) fn input_2d(
     z_policy: Option<CoordinateZPolicyInput>,
 ) -> PyResult<Coordinate2DInputParams> {
     Ok(Coordinate2DInputParams {
-        inner: ck::Coordinate2DInputParams {
+        inner: crate::parameters::NativeField::Owned(ck::Coordinate2DInputParams {
             z_policy: match z_policy {
                 Some(value) => value.into_rust()?,
                 None => ck::Coordinate2DInputParams::default().z_policy,
             },
-        },
+        }),
     })
 }
 

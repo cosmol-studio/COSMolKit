@@ -2,10 +2,12 @@ use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct TemplateAttachment {
-    pub(crate) inner: ck::TemplateAttachment,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct TemplateAttachment {
+        pub(crate) inner: ck::TemplateAttachment,
+    }
 }
 #[pymethods]
 impl TemplateAttachment {
@@ -15,17 +17,21 @@ impl TemplateAttachment {
             inner: ck::TemplateAttachment::new(ck::AtomId::new(target), label),
         }
     }
+    #[getter]
     fn target(&self) -> usize {
         self.inner.target().index()
     }
+    #[getter]
     fn label(&self) -> &str {
         self.inner.label()
     }
 }
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct TemplateAttachmentOrder {
-    pub(crate) inner: ck::TemplateAttachmentOrder,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct TemplateAttachmentOrder {
+        pub(crate) inner: ck::TemplateAttachmentOrder,
+    }
 }
 #[pymethods]
 impl TemplateAttachmentOrder {
@@ -35,6 +41,7 @@ impl TemplateAttachmentOrder {
             .map(|inner| Self { inner })
             .map_err(TemplateAttachmentOrderError::from_rust)
     }
+    #[getter]
     fn entries(&self) -> Vec<TemplateAttachment> {
         self.inner
             .entries()
@@ -50,16 +57,14 @@ impl TemplateAttachmentOrder {
     }
 }
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum TemplateAttachmentOrderErrorKind {
+crate::enums::binding_enum!(TemplateAttachmentOrderErrorKind, {
     Empty,
     DuplicateTarget,
     DuplicateLabel,
     TargetOutOfRange,
     MappingTargetOutOfRange,
     TargetRemoved,
-}
+});
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct TemplateAttachmentOrderError {
     inner: ck::TemplateAttachmentOrderError,
@@ -183,10 +188,12 @@ impl TemplateAttachmentOrderError {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct AtomMetadata {
-    pub(crate) inner: ck::AtomMetadata,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct AtomMetadata {
+        pub(crate) inner: ck::AtomMetadata,
+    }
 }
 #[pymethods]
 impl AtomMetadata {

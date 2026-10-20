@@ -31,18 +31,18 @@ def allocated_output():
 
 def same_value(actual, expected):
     if "nonzero" in expected:
-        assert actual.length() == expected["size"]
-        assert actual.nonzero_elements() == dict(expected["nonzero"])
+        assert actual.length == expected["size"]
+        assert actual.nonzero_elements == dict(expected["nonzero"])
     else:
-        assert actual.n_bits() == expected["size"]
-        assert actual.on_bits() == expected["native_bits"]
+        assert actual.n_bits == expected["size"]
+        assert actual.on_bits == expected["native_bits"]
 
 def same_output(actual, expected):
-    assert actual.atom_counts() == expected["atom_counts"]
-    assert actual.atom_to_bits() == expected["atom_to_bits"]
-    assert actual.bit_info_map() == {key: [tuple(pair) for pair in pairs] for key, pairs in expected["bit_info_map"]}
-    assert actual.bit_paths() == dict(expected["bit_paths"])
-    assert actual.atoms_per_bit() is None
+    assert actual.atom_counts == expected["atom_counts"]
+    assert actual.atom_to_bits == expected["atom_to_bits"]
+    assert actual.bit_info_map == {key: [tuple(pair) for pair in pairs] for key, pairs in expected["bit_info_map"]}
+    assert actual.bit_paths == dict(expected["bit_paths"])
+    assert actual.atoms_per_bit is None
 
 def native_generator(record):
     if record["case"] == "feature-invalid-source-null-pattern-skip":
@@ -61,7 +61,7 @@ def test_source_native_full_scalar_ao_metadata_restore_and_bulk(record, form, si
     assert generator.info_string() == record["info"]
     assert json.loads(generator.to_json()) == record["json"]
     output = allocated_output()
-    same_value(getattr(molecule, single)(generator, output=output), record["outputs"][form])
+    same_value(getattr(molecule, single)(generator, additional_output=output), record["outputs"][form])
     same_output(output, record["outputs"][form]["additional_output"])
     restored = ck.MorganFingerprintGenerator.from_json(generator.to_json())
     same_value(getattr(molecule, single)(restored), record["outputs"][form])
@@ -78,8 +78,8 @@ def test_source_native_full_scalar_ao_metadata_restore_and_bulk(record, form, si
 
 def test_live_settings_all_fields_alias_snapshot_copy_and_lifetime():
     generator = ck.MorganFingerprintGenerator()
-    settings, alias = generator.settings(), generator.settings()
-    snapshot = settings.params()
+    settings, alias = generator.settings, generator.settings
+    snapshot = settings.params
     fields = {"radius": 0, "only_nonzero_invariants": True, "include_redundant_environments": True,
               "include_chirality": True, "count_simulation": True, "fp_size": 1000,
               "bits_per_feature": 2, "count_bounds": [1, 3, 5]}
@@ -100,7 +100,7 @@ def test_live_settings_all_fields_alias_snapshot_copy_and_lifetime():
 
 @pytest.mark.parametrize("name,value,error", [("radius", -1, OverflowError), ("fp_size", 4294967296, OverflowError), ("bits_per_feature", 1.5, TypeError), ("count_bounds", [-1], OverflowError)])
 def test_invalid_binding_settings_transport_preserves_previous_value(name, value, error):
-    settings = ck.MorganFingerprintGenerator().settings()
+    settings = ck.MorganFingerprintGenerator().settings
     old = getattr(settings, name)
     with pytest.raises(error):
         setattr(settings, name, value)
@@ -134,11 +134,11 @@ def test_present_empty_roots_reset_all_allocated_output(form, single, bulk):
     molecule = ck.Molecule.from_smiles("CCO")
     generator = ck.MorganFingerprintGenerator()
     output = allocated_output()
-    getattr(molecule, single)(generator, output=output)
-    empty = getattr(molecule, single)(generator, params=ck.MorganCallParams(from_atoms=[]), output=output)
-    assert empty.nonzero_elements() == {} if hasattr(empty, "nonzero_elements") else empty.on_bits() == []
-    assert output.atom_counts() == [0, 0, 0] and output.atom_to_bits() == [[], [], []]
-    assert output.bit_info_map() == {} and output.bit_paths() == {}
+    getattr(molecule, single)(generator, additional_output=output)
+    empty = getattr(molecule, single)(generator, params=ck.MorganCallParams(from_atoms=[]), additional_output=output)
+    assert empty.nonzero_elements == {} if hasattr(empty, "nonzero_elements") else empty.on_bits == []
+    assert output.atom_counts == [0, 0, 0] and output.atom_to_bits == [[], [], []]
+    assert output.bit_info_map == {} and output.bit_paths == {}
 
 def test_provider_query_copy_lifetime_none_empty_and_custom_precedence():
     patterns = [ck.QueryGraph.from_smarts("[C]"), ck.QueryGraph.from_smarts("[O]")]
@@ -147,12 +147,12 @@ def test_provider_query_copy_lifetime_none_empty_and_custom_precedence():
     generator = ck.MorganFingerprintGenerator(params=ck.MorganGeneratorParams(radius=0), atom_invariants=provider)
     del provider
     molecule = ck.Molecule.from_smiles("CCO")
-    assert molecule.fingerprint_morgan_sparse_count_with_generator(generator).nonzero_elements() == {1: 2, 2: 1}
+    assert molecule.fingerprint_morgan_sparse_count_with_generator(generator).nonzero_elements == {1: 2, 2: 1}
     assert json.loads(generator.to_json())["atomInvariantsGenerator"]["patternSMARTS"] == ["C", "O"]
     empty = ck.MorganFingerprintGenerator(params=ck.MorganGeneratorParams(radius=0), atom_invariants=ck.MorganAtomInvariantsGenerator.features([]))
-    assert molecule.fingerprint_morgan_sparse_count_with_generator(empty).nonzero_elements() == {0: 3}
+    assert molecule.fingerprint_morgan_sparse_count_with_generator(empty).nonzero_elements == {0: 3}
     params = ck.MorganCallParams(custom_atom_invariants=[11, 12, 13])
-    assert molecule.fingerprint_morgan_sparse_count_with_generator(empty, params=params).nonzero_elements() == {11: 1, 12: 1, 13: 1}
+    assert molecule.fingerprint_morgan_sparse_count_with_generator(empty, params=params).nonzero_elements == {11: 1, 12: 1, 13: 1}
     default = ck.MorganFingerprintGenerator(atom_invariants=ck.MorganAtomInvariantsGenerator.features())
     assert "patternSMARTS" not in json.loads(default.to_json())["atomInvariantsGenerator"]
 
@@ -176,21 +176,21 @@ def test_source_null_provider_preconditions_json_fallback_and_live_error_recover
     assert caught.value.kind == "Generator" and caught.value.__cause__ is not None
     with pytest.raises(ck.MorganReadError, match="bond invariants"):
         molecule.fingerprint_morgan_sparse_count_with_generator(null, params=ck.MorganCallParams(custom_atom_invariants=[11, 12, 13]))
-    assert molecule.fingerprint_morgan_sparse_count_with_generator(null, params=ck.MorganCallParams(custom_atom_invariants=[11, 12, 13], custom_bond_invariants=[1, 1])).nonzero_elements()
+    assert molecule.fingerprint_morgan_sparse_count_with_generator(null, params=ck.MorganCallParams(custom_atom_invariants=[11, 12, 13], custom_bond_invariants=[1, 1])).nonzero_elements
     generator = ck.MorganFingerprintGenerator()
-    settings = generator.settings()
+    settings = generator.settings
     settings.count_simulation = True
     settings.count_bounds = []
     with pytest.raises(ck.MorganReadError) as caught:
         generator.fingerprints([None, molecule], num_threads=3)
     assert caught.value.kind == "Generator" and caught.value.__cause__ is not None
-    assert generator.sparse_counts([molecule], num_threads=3)[0].nonzero_elements()
+    assert generator.sparse_counts([molecule], num_threads=3)[0].nonzero_elements
     settings.count_bounds = [1, 2, 4, 8]
-    assert generator.fingerprints([molecule], num_threads=3)[0].on_bits()
+    assert generator.fingerprints([molecule], num_threads=3)[0].on_bits
     with pytest.raises(ck.MorganReadError, match="INT_MIN"):
         generator.counts([molecule], num_threads=-2147483648)
     text = generator.to_json().replace('"fpSize":"2048"', '"fpSize":1,"fpSize":2')
-    assert ck.MorganFingerprintGenerator.from_json(text).settings().fp_size == 1
+    assert ck.MorganFingerprintGenerator.from_json(text).settings.fp_size == 1
 
 def test_original_stub_projects_all_five_types_methods_and_settings():
     tree = ast.parse((ROOT / "python/cosmolkit.pyi").read_text())

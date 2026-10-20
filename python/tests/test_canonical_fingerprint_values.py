@@ -17,11 +17,11 @@ def test_fingerprint_additional_output_domain_explicit_public_name():
     assert not hasattr(cosmolkit, "AdditionalOutput")
     assert repr(output).startswith("FingerprintAdditionalOutput(")
     assert [
-        output.atom_counts(),
-        output.atom_to_bits(),
-        output.bit_info_map(),
-        output.bit_paths(),
-        output.atoms_per_bit(),
+        output.atom_counts,
+        output.atom_to_bits,
+        output.bit_info_map,
+        output.bit_paths,
+        output.atoms_per_bit,
     ] == [None] * 5
     assert isinstance(cosmolkit.FingerprintAdditionalOutput.default(), type(output))
     names = {

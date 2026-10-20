@@ -7,6 +7,7 @@ pub mod descriptors;
 pub mod fingerprints;
 pub mod fuzzy_fingerprints;
 pub mod geometry;
+pub mod inchi;
 pub mod pair_fingerprints;
 pub mod path_fingerprints;
 pub mod random_profiles;

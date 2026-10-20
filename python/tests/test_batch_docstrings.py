@@ -12,9 +12,9 @@ import cosmolkit as ck
     ("name", "details"),
     [
         ("from_smiles_list", ["input order", 'sanitize=True', 'errors="keep"', "SmilesParseParams"]),
-        ("to_smiles_list", ["input order", "canonical, isomeric", "None", "SmilesWriteParams"]),
+        ("to_smiles", ["input order", "canonical, isomeric", "None", "SmilesWriteParams"]),
         ("with_hydrogens", ["source batch unchanged", 'errors="raise"', 'errors="keep"', "AddHsParams"]),
-        ("fingerprint_morgan_list", ["input order", "radius 3, 2048 bits", "None", "MorganFingerprintParams"]),
+        ("fingerprint_morgan", ["input order", "radius 3, 2048 bits", "None", "MorganFingerprintParams"]),
     ],
 )
 def test_public_batch_help_preserves_native_documentation(name: str, details: list[str]):
@@ -32,30 +32,30 @@ def test_public_batch_help_preserves_native_documentation(name: str, details: li
 
 def test_batch_help_examples_match_return_and_error_behavior():
     batch = ck.MoleculeBatch.from_smiles_list(["CCO", "C1CC"], errors="keep", n_jobs=1)
-    before = batch.to_smiles_list()
+    before = batch.to_smiles()
     assert before == ["CCO", None]
-    assert batch.to_smiles_list(canonical=False, n_jobs=1) == before
-    assert [error.index() for error in batch.errors()] == [1]
+    assert batch.to_smiles(canonical=False, n_jobs=1) == before
+    assert [error.index for error in batch.errors] == [1]
 
     with pytest.raises(ck.BatchValidationError):
         _ = ck.MoleculeBatch.from_smiles_list(["CCO", "C1CC"])
     with pytest.raises(ck.BatchValidationError):
         _ = batch.with_hydrogens(errors="raise")
-    assert batch.with_hydrogens().valid_mask() == [True, False]
+    assert batch.with_hydrogens().valid_mask == [True, False]
     with_hs = batch.with_hydrogens(errors="keep", n_jobs=1)
     assert len(with_hs) == len(batch)
     assert with_hs[1] is None
-    assert [error.as_dict() for error in with_hs.errors()] == [
-        error.as_dict() for error in batch.errors()
+    assert [error.as_dict() for error in with_hs.errors] == [
+        error.as_dict() for error in batch.errors
     ]
     original, hydrogenated = batch[0], with_hs[0]
     assert original is not None and hydrogenated is not None
-    assert original.num_atoms() == 3
-    assert hydrogenated.num_atoms() == 9
+    assert original.num_atoms == 3
+    assert hydrogenated.num_atoms == 9
 
-    fingerprints = batch.fingerprint_morgan_list(generator=ck.MorganGeneratorParams(radius=2), n_jobs=1)
+    fingerprints = batch.fingerprint_morgan(radius=2, n_jobs=1)
     assert len(fingerprints) == len(batch)
     assert fingerprints[0] is not None
-    assert fingerprints[0].n_bits() == 2048
+    assert fingerprints[0].n_bits == 2048
     assert fingerprints[1] is None
-    assert batch.to_smiles_list() == before
+    assert batch.to_smiles() == before

@@ -10,13 +10,13 @@ def xyz(mol, index=0):
 
 def test_empty_coordinate_arrays_keep_their_dimension():
     mol = cosmolkit.Molecule.from_smiles("")
-    assert mol.coordinates_2d() is None
+    assert mol.coordinates_2d is None
     two_d = mol.with_2d_coordinate_block(np.empty((0, 2)))
     three_d = two_d.with_only_3d_conformer(np.empty((0, 3)))
     for output, dimension in [
-        (three_d.coordinates_2d(), 2),
+        (three_d.coordinates_2d, 2),
         (three_d.coordinates_3d(), 3),
-        (three_d.conformers_3d()[0].coordinates(), 3),
+        (three_d.conformers_3d[0].coordinates, 3),
     ]:
         assert isinstance(output, np.ndarray)
         assert output.shape == (0, dimension)
@@ -29,14 +29,14 @@ def test_setting_2d_coordinates_is_value_style_and_validates_input():
     with_coords = mol.with_2d_coordinate_block(coords)
 
     assert with_coords is not mol
-    assert not mol.has_2d_coordinates()
-    assert with_coords.has_2d_coordinates()
-    output = with_coords.coordinates_2d()
+    assert not mol.has_2d_coordinates
+    assert with_coords.has_2d_coordinates
+    output = with_coords.coordinates_2d
     assert isinstance(output, np.ndarray)
     assert output.shape == (3, 2) and output.dtype == np.float64
     np.testing.assert_array_equal(output, coords)
     output[:] = 123
-    np.testing.assert_array_equal(with_coords.coordinates_2d(), coords)
+    np.testing.assert_array_equal(with_coords.coordinates_2d, coords)
 
     with pytest.raises(ValueError, match="row count mismatch"):
         mol.with_2d_coordinate_block([[0.0, 0.0]])
@@ -49,7 +49,7 @@ def test_setting_2d_coordinates_z_policy_and_in_place_update():
     coords3 = [[0.0, 0.0, 0.0], [1.0, 0.1, 0.0], [2.0, 0.2, 0.0]]
 
     strict = mol.with_2d_coordinate_block_with_params(coords3, cosmolkit.Coordinate2DInputParams(cosmolkit.CoordinateZPolicy.RequireZero))
-    np.testing.assert_array_equal(strict.coordinates_2d(), np.asarray(coords3)[:, :2])
+    np.testing.assert_array_equal(strict.coordinates_2d, np.asarray(coords3)[:, :2])
 
     with pytest.raises(ValueError, match="z_policy='error'"):
         mol.with_2d_coordinate_block_with_params(coords3, cosmolkit.Coordinate2DInputParams(cosmolkit.CoordinateZPolicy.Error))
@@ -61,9 +61,9 @@ def test_setting_2d_coordinates_z_policy_and_in_place_update():
         )
 
     assert mol.set_2d_coordinates_(coords3) is None
-    assert mol.has_2d_coordinates()
-    assert mol.coordinates_2d().shape == (3, 2)
-    np.testing.assert_array_equal(mol.coordinates_2d(), np.asarray(coords3)[:, :2])
+    assert mol.has_2d_coordinates
+    assert mol.coordinates_2d.shape == (3, 2)
+    np.testing.assert_array_equal(mol.coordinates_2d, np.asarray(coords3)[:, :2])
 
 def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
     mol = cosmolkit.Molecule.from_smiles("CCO")
@@ -74,8 +74,8 @@ def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
     one_conf = mol.with_added_3d_conformer(first)
 
     assert one_conf is not mol
-    assert len(mol.conformers_3d()) == 0
-    assert len(one_conf.conformers_3d()) == 1
+    assert len(mol.conformers_3d) == 0
+    assert len(one_conf.conformers_3d) == 1
     output = one_conf.coordinates_3d()
     assert isinstance(output, np.ndarray)
     assert output.shape == (3, 3) and output.dtype == np.float64
@@ -87,8 +87,8 @@ def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
     two_confs = one_conf.with_added_3d_conformer(second.astype(np.float32))
     replaced = two_confs.with_3d_coordinates_with_params(replacement, cosmolkit.Replace3DCoordinatesParams(conformer_id=0))
 
-    assert len(two_confs.conformers_3d()) == 2
-    assert len(replaced.conformers_3d()) == 2
+    assert len(two_confs.conformers_3d) == 2
+    assert len(replaced.conformers_3d) == 2
     assert np.allclose(xyz(two_confs, 0), first)
     assert np.allclose(xyz(replaced, 0), replacement)
     assert np.allclose(xyz(replaced, 1), second)
@@ -99,7 +99,7 @@ def test_3d_coordinate_in_place_api_returns_conformer_ids_and_validates_input():
     replacement = [[0.1, 0.2, 0.3], [1.5, 0.2, 0.3], [2.1, 1.2, 0.3]]
 
     assert mol.add_3d_conformer_(first) == 0
-    assert len(mol.conformers_3d()) == 1
+    assert len(mol.conformers_3d) == 1
     assert mol.set_3d_coordinates_(replacement) is None
     assert np.allclose(xyz(mol), replacement)
 
@@ -146,9 +146,9 @@ def test_3d_conformer_clear_and_single_conformer_assignment_use_value_semantics(
     cleared = multi.with_cleared_3d_conformers()
     single = multi.with_only_3d_conformer(replacement)
 
-    assert len(multi.conformers_3d()) == 2
-    assert len(cleared.conformers_3d()) == 0
-    assert len(single.conformers_3d()) == 1
+    assert len(multi.conformers_3d) == 2
+    assert len(cleared.conformers_3d) == 0
+    assert len(single.conformers_3d) == 1
     assert np.allclose(xyz(single), replacement)
 
     with pytest.raises(ValueError, match="no 3D conformer"):
@@ -161,13 +161,13 @@ def test_3d_conformer_clear_and_single_conformer_assignment_in_place():
 
     mol.add_3d_conformer_(first)
     mol.add_3d_conformer_(second)
-    assert len(mol.conformers_3d()) == 2
+    assert len(mol.conformers_3d) == 2
 
     assert mol.clear_3d_conformers_() is None
-    assert len(mol.conformers_3d()) == 0
+    assert len(mol.conformers_3d) == 0
 
     assert mol.set_only_3d_conformer_(second) == 0
-    assert len(mol.conformers_3d()) == 1
+    assert len(mol.conformers_3d) == 1
     assert np.allclose(xyz(mol), second)
 
     with pytest.raises(ValueError, match="row count mismatch"):

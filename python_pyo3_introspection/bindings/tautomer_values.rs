@@ -123,15 +123,27 @@ impl TautomerEnumeration {
         self._canonical_tautomer_params(py, Some(params))
     }
 
+    #[getter]
     fn len(&self) -> usize {
         self.inner.len()
     }
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+    fn __getitem__(&self, index: crate::indexing::Integer) -> PyResult<Molecule> {
+        let index = crate::indexing::normalize(index, self.inner.len())?;
+        self.get(index)
+            .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err(index))
+    }
+    #[getter]
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
+    #[getter]
     fn status(&self) -> TautomerEnumerationStatus {
         self.inner.status().into()
     }
+    #[getter]
     fn modified_atoms(&self) -> BTreeSet<usize> {
         self.inner
             .modified_atoms()
@@ -139,6 +151,7 @@ impl TautomerEnumeration {
             .map(|id| id.index())
             .collect()
     }
+    #[getter]
     fn modified_bonds(&self) -> BTreeSet<usize> {
         self.inner
             .modified_bonds()
@@ -146,6 +159,7 @@ impl TautomerEnumeration {
             .map(|id| id.index())
             .collect()
     }
+    #[getter]
     fn canonical_smiles(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         self.inner
             .canonical_smiles()
@@ -235,30 +249,38 @@ impl TautomerEntryIterator {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct TautomerScore {
-    pub(crate) inner: ck::TautomerScore,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct TautomerScore {
+        pub(crate) inner: ck::TautomerScore,
+    }
 }
 
 #[pymethods]
 impl TautomerScore {
+    #[getter]
     fn ring(&self) -> i32 {
         self.inner.ring()
     }
+    #[getter]
     fn substructure(&self) -> i32 {
         self.inner.substructure()
     }
+    #[getter]
     fn hetero_hydrogen(&self) -> i32 {
         self.inner.hetero_hydrogen()
     }
+    #[getter]
     fn total(&self) -> i32 {
         self.inner.total()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct TautomerScoreTerm {
-    pub(crate) inner: ck::TautomerScoreTerm,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct TautomerScoreTerm {
+        pub(crate) inner: ck::TautomerScoreTerm,
+    }
 }
 
 #[pymethods]
@@ -273,12 +295,15 @@ impl TautomerScoreTerm {
     fn new(name: String, smarts: String, score: i32) -> Self {
         Self::construct(name, smarts, score)
     }
+    #[getter]
     fn name(&self) -> &str {
         self.inner.name()
     }
+    #[getter]
     fn smarts(&self) -> &str {
         self.inner.smarts()
     }
+    #[getter]
     fn score(&self) -> i32 {
         self.inner.score()
     }
@@ -293,15 +318,6 @@ pub fn default_tautomer_score_terms() -> Vec<TautomerScoreTerm> {
         .collect()
 }
 
-impl crate::parameters::Configuration for TautomerScoreTerm {
-    type Native = ck::TautomerScoreTerm;
-    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
-        Ok(Self { inner })
-    }
-    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
-        Ok(self.inner.clone())
-    }
-}
 ck::project_configuration!(ck::TautomerScoreParams);
 
 #[cfg(test)]

@@ -27,7 +27,7 @@ macro_rules! flag_value {
         impl $name {
             $(#[classattr] const $flag: Self = Self { inner: ck::$name::$flag };)+
             #[staticmethod] fn from_bits_retain(bits: u32) -> Self { Self { inner: ck::$name::from_bits_retain(bits) } }
-            fn bits(&self) -> u32 { self.inner.bits() }
+            #[getter] fn bits(&self) -> u32 { self.inner.bits() }
             fn contains(&self, other: &Self) -> bool { self.inner.contains(other.inner) }
             fn __index__(&self) -> u32 { self.inner.bits() }
             fn __or__(&self, other: &Self) -> Self { Self { inner: self.inner | other.inner } }
@@ -145,6 +145,7 @@ impl AvalonFingerprintFlags {
             inner: ck::AvalonFingerprintFlags::from_bits_retain(bits),
         }
     }
+    #[getter]
     fn bits(&self) -> u32 {
         self.inner.bits()
     }
@@ -157,6 +158,30 @@ impl AvalonFingerprintFlags {
     fn __or__(&self, other: &Self) -> Self {
         Self {
             inner: self.inner | other.inner,
+        }
+    }
+}
+
+crate::configuration::type_projection! {
+    impl NativeScalar for ck::LayeredFingerprintLayers {
+        type Repr = u32;
+        fn from_scalar(value: u32) -> Self {
+            Self::from_bits_retain(value)
+        }
+        fn scalar(self) -> u32 {
+            self.bits()
+        }
+    }
+}
+
+crate::configuration::type_projection! {
+    impl NativeScalar for cosmolkit::AvalonFingerprintFlags {
+        type Repr = u32;
+        fn from_scalar(value: u32) -> Self {
+            Self::from_bits_retain(value)
+        }
+        fn scalar(self) -> u32 {
+            self.bits()
         }
     }
 }

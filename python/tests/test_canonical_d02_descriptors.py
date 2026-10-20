@@ -61,11 +61,11 @@ def close(actual: object, expected: float, tolerance: float) -> None:
 @pytest.mark.parametrize("case", DATA["scalar_projection_cases"], ids=[case["canonical"] for case in DATA["scalar_projection_cases"]])
 def test_d02_scalar_queries_project_source_literals(case: ScalarCase):
     molecule = ck.Molecule.from_smiles(case["smiles"])
-    before = (molecule.num_atoms(), molecule.num_bonds(), molecule.to_smiles(), molecule.coordinates_2d())
+    before = (molecule.num_atoms, molecule.num_bonds, molecule.to_smiles(), molecule.coordinates_2d)
     method = query(molecule, case["canonical"])
     result = method() if case["order"] is None else method(case["order"])
     close(result, case["expected"], float(case["tolerance_literal"]))
-    assert (molecule.num_atoms(), molecule.num_bonds(), molecule.to_smiles(), molecule.coordinates_2d()) == before
+    assert (molecule.num_atoms, molecule.num_bonds, molecule.to_smiles(), molecule.coordinates_2d) == before
 
 
 @pytest.mark.parametrize("case", DATA["hall_contributions"], ids=[case["smiles"] for case in DATA["hall_contributions"]])
@@ -73,7 +73,7 @@ def test_d02_contributions_tuple_atom_order_and_owned_rows(case: ContributionCas
     molecule = ck.Molecule.from_smiles(case["smiles"])
     alpha, rows = molecule.hall_kier_alpha_with_contributions()
     close(alpha, case["alpha"], 1e-12)
-    assert isinstance(rows, list) and len(rows) == molecule.num_atoms()
+    assert isinstance(rows, list) and len(rows) == molecule.num_atoms
     for actual, expected in zip(rows, case["rows"], strict=True):
         close(actual, expected, 1e-12)
     rows[0] = 123.0
@@ -110,7 +110,7 @@ def test_d02_generic_zero_differs_from_fixed_zero_and_wraps(family: str):
 @pytest.mark.parametrize("name", PREPARED)
 def test_d02_raw_molecule_prepared_boundary_is_typed_and_preserving(name: str):
     molecule = ck.Molecule.from_smiles_with_params("CCC", ck.SmilesParseParams(sanitize=False, remove_hs=False))
-    before = (molecule.num_atoms(), molecule.num_bonds(), molecule.coordinates_2d())
+    before = (molecule.num_atoms, molecule.num_bonds, molecule.coordinates_2d)
     with pytest.raises(ck.DescriptorReadError) as caught:
         if PARAMETERS[name] == "force":
             _ = query(molecule, name)(False)
@@ -122,7 +122,7 @@ def test_d02_raw_molecule_prepared_boundary_is_typed_and_preserving(name: str):
     assert isinstance(error, ValueError)
     assert error.domain == "descriptors" and error.kind == "MissingPreparedValence"
     assert error.__cause__ is None
-    assert (molecule.num_atoms(), molecule.num_bonds(), molecule.coordinates_2d()) == before
+    assert (molecule.num_atoms, molecule.num_bonds, molecule.coordinates_2d) == before
 
 
 @pytest.mark.parametrize("name,expected", [

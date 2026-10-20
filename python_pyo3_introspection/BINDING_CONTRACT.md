@@ -38,19 +38,45 @@ input storage. Constructors/setters use the same typed extraction and replace
 native fields only after conversion succeeds. Sequence getters return tuples;
 map getters return readonly mappings, recursively projecting their contents.
 Do not expose list.append/dict item assignment that silently edits a copy.
-Nested configuration getters return independent values: edit and assign back
-explicitly. Native callbacks, random sources and executors retain their actual
+Nested configuration getters return views of the actual native parent field;
+child setters write that field directly. Views retain their owner, acquire only
+short checked borrows, and resolve the field again after replacement. Construction
+and whole-field assignment still capture independent native values; views do not
+retain a second configuration or a raw field pointer.
+If an optional child is replaced with None, accessing its retained view raises
+ReferenceError; it does not recreate the field or edit a detached copy.
+Native callbacks, random sources and executors retain their actual
 state and ownership rather than being rebuilt as input records. Capture native
 invocation inputs before execution or callbacks. Keyword paths construct inputs
 directly, without allocating an intermediate editable Python configuration.
 
-Configuration bindings use native `Configuration` metadata and
+Editable-record bindings use native `Configuration` metadata and
 `ck::project_configuration!(ck::TypeName)`. Do not repeat their fields or types
 in binding declarations. Rust-resolved field aliases select shared typed
 projections; generated native struct literals enforce completeness. Required
 inputs, None/default interpretation, composition and registered factories are
 explicit native annotations. Fixed arrays return tuples; setters retain native
 length and element-type checks.
+
+Eligibility follows the declared Python editing contract, not a `Params` name:
+both algorithm options and user-editable detached records use this mechanism.
+For example, `BioCrystalCell` remains a value with its existing name:
+
+```rust
+// On the canonical Rust struct: #[derive(cosmolkit_macros::Configuration)]
+ck::project_configuration!(ck::BioCrystalCell);
+```
+
+```python
+cell = ck.BioCrystalCell(a=50, b=50, c=50)
+cell.a = 60
+```
+
+Direct setters are allowed only for native plain-field editing; native checked
+setters retain their accessor adapter. Do not infer editability from public Rust
+fields or automatically make outputs, diagnostics, executors or resources
+editable. Exposed nested editable records use the same live-view semantics;
+whole-field assignment still receives an independent value.
 
 Stateful/accessor records require an explicit ownership adapter, for example
 `ck::project_configuration!(ck::EmbedParams, using embedding_parameters)`.
@@ -69,6 +95,91 @@ rules["{A}"] = "N"
 p.replacements = rules         # Replaces the actual Rust field.
 # p.replacements["{A}"] = "N" raises TypeError.
 ```
+
+## Type declarations
+
+Each binding declares its Rust/Python association once. Parameters and callable
+adapters reuse that declaration; framework files must not list business types
+or repeat their mappings. This is runtime conversion plumbing, not a stub
+rewrite. Public Python classes, enum members and call syntax remain unchanged.
+
+Readonly value bindings declare conversion and field association together:
+
+```rust
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct Element {
+        pub(crate) inner: ck::Element,
+    }
+}
+```
+
+The declaration generates the class, native field association and conversion
+from the same native field type. Value-producing macros use this declaration too.
+The explicit `impl Configuration` form retains custom accepted input unions.
+Declare macro-generated classes in their binding module and expose them through
+`#[pymodule_export]`; the declarative module cannot discover nested macro output.
+Existing enum declarations (`enum_value!`) do the same; editable Params use
+`project_configuration!` and retain their live-view ownership, not the readonly
+value adapter. Scalar representations and explicit text conversions use the
+`NativeScalar` and `Container` forms of `type_projection!` beside their owning
+bindings. Keep existing accepted inputs and strict decoding unchanged.
+
+```python
+carbon = ck.Element.from_symbol("C")
+info = ck.element_info(carbon)
+double = ck.BondOrder.Double  # Still an enum member, not an internal type name.
+```
+
+Framework code owns generic conversion, container and ownership mechanisms only.
+Missing or duplicate native associations fail Rust compilation. Adding ordinary
+business types does not change the framework, stub generator or consumer test
+inventory; declarations and existing representative samples provide the boundary.
+This does not make every Python object an editable configuration. Executors,
+consuming streams, scoped callback views and retained exceptions keep their
+explicit binding-owned adapters; they must not acquire a cloning field adapter
+merely because they contain a Rust value. Their native state/cause/owner remains
+the source of truth, with no framework business-type map.
+
+### Native enums
+
+Payload-free enums use one `enum_value!` declaration for native conversion,
+member aliases and the shared enum protocol. Error discriminants without a
+corresponding native enum use `binding_enum!`; error projection macros invoke
+it themselves. No per-type protocol methods, stub lists or generator patches.
+
+```rust
+enum_value!(BatchErrorMode, {
+    Strict [RAISE] text = "raise",
+    KeepErrors [KEEP] text = "keep",
+});
+```
+
+```python
+bond = ck.BondOrder.SINGLE
+assert bond == ck.BondOrder.Single
+assert bond.name == "Single"                 # Canonical declared Python name.
+assert repr(bond) == "BondOrder.Single"
+assert ck.BondOrder(int(bond)) == bond
+assert hash(bond) == hash(int(bond))
+assert ck.BondOrder.names["SINGLE"] == bond   # Includes declared aliases.
+assert ck.BondOrder.values[int(bond)] == bond # One entry per numeric value.
+```
+
+The readonly mappings are initialized once per Python type. Official
+introspection supplies `Mapping[str, BondOrder]` and `Mapping[int, BondOrder]`.
+Numeric construction rejects undeclared values. Explicit native constructors,
+such as CIP descriptor text parsing, keep their existing accepted inputs.
+Each variant accepts one string spelling. An explicit `text` replaces the
+derived snake-case spelling; it does not add a fallback or a historical alias.
+Batch error policy accepts only `"raise"` and `"keep"`; constructors, setters
+and function arguments use the same conversion. Member constants and their
+aliases do not implicitly add accepted strings.
+Use PyO3's own integer/equality/repr implementation; this does not implement
+the standard-library Enum metaclass, class iteration or class subscription.
+Element, data-bearing variants, bit flags and non-exhaustive native wrappers
+retain their own representation rather than being coerced into closed enums.
 
 ## Callbacks
 
@@ -288,6 +399,8 @@ metadata. This allows real enum discriminants such as ValencePhase and concrete
 nested error payloads; it does not register arbitrary business classes, functions
 or constructors. Unregistered simple enums must have the official native
 enum-constant shape and matching runtime variants, without business methods.
+The shared name, mapping, hash and numeric-construction protocol above is
+allowed; reconciliation verifies its typed mappings against the actual constants.
 Rich non-error records/tagged enums declare native class metadata
 `#[doc = r#"{"role":"error_value"}"#]` on a frozen PyO3 class. They expose actual
 typed readonly native getters, no constructors, setters or business methods.
@@ -396,6 +509,23 @@ its real source edges remain distinct from readonly error payload fields.
 
 ## Values and ownership
 
+Intrinsic information and existing results are readonly properties, including
+`atom.id`, `conformer.id`, `mol.num_atoms`, `mol.atoms` and
+`match.atom_mapping`. Calculations, conversions, searches, IO, iteration and
+parameterized queries remain methods: `mol.atom(1)`, `mol.to_smiles()`,
+`match.atom_pairs()`, `force_field.energy()` and `fp.to_numpy()`.
+Rust getters remain functions; declare the Python projection explicitly with
+the existing registry property metadata and PyO3 getter. Allocation for result
+conversion does not change this classification. Never compute or mutate
+chemistry implicitly in a property, and never infer property declarations in
+the stub generator. Native read errors retain their existing exception types.
+
+- `mol.atom(i)` and `mol.atoms[i]` return the same molecular atom value,
+  not necessarily the same Python object. Each wraps the Rust `MoleculeAtom`;
+  the binding stores no separate degree or valence metadata. The Rust object
+  retains its molecular version through COW, remains valid after the source
+  is dropped, and reads cached valence without implicit recalculation.
+  No public `atom_ref`/`atom_refs` alternative is exposed.
 - Molecule pickle uses the unchanged reconstruction path
   `cosmolkit._molecule_from_binary(bytes)`. `__reduce__` returns that native
   callable and one binary argument; `__reduce_ex__` validates Python's index
@@ -421,19 +551,63 @@ its real source edges remain distinct from readonly error payload fields.
   isolated through normal operations. No eager deep-copy or universal O(1)
   promise: native Clone also copies its descriptor memo.
 
+## Collection protocols
+
+Expose `len()`, indexing and iteration only when each has an explicit,
+meaningful collection contract. Decide each protocol independently; supporting
+one does not imply the others. An existing Rust count method or an old Python
+test is not sufficient justification.
+
+- `len(MoleculeBatch)` counts records, including failed records;
+  `len(SdfDataset)` counts SDF records. Selection preserves record positions
+  and errors according to the declared collection policy.
+- Existing explicitly named length reads are readonly `.len` properties;
+  prefer `len(collection)` where that type declares the length protocol.
+  A length property alone does not add indexing or iteration.
+- Molecule and QueryGraph are not implicitly atom sequences. Use
+  `num_atoms` and `num_bonds`, not an ambiguous `len()`.
+- Fingerprints expose explicitly named bit-count and nonzero-entry-count
+  queries. Do not introduce `len()` that leaves the distinction between index
+  space, set bits and stored entries unclear.
+- Other result/hierarchy containers must state what their elements are and
+  what is counted before exposing protocols. Streams need not have a known
+  length or random access.
+
+```python
+len(batch)          # Record count, including failures.
+len(dataset)        # SDF record count.
+mol.num_atoms       # Explicit molecular quantity.
+mol.num_bonds
+fp.num_on_bits()    # Set-bit count, not fingerprint capacity.
+```
+
+Do not restore ambiguous protocols merely for historical compatibility.
+Update consumers to explicit queries instead. Implement approved protocols
+through canonical Rust operations and the shared binding framework.
+
 ## Declarations and checks
 
 - Official introspection supplies ordinary declarations. Explicit overload
   branches are registered, executed functions; the native main entrypoint dispatches.
 - Indexing overloads require explicit native documentation
-  `{"role":"indexing","protocol":"integer_slice_self"}` on `__getitem__`.
-  This declares integer indexing returns the item and slicing returns the same
-  collection type. The extracted signature must accept exactly an integer-like
-  index or slice and return concrete item types or that collection. Generation
-  rejects incompatible marked signatures; unmarked indexing stays unchanged.
-  The shared Rust indexing implementation owns actual runtime behavior. Other
-  indexing shapes use their ordinary signature or existing explicit overload
-  branches, not new per-collection generator rules.
+  `{"role":"indexing","protocol":"integer_selection","selection":"Self"}`
+  on `__getitem__`. Use an explicit result name instead of Self when needed:
+  SdfDataset declares `"selection":"MoleculeBatch"`.
+  Integer input returns the declared item; slices, integer sequences and boolean
+  masks return the declared selection. Generation validates the actual input
+  and return unions, never guesses collection semantics from class names.
+  `indexing::Collection` associates native single-item and selection operations;
+  `indexing::get` alone normalizes and dispatches. No preloading into a Python
+  object array, duplicated index arithmetic, or per-class stub patch.
+  Negative indices are supported; out-of-range indices raise IndexError.
+  Selections preserve order and duplicates. Masks must match the collection
+  length. Scalar bool and mixed integer/bool sequences are rejected; an empty
+  sequence is an empty integer selection. Slice normalization follows Python,
+  including reverse steps, zero-step rejection and arbitrarily large steps.
+  Integer-only collections use `indexing::Integer` and `normalize` with ordinary
+  introspection; streams are not inferred to be indexable. Read/parse errors
+  preserve their native types. Indexing never implies in-place assignment.
+  Framework tests use representative protocol shapes, not a business-type list.
 - return_type metadata is an explicit binding-owned annotation, not Rust inference.
   Its type expression must match runtime behavior. Doc metadata remains visible
   in native __doc__ unless a separate documentation policy changes that.

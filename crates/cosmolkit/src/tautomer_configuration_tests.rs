@@ -268,7 +268,7 @@ fn canonicalization_and_factories_canonical_selection_paths_follow_quickcopy_and
         assert_eq!(picked.properties(), &expected_product_properties);
     }
     for replacement in [&selected, &from_enumeration, &from_iterable] {
-        assert_eq!(replacement.atoms(), selected.atoms());
+        assert_eq!(replacement.topology().atoms, selected.topology().atoms);
         assert_eq!(replacement.bonds(), selected.bonds());
         assert!(
             replacement

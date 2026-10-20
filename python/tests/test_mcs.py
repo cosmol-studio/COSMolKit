@@ -103,7 +103,7 @@ def test_mcs_result_lifetime_degenerate_results_and_typed_errors():
     assert all(isinstance(q, ck.QueryGraph) for q in result.degenerate.values())
     result = ck.maximum_common_substructure(inputs)
     del inputs
-    assert result.query.num_atoms() == 2
+    assert result.query.num_atoms == 2
     for inputs, options in [([], {}), (molecules("CC"), {}), (molecules("CC", "CO"), {"threshold": 1.1})]:
         with pytest.raises(ck.McsError) as failure:
             ck.maximum_common_substructure(inputs, **options)

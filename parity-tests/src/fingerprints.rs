@@ -326,7 +326,7 @@ pub fn morgan_batch(
     let profile: MorganProfile =
         serde_json::from_value(profile.clone()).expect("validated Morgan profile");
     batch
-        .fingerprint_morgan_with_output_list_with_generator_params(
+        .fingerprint_morgan_with_output_with_generator_params(
             &profile.generator_params(),
             Some(&profile.atom_generator()),
             profile.bond_generator().as_ref(),

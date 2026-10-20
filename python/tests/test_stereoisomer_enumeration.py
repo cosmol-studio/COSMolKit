@@ -199,7 +199,7 @@ def test_potential_stereo_analysis_returns_typed_isolated_state():
 
     analysis = molecule.potential_stereo_with_params(cosmolkit.PotentialStereoParams(clean=True))
     assert isinstance(analysis, cosmolkit.PotentialStereoResult)
-    assert len(analysis) == 1
+    assert len(analysis.stereo) == 1
     assert analysis.cleaned_molecule is not molecule
     assert analysis.cleaned_molecule.to_smiles() == before
     assert molecule.to_smiles() == before
@@ -232,19 +232,19 @@ def test_enumeration_composes_with_hydrogen_conformer_and_descriptor_apis():
     before_coordinates = source.coordinates_3d().copy()
     assert isinstance(before_coordinates, np.ndarray)
     assert before_coordinates.dtype == np.float64
-    assert before_coordinates.shape == (source.num_atoms(), 3)
+    assert before_coordinates.shape == (source.num_atoms, 3)
 
     outputs = list(source.enumerate_stereoisomers())
     assert [molecule.to_smiles() for molecule in outputs] == [
         "[H][C@@](F)(Cl)Br",
         "[H][C@](F)(Cl)Br",
     ]
-    assert all(len(molecule) == len(source) for molecule in outputs)
-    assert all(molecule.num_3d_conformers() == 1 for molecule in outputs)
+    assert all(molecule.num_atoms == source.num_atoms for molecule in outputs)
+    assert all(molecule.num_3d_conformers == 1 for molecule in outputs)
     assert all(molecule.molecular_weight() == before_mass for molecule in outputs)
 
     assert source.to_smiles() == before_smiles
-    assert source.num_3d_conformers() == 1
+    assert source.num_3d_conformers == 1
     coordinates = source.coordinates_3d()
     assert isinstance(coordinates, np.ndarray) and coordinates.dtype == np.float64
     np.testing.assert_array_equal(coordinates, before_coordinates)

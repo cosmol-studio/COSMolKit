@@ -15,7 +15,7 @@ documentation = "https://docs.rs/cosmolkit"
 cosmolkit-macros = { version = "0.5.1-rc.5", path = "../cosmolkit-macros" }
 cosmolkit-core = { version = "0.5.1-rc.5", path = "../cosmolkit-core" }
 cosmolkit-model = { version = "0.5.1-rc.5", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.1-rc.5", path = "../cosmolkit-search" }
+cosmolkit-search = { version = "0.5.1-rc.5", path = "../cosmolkit-search", default-features = false, features = ["smiles-integration"] }
 
 cosmolkit-stereo = { version = "0.5.1-rc.5", path = "../cosmolkit-stereo", default-features = false }
 

@@ -48,16 +48,16 @@ random access, metadata inspection, or chunked processing:
    dataset = ck.SdfDataset.open("large.sdf")
 
    print(len(dataset))
-   print(dataset.metadata(0).title())
+   print(dataset.metadata(0).title)
 
    record = dataset[12345]
-   print(record.title(), record.data_field("supplier_id"))
+   print(record.title, record.data_field("supplier_id"))
 
    head = dataset[:1024]
-   print(head.valid_mask())
+   print(head.valid_mask)
 
    for batch in dataset.batches(size=1024, errors="keep", progress_bar=True):
-       fingerprints = batch.fingerprint_morgan_list()
+       fingerprints = batch.fingerprint_morgan()
 
 ``dataset[i]`` returns one ``SdfRecord`` with SDF metadata and data fields.
 Slices, integer index lists, and boolean masks return ``MoleculeBatch`` objects.
@@ -70,7 +70,7 @@ not needed:
    import cosmolkit as ck
 
    for batch in ck.SdfReader.open("large.sdf").batches(size=1024, errors="keep"):
-       smiles = batch.to_smiles_list(canonical=True)
+       smiles = batch.to_smiles(canonical=True)
 
 ``SdfReader`` does not know the final record count without pre-indexing the
 file, so accurate record-count progress belongs to ``SdfDataset``.
@@ -158,7 +158,15 @@ For multi-record strings, use the batch API:
 
    batch = ck.mols_from_sdf_records(
        sdf_text, ck.SdfReadParams(coordinate_mode="preserve"),
+       errors="keep", n_jobs=4, progress_bar=True,
    )
+
+Alternatively, pass reading options directly, such as
+``ck.mols_from_sdf_records(sdf_text, coordinate_mode="preserve", sanitize=True)``.
+An explicit ``read=`` configuration and reading-option keywords are mutually
+exclusive, including explicitly supplied ``None``. ``errors``, ``n_jobs`` and
+``progress_bar`` are independent of that choice. ``MoleculeBatch.read_sdf()``
+accepts the same options for a filesystem path.
 
 MOL2 Files
 ----------
@@ -280,7 +288,7 @@ Coordinate Arrays
 
 ``coordinates_2d()``, ``coordinates_3d()``, and ``dg_bounds_matrix()`` return NumPy
 arrays. ``coordinates_2d()`` has shape ``(num_atoms, 2)`` with x and y columns;
-``coordinates_3d()`` and ``Conformer3D.coordinates()`` have shape
+``coordinates_3d()`` and ``Conformer3D.coordinates`` have shape
 ``(num_atoms, 3)`` with x, y and z columns. Coordinate arrays are independent
 float64 snapshots: editing them does not modify the molecule or conformer.
 
@@ -290,7 +298,7 @@ For example:
 
    mol = ck.mol_from_smiles("c1ccccc1O").with_2d_coordinates()
 
-   coords = mol.coordinates_2d()
+   coords = mol.coordinates_2d
    bounds = mol.dg_bounds_matrix()
 
    print(coords.shape)

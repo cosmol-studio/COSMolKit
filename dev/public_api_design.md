@@ -186,9 +186,31 @@ num_rotatable_bonds
 mmff_has_all_molecule_params
 ```
 
-Boolean methods use `is_`, `has_`, or a domain-specific predicate. Methods may
-return `Result<bool, Error>` when source behavior can fail; they remain methods
-and must not be silently converted into properties in another language.
+Boolean queries use `is_`, `has_`, or a domain-specific predicate. Python
+projects existing state as a property and computation as a method, as specified
+below; a fallible stored-state read preserves its native exception.
+
+### Python information and action syntax
+
+Python properties expose intrinsic information and already available results:
+`atom.id`, `atom.element`, `conformer.id`, `mol.num_atoms`,
+`mol.atoms`, `match.atom_mapping`, and `result.energy`. Configuration properties
+remain writable only under their declared editing contract; other information
+is readonly.
+
+Methods perform calculations, conversions, searches, IO, iteration or changes:
+`mol.atom(1)`, `mol.to_smiles()`, `force_field.energy()`,
+`match.atom_pairs()` and `fingerprints.to_numpy()`. Reads that accept selection
+or calculation options remain methods. Obtaining a property must not silently
+run chemistry, recalculate caches or mutate domain state. Copying a result into
+its language representation does not by itself make the read an action.
+
+Rust retains encapsulated getters and native fields as appropriate. Python
+syntax follows user intent, not whether Rust spells a read as a field or a
+function. Declare getter projections explicitly with `python_property: getter`
+and native binding getters; generators must not infer them from names,
+return types or argument counts. The same logical information uses the same
+Python form across molecular, BIO and result types.
 
 Coordinate-reading methods on `Molecule` are dimension-specific:
 
@@ -322,6 +344,20 @@ parameter type must not contain a live `Molecule` or a runtime capability.
 
 #### Configuration, executors and outputs
 
+Editable-record projection is defined by the public editing contract, not by
+a `Params` suffix. It covers algorithm options and detached data records that
+users may construct and edit, such as `BioCrystalCell`. Such values retain their
+domain names and value role; using configuration projection does not turn them
+into algorithm parameters. Rust declares the exposed fields, types, defaults
+and any editing policy once; bindings derive construction and field access from
+that declaration. Public Rust fields alone do not authorize Python setters.
+
+The plain-field form applies when direct field assignment is the native editing
+contract. If native setters enforce invariants, use their explicit accessor
+projection instead of bypassing them. Executors, resource handles, readonly
+results and diagnostics are excluded from editable-record projection. Stateful
+options require their explicit state-preserving adapter, not record rebuilding.
+
 Define and implement these responsibilities in the canonical Rust API first.
 Bindings call that API; they do not create their own configuration semantics,
 construction/validation policy or execution lifecycle. Typed extraction,
@@ -377,9 +413,10 @@ The same value-ownership contract applies to Rust, Python and JavaScript:
   Params and containers; later changes to the source do not affect it.
 - Language bindings expose container fields as immutable value snapshots, not
   editable copies or write-through proxies. Change them by assigning the whole
-  field. Nested configuration getters return independent configuration values;
-  edit that value and explicitly assign it back. Rust continues to expose its
-  native typed fields and borrows.
+  field. Nested configuration getters expose the parent's actual field: editing
+  that child changes the parent, without an editable copy or explicit writeback.
+  A retained child keeps its owner alive and resolves its field on each access,
+  including after whole-field replacement. Rust exposes native fields and borrows.
 - Execution reads the effective configuration for that invocation. Subsequent
   edits do not change completed results or an invocation already in progress.
   Native borrowing may establish this guarantee without an additional copy.
@@ -395,9 +432,8 @@ source = ChildParams(radius=3)
 params = OperationParams(child=source)
 source.radius = 2
 assert params.child.radius == 3       # Construction receives a value.
-child = params.child                 # An independent configuration value.
+child = params.child                 # A view of the parent's actual field.
 child.radius = 0
-params.child = child                 # Explicitly replace the owned input.
 assert params.child.radius == 0
 
 indices = [0]
@@ -916,7 +952,7 @@ Apply it consistently to scalar, query and batch entry points.
 | `mol.morgan_count_fingerprint()` | `mol.fingerprint_morgan_count()` |
 | `mol.morgan_sparse_fingerprint()` | `mol.fingerprint_morgan_sparse()` |
 | `mol.morgan_sparse_count_fingerprint()` | `mol.fingerprint_morgan_sparse_count()` |
-| Scalar `layered_fingerprint`, but batch `fingerprint_layered_list` | Scalar `fingerprint_layered`, batch `fingerprint_layered_list` |
+| Scalar `layered_fingerprint`, but batch `fingerprint_layered_list` | Both receivers use `fingerprint_layered` |
 | `layered_query_fingerprint(...)` | `fingerprint_layered_query(...)` |
 
 This is a discoverability rule for entry points, not permission to collapse
@@ -983,10 +1019,17 @@ cached = mol.atom_metadata(recalculate=False)  # Observe existing valid cache.
 fresh = mol.atom_metadata(recalculate=True)   # Request recalculation.
 ```
 
-Document that `atoms()` currently requests recalculated metadata. A cache-only
-read must not silently recalculate, and a recalculating read must not be
-advertised as cache-only. This clarification does not approve changing cache
-validity, failure semantics or operation permissions.
+Python `mol.atom(id)` and `mol.atoms[id]` obtain the same atom in the
+same molecular version. They retain shared ownership internally; there is no
+separate public `atom_ref` selection mode. Subsequent molecular edits use COW
+and do not change an already obtained atom, which also remains usable after
+the source molecule is dropped. Bindings project this Rust behavior directly.
+
+Atom valence/hydrogen queries observe the retained native cache and propagate
+missing-cache errors; obtaining atoms never requests recalculation. Use the
+explicit metadata API above when recalculation is required. Detached `Atom`
+records remain available for model inputs; `MoleculeAtom` supplies molecular
+context without duplicating the record or its calculated metadata.
 
 ### 10.7 Review names separately from implementation gaps
 
@@ -1027,9 +1070,13 @@ silently fall back to a default, or introduce different vocabularies for
 different entry points. Equivalent enum and string inputs must normalize to
 the same Rust enum and use the same validation and algorithm.
 
-Native Python enum spellings are generated deterministically from declared
+Native Python enum spellings are generated by default from declared
 variant names using lowercase snake case (`NonStrict` → `"non_strict"`,
-`Require3D` → `"require_3d"`, `V2000` → `"v2000"`). The same declaration
+`Require3D` → `"require_3d"`, `V2000` → `"v2000"`). An explicitly declared
+string spelling replaces that default, rather than adding accepted aliases.
+Each variant has one accepted string; historical spellings are not retained.
+For example, `BatchErrorMode::Strict` uses `"raise"` and `KeepErrors` uses
+`"keep"`; `"strict"` and `"keep_errors"` are rejected. The same declaration
 generates extraction and the vocabulary consumed by binding checks; do not
 maintain separate per-function conversion tables.
 

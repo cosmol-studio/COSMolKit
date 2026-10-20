@@ -87,7 +87,7 @@ def test_molecular_format_shortcuts_use_original_factories():
         expected = getattr(ck.Molecule, methods[name])(data)
         assert isinstance(actual, ck.Molecule)
         assert actual.to_smiles() == expected.to_smiles()
-        assert actual.num_atoms() == expected.num_atoms()
+        assert actual.num_atoms == expected.num_atoms
 
 
 def test_batch_shortcuts_inherit_execution_configuration_and_record_state():
@@ -95,12 +95,12 @@ def test_batch_shortcuts_inherit_execution_configuration_and_record_state():
     options = dict(sanitize=False, errors="keep", n_jobs=1)
     actual = ck.mols_from_smiles_list(inputs, **options)
     expected = ck.MoleculeBatch.from_smiles_list(inputs, **options)
-    assert actual.to_smiles_list(canonical=False) == expected.to_smiles_list(canonical=False)
-    assert len(actual.errors()) == len(expected.errors()) == 1
+    assert actual.to_smiles(canonical=False) == expected.to_smiles(canonical=False)
+    assert len(actual.errors) == len(expected.errors) == 1
     mol = ck.mol_from_smiles("C").with_2d_coordinates()
     sdf = mol.to_sdf()
-    assert ck.mols_from_sdf_records(sdf, errors="keep", n_jobs=1).to_smiles_list() == ["C"]
-    assert ck.mols_from_records([mol], ck.BatchErrorMode.KEEP).to_smiles_list() == ["C"]
+    assert ck.mols_from_sdf_records(sdf, errors="keep", n_jobs=1).to_smiles() == ["C"]
+    assert ck.mols_from_records([mol], ck.BatchErrorMode.KEEP).to_smiles() == ["C"]
 
 
 def test_reaction_shortcut_inherits_configuration():
@@ -119,9 +119,9 @@ def test_bio_shortcuts_retain_types_coordinates_and_configuration(owner, pdb_nam
     actual = getattr(ck, pdb_name)(PDB, ignore_ter=True)
     expected = owner.from_pdb(PDB, ck.BioPdbReadParams(ignore_ter=True))
     assert isinstance(actual, owner)
-    assert actual.num_atoms() == expected.num_atoms() == 1
-    assert [atom.position() for atom in actual.atoms()] == [atom.position() for atom in expected.atoms()]
+    assert actual.num_atoms == expected.num_atoms == 1
+    assert [atom.position() for atom in actual.atoms] == [atom.position() for atom in expected.atoms]
     # Use the complete structure writer for both structural and Protein ingress.
     cif = ck.BioStructure.from_pdb(PDB).to_mmcif()
     assert isinstance(getattr(ck, cif_name)(cif), owner)
-    assert getattr(ck, cif_name)(cif).num_atoms() == owner.from_mmcif(cif).num_atoms()
+    assert getattr(ck, cif_name)(cif).num_atoms == owner.from_mmcif(cif).num_atoms

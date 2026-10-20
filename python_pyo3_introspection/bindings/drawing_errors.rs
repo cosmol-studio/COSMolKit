@@ -119,10 +119,12 @@ use cosmolkit as ck;
 use pyo3::{exceptions::PyValueError, prelude::*};
 use std::error::Error;
 
-#[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct XmlTextPos {
-    inner: ck::XmlTextPos,
+crate::configuration::type_projection! {
+    #[doc = r#"{"role":"error_value"}"#]
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct XmlTextPos {
+        inner: ck::XmlTextPos,
+    }
 }
 #[pymethods]
 impl XmlTextPos {
@@ -135,9 +137,7 @@ impl XmlTextPos {
         self.inner.col
     }
 }
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum XmlParseErrorKind {
+crate::enums::binding_enum!(XmlParseErrorKind, {
     InvalidXmlPrefixUri,
     UnexpectedXmlUri,
     UnexpectedXmlnsUri,
@@ -169,7 +169,7 @@ pub enum XmlParseErrorKind {
     InvalidCharacterData,
     UnknownToken,
     UnexpectedEndOfStream,
-}
+});
 #[pyclass(module="cosmolkit",extends=PyValueError)]
 pub struct XmlParseError {
     inner: RetainedError<ck::XmlParseError>,
@@ -325,10 +325,12 @@ ck::SvgParseError::ParsingFailed(_)=>Ok(Some(XmlParseError::from_ref(self.inner.
 _=>Ok(None)}}
 });
 enum_value!(DoubleLexicalReadErrorKind,{Syntax,TrailingByte,Overflow,FloatingEnvironmentNotModeled});
-#[doc = r#"{"role":"error_value"}"#]
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct SourceNumericStreamState {
-    inner: ck::SourceNumericStreamState,
+crate::configuration::type_projection! {
+    #[doc = r#"{"role":"error_value"}"#]
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct SourceNumericStreamState {
+        inner: ck::SourceNumericStreamState,
+    }
 }
 #[pymethods]
 impl SourceNumericStreamState {

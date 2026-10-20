@@ -55,9 +55,9 @@ def test_native_binary_preserves_computed_cip_and_failure_atomicity_after_pickle
     molecule = cosmolkit.Molecule.from_smiles("C[C@H](F)Cl").with_cip_labels()
     source = molecule.to_binary()
     restored = pickle.loads(pickle.dumps(molecule))
-    assert restored.cip_computed() == molecule.cip_computed()
-    assert restored.atoms()[1].cip_descriptor() == molecule.atoms()[1].cip_descriptor()
-    assert restored.atoms()[1].cip_neighbor_order() == molecule.atoms()[1].cip_neighbor_order()
+    assert restored.cip_computed == molecule.cip_computed
+    assert restored.atoms[1].cip_descriptor == molecule.atoms[1].cip_descriptor
+    assert restored.atoms[1].cip_neighbor_order == molecule.atoms[1].cip_neighbor_order
     assert restored.to_binary() == source
 
 

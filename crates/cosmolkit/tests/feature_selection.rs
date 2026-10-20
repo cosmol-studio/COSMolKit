@@ -513,7 +513,7 @@ fn core_includes_native_archives_and_ordered_batch_without_optional_domains() {
     assert_eq!(restored.to_smiles().unwrap(), molecule.to_smiles().unwrap());
     let batch = cosmolkit::MoleculeBatch::from_smiles_list(&["CCO".into(), "N".into()]).unwrap();
     assert_eq!(
-        batch.to_smiles_list().unwrap(),
+        batch.to_smiles().unwrap(),
         vec![Some("CCO".into()), Some("N".into())]
     );
 }

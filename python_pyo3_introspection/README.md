@@ -62,7 +62,7 @@ After `build.py`, package the extension, `__init__.py`, `__init__.pyi` and `py.t
     --out python_pyo3_introspection/artifacts/wheels
 uv pip install --python .venv/bin/python --reinstall \
     python_pyo3_introspection/artifacts/wheels/cosmolkit-*.whl
-.venv/bin/python -c 'import cosmolkit as ck; print(ck.mol_from_smiles("CCO").num_atoms())'
+.venv/bin/python -c 'import cosmolkit as ck; print(ck.mol_from_smiles("CCO").num_atoms)'
 ```
 
 The final command prints `3`. Add `--release` to `maturin build` for an optimized
@@ -84,7 +84,8 @@ ck::project_configuration!(ck::MaccsFingerprintParams);
 
 The shared projection generates typed construction and writable properties over
 the actual Rust configuration. Getters return tuples, readonly mappings or
-independent nested configuration values; replace fields through assignment.
+nested configuration views. Child edits update the parent; containers are
+replaced through whole-field assignment.
 Conversion failures leave the Rust field unchanged, including fixed-array
 length errors. No editable Python container mirror is retained.
 

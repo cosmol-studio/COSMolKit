@@ -12,7 +12,7 @@ def make_molecule(smiles="CC", coords=((0.0, 0.0, 0.0), (2.0, 0.0, 0.0))):
 
 
 def coordinates(molecule):
-    return [row.coordinates().tolist() for row in molecule.conformers_3d()]
+    return [row.coordinates.tolist() for row in molecule.conformers_3d]
 
 
 def test_mmff_source_default_parameters():
@@ -27,21 +27,21 @@ def test_mmff_value_results_and_original_protocols():
     original = coordinates(molecule)
     result = molecule.with_mmff_optimized()
     assert isinstance(result, ck.MmffOptimizeMoleculeResult)
-    assert result.status_code() == 0
-    assert result.needs_more() is False
-    assert result.molecule().num_atoms() == molecule.num_atoms()
+    assert result.status_code == 0
+    assert result.needs_more is False
+    assert result.molecule.num_atoms == molecule.num_atoms
     assert "MmffOptimizeMoleculeResult" in repr(result)
     assert coordinates(molecule) == original
     multi = molecule.with_mmff_optimized_conformers()
     assert isinstance(multi, ck.MmffOptimizeMoleculeConfsResult)
-    assert len(multi.conformer_results()) == 1
+    assert len(multi.conformer_results) == 1
     assert "MmffOptimizeMoleculeConfsResult" in repr(multi)
-    row = multi.conformer_results()[0]
+    row = multi.conformer_results[0]
     assert isinstance(row, ck.MmffOptimizeMoleculeConfResult)
-    assert row.status_code() == 0 and row.needs_more() is False
-    assert isinstance(row.energy(), float)
+    assert row.status_code == 0 and row.needs_more is False
+    assert isinstance(row.energy, float)
     assert "MmffOptimizeMoleculeConfResult" in repr(row)
-    assert multi.molecule().num_atoms() == molecule.num_atoms()
+    assert multi.molecule.num_atoms == molecule.num_atoms
     assert coordinates(molecule) == original
 
 
@@ -50,14 +50,14 @@ def test_mmff_zero_iterations_and_configured_calls():
     original = coordinates(molecule)
     result = molecule.with_mmff_optimized_with_params(ck.MmffOptimizationParams(max_iterations=0))
     configured = molecule.with_mmff_optimized_with_params(ck.MmffOptimizationParams(max_iterations=0))
-    assert result.status_code() == configured.status_code() == 1
-    assert result.needs_more() and configured.needs_more()
-    assert coordinates(result.molecule()) == coordinates(configured.molecule()) == original
+    assert result.status_code == configured.status_code == 1
+    assert result.needs_more and configured.needs_more
+    assert coordinates(result.molecule) == coordinates(configured.molecule) == original
     multi = molecule.with_mmff_optimized_conformers_with_params(ck.MmffConformerOptimizationParams(max_iterations=0))
     configured_multi = molecule.with_mmff_optimized_conformers_with_params(ck.MmffConformerOptimizationParams(max_iterations=0))
-    assert multi.conformer_results()[0].status_code() == 1
-    assert configured_multi.conformer_results()[0].status_code() == 1
-    assert multi.conformer_results()[0].energy() == configured_multi.conformer_results()[0].energy()
+    assert multi.conformer_results[0].status_code == 1
+    assert configured_multi.conformer_results[0].status_code == 1
+    assert multi.conformer_results[0].energy == configured_multi.conformer_results[0].energy
     assert coordinates(molecule) == original
 
 
@@ -65,11 +65,11 @@ def test_mmff_source_invalid_typing_sentinels():
     molecule = make_molecule("[He]", ((0.0, 0.0, 0.0),))
     assert molecule.mmff_has_all_molecule_params() is False
     single = molecule.with_mmff_optimized()
-    assert single.status_code() == -1 and single.needs_more() is False
+    assert single.status_code == -1 and single.needs_more is False
     multi = molecule.with_mmff_optimized_conformers()
-    row = multi.conformer_results()[0]
-    assert row.status_code() == -1 and row.energy() == -1.0
-    assert coordinates(single.molecule()) == coordinates(multi.molecule()) == coordinates(molecule)
+    row = multi.conformer_results[0]
+    assert row.status_code == -1 and row.energy == -1.0
+    assert coordinates(single.molecule) == coordinates(multi.molecule) == coordinates(molecule)
     assert molecule.mmff_energy_gradient() is None
 
 
@@ -81,13 +81,13 @@ def test_mmff_source_negative_selectors_choose_first(selector):
     assert params.conformer_id is None
     selected = molecule.with_mmff_optimized_with_params(params)
     default = molecule.with_mmff_optimized_with_params(ck.MmffOptimizationParams(max_iterations=0))
-    assert selected.status_code() == default.status_code() == 1
-    assert coordinates(selected.molecule()) == coordinates(default.molecule()) == before
+    assert selected.status_code == default.status_code == 1
+    assert coordinates(selected.molecule) == coordinates(default.molecule) == before
     evaluated = molecule.mmff_energy_gradient_with_params(ck.MmffEvaluationParams(conformer_id=selector))
     original = molecule.mmff_energy_gradient()
     assert evaluated is not None and original is not None
-    assert evaluated.energy() == original.energy()
-    assert evaluated.gradient() == original.gradient()
+    assert evaluated.energy == original.energy
+    assert evaluated.gradient == original.gradient
 
 
 @pytest.mark.parametrize("selector", [-2**31 - 1, 2**31])
@@ -128,19 +128,19 @@ def test_mmff_absent_selector_is_typed_and_input_is_preserved():
 def test_mmff_variant_parser_matches_original_source(variant, expected):
     molecule = make_molecule()
     props = molecule.mmff_properties_with_params(ck.MmffPropertiesParams(variant))
-    assert props.variant() == expected
+    assert props.variant == expected
     result = molecule.with_mmff_optimized_with_params(ck.MmffOptimizationParams(mmff_variant=variant,max_iterations=0))
-    assert result.status_code() == 1
+    assert result.status_code == 1
 
 
 def test_mmff_property_lookup_bounds_and_canonical_types():
     molecule = ck.Molecule.from_smiles("CCO")
     props = molecule.mmff_properties()
-    assert props.is_valid()
+    assert props.is_valid
     assert [props.atom_type(i) for i in range(3)] == [1, 1, 6]
-    atoms = props.atoms()
+    atoms = props.atoms
     assert len(atoms) == 3
-    assert [atom.atom_type() for atom in atoms] == [1, 1, 6]
+    assert [atom.atom_type for atom in atoms] == [1, 1, 6]
     with pytest.raises(ck.MmffMolPropertiesError) as error:
         props.atom_type(3)
     assert error.value.kind == "AtomIndexOutOfRange"
@@ -156,9 +156,9 @@ def test_mmff_thread_dispatch_order_matches_serial():
     before = coordinates(molecule)
     serial = molecule.with_mmff_optimized_conformers_with_params(ck.MmffConformerOptimizationParams(num_threads=1,max_iterations=25))
     threaded = molecule.with_mmff_optimized_conformers_with_params(ck.MmffConformerOptimizationParams(num_threads=2,max_iterations=25))
-    assert [(r.status_code(), r.energy()) for r in serial.conformer_results()] == [(r.status_code(), r.energy()) for r in threaded.conformer_results()]
-    assert coordinates(serial.molecule()) == coordinates(threaded.molecule())
-    assert [r.id() for r in serial.molecule().conformers_3d()] == [0, 1]
+    assert [(r.status_code, r.energy) for r in serial.conformer_results] == [(r.status_code, r.energy) for r in threaded.conformer_results]
+    assert coordinates(serial.molecule) == coordinates(threaded.molecule)
+    assert [r.id for r in serial.molecule.conformers_3d] == [0, 1]
     assert coordinates(molecule) == before
 
 
@@ -173,7 +173,7 @@ def test_mmff_parameters_are_writable_and_unknown_keywords_are_rejected():
     explicit = molecule.with_mmff_optimized_conformers_with_params(
         ck.MmffConformerOptimizationParams(num_threads=2)
     )
-    assert [(r.status_code(), r.energy()) for r in configured.conformer_results()] == [
-        (r.status_code(), r.energy()) for r in explicit.conformer_results()
+    assert [(r.status_code, r.energy) for r in configured.conformer_results] == [
+        (r.status_code, r.energy) for r in explicit.conformer_results
     ]
-    assert coordinates(configured.molecule()) == coordinates(explicit.molecule())
+    assert coordinates(configured.molecule) == coordinates(explicit.molecule)

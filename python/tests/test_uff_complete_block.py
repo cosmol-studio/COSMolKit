@@ -11,7 +11,7 @@ def make_molecule():
 
 
 def coordinates(molecule):
-    return [row.coordinates().tolist() for row in molecule.conformers_3d()]
+    return [row.coordinates.tolist() for row in molecule.conformers_3d]
 
 
 BASELINE_ROWS = [
@@ -34,23 +34,23 @@ def test_uff_original_21_rows_canonical_native_behavior(original_row):
     elif original_row in ["Molecule.with_uff_optimized", "uff_optimize_molecule"] or original_row.startswith("UffOptimizeMoleculeResult"):
         result = molecule.with_uff_optimized()
         assert isinstance(result, ck.UffOptimizationResult)
-        assert result.status_code() == 0 and result.needs_more() is False
-        assert isinstance(result.energy(), float) and math.isfinite(result.energy())
-        assert result.molecule().num_atoms() == 2
-        assert coordinates(result.molecule()) != before
+        assert result.status_code == 0 and result.needs_more is False
+        assert isinstance(result.energy, float) and math.isfinite(result.energy)
+        assert result.molecule.num_atoms == 2
+        assert coordinates(result.molecule) != before
         assert "UffOptimizationResult(needs_more=0, energy=" in repr(result)
     else:
         multi = molecule.with_uff_optimized_conformers()
         assert isinstance(multi, ck.UffConformerOptimizationResult)
-        assert multi.molecule().num_atoms() == 2
-        assert coordinates(multi.molecule()) != before
+        assert multi.molecule.num_atoms == 2
+        assert coordinates(multi.molecule) != before
         assert repr(multi) == "UffConformerOptimizationResult(conformers=1)"
-        assert len(multi.conformer_results()) == 1
-        result = multi.conformer_results()[0]
+        assert len(multi.conformer_results) == 1
+        result = multi.conformer_results[0]
         assert isinstance(result, ck.UffConformerResult)
-        assert result.status_code() == 0 and result.needs_more() is False
-        assert isinstance(result.energy(), float) and math.isfinite(result.energy())
-        assert result.conformer_id() == molecule.conformers_3d()[0].id()
+        assert result.status_code == 0 and result.needs_more is False
+        assert isinstance(result.energy, float) and math.isfinite(result.energy)
+        assert result.conformer_id == molecule.conformers_3d[0].id
         assert "UffConformerResult(needs_more=0, energy=" in repr(result)
     assert coordinates(molecule) == before
 
@@ -73,14 +73,14 @@ def test_uff_source_signed_selectors_choose_first_stored_3d(selector):
     before = coordinates(molecule)
     selected = molecule.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=0, conformer_id=selector))
     default = molecule.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=0))
-    assert selected.status_code() == default.status_code() == 1
-    assert selected.needs_more() is True
-    assert selected.energy() == default.energy()
-    assert coordinates(selected.molecule()) == before
+    assert selected.status_code == default.status_code == 1
+    assert selected.needs_more is True
+    assert selected.energy == default.energy
+    assert coordinates(selected.molecule) == before
     actual = molecule.uff_energy_gradient_with_params(ck.UffEvaluationParams(conformer_id=selector))
     first = molecule.uff_energy_gradient()
-    assert actual.energy() == first.energy() == selected.energy()
-    assert actual.gradient() == first.gradient()
+    assert actual.energy == first.energy == selected.energy
+    assert actual.gradient == first.gradient
     assert coordinates(molecule) == before
 
 
@@ -100,9 +100,9 @@ def test_uff_existing_source_dispatch_preserves_order_rows_and_source(threads):
     before = coordinates(molecule)
     serial = molecule.with_uff_optimized_conformers_with_params(ck.UffConformerOptimizationParams(num_threads=1, max_iterations=25))
     actual = molecule.with_uff_optimized_conformers_with_params(ck.UffConformerOptimizationParams(num_threads=threads, max_iterations=25))
-    assert [r.conformer_id() for r in actual.conformer_results()] == [r.id() for r in molecule.conformers_3d()]
-    assert [(r.status_code(), r.energy()) for r in actual.conformer_results()] == [(r.status_code(), r.energy()) for r in serial.conformer_results()]
-    assert coordinates(actual.molecule()) == coordinates(serial.molecule())
+    assert [r.conformer_id for r in actual.conformer_results] == [r.id for r in molecule.conformers_3d]
+    assert [(r.status_code, r.energy) for r in actual.conformer_results] == [(r.status_code, r.energy) for r in serial.conformer_results]
+    assert coordinates(actual.molecule) == coordinates(serial.molecule)
     assert coordinates(molecule) == before
 
 
@@ -128,7 +128,7 @@ def test_uff_missing_selected_geometry_has_canonical_source_cause(query):
             molecule.with_uff_optimized_with_params(ck.UffOptimizationParams(conformer_id=999))
     assert error.value.kind == "UffOptimization"
     assert isinstance(error.value.__cause__, ck.UffOptimizationError)
-    cause_kind = error.value.__cause__.kind()
+    cause_kind = error.value.__cause__.kind
     assert isinstance(cause_kind, ck.UffOptimizationErrorKind)
     assert cause_kind.variant == "MissingConformer"
     assert cause_kind.requested == 999
@@ -154,10 +154,10 @@ def test_uff_default_and_configured_single_multi_protocols_equal():
     molecule = make_molecule()
     default = molecule.with_uff_optimized()
     explicit = molecule.with_uff_optimized_with_params(ck.UffOptimizationParams())
-    assert default.energy() == explicit.energy()
-    assert default.status_code() == explicit.status_code()
-    assert coordinates(default.molecule()) == coordinates(explicit.molecule())
+    assert default.energy == explicit.energy
+    assert default.status_code == explicit.status_code
+    assert coordinates(default.molecule) == coordinates(explicit.molecule)
     default = molecule.with_uff_optimized_conformers()
     explicit = molecule.with_uff_optimized_conformers_with_params(ck.UffConformerOptimizationParams())
-    assert [(r.status_code(),r.energy()) for r in default.conformer_results()] == [(r.status_code(),r.energy()) for r in explicit.conformer_results()]
-    assert coordinates(default.molecule()) == coordinates(explicit.molecule())
+    assert [(r.status_code,r.energy) for r in default.conformer_results] == [(r.status_code,r.energy) for r in explicit.conformer_results]
+    assert coordinates(default.molecule) == coordinates(explicit.molecule)

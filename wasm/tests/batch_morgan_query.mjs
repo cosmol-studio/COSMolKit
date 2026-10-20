@@ -2,17 +2,17 @@ import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';imp
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 test('Torsion batches preserve scalar bits, ordered invalid rows and progress',()=>{
  const value=b.MoleculeBatch.fromSmilesListWithParams(['CCO','[','O'],new b.SmilesParseParams(),new b.BatchParams(b.BatchErrorMode.KeepErrors));
- const query=new b.BatchQueryParams(),rows=value.fingerprintTopologicalTorsionList();let ticks=0;
+ const query=new b.BatchQueryParams(),rows=value.fingerprintTopologicalTorsion();let ticks=0;
  assert.equal(rows.length,3);assert.equal(rows[1],null);
  for(const [index,smiles] of [[0,'CCO'],[2,'O']])assert.deepEqual(rows[index].onBits(),b.Molecule.fromSmiles(smiles).fingerprintTopologicalTorsion().onBits());
- const explicit=value.fingerprintTopologicalTorsionListWithParams(new b.TopologicalTorsionFingerprintParams(),query);
+ const explicit=value.fingerprintTopologicalTorsionWithParams(new b.TopologicalTorsionFingerprintParams(),query);
  assert.deepEqual(explicit.map(v=>v?.onBits()??null),rows.map(v=>v?.onBits()??null));
- value.fingerprintTopologicalTorsionList({}, {progressCallback:()=>{ticks++;}});assert.equal(ticks,3);
- const error=new Error('torsion progress');assert.throws(()=>value.fingerprintTopologicalTorsionList({}, {progressCallback:()=>{throw error;}}),e=>e===error);
+ value.fingerprintTopologicalTorsion({}, {progressCallback:()=>{ticks++;}});assert.equal(ticks,3);
+ const error=new Error('torsion progress');assert.throws(()=>value.fingerprintTopologicalTorsion({}, {progressCallback:()=>{throw error;}}),e=>e===error);
 });
 test('Morgan provider alternatives retain copied query patterns and borrowed provider lifetime',()=>{
  const value=b.MoleculeBatch.fromSmilesList(['CCO']),options=new b.MorganGeneratorParams(0),call=new b.MorganCallParams(),query=new b.BatchQueryParams(),pattern=b.QueryGraph.fromSmarts('[#8]'),patterns=[pattern],provider=b.MorganAtomInvariantsGenerator.features(patterns);patterns.length=0;pattern.free();
  const bond=b.MorganBondInvariantsGenerator.new(false,true);assert.equal(bond.useBondTypes,false);assert.equal(bond.includeChirality,true);assert.equal(new b.MorganBondInvariantsGenerator().useBondTypes,true);
- for(const atom of [provider,b.MorganAtomInvariantsGenerator.features(),b.MorganAtomInvariantsGenerator.features([]),b.MorganAtomInvariantsGenerator.connectivity(),b.MorganAtomInvariantsGenerator.atomPair(new b.AtomPairAtomInvariantsGenerator())]){const first=value.fingerprintMorganListWithGeneratorParams(options,atom,bond,call,query)[0];assert.ok(first instanceof b.Fingerprint);assert.deepEqual(value.fingerprintMorganListWithGeneratorParams(options,atom,bond,call,query)[0].onBits(),first.onBits());}
- assert.deepEqual(value.fingerprintMorganListWithGeneratorParams(options,null,null,new b.MorganCallParams([]),query)[0].onBits(),[]);assert.throws(()=>b.MorganAtomInvariantsGenerator.features([{}]),TypeError);assert.throws(()=>value.fingerprintMorganListWithGeneratorParams(options,{},null,call,query),TypeError);
+ for(const atom of [provider,b.MorganAtomInvariantsGenerator.features(),b.MorganAtomInvariantsGenerator.features([]),b.MorganAtomInvariantsGenerator.connectivity(),b.MorganAtomInvariantsGenerator.atomPair(new b.AtomPairAtomInvariantsGenerator())]){const first=value.fingerprintMorganWithGeneratorParams(options,atom,bond,call,query)[0];assert.ok(first instanceof b.Fingerprint);assert.deepEqual(value.fingerprintMorganWithGeneratorParams(options,atom,bond,call,query)[0].onBits(),first.onBits());}
+ assert.deepEqual(value.fingerprintMorganWithGeneratorParams(options,null,null,new b.MorganCallParams([]),query)[0].onBits(),[]);assert.throws(()=>b.MorganAtomInvariantsGenerator.features([{}]),TypeError);assert.throws(()=>value.fingerprintMorganWithGeneratorParams(options,{},null,call,query),TypeError);
 });

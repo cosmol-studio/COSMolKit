@@ -9,11 +9,11 @@ def test_pdb_stages_and_protein_outer_error_are_preserved(reader,error):
     with pytest.raises(error) as observed: reader("ATOM\n")
     assert observed.value.domain=="bio"
     if error is ck.BioPdbReadError:
-        assert observed.value.line_number()==1
+        assert observed.value.line_number==1
         assert observed.value.stage
     else:
         assert isinstance(observed.value.__cause__,ck.BioPdbReadError)
-        assert observed.value.__cause__.line_number()==1
+        assert observed.value.__cause__.line_number==1
 
 def test_protein_general_loader_preserves_its_outer_type():
     with pytest.raises(ck.ProteinReadError) as observed:ck.Protein.from_text("data_x\n_atom_site.id\n")
@@ -40,4 +40,4 @@ def test_conversion_has_a_typed_sanitize_cause_and_retains_input():
     assert cause.domain=="bio"
     assert cause.kind=="Sanitize"
     assert cause.__cause__ is not None
-    assert source.num_atoms()==6
+    assert source.num_atoms==6

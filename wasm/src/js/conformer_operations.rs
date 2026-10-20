@@ -7,12 +7,123 @@ use crate::{
 };
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+use cosmolkit_wasm::rust as ck;
+
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub enum EmbedFailureCause {
+    InitialCoords = 0,
+    FirstMinimization = 1,
+    CheckTetrahedralCenters = 2,
+    CheckChiralCenters = 3,
+    MinimizeFourthDimension = 4,
+    EtkMinimization = 5,
+    FinalChiralBounds = 6,
+    FinalCenterInVolume = 7,
+    LinearDoubleBond = 8,
+    BadDoubleBondStereo = 9,
+    CheckChiralCenters2 = 10,
+    ExceededTimeout = 11,
+    Minimization = 12,
+    KtermViolation = 13,
+    Clash = 14,
+    EndOfEnum = 15,
+}
+impl From<EmbedFailureCause> for ck::EmbedFailureCause {
+    fn from(value: EmbedFailureCause) -> Self {
+        match value {
+            EmbedFailureCause::InitialCoords => Self::InitialCoords,
+            EmbedFailureCause::FirstMinimization => Self::FirstMinimization,
+            EmbedFailureCause::CheckTetrahedralCenters => Self::CheckTetrahedralCenters,
+            EmbedFailureCause::CheckChiralCenters => Self::CheckChiralCenters,
+            EmbedFailureCause::MinimizeFourthDimension => Self::MinimizeFourthDimension,
+            EmbedFailureCause::EtkMinimization => Self::EtkMinimization,
+            EmbedFailureCause::FinalChiralBounds => Self::FinalChiralBounds,
+            EmbedFailureCause::FinalCenterInVolume => Self::FinalCenterInVolume,
+            EmbedFailureCause::LinearDoubleBond => Self::LinearDoubleBond,
+            EmbedFailureCause::BadDoubleBondStereo => Self::BadDoubleBondStereo,
+            EmbedFailureCause::CheckChiralCenters2 => Self::CheckChiralCenters2,
+            EmbedFailureCause::ExceededTimeout => Self::ExceededTimeout,
+            EmbedFailureCause::Minimization => Self::Minimization,
+            EmbedFailureCause::KtermViolation => Self::KtermViolation,
+            EmbedFailureCause::Clash => Self::Clash,
+            EmbedFailureCause::EndOfEnum => Self::EndOfEnum,
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub struct EmbedFailureCountError {
+    inner: ck::EmbedFailureCountError,
+}
+#[wasm_bindgen]
+impl EmbedFailureCountError {
+    #[wasm_bindgen(getter)]
+    pub fn variant(&self) -> String {
+        match self.inner {
+            ck::EmbedFailureCountError::InvalidCause => "InvalidCause",
+            ck::EmbedFailureCountError::MissingCounter { .. } => "MissingCounter",
+        }.into()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn index(&self) -> Option<usize> {
+        match self.inner {
+            ck::EmbedFailureCountError::MissingCounter { index, .. } => Some(index),
+            _ => None,
+        }
+    }
+    #[wasm_bindgen(getter)]
+    pub fn available(&self) -> Option<usize> {
+        match self.inner {
+            ck::EmbedFailureCountError::MissingCounter { available, .. } => Some(available),
+            _ => None,
+        }
+    }
+}
+fn failure_count_error(inner: ck::EmbedFailureCountError) -> JsValue {
+    let error = js_sys::Error::new(&inner.to_string());
+    error.set_name("EmbedFailureCountError");
+    let detail = EmbedFailureCountError { inner };
+    let value: JsValue = error.into();
+    let projection = (|| -> Result<(), JsValue> {
+        set(&value, "domain", "conformer".into())?;
+        set(&value, "variant", detail.variant().into())?;
+        set(&value, "index", detail.index().map_or(JsValue::NULL, |x| (x as f64).into()))?;
+        set(&value, "available", detail.available().map_or(JsValue::NULL, |x| (x as f64).into()))?;
+        set(&value, "detail", detail.into())
+    })();
+    match projection { Ok(()) => value, Err(error) => error }
+}
+fn failure_counts_snapshot(counts: Option<&[u32]>) -> JsValue {
+    match counts {
+        None => JsValue::NULL,
+        Some(counts) => {
+            let values: js_sys::Array = counts.iter().map(|&x| JsValue::from(x)).collect();
+            js_sys::Object::freeze(values.as_ref());
+            values.into()
+        }
+    }
+}
 #[wasm_bindgen]
 pub struct EmbedMoleculeResult {
     inner: cosmolkit_wasm::EmbedMoleculeResult,
 }
 #[wasm_bindgen]
 impl EmbedMoleculeResult {
+    #[wasm_bindgen(getter, js_name=failuresTracked)]
+    pub fn failures_tracked(&self) -> bool {
+        self.inner.failures_tracked()
+    }
+    #[wasm_bindgen(getter, js_name=failureCounts, unchecked_return_type="ReadonlyArray<number> | null")]
+    pub fn failure_counts(&self) -> JsValue {
+        failure_counts_snapshot(self.inner.failure_counts())
+    }
+    #[wasm_bindgen(js_name=failureCount, unchecked_return_type="number | null")]
+    pub fn failure_count(&self, cause: EmbedFailureCause) -> Result<JsValue, JsValue> {
+        self.inner.failure_count(cause.into())
+            .map(|count| count.map_or(JsValue::NULL, JsValue::from))
+            .map_err(failure_count_error)
+    }
     pub fn molecule(&self) -> Molecule {
         Molecule {
             inner: Arc::new(self.inner.molecule()),
@@ -37,6 +148,20 @@ pub struct EmbedMultipleConfsResult {
 }
 #[wasm_bindgen]
 impl EmbedMultipleConfsResult {
+    #[wasm_bindgen(getter, js_name=failuresTracked)]
+    pub fn failures_tracked(&self) -> bool {
+        self.inner.failures_tracked()
+    }
+    #[wasm_bindgen(getter, js_name=failureCounts, unchecked_return_type="ReadonlyArray<number> | null")]
+    pub fn failure_counts(&self) -> JsValue {
+        failure_counts_snapshot(self.inner.failure_counts())
+    }
+    #[wasm_bindgen(js_name=failureCount, unchecked_return_type="number | null")]
+    pub fn failure_count(&self, cause: EmbedFailureCause) -> Result<JsValue, JsValue> {
+        self.inner.failure_count(cause.into())
+            .map(|count| count.map_or(JsValue::NULL, JsValue::from))
+            .map_err(failure_count_error)
+    }
     pub fn molecule(&self) -> Molecule {
         Molecule {
             inner: Arc::new(self.inner.molecule()),

@@ -15,7 +15,7 @@ def present_values(values: list[T | None]) -> list[T]:
 
 
 def fingerprint_key(value) -> tuple[int, list[int]]:
-    return value.n_bits(), value.on_bits()
+    return value.n_bits, value.on_bits
 
 
 def every_fingerprint_family_key(molecule, torsion_generator):
@@ -37,8 +37,8 @@ def test_layered_scalar_defaults_types_counts_masks_roots_and_immutability():
     before = molecule.to_smiles()
 
     default = molecule.fingerprint_layered()
-    assert default.n_bits() == 2048
-    assert default.on_bits() == [
+    assert default.n_bits == 2048
+    assert default.on_bits == [
         92,
         360,
         596,
@@ -54,21 +54,21 @@ def test_layered_scalar_defaults_types_counts_masks_roots_and_immutability():
     assert molecule.to_smiles() == before
 
     topology_mask = molecule.fingerprint_layered(layers=0x01)
-    assert topology_mask.on_bits() == [674, 867]
+    assert topology_mask.on_bits == [674, 867]
     masked = molecule.fingerprint_layered_with_output(
         atom_counts=[10, 20, 30], set_only_bits=topology_mask
     )
-    assert masked.fingerprint().on_bits() == [674, 867]
-    assert masked.atom_counts() == [12, 23, 32]
+    assert masked.fingerprint.on_bits == [674, 867]
+    assert masked.atom_counts == [12, 23, 32]
 
     no_counts = molecule.fingerprint_layered_with_output()
-    assert no_counts.atom_counts() is None
-    assert no_counts.fingerprint().on_bits() == default.on_bits()
+    assert no_counts.atom_counts is None
+    assert no_counts.fingerprint.on_bits == default.on_bits
 
-    assert molecule.fingerprint_layered(from_atoms=[]).on_bits() == []
+    assert molecule.fingerprint_layered(from_atoms=[]).on_bits == []
     assert molecule.fingerprint_layered(
         branched_paths=False, from_atoms=[0]
-    ).on_bits() == [360, 596, 610, 611, 674, 867, 1044, 1111, 1783, 1784]
+    ).on_bits == [360, 596, 610, 611, 674, 867, 1044, 1111, 1783, 1784]
     assert molecule.to_smiles() == before
 
 
@@ -77,7 +77,7 @@ def test_layered_scalar_preserves_source_errors_and_unsigned_layer_bits():
 
     assert molecule.fingerprint_layered(
         layers=0xFFFF_FFC0, atom_counts=[5, 6, 7]
-    ).on_bits() == []
+    ).on_bits == []
     with pytest.raises(ValueError, match="minPath==0"):
         molecule.fingerprint_layered(min_path=0)
     with pytest.raises(ValueError, match="maxPath<minPath"):
@@ -95,16 +95,13 @@ def test_layered_scalar_preserves_source_errors_and_unsigned_layer_bits():
 def test_layered_batch_matches_ordered_scalar_calls_and_keeps_invalid_positions():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(SMILES)
     values = present_values(
-        batch.fingerprint_layered_list(
+        batch.fingerprint_layered(
             layers=0x07,
             fp_size=256,
             branched_paths=False,
-            from_atoms=[0],
-            n_jobs=4,
-            progress_bar=False,
-        )
+            from_atoms=[0], n_jobs=4, progress_bar=False)
     )
-    assert [value.on_bits() for value in values] == [
+    assert [value.on_bits for value in values] == [
         cosmolkit.Molecule.from_smiles(smiles)
         .fingerprint_layered(
             layers=0x07,
@@ -112,32 +109,29 @@ def test_layered_batch_matches_ordered_scalar_calls_and_keeps_invalid_positions(
             branched_paths=False,
             from_atoms=[0],
         )
-        .on_bits()
+        .on_bits
         for smiles in SMILES
     ]
 
     outputs = present_values(
-        batch.fingerprint_layered_with_output_list(
+        batch.fingerprint_layered_with_output(
             layers=0x01,
-            atom_counts=[0, 0, 0, 0, 0, 0, 0, 0],
-            n_jobs=3,
-            progress_bar=False,
-        )
+            atom_counts=[0, 0, 0, 0, 0, 0, 0, 0], n_jobs=3, progress_bar=False)
     )
-    assert [value.fingerprint().on_bits() for value in outputs] == [
+    assert [value.fingerprint.on_bits for value in outputs] == [
         cosmolkit.Molecule.from_smiles(smiles)
         .fingerprint_layered(layers=0x01)
-        .on_bits()
+        .on_bits
         for smiles in SMILES
     ]
-    assert all(value.atom_counts() is not None for value in outputs)
+    assert all(value.atom_counts is not None for value in outputs)
 
     kept = cosmolkit.MoleculeBatch.from_smiles_list(
         ["CC", "not-a-smiles", "CCC"], errors="keep"
     )
-    kept_values = kept.fingerprint_layered_list(n_jobs=2, progress_bar=False)
+    kept_values = kept.fingerprint_layered(n_jobs=2, progress_bar=False)
     assert [value is not None for value in kept_values] == [True, False, True]
-    assert [(error.index(), error.operation()) for error in kept.errors()] == [
+    assert [(error.index, error.operation) for error in kept.errors] == [
         (1, "batch.from_smiles_list")
     ]
 
@@ -145,38 +139,38 @@ def test_layered_batch_matches_ordered_scalar_calls_and_keeps_invalid_positions(
 def test_layered_batch_thread_counts_repeats_errors_and_concurrency_are_stable():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(SMILES)
     baseline = [
-        value.on_bits()
+        value.on_bits
         for value in present_values(
-            batch.fingerprint_layered_list(n_jobs=1, progress_bar=False)
+            batch.fingerprint_layered(n_jobs=1, progress_bar=False)
         )
     ]
     for n_jobs in (1, 2, 4):
         for _ in range(3):
             current = present_values(
-                batch.fingerprint_layered_list(n_jobs=n_jobs, progress_bar=False)
+                batch.fingerprint_layered(n_jobs=n_jobs, progress_bar=False)
             )
-            assert [value.on_bits() for value in current] == baseline
+            assert [value.on_bits for value in current] == baseline
 
     with pytest.raises(ValueError, match="n_jobs"):
-        batch.fingerprint_layered_list(n_jobs=0)
+        batch.fingerprint_layered(n_jobs=0)
     with pytest.raises(
         cosmolkit.BatchValidationError, match="batch.fingerprint_layered"
     ):
-        batch.fingerprint_layered_list(from_atoms=[99], n_jobs=2, progress_bar=False)
+        batch.fingerprint_layered(from_atoms=[99], n_jobs=2, progress_bar=False)
 
     def layered_call() -> list[list[int]]:
         return [
-            value.on_bits()
+            value.on_bits
             for value in present_values(
-                batch.fingerprint_layered_list(n_jobs=4, progress_bar=False)
+                batch.fingerprint_layered(n_jobs=4, progress_bar=False)
             )
         ]
 
     def morgan_call() -> list[list[int]]:
         return [
-            value.on_bits()
+            value.on_bits
             for value in present_values(
-                batch.fingerprint_morgan_list(n_jobs=3, progress_bar=False)
+                batch.fingerprint_morgan(n_jobs=3, progress_bar=False)
             )
         ]
 
@@ -203,7 +197,7 @@ def test_layered_calls_compose_with_every_fingerprint_family_without_crosstalk()
             min_path=1,
             max_path=4,
             fp_size=257,
-            atom_counts=[7] * molecule.num_atoms(),
+            atom_counts=[7] * molecule.num_atoms,
             branched_paths=False,
             from_atoms=[0, 6],
         )
@@ -222,7 +216,7 @@ def test_layered_calls_compose_with_every_fingerprint_family_without_crosstalk()
                 min_path=1,
                 max_path=4,
                 fp_size=257,
-                atom_counts=[7] * molecule.num_atoms(),
+                atom_counts=[7] * molecule.num_atoms,
                 branched_paths=False,
                 from_atoms=[0, 6],
             )

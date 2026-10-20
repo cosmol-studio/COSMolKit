@@ -5,14 +5,12 @@ use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum SerdeJsonCategory {
+crate::enums::binding_enum!(SerdeJsonCategory, {
     Io = serde_json::error::Category::Io as isize,
     Syntax = serde_json::error::Category::Syntax as isize,
     Data = serde_json::error::Category::Data as isize,
     Eof = serde_json::error::Category::Eof as isize,
-}
+});
 impl From<serde_json::error::Category> for SerdeJsonCategory {
     fn from(value: serde_json::error::Category) -> Self {
         match value {
@@ -52,15 +50,19 @@ impl SerdeJsonError {
     fn io_error_kind(&self) -> Option<IoErrorKind> {
         self.native().io_error_kind().map(IoErrorKind::from_native)
     }
+    #[getter]
     fn is_io(&self) -> bool {
         self.native().is_io()
     }
+    #[getter]
     fn is_syntax(&self) -> bool {
         self.native().is_syntax()
     }
+    #[getter]
     fn is_data(&self) -> bool {
         self.native().is_data()
     }
+    #[getter]
     fn is_eof(&self) -> bool {
         self.native().is_eof()
     }
@@ -95,13 +97,11 @@ impl SerdeJsonError {
     }
 }
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum FingerprintJsonErrorKind {
+crate::enums::binding_enum!(FingerprintJsonErrorKind, {
     Parse,
     Invalid,
     UnsupportedComponent,
-}
+});
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct FingerprintJsonError {
     inner: RetainedError<ck::FingerprintJsonError>,

@@ -3,7 +3,7 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 
 ck::project_configuration!(ck::BioMmcifWriteParams, methods {
-    fn __repr__(&self) -> String { format!("{:?}", self.inner) }
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> { self.inner.read(py, |native| format!("{native:?}")) }
 });
 
 #[cfg(test)]
@@ -18,24 +18,24 @@ mod tests {
         Python::attach(|py| -> PyResult<()> {
             let class = py.get_type::<BioMmcifWriteParams>();
             let params = class.call0()?.extract::<Py<BioMmcifWriteParams>>()?;
-            assert_eq!(params.borrow(py).inner, ck::BioMmcifWriteParams::default());
-            assert!(params.borrow(py).inner.atoms);
-            assert!(!params.borrow(py).inner.auth_all);
+            assert_eq!(params.borrow(py).to_rust(py)?, ck::BioMmcifWriteParams::default());
+            assert!(params.borrow(py).to_rust(py)?.atoms);
+            assert!(!params.borrow(py).to_rust(py)?.auth_all);
             let structure = ck::BioStructure::from_pdb("ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \n").unwrap();
             let baseline = structure.to_mmcif().unwrap();
             params.bind(py).setattr("atoms", false)?;
-            let configured = structure.to_mmcif_with_params(&params.borrow(py).inner).unwrap();
+            let configured = structure.to_mmcif_with_params(&params.borrow(py).to_rust(py)?).unwrap();
             assert_ne!(configured, baseline);
             let kwargs = PyDict::new(py);
             kwargs.set_item("atoms", false)?;
             let constructed = class.call((), Some(&kwargs))?.extract::<Py<BioMmcifWriteParams>>()?;
-            assert_eq!(constructed.borrow(py).inner, params.borrow(py).inner);
-            assert_eq!(structure.to_mmcif_with_params(&constructed.borrow(py).inner).unwrap(), configured);
+            assert_eq!(constructed.borrow(py).to_rust(py)?, params.borrow(py).to_rust(py)?);
+            assert_eq!(structure.to_mmcif_with_params(&constructed.borrow(py).to_rust(py)?).unwrap(), configured);
             params.bind(py).setattr("atoms", py.None())?;
-            assert_eq!(structure.to_mmcif_with_params(&params.borrow(py).inner).unwrap(), baseline);
+            assert_eq!(structure.to_mmcif_with_params(&params.borrow(py).to_rust(py)?).unwrap(), baseline);
             params.bind(py).setattr("align_pairs", 65535_u16)?;
             assert!(params.bind(py).setattr("align_pairs", 65536_u32).is_err());
-            assert_eq!(params.borrow(py).inner.align_pairs, 65535);
+            assert_eq!(params.borrow(py).to_rust(py)?.align_pairs, 65535);
 
             let class = py.get_type::<TopologicalFingerprintParams>();
             let params = class.call0()?.extract::<Py<TopologicalFingerprintParams>>()?;

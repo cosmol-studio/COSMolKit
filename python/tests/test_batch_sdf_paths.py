@@ -47,15 +47,15 @@ def test_sdf_paths_support_all_call_forms(kind: str, form: str, tmp_path: Path):
         report = batch.write_sdf(path, report_path=counts)
         files = batch.write_sdf_files(directory, filenames=["ethanol.sdf", "water.sdf"])
         result = ck.MoleculeBatch.read_sdf(path)
-    assert result.to_smiles_list() == ["CCO", "O"]
-    assert (report.total(), report.success(), report.failed()) == (2, 2, 0)
-    assert (files.total(), files.success(), files.failed()) == (2, 2, 0)
+    assert result.to_smiles() == ["CCO", "O"]
+    assert (report.total, report.success, report.failed) == (2, 2, 0)
+    assert (files.total, files.success, files.failed) == (2, 2, 0)
     assert json.loads((tmp_path / "计数.json").read_text()) == {"written": 2, "failed": 0}
     for filename, expected in [("ethanol.sdf", "CCO"), ("water.sdf", "O")]:
-        assert ck.MoleculeBatch.read_sdf(path_input(tmp_path / "分子" / filename, kind)).to_smiles_list() == [expected]
+        assert ck.MoleculeBatch.read_sdf(path_input(tmp_path / "分子" / filename, kind)).to_smiles() == [expected]
     report.write_report(path_input(tmp_path / "report.csv", kind))
     assert (tmp_path / "report.csv").read_text().splitlines() == ["written,failed", "2,0"]
-    assert batch.to_smiles_list() == ["CCO", "O"]
+    assert batch.to_smiles() == ["CCO", "O"]
 
 
 @pytest.mark.parametrize("kind", ["str", "pathlib", "custom"])
@@ -72,9 +72,9 @@ def test_sdf_dataset_and_reader_accept_path_protocol(kind: str, configured: bool
         dataset = ck.SdfDataset.open(value)
         reader = ck.SdfReader.open(value)
     assert len(dataset) == 2
-    assert dataset[:].to_smiles_list() == ["CCO", "O"]
-    assert reader.path() == path
-    assert [item.to_smiles_list() for item in reader.batches(size=1)] == [["CCO"], ["O"]]
+    assert dataset[:].to_smiles() == ["CCO", "O"]
+    assert reader.path == path
+    assert [item.to_smiles() for item in reader.batches(size=1)] == [["CCO"], ["O"]]
 
 
 class BytesPath:
@@ -102,7 +102,7 @@ def test_non_text_paths_fail_before_export(invalid: object, tmp_path: Path):
     with pytest.raises(TypeError):
         _ = batch.write_sdf(output, report_path=bad)
     assert not output.exists()
-    assert batch.to_smiles_list() == ["O"]
+    assert batch.to_smiles() == ["O"]
 
 
 def test_fspath_error_is_preserved_without_string_fallback(tmp_path: Path):

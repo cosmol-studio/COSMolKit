@@ -10,7 +10,7 @@ def test_reaction_run_without_molecule_receiver():
     rxn = ck.Reaction.from_smirks("[C:1].[O:2]>>[C:1][O:2]")
     groups = rxn.run([carbon, oxygen], ck.ReactionRunParams())
     assert [[mol.to_smiles() for mol in group] for group in groups] == [["CO"]]
-    assert rxn.is_initialized()
+    assert rxn.is_initialized
     assert [carbon.to_binary(), oxygen.to_binary()] == before
     with pytest.raises(ValueError):
         rxn.run([carbon], ck.ReactionRunParams())
@@ -53,7 +53,7 @@ def test_reaction_run_keywords_limit_products_and_reject_conflicts_before_execut
         reaction = ck.Reaction.from_smirks("[C:1]>>[N:1]")
         groups = reaction.run([source], *args, **kwargs)
         assert [[mol.to_smiles() for mol in group] for group in groups] == [["CN"]]
-        assert reaction.is_initialized()
+        assert reaction.is_initialized
     reaction = ck.Reaction.from_smirks("[C:1]>>[N:1]")
     assert len(reaction.run([source])) == 2
     for args, kwargs, error in [
@@ -66,7 +66,7 @@ def test_reaction_run_keywords_limit_products_and_reject_conflicts_before_execut
         fresh = ck.Reaction.from_smirks("[C:1]>>[N:1]")
         with pytest.raises(error):
             fresh.run([source], *args, **kwargs)
-        assert not fresh.is_initialized()
+        assert not fresh.is_initialized
     assert source.to_binary() == before
     assert params.max_products == 1
 
@@ -99,38 +99,38 @@ def test_template_writer_clears_unpaired_directions():
 
 def test_reaction_values_writers_and_initialization():
     rxn = ck.Reaction.from_smirks("[C:1]>O>[N:1]")
-    assert (rxn.num_reactant_templates(), rxn.num_product_templates(), rxn.num_agent_templates()) == (1, 1, 1)
-    assert rxn.reactant_template(0).num_atoms() == 1
-    assert len(rxn.reactant_templates()) == len(rxn.product_templates()) == len(rxn.agent_templates()) == 1
-    assert not rxn.is_initialized()
+    assert (rxn.num_reactant_templates, rxn.num_product_templates, rxn.num_agent_templates) == (1, 1, 1)
+    assert rxn.reactant_template(0).num_atoms == 1
+    assert len(rxn.reactant_templates) == len(rxn.product_templates) == len(rxn.agent_templates) == 1
+    assert not rxn.is_initialized
     report = rxn.validate_with_params(ck.ReactionValidationParams(silent=True))
     assert report.is_valid and report.num_errors == 0 and report.errors == []
-    assert rxn.with_initialized().is_initialized()
-    assert not rxn.is_initialized()
-    assert rxn.with_initialized_with_params(ck.ReactionValidationParams(silent=True)).is_initialized()
+    assert rxn.with_initialized().is_initialized
+    assert not rxn.is_initialized
+    assert rxn.with_initialized_with_params(ck.ReactionValidationParams(silent=True)).is_initialized
     for text in [rxn.to_smirks(), rxn.to_smirks_with_params(ck.ReactionWriteParams()),
                  rxn.to_cx_smirks(), rxn.to_cx_smirks_with_params(ck.ReactionWriteParams())]:
         assert isinstance(text, str)
-        assert ck.parse_smirks(text).num_agent_templates() == 1
+        assert ck.parse_smirks(text).num_agent_templates == 1
 
 
 def test_reaction_templates_are_owned_values():
     query = ck.QueryGraph.from_smarts("[C:1]")
     rxn = ck.Reaction.from_templates([query], [query], [])
     extended = rxn.with_agent_template(query).with_reactant_template(query).with_product_template(query)
-    assert (rxn.num_reactant_templates(), rxn.num_agent_templates(), rxn.num_product_templates()) == (1, 0, 1)
-    assert (extended.num_reactant_templates(), extended.num_agent_templates(), extended.num_product_templates()) == (2, 1, 2)
+    assert (rxn.num_reactant_templates, rxn.num_agent_templates, rxn.num_product_templates) == (1, 0, 1)
+    assert (extended.num_reactant_templates, extended.num_agent_templates, extended.num_product_templates) == (2, 1, 2)
     removed = extended.without_agents()
     assert len(removed.removed_templates) == 1
-    assert removed.reaction.num_agent_templates() == 0
-    assert extended.num_agent_templates() == 1
+    assert removed.reaction.num_agent_templates == 0
+    assert extended.num_agent_templates == 1
     for name in ["without_unmapped_reactants", "without_unmapped_products"]:
         assert isinstance(getattr(rxn, name)(), ck.ReactionTemplateRemoval)
         assert isinstance(getattr(rxn, name + "_with_params")(ck.ReactionTemplateRemovalParams()), ck.ReactionTemplateRemoval)
     # Reaction.h:376 defaults manual ChemicalReaction templates to false.
     changed = rxn.with_implicit_properties(True)
-    assert changed.implicit_properties() and not rxn.implicit_properties()
-    assert rxn.with_match_params(ck.SubstructMatchParams(max_matches=7)).match_params().max_matches == 7
+    assert changed.implicit_properties and not rxn.implicit_properties
+    assert rxn.with_match_params(ck.SubstructMatchParams(max_matches=7)).match_params.max_matches == 7
 
 
 def test_reaction_parameter_defaults_and_coordinate_payloads():
@@ -150,13 +150,13 @@ def test_reaction_parameter_defaults_and_coordinate_payloads():
     selections = ck.ReactionRunParams(max_products=3, coordinate_selections=[two, three]).coordinate_selections
     assert [s.id for s in selections] == [7, 42]
     write = ck.ReactionWriteParams(cx_fields=ck.CxSmilesFields.NONE, rooted_at_atom=0, coordinate_selections=[two])
-    assert write.cx_fields.bits() == 0 and write.rooted_at_atom == 0
+    assert write.cx_fields.bits == 0 and write.rooted_at_atom == 0
     assert write.coordinate_selections[0].id == 7
     params.sanitize = True
     assert params.sanitize is True
     with pytest.raises(TypeError):
         _ = ck.ReactionSingleRunParams(coordinate_selection="Auto")  # pyright: ignore[reportArgumentType]
-    assert ck.parse_smirks_with_params("{C}>>[N:1]", ck.ReactionParseParams(replacements={"{C}": "[C:1]"})).num_reactant_templates() == 1
+    assert ck.parse_smirks_with_params("{C}>>[N:1]", ck.ReactionParseParams(replacements={"{C}": "[C:1]"})).num_reactant_templates == 1
 
 
 @pytest.mark.parametrize("explicit", [False, True])
@@ -164,10 +164,10 @@ def test_product_groups_mutate_reaction_initialization_not_input(explicit: bool)
     source = ck.Molecule.from_smiles("C")
     original = source.to_smiles()
     rxn = ck.Reaction.from_smirks("[C:1]>>[N:1]")
-    assert not rxn.is_initialized()
+    assert not rxn.is_initialized
     sets = (source.reaction_products_with_params(rxn, 0, ck.ReactionSingleRunParams())
             if explicit else source.reaction_products(rxn, 0))
-    assert rxn.is_initialized()
+    assert rxn.is_initialized
     assert len(sets) == len(sets[0]) == 1
     assert sets[0][0].to_smiles() == "N"
     assert source.to_smiles() == original

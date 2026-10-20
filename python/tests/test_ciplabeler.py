@@ -9,12 +9,12 @@ def test_full_assignment_exposes_typed_atom_and_bond_state() -> None:
     labeled = molecule.with_cip_labels()
 
     assert labeled is not molecule
-    assert not molecule.cip_computed()
-    assert labeled.cip_computed()
-    center = labeled.atoms()[1]
-    assert center.cip_descriptor() in {"R", "S"}
-    assert center.cip_neighbor_order() == [3, 2, 0]
-    assert labeled.bonds()[0].cip_descriptor() is None
+    assert not molecule.cip_computed
+    assert labeled.cip_computed
+    center = labeled.atoms[1]
+    assert center.cip_descriptor in {"R", "S"}
+    assert center.cip_neighbor_order == [3, 2, 0]
+    assert labeled.bonds[0].cip_descriptor is None
 
 
 def test_selected_atom_and_bond_assignment_are_contextual_and_value_style() -> None:
@@ -23,24 +23,24 @@ def test_selected_atom_and_bond_assignment_are_contextual_and_value_style() -> N
     bond_selected = molecule.with_cip_labels(bonds=[1])
     both_selected = molecule.with_cip_labels(atoms=[1], bonds=[1])
 
-    assert atom_selected.atoms()[1].cip_descriptor() is None
-    assert atom_selected.bonds()[1].cip_descriptor() is None
-    assert bond_selected.bonds()[1].cip_descriptor() in {"E", "Z"}
-    assert bond_selected.atoms()[1].cip_descriptor() is None
-    assert both_selected.bonds()[1].cip_descriptor() in {"E", "Z"}
-    assert molecule.atoms()[1].cip_descriptor() is None
+    assert atom_selected.atoms[1].cip_descriptor is None
+    assert atom_selected.bonds[1].cip_descriptor is None
+    assert bond_selected.bonds[1].cip_descriptor in {"E", "Z"}
+    assert bond_selected.atoms[1].cip_descriptor is None
+    assert both_selected.bonds[1].cip_descriptor in {"E", "Z"}
+    assert molecule.atoms[1].cip_descriptor is None
 
 
 def test_in_place_assignment_and_empty_dispatch_match_public_contract() -> None:
     molecule = cosmolkit.Molecule.from_smiles("C[C@H](F)Cl")
     assert molecule.assign_cip_labels_() is None
-    assert molecule.cip_computed()
-    assert molecule.atoms()[1].cip_descriptor() in {"R", "S"}
+    assert molecule.cip_computed
+    assert molecule.atoms[1].cip_descriptor in {"R", "S"}
 
     empty = cosmolkit.Molecule.from_smiles("C[C@H](F)Cl")
     empty.assign_cip_labels_(atoms=[], bonds=[])
-    assert empty.cip_computed()
-    assert empty.atoms()[1].cip_descriptor() in {"R", "S"}
+    assert empty.cip_computed
+    assert empty.atoms[1].cip_descriptor in {"R", "S"}
 
 
 def test_recursion_limit_errors_are_structured_and_do_not_mutate_source() -> None:

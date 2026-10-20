@@ -68,13 +68,13 @@ def _execute(profile, path, digest, count):
                 params = configured(params, max_iterations=3)
                 params = configured(params, timeout=0)
                 result = molecule.with_3d_conformer_result(params)
-                actual["status"] = result.conf_id()
+                actual["status"] = result.conf_id
                 actual["embed_ok"] = actual["status"] == 0
-                actual["failure_counts"] = result.params().failures
+                actual["failure_counts"] = result.params.failures
                 if actual["embed_ok"]:
-                    conformers = result.molecule().conformers_3d()
-                    actual["conformer_ids"] = [conformer.id() for conformer in conformers]
-                    actual["coords"] = conformers[0].coordinates().tolist()
+                    conformers = result.molecule.conformers_3d
+                    actual["conformer_ids"] = [conformer.id for conformer in conformers]
+                    actual["coords"] = conformers[0].coordinates.tolist()
                 else:
                     actual["error_stage"] = "embed"
                     actual["error"] = "EmbedMolecule returned " + str(actual["status"])

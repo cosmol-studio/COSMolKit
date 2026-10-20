@@ -10,16 +10,130 @@ use std::collections::BTreeMap;
 /// native; container reads are immutable snapshots, never editable mirrors.
 pub(crate) trait Container: Sized {
     const OPTIONAL: bool = false;
-    type Native: Clone;
+    type Native: Clone + 'static;
     const TYPE: pyo3::inspect::PyStaticExpr;
     const INPUT: pyo3::inspect::PyStaticExpr;
     fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native>;
     fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>>;
+    fn output_field<'py, V: NativeView<Self::Native> + 'static>(
+        py: Python<'py>,
+        field: V,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let mut result = None;
+        field.read(py, &mut |value| result = Some(Self::output(py, value)))?;
+        result.unwrap()
+    }
+}
+
+/// A short, checked borrow on each access, never a retained reference into a
+/// Python allocation. The parent handle keeps the owner alive.
+pub(crate) trait NativeView<T>: Send + Sync {
+    fn read(&self, py: Python<'_>, visit: &mut dyn FnMut(&T)) -> PyResult<()>;
+    fn write(&self, py: Python<'_>, visit: &mut dyn FnMut(&mut T)) -> PyResult<()>;
+    fn traverse(&self, visit: pyo3::gc::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError>;
+}
+
+pub(crate) enum NativeField<T> {
+    Owned(T),
+    View(Box<dyn NativeView<T>>),
+}
+impl<T> NativeField<T> {
+    pub(crate) fn traverse(
+        &self,
+        visit: pyo3::gc::PyVisit<'_>,
+    ) -> Result<(), pyo3::PyTraverseError> {
+        match self {
+            Self::Owned(_) => Ok(()),
+            Self::View(view) => view.traverse(visit),
+        }
+    }
+    pub(crate) fn read<R>(&self, py: Python<'_>, f: impl FnOnce(&T) -> R) -> PyResult<R> {
+        match self {
+            Self::Owned(value) => Ok(f(value)),
+            Self::View(view) => {
+                let mut f = Some(f);
+                let mut result = None;
+                view.read(py, &mut |value| result = Some(f.take().unwrap()(value)))?;
+                Ok(result.unwrap())
+            }
+        }
+    }
+    pub(crate) fn write<R>(&mut self, py: Python<'_>, f: impl FnOnce(&mut T) -> R) -> PyResult<R> {
+        match self {
+            Self::Owned(value) => Ok(f(value)),
+            Self::View(view) => {
+                let mut f = Some(f);
+                let mut result = None;
+                view.write(py, &mut |value| result = Some(f.take().unwrap()(value)))?;
+                Ok(result.unwrap())
+            }
+        }
+    }
+}
+
+pub(crate) trait NativeOwner:
+    pyo3::PyClass<Frozen = pyo3::pyclass::boolean_struct::False>
+{
+    type Value;
+    fn read_native(&self, py: Python<'_>, visit: &mut dyn FnMut(&Self::Value)) -> PyResult<()>;
+    fn write_native(
+        &mut self,
+        py: Python<'_>,
+        visit: &mut dyn FnMut(&mut Self::Value),
+    ) -> PyResult<()>;
+}
+pub(crate) struct ChildField<P: NativeOwner, T> {
+    parent: Py<P>,
+    get: fn(&P::Value) -> &T,
+    get_mut: fn(&mut P::Value) -> &mut T,
+}
+impl<P: NativeOwner, T> NativeView<T> for ChildField<P, T> {
+    fn traverse(&self, visit: pyo3::gc::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
+        visit.call(&self.parent)
+    }
+    fn read(&self, py: Python<'_>, visit: &mut dyn FnMut(&T)) -> PyResult<()> {
+        self.parent
+            .try_borrow(py)?
+            .read_native(py, &mut |parent| visit((self.get)(parent)))
+    }
+    fn write(&self, py: Python<'_>, visit: &mut dyn FnMut(&mut T)) -> PyResult<()> {
+        self.parent
+            .try_borrow_mut(py)?
+            .write_native(py, &mut |parent| visit((self.get_mut)(parent)))
+    }
+}
+
+pub(crate) struct FieldOutput<T: Container, P: NativeOwner>(ChildField<P, T::Native>);
+impl<T: Container, P: NativeOwner> FieldOutput<T, P> {
+    pub(crate) fn new(
+        parent: Py<P>,
+        get: fn(&P::Value) -> &T::Native,
+        get_mut: fn(&mut P::Value) -> &mut T::Native,
+    ) -> Self {
+        Self(ChildField {
+            parent,
+            get,
+            get_mut,
+        })
+    }
+}
+impl<'py, T: Container, P: NativeOwner> IntoPyObject<'py> for FieldOutput<T, P> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+    const OUTPUT_TYPE: pyo3::inspect::PyStaticExpr = T::TYPE;
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        T::output_field(py, self.0)
+    }
+}
+
+pub(crate) trait ConfigurationView: Configuration {
+    fn from_field(field: NativeField<Self::Native>) -> Self;
 }
 
 impl<T> Container for Vec<T>
 where
-    T: Clone,
+    T: Clone + 'static,
     for<'a, 'py> T: FromPyObject<'a, 'py>,
     for<'py> T: IntoPyObject<'py>,
 {
@@ -45,7 +159,7 @@ where
 // conversion for assignment.
 impl<T, const N: usize> Container for [T; N]
 where
-    T: Clone,
+    T: Clone + 'static,
     for<'a, 'py> T: FromPyObject<'a, 'py>,
     for<'py> T: IntoPyObject<'py>,
 {
@@ -89,6 +203,60 @@ impl<T: Container> Container for Option<T> {
             None => Ok(py.None().into_bound(py)),
         }
     }
+    fn output_field<'py, V: NativeView<Self::Native> + 'static>(
+        py: Python<'py>,
+        field: V,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let mut present = false;
+        field.read(py, &mut |value| present = value.is_some())?;
+        if present {
+            T::output_field(
+                py,
+                OptionalField::<V, T::Native>(field, std::marker::PhantomData),
+            )
+        } else {
+            Ok(py.None().into_bound(py))
+        }
+    }
+}
+
+struct OptionalField<V, T>(V, std::marker::PhantomData<fn() -> T>);
+impl<V: NativeView<Option<T>>, T> NativeView<T> for OptionalField<V, T> {
+    fn traverse(&self, visit: pyo3::gc::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
+        self.0.traverse(visit)
+    }
+    fn read(&self, py: Python<'_>, visit: &mut dyn FnMut(&T)) -> PyResult<()> {
+        let mut present = false;
+        self.0.read(py, &mut |value| {
+            if let Some(value) = value {
+                present = true;
+                visit(value);
+            }
+        })?;
+        if present {
+            Ok(())
+        } else {
+            Err(pyo3::exceptions::PyReferenceError::new_err(
+                "configuration field is now None",
+            ))
+        }
+    }
+    fn write(&self, py: Python<'_>, visit: &mut dyn FnMut(&mut T)) -> PyResult<()> {
+        let mut present = false;
+        self.0.write(py, &mut |value| {
+            if let Some(value) = value {
+                present = true;
+                visit(value);
+            }
+        })?;
+        if present {
+            Ok(())
+        } else {
+            Err(pyo3::exceptions::PyReferenceError::new_err(
+                "configuration field is now None",
+            ))
+        }
+    }
 }
 
 pub(crate) struct ContainerOutput<'a, T: Container>(pub(crate) &'a T::Native);
@@ -104,7 +272,7 @@ impl<'py, T: Container> IntoPyObject<'py> for ContainerOutput<'_, T> {
 
 /// Projection of a pure native input value, never an executor or diagnostics.
 pub(crate) trait Configuration: pyo3::PyClass<BaseType = PyAny> {
-    type Native: Clone;
+    type Native: Clone + 'static;
     const INPUT: pyo3::inspect::PyStaticExpr = <Py<Self> as FromPyObject<'_, '_>>::INPUT_TYPE;
     fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
         let instance = value.extract::<Py<Self>>()?;
@@ -116,6 +284,28 @@ pub(crate) trait Configuration: pyo3::PyClass<BaseType = PyAny> {
 }
 
 pub(crate) struct ConfigurationField<T>(std::marker::PhantomData<T>);
+pub(crate) struct LiveConfigurationField<T>(std::marker::PhantomData<T>);
+impl<T: ConfigurationView> Container for LiveConfigurationField<T> {
+    type Native = T::Native;
+    const TYPE: pyo3::inspect::PyStaticExpr = <Py<T> as IntoPyObject<'_>>::OUTPUT_TYPE;
+    const INPUT: pyo3::inspect::PyStaticExpr = T::INPUT;
+    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+        T::extract(value)
+    }
+    fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
+        ConfigurationField::<T>::output(py, value)
+    }
+    fn output_field<'py, V: NativeView<Self::Native> + 'static>(
+        py: Python<'py>,
+        field: V,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        Ok(
+            Py::new(py, T::from_field(NativeField::View(Box::new(field))))?
+                .into_bound(py)
+                .into_any(),
+        )
+    }
+}
 impl<T: Configuration> Container for ConfigurationField<T> {
     type Native = T::Native;
     const TYPE: pyo3::inspect::PyStaticExpr = <Py<T> as IntoPyObject<'_>>::OUTPUT_TYPE;
@@ -218,28 +408,10 @@ where
     }
 }
 
-pub(crate) trait NativeScalar: Copy {
+pub(crate) trait NativeScalar: Copy + 'static {
     type Repr: Copy;
     fn from_scalar(index: Self::Repr) -> Self;
     fn scalar(self) -> Self::Repr;
-}
-impl NativeScalar for cosmolkit::AtomId {
-    type Repr = usize;
-    fn from_scalar(index: usize) -> Self {
-        Self::new(index)
-    }
-    fn scalar(self) -> usize {
-        self.index()
-    }
-}
-impl NativeScalar for cosmolkit::BondId {
-    type Repr = usize;
-    fn from_scalar(index: usize) -> Self {
-        Self::new(index)
-    }
-    fn scalar(self) -> usize {
-        self.index()
-    }
 }
 pub(crate) struct NativeScalarField<T>(std::marker::PhantomData<T>);
 impl<T: NativeScalar> Container for NativeScalarField<T>
@@ -270,7 +442,7 @@ where
 pub(crate) struct Scalar<T>(std::marker::PhantomData<T>);
 impl<T> Container for Scalar<T>
 where
-    T: Clone,
+    T: Clone + 'static,
     for<'a, 'py> T: FromPyObject<'a, 'py>,
     for<'py> T: IntoPyObject<'py>,
 {
@@ -362,7 +534,7 @@ where
 pub(crate) trait NativeEnum:
     crate::chemical_values::EnumValue + pyo3::PyClass<BaseType = PyAny> + Copy
 {
-    type Native: Copy;
+    type Native: Copy + 'static;
     const INPUT: pyo3::inspect::PyStaticExpr = pyo3::type_hint_union!(
         <Py<Self> as IntoPyObject<'_>>::OUTPUT_TYPE,
         pyo3::type_hint_identifier!("builtins", "str")
@@ -393,40 +565,3 @@ impl<T: NativeEnum> Container for EnumField<T> {
             .into_any())
     }
 }
-
-macro_rules! parameters {
-    ($name:ident, $module:ident::$rust:ident, {$($field:ident: $ty:ty),+ $(,)?}
-        $(, defaults = [$($unexposed:ident),+ $(,)?])?
-        $(, methods = {$($method:item)*})?) => {
-        #[pyo3::pyclass(module = "cosmolkit")]
-        pub struct $name { pub(crate) inner: $module::$rust }
-
-        impl $crate::parameters::Configuration for $name {
-            type Native = $module::$rust;
-            fn from_native(_py: pyo3::Python<'_>, inner: Self::Native) -> pyo3::PyResult<Self> { Ok(Self { inner }) }
-            fn to_native(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<Self::Native> { Ok(self.inner.clone()) }
-        }
-
-        paste::paste! {
-            #[pyo3::pymethods]
-            impl $name {
-                #[new]
-                #[pyo3(signature = (*, $($field=$module::$rust::default().$field),+))]
-                fn new($($field: $ty),+) -> Self {
-                    // The exhaustive literal rejects new domain fields at compile time.
-                    Self { inner: $module::$rust { $($field,)+
-                        $($($unexposed: $module::$rust::default().$unexposed,)+)?
-                    } }
-                }
-                $(
-                    #[getter]
-                    fn $field(&self) -> $ty { self.inner.$field.clone() }
-                    #[setter]
-                    fn [<set_ $field>](&mut self, value: $ty) { self.inner.$field = value; }
-                )+
-                $($($method)*)?
-            }
-        }
-    };
-}
-pub(crate) use parameters;

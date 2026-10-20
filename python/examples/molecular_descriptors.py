@@ -28,7 +28,7 @@ slogp_vsa = molecule.slogp_vsa()
 smr_vsa = molecule.smr_vsa()
 
 assert len(mqns) == 42
-assert len(atom_asa) == molecule.num_atoms()
+assert len(atom_asa) == molecule.num_atoms
 assert len(slogp_vsa) == 12
 assert len(smr_vsa) == 10
 

@@ -40,6 +40,29 @@ fn filter_valid_preserves_surviving_input_order() {
 }
 
 #[test]
+fn selection_preserves_records_and_execution_settings() {
+    let batch = kept(&["C".into(), "C1".into(), "O".into()])
+        .with_parallel_jobs(Some(2))
+        .unwrap()
+        .with_progress_bar(Some(true));
+    let selected = batch.select(&[2, 1, 0, 1]).unwrap();
+    assert_eq!(selected.valid_mask(), [true, false, true, false]);
+    assert_eq!(selected.error_mode(), batch.error_mode());
+    assert_eq!(selected.parallel_jobs(), Some(2));
+    assert_eq!(selected.progress_bar(), Some(true));
+    for error in selected.errors() {
+        assert_eq!(error.index, batch.errors()[0].index);
+        assert_eq!(error.message, batch.errors()[0].message);
+    }
+    let values = selected.to_list();
+    assert_eq!(values[0].as_ref().unwrap().to_smiles().unwrap(), "O".into());
+    assert_eq!(values[2].as_ref().unwrap().to_smiles().unwrap(), "C".into());
+    assert!(batch.select(&[]).unwrap().is_empty());
+    assert!(batch.select(&[0, 3]).is_none());
+    assert_eq!(batch.len(), 3);
+}
+
+#[test]
 #[cfg(feature = "cap-hydrogens")]
 fn error_policy_inherits_through_transforms_and_overrides_only_the_returned_chain() {
     let batch = kept(&["CCO".into(), "C1CC".into(), "O".into()]);

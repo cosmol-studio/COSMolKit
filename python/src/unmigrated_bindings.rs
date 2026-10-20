@@ -4197,7 +4197,7 @@ Return ordered explicit-bit AtomPair fingerprints for valid batch records.
 
 Invalid input records remain ``None`` at their original positions.
 "#]
-    fn fingerprint_atom_pair_list(
+    fn fingerprint_atom_pair(
         &self,
         n_bits: usize,
         min_distance: u32,
@@ -4261,7 +4261,7 @@ Invalid input records remain ``None`` at their original positions.
         n_jobs=None,
         progress_bar=None
     ))]
-    fn fingerprint_atom_pair_sparse_count_list(
+    fn fingerprint_atom_pair_sparse_count(
         &self,
         n_bits: usize,
         min_distance: u32,
@@ -4325,7 +4325,7 @@ Invalid input records remain ``None`` at their original positions.
         n_jobs=None,
         progress_bar=None
     ))]
-    fn fingerprint_atom_pair_count_list(
+    fn fingerprint_atom_pair_count(
         &self,
         n_bits: usize,
         min_distance: u32,
@@ -4389,7 +4389,7 @@ Invalid input records remain ``None`` at their original positions.
         n_jobs=None,
         progress_bar=None
     ))]
-    fn fingerprint_atom_pair_sparse_bits_list(
+    fn fingerprint_atom_pair_sparse(
         &self,
         n_bits: usize,
         min_distance: u32,
@@ -4453,7 +4453,7 @@ Invalid input records remain ``None`` at their original positions.
         n_jobs=None,
         progress_bar=None
     ))]
-    fn fingerprint_atom_pair_with_output_list(
+    fn fingerprint_atom_pair_with_output(
         &self,
         n_bits: usize,
         min_distance: u32,
@@ -4486,7 +4486,7 @@ Invalid input records remain ``None`` at their original positions.
             true,
         );
         self.inner
-            .atom_pair_fingerprint_with_output_list_with_options(
+            .atom_pair_fingerprint_with_output_with_options(
                 &params,
                 validate_n_jobs(n_jobs)?,
                 progress_bar,
@@ -4542,7 +4542,7 @@ rooted_at_atom : int, optional
 n_jobs : int, optional
     Number of worker threads to use.
 "#]
-    fn to_smiles_list(
+    fn to_smiles(
         &self,
         isomeric_smiles: bool,
         canonical: bool,
@@ -4581,7 +4581,7 @@ n_jobs : int, optional
 Return distance-geometry bounds matrices for all valid records.
 "#]
     #[gen_stub(override_return_type(type_repr = "builtins.list[typing.Optional[numpy.ndarray[typing.Any, typing.Any]]]", imports = ("builtins", "typing", "numpy")))]
-    fn dg_bounds_matrix_list<'py>(
+    fn dg_bounds_matrix<'py>(
         &self,
         py: Python<'py>,
         n_jobs: Option<usize>,
@@ -4589,14 +4589,14 @@ Return distance-geometry bounds matrices for all valid records.
     ) -> PyResult<Bound<'py, PyList>> {
         let values = self
             .inner
-            .dg_bounds_matrix_list_with_options(validate_n_jobs(n_jobs)?, progress_bar)
+            .dg_bounds_matrix_with_options(validate_n_jobs(n_jobs)?, progress_bar)
             .map_err(batch_validation_pyerr)?;
         let out = PyList::empty(py);
         for value in values {
             if let Some(matrix) = value {
                 out.append(PyArray2::from_vec2(py, &matrix).map_err(|err| {
                     PyValueError::new_err(format!(
-                        "MoleculeBatch.dg_bounds_matrix_list failed: {err}"
+                        "MoleculeBatch.dg_bounds_matrix failed: {err}"
                     ))
                 })?)?;
             } else {
@@ -4625,7 +4625,7 @@ Return ordered Layered fingerprints for valid batch records.
 Invalid input records remain ``None`` at their original positions. All
 fingerprints delegate to the same Rust scalar core.
 "#]
-    fn fingerprint_layered_list(
+    fn fingerprint_layered(
         &self,
         layers: u32,
         min_path: u32,
@@ -4677,7 +4677,7 @@ Return ordered Layered fingerprints and optional updated atom counts.
 
 Invalid input records remain ``None`` at their original positions.
 "#]
-    fn fingerprint_layered_with_output_list(
+    fn fingerprint_layered_with_output(
         &self,
         layers: u32,
         min_path: u32,
@@ -4701,7 +4701,7 @@ Invalid input records remain ``None`` at their original positions.
             from_atoms,
         );
         self.inner
-            .layered_fingerprint_with_output_list_with_options(
+            .layered_fingerprint_with_output_with_options(
                 &params,
                 validate_n_jobs(n_jobs)?,
                 progress_bar,
@@ -4743,7 +4743,7 @@ Return Morgan fingerprints for valid batch records.
 
 Invalid records are returned as ``None`` in their original positions.
 "#]
-    fn fingerprint_morgan_list(
+    fn fingerprint_morgan(
         &self,
         radius: u32,
         n_bits: usize,
@@ -4826,7 +4826,7 @@ Return Morgan fingerprints and additional output for valid batch records.
 
 Invalid records are returned as ``None`` in their original positions.
 "#]
-    fn fingerprint_morgan_with_output_list(
+    fn fingerprint_morgan_with_output(
         &self,
         radius: u32,
         n_bits: usize,
@@ -4871,7 +4871,7 @@ Invalid records are returned as ``None`` in their original positions.
             true,
         )?;
         self.inner
-            .morgan_fingerprint_with_output_list_with_options(
+            .morgan_fingerprint_with_output_with_options(
                 &params,
                 validate_n_jobs(n_jobs)?,
                 progress_bar,
@@ -4889,7 +4889,7 @@ Invalid records are returned as ``None`` in their original positions.
     #[doc = r#"
 Render each valid molecule to an SVG string.
 "#]
-    fn to_svg_list(
+    fn to_svg(
         &self,
         width: u32,
         height: u32,
@@ -4897,7 +4897,7 @@ Render each valid molecule to an SVG string.
         progress_bar: Option<bool>,
     ) -> PyResult<Vec<Option<String>>> {
         self.inner
-            .to_svg_list_with_options(width, height, validate_n_jobs(n_jobs)?, progress_bar)
+            .to_svg_with_options(width, height, validate_n_jobs(n_jobs)?, progress_bar)
             .map_err(batch_validation_pyerr)
     }
 

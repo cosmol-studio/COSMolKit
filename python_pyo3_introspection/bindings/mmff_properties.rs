@@ -13,14 +13,12 @@ use std::error::Error;
 
 enum_value!(MmffParamTable, { Def, Prop, Pbci, Chg, Bond, Bndk, Stbn, Dfsb, Angle, Oop, Tor, Vdw, HerschbachLaurie, CovRadPauEle });
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum MmffParamParseCauseKind {
+crate::enums::binding_enum!(MmffParamParseCauseKind, {
     InvalidUnsigned,
     InvalidFloat,
     MissingToken,
     EmptyProcessedLine,
-}
+});
 #[pyclass(module = "cosmolkit", frozen)]
 #[doc = r#"{"role":"error_value"}"#]
 pub struct MmffParamParseCause {
@@ -193,18 +191,23 @@ error_projection!(MmffMolPropertiesError,MmffMolPropertiesErrorKind,ck::MmffMolP
     }}
 });
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct MmffProperties {
-    pub(crate) inner: ck::MmffProperties,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct MmffProperties {
+        pub(crate) inner: ck::MmffProperties,
+    }
 }
 #[pymethods]
 impl MmffProperties {
+    #[getter]
     fn is_valid(&self) -> bool {
         self.inner.is_valid()
     }
+    #[getter]
     fn variant(&self) -> MmffVariant {
         self.inner.variant().into()
     }
+    #[getter]
     fn atoms(&self) -> Vec<MmffAtomProperties> {
         self.inner
             .atoms()
@@ -264,15 +267,15 @@ mod tests {
                 let params = Py::new(
                     py,
                     MmffPropertiesParams {
-                        inner: ck::MmffPropertiesParams {
+                        inner: crate::parameters::NativeField::Owned(ck::MmffPropertiesParams {
                             mmff_variant: variant.into(),
-                        },
+                        }),
                     },
                 )?;
                 let expected = molecule
                     .borrow(py)
                     .inner
-                    .mmff_properties_with_params(&params.borrow(py).inner)
+                    .mmff_properties_with_params(&params.borrow(py).to_rust(py)?)
                     .unwrap();
                 let keywords = PyDict::new(py);
                 keywords.set_item("mmff_variant", variant)?;

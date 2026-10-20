@@ -39,23 +39,23 @@ def _rdkit_mol_or_skip(smiles):
 def _topology_signature(mol):
     atoms = [
         (
-            atom.id(),
-            atom.atomic_number(),
+            atom.id,
+            atom.atomic_number,
             atom.formal_charge(),
-            atom.chiral_tag(),
-            atom.isotope(),
-            atom.atom_map(),
+            atom.chiral_tag,
+            atom.isotope,
+            atom.atom_map,
         )
-        for atom in mol.atoms()
+        for atom in mol.atoms
     ]
     bonds = [
         (
-            bond.id(),
-            min(bond.begin(), bond.end()),
-            max(bond.begin(), bond.end()),
-            bond.order(),
+            bond.id,
+            min(bond.begin, bond.end),
+            max(bond.begin, bond.end),
+            bond.order,
         )
-        for bond in mol.bonds()
+        for bond in mol.bonds
     ]
     return atoms, sorted(bonds)
 
@@ -63,37 +63,37 @@ def _topology_signature(mol):
 def _feature_signature(mol):
     atoms = [
         (
-            atom.id(),
-            atom.atomic_number(),
+            atom.id,
+            atom.atomic_number,
             atom.formal_charge(),
-            atom.chiral_tag(),
-            atom.isotope(),
-            atom.atom_map(),
-            atom.is_aromatic(),
-            atom.explicit_hydrogens(),
-            atom.no_implicit(),
-            atom.radical_electrons(),
-            atom.hybridization(),
+            atom.chiral_tag,
+            atom.isotope,
+            atom.atom_map,
+            atom.is_aromatic,
+            atom.explicit_hydrogens,
+            atom.no_implicit,
+            atom.radical_electrons,
+            atom.hybridization,
             atom.degree(),
-            atom.explicit_valence(),
-            atom.implicit_hydrogens(),
-            atom.total_hydrogens(),
-            atom.total_valence(),
+            atom.explicit_valence,
+            atom.implicit_hydrogens,
+            atom.total_hydrogens,
+            atom.total_valence,
         )
-        for atom in mol.atoms()
+        for atom in mol.atoms
     ]
     bonds = [
         (
-            bond.id(),
-            min(bond.begin(), bond.end()),
-            max(bond.begin(), bond.end()),
-            bond.order(),
-            bond.direction(),
-            bond.stereo(),
-            tuple(bond.stereo_atoms() or ()),
-            bond.is_aromatic(),
+            bond.id,
+            min(bond.begin, bond.end),
+            max(bond.begin, bond.end),
+            bond.order,
+            bond.direction,
+            bond.stereo,
+            tuple(bond.stereo_atoms or ()),
+            bond.is_aromatic,
         )
-        for bond in mol.bonds()
+        for bond in mol.bonds
     ]
     return atoms, sorted(bonds)
 
@@ -148,15 +148,15 @@ def test_from_rdkit_copies_basic_graph_features(smiles):
 
 def test_atom_and_bond_feature_enums_are_intenum_values():
     mol = cosmolkit.Molecule.from_smiles("C=C")
-    atom = mol.atoms()[0]
-    bond = mol.bonds()[0]
+    atom = mol.atoms[0]
+    bond = mol.bonds[0]
 
-    assert atom.chiral_tag() == cosmolkit.ChiralTag.CHI_UNSPECIFIED
-    assert atom.chiral_tag_code() == int(cosmolkit.ChiralTag.CHI_UNSPECIFIED)
-    assert bond.order() == cosmolkit.BondOrder.DOUBLE
-    assert bond.order_code() == int(cosmolkit.BondOrder.DOUBLE)
-    assert bond.direction() == cosmolkit.BondDirection.NONE
-    assert bond.stereo() == cosmolkit.BondStereo.STEREONONE
+    assert atom.chiral_tag == cosmolkit.ChiralTag.CHI_UNSPECIFIED
+    assert atom.chiral_tag_code == int(cosmolkit.ChiralTag.CHI_UNSPECIFIED)
+    assert bond.order == cosmolkit.BondOrder.DOUBLE
+    assert bond.order_code == int(cosmolkit.BondOrder.DOUBLE)
+    assert bond.direction == cosmolkit.BondDirection.NONE
+    assert bond.stereo == cosmolkit.BondStereo.STEREONONE
     assert cosmolkit.BondOrder.DOUBLE == int(Chem.BondType.DOUBLE)
     assert not hasattr(bond, "bond_type")
 
@@ -208,7 +208,7 @@ def test_from_rdkit_copies_3d_conformers():
 
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
-    assert bridged.num_3d_conformers() == 1
+    assert bridged.num_3d_conformers == 1
     assert np.allclose(bridged.coordinates_3d(0), coords)
     assert np.array_equal(np.asarray(bridged.coordinates_3d(0)).view(np.uint64), coords.view(np.uint64))
 
@@ -224,10 +224,10 @@ def test_from_rdkit_defaults_to_prepared_graph_for_3d_atom_pair_fingerprint():
     default = cosmolkit.Molecule.from_rdkit(rd_mol)
     explicit = cosmolkit.Molecule.from_rdkit(rd_mol, sanitize=True)
 
-    assert default.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairGeneratorParams(use_2d=False)), None).on_bits() == [1432]
+    assert default.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(use_2d=False), None).on_bits == [1432]
     assert (
-        default.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairGeneratorParams(use_2d=False)), None).on_bits()
-        == explicit.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairGeneratorParams(use_2d=False)), None).on_bits()
+        default.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(use_2d=False), None).on_bits
+        == explicit.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(use_2d=False), None).on_bits
     )
 
 
@@ -248,7 +248,7 @@ def test_from_rdkit_sanitize_false_preserves_unprepared_graph_state():
     assert error.value.kind == "ExplicitValenceCacheNotInitialized"
     assert error.value.atom == 0
     with pytest.raises(cosmolkit.AtomPairReadError, match="Fingerprint preparation requires a valid prepared valence assignment"):
-        raw.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairGeneratorParams(use_2d=False)), None)
+        raw.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(use_2d=False), None)
 
 
 def test_from_rdkit_copies_multiple_3d_conformers_and_skips_2d():
@@ -262,7 +262,7 @@ def test_from_rdkit_copies_multiple_3d_conformers_and_skips_2d():
 
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
-    assert bridged.num_3d_conformers() == 2
+    assert bridged.num_3d_conformers == 2
     assert np.allclose(bridged.coordinates_3d(0), coordinates_3d_a)
     assert np.allclose(bridged.coordinates_3d(1), coordinates_3d_b)
 
@@ -273,7 +273,7 @@ def test_from_rdkit_does_not_copy_2d_conformer():
 
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
 
-    assert bridged.num_3d_conformers() == 0
+    assert bridged.num_3d_conformers == 0
     with pytest.raises(ValueError, match="no 3D conformer"):
         bridged.coordinates_3d(0)
 
@@ -294,7 +294,7 @@ def test_from_rdkit_preserves_source_and_returns_independent_storage(sanitize):
     assert np.array_equal(np.asarray(imported.coordinates_3d(0)).view(np.uint64), positions.view(np.uint64))
     source.GetAtomWithIdx(0).SetIsotope(12)
     source.GetConformer().SetAtomPosition(0, Point3D(100., 200., 300.))
-    assert imported.atoms()[0].isotope() == 13
+    assert imported.atoms[0].isotope == 13
     assert np.array_equal(np.asarray(imported.coordinates_3d(0)).view(np.uint64), positions.view(np.uint64))
 
 
@@ -308,8 +308,8 @@ def test_from_rdkit_default_prepares_valence_without_sanitizing():
     assert _feature_signature(prepared) == _rdkit_signature(reference)
     Chem.SanitizeMol(reference)
     assert _feature_signature(sanitized) == _rdkit_signature(reference)
-    assert prepared.atoms()[0].hybridization() == cosmolkit.Hybridization.UNSPECIFIED
-    assert sanitized.atoms()[0].hybridization() == cosmolkit.Hybridization.SP3
+    assert prepared.atoms[0].hybridization == cosmolkit.Hybridization.UNSPECIFIED
+    assert sanitized.atoms[0].hybridization == cosmolkit.Hybridization.SP3
     assert source.ToBinary() == before
 
 

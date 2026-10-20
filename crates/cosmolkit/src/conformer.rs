@@ -94,6 +94,104 @@ pub struct EmbedMultipleConfsResult {
     pub requested_num_confs: u32,
     pub params: EmbedParams,
 }
+
+/// Invalid access to embedding diagnostics; not an embedding failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EmbedFailureCountError {
+    InvalidCause,
+    MissingCounter { index: usize, available: usize },
+}
+impl fmt::Display for EmbedFailureCountError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidCause => f.write_str("EndOfEnum is not an embedding failure cause"),
+            Self::MissingCounter { index, available } => write!(
+                f,
+                "embedding failure counter {index} is absent (available: {available})"
+            ),
+        }
+    }
+}
+impl std::error::Error for EmbedFailureCountError {}
+
+fn failure_count(
+    params: &EmbedParams,
+    cause: EmbedFailureCause,
+) -> Result<Option<u32>, EmbedFailureCountError> {
+    if cause == EmbedFailureCause::EndOfEnum {
+        return Err(EmbedFailureCountError::InvalidCause);
+    }
+    if !params.track_failures {
+        return Ok(None);
+    }
+    let index = cause.rdkit_ordinal() as usize;
+    params
+        .failures
+        .get(index)
+        .copied()
+        .map(Some)
+        .ok_or(EmbedFailureCountError::MissingCounter {
+            index,
+            available: params.failures.len(),
+        })
+}
+
+#[cfg(test)]
+mod failure_diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn direct_result_diagnostics_distinguish_untracked_zero_and_invalid_access() {
+        let mut params = EmbedParams::etkdg_v3();
+        params.failures = vec![0; EmbedFailureCause::EndOfEnum as usize];
+        params.failures[EmbedFailureCause::InitialCoords as usize] = 3;
+        let mut result = EmbedMultipleConfsResult {
+            molecule: Molecule::default(),
+            conf_ids: vec![],
+            requested_num_confs: 8,
+            params,
+        };
+        assert!(!result.failures_tracked());
+        assert_eq!(result.failure_counts(), None);
+        assert_eq!(
+            result.failure_count(EmbedFailureCause::InitialCoords),
+            Ok(None)
+        );
+        assert_eq!(
+            result.failure_count(EmbedFailureCause::EndOfEnum),
+            Err(EmbedFailureCountError::InvalidCause)
+        );
+        result.params.track_failures = true;
+        assert!(std::ptr::eq(
+            result.failure_counts().unwrap().as_ptr(),
+            result.params.failures.as_ptr()
+        ));
+        assert_eq!(
+            result.failure_count(EmbedFailureCause::InitialCoords),
+            Ok(Some(3))
+        );
+        assert_eq!(result.failure_count(EmbedFailureCause::Clash), Ok(Some(0)));
+        let single = EmbedMoleculeResult {
+            molecule: result.molecule.clone(),
+            conf_id: -1,
+            params: result.params.clone(),
+        };
+        assert!(single.failures_tracked());
+        assert_eq!(single.failure_counts(), result.failure_counts());
+        assert_eq!(
+            single.failure_count(EmbedFailureCause::InitialCoords),
+            Ok(Some(3))
+        );
+        result.params.failures.clear();
+        assert_eq!(
+            result.failure_count(EmbedFailureCause::Clash),
+            Err(EmbedFailureCountError::MissingCounter {
+                index: 14,
+                available: 0
+            })
+        );
+    }
+}
 impl From<(Molecule, EmbedConformerReport)> for EmbedMoleculeResult {
     fn from((molecule, report): (Molecule, EmbedConformerReport)) -> Self {
         // RDKit❗✔️: inline int EmbedMolecule(ROMol &mol, EmbedParameters &params) {
@@ -127,6 +225,22 @@ impl From<(Molecule, EmbedConformerReport)> for EmbedMultipleConfsResult {
     }
 }
 impl EmbedMoleculeResult {
+    /// Whether failure events were collected for this invocation.
+    pub fn failures_tracked(&self) -> bool {
+        self.params.track_failures
+    }
+    /// Counts in EmbedFailureCause order, or None when tracking was disabled.
+    /// These count intermediate failure events, not unsuccessful conformers.
+    pub fn failure_counts(&self) -> Option<&[u32]> {
+        self.failures_tracked()
+            .then_some(self.params.failures.as_slice())
+    }
+    pub fn failure_count(
+        &self,
+        cause: EmbedFailureCause,
+    ) -> Result<Option<u32>, EmbedFailureCountError> {
+        failure_count(&self.params, cause)
+    }
     pub fn molecule(&self) -> &Molecule {
         &self.molecule
     }
@@ -149,6 +263,22 @@ impl fmt::Debug for EmbedMoleculeResult {
     }
 }
 impl EmbedMultipleConfsResult {
+    /// Whether failure events were collected for this invocation.
+    pub fn failures_tracked(&self) -> bool {
+        self.params.track_failures
+    }
+    /// Counts in EmbedFailureCause order, or None when tracking was disabled.
+    /// These count intermediate failure events, not unsuccessful conformers.
+    pub fn failure_counts(&self) -> Option<&[u32]> {
+        self.failures_tracked()
+            .then_some(self.params.failures.as_slice())
+    }
+    pub fn failure_count(
+        &self,
+        cause: EmbedFailureCause,
+    ) -> Result<Option<u32>, EmbedFailureCountError> {
+        failure_count(&self.params, cause)
+    }
     pub fn molecule(&self) -> &Molecule {
         &self.molecule
     }

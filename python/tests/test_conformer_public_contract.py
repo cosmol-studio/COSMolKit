@@ -32,79 +32,79 @@ def test_manual_coordinate_forms_ids_flags_and_atomic_errors():
     source = water()
     coords = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
     appended = source.with_added_3d_conformer(coords)
-    assert source.num_3d_conformers() == 0
-    assert appended.num_3d_conformers() == 1
-    assert appended.conformers_3d()[0].id() == 0
+    assert source.num_3d_conformers == 0
+    assert appended.num_3d_conformers == 1
+    assert appended.conformers_3d[0].id == 0
     assert source.add_3d_conformer_(coords) == 0
     assert source.add_3d_conformer_with_params_(coords, flags(False)) == 1
-    assert not source.conformers_3d()[1].is_3d()
+    assert not source.conformers_3d[1].is_3d
     changed = [[2.0, 3.0, 4.0]] * 3
     value = source.with_3d_coordinates_with_params(changed, replacement(1))
-    np.testing.assert_array_equal(source.conformers_3d()[1].coordinates(), coords)
-    np.testing.assert_array_equal(value.conformers_3d()[1].coordinates(), changed)
-    assert not value.conformers_3d()[1].is_3d()
+    np.testing.assert_array_equal(source.conformers_3d[1].coordinates, coords)
+    np.testing.assert_array_equal(value.conformers_3d[1].coordinates, changed)
+    assert not value.conformers_3d[1].is_3d
     source.set_3d_coordinates_with_params_(changed, replacement(1))
-    snapshot = [(c.id(), c.coordinates().tolist(), c.is_3d()) for c in source.conformers_3d()]
+    snapshot = [(c.id, c.coordinates.tolist(), c.is_3d) for c in source.conformers_3d]
     for coords, identifier in [([[0.0, 0.0, 0.0]], 1), ([[math.nan, 0.0, 0.0]] * 3, 1), ([[0.0, 0.0, 0.0]] * 3, 99)]:
         with pytest.raises(ValueError):
             source.set_3d_coordinates_with_params_(coords, replacement(identifier))
-        assert [(c.id(), c.coordinates().tolist(), c.is_3d()) for c in source.conformers_3d()] == snapshot
+        assert [(c.id, c.coordinates.tolist(), c.is_3d) for c in source.conformers_3d] == snapshot
     only = source.with_only_3d_conformer(changed)
-    assert [c.id() for c in only.conformers_3d()] == [0]
-    assert source.num_3d_conformers() == 2
+    assert [c.id for c in only.conformers_3d] == [0]
+    assert source.num_3d_conformers == 2
     assert source.set_only_3d_conformer_(changed) == 0
-    assert source.num_3d_conformers() == 1
+    assert source.num_3d_conformers == 1
     cleared = source.with_cleared_3d_conformers()
-    assert cleared.num_3d_conformers() == 0
-    assert source.num_3d_conformers() == 1
+    assert cleared.num_3d_conformers == 0
+    assert source.num_3d_conformers == 1
     source.clear_3d_conformers_()
-    assert source.num_3d_conformers() == 0
+    assert source.num_3d_conformers == 0
 
 
 def test_results_snapshots_all_generation_forms_and_atomic_typed_error():
     original = water()
     params = seeded()
     result = original.with_3d_conformer_result(params)
-    assert result.ok() and result.conf_id() == 0
-    assert result.molecule().num_3d_conformers() == 1
-    assert original.num_3d_conformers() == 0
-    assert result.params().random_seed == 42
+    assert result.ok and result.conf_id == 0
+    assert result.molecule.num_3d_conformers == 1
+    assert original.num_3d_conformers == 0
+    assert result.params.random_seed == 42
     assert params.failures == []
     # RDKit 2026.03.6 Embedder.h: EmbedFailureCauses::END_OF_ENUM.
-    assert len(result.params().failures) == 15
-    snapshot = result.params().to_json()
+    assert len(result.params.failures) == 15
+    snapshot = result.params.to_json()
     params = configured(params, random_seed=123)
-    assert result.params().to_json() == snapshot
+    assert result.params.to_json() == snapshot
     params = seeded()
     inplace = water()
     committed = inplace.embed_3d_conformer_result_(params)
-    assert committed.conf_id() == 0 and committed.molecule().num_3d_conformers() == 1
-    np.testing.assert_array_equal(inplace.conformers_3d()[0].coordinates(), result.molecule().conformers_3d()[0].coordinates())
+    assert committed.conf_id == 0 and committed.molecule.num_3d_conformers == 1
+    np.testing.assert_array_equal(inplace.conformers_3d[0].coordinates, result.molecule.conformers_3d[0].coordinates)
     params = configured(params, clear_conformers=False)
     multiple = inplace.with_3d_conformers_result(3, params)
-    assert multiple.conf_ids() == [1, 2, 3]
-    assert multiple.requested_num_confs() == 3 and multiple.generated_count() == 3
-    assert multiple.molecule().num_3d_conformers() == 4
+    assert multiple.conf_ids == [1, 2, 3]
+    assert multiple.requested_num_confs == 3 and multiple.generated_count == 3
+    assert multiple.molecule.num_3d_conformers == 4
     committed = inplace.embed_3d_conformers_result_(3, params)
-    assert committed.conf_ids() == [1, 2, 3]
-    assert inplace.num_3d_conformers() == 4
+    assert committed.conf_ids == [1, 2, 3]
+    assert inplace.num_3d_conformers == 4
     assert params.failures == []
-    assert len(committed.params().failures) == 15
-    before = [c.coordinates() for c in inplace.conformers_3d()]
+    assert len(committed.params.failures) == 15
+    before = [c.coordinates for c in inplace.conformers_3d]
     params = configured(params, et_version=99)
     with pytest.raises(ValueError, match="Only version 1 and 2"):
         inplace.embed_3d_conformer_result_(params)
-    np.testing.assert_array_equal([c.coordinates() for c in inplace.conformers_3d()], before)
+    np.testing.assert_array_equal([c.coordinates for c in inplace.conformers_3d], before)
     for value, inplace_name, count in [("with_3d_conformer", "embed_3d_conformer_", 1), ("with_3d_conformers", "embed_3d_conformers_", 2)]:
         arguments = [] if count == 1 else [count]
-        assert getattr(original, value)(*arguments).num_3d_conformers() == count
+        assert getattr(original, value)(*arguments).num_3d_conformers == count
         actual = water()
         assert getattr(actual, inplace_name)(*arguments) is None
-        assert actual.num_3d_conformers() == count
+        assert actual.num_3d_conformers == count
         params = seeded()
-        assert getattr(original, value)(*arguments, params=params).num_3d_conformers() == count
+        assert getattr(original, value)(*arguments, params=params).num_3d_conformers == count
         assert getattr(actual, inplace_name)(*arguments, params=params) is None
-        assert actual.num_3d_conformers() == count
+        assert actual.num_3d_conformers == count
 
 
 @pytest.mark.parametrize("factory,source", [("etkdg", "ETKDG"), ("etkdg_v2", "ETKDGv2"), ("etkdg_v3", "ETKDGv3"), ("sr_etkdg_v3", "srETKDGv3")])
@@ -152,7 +152,7 @@ def test_bounds_array_is_numeric_readonly_query():
     assert isinstance(actual, np.ndarray) and actual.shape == (3, 3)
     assert actual.dtype == np.dtype("float64")
     assert np.isfinite(actual).all() and np.diag(actual).tolist() == [0.0, 0.0, 0.0]
-    assert source.num_3d_conformers() == 0
+    assert source.num_3d_conformers == 0
 
 
 def configured(params, **changes):

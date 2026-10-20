@@ -23,7 +23,7 @@ def call(value: object) -> Callable[..., object]:
 
 
 def state(mol: ck.Molecule) -> tuple[str, int, int, np.ndarray | None]:
-    return mol.to_smiles(), mol.num_atoms(), mol.num_bonds(), mol.coordinates_2d()
+    return mol.to_smiles(), mol.num_atoms, mol.num_bonds, mol.coordinates_2d
 
 
 def test_real_default_module_and_one_class():
@@ -93,7 +93,7 @@ def test_replacements_are_copied_and_forwarded():
 def test_hydrogen_option_forwarding(remove_hs: bool, expected_atoms: int):
     mol = ck.Molecule.from_smiles_with_params("[H]C([H])([H])[H]",
         ck.SmilesParseParams(remove_hs=remove_hs))
-    assert mol.num_atoms() == expected_atoms
+    assert mol.num_atoms == expected_atoms
 
 
 @pytest.mark.parametrize("family,error_type,label", [
@@ -185,7 +185,7 @@ def test_four_morgan_results_and_owned_containers(method: str, result_type: type
     assert returned == values
     assert str(result).startswith(result_type.__name__ + "(")
     if is_bits:
-        assert len(cast(ck.Fingerprint, result)) == width
+        assert cast(ck.Fingerprint, result).n_bits == width
         cast(list[int], returned).clear()
     else:
         cast(dict[int, int], returned).clear()
@@ -204,9 +204,9 @@ def test_count_widths_values_errors_and_copies(factory: object, bits: int):
     result = cast(ck.SparseCountFingerprint, call(cast(object, getattr(factory, "new")))((1 << bits)-1))
     result.set_value((1 << bits)-1, -7)
     assert result.value((1 << bits)-1) == -7
-    assert result.nonzero_elements() == {(1 << bits)-1: -7}
+    assert result.nonzero_elements == {(1 << bits)-1: -7}
     result.set_value((1 << bits)-1, 0)
-    assert result.nonzero_elements() == {}
+    assert result.nonzero_elements == {}
     for invalid in [-1, (1 << bits)]:
         with pytest.raises(OverflowError):
             _ = call(result.set_value)(invalid, 1)
@@ -227,23 +227,23 @@ def test_complete_count_arithmetic_delegates_and_preserves_inputs(factory: objec
     b = cast(ck.SparseCountFingerprint, call(cast(object, getattr(factory, "new")))(10))
     a.set_value(1, 5); a.set_value(3, -2); a.set_value(8, 4)
     b.set_value(1, 3); b.set_value(3, -4); b.set_value(9, 7)
-    before = a.nonzero_elements(), b.nonzero_elements()
-    assert a.fuzzy_and(b).nonzero_elements() == {1: 3, 3: -4}
-    assert a.fuzzy_or(b).nonzero_elements() == {1: 5, 3: -2, 8: 4, 9: 7}
-    assert a.with_added(b).nonzero_elements() == {1: 8, 3: -6, 8: 4, 9: 7}
-    assert a.with_subtracted(b).nonzero_elements() == {1: 2, 3: 2, 8: 4, 9: -7}
-    assert a.with_added_scalar(2).nonzero_elements() == {1: 7, 3: 0, 8: 6}
-    assert a.with_subtracted_scalar(2).nonzero_elements() == {1: 3, 3: -4, 8: 2}
-    assert a.with_multiplied_scalar(2).nonzero_elements() == {1: 10, 3: -4, 8: 8}
-    assert a.with_divided_scalar(2).nonzero_elements() == {1: 2, 3: -1, 8: 2}
+    before = a.nonzero_elements, b.nonzero_elements
+    assert a.fuzzy_and(b).nonzero_elements == {1: 3, 3: -4}
+    assert a.fuzzy_or(b).nonzero_elements == {1: 5, 3: -2, 8: 4, 9: 7}
+    assert a.with_added(b).nonzero_elements == {1: 8, 3: -6, 8: 4, 9: 7}
+    assert a.with_subtracted(b).nonzero_elements == {1: 2, 3: 2, 8: 4, 9: -7}
+    assert a.with_added_scalar(2).nonzero_elements == {1: 7, 3: 0, 8: 6}
+    assert a.with_subtracted_scalar(2).nonzero_elements == {1: 3, 3: -4, 8: 2}
+    assert a.with_multiplied_scalar(2).nonzero_elements == {1: 10, 3: -4, 8: 8}
+    assert a.with_divided_scalar(2).nonzero_elements == {1: 2, 3: -1, 8: 2}
     assert a.total_value() == 7 and a.total_value(use_abs=True) == 11
     with pytest.raises(ck.FingerprintError) as caught:
         _ = a.with_divided_scalar(0)
     assert caught.value.kind == "UndefinedArithmetic"
     assert caught.value.site == "SparseIntVect::operator/=(int)"
-    assert a.nonzero_elements() == before[0] and b.nonzero_elements() == before[1]
+    assert a.nonzero_elements == before[0] and b.nonzero_elements == before[1]
     empty = cast(ck.SparseCountFingerprint, call(cast(object, getattr(factory, "new")))(10))
-    assert empty.with_divided_scalar(0).nonzero_elements() == {}
+    assert empty.with_divided_scalar(0).nonzero_elements == {}
     mismatch = cast(ck.SparseCountFingerprint, call(cast(object, getattr(factory, "new")))(11))
     for method in [a.fuzzy_and, a.fuzzy_or, a.with_added, a.with_subtracted]:
         with pytest.raises(ck.FingerprintError) as caught:

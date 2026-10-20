@@ -43,10 +43,12 @@ enum_input!(BioCalcFlagInput, BioCalcFlag);
 enum_input!(EntityKindInput, EntityKind);
 enum_input!(PolymerKindInput, PolymerKind);
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct BioSiftsUnpResidue {
-    pub(crate) inner: ck::BioSiftsUnpResidue,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct BioSiftsUnpResidue {
+        pub(crate) inner: ck::BioSiftsUnpResidue,
+    }
 }
 #[pymethods]
 impl BioSiftsUnpResidue {
@@ -57,21 +59,26 @@ impl BioSiftsUnpResidue {
             inner: ck::BioSiftsUnpResidue::new(residue, accession_index, number),
         }
     }
+    #[getter]
     fn residue(&self) -> Option<u8> {
         self.inner.residue()
     }
+    #[getter]
     fn accession_index(&self) -> u8 {
         self.inner.accession_index()
     }
+    #[getter]
     fn number(&self) -> u16 {
         self.inner.number()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioEntityDbRef {
-    pub(crate) inner: ck::BioEntityDbRef,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioEntityDbRef {
+        pub(crate) inner: ck::BioEntityDbRef,
+    }
 }
 #[pymethods]
 impl BioEntityDbRef {
@@ -162,10 +169,12 @@ impl BioEntityDbRef {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioEntityRow {
-    pub(crate) inner: ck::BioEntityRow,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioEntityRow {
+        pub(crate) inner: ck::BioEntityRow,
+    }
 }
 #[pymethods]
 impl BioEntityRow {
@@ -197,18 +206,23 @@ impl BioEntityRow {
     fn first_mon(mon_list: &str) -> &str {
         ck::BioEntityRow::first_mon(mon_list)
     }
+    #[getter]
     fn kind(&self) -> EntityKind {
         self.inner.kind().into()
     }
+    #[getter]
     fn polymer_kind(&self) -> PolymerKind {
         self.inner.polymer_kind().into()
     }
+    #[getter]
     fn reflects_microhetero(&self) -> bool {
         self.inner.reflects_microhetero()
     }
+    #[getter]
     fn full_sequence(&self) -> Vec<String> {
         self.inner.full_sequence().to_vec()
     }
+    #[getter]
     fn dbrefs(&self) -> Vec<BioEntityDbRef> {
         self.inner
             .dbrefs()
@@ -217,12 +231,15 @@ impl BioEntityRow {
             .map(|inner| BioEntityDbRef { inner })
             .collect()
     }
+    #[getter]
     fn sifts_unp_accessions(&self) -> Vec<String> {
         self.inner.sifts_unp_accessions().to_vec()
     }
+    #[getter]
     fn subchains(&self) -> Vec<String> {
         self.inner.subchains().to_vec()
     }
+    #[getter]
     fn source(&self) -> EntitySourceIds {
         EntitySourceIds {
             inner: self.inner.source().clone(),
@@ -230,10 +247,12 @@ impl BioEntityRow {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioResidueRow {
-    pub(crate) inner: ck::BioResidueRow,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioResidueRow {
+        pub(crate) inner: ck::BioResidueRow,
+    }
 }
 #[pymethods]
 impl BioResidueRow {
@@ -270,36 +289,46 @@ impl BioResidueRow {
             ),
         })
     }
+    #[getter]
     fn chain_id(&self) -> u32 {
         self.inner.chain_id().value()
     }
+    #[getter]
     fn atom_span(&self) -> PyResult<BioRowSpan> {
         BioRowSpan::from_rust(self.inner.atom_span())
             .map_err(crate::bio_errors::BioStructureError::from_rust)
     }
+    #[getter]
     fn name(&self) -> String {
         self.inner.name().as_str().to_owned()
     }
+    #[getter]
     fn residue_info_kind(&self) -> ResidueInfoKind {
         self.inner.residue_info_kind().into()
     }
+    #[getter]
     fn kind(&self) -> ResidueKind {
         self.inner.kind().into()
     }
+    #[getter]
     fn entity_kind(&self) -> EntityKind {
         self.inner.entity_kind().into()
     }
+    #[getter]
     fn entity_id(&self) -> Option<u32> {
         self.inner.entity_id().map(|value| value.value())
     }
+    #[getter]
     fn het_flag(&self) -> Option<u8> {
         self.inner.het_flag()
     }
+    #[getter]
     fn source(&self) -> ResidueSourceIds {
         ResidueSourceIds {
             inner: self.inner.source().clone(),
         }
     }
+    #[getter]
     fn sifts_unp(&self) -> BioSiftsUnpResidue {
         BioSiftsUnpResidue {
             inner: self.inner.sifts_unp(),
@@ -307,10 +336,12 @@ impl BioResidueRow {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioAtomRow {
-    pub(crate) inner: ck::BioAtomRow,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioAtomRow {
+        pub(crate) inner: ck::BioAtomRow,
+    }
 }
 #[pymethods]
 impl BioAtomRow {
@@ -349,46 +380,59 @@ impl BioAtomRow {
             ),
         })
     }
+    #[getter]
     fn residue_id(&self) -> u32 {
         self.inner.residue_id().value()
     }
+    #[getter]
     fn name(&self) -> AtomName {
         AtomName {
             inner: self.inner.name(),
         }
     }
+    #[getter]
     fn element(&self) -> Element {
         Element {
             inner: self.inner.element(),
         }
     }
+    #[getter]
     fn isotope_mass_number(&self) -> Option<u16> {
         self.inner.isotope_mass_number()
     }
+    #[getter]
     fn altloc(&self) -> Option<AltLocLabel> {
         self.inner.altloc().map(|inner| AltLocLabel { inner })
     }
+    #[getter]
     fn formal_charge(&self) -> i8 {
         self.inner.formal_charge()
     }
+    #[getter]
     fn calc_flag(&self) -> BioCalcFlag {
         self.inner.calc_flag().into()
     }
+    #[getter]
     fn occupancy(&self) -> f64 {
         self.inner.occupancy()
     }
+    #[getter]
     fn b_iso(&self) -> f64 {
         self.inner.b_iso()
     }
+    #[getter]
     fn anisou(&self) -> Vec<f64> {
         self.inner.anisou().to_vec()
     }
+    #[getter]
     fn tls_group_id(&self) -> i16 {
         self.inner.tls_group_id()
     }
+    #[getter]
     fn fraction(&self) -> f64 {
         self.inner.fraction()
     }
+    #[getter]
     fn source(&self) -> AtomSourceIds {
         AtomSourceIds {
             inner: *self.inner.source(),

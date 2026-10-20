@@ -19,17 +19,17 @@ HETATM    7  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
 
 
 protein = ck.Protein.from_pdb(PDB)
-print("chains:", protein.num_chains())
-print("residues:", protein.num_residues())
-print("atoms:", protein.num_atoms())
+print("chains:", protein.num_chains)
+print("residues:", protein.num_residues)
+print("atoms:", protein.num_atoms)
 
 first_chain = protein[0]
-residues = [residue for residue in first_chain.residues()]
-print("residue names:", [residue.name() for residue in residues])
+residues = [residue for residue in first_chain.residues]
+print("residue names:", [residue.name for residue in residues])
 
 for residue in residues:
-    if residue.code() == ck.ResidueCode.MET:
-        print("found MET residue", residue.id(), residue.fasta_code())
-    print(residue.name(), residue.code(), [atom.name() for atom in residue.atoms()])
+    if residue.code == ck.ResidueCode.MET:
+        print("found MET residue", residue.id, residue.fasta_code)
+    print(residue.name, residue.code, [atom.name for atom in residue.atoms])
 
 print("expanded peptide:", ck.expand_one_letter_sequence("ACD(MSE)", ck.ResidueInfoKind.AA))

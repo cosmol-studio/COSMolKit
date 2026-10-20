@@ -3,8 +3,8 @@ use pyo3::prelude::*;
 use std::collections::BTreeMap;
 
 ck::project_configuration!(ck::AtomPairAtomInvariantsGenerator, methods {
-    fn info_string(&self) -> String { self.inner.info_string() }
-    fn to_json(&self) -> String { self.inner.to_json() }
+    fn info_string(&self, py: Python<'_>) -> PyResult<String> { self.inner.read(py, |native| native.info_string()) }
+    fn to_json(&self, py: Python<'_>) -> PyResult<String> { self.inner.read(py, |native| native.to_json()) }
 });
 
 ck::project_configuration!(ck::MorganBondInvariantsGenerator);
@@ -47,18 +47,23 @@ impl FingerprintAdditionalOutput {
     fn allocate_atoms_per_bit(&mut self) {
         self.inner.allocate_atoms_per_bit();
     }
+    #[getter]
     fn atom_counts(&self) -> Option<Vec<u32>> {
         self.inner.atom_counts().map(<[u32]>::to_vec)
     }
+    #[getter]
     fn atom_to_bits(&self) -> Option<Vec<Vec<u64>>> {
         self.inner.atom_to_bits().map(<[Vec<u64>]>::to_vec)
     }
+    #[getter]
     fn bit_info_map(&self) -> Option<BTreeMap<u64, Vec<(u32, u32)>>> {
         self.inner.bit_info_map().cloned()
     }
+    #[getter]
     fn bit_paths(&self) -> Option<BTreeMap<u64, Vec<Vec<i32>>>> {
         self.inner.bit_paths().cloned()
     }
+    #[getter]
     fn atoms_per_bit(&self) -> Option<BTreeMap<u64, Vec<Vec<i32>>>> {
         self.inner.atoms_per_bit().cloned()
     }

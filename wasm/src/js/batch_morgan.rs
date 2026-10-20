@@ -11,8 +11,8 @@ use js_sys::Array;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 impl MoleculeBatch {
-    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionList,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn fingerprint_topological_torsion_list(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsion,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_topological_torsion(
         &self,
         #[wasm_bindgen(
             unchecked_optional_param_type = "TopologicalTorsionFingerprintParams | TopologicalTorsionFingerprintParamsOptions"
@@ -23,13 +23,13 @@ impl MoleculeBatch {
         )]
         params: JsValue,
     ) -> Result<Array, JsValue> {
-        self.fingerprint_topological_torsion_list_with_params(
+        self.fingerprint_topological_torsion_with_params(
             &crate::topological_torsion_parameters::TopologicalTorsionFingerprintParams::from_js_configuration(&options)?,
             &BatchQueryParams::from_js_configuration(&params)?,
         )
     }
-    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionListWithParams,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn fingerprint_topological_torsion_list_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionWithParams,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_topological_torsion_with_params(
         &self,
         options: &crate::topological_torsion_parameters::TopologicalTorsionFingerprintParams,
         params: &BatchQueryParams,
@@ -37,7 +37,7 @@ impl MoleculeBatch {
         params
             .execute(|p| {
                 self.inner
-                    .fingerprint_topological_torsion_list_with_params(&options.inner, p)
+                    .fingerprint_topological_torsion_with_params(&options.inner, p)
             })
             .map(|values| {
                 values
@@ -46,8 +46,8 @@ impl MoleculeBatch {
                     .collect()
             })
     }
-    #[wasm_bindgen(js_name=fingerprintMorganList,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn fingerprint_morgan_list(
+    #[wasm_bindgen(js_name=fingerprintMorgan,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_morgan(
         &self,
         #[wasm_bindgen(
             unchecked_optional_param_type = "MorganFingerprintParams | MorganFingerprintParamsOptions"
@@ -61,7 +61,7 @@ impl MoleculeBatch {
         if options.is_undefined() && params.is_undefined() {
             return {
                 self.inner
-                    .fingerprint_morgan_list()
+                    .fingerprint_morgan()
                     .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
                     .map(|values| {
                         values
@@ -75,10 +75,10 @@ impl MoleculeBatch {
             crate::morgan_parameters::MorganFingerprintParams::from_js_configuration(&options)?;
         let configuration_1 =
             crate::batch_queries::BatchQueryParams::from_js_configuration(&params)?;
-        self.fingerprint_morgan_list_with_params(&configuration_0, &configuration_1)
+        self.fingerprint_morgan_with_params(&configuration_0, &configuration_1)
     }
-    #[wasm_bindgen(js_name=fingerprintMorganListWithParams,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn fingerprint_morgan_list_with_params(
+    #[wasm_bindgen(js_name=fingerprintMorganWithParams,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_morgan_with_params(
         &self,
         options: &MorganFingerprintParams,
         params: &BatchQueryParams,
@@ -86,7 +86,7 @@ impl MoleculeBatch {
         params
             .execute(|p| {
                 self.inner
-                    .fingerprint_morgan_list_with_params(&options.inner, p)
+                    .fingerprint_morgan_with_params(&options.inner, p)
             })
             .map(|values| {
                 values
@@ -95,8 +95,8 @@ impl MoleculeBatch {
                     .collect()
             })
     }
-    #[wasm_bindgen(js_name=fingerprintMorganWithOutputList,unchecked_return_type="(BatchFingerprintOutput | null)[]")]
-    pub fn fingerprint_morgan_with_output_list(
+    #[wasm_bindgen(js_name=fingerprintMorganWithOutput,unchecked_return_type="(BatchFingerprintOutput | null)[]")]
+    pub fn fingerprint_morgan_with_output(
         &self,
         #[wasm_bindgen(
             unchecked_optional_param_type = "MorganFingerprintParams | MorganFingerprintParamsOptions"
@@ -110,14 +110,14 @@ impl MoleculeBatch {
         if !options.is_undefined() || !params.is_undefined() {
             let options = MorganFingerprintParams::from_js_configuration(&options)?;
             let params = BatchQueryParams::from_js_configuration(&params)?;
-            return self.fingerprint_morgan_with_output_list_with_params(
+            return self.fingerprint_morgan_with_output_with_params(
                 &options,
                 true.into(),
                 &params,
             );
         }
         self.inner
-            .fingerprint_morgan_with_output_list()
+            .fingerprint_morgan_with_output()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
             .map(|values| {
                 values
@@ -130,8 +130,8 @@ impl MoleculeBatch {
                     .collect()
             })
     }
-    #[wasm_bindgen(js_name=fingerprintMorganWithOutputListWithParams,unchecked_return_type="(BatchFingerprintOutput | null)[]")]
-    pub fn fingerprint_morgan_with_output_list_with_params(
+    #[wasm_bindgen(js_name=fingerprintMorganWithOutputWithParams,unchecked_return_type="(BatchFingerprintOutput | null)[]")]
+    pub fn fingerprint_morgan_with_output_with_params(
         &self,
         options: &MorganFingerprintParams,
         #[wasm_bindgen(unchecked_param_type = "boolean")] collect_additional_output: JsValue,
@@ -140,7 +140,7 @@ impl MoleculeBatch {
         let collect = bool_value(&collect_additional_output, "collectAdditionalOutput")?;
         params
             .execute(|p| {
-                self.inner.fingerprint_morgan_with_output_list_with_params(
+                self.inner.fingerprint_morgan_with_output_with_params(
                     &options.inner,
                     collect,
                     p,
@@ -157,8 +157,8 @@ impl MoleculeBatch {
                     .collect()
             })
     }
-    #[wasm_bindgen(js_name=fingerprintMorganListWithGeneratorParams,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn fingerprint_morgan_list_with_generator_params(
+    #[wasm_bindgen(js_name=fingerprintMorganWithGeneratorParams,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_morgan_with_generator_params(
         &self,
         options: &MorganGeneratorParams,
         #[wasm_bindgen(unchecked_param_type = "MorganAtomInvariantsGenerator | null")]
@@ -172,7 +172,7 @@ impl MoleculeBatch {
         let bond = optional_bond(&bond_invariants)?;
         params
             .execute(|p| {
-                self.inner.fingerprint_morgan_list_with_generator_params(
+                self.inner.fingerprint_morgan_with_generator_params(
                     &options.inner,
                     atom.as_ref(),
                     bond.as_ref(),
@@ -187,8 +187,8 @@ impl MoleculeBatch {
                     .collect()
             })
     }
-    #[wasm_bindgen(js_name=fingerprintMorganWithOutputListWithGeneratorParams,unchecked_return_type="(BatchFingerprintOutput | null)[]")]
-    pub fn fingerprint_morgan_with_output_list_with_generator_params(
+    #[wasm_bindgen(js_name=fingerprintMorganWithOutputWithGeneratorParams,unchecked_return_type="(BatchFingerprintOutput | null)[]")]
+    pub fn fingerprint_morgan_with_output_with_generator_params(
         &self,
         options: &MorganGeneratorParams,
         #[wasm_bindgen(unchecked_param_type = "MorganAtomInvariantsGenerator | null")]
@@ -205,7 +205,7 @@ impl MoleculeBatch {
         params
             .execute(|p| {
                 self.inner
-                    .fingerprint_morgan_with_output_list_with_generator_params(
+                    .fingerprint_morgan_with_output_with_generator_params(
                         &options.inner,
                         atom.as_ref(),
                         bond.as_ref(),

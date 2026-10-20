@@ -31,11 +31,11 @@ print("pickle bytes:", len(payload))
 print("original smiles:", mol.to_smiles(canonical=False))
 print("restored smiles:", restored.to_smiles(canonical=False))
 print("file restored smiles:", restored_from_file.to_smiles(canonical=False))
-print("atom count:", len(restored))
-print("bond count:", restored.num_bonds())
-print("has 2d coordinates:", restored.has_2d_coordinates())
-original_coords = mol.coordinates_2d()
-restored_coords = restored.coordinates_2d()
+print("atom count:", restored.num_atoms)
+print("bond count:", restored.num_bonds)
+print("has 2d coordinates:", restored.has_2d_coordinates)
+original_coords = mol.coordinates_2d
+restored_coords = restored.coordinates_2d
 assert original_coords is not None and restored_coords is not None
 coordinate_delta = float(np.abs(original_coords - restored_coords).max())
 print("max 2d coordinate delta:", coordinate_delta)

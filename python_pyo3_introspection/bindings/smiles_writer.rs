@@ -124,7 +124,7 @@ pub(crate) fn keywords(
 ) -> crate::chemical_params::SmilesWriteParams {
     let defaults = ck::SmilesWriteParams::default();
     crate::chemical_params::SmilesWriteParams {
-        inner: ck::SmilesWriteParams {
+        inner: crate::parameters::NativeField::Owned(ck::SmilesWriteParams {
             isomeric_smiles: isomeric_smiles.unwrap_or(defaults.isomeric_smiles),
             kekule: kekule.unwrap_or(defaults.kekule),
             canonical: canonical.unwrap_or(defaults.canonical),
@@ -136,7 +136,7 @@ pub(crate) fn keywords(
             include_dative_bonds: include_dative_bonds.unwrap_or(defaults.include_dative_bonds),
             ignore_atom_map_numbers: ignore_atom_map_numbers
                 .unwrap_or(defaults.ignore_atom_map_numbers),
-        },
+        }),
     }
 }
 
@@ -195,7 +195,7 @@ mod tests {
                 let params = Py::new(
                     py,
                     SmilesWriteParams {
-                        inner: native_params,
+                        inner: crate::parameters::NativeField::Owned(native_params),
                     },
                 )?;
                 let kwargs = PyDict::new(py);
@@ -455,7 +455,12 @@ mod tests {
                     .into_iter()
                     .map(decoded)
                     .collect::<Vec<_>>();
-                let random = Py::new(py, RandomSmilesWriteParams { inner: random })?;
+                let random = Py::new(
+                    py,
+                    RandomSmilesWriteParams {
+                        inner: crate::parameters::NativeField::Owned(random),
+                    },
+                )?;
                 let random_kwargs = PyDict::new(py);
                 random_kwargs.set_item("isomeric_smiles", false)?;
                 random_kwargs.set_item("kekule", true)?;

@@ -11,10 +11,10 @@ molecule.withMmffOptimized({maxIterations:2});
 molecule.alignmentTransformTo(molecule,new AlignmentParameters());
 molecule.alignmentTransformTo(molecule,{reflect:false});
 const batch=MoleculeBatch.fromSmilesList(['CCO'],new SmilesParseParams(),new BatchParams());
-batch.toSmilesList(new SmilesWriteParams(),new BatchQueryParams());
-batch.toSmilesList({allBondsExplicit:true},{progressCallback:()=>{}});
+batch.toSmiles(new SmilesWriteParams(),new BatchQueryParams());
+batch.toSmiles({allBondsExplicit:true},{progressCallback:()=>{}});
 batch.withHydrogens({},{});
-batch.fingerprintMorganList({},{});
+batch.fingerprintMorgan({},{});
 Reaction.fromSmirks('[C:1]>>[C:1]',{}).toSmirks(new ReactionWriteParams());
 // @ts-expect-error checked optional configuration
 molecule.withUffOptimized({maxIterations:'2'});

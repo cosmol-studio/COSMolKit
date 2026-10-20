@@ -2085,20 +2085,20 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         expected.extend(["types.BatchQueryParams"]);
         if cfg!(feature = "cap-smiles") {
             expected.extend([
-                "MoleculeBatch.to_smiles_list",
-                "MoleculeBatch.to_smiles_list_with_params",
+                "MoleculeBatch.to_smiles",
+                "MoleculeBatch.to_smiles_with_params",
             ]);
         }
         if cfg!(feature = "cap-conformer") {
             expected.extend([
-                "MoleculeBatch.dg_bounds_matrix_list",
-                "MoleculeBatch.dg_bounds_matrix_list_with_params",
+                "MoleculeBatch.dg_bounds_matrix",
+                "MoleculeBatch.dg_bounds_matrix_with_params",
             ]);
         }
         if cfg!(feature = "cap-depict") {
             expected.extend([
-                "MoleculeBatch.to_svg_list",
-                "MoleculeBatch.to_svg_list_with_params",
+                "MoleculeBatch.to_svg",
+                "MoleculeBatch.to_svg_with_params",
                 "types.BatchImageParams",
                 "types.BatchImageError",
                 "MoleculeBatch.write_images",
@@ -2107,29 +2107,29 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         }
         if cfg!(feature = "cap-fingerprints") {
             expected.extend([
-                "MoleculeBatch.fingerprint_atom_pair_list",
-                "MoleculeBatch.fingerprint_atom_pair_list_with_params",
-                "MoleculeBatch.fingerprint_atom_pair_sparse_count_list",
-                "MoleculeBatch.fingerprint_atom_pair_sparse_count_list_with_params",
-                "MoleculeBatch.fingerprint_atom_pair_count_list",
-                "MoleculeBatch.fingerprint_atom_pair_count_list_with_params",
-                "MoleculeBatch.fingerprint_atom_pair_sparse_bits_list",
-                "MoleculeBatch.fingerprint_atom_pair_sparse_bits_list_with_params",
-                "MoleculeBatch.fingerprint_layered_list",
-                "MoleculeBatch.fingerprint_layered_list_with_params",
-                "MoleculeBatch.fingerprint_layered_with_output_list",
-                "MoleculeBatch.fingerprint_layered_with_output_list_with_params",
-                "MoleculeBatch.fingerprint_pattern_list",
-                "MoleculeBatch.fingerprint_pattern_list_with_params",
-                "MoleculeBatch.fingerprint_morgan_list",
-                "MoleculeBatch.fingerprint_morgan_list_with_params",
+                "MoleculeBatch.fingerprint_atom_pair",
+                "MoleculeBatch.fingerprint_atom_pair_with_params",
+                "MoleculeBatch.fingerprint_atom_pair_sparse_count",
+                "MoleculeBatch.fingerprint_atom_pair_sparse_count_with_params",
+                "MoleculeBatch.fingerprint_atom_pair_count",
+                "MoleculeBatch.fingerprint_atom_pair_count_with_params",
+                "MoleculeBatch.fingerprint_atom_pair_sparse",
+                "MoleculeBatch.fingerprint_atom_pair_sparse_with_params",
+                "MoleculeBatch.fingerprint_layered",
+                "MoleculeBatch.fingerprint_layered_with_params",
+                "MoleculeBatch.fingerprint_layered_with_output",
+                "MoleculeBatch.fingerprint_layered_with_output_with_params",
+                "MoleculeBatch.fingerprint_pattern",
+                "MoleculeBatch.fingerprint_pattern_with_params",
+                "MoleculeBatch.fingerprint_morgan",
+                "MoleculeBatch.fingerprint_morgan_with_params",
                 "types.BatchFingerprintOutput",
-                "MoleculeBatch.fingerprint_atom_pair_with_output_list",
-                "MoleculeBatch.fingerprint_atom_pair_with_output_list_with_params",
-                "MoleculeBatch.fingerprint_morgan_with_output_list",
-                "MoleculeBatch.fingerprint_morgan_with_output_list_with_params",
-                "MoleculeBatch.fingerprint_morgan_list_with_generator_params",
-                "MoleculeBatch.fingerprint_morgan_with_output_list_with_generator_params",
+                "MoleculeBatch.fingerprint_atom_pair_with_output",
+                "MoleculeBatch.fingerprint_atom_pair_with_output_with_params",
+                "MoleculeBatch.fingerprint_morgan_with_output",
+                "MoleculeBatch.fingerprint_morgan_with_output_with_params",
+                "MoleculeBatch.fingerprint_morgan_with_generator_params",
+                "MoleculeBatch.fingerprint_morgan_with_output_with_generator_params",
                 "types.BatchFingerprintAdditionalOutput",
                 "types.BatchFingerprintOutputError",
                 "BatchFingerprintAdditionalOutput.atom_counts",
@@ -2139,8 +2139,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "BatchFingerprintAdditionalOutput.atoms_per_bit",
                 "BatchFingerprintOutput.fingerprint",
                 "BatchFingerprintOutput.additional_output",
-                "MoleculeBatch.fingerprint_topological_torsion_list",
-                "MoleculeBatch.fingerprint_topological_torsion_list_with_params",
+                "MoleculeBatch.fingerprint_topological_torsion",
+                "MoleculeBatch.fingerprint_topological_torsion_with_params",
             ]);
         }
     }
@@ -3005,39 +3005,39 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "MoleculeBatch.with_2d_coordinates"
                 | "MoleculeBatch.with_2d_coordinates_with_params"
                 | "types.BatchQueryParams"
-                | "MoleculeBatch.to_smiles_list"
-                | "MoleculeBatch.to_smiles_list_with_params"
-                | "MoleculeBatch.dg_bounds_matrix_list"
-                | "MoleculeBatch.dg_bounds_matrix_list_with_params"
-                | "MoleculeBatch.to_svg_list"
-                | "MoleculeBatch.to_svg_list_with_params"
+                | "MoleculeBatch.to_smiles"
+                | "MoleculeBatch.to_smiles_with_params"
+                | "MoleculeBatch.dg_bounds_matrix"
+                | "MoleculeBatch.dg_bounds_matrix_with_params"
+                | "MoleculeBatch.to_svg"
+                | "MoleculeBatch.to_svg_with_params"
                 | "types.BatchImageParams"
                 | "types.BatchImageError"
                 | "MoleculeBatch.write_images"
                 | "MoleculeBatch.write_images_with_params"
-                | "MoleculeBatch.fingerprint_atom_pair_list"
-                | "MoleculeBatch.fingerprint_atom_pair_list_with_params"
-                | "MoleculeBatch.fingerprint_atom_pair_sparse_count_list"
-                | "MoleculeBatch.fingerprint_atom_pair_sparse_count_list_with_params"
-                | "MoleculeBatch.fingerprint_atom_pair_count_list"
-                | "MoleculeBatch.fingerprint_atom_pair_count_list_with_params"
-                | "MoleculeBatch.fingerprint_atom_pair_sparse_bits_list"
-                | "MoleculeBatch.fingerprint_atom_pair_sparse_bits_list_with_params"
-                | "MoleculeBatch.fingerprint_layered_list"
-                | "MoleculeBatch.fingerprint_layered_list_with_params"
-                | "MoleculeBatch.fingerprint_layered_with_output_list"
-                | "MoleculeBatch.fingerprint_layered_with_output_list_with_params"
-                | "MoleculeBatch.fingerprint_pattern_list"
-                | "MoleculeBatch.fingerprint_pattern_list_with_params"
-                | "MoleculeBatch.fingerprint_morgan_list"
-                | "MoleculeBatch.fingerprint_morgan_list_with_params"
+                | "MoleculeBatch.fingerprint_atom_pair"
+                | "MoleculeBatch.fingerprint_atom_pair_with_params"
+                | "MoleculeBatch.fingerprint_atom_pair_sparse_count"
+                | "MoleculeBatch.fingerprint_atom_pair_sparse_count_with_params"
+                | "MoleculeBatch.fingerprint_atom_pair_count"
+                | "MoleculeBatch.fingerprint_atom_pair_count_with_params"
+                | "MoleculeBatch.fingerprint_atom_pair_sparse"
+                | "MoleculeBatch.fingerprint_atom_pair_sparse_with_params"
+                | "MoleculeBatch.fingerprint_layered"
+                | "MoleculeBatch.fingerprint_layered_with_params"
+                | "MoleculeBatch.fingerprint_layered_with_output"
+                | "MoleculeBatch.fingerprint_layered_with_output_with_params"
+                | "MoleculeBatch.fingerprint_pattern"
+                | "MoleculeBatch.fingerprint_pattern_with_params"
+                | "MoleculeBatch.fingerprint_morgan"
+                | "MoleculeBatch.fingerprint_morgan_with_params"
                 | "types.BatchFingerprintOutput"
-                | "MoleculeBatch.fingerprint_atom_pair_with_output_list"
-                | "MoleculeBatch.fingerprint_atom_pair_with_output_list_with_params"
-                | "MoleculeBatch.fingerprint_morgan_with_output_list"
-                | "MoleculeBatch.fingerprint_morgan_with_output_list_with_params"
-                | "MoleculeBatch.fingerprint_morgan_list_with_generator_params"
-                | "MoleculeBatch.fingerprint_morgan_with_output_list_with_generator_params"
+                | "MoleculeBatch.fingerprint_atom_pair_with_output"
+                | "MoleculeBatch.fingerprint_atom_pair_with_output_with_params"
+                | "MoleculeBatch.fingerprint_morgan_with_output"
+                | "MoleculeBatch.fingerprint_morgan_with_output_with_params"
+                | "MoleculeBatch.fingerprint_morgan_with_generator_params"
+                | "MoleculeBatch.fingerprint_morgan_with_output_with_generator_params"
                 | "types.BatchFingerprintAdditionalOutput"
                 | "types.BatchFingerprintOutputError"
                 | "BatchFingerprintAdditionalOutput.atom_counts"
@@ -3047,8 +3047,8 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "BatchFingerprintAdditionalOutput.atoms_per_bit"
                 | "BatchFingerprintOutput.fingerprint"
                 | "BatchFingerprintOutput.additional_output"
-                | "MoleculeBatch.fingerprint_topological_torsion_list"
-                | "MoleculeBatch.fingerprint_topological_torsion_list_with_params"
+                | "MoleculeBatch.fingerprint_topological_torsion"
+                | "MoleculeBatch.fingerprint_topological_torsion_with_params"
         );
         let native_atom_properties = matches!(
             contract.semantic_id,

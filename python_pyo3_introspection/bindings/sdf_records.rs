@@ -222,7 +222,7 @@ pub(crate) fn configuration(
 ) -> PyResult<SdfReadParams> {
     let defaults = ck::SdfReadParams::default();
     Ok(SdfReadParams {
-        inner: ck::SdfReadParams {
+        inner: crate::parameters::NativeField::Owned(ck::SdfReadParams {
             sanitize: sanitize.unwrap_or(defaults.sanitize),
             remove_hs: remove_hs.unwrap_or(defaults.remove_hs),
             strict_parsing: strict_parsing.unwrap_or(defaults.strict_parsing),
@@ -234,7 +234,7 @@ pub(crate) fn configuration(
                 .map(SdfCoordinateModeInput::into_rust)
                 .transpose()?
                 .unwrap_or(defaults.coordinate_mode),
-        },
+        }),
     })
 }
 
@@ -243,8 +243,10 @@ pub(crate) fn molecule_sdf(
     input: &str,
     params: Option<&SdfReadParams>,
 ) -> PyResult<Molecule> {
+    let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
     py.detach(|| match params {
-        Some(params) => ck::Molecule::from_sdf_with_params(input, &params.inner),
+        Some(params) => ck::Molecule::from_sdf_with_params(input, &params),
         None => ck::Molecule::from_sdf(input),
     })
     .map(|inner| Molecule { inner })
@@ -255,8 +257,10 @@ pub(crate) fn molecule_mol(
     text: &str,
     params: Option<&SdfReadParams>,
 ) -> PyResult<Molecule> {
+    let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
     py.detach(|| match params {
-        Some(params) => ck::Molecule::from_mol_with_params(text, &params.inner),
+        Some(params) => ck::Molecule::from_mol_with_params(text, &params),
         None => ck::Molecule::from_mol(text),
     })
     .map(|inner| Molecule { inner })
@@ -324,8 +328,10 @@ impl SdfRecord {
         py: Python<'_>,
         params: Option<&crate::io_batch_params::MolBlockWriteParams>,
     ) -> PyResult<String> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         py.detach(|| match params {
-            Some(params) => self.inner.to_mol_with_params(&params.inner),
+            Some(params) => self.inner.to_mol_with_params(&params),
             None => self.inner.to_mol(),
         })
         .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -409,8 +415,10 @@ impl SdfRecord {
         py: Python<'_>,
         params: Option<&crate::io_batch_params::MolBlockWriteParams>,
     ) -> PyResult<String> {
+        let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).transpose())?;
+
         py.detach(|| match params {
-            Some(params) => self.inner.to_sdf_with_params(&params.inner),
+            Some(params) => self.inner.to_sdf_with_params(&params),
             None => self.inner.to_sdf(),
         })
         .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
@@ -493,8 +501,9 @@ impl SdfRecord {
         input: &str,
         params: Option<&SdfReadParams>,
     ) -> PyResult<Self> {
+        let params = params.map(|value| value.to_rust(py)).transpose()?;
         py.detach(|| match params {
-            Some(value) => ck::SdfRecord::from_sdf_with_params(input, &value.inner),
+            Some(value) => ck::SdfRecord::from_sdf_with_params(input, &value),
             None => ck::SdfRecord::from_sdf(input),
         })
         .map(Self::from_rust)
@@ -538,6 +547,7 @@ impl SdfRecord {
             .map(Self::from_rust)
             .map_err(SdfError::from_rust)
     }
+    #[getter]
     fn graph(&self) -> SdfGraph {
         match self.inner.graph() {
             ck::SdfGraph::Molecule(value) => SdfGraph::Molecule {
@@ -550,6 +560,7 @@ impl SdfRecord {
             },
         }
     }
+    #[getter]
     fn molecule(&self) -> PyResult<Molecule> {
         self.inner
             .molecule()
@@ -558,10 +569,12 @@ impl SdfRecord {
             })
             .map_err(SdfError::from_rust)
     }
+    #[getter]
     fn query_graph(&self) -> PyResult<QueryGraph> {
         self.inner.query_graph().map_err(SdfError::from_rust)?;
         Ok(QueryGraph::from_sdf_record(Arc::clone(&self.inner)))
     }
+    #[getter]
     fn data_fields(&self, py: Python<'_>) -> PyResult<Vec<(String, String)>> {
         self.inner
             .data_fields()
@@ -569,11 +582,13 @@ impl SdfRecord {
             .map(|(key, value)| Ok((decode_source_text(py, key)?, decode_source_text(py, value)?)))
             .collect()
     }
+    #[getter]
     fn properties(&self) -> MoleculeProperties {
         MoleculeProperties {
             inner: self.inner.properties().clone(),
         }
     }
+    #[getter]
     fn substance_groups(&self) -> Vec<SubstanceGroup> {
         self.inner
             .substance_groups()
@@ -582,12 +597,15 @@ impl SdfRecord {
             .map(|inner| SubstanceGroup { inner })
             .collect()
     }
+    #[getter]
     fn source_coordinate_dim(&self) -> Option<CoordinateDimension> {
         self.inner.source_coordinate_dim().map(Into::into)
     }
+    #[getter]
     fn index(&self) -> usize {
         self.inner.index()
     }
+    #[getter]
     fn title(&self, py: Python<'_>) -> PyResult<Option<String>> {
         self.inner
             .title()

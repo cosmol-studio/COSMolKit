@@ -93,12 +93,12 @@ Inspect atoms and bonds:
 
    mol = ck.mol_from_smiles("c1ccccc1O")
 
-   for atom in mol.atoms():
-       print(atom.id(), atom.atomic_number(), atom.is_aromatic())
+   for atom in mol.atoms:
+       print(atom.id, atom.atomic_number, atom.is_aromatic)
 
-   for bond in mol.bonds():
-       if bond.order() == ck.BondOrder.SINGLE:
-           print(bond.begin(), bond.end(), bond.order().name)
+   for bond in mol.bonds:
+       if bond.order == ck.BondOrder.SINGLE:
+           print(bond.begin, bond.end, bond.order.name)
 
 Inspect chiral tags without converting to an ordered tetrahedral record:
 
@@ -109,9 +109,9 @@ Inspect chiral tags without converting to an ordered tetrahedral record:
    print(chiral.to_smiles())
    print(chiral.to_smiles(isomeric_smiles=False))
 
-   for atom in chiral.atoms():
-       if atom.chiral_tag() != ck.ChiralTag.CHI_UNSPECIFIED:
-           print(atom.id(), atom.chiral_tag().name)
+   for atom in chiral.atoms:
+       if atom.chiral_tag != ck.ChiralTag.CHI_UNSPECIFIED:
+           print(atom.id, atom.chiral_tag.name)
 
 Assign atom chiral tags from a stored 3D conformer:
 
@@ -131,8 +131,8 @@ Assign atom chiral tags from a stored 3D conformer:
    )
    assigned = spatial.with_chiral_tags_from_structure()
 
-   assert spatial.atoms()[0].chiral_tag() == ck.ChiralTag.CHI_UNSPECIFIED
-   assert assigned.atoms()[0].chiral_tag() != ck.ChiralTag.CHI_UNSPECIFIED
+   assert spatial.atoms[0].chiral_tag == ck.ChiralTag.CHI_UNSPECIFIED
+   assert assigned.atoms[0].chiral_tag != ck.ChiralTag.CHI_UNSPECIFIED
 
 ``with_chiral_tags_from_structure()`` is a stable, RDKit-parity operation. Its
 in-place counterpart is ``assign_chiral_tags_from_structure_()``. The
@@ -178,7 +178,7 @@ Access coordinates as NumPy arrays:
 .. code-block:: python
 
    mol2d = ck.mol_from_smiles("CCO").with_2d_coordinates()
-   coords = mol2d.coordinates_2d()
+   coords = mol2d.coordinates_2d
 
    print(coords.shape)
 
@@ -193,7 +193,7 @@ Round-trip a molecule through Python pickle:
    restored = pickle.loads(pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL))
 
    print(restored.to_smiles(canonical=False))
-   print(restored.has_2d_coordinates())
+   print(restored.has_2d_coordinates)
 
 Conformers And Force Fields
 ---------------------------
@@ -210,11 +210,12 @@ Generate a native 3D conformer with ETKDGv3:
    params.num_threads = 1
    params.track_failures = True
 
-   embedded = mol.with_3d_conformer(params)
+   result = mol.with_3d_conformer_result(params)
+   embedded = result.molecule
 
-   print(embedded.num_3d_conformers())
+   print(embedded.num_3d_conformers)
    print(embedded.coordinates_3d().shape)
-   print(params.failures)
+   print(result.failure_counts)
 
 ``with_3d_conformer()`` follows RDKit's ETKDG behavior for trusted molecular
 graphs. A molecule without explicit hydrogens is embedded as a heavy-atom-only
@@ -233,7 +234,7 @@ Generate multiple conformers with RMS pruning:
    params.enable_sequential_random_seeds = True
 
    conformers = mol.with_3d_conformers(5, params)
-   print(conformers.num_3d_conformers())
+   print(conformers.num_3d_conformers)
 
 Enum inputs accept either an enum member or its canonical snake-case string.
 For example, ``coordinate_mode="require_3d"`` and
@@ -250,19 +251,19 @@ Optimize an existing 3D conformer with UFF:
 
    if mol.uff_has_all_molecule_params():
        result = mol.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=200))
-       optimized = result.molecule()
+       optimized = result.molecule
 
-       print(not result.needs_more())
-       print(result.status_code())
-       print(result.energy())
+       print(not result.needs_more)
+       print(result.status_code)
+       print(result.energy)
        print(optimized.coordinates_3d().shape)
 
    if mol.mmff_has_all_molecule_params():
        result = mol.with_mmff_optimized_with_params(
            ck.MmffOptimizationParams(mmff_variant="MMFF94", max_iterations=200),
        )
-       print(not result.needs_more())
-       print(result.status_code())
+       print(not result.needs_more)
+       print(result.status_code)
 
 Fingerprints And SMARTS
 -----------------------
@@ -287,12 +288,12 @@ Generate source-backed fingerprints:
        fp_size=2048,
    )
 
-   print(morgan.on_bits())
-   print(topological.on_bits())
-   print(avalon.on_bits())
-   print(pattern.on_bits())
-   print(atom_pair.on_bits())
-   print(torsion.on_bits())
+   print(morgan.on_bits)
+   print(topological.on_bits)
+   print(avalon.on_bits)
+   print(pattern.on_bits)
+   print(atom_pair.on_bits)
+   print(torsion.on_bits)
 
 ``on_bits()`` returns the sparse bit indexes set inside the fixed-length binary
 fingerprint. The exposed Morgan, MACCS, RDKit topological, Avalon, Pattern,
@@ -308,8 +309,8 @@ Parse SMARTS metadata:
 
    query = ck.parse_smarts("[#6]-O")
 
-   print(query.num_atoms())
-   print(query.num_bonds())
+   print(query.num_atoms)
+   print(query.num_bonds)
 
 ``parse_smarts()`` returns a detached ``QueryGraph``, not a ``Molecule``.
 ``ck.QueryGraph.from_smarts(text)`` is the equivalent class factory. Both
@@ -347,16 +348,16 @@ Process a list of molecules:
        errors=ck.BatchErrorMode.KEEP,
    ).with_parallel_jobs(8)
 
-   for error in batch.errors():
-       print(error.index(), error.operation(), error.message())
+   for error in batch.errors:
+       print(error.index, error.operation, error.message)
 
    prepared = batch.with_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
-   fingerprints = prepared.fingerprint_morgan_list(fp_size=2048)
+   fingerprints = prepared.fingerprint_morgan(fp_size=2048)
 
-   print(prepared.valid_mask())
-   print(prepared.to_smiles_list(canonical=True))
+   print(prepared.valid_mask)
+   print(prepared.to_smiles(canonical=True))
    print([mol.to_smiles() if mol is not None else None for mol in prepared])
-   print([fp.on_bits() if fp is not None else None for fp in fingerprints])
+   print([fp.on_bits if fp is not None else None for fp in fingerprints])
 
 ``MoleculeBatch`` preserves input order. When ``errors="keep"`` or
 ``BatchErrorMode.KEEP`` is used, invalid records stay aligned with their input

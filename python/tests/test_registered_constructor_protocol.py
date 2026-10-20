@@ -39,10 +39,10 @@ def test_builder_factories_retain_ids_bond_order_and_atom_metadata():
     oxygen = builder.add_atom(ck.AtomSpec.new(ck.Element.O).with_isotope(18))
     builder.add_bond(ck.BondSpec.new(carbon, oxygen, ck.BondOrder.DOUBLE))
     molecule = builder.build()
-    assert [atom.atomic_number() for atom in molecule.atoms()] == [6, 8]
-    assert molecule.atoms()[0].atom_map() == 17
-    assert molecule.atoms()[1].isotope() == 18
-    assert molecule.bonds()[0].order() == ck.BondOrder.DOUBLE
+    assert [atom.atomic_number for atom in molecule.atoms] == [6, 8]
+    assert molecule.atoms[0].atom_map == 17
+    assert molecule.atoms[1].isotope == 18
+    assert molecule.bonds[0].order == ck.BondOrder.DOUBLE
     with pytest.raises(ValueError, match="invalid BondOrder code"):
         ck.BondSpec.new(0, 1, 999)
 
@@ -50,28 +50,28 @@ def test_builder_factories_retain_ids_bond_order_and_atom_metadata():
 def test_fingerprint_output_factories_do_not_share_allocation_state():
     first = ck.FingerprintAdditionalOutput.new()
     second = ck.FingerprintAdditionalOutput.new()
-    assert first.atom_counts() is None
-    assert second.atom_counts() is None
+    assert first.atom_counts is None
+    assert second.atom_counts is None
     first.allocate_atom_counts()
-    assert first.atom_counts() == []
-    assert second.atom_counts() is None
+    assert first.atom_counts == []
+    assert second.atom_counts is None
 
 
 def test_score_term_factory_preserves_supplied_value():
     value = ck.TautomerScoreTerm.new("label", "[#7]", -9)
-    assert value.name() == "label"
-    assert value.smarts() == "[#7]"
-    assert value.score() == -9
+    assert value.name == "label"
+    assert value.smarts == "[#7]"
+    assert value.score == -9
     assert value == ck.TautomerScoreTerm("label", "[#7]", -9)
 
 
 def test_generator_factories_pass_explicit_configuration_to_the_owner():
     morgan = ck.MorganFingerprintGenerator.new(params=ck.MorganGeneratorParams(radius=3))
-    assert morgan.settings().params().radius == 3
+    assert morgan.settings.params.radius == 3
     torsion = ck.TopologicalTorsionFingerprintGenerator.new(
         params=ck.TopologicalTorsionGeneratorParams(torsion_atom_count=5)
     )
-    assert torsion.settings().params().torsion_atom_count == 5
+    assert torsion.settings.params.torsion_atom_count == 5
     with pytest.raises(OverflowError):
         ck.LegacyTopologicalTorsionParams.new(torsion_atom_count=-1)
 

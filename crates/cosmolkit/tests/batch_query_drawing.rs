@@ -49,14 +49,14 @@ fn complete_query_values_and_invalid_positions_match_scalar_serial_and_parallel(
             ..Default::default()
         };
         let strings = batch
-            .to_smiles_list_with_params(&SmilesWriteParams::default(), &query)
+            .to_smiles_with_params(&SmilesWriteParams::default(), &query)
             .unwrap();
         assert_eq!(
             strings,
             vec![Some("CCO".into()), None, Some("c1ccccc1".into())]
         );
-        let bounds = batch.dg_bounds_matrix_list_with_params(&query).unwrap();
-        let svg = batch.to_svg_list_with_params(300, 300, &query).unwrap();
+        let bounds = batch.dg_bounds_matrix_with_params(&query).unwrap();
+        let svg = batch.to_svg_with_params(300, 300, &query).unwrap();
         for index in 0..3 {
             match &originals[index] {
                 Some(molecule) => {
@@ -85,7 +85,7 @@ fn complete_query_values_and_invalid_positions_match_scalar_serial_and_parallel(
     };
     assert!(
         batch
-            .to_smiles_list_with_params(&Default::default(), &query)
+            .to_smiles_with_params(&Default::default(), &query)
             .is_err()
     );
 }

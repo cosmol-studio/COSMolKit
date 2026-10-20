@@ -181,13 +181,13 @@ impl MorganSettings {
     }
 }
 macro_rules! calculations {
-    ($bulk:ident,$method:ident,$owner:ident,$result:ty) => {
+    ($bulk:ident,$method:ident,$owner:ident,$result:ty,$batch:ty) => {
         impl MorganFingerprintGenerator {
             pub fn $bulk(
                 &self,
                 molecules: &[Option<&Molecule>],
                 num_threads: i32,
-            ) -> Result<Vec<Option<$result>>, MorganReadError> {
+            ) -> Result<$batch, MorganReadError> {
                 // Keep one owner lock across needs decisions and calculation.
                 // On poison, preserve the original ordered preparation errors
                 // before surfacing the owner error; never prescan valence.
@@ -221,6 +221,7 @@ macro_rules! calculations {
                     .collect::<Vec<_>>();
                 calculation
                     .$bulk(&inputs, num_threads)
+                    .map(<$batch>::from)
                     .map_err(MorganReadError::Generator)
             }
         }
@@ -229,7 +230,7 @@ macro_rules! calculations {
                 &self,
                 generator: &MorganFingerprintGenerator,
                 params: Option<&MorganCallParams>,
-                output: Option<&mut FingerprintAdditionalOutput>,
+                additional_output: Option<&mut FingerprintAdditionalOutput>,
             ) -> Result<$result, MorganReadError> {
                 let defaults = MorganCallParams::default();
                 let params = params.unwrap_or(&defaults);
@@ -248,7 +249,7 @@ macro_rules! calculations {
                 )
                 .map_err(MorganReadError::Preparation)?;
                 calculation
-                    .$owner(&prepared.owner_input(), &call, output)
+                    .$owner(&prepared.owner_input(), &call, additional_output)
                     .map_err(MorganReadError::Generator)
             }
         }
@@ -258,25 +259,29 @@ calculations!(
     fingerprints,
     fingerprint_morgan_with_generator,
     bits,
-    Fingerprint
+    Fingerprint,
+    crate::FingerprintBatch
 );
 calculations!(
     counts,
     fingerprint_morgan_count_with_generator,
     count,
-    SparseCountFingerprint32
+    SparseCountFingerprint32,
+    Vec<Option<SparseCountFingerprint32>>
 );
 calculations!(
     sparse_fingerprints,
     fingerprint_morgan_sparse_with_generator,
     sparse_bits,
-    SparseBitFingerprint
+    SparseBitFingerprint,
+    Vec<Option<SparseBitFingerprint>>
 );
 calculations!(
     sparse_counts,
     fingerprint_morgan_sparse_count_with_generator,
     sparse_count,
-    SparseCountFingerprint
+    SparseCountFingerprint,
+    Vec<Option<SparseCountFingerprint>>
 );
 
 #[cfg(test)]
@@ -344,7 +349,11 @@ mod tests {
                 generator
                     .fingerprints(&[Some(&cold), None, Some(&cold)], 2)
                     .unwrap(),
-                vec![Some(expected.clone()), None, Some(expected.clone())]
+                crate::FingerprintBatch::new(vec![
+                    Some(expected.clone()),
+                    None,
+                    Some(expected.clone())
+                ])
             );
         }
         assert_eq!(acquisitions(), before);

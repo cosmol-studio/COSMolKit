@@ -693,7 +693,7 @@ fn query_batch(
             }
             let values = if task == "svg" {
                 batch
-                    .to_svg_list_with_params(
+                    .to_svg_with_params(
                         integer(p, "width") as u32,
                         integer(p, "height") as u32,
                         &query,
@@ -704,7 +704,7 @@ fn query_batch(
                             .collect::<Vec<_>>()
                     })
             } else {
-                batch.dg_bounds_matrix_list_with_params(&query).map(|rows| {
+                batch.dg_bounds_matrix_with_params(&query).map(|rows| {
                     rows.into_iter()
                         .map(|v| {
                             v.map(|matrix| {

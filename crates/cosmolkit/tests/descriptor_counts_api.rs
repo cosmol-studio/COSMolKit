@@ -233,7 +233,12 @@ fn descriptor_heteroatoms_public_product() {
                         let label = format!("{smiles}/rh={remove_hs}/s={sanitized_constructor}");
                         // BEFORE-call constructor/element/H/isotope
                         // prerequisite plus fresh public property clone.
-                        assert_input_prerequisites(&label, smiles, receiver.atoms(), remove_hs);
+                        assert_input_prerequisites(
+                            &label,
+                            smiles,
+                            &receiver.topology().atoms,
+                            remove_hs,
+                        );
                         let properties_before = receiver.properties().clone();
                         let atoms = receiver.num_atoms();
                         let bonds = receiver.num_bonds();

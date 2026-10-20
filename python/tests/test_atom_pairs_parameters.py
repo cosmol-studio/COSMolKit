@@ -3,8 +3,8 @@ import pytest
 import cosmolkit as ck
 
 def fields(value):
-    result=(value.symbol(),value.branch_count(),value.pi_electrons())
-    return result if value.chirality() is None else result+(value.chirality(),)
+    result=(value.symbol,value.branch_count,value.pi_electrons)
+    return result if value.chirality is None else result+(value.chirality,)
 
 @pytest.mark.parametrize("name,expected", [
     ("version","1.1.0"),("num_type_bits",4),("num_pi_bits",2),

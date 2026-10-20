@@ -3780,7 +3780,7 @@ mod original_runtime_descriptor_conditions {
         // canonical sanitize value operation really invalidates query properties.
         let before = memo(&molecule);
         let invalidated = molecule.sanitize().unwrap();
-        assert_eq!(invalidated.atoms(), molecule.atoms());
+        assert_eq!(invalidated.topology().atoms, molecule.topology().atoms);
         assert_eq!(invalidated.bonds(), molecule.bonds());
         assert_eq!(memo(&invalidated), Default::default());
         assert_eq!(

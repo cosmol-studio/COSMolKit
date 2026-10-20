@@ -56,7 +56,7 @@ fn batch_pattern_zero_and_source_unsigned_width_errors_retain_all_indices_and_ca
     for (n_bits, expected) in widths() {
         for n_jobs in [1, 4] {
             let error = batch
-                .fingerprint_pattern_list_with_params(
+                .fingerprint_pattern_with_params(
                     &PatternFingerprintParams {
                         n_bits,
                         tautomeric: false,

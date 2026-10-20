@@ -99,9 +99,7 @@ macro_rules! error_projection {
         $($variant:ident $({$($field:ident $(: $ty:ty $(=> $convert:expr)?)?),+ $(,)?})? $(($source:tt))?),+ $(,)?
     } $(, cause = $cause:expr)? $(, source = $source_type:ty)? $(, methods = {$($method:item)*})? ) => {
         $crate::error_framework::require_retained_cause!($mode $(, $cause)?);
-        #[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-        #[derive(Clone, Copy, PartialEq)]
-        pub enum $kind { $($variant),+ }
+        $crate::enums::binding_enum!($kind, { $($variant),+ });
 
         #[pyclass(module = "cosmolkit", extends=PyValueError)]
         pub struct $name {

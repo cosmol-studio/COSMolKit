@@ -20,10 +20,10 @@ macro_rules! run_fingerprint {
             molecule: &Molecule,
             py: Python<'_>,
             params: &ck::$params,
-            output: Option<&mut FingerprintAdditionalOutput>,
+            additional_output: Option<&mut FingerprintAdditionalOutput>,
         ) -> PyResult<$output> {
-            let output = output.map(|value| &mut value.inner);
-            py.detach(|| molecule.inner.$method(params, output))
+            let additional_output = additional_output.map(|value| &mut value.inner);
+            py.detach(|| molecule.inner.$method(params, additional_output))
                 .map(|inner| $output { inner })
                 .map_err(crate::morgan_errors::$error::from_rust)
         }

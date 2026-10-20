@@ -32,13 +32,18 @@ impl Molecule {
         self.inner.borrow().has_valence_violation(atom_id)
     }
     pub fn atoms(&self) -> Vec<ck::Atom> {
-        self.inner.borrow().atoms().to_vec()
+        self.inner.borrow().topology().atoms.clone()
     }
     pub fn bonds(&self) -> Vec<ck::Bond> {
         self.inner.borrow().bonds().to_vec()
     }
     pub fn atom(&self, atom: ck::AtomId) -> Option<ck::Atom> {
-        self.inner.borrow().atom(atom).cloned()
+        self.inner
+            .borrow()
+            .topology()
+            .atoms
+            .get(atom.index())
+            .cloned()
     }
     pub fn bond(&self, bond: ck::BondId) -> Option<ck::Bond> {
         self.inner.borrow().bond(bond).cloned()

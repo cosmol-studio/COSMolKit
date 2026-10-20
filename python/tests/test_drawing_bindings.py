@@ -16,8 +16,8 @@ def coordinate_bits(rows: Sequence[Sequence[float]] | None) -> tuple[bytes, ...]
 
 
 def state(molecule: cosmolkit.Molecule) -> tuple[str, int, int, tuple[bytes, ...] | None]:
-    return (molecule.to_smiles(), molecule.num_atoms(), molecule.num_bonds(),
-            coordinate_bits(molecule.coordinates_2d()))
+    return (molecule.to_smiles(), molecule.num_atoms, molecule.num_bonds,
+            coordinate_bits(molecule.coordinates_2d))
 
 
 def invalid_ffi_call(operation: object) -> Callable[..., object]:
@@ -98,8 +98,8 @@ def test_default_and_configured_layout_are_value_transforms():
     assert state(short_source) == before
     configured = configured_source.with_2d_coordinates_with_params(cosmolkit.Coordinate2DParams())
     assert state(configured_source) == before
-    assert coordinate_bits(short.coordinates_2d()) == coordinate_bits(configured.coordinates_2d())
-    rows = short.coordinates_2d()
+    assert coordinate_bits(short.coordinates_2d) == coordinate_bits(configured.coordinates_2d)
+    rows = short.coordinates_2d
     assert rows is not None
     assert len(rows) == 3
 
@@ -110,8 +110,8 @@ def test_explicit_two_atom_map_forwarding_preserves_original():
     params = cosmolkit.Coordinate2DParams({0: [-0.0, 0.0], 1: [1.5, 0.0]}, force_rdkit=True)
     positioned = source.with_2d_coordinates_with_params(params)
     assert state(source) == before == ("CCO", 3, 2, None)
-    assert positioned.num_atoms() == 3 and positioned.num_bonds() == 2
-    rows = positioned.coordinates_2d()
+    assert positioned.num_atoms == 3 and positioned.num_bonds == 2
+    rows = positioned.coordinates_2d
     assert rows is not None
     assert len(rows) == 3
     assert coordinate_bits([params.coordinate_map[0]]) == coordinate_bits([[-0.0, 0.0]])
@@ -241,7 +241,7 @@ def test_svg_png_exact_repeats_and_observable_state(smiles: str, dimensions: tup
     assert svg_outputs[0] == svg_outputs[1]
     assert png_outputs[0] == png_outputs[1]
     if positioned:
-        returned = source.coordinates_2d()
+        returned = source.coordinates_2d
         assert returned is not None
         returned[0][0] = 999.0
         assert state(source) == before

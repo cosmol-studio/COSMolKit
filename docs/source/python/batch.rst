@@ -19,8 +19,8 @@ transform, export, and filtering steps.
 
    prepared = batch.with_hydrogens().with_2d_coordinates()
 
-   print(prepared.valid_mask())
-   print(prepared.errors())
+   print(prepared.valid_mask)
+   print(prepared.errors)
 
 ``repr()`` on ``BatchParams``, ``BatchQueryParams``, ``BatchExportParams`` and
 ``BatchImageParams`` displays every registered configuration field and its
@@ -52,8 +52,8 @@ input index, operation name, and message:
 
 .. code-block:: python
 
-   for error in batch.errors():
-       print(error.index(), error.operation(), error.message())
+   for error in batch.errors:
+       print(error.index, error.operation, error.message)
 
    try:
        ck.mols_from_smiles_list(["C1CC"], errors=ck.BatchErrorMode.RAISE)
@@ -75,7 +75,7 @@ returned as ``Molecule`` objects and invalid kept records are returned as
    molecules = prepared.to_list()
    first = prepared[0]
    tail = prepared[5:]
-   valid = prepared[prepared.valid_mask()]
+   valid = prepared[prepared.valid_mask]
 
    for molecule in prepared:
        if molecule is not None:
@@ -101,7 +101,7 @@ Export Images
        report_path="image_errors.json",
    )
 
-   print(report.total(), report.success(), report.failed())
+   print(report.total, report.success, report.failed)
 
 ``filenames`` is optional. Entries must match the batch length; ``None`` uses
 the default zero-padded name for that record. Names are relative to the output
@@ -142,17 +142,29 @@ Derived Outputs
 
 .. code-block:: python
 
-   smiles = prepared.to_smiles_list()
-   rooted = prepared.to_smiles_list(rooted_at_atom=0)
-   explicit = prepared.to_smiles_list(
+   smiles = prepared.to_smiles()
+   rooted = prepared.to_smiles(rooted_at_atom=0)
+   explicit = prepared.to_smiles(
        all_bonds_explicit=True,
        all_hydrogens_explicit=True,
    )
-   svgs = prepared.to_svg_list(width=300, height=300)
-   bounds = prepared.dg_bounds_matrix_list()
-   fingerprints = prepared.fingerprint_morgan_list(fp_size=2048)
-   patterns = prepared.fingerprint_pattern_list(n_bits=2048, tautomeric=False)
-   atom_pairs = prepared.fingerprint_atom_pair_list(fp_size=2048)
+   svgs = prepared.to_svg(width=300, height=300)
+   bounds = prepared.dg_bounds_matrix()
+   fingerprints = prepared.fingerprint_morgan(fp_size=2048)
+   patterns = prepared.fingerprint_pattern(n_bits=2048, tautomeric=False)
+   atom_pairs = prepared.fingerprint_atom_pair(fp_size=2048)
+
+Fingerprint method names and algorithm parameters match ``Molecule``. Pass
+either a parameter object or algorithm keywords. Execution keywords remain
+independent of algorithm configuration:
+
+.. code-block:: python
+
+   options = ck.MorganFingerprintParams(radius=2)
+   fingerprints = prepared.fingerprint_morgan(
+       options,
+       n_jobs=4,
+   )
 
 Morgan, Pattern, and AtomPair batch APIs use the same source-backed cores as
 the single-molecule APIs, preserve record order, and are covered by exact
@@ -164,28 +176,28 @@ provenance through the following ``MoleculeBatch`` conveniences:
 
 .. code-block:: python
 
-   results = prepared.fingerprint_morgan_with_output_list(
-       options=ck.MorganFingerprintParams(radius=2, fp_size=2048),
+   results = prepared.fingerprint_morgan_with_output(
+       ck.MorganFingerprintParams(radius=2, fp_size=2048),
    )
 
    for result in results:
        if result is not None:
-           print(result.fingerprint().on_bits())
-           print(result.additional_output().bit_info_map())
+           print(result.fingerprint.on_bits)
+           print(result.additional_output.bit_info_map)
 
-   atom_pair_results = prepared.fingerprint_atom_pair_with_output_list(
-       options=ck.AtomPairFingerprintParams(fp_size=2048),
+   atom_pair_results = prepared.fingerprint_atom_pair_with_output(
+       ck.AtomPairFingerprintParams(fp_size=2048),
    )
 
    for result in atom_pair_results:
        if result is not None:
-           print(result.fingerprint().on_bits())
-           print(result.additional_output().bit_info_map())
+           print(result.fingerprint.on_bits)
+           print(result.additional_output.bit_info_map)
 
 SMILES Options
 --------------
 
-``to_smiles_list()`` accepts the same output-shaping options for every record:
+``to_smiles()`` accepts the same output-shaping options for every record:
 
 - ``isomeric_smiles`` includes stereochemical and isotopic information.
 - ``canonical`` returns canonical SMILES when enabled.
@@ -209,15 +221,15 @@ Batch SMILES output preserves isomeric chirality by default:
        errors="raise",
    )
 
-   print(chiral_batch.to_smiles_list(isomeric_smiles=True))
-   print(chiral_batch.to_smiles_list(isomeric_smiles=False))
+   print(chiral_batch.to_smiles(isomeric_smiles=True))
+   print(chiral_batch.to_smiles(isomeric_smiles=False))
 
 Use ``canonical=False`` when you want output to stay closer to each record's
 input traversal while keeping the same CW/CCW chiral tag path:
 
 .. code-block:: python
 
-   print(chiral_batch.to_smiles_list(canonical=False))
+   print(chiral_batch.to_smiles(canonical=False))
 
 Parallel Work
 -------------
@@ -234,13 +246,13 @@ this configuration step does not duplicate the molecular data.
 
    configured = batch.with_parallel_jobs(8)
    prepared = configured.with_2d_coordinates(errors="keep")
-   smiles = prepared.to_smiles_list()
+   smiles = prepared.to_smiles()
 
 Method-level ``n_jobs`` still overrides the batch default for a single call:
 
 .. code-block:: python
 
-   svgs = prepared.to_svg_list(300, 300, n_jobs=2)
+   svgs = prepared.to_svg(300, 300, n_jobs=2)
 
 ``with_progress_bar()`` returns a new batch with a default Rust-side progress
 bar setting. Progress is emitted by Rust to stderr, matching the usual terminal
@@ -251,7 +263,7 @@ batch default for one call:
 
    tracked = batch.with_parallel_jobs(8).with_progress_bar(True)
    prepared = tracked.with_2d_coordinates(errors="keep")
-   smiles = prepared.to_smiles_list(progress_bar=False)
+   smiles = prepared.to_smiles(progress_bar=False)
 
 Pass ``None`` to clear the batch-level default and let rayon choose:
 

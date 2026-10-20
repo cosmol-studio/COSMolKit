@@ -118,12 +118,12 @@ pub(crate) fn keywords(
 ) -> crate::params::BioMoleculeParams {
     let defaults = ck::BioMoleculeParams::default();
     crate::params::BioMoleculeParams {
-        inner: ck::BioMoleculeParams {
+        inner: crate::parameters::NativeField::Owned(ck::BioMoleculeParams {
             sanitize: sanitize.unwrap_or(defaults.sanitize),
             remove_hs: remove_hs.unwrap_or(defaults.remove_hs),
             flavor: flavor.unwrap_or(defaults.flavor),
             proximity_bonding: proximity_bonding.unwrap_or(defaults.proximity_bonding),
-        },
+        }),
     }
 }
 
@@ -146,7 +146,7 @@ mod tests {
             let original=bio.to_mmcif().unwrap();
             let defaults=ck::BioMoleculeParams::default();
             let configured=ck::BioMoleculeParams{sanitize:false,remove_hs:false,flavor:1,proximity_bonding:false};
-            let params=Py::new(py,crate::params::BioMoleculeParams{inner:configured})?;
+            let params=Py::new(py,crate::params::BioMoleculeParams{inner:crate::parameters::NativeField::Owned(configured)})?;
             let kwargs=PyDict::new(py);
             kwargs.set_item("sanitize",false)?;kwargs.set_item("remove_hs",false)?;
             kwargs.set_item("flavor",1)?;kwargs.set_item("proximity_bonding",false)?;

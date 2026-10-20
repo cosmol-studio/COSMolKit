@@ -44,9 +44,11 @@ impl PropertyValueError {
     fn domain(&self) -> &'static str {
         "property"
     }
+    #[getter]
     fn expected(&self) -> PropertyValueKind {
         self.inner.expected().into()
     }
+    #[getter]
     fn actual(&self) -> PropertyValueKind {
         self.inner.actual().into()
     }
@@ -63,10 +65,12 @@ impl PropertyValueError {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct PropertyValue {
-    pub(crate) inner: ck::PropertyValue,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct PropertyValue {
+        pub(crate) inner: ck::PropertyValue,
+    }
 }
 #[pymethods]
 impl PropertyValue {
@@ -121,6 +125,7 @@ impl PropertyValue {
             inner: ck::PropertyValue::Bool(value),
         }
     }
+    #[getter]
     fn kind(&self) -> PropertyValueKind {
         self.inner.kind().into()
     }
@@ -192,5 +197,26 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+}
+
+/// Counted native byte text is exposed as Python text only by strict decoding.
+/// This shares the existing explicit UTF-8 boundary; no lossy replacement.
+pub(crate) struct PropertyTextField;
+crate::configuration::type_projection! {
+    impl Container for PropertyTextField {
+        type Native = cosmolkit::PropertyText;
+        const TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_identifier!("builtins", "str");
+        const INPUT: pyo3::inspect::PyStaticExpr = Self::TYPE;
+        fn extract(value: pyo3::Borrowed<'_, '_, pyo3::PyAny>) -> pyo3::PyResult<Self::Native> {
+            Ok(value.extract::<String>()?.into())
+        }
+        fn output<'py>(
+            py: pyo3::Python<'py>,
+            value: &Self::Native,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            use pyo3::IntoPyObjectExt;
+            crate::property_values::decode_source_text(py, value)?.into_bound_py_any(py)
+        }
     }
 }

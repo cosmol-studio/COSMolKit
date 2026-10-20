@@ -1,23 +1,14 @@
 //! Source-owned Morgan selectors and configuration, without fingerprint logic.
 use crate::fingerprint_providers::AtomPairAtomInvariantsGenerator;
-use crate::parameters::Configuration;
 use crate::query_compiler::QueryGraph;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
-#[derive(Clone, PartialEq)]
-pub struct MorganInvariants {
-    pub(crate) inner: ck::MorganInvariants,
-}
-
-impl Configuration for MorganInvariants {
-    type Native = ck::MorganInvariants;
-    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
-        Ok(Self { inner })
-    }
-    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
-        Ok(self.inner.clone())
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
+    #[derive(Clone, PartialEq)]
+    pub struct MorganInvariants {
+        pub(crate) inner: ck::MorganInvariants,
     }
 }
 
@@ -74,10 +65,10 @@ impl MorganAtomInvariantsGenerator {
         }
     }
     #[staticmethod]
-    fn atom_pair(generator: &AtomPairAtomInvariantsGenerator) -> Self {
-        Self {
-            inner: ck::MorganAtomInvariantsGenerator::atom_pair(generator.inner.clone()),
-        }
+    fn atom_pair(py: Python<'_>, generator: &AtomPairAtomInvariantsGenerator) -> PyResult<Self> {
+        Ok(Self {
+            inner: ck::MorganAtomInvariantsGenerator::atom_pair(generator.to_rust(py)?),
+        })
     }
 }
 

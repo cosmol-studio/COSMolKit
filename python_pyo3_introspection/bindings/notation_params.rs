@@ -9,6 +9,7 @@ macro_rules! cx_fields {
         #[pymethods]
         impl CxSmilesFields {
             $(#[classattr] #[allow(non_snake_case)] fn $flag() -> Self { Self { inner: ck::CxSmilesFields::$flag } })+
+            #[getter]
             fn bits(&self) -> u32 { self.inner.bits() }
             fn contains(&self, other: &Self) -> bool { self.inner.contains(other.inner) }
             fn __or__(&self, other: &Self) -> Self { Self { inner: self.inner | other.inner } }
@@ -91,32 +92,36 @@ impl CxCoordinateSelectionInput {
     }
 }
 
-impl crate::parameters::Configuration for CxSmilesFields {
-    type Native = ck::CxSmilesFields;
-    const INPUT: pyo3::inspect::PyStaticExpr =
-        <CxSmilesFieldsInput as FromPyObject<'_, '_>>::INPUT_TYPE;
-    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
-        value.extract::<CxSmilesFieldsInput>()?.into_rust()
-    }
-    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
-        Ok(Self { inner })
-    }
-    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
-        Ok(self.inner)
+crate::configuration::type_projection! {
+    impl Configuration for CxSmilesFields {
+        type Native = ck::CxSmilesFields;
+        const INPUT: pyo3::inspect::PyStaticExpr =
+            <CxSmilesFieldsInput as FromPyObject<'_, '_>>::INPUT_TYPE;
+        fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+            value.extract::<CxSmilesFieldsInput>()?.into_rust()
+        }
+        fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
+            Ok(Self { inner })
+        }
+        fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
+            Ok(self.inner)
+        }
     }
 }
-impl crate::parameters::Configuration for CxCoordinateSelection {
-    type Native = ck::CxCoordinateSelection;
-    const INPUT: pyo3::inspect::PyStaticExpr =
-        <CxCoordinateSelectionInput as FromPyObject<'_, '_>>::INPUT_TYPE;
-    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
-        value.extract::<CxCoordinateSelectionInput>()?.into_rust()
-    }
-    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
-        Ok(Self { inner })
-    }
-    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
-        Ok(self.inner)
+crate::configuration::type_projection! {
+    impl Configuration for CxCoordinateSelection {
+        type Native = ck::CxCoordinateSelection;
+        const INPUT: pyo3::inspect::PyStaticExpr =
+            <CxCoordinateSelectionInput as FromPyObject<'_, '_>>::INPUT_TYPE;
+        fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+            value.extract::<CxCoordinateSelectionInput>()?.into_rust()
+        }
+        fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
+            Ok(Self { inner })
+        }
+        fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
+            Ok(self.inner)
+        }
     }
 }
 

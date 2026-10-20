@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from types import MappingProxyType
 
 HERE = Path(__file__).resolve().parent
 
@@ -144,6 +145,24 @@ def enum_payload(node, runtime):
     constants = [member for member in node.body if isinstance(member, ast.AnnAssign)]
     if not constants:
         return False
+    mappings = {member.target.id: member for member in constants
+                if isinstance(member.target, ast.Name) and member.target.id in {"names", "values"}}
+    if mappings:
+        if set(mappings) != {"names", "values"}:
+            return False
+        for name, key in (("names", "str"), ("values", "int")):
+            if (ast.unparse(mappings[name].annotation) != f"Final[Mapping[{key}, {node.name}]]"
+                    or not isinstance(getattr(runtime, name, None), MappingProxyType)):
+                return False
+        constants = [member for member in constants if member not in mappings.values()]
+        expected = {member.target.id: getattr(runtime, member.target.id, None)
+                    for member in constants if isinstance(member.target, ast.Name)}
+        if not expected or dict(runtime.names) != expected:
+            return False
+        if dict(runtime.values) != {int(value): value for value in expected.values()}:
+            return False
+        if any(runtime.names.get(value.name) != value for value in expected.values()):
+            return False
     for member in constants:
         annotation = member.annotation
         if (not isinstance(member.target, ast.Name)
@@ -153,6 +172,13 @@ def enum_payload(node, runtime):
                 or not isinstance(annotation.slice, ast.Name) or annotation.slice.id != node.name
                 or not isinstance(getattr(runtime, member.target.id, None), runtime)):
             return False
+    if mappings:
+        methods = {member.name: member for member in node.body if isinstance(member, ast.FunctionDef)}
+        name = methods.get("name")
+        if (name is None or ast.unparse(name.returns) != "str"
+                or len(name.decorator_list) != 1 or not has_decorator(name, "property")):
+            return False
+        return set(methods) <= {"name", "__new__", "__repr__", "__int__", "__eq__", "__ne__", "__hash__"}
     return all(not isinstance(member, ast.FunctionDef)
                or (member.name.startswith("__") and member.name.endswith("__")
                    and member.name not in {"__new__", "__init__"})
@@ -388,14 +414,20 @@ def validate(contract, module, stub):
             for name in payloads:
                 declarations = nodes.get(name, [])
                 accessor = inspect.getattr_static(runtime, name.rpartition(".")[2], None)
-                if len(declarations) != 1 or not callable(accessor):
+                is_property = payloads[name]["kind"] == "property"
+                valid_accessor = (
+                    accessor is not None and hasattr(accessor, "__get__")
+                    if is_property else callable(accessor)
+                )
+                if len(declarations) != 1 or not valid_accessor:
                     fail("error_projection", f"Record error payload accessor missing: {name}")
                     continue
                 member = declarations[0]
                 arguments = member.args.posonlyargs + member.args.args
                 if (len(arguments) != 1 or member.args.kwonlyargs or member.args.vararg
                         or member.args.kwarg or not concrete_annotation(member.returns)
-                        or has_decorator(member, "setter")):
+                        or has_decorator(member, "setter")
+                        or has_decorator(member, "property") != is_property):
                     fail("error_projection", f"Record error payload must be typed and readonly: {name}")
             continue
         getters = [member for member in nodes[path].body

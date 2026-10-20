@@ -53,12 +53,12 @@ test('Batch short calls preserve configured parsing, query callbacks and error p
   assert.deepEqual(value.errors().map(e=>e.index()),[1]);
   const write=new ck.SmilesWriteParams();write.allBondsExplicit=true;
   let ticks=0;const callback=()=>{ticks++;};
-  assert.deepEqual(value.toSmilesList(write,{progressCallback:callback}),['C-C-O',null,'O']);assert.equal(ticks,3);
-  assert.deepEqual(value.toSmilesList({allBondsExplicit:true},new ck.BatchQueryParams()),value.toSmilesListWithParams(write,new ck.BatchQueryParams()));
+  assert.deepEqual(value.toSmiles(write,{progressCallback:callback}),['C-C-O',null,'O']);assert.equal(ticks,3);
+  assert.deepEqual(value.toSmiles({allBondsExplicit:true},new ck.BatchQueryParams()),value.toSmilesWithParams(write,new ck.BatchQueryParams()));
   assert.deepEqual(value.withHydrogens({},{}).validMask(),[true,false,true]);
-  const expected=value.fingerprintMorganListWithParams(new ck.MorganFingerprintParams(),new ck.BatchQueryParams()).map(fp=>fp?.onBits()??null);
-  assert.deepEqual(value.fingerprintMorganList({},{}).map(fp=>fp?.onBits()??null),expected);
-  const thrown=new Error('progress callback');assert.throws(()=>value.toSmilesList({}, {progressCallback:()=>{throw thrown;}}),e=>e===thrown);
+  const expected=value.fingerprintMorganWithParams(new ck.MorganFingerprintParams(),new ck.BatchQueryParams()).map(fp=>fp?.onBits()??null);
+  assert.deepEqual(value.fingerprintMorgan({},{}).map(fp=>fp?.onBits()??null),expected);
+  const thrown=new Error('progress callback');assert.throws(()=>value.toSmiles({}, {progressCallback:()=>{throw thrown;}}),e=>e===thrown);
  }
 });
 

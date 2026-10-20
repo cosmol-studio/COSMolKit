@@ -4,20 +4,20 @@ import cosmolkit as ck
 
 
 @pytest.mark.parametrize("method", ["fingerprint_morgan", "fingerprint_morgan_sparse", "fingerprint_morgan_count", "fingerprint_morgan_sparse_count"])
-def test_morgan_short_methods_accept_generator_keywords(method):
+def test_morgan_short_methods_accept_flat_configuration_keywords(method):
     molecule = ck.Molecule.from_smiles("CC(C)O")
     function = getattr(molecule, method)
-    params = ck.MorganFingerprintParams(generator=ck.MorganGeneratorParams(radius=2, fp_size=256, include_chirality=True), from_atoms=[0, 1])
+    params = ck.MorganFingerprintParams(radius=2, fp_size=256, include_chirality=True, from_atoms=[0, 1])
     expected = getattr(molecule, method + "_with_params")(params, None)
     actual = function(radius=2, fp_size=256, include_chirality=True, from_atoms=[0, 1])
-    project = lambda value: value.on_bits() if hasattr(value, "on_bits") else value.nonzero_elements()
+    project = lambda value: value.on_bits if hasattr(value, "on_bits") else value.nonzero_elements
     assert project(actual) == project(expected) == project(function(params))
-    assert project(function(generator=params.generator, from_atoms=[0, 1])) == project(expected)
+    assert project(function(radius=params.radius, fp_size=params.fp_size, include_chirality=params.include_chirality, from_atoms=params.from_atoms)) == project(expected)
     if hasattr(actual, "n_bits") and "sparse" not in method:
-        assert actual.n_bits() == 256
+        assert actual.n_bits == 256
     with pytest.raises(TypeError, match="mutually exclusive"):
         function(params, radius=2)
-    with pytest.raises(TypeError, match="mutually exclusive"):
+    with pytest.raises(TypeError):
         function(generator=ck.MorganGeneratorParams(), radius=2)
     with pytest.raises((TypeError, OverflowError)):
         function(radius=-1)
@@ -45,7 +45,7 @@ def test_search_configuration_forms_are_effective_and_mutually_exclusive():
 def test_smiles_factories_writers_and_required_fragment_inputs():
     params = ck.SmilesParseParams(sanitize=False)
     molecule = ck.Molecule.from_smiles("CCO", params)
-    assert molecule.num_atoms() == ck.Molecule.from_smiles("CCO", sanitize=False).num_atoms() == 3
+    assert molecule.num_atoms == ck.Molecule.from_smiles("CCO", sanitize=False).num_atoms == 3
     writer = ck.SmilesWriteParams(canonical=False, all_bonds_explicit=True)
     assert molecule.to_smiles(writer) == molecule.to_smiles(canonical=False, all_bonds_explicit=True)
     fragment = ck.FragmentSmilesWriteParams([0, 1])
@@ -56,10 +56,30 @@ def test_smiles_factories_writers_and_required_fragment_inputs():
 
 def test_two_configuration_objects_have_independent_keyword_groups():
     batch = ck.MoleculeBatch.from_smiles_list(["CCO", "CCN"], ck.SmilesParseParams(), ck.BatchParams(n_jobs=2))
-    assert batch.to_smiles_list(n_jobs=2, canonical=False) == ["CCO", "CCN"]
-    assert ck.MoleculeBatch.from_smiles_list(["CCO"], sanitize=False, n_jobs=2).to_smiles_list() == ["CCO"]
+    assert batch.to_smiles(n_jobs=2, canonical=False) == ["CCO", "CCN"]
+    assert ck.MoleculeBatch.from_smiles_list(["CCO"], sanitize=False, n_jobs=2).to_smiles() == ["CCO"]
     with pytest.raises(TypeError, match="mutually exclusive"):
         ck.MoleculeBatch.from_smiles_list(["C"], parse=ck.SmilesParseParams(), sanitize=False)
+    read = dict(sanitize=False, allow_cxsmiles=True, strict_cxsmiles=True,
+                parse_name=False, remove_hs=False, skip_cleanup=False,
+                debug_parse=False, replacements={"{X}": "O"})
+    write = dict(isomeric_smiles=True, kekule=False, canonical=False,
+                 clean_stereo=True, rooted_at_atom=0, all_bonds_explicit=True,
+                 all_hydrogens_explicit=True, include_dative_bonds=True,
+                 ignore_atom_map_numbers=True)
+    texts = ["[H]O[H]", "{X}"]
+    expected = [ck.mol_from_smiles(text, **read).to_smiles(**write) for text in texts]
+    for factory in (ck.MoleculeBatch.from_smiles_list, ck.mols_from_smiles_list):
+        keyword_batch = factory(texts, **read, n_jobs=2, progress_bar=False)
+        configured_batch = factory(texts, ck.SmilesParseParams(**read), n_jobs=2)
+        assert keyword_batch.to_smiles(**write, n_jobs=2) == expected
+        assert configured_batch.to_smiles(ck.SmilesWriteParams(**write), n_jobs=2) == expected
+        for parse in (None, ck.SmilesParseParams()):
+            with pytest.raises(TypeError, match="mutually exclusive"):
+                factory(texts, parse, sanitize=None)
+        for options in (None, ck.SmilesWriteParams()):
+            with pytest.raises(TypeError, match="mutually exclusive"):
+                keyword_batch.to_smiles(options, canonical=None)
 
 
 def test_class_factories_keep_defaults_outside_the_configuration_record(tmp_path):
@@ -77,7 +97,7 @@ def test_sdf_text_conversion_and_batch_file_writers_are_distinct(tmp_path):
     text = molecule.to_sdf()
     assert isinstance(text, str) and text.endswith("$$$$\n")
     batch = ck.MoleculeBatch.from_sdf_records(text)
-    original = batch.to_smiles_list()
+    original = batch.to_smiles()
     params = ck.BatchExportParams(format="v3000", progress_bar=False)
 
     for label, args, kwargs in (
@@ -88,24 +108,24 @@ def test_sdf_text_conversion_and_batch_file_writers_are_distinct(tmp_path):
         path = tmp_path / f"{label}.sdf"
         report = batch.write_sdf(str(path), *args, **kwargs)
         assert isinstance(report, ck.BatchExportReport)
-        assert (report.total(), report.success(), report.failed()) == (1, 1, 0)
-        assert ck.MoleculeBatch.read_sdf(str(path)).to_smiles_list() == original
+        assert (report.total, report.success, report.failed) == (1, 1, 0)
+        assert ck.MoleculeBatch.read_sdf(str(path)).to_smiles() == original
         if label != "default":
             assert "V3000" in path.read_text()
 
         directory = tmp_path / label
         directory.mkdir()
         report = batch.write_sdf_files(str(directory), *args, **kwargs)
-        assert report.success() == 1
+        assert report.success == 1
         files = list(directory.glob("*.sdf"))
         assert len(files) == 1
-        assert ck.MoleculeBatch.read_sdf(str(files[0])).to_smiles_list() == original
+        assert ck.MoleculeBatch.read_sdf(str(files[0])).to_smiles() == original
         if label != "default":
             assert "V3000" in files[0].read_text()
 
     for name in ("to_sdf", "to_sdf_with_params", "to_sdf_files", "to_sdf_files_with_params"):
         assert not hasattr(batch, name)
-    assert batch.to_smiles_list() == original
+    assert batch.to_smiles() == original
     assert molecule.to_sdf() == text
 
 
@@ -133,7 +153,7 @@ def test_pickle_protocol_accepts_the_declared_index_protocol():
 
 def test_native_batch_record_union_keeps_both_real_variants():
     batch = ck.MoleculeBatch.from_smiles_list(["C", "C#"], errors=ck.BatchErrorMode.KEEP)
-    records = batch.records()
+    records = batch.records
     assert len(records) == 2
     assert isinstance(records[0], ck.Molecule)
     assert isinstance(records[1], ck.BatchError)

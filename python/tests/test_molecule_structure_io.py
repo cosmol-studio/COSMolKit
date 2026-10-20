@@ -14,16 +14,16 @@ def positions(text: str) -> list[tuple[float, ...]]:
 def test_structural_readers_default_params_kwargs_and_conveniences():
     params = ck.BioMoleculeParams(remove_hs=False, proximity_bonding=False)
     for read in (ck.Molecule.from_pdb, ck.mol_from_pdb):
-        assert read(PDB).num_atoms() == 1
-        assert read(PDB, params).num_atoms() == 2
-        assert read(PDB, remove_hs=False, proximity_bonding=False).num_bonds() == 1
+        assert read(PDB).num_atoms == 1
+        assert read(PDB, params).num_atoms == 2
+        assert read(PDB, remove_hs=False, proximity_bonding=False).num_bonds == 1
         assert positions(read(PDB).to_pdb()) == [(1.0, 2.0, 3.0)]
-    assert ck.Molecule.from_pdb_with_params(PDB, params).num_atoms() == 2
+    assert ck.Molecule.from_pdb_with_params(PDB, params).num_atoms == 2
     for read in (ck.Molecule.from_mmcif, ck.mol_from_mmcif):
         assert positions(read(MMCIF).to_pdb()) == [(1.0, 2.0, 3.0)]
-        assert read(MMCIF, params).num_atoms() == 1
-        assert read(MMCIF, proximity_bonding=False).num_bonds() == 0
-    assert ck.Molecule.from_mmcif_with_params(MMCIF, params).num_atoms() == 1
+        assert read(MMCIF, params).num_atoms == 1
+        assert read(MMCIF, proximity_bonding=False).num_bonds == 0
+    assert ck.Molecule.from_mmcif_with_params(MMCIF, params).num_atoms == 1
 
 
 def test_pdb_unique_explicit_all_and_atomic_writable_options():
@@ -51,7 +51,7 @@ def test_pdb_unique_explicit_all_and_atomic_writable_options():
         setattr(params, "all_conformers", "yes")
     assert params.all_conformers is True
     assert positions(source.to_pdb()) == [(0.0, 0.0, 0.0)]
-    coordinates = molecule.coordinates_2d()
+    coordinates = molecule.coordinates_2d
     assert coordinates is not None
     assert coordinates.tolist() == [[1.25, -2.5]]
     with pytest.raises(ck.MolecularIoError) as caught:

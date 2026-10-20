@@ -11,10 +11,12 @@ pub(crate) fn array<'py, const DIM: usize>(
         .into_pyarray(py)
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct Conformer2D {
-    pub(crate) inner: ck::Conformer2D,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct Conformer2D {
+        pub(crate) inner: ck::Conformer2D,
+    }
 }
 #[pymethods]
 impl Conformer2D {
@@ -29,15 +31,18 @@ impl Conformer2D {
         self.inner.id()
     }
     #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]]"}"#]
+    #[getter]
     fn coordinates<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray2<f64>> {
         array(py, self.inner.coordinates())
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct Conformer3D {
-    pub(crate) inner: ck::Conformer3D,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct Conformer3D {
+        pub(crate) inner: ck::Conformer3D,
+    }
 }
 #[pymethods]
 impl Conformer3D {
@@ -56,6 +61,7 @@ impl Conformer3D {
         self.inner.is_3d()
     }
     #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]]"}"#]
+    #[getter]
     fn coordinates<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray2<f64>> {
         array(py, self.inner.coordinates())
     }

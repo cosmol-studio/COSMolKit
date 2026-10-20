@@ -4,6 +4,7 @@ mod cx_lowering;
 mod cx_offsets;
 mod generic_groups;
 mod matcher;
+#[cfg(feature = "mcs")]
 mod mcs;
 mod query_behavior;
 mod query_fragments;
@@ -27,6 +28,7 @@ pub use matcher::{
 };
 #[doc(hidden)]
 pub use matcher::{QueryAtomIterator, query_atom_iterator};
+#[cfg(feature = "mcs")]
 pub use mcs::{
     AtomComparator, BondComparator, McsAtomCompareParameters, McsBondCompareParameters,
     McsCandidateMatchError, McsError, McsParameters, McsParametersJsonError, McsProgressError,
@@ -189,13 +191,16 @@ pub fn try_get_substruct_atom_matches_with_compiled_query_and_context(
 pub use matcher::__configuration_SubstructMatchParams;
 
 #[doc(hidden)]
+#[cfg(feature = "mcs")]
 pub use mcs::__configuration_McsParameters;
 #[doc(hidden)]
 pub use smarts_parse::__configuration_SmartsParseParams;
 
 #[doc(hidden)]
+#[cfg(feature = "mcs")]
 pub use mcs::__configuration_McsAtomCompareParameters;
 #[doc(hidden)]
+#[cfg(feature = "mcs")]
 pub use mcs::__configuration_McsBondCompareParameters;
 #[doc(hidden)]
 pub use smarts_write::__configuration_SmartsWriteParams;
@@ -264,6 +269,14 @@ pub struct MatchResult {
 }
 
 impl MatchResult {
+    /// Return `(query atom index, target atom index)` pairs in query order.
+    ///
+    /// The dense mapping stores each target index at its query index.
+    #[must_use]
+    pub fn atom_pairs(&self) -> Vec<(usize, usize)> {
+        self.atom_mapping.iter().copied().enumerate().collect()
+    }
+
     #[must_use]
     pub fn new(atom_mapping: Vec<usize>, bond_mapping: Vec<usize>) -> Self {
         Self {
@@ -274,6 +287,7 @@ impl MatchResult {
 }
 
 /// Result metadata for a maximum-common-substructure search.
+#[cfg(feature = "mcs")]
 #[derive(Debug, Clone, PartialEq)]
 pub struct McsResult {
     pub query: Option<QueryGraph>,
@@ -284,6 +298,7 @@ pub struct McsResult {
     pub degenerate: std::collections::BTreeMap<cosmolkit_model::PropertyText, QueryGraph>,
 }
 
+#[cfg(feature = "mcs")]
 impl McsResult {
     #[must_use]
     pub fn new(query: QueryGraph, atom_count: usize, bond_count: usize, completed: bool) -> Self {
@@ -336,6 +351,13 @@ mod tests {
     use super::*;
     use cosmolkit_model::{AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec};
     use cosmolkit_types::{BondOrder, Element};
+
+    #[test]
+    fn match_result_atom_pairs_preserve_query_order() {
+        let result = MatchResult::new(vec![4, 1, 7], vec![2, 5]);
+        assert_eq!(result.atom_pairs(), vec![(0, 4), (1, 1), (2, 7)]);
+        assert!(MatchResult::new(vec![], vec![]).atom_pairs().is_empty());
+    }
 
     fn query() -> QueryGraph {
         let atoms = vec![

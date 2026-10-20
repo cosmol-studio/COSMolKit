@@ -26,10 +26,12 @@ error_projection!(ChemistryProblemError, ChemistryProblemErrorKind, ck::Chemistr
     } }
 });
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct ChemistryProblem {
-    pub(crate) inner: ck::ChemistryProblem,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct ChemistryProblem {
+        pub(crate) inner: ck::ChemistryProblem,
+    }
 }
 #[pymethods]
 impl ChemistryProblem {
@@ -55,10 +57,12 @@ impl ChemistryProblem {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct ChemistryProblemReport {
-    pub(crate) inner: ck::ChemistryProblemReport,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct ChemistryProblemReport {
+        pub(crate) inner: ck::ChemistryProblemReport,
+    }
 }
 #[pymethods]
 impl ChemistryProblemReport {
@@ -164,13 +168,15 @@ mod tests {
                     let params = Py::new(
                         py,
                         SanitizeParams {
-                            inner: ck::SanitizeParams { operations },
+                            inner: crate::parameters::NativeField::Owned(ck::SanitizeParams {
+                                operations,
+                            }),
                         },
                     )?;
                     let expected = molecule
                         .borrow(py)
                         .inner
-                        .detect_chemistry_problems_with_params(&params.borrow(py).inner)
+                        .detect_chemistry_problems_with_params(&params.borrow(py).to_rust(py)?)
                         .unwrap();
                     let kwargs = pyo3::types::PyDict::new(py);
                     kwargs.set_item(

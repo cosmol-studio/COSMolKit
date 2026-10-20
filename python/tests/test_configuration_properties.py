@@ -1,7 +1,6 @@
 """Small native-binding regressions, not a second corpus parity suite."""
 import json
 import gc
-import weakref
 
 import pytest
 
@@ -21,54 +20,51 @@ def test_configuration_assignment_reaches_the_actual_operation():
     assert params.uniquify is False
 
 
-def test_assignment_preserves_nested_configuration_and_owned_lists():
-    generator = ck.MorganGeneratorParams(radius=2, include_chirality=True)
-    params = ck.MorganFingerprintParams(generator=generator, from_atoms=[0])
+def test_assignment_preserves_flat_configuration_and_owned_lists():
+    params = ck.MorganFingerprintParams(radius=2, include_chirality=True, from_atoms=[0])
     params.from_atoms = [1, 2]
-    assert params.from_atoms == [1, 2]
-    assert params.generator.radius == 2
-    assert params.generator.include_chirality is True
-    params.generator = ck.MorganGeneratorParams(radius=4)
-    assert params.generator.radius == 4
-    assert params.from_atoms == [1, 2]
+    assert params.from_atoms == (1, 2)
+    assert params.radius == 2
+    assert params.include_chirality is True
+    params.radius = 4
+    assert params.radius == 4
+    assert params.include_chirality is True
+    assert params.from_atoms == (1, 2)
 
 
-def test_nested_edits_reach_native_calls_without_aliasing_constructor_inputs():
-    original = ck.MorganGeneratorParams(radius=3)
+def test_flat_edits_reach_native_calls_without_aliasing_constructor_inputs():
     roots = [0]
-    params = ck.MorganFingerprintParams(generator=original, from_atoms=roots)
-    generator = params.generator
-    generator.radius = 0
-    params.from_atoms.append(1)
-    assert params.generator is generator
-    assert params.generator.radius == 0
-    assert params.from_atoms == [0, 1]
-    assert original.radius == 3 and roots == [0]
-    molecule = ck.Molecule.from_smiles("CCO")
-    explicit = ck.MorganFingerprintParams(generator=ck.MorganGeneratorParams(radius=0), from_atoms=[0, 1])
-    assert molecule.fingerprint_morgan_with_params(params, None).on_bits() == molecule.fingerprint_morgan_with_params(explicit, None).on_bits()
-    params.generator = ck.MorganGeneratorParams(radius=2)
-    assert generator.radius == 2
-    assert ck.MorganFingerprintParams(generator=generator).generator.radius == 2
-    params.generator.count_bounds.append(16)
-    assert params.generator.count_bounds == [1, 2, 4, 8, 16]
-
-
-def test_nested_and_list_conversion_failures_are_atomic():
-    params = ck.MorganFingerprintParams(from_atoms=[0])
-    child, roots = params.generator, params.from_atoms
-    with pytest.raises((OverflowError, TypeError)):
-        child.radius = -1
-    assert child.radius == params.generator.radius == 3
-    with pytest.raises((OverflowError, TypeError)):
-        roots.extend([1, -1])
-    assert roots == params.from_atoms == [0]
-    with pytest.raises((OverflowError, TypeError)):
-        params.generator.count_bounds.append(-1)
-    assert child.count_bounds == [1, 2, 4, 8]
-    params.from_atoms = None
+    params = ck.MorganFingerprintParams(radius=3, from_atoms=roots)
+    params.radius = 0
+    params.from_atoms = [*params.from_atoms, 1]
+    assert params.radius == 0
+    assert params.from_atoms == (0, 1)
+    assert roots == [0]
     roots.append(2)
-    assert params.from_atoms is None and roots == [0, 2]
+    assert params.from_atoms == (0, 1)
+    molecule = ck.Molecule.from_smiles("CCO")
+    explicit = ck.MorganFingerprintParams(radius=0, from_atoms=[0, 1])
+    assert molecule.fingerprint_morgan_with_params(params, None).on_bits == molecule.fingerprint_morgan_with_params(explicit, None).on_bits
+    params.radius = 2
+    assert params.radius == 2
+    params.count_bounds = [*params.count_bounds, 16]
+    assert params.count_bounds == (1, 2, 4, 8, 16)
+
+
+def test_flat_and_list_conversion_failures_are_atomic():
+    params = ck.MorganFingerprintParams(from_atoms=[0])
+    roots = params.from_atoms
+    with pytest.raises((OverflowError, TypeError)):
+        params.radius = -1
+    assert params.radius == 3
+    with pytest.raises((OverflowError, TypeError)):
+        params.from_atoms = [1, -1]
+    assert roots == params.from_atoms == (0,)
+    with pytest.raises((OverflowError, TypeError)):
+        params.count_bounds = [1, 2, 4, 8, -1]
+    assert params.count_bounds == (1, 2, 4, 8)
+    params.from_atoms = None
+    assert params.from_atoms is None and roots == (0,)
 
 
 @pytest.mark.parametrize("method,args,expected", [
@@ -111,14 +107,14 @@ def test_manually_defined_setters_also_support_live_configuration_views():
     callback = lambda *args: False
     tautomer = ck.TautomerParams.v1()
     tautomer.callback = callback
-    transforms = tautomer.transform_count()
+    transforms = tautomer.transform_count
     tautomer.score_params.terms = []
     tautomer.score_params.terms.append(ck.TautomerScoreTerm("carbon", "[#6]", 3))
-    assert [term.score() for term in tautomer.score_params.terms] == [3]
-    assert tautomer.callback is callback and tautomer.transform_count() == transforms
+    assert [term.score for term in tautomer.score_params.terms] == [3]
+    assert tautomer.callback is callback and tautomer.transform_count == transforms
     with pytest.raises(TypeError):
         tautomer.score_params.terms.append(42)
-    assert [term.score() for term in tautomer.score_params.terms] == [3]
+    assert [term.score for term in tautomer.score_params.terms] == [3]
 
 
 def test_mapping_and_nested_coordinate_edits_preserve_preset_state():
@@ -139,19 +135,14 @@ def test_mapping_and_nested_coordinate_edits_preserve_preset_state():
     assert {key: value for key, value in before.items() if "coord" not in key.lower()} == {key: value for key, value in after.items() if "coord" not in key.lower()}
 
 
-def test_views_do_not_keep_owners_alive_and_survive_owner_release():
+def test_readonly_sequence_snapshot_survives_owner_release():
     params = ck.MorganFingerprintParams(from_atoms=[0])
-    reference = weakref.ref(params)
-    child, roots = params.generator, params.from_atoms
+    roots = params.from_atoms
     del params
     gc.collect()
-    assert reference() is None
-    child.radius = 2
-    roots.append(1)
-    assert child.radius == 2 and roots == [0, 1]
-    child = ck.MorganFingerprintParams().generator
-    child.radius = 0
-    assert child.radius == 0
+    assert roots == (0,)
+    with pytest.raises(AttributeError):
+        roots.append(1)
 
 
 def test_setter_reuses_constructor_validation_and_is_atomic():
@@ -204,17 +195,17 @@ def test_conformer_assignment_retains_all_other_preset_state():
 
 def test_tautomer_assignment_retains_catalog_and_callback_identity():
     params = ck.TautomerParams.v1()
-    count = params.transform_count()
+    count = params.transform_count
     callback = lambda *args: False
     params.callback = callback
     params.max_tautomers = 9
     assert params.callback is callback
-    assert params.transform_count() == count
+    assert params.transform_count == count
     assert params.max_tautomers == 9
     with pytest.raises(TypeError, match="callable"):
         params.callback = 42
     assert params.callback is callback
-    assert params.transform_count() == count
+    assert params.transform_count == count
 
 
 def test_bio_group_switch_remains_writable_and_preserves_output_formatting():

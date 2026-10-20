@@ -194,27 +194,23 @@ impl UffBoundsError {
         self.inner.to_string()
     }
 }
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum UffBoundsCauseKind {
+crate::enums::binding_enum!(UffBoundsCauseKind, {
     Parameter,
     BondOrder,
     BondMath,
     AssignmentLength,
-}
+});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
 pub struct UffBoundsCause {
     inner: RetainedError<ck::UffBoundsError>,
 }
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum DistGeomForceFieldErrorKind {
+crate::enums::binding_enum!(DistGeomForceFieldErrorKind, {
     Kernel,
     Inversion,
     IndexOverflow,
-}
+});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
 pub struct DistGeomForceFieldError {
@@ -264,12 +260,10 @@ impl DistGeomForceFieldError {
         }
     }
 }
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum ConformerOptimizerCauseKind {
+crate::enums::binding_enum!(ConformerOptimizerCauseKind, {
     Input,
     Construction,
-}
+});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
 pub struct ConformerOptimizerCause {

@@ -28,11 +28,13 @@ impl BatchFingerprintOutput {
 
 #[pymethods]
 impl BatchFingerprintOutput {
+    #[getter]
     fn fingerprint(&self) -> Fingerprint {
         Fingerprint {
             inner: self.inner.fingerprint().clone(),
         }
     }
+    #[getter]
     fn additional_output(&self) -> PyResult<BatchFingerprintAdditionalOutput> {
         self.inner
             .additional_output()
@@ -60,18 +62,23 @@ impl BatchFingerprintAdditionalOutput {
 
 #[pymethods]
 impl BatchFingerprintAdditionalOutput {
+    #[getter]
     fn atom_counts(&self) -> PyResult<Option<Vec<u32>>> {
         Ok(self.inner()?.atom_counts().map(<[u32]>::to_vec))
     }
+    #[getter]
     fn atom_to_bits(&self) -> PyResult<Option<Vec<Vec<u64>>>> {
         Ok(self.inner()?.atom_to_bits().map(<[Vec<u64>]>::to_vec))
     }
+    #[getter]
     fn bit_info_map(&self) -> PyResult<Option<BTreeMap<u64, Vec<(u32, u32)>>>> {
         Ok(self.inner()?.bit_info_map().cloned())
     }
+    #[getter]
     fn bit_paths(&self) -> PyResult<Option<BTreeMap<u64, Vec<Vec<i32>>>>> {
         Ok(self.inner()?.bit_paths().cloned())
     }
+    #[getter]
     fn atoms_per_bit(&self) -> PyResult<Option<BTreeMap<u64, Vec<Vec<i32>>>>> {
         Ok(self.inner()?.atoms_per_bit().cloned())
     }
@@ -88,7 +95,7 @@ mod tests {
             let batch = ck::MoleculeBatch::from_smiles_list(&["CCO".to_owned()]).unwrap();
             for collect in [false, true] {
                 let mut records = batch
-                    .fingerprint_morgan_with_output_list_with_params(
+                    .fingerprint_morgan_with_output_with_params(
                         &ck::MorganFingerprintParams::default(),
                         collect,
                         &ck::BatchQueryParams {

@@ -18,6 +18,7 @@ for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[name] = "1"
 from rdkit import Chem, RDLogger, rdBase
 from rdkit.Chem import rdCIPLabeler
+from rdkit.Chem import inchi
 from fingerprints import UInt, morgan, pair_fingerprint, path_fingerprint
 from isolate import isolated
 from descriptors import descriptor
@@ -54,6 +55,20 @@ def encode(value):
 
 
 def native(mol, task, profile):
+    if task == "inchi_write":
+        return inchi.MolToInchi(mol, options=profile["options"])
+    if task == "inchi_key":
+        identifier = inchi.MolToInchi(mol, options=profile["options"])
+        return [inchi.MolToInchiKey(mol, options=profile["options"]),
+                inchi.InchiToInchiKey(identifier)]
+    if task == "inchi_roundtrip":
+        from chemistry import state
+        identifier = inchi.MolToInchi(mol)
+        parsed = inchi.MolFromInchi(identifier, sanitize=profile["read_sanitize"],
+                                    removeHs=profile["read_remove_hs"])
+        if parsed is None:
+            raise ValueError("MolFromInchi returned no molecule")
+        return [identifier, state(parsed)]
     if task in GEOMETRY_TASKS: return geometry(mol,task,profile)
     if task=="substructure": return search(mol,profile)
     if task=="tautomer": return tautomer(mol,profile)
@@ -150,7 +165,8 @@ def compress_frame(raw, count):
 
 def calculate(job):
     task, profiles, smiles, folder = job
-    outcomes = (isolated(evaluate_rows, task, profiles, smiles) if task == "fingerprint_layered"
+    outcomes = (isolated(evaluate_rows, task, profiles, smiles)
+                if task in ("fingerprint_layered", "inchi_write", "inchi_key", "inchi_roundtrip")
                 else iter_outcomes(task, profiles, smiles))
     raw = bytearray()
     frames, count = 0, 0

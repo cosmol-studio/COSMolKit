@@ -56,15 +56,13 @@ impl CifReadError {
     }
 }
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum BioMmcifWriteErrorKind {
+crate::enums::binding_enum!(BioMmcifWriteErrorKind, {
     Structure,
     Cif,
     InvalidText,
     Io,
     FileWrite,
-}
+});
 #[pyclass(module="cosmolkit", extends=PyValueError)]
 pub struct BioMmcifWriteError {
     inner: Arc<ck::BioMmcifWriteError>,
@@ -142,9 +140,9 @@ mod tests {
                 ("align_pairs", 12_u16.into_pyobject(py)?.into_any()),
                 ("align_loops", 6_u16.into_pyobject(py)?.into_any()),
             ] {
-                let params = Py::new(py, BioMmcifWriteParams { inner: ck::BioMmcifWriteParams::default() })?;
+                let params = Py::new(py, BioMmcifWriteParams { inner: crate::parameters::NativeField::Owned(ck::BioMmcifWriteParams::default() )})?;
                 params.bind(py).setattr(field, value.clone())?;
-                let expected = structure.borrow(py).inner.to_mmcif_with_params(&params.borrow(py).inner).unwrap();
+                let expected = structure.borrow(py).inner.to_mmcif_with_params(&params.borrow(py).to_rust(py)?).unwrap();
                 let kwargs = PyDict::new(py);
                 kwargs.set_item(field, value)?;
                 for actual in [

@@ -53,10 +53,12 @@ impl UffOptimizationErrorKind {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct TopologicalFingerprintOutput {
-    pub(crate) inner: ck::TopologicalFingerprintOutput,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct TopologicalFingerprintOutput {
+        pub(crate) inner: ck::TopologicalFingerprintOutput,
+    }
 }
 #[pymethods]
 impl TopologicalFingerprintOutput {
@@ -83,10 +85,12 @@ impl TopologicalFingerprintOutput {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct MmffAtomProperties {
-    pub(crate) inner: ck::MmffAtomProperties,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct MmffAtomProperties {
+        pub(crate) inner: ck::MmffAtomProperties,
+    }
 }
 #[pymethods]
 impl MmffAtomProperties {
@@ -100,12 +104,15 @@ impl MmffAtomProperties {
             },
         }
     }
+    #[getter]
     fn atom_type(&self) -> u8 {
         self.inner.atom_type()
     }
+    #[getter]
     fn formal_charge(&self) -> f64 {
         self.inner.formal_charge()
     }
+    #[getter]
     fn partial_charge(&self) -> f64 {
         self.inner.partial_charge()
     }

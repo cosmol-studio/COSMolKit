@@ -18,7 +18,7 @@ params = ck.AlignmentParameters(
 transform_result = probe.alignment_transform_to(reference, params)
 aligned_probe, applied_result = probe.with_alignment_to(reference, params)
 
-print("read-only RMSD:", transform_result.rmsd())
-print("applied RMSD:", applied_result.rmsd())
+print("read-only RMSD:", transform_result.rmsd)
+print("applied RMSD:", applied_result.rmsd)
 print("source unchanged:", np.array_equal(probe.coordinates_3d(), probe_coordinates))
 print("aligned coordinates:\n", aligned_probe.coordinates_3d())

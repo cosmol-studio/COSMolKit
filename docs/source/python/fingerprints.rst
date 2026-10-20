@@ -74,15 +74,15 @@ bit-domain and count-simulation rules, count output folds counts into
    count = mol.fingerprint_topological_torsion_count_with_generator(generator)
    bit = mol.fingerprint_topological_torsion_with_generator(generator)
 
-   print(sparse_count.nonzero_elements())
-   print(sparse_bit.on_bits())
-   print(count.nonzero_elements())
-   print(bit.on_bits())
+   print(sparse_count.nonzero_elements)
+   print(sparse_bit.on_bits)
+   print(count.nonzero_elements)
+   print(bit.on_bits)
 
 The ``TopologicalTorsionGeneratorParams`` passed to the constructor controls
 ``include_chirality``, ``torsion_atom_count``, ``count_simulation``,
 ``count_bounds``, ``fp_size``, ``bits_per_feature``, and
-``only_shortest_paths``. ``generator.settings()`` returns a live settings view
+``only_shortest_paths``. ``generator.settings`` returns a live settings view
 whose writable fields update the generator. Scalar calls accept a
 ``TopologicalTorsionCallParams`` object with ``from_atoms``,
 ``ignore_atoms``, and ``custom_atom_invariants``. ``from_atoms`` selects paths
@@ -115,11 +115,11 @@ the absence of entries is verified rather than assumed.
    output.allocate_bit_paths()
    output.allocate_atoms_per_bit()
 
-   mol.fingerprint_topological_torsion_with_generator(generator, output=output)
-   print(output.atom_to_bits())
-   print(output.atom_counts())
-   print(output.bit_paths())
-   print(output.atoms_per_bit())
+   mol.fingerprint_topological_torsion_with_generator(generator, additional_output=output)
+   print(output.atom_to_bits)
+   print(output.atom_counts)
+   print(output.bit_paths)
+   print(output.atoms_per_bit)
 
 Bulk generator methods preserve input order and accept ``num_threads``:
 
@@ -131,8 +131,8 @@ Bulk generator methods preserve input order and accept ``num_threads``:
    ]
    bits = generator.fingerprints(molecules, num_threads=2)
 
-   assert bits[0].on_bits() == molecules[0].fingerprint_topological_torsion_with_generator(generator).on_bits()
-   assert bits[1].on_bits() == molecules[1].fingerprint_topological_torsion_with_generator(generator).on_bits()
+   assert bits[0].on_bits == molecules[0].fingerprint_topological_torsion_with_generator(generator).on_bits
+   assert bits[1].on_bits == molecules[1].fingerprint_topological_torsion_with_generator(generator).on_bits
 
 Additional vector forms have their own parameter semantics:
 
@@ -200,8 +200,8 @@ generate 2D coordinates first.
        bit_flags=0xF07FFF,
    )
 
-   print(topological.on_bits())
-   print(avalon.on_bits())
+   print(topological.on_bits)
+   print(avalon.on_bits)
 
 Connected fragments
 -------------------
@@ -284,15 +284,15 @@ roots retain the source aggregation order.
        min_path=2,
        max_path=4,
        fp_size=257,
-       atom_counts=[10] * molecule.num_atoms(),
+       atom_counts=[10] * molecule.num_atoms,
        set_only_bits=even_mask,
        branched_paths=True,
        from_atoms=[0],
    )
 
-   print(substructure.on_bits())
-   print(counted.fingerprint().on_bits())
-   print(counted.atom_counts())
+   print(substructure.on_bits)
+   print(counted.fingerprint.on_bits)
+   print(counted.atom_counts)
 
 ``set_only_bits`` must have exactly ``fp_size`` bits. It gates projected bits
 before insertion and before counting. A supplied ``atom_counts`` vector is a
@@ -333,8 +333,8 @@ states:
        tautomeric=True,
    )
 
-   print(pattern.on_bits())
-   print(tautomeric_pattern.on_bits())
+   print(pattern.on_bits)
+   print(tautomeric_pattern.on_bits)
 
 The call is value-style and does not mutate the molecule. Query-bearing
 molecules are supported and follow the source's Pattern-specific atom and bond
@@ -387,10 +387,10 @@ and custom atom invariants. A 3D call requires a conformer and sets
    folded_count = mol.fingerprint_atom_pair_count()
    sparse_bits = mol.fingerprint_atom_pair_sparse()
 
-   print(explicit.on_bits())
-   print(sparse_count.nonzero_elements())
-   print(folded_count.nonzero_elements())
-   print(sparse_bits.on_bits())
+   print(explicit.on_bits)
+   print(sparse_count.nonzero_elements)
+   print(folded_count.nonzero_elements)
+   print(sparse_bits.on_bits)
 
 Pass a ``FingerprintAdditionalOutput`` collector to
 ``fingerprint_atom_pair_with_params()`` for exact atom counts, atom-to-bit
@@ -405,11 +405,11 @@ rows, endpoint-pair bit information, and atoms-per-bit provenance:
    output.allocate_atoms_per_bit()
    fp = mol.fingerprint_atom_pair_with_params(ck.AtomPairFingerprintParams(), output)
 
-   print(fp.on_bits())
-   print(output.atom_counts())
-   print(output.atom_to_bits())
-   print(output.bit_info_map())
-   print(output.atoms_per_bit())
+   print(fp.on_bits)
+   print(output.atom_counts)
+   print(output.atom_to_bits)
+   print(output.bit_info_map)
+   print(output.atoms_per_bit)
 
 The complete ChEMBL 37 validation compares 40 vectors and one full provenance
 output for every one of the 2,897,804 mutually parseable records: 118,809,964
@@ -431,9 +431,9 @@ receive the matching source provenance outputs:
        bit_info=True,
    )
 
-   print(result.fingerprint().on_bits())
-   print(result.atom_bits())
-   print(result.bit_info())
+   print(result.fingerprint.on_bits)
+   print(result.atom_bits)
+   print(result.bit_info)
 
 Single Molecules
 ----------------
@@ -445,8 +445,8 @@ Single Molecules
    mol = ck.mol_from_smiles("c1ccccc1O")
    fp = mol.fingerprint_morgan(radius=2, fp_size=2048)
 
-   print(fp.n_bits())
-   print(fp.on_bits())
+   print(fp.n_bits)
+   print(fp.on_bits)
 
 Tanimoto similarity is computed directly on ``Fingerprint`` values:
 
@@ -474,11 +474,11 @@ to obtain provenance alongside the returned fingerprint:
        radius=2, fp_size=2048, additional_output=output,
    )
 
-   print(fp.on_bits())
-   print(output.atom_counts())
-   print(output.atom_to_bits())
-   print(output.bit_info_map())
-   print(output.atoms_per_bit())
+   print(fp.on_bits)
+   print(output.atom_counts)
+   print(output.atom_to_bits)
+   print(output.bit_info_map)
+   print(output.atoms_per_bit)
 
 Supported Parameters
 --------------------
@@ -538,13 +538,13 @@ Batch Fingerprints
        ["CCO", "not-smiles", "CCCO"],
        errors="keep",
    ).with_parallel_jobs(8)
-   fps = batch.fingerprint_morgan_list(fp_size=2048)
-   atom_pairs = batch.fingerprint_atom_pair_list(
+   fps = batch.fingerprint_morgan(fp_size=2048)
+   atom_pairs = batch.fingerprint_atom_pair(
        fp_size=2048,
        n_jobs=8,
        progress_bar=False,
    )
-   layered = batch.fingerprint_layered_list(
+   layered = batch.fingerprint_layered(
        layers=0x3F,
        min_path=1,
        max_path=7,
@@ -553,6 +553,6 @@ Batch Fingerprints
        progress_bar=False,
    )
 
-   print([fp.on_bits() if fp is not None else None for fp in fps])
-   print([fp.on_bits() if fp is not None else None for fp in atom_pairs])
-   print([fp.on_bits() if fp is not None else None for fp in layered])
+   print([fp.on_bits if fp is not None else None for fp in fps])
+   print([fp.on_bits if fp is not None else None for fp in atom_pairs])
+   print([fp.on_bits if fp is not None else None for fp in layered])

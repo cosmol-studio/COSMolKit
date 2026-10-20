@@ -1,6 +1,5 @@
 use crate::chemical_values::{EnumValue, enum_value};
 use crate::coordinates;
-use crate::parameters::parameters;
 use cosmolkit as ck;
 use numpy::IntoPyArray;
 use pyo3::prelude::*;
@@ -63,9 +62,11 @@ impl ChainKindInput {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct ChainSourceIds {
-    pub(crate) inner: ck::ChainSourceIds,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct ChainSourceIds {
+        pub(crate) inner: ck::ChainSourceIds,
+    }
 }
 #[pymethods]
 impl ChainSourceIds {
@@ -85,20 +86,24 @@ impl ChainSourceIds {
             inner: ck::ChainSourceIds::new(auth_chain_id, label_asym_id),
         })
     }
+    #[getter]
     fn auth_chain_id(&self) -> Option<String> {
         self.inner
             .auth_chain_id()
             .map(|value| value.as_str().to_owned())
     }
+    #[getter]
     fn label_asym_id(&self) -> Option<&str> {
         self.inner.label_asym_id()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioChainRow {
-    pub(crate) inner: ck::BioChainRow,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioChainRow {
+        pub(crate) inner: ck::BioChainRow,
+    }
 }
 #[pymethods]
 impl BioChainRow {
@@ -124,19 +129,24 @@ impl BioChainRow {
             ),
         })
     }
+    #[getter]
     fn model_id(&self) -> u32 {
         self.inner.model_id().value()
     }
+    #[getter]
     fn entity_id(&self) -> Option<u32> {
         self.inner.entity_id().map(|id| id.value())
     }
+    #[getter]
     fn residue_span(&self) -> PyResult<BioRowSpan> {
         BioRowSpan::from_rust(self.inner.residue_span())
             .map_err(crate::bio_errors::BioStructureError::from_rust)
     }
+    #[getter]
     fn kind(&self) -> ChainKind {
         self.inner.kind().into()
     }
+    #[getter]
     fn source(&self) -> ChainSourceIds {
         ChainSourceIds {
             inner: self.inner.source().clone(),
@@ -144,9 +154,11 @@ impl BioChainRow {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct BioRowSpan {
-    pub(crate) inner: ck::BioRowSpan<ck::BioAtomId>,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct BioRowSpan {
+        pub(crate) inner: ck::BioRowSpan<ck::BioAtomId>,
+    }
 }
 
 impl BioRowSpan {
@@ -158,10 +170,12 @@ impl BioRowSpan {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct BioModelRow {
-    pub(crate) inner: ck::BioModelRow,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct BioModelRow {
+        pub(crate) inner: ck::BioModelRow,
+    }
 }
 #[pymethods]
 impl BioModelRow {
@@ -186,9 +200,11 @@ impl BioModelRow {
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen)]
-pub struct AtomName {
-    pub(crate) inner: ck::AtomName,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen)]
+    pub struct AtomName {
+        pub(crate) inner: ck::AtomName,
+    }
 }
 #[pymethods]
 impl AtomName {
@@ -217,28 +233,32 @@ impl BioRowSpan {
             .map(|inner| Self { inner })
             .map_err(crate::bio_errors::BioStructureError::from_rust)
     }
+    #[getter]
     fn start(&self) -> u32 {
         self.inner.start()
     }
+    #[getter]
     fn len(&self) -> u32 {
         self.inner.len()
     }
+    #[getter]
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
+    #[getter]
     fn end(&self) -> u32 {
         self.inner.end()
     }
 }
 
-parameters!(BioCrystalCell, ck::BioCrystalCell, {
-    a: f64, b: f64, c: f64, alpha: f64, beta: f64, gamma: f64,
-});
+ck::project_configuration!(ck::BioCrystalCell);
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct BioTransform {
-    pub(crate) inner: ck::BioTransform,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct BioTransform {
+        pub(crate) inner: ck::BioTransform,
+    }
 }
 #[pymethods]
 impl BioTransform {

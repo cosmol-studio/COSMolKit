@@ -161,7 +161,9 @@ impl Molecule {
         id: crate::AtomId,
         key: &str,
     ) -> Result<Option<crate::PropertyText>, crate::PropertyStringError> {
-        self.atom(id)
+        self.topology()
+            .atoms
+            .get(id.index())
             .and_then(|atom| atom.prop(key))
             .map(crate::property_value_to_text)
             .transpose()

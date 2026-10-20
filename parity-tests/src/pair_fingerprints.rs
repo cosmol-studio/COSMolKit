@@ -313,13 +313,13 @@ pub fn batch(
         let p2 = p.params(atoms);
         match p.form.as_str() {
             "bits" => batch
-                .fingerprint_atom_pair_list_with_params(&p2, runtime)
+                .fingerprint_atom_pair_with_params(&p2, runtime)
                 .map(|v| v.into_iter().map(|v| v.map(|v| bits(&v))).collect()),
             "sparse_bits" => batch
-                .fingerprint_atom_pair_sparse_bits_list_with_params(&p2, runtime)
+                .fingerprint_atom_pair_sparse_with_params(&p2, runtime)
                 .map(|v| v.into_iter().map(|v| v.map(|v| sparse_bits(&v))).collect()),
             "count" => batch
-                .fingerprint_atom_pair_count_list_with_params(&p2, runtime)
+                .fingerprint_atom_pair_count_with_params(&p2, runtime)
                 .map(|v| {
                     v.into_iter()
                         .map(|v| {
@@ -333,7 +333,7 @@ pub fn batch(
                         .collect()
                 }),
             "sparse_count" => batch
-                .fingerprint_atom_pair_sparse_count_list_with_params(&p2, runtime)
+                .fingerprint_atom_pair_sparse_count_with_params(&p2, runtime)
                 .map(|v| {
                     v.into_iter()
                         .map(|v| {
@@ -352,7 +352,7 @@ pub fn batch(
         let p: TorsionProfile =
             serde_json::from_value(profile.clone()).expect("validated torsion profile");
         batch
-            .fingerprint_topological_torsion_list_with_params(&p.params(atoms), runtime)
+            .fingerprint_topological_torsion_with_params(&p.params(atoms), runtime)
             .map(|v| v.into_iter().map(|v| v.map(|v| bits(&v))).collect())
     };
     values.map(|values: Vec<Option<Value>>| {

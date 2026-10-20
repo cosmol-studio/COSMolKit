@@ -102,13 +102,11 @@ impl BioSelectionCopyError {
     }
 }
 
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum BioOperationErrorKind {
+crate::enums::binding_enum!(BioOperationErrorKind, {
     Structure,
     Protein,
     Selection,
-}
+});
 
 #[pyclass(module = "cosmolkit", extends=PyValueError)]
 pub struct BioOperationError {

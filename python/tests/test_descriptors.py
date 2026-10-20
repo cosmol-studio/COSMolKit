@@ -135,14 +135,14 @@ def test_high_feasibility_descriptor_bindings_compose_without_mutating_input():
     alpha, alpha_contributions = (
         molecule.hall_kier_alpha_with_contributions()
     )
-    assert len(alpha_contributions) == molecule.num_atoms()
+    assert len(alpha_contributions) == molecule.num_atoms
     assert f64_bits(ordered_f64_sum(alpha_contributions)) == f64_bits(alpha)
 
     contributions = molecule.labute_asa_contributions_with_params(True, True)
     asa, atom_contributions, hydrogen_contribution = (
         contributions.asa, contributions.atom_contributions, contributions.hydrogen_contribution
     )
-    assert len(atom_contributions) == molecule.num_atoms()
+    assert len(atom_contributions) == molecule.num_atoms
     assert f64_bits(
         ordered_f64_sum(atom_contributions) + hydrogen_contribution
     ) == f64_bits(asa)

@@ -273,7 +273,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_parallel_jobs(Some(8))?
         .with_2d_coordinates()?;
 
-    let out = batch.to_smiles_list()?;
+    let out = batch.to_smiles()?;
     println!("{out:?}");
     Ok(())
 }

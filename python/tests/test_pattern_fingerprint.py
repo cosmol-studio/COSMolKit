@@ -9,7 +9,7 @@ SMILES = ["C", "CC", "CCO", "c1ccccc1O", "C[C@H](O)F"]
 
 def present_bits(values: list[cosmolkit.Fingerprint | None]) -> list[list[int]]:
     assert all(value is not None for value in values)
-    return [value.on_bits() for value in values if value is not None]
+    return [value.on_bits for value in values if value is not None]
 
 
 def test_pattern_scalar_defaults_options_type_and_exact_bits():
@@ -20,10 +20,10 @@ def test_pattern_scalar_defaults_options_type_and_exact_bits():
     tautomeric = molecule.fingerprint_pattern(n_bits=2048, tautomeric=True)
 
     assert isinstance(default, cosmolkit.Fingerprint)
-    assert default.n_bits() == 2048
-    assert default.on_bits() == [429, 778, 1022, 1061, 1236, 1295]
-    assert explicit.on_bits() == default.on_bits()
-    assert tautomeric.on_bits() == [429, 776, 778, 1022, 1061, 1236, 1295]
+    assert default.n_bits == 2048
+    assert default.on_bits == [429, 778, 1022, 1061, 1236, 1295]
+    assert explicit.on_bits == default.on_bits
+    assert tautomeric.on_bits == [429, 776, 778, 1022, 1061, 1236, 1295]
 
 
 def test_pattern_scalar_preserves_input_and_reports_argument_errors():
@@ -33,7 +33,7 @@ def test_pattern_scalar_preserves_input_and_reports_argument_errors():
     first = molecule.fingerprint_pattern(n_bits=127, tautomeric=True)
     second = molecule.fingerprint_pattern(n_bits=127, tautomeric=True)
 
-    assert first.on_bits() == second.on_bits()
+    assert first.on_bits == second.on_bits
     assert molecule.to_smiles() == before
     with pytest.raises(ValueError, match="fingerprint requires n_bits > 0"):
         molecule.fingerprint_pattern(n_bits=0)
@@ -47,44 +47,41 @@ def test_pattern_batch_matches_scalar_order_and_keeps_invalid_positions():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(
         ["CC", "not-a-smiles", "c1ccccc1O"], errors="keep"
     )
-    values = batch.fingerprint_pattern_list(
-        n_bits=257, tautomeric=True, n_jobs=2, progress_bar=False
-    )
+    values = batch.fingerprint_pattern(
+        n_bits=257, tautomeric=True, n_jobs=2, progress_bar=False)
 
     assert [value is not None for value in values] == [True, False, True]
-    assert [value.on_bits() if value is not None else None for value in values] == [
+    assert [value.on_bits if value is not None else None for value in values] == [
         cosmolkit.Molecule.from_smiles("CC")
         .fingerprint_pattern(n_bits=257, tautomeric=True)
-        .on_bits(),
+        .on_bits,
         None,
         cosmolkit.Molecule.from_smiles("c1ccccc1O")
         .fingerprint_pattern(n_bits=257, tautomeric=True)
-        .on_bits(),
+        .on_bits,
     ]
     with pytest.raises(cosmolkit.BatchValidationError, match="batch.fingerprint_pattern"):
-        batch.fingerprint_pattern_list(n_bits=0, n_jobs=2, progress_bar=False)
+        batch.fingerprint_pattern(n_bits=0, n_jobs=2, progress_bar=False)
     with pytest.raises(ValueError, match="n_jobs"):
-        batch.fingerprint_pattern_list(n_jobs=0)
+        batch.fingerprint_pattern(n_jobs=0)
 
 
 def test_pattern_batch_is_deterministic_across_workers_and_concurrent_calls():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(SMILES).with_progress_bar(False)
     expected = present_bits(
-        batch.fingerprint_pattern_list(n_bits=511, tautomeric=True, n_jobs=1)
+        batch.fingerprint_pattern(n_bits=511, tautomeric=True, n_jobs=1)
     )
 
     for n_jobs in (1, 2, 4):
         assert present_bits(
-            batch.fingerprint_pattern_list(
-                n_bits=511, tautomeric=True, n_jobs=n_jobs
-            )
+            batch.fingerprint_pattern(
+                n_bits=511, tautomeric=True, n_jobs=n_jobs)
         ) == expected
 
     def pattern_call() -> list[list[int]]:
         return present_bits(
-            batch.fingerprint_pattern_list(
-                n_bits=511, tautomeric=True, n_jobs=2, progress_bar=False
-            )
+            batch.fingerprint_pattern(
+                n_bits=511, tautomeric=True, n_jobs=2, progress_bar=False)
         )
 
     with ThreadPoolExecutor(max_workers=4) as executor:
@@ -96,16 +93,16 @@ def fingerprint_family_snapshot(molecule: cosmolkit.Molecule) -> dict[str, list[
     torsion = cosmolkit.TopologicalTorsionFingerprintGenerator()
     return {
         "smiles": molecule.to_smiles(),
-        "avalon": molecule.fingerprint_avalon().on_bits(),
-        "morgan": molecule.fingerprint_morgan().on_bits(),
-        "atom_pair": molecule.fingerprint_atom_pair().on_bits(),
-        "pattern": molecule.fingerprint_pattern().on_bits(),
+        "avalon": molecule.fingerprint_avalon().on_bits,
+        "morgan": molecule.fingerprint_morgan().on_bits,
+        "atom_pair": molecule.fingerprint_atom_pair().on_bits,
+        "pattern": molecule.fingerprint_pattern().on_bits,
         "tautomeric_pattern": molecule.fingerprint_pattern(
             n_bits=257, tautomeric=True
-        ).on_bits(),
-        "topological": molecule.fingerprint_topological().on_bits(),
-        "maccs": molecule.fingerprint_maccs().on_bits(),
-        "topological_torsion": molecule.fingerprint_topological_torsion_with_generator(torsion).on_bits(),
+        ).on_bits,
+        "topological": molecule.fingerprint_topological().on_bits,
+        "maccs": molecule.fingerprint_maccs().on_bits,
+        "topological_torsion": molecule.fingerprint_topological_torsion_with_generator(torsion).on_bits,
     }
 
 
@@ -114,20 +111,20 @@ def test_pattern_composes_with_every_fingerprint_family_on_one_shared_molecule()
     expected = fingerprint_family_snapshot(molecule)
 
     for _ in range(4):
-        assert molecule.fingerprint_pattern(n_bits=257, tautomeric=True).on_bits() == expected[
+        assert molecule.fingerprint_pattern(n_bits=257, tautomeric=True).on_bits == expected[
             "tautomeric_pattern"
         ]
-        assert molecule.fingerprint_atom_pair().on_bits() == expected["atom_pair"]
-        assert molecule.fingerprint_maccs().on_bits() == expected["maccs"]
-        assert molecule.fingerprint_morgan().on_bits() == expected["morgan"]
-        assert molecule.fingerprint_topological().on_bits() == expected["topological"]
-        assert molecule.fingerprint_avalon().on_bits() == expected["avalon"]
+        assert molecule.fingerprint_atom_pair().on_bits == expected["atom_pair"]
+        assert molecule.fingerprint_maccs().on_bits == expected["maccs"]
+        assert molecule.fingerprint_morgan().on_bits == expected["morgan"]
+        assert molecule.fingerprint_topological().on_bits == expected["topological"]
+        assert molecule.fingerprint_avalon().on_bits == expected["avalon"]
         assert (
             molecule.fingerprint_topological_torsion_with_generator(cosmolkit.TopologicalTorsionFingerprintGenerator())
-            .on_bits()
+            .on_bits
             == expected["topological_torsion"]
         )
-        assert molecule.fingerprint_pattern().on_bits() == expected["pattern"]
+        assert molecule.fingerprint_pattern().on_bits == expected["pattern"]
         assert fingerprint_family_snapshot(molecule) == expected
 
     with ThreadPoolExecutor(max_workers=8) as executor:

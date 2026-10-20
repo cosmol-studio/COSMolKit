@@ -128,7 +128,7 @@ def fail():
                 Some(callbacks.getattr("progress")?.extract()?),
             );
             let run = |native: &ck::BatchQueryParams| {
-                batch.to_smiles_list_with_params(&ck::SmilesWriteParams::default(), native)
+                batch.to_smiles_with_params(&ck::SmilesWriteParams::default(), native)
             };
             let rows = params.with_callback(py, run)?.unwrap();
             assert_eq!(rows.len(), 3);

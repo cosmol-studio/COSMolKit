@@ -7,10 +7,12 @@ enum_value!(PolymerKind, { Unknown, PeptideL, PeptideD, Dna, Rna, DnaRnaHybrid,
     SaccharideD, SaccharideL, Pna, CyclicPseudoPeptide, Other });
 enum_value!(ResidueKind, { AminoAcid, Dna, Rna, Saccharide, Water, Buffer, Ligand, Unknown });
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct PdbSeqId {
-    pub(crate) inner: ck::PdbSeqId,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct PdbSeqId {
+        pub(crate) inner: ck::PdbSeqId,
+    }
 }
 #[pymethods]
 impl PdbSeqId {
@@ -21,18 +23,22 @@ impl PdbSeqId {
             inner: ck::PdbSeqId::new(seq_num, ins_code),
         }
     }
+    #[getter]
     fn seq_num(&self) -> i32 {
         self.inner.seq_num()
     }
+    #[getter]
     fn ins_code(&self) -> Option<char> {
         self.inner.ins_code().map(char::from)
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct AltLocLabel {
-    pub(crate) inner: ck::AltLocLabel,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct AltLocLabel {
+        pub(crate) inner: ck::AltLocLabel,
+    }
 }
 #[pymethods]
 impl AltLocLabel {
@@ -42,15 +48,18 @@ impl AltLocLabel {
             inner: ck::AltLocLabel::new(value),
         }
     }
+    #[getter]
     fn value(&self) -> u8 {
         self.inner.value()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct AtomSourceIds {
-    pub(crate) inner: ck::AtomSourceIds,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct AtomSourceIds {
+        pub(crate) inner: ck::AtomSourceIds,
+    }
 }
 #[pymethods]
 impl AtomSourceIds {
@@ -61,15 +70,18 @@ impl AtomSourceIds {
             inner: ck::AtomSourceIds::new(serial.map(ck::PdbAtomSerial::new)),
         }
     }
+    #[getter]
     fn serial(&self) -> Option<i32> {
         self.inner.serial().map(|value| value.value())
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct ResidueSourceIds {
-    pub(crate) inner: ck::ResidueSourceIds,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct ResidueSourceIds {
+        pub(crate) inner: ck::ResidueSourceIds,
+    }
 }
 #[pymethods]
 impl ResidueSourceIds {
@@ -91,29 +103,36 @@ impl ResidueSourceIds {
         )
         .map(|inner| Self { inner })
     }
+    #[getter]
     fn seq_id(&self) -> Option<PdbSeqId> {
         self.inner.seq_id().map(|inner| PdbSeqId { inner })
     }
+    #[getter]
     fn label_seq_id(&self) -> Option<i32> {
         self.inner.label_seq_id()
     }
+    #[getter]
     fn segment_id<'py>(&self, py: Python<'py>) -> Option<Bound<'py, pyo3::types::PyBytes>> {
         self.inner
             .segment_id()
             .map(|bytes| pyo3::types::PyBytes::new(py, bytes))
     }
+    #[getter]
     fn subchain_id(&self) -> Option<&str> {
         self.inner.subchain_id()
     }
+    #[getter]
     fn label_entity_id(&self) -> Option<&str> {
         self.inner.label_entity_id()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct EntitySourceIds {
-    pub(crate) inner: ck::EntitySourceIds,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct EntitySourceIds {
+        pub(crate) inner: ck::EntitySourceIds,
+    }
 }
 #[pymethods]
 impl EntitySourceIds {
@@ -123,15 +142,18 @@ impl EntitySourceIds {
             inner: ck::EntitySourceIds::new(source_entity_id),
         }
     }
+    #[getter]
     fn source_entity_id(&self) -> &str {
         self.inner.source_entity_id()
     }
 }
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone, Copy)]
-pub struct AltLocRequest {
-    pub(crate) inner: ck::AltLocRequest,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct AltLocRequest {
+        pub(crate) inner: ck::AltLocRequest,
+    }
 }
 #[pymethods]
 impl AltLocRequest {

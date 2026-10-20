@@ -329,6 +329,10 @@ impl MoleculeBatch {
     pub fn len(&self) -> usize {
         self.inner.len()
     }
+    pub fn select(&self, indices: Vec<u32>) -> Option<MoleculeBatch> {
+        let indices: Vec<_> = indices.into_iter().map(|index| index as usize).collect();
+        self.inner.select(&indices).map(|inner| Self { inner })
+    }
     #[wasm_bindgen(js_name = errorMode)]
     pub fn error_mode(&self) -> BatchErrorMode {
         BatchErrorMode::from_core(self.inner.error_mode())

@@ -66,7 +66,7 @@ def test_property_text_and_exception_type_are_real_python_values() -> None:
     # Every currently modeled property kind is supported by the Rust formatter;
     # do not invent an UnsupportedKind input that cannot exist in this model.
     assert ck.property_value_to_text(value) == "[numArom,_StereochemDone]"
-    assert value.kind() == ck.PropertyValueKind.StringVector
+    assert value.kind == ck.PropertyValueKind.StringVector
     assert issubclass(ck.PropertyStringError, ValueError)
     assert callable(ck.PropertyStringError.kind)
 
@@ -75,17 +75,17 @@ def test_batch_record_projection_keeps_error_records_and_input_values() -> None:
     original = ck.Molecule.from_smiles("CCO")
     before = original.to_smiles()
     failed = ck.MoleculeBatch.from_smiles_list_with_params(["not-a-smiles"], ck.SmilesParseParams(), ck.BatchParams(errors="keep"))
-    error = failed.errors()[0]
+    error = failed.errors[0]
     batch = ck.MoleculeBatch.from_records([original, error], ck.BatchErrorMode.KEEP)
-    records = batch.records()
+    records = batch.records
     assert len(records) == 2
     assert isinstance(records[0], ck.Molecule)
     assert records[0].to_smiles() == before
     assert isinstance(records[1], ck.BatchError)
-    assert (records[1].index(), records[1].operation(), records[1].message()) == (error.index(), error.operation(), error.message())
+    assert (records[1].index, records[1].operation, records[1].message) == (error.index, error.operation, error.message)
     assert isinstance(batch.get(1), ck.BatchError)
     assert batch.get(2) is None
-    assert batch.valid_mask() == [True, False]
+    assert batch.valid_mask == [True, False]
     assert original.to_smiles() == before
     with pytest.raises(ck.BatchValidationError):
         _ = ck.MoleculeBatch.from_records([original, error], ck.BatchErrorMode.RAISE)
@@ -101,13 +101,13 @@ def test_typed_sdf_factories_exports_and_report(tmp_path: Path) -> None:
     path = tmp_path / "molecules.sdf"
     _ = path.write_text(text)
     loaded = ck.MoleculeBatch.read_sdf_with_params(str(path), read, ck.BatchErrorMode.RAISE, 2, False)
-    assert loaded.to_smiles_list() == batch.to_smiles_list()
+    assert loaded.to_smiles() == batch.to_smiles()
     dataset = ck.SdfDataset.open(str(path))
     reordered = ck.MoleculeBatch.from_dataset_indices(dataset, [1, 0, 1], ck.BatchErrorMode.RAISE)
-    assert reordered.to_smiles_list() == ["CCN", "CCO", "CCN"]
+    assert reordered.to_smiles() == ["CCN", "CCO", "CCN"]
     invalid_text = _record("CCO") + "invalid molecule\n$$$$\n"
     kept = ck.MoleculeBatch.from_sdf_records_with_params(invalid_text, read, ck.BatchErrorMode.KEEP, 2)
-    assert kept.valid_mask() == [True, False]
+    assert kept.valid_mask == [True, False]
     with pytest.raises(ck.BatchValidationError):
         _ = ck.MoleculeBatch.from_sdf_records_with_params(invalid_text, read, ck.BatchErrorMode.RAISE, 2)
     # Fixed RDKit MolToMolBlock(AddHs(MolFromSmiles("CO"))) input. Test
@@ -116,14 +116,14 @@ def test_typed_sdf_factories_exports_and_report(tmp_path: Path) -> None:
     retained = ck.MoleculeBatch.from_sdf_records_with_params(explicit_text, ck.SdfReadParams(remove_hs=False), ck.BatchErrorMode.RAISE, 2).get(0)
     removed = ck.MoleculeBatch.from_sdf_records_with_params(explicit_text, ck.SdfReadParams(remove_hs=True), ck.BatchErrorMode.RAISE, 2).get(0)
     assert isinstance(retained, ck.Molecule) and isinstance(removed, ck.Molecule)
-    assert retained.num_atoms() == 6
-    assert removed.num_atoms() == 2
+    assert retained.num_atoms == 6
+    assert removed.num_atoms == 2
     options = ck.BatchExportParams(format="v3000", errors="raise", n_jobs=2, progress_bar=False)
     assert (options.format, cast(object, options.errors), options.n_jobs, options.progress_bar) == ("v3000", ck.BatchErrorMode.RAISE, 2, False)
     output = tmp_path / "output.sdf"
     report_file = tmp_path / "report.json"
     report = batch.write_sdf_with_params(str(output), options, str(report_file))
-    assert (report.total(), report.success(), report.failed()) == (2, 2, 0)
+    assert (report.total, report.success, report.failed) == (2, 2, 0)
     assert "V3000" in output.read_text()
     copied_report = tmp_path / "copied-report.json"
     report.write_report(str(copied_report))
@@ -131,7 +131,7 @@ def test_typed_sdf_factories_exports_and_report(tmp_path: Path) -> None:
     directory = tmp_path / "separate"
     directory.mkdir()
     files = batch.write_sdf_files_with_params(str(directory), options, ["one.sdf", "two.sdf"], None)
-    assert files.success() == 2
+    assert files.success == 2
     assert sorted(p.name for p in directory.iterdir()) == ["one.sdf", "two.sdf"]
     with pytest.raises(ValueError):
         _ = ck.BatchExportParams(n_jobs=0)
@@ -151,20 +151,20 @@ def test_batch_iterators_and_stream_transfer_continue_at_current_record(tmp_path
     dataset = ck.SdfDataset.open(str(path))
     indexed = dataset.batches(size=2)
     first = indexed.next_batch()
-    assert first is not None and first.to_smiles_list() == ["C", "CC"]
+    assert first is not None and first.to_smiles() == ["C", "CC"]
     second = next(indexed)
-    assert second.to_smiles_list() == ["CCC"]
+    assert second.to_smiles() == ["CCC"]
     assert indexed.next_batch() is None
     forward = ck.SdfReader.open(str(path)).batches(size=2)
     assert forward.next_batch() is not None
-    assert next(forward).to_smiles_list() == ["CCC"]
+    assert next(forward).to_smiles() == ["CCC"]
     assert forward.next_batch() is None
     stream = ck.SdfRecordStream.open(str(path))
     assert stream.next_record() is not None
-    assert stream.records_consumed() == 1
+    assert stream.records_consumed == 1
     batches = stream.batches(2, ck.BatchErrorMode.RAISE, 2)
     remaining = batches.next_batch()
-    assert remaining is not None and remaining.to_smiles_list() == ["CC", "CCC"]
+    assert remaining is not None and remaining.to_smiles() == ["CC", "CCC"]
     assert batches.next_batch() is None
     for call in [stream.next_record, stream.is_end, stream.records_consumed, stream.bytes_consumed, stream.lines_consumed]:
         with pytest.raises(RuntimeError, match="transferred"):
@@ -181,19 +181,18 @@ def test_torsion_batch_thin_bindings_match_scalar_and_propagate_callback_errors(
     before = [m.to_smiles() for m in molecules]
     batch = ck.MoleculeBatch.from_records(molecules, ck.BatchErrorMode.RAISE)
     generator = ck.TopologicalTorsionFingerprintGenerator()
-    expected = [m.fingerprint_topological_torsion_with_generator(generator).on_bits() for m in molecules]
-    assert [v.on_bits() for v in batch.fingerprint_topological_torsion_list() if v is not None] == expected
-    generator_params = ck.TopologicalTorsionGeneratorParams(fp_size=256, count_simulation=False)
-    options = ck.TopologicalTorsionFingerprintParams(generator=generator_params)
+    expected = [m.fingerprint_topological_torsion_with_generator(generator).on_bits for m in molecules]
+    assert [v.on_bits for v in batch.fingerprint_topological_torsion() if v is not None] == expected
+    options = ck.TopologicalTorsionFingerprintParams(fp_size=256, count_simulation=False)
     calls: list[None] = []
-    values = batch.fingerprint_topological_torsion_list_with_params(options, ck.BatchQueryParams(n_jobs=2, progress_callback=lambda: calls.append(None)))
-    expected_custom = [m.fingerprint_topological_torsion_with_params(options, None).on_bits() for m in molecules]
-    assert [v.on_bits() for v in values if v is not None] == expected_custom
+    values = batch.fingerprint_topological_torsion_with_params(options, ck.BatchQueryParams(n_jobs=2, progress_callback=lambda: calls.append(None)))
+    expected_custom = [m.fingerprint_topological_torsion_with_params(options, None).on_bits for m in molecules]
+    assert [v.on_bits for v in values if v is not None] == expected_custom
     assert len(values) == 3 and len(calls) == 3
     def fail() -> None:
         raise LookupError("callback sentinel")
     with pytest.raises(LookupError, match="callback sentinel"):
-        _ = batch.fingerprint_topological_torsion_list_with_params(options, ck.BatchQueryParams(progress_callback=fail))
+        _ = batch.fingerprint_topological_torsion_with_params(options, ck.BatchQueryParams(progress_callback=fail))
     assert [m.to_smiles() for m in molecules] == before
 
 
@@ -219,11 +218,11 @@ def test_dynamic_batch_types_have_stubs_and_preserve_error_fields() -> None:
         assert len([node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name]) == 1
     assert int(ck.BatchErrorMode.RAISE) == 1 and int(ck.BatchErrorMode.KEEP) == 2
     failed = ck.MoleculeBatch.from_smiles_list_with_params(["invalid"], ck.SmilesParseParams(), ck.BatchParams(errors="keep"))
-    record = failed.errors()[0]
+    record = failed.errors[0]
     error = ck.BatchValidationError("message", 1, "reason", [record])
     assert str(error) == "message"
     assert error.error_count == 1 and error.reason == "reason"
-    assert error.errors()[0].message() == record.message()
+    assert error.errors[0].message() == record.message
 
 
 @pytest.mark.parametrize("factory,changes", [
@@ -235,7 +234,7 @@ def test_dynamic_batch_types_have_stubs_and_preserve_error_fields() -> None:
         "count_simulation": False, "fp_size": 256, "bits_per_feature": 2, "count_bounds": [2, 4]}),
 ])
 def test_fingerprint_settings_properties_and_explicit_setters_are_distinct(factory: str, changes: dict[str, object]) -> None:
-    settings = ck.MorganFingerprintGenerator().settings() if factory == "MorganFingerprintGenerator" else ck.TopologicalTorsionFingerprintGenerator().settings()
+    settings = ck.MorganFingerprintGenerator().settings if factory == "MorganFingerprintGenerator" else ck.TopologicalTorsionFingerprintGenerator().settings
     for name, value in changes.items():
         before = cast(object, getattr(settings, name))
         method = cast(object, getattr(settings, "set_" + name))

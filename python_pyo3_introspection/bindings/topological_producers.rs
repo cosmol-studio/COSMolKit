@@ -10,6 +10,17 @@ use pyo3::prelude::*;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+pub(crate) fn request_keywords(
+    atom_bits: Option<bool>,
+    bit_info: Option<bool>,
+) -> ck::TopologicalFingerprintOutputRequest {
+    let defaults = ck::TopologicalFingerprintOutputRequest::default();
+    ck::TopologicalFingerprintOutputRequest {
+        atom_bits: atom_bits.unwrap_or(defaults.atom_bits),
+        bit_info: bit_info.unwrap_or(defaults.bit_info),
+    }
+}
+
 pub(crate) fn keyword_params(
     min_path: Option<u32>,
     max_path: Option<u32>,
@@ -62,17 +73,20 @@ impl TopologicalFingerprintResult {
             output: output.inner.clone(),
         })
     }
+    #[getter]
     fn fingerprint(&self) -> Fingerprint {
         Fingerprint {
             inner: self.inner.fingerprint().clone(),
         }
     }
+    #[getter]
     fn atom_bits(&self) -> PyResult<Vec<Vec<u32>>> {
         self.inner
             .atom_bits()
             .map(<[Vec<u32>]>::to_vec)
             .map_err(TopologicalFingerprintError::from_rust)
     }
+    #[getter]
     fn bit_info(&self) -> PyResult<BTreeMap<u32, Vec<Vec<i32>>>> {
         self.inner
             .bit_info()
@@ -101,10 +115,12 @@ pub fn fingerprint_topological_query_with_output_with_params(
     params: &TopologicalFingerprintParams,
     request: &TopologicalFingerprintOutputRequest,
 ) -> PyResult<TopologicalFingerprintResult> {
+    let request = pyo3::Python::attach(|py| request.to_rust(py))?;
+
     ck::fingerprint_topological_query_with_output_with_params(
         query.inner(),
         &params.to_rust(py)?,
-        request.inner,
+        request,
     )
     .map(TopologicalFingerprintResult::from_rust)
     .map_err(TopologicalFingerprintError::from_rust)
@@ -282,8 +298,12 @@ mod tests {
                                 request,
                             )
                             .unwrap();
-                        let request =
-                            Py::new(py, TopologicalFingerprintOutputRequest { inner: request })?;
+                        let request = Py::new(
+                            py,
+                            TopologicalFingerprintOutputRequest {
+                                inner: crate::parameters::NativeField::Owned(request),
+                            },
+                        )?;
                         kwargs.set_item("request", request.clone_ref(py))?;
                         let mut retained = Vec::new();
                         for actual in [

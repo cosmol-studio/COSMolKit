@@ -177,26 +177,26 @@ class TestElementMetadata:
         assert type(info) is ck.ElementInfo
         assert repr(info) == f"ElementInfo(symbol='{symbol}', atomic_number={number}, period={period})"
         for _ in range(3):
-            assert constant.atomic_number() == number and type(constant.atomic_number()) is int
-            assert constant.symbol() == symbol and type(constant.symbol()) is str
-            assert info.element() == constant and type(info.element()) is ck.Element
-            assert info.symbol() == symbol and type(info.symbol()) is str
-            assert info.atomic_number() == number and type(info.atomic_number()) is int
-            assert info.period() == period and type(info.period()) is int
-            assert info.outer_electrons() == outer and type(info.outer_electrons()) is int
-            actual = info.valences()
+            assert constant.atomic_number == number and type(constant.atomic_number) is int
+            assert constant.symbol == symbol and type(constant.symbol) is str
+            assert info.element == constant and type(info.element) is ck.Element
+            assert info.symbol == symbol and type(info.symbol) is str
+            assert info.atomic_number == number and type(info.atomic_number) is int
+            assert info.period == period and type(info.period) is int
+            assert info.outer_electrons == outer and type(info.outer_electrons) is int
+            actual = info.valences
             assert type(actual) is list and actual == valences
             assert all(type(v) is int for v in actual)
-            assert info.rb0() == rb0 and type(info.rb0()) is float
-            assert info.atomic_weight() == weight and type(info.atomic_weight()) is float
-            assert struct.pack(">d", info.rb0()).hex() == rb0_bits
-            assert struct.pack(">d", info.atomic_weight()).hex() == weight_bits
-        first = info.valences()
-        second = info.valences()
+            assert info.rb0 == rb0 and type(info.rb0) is float
+            assert info.atomic_weight == weight and type(info.atomic_weight) is float
+            assert struct.pack(">d", info.rb0).hex() == rb0_bits
+            assert struct.pack(">d", info.atomic_weight).hex() == weight_bits
+        first = info.valences
+        second = info.valences
         assert first is not second
         first.append(2**40)
-        assert second == valences and info.valences() == valences
-        assert ck.element_info(constant).valences() == valences
+        assert second == valences and info.valences == valences
+        assert ck.element_info(constant).valences == valences
 
 
 class TestElementValue:
@@ -280,9 +280,9 @@ class TestElementValue:
         with pytest.raises(AttributeError):
             setattr(value, name, 1)
         if isinstance(value, ck.ElementInfo):
-            assert value.atomic_number() == 6 and value.valences() == [4]
+            assert value.atomic_number == 6 and value.valences == [4]
         else:
-            assert ck.Element.C.atomic_number() == 6
+            assert ck.Element.C.atomic_number == 6
 
     @pytest.mark.parametrize("value", [6, "C", None, object()], ids=["int", "string", "none", "object"])
     def test_unrelated_equality(self, value: object):
@@ -309,7 +309,7 @@ class TestElementValue:
         assert set(fields) == expected
         assert set(fields.values()) == {"typing.ClassVar[Element]"}
         for name, _, number, *_ in ROWS:
-            assert cast(ck.Element, getattr(ck.Element, name)).atomic_number() == number
+            assert cast(ck.Element, getattr(ck.Element, name)).atomic_number == number
 
     @pytest.mark.parametrize("name", ["Element", "ElementInfo"])
     def test_native_stub_methods_and_types(self, name: str):

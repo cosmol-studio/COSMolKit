@@ -6,21 +6,21 @@ import pytest
 def test_hydrogen_parameters_and_in_place_result():
     molecule = ck.Molecule.from_smiles("CO")
     expanded = molecule.with_hydrogens_with_params(ck.AddHsParams(only_on_atoms=[1]))
-    assert molecule.num_atoms() == 2
-    assert expanded.num_atoms() == 3
+    assert molecule.num_atoms == 2
+    assert expanded.num_atoms == 3
     assert molecule.add_hydrogens_with_params_(ck.AddHsParams(only_on_atoms=[1])) is None
-    assert molecule.num_atoms() == 3
-    assert molecule.without_hydrogens_with_params(ck.RemoveHsParams()).num_atoms() == 2
+    assert molecule.num_atoms == 3
+    assert molecule.without_hydrogens_with_params(ck.RemoveHsParams()).num_atoms == 2
 
 
 def test_matrix_parameters_reach_the_owner():
     molecule = ck.Molecule.from_smiles("C=C")
     ordinary = molecule.distance_matrix()
     weighted = molecule.distance_matrix_with_params(ck.DistanceMatrixParams(use_bond_order=True))
-    assert ordinary.dimension() == 2
+    assert ordinary.dimension == 2
     assert ordinary.get(0, 1) == 1.0
     assert weighted.get(0, 1) == 0.5
-    assert weighted.values() == [0.0, 0.5, 0.5, 0.0]
+    assert weighted.values == [0.0, 0.5, 0.5, 0.0]
     assert weighted.get(2, 0) is None
 
 
@@ -37,10 +37,10 @@ def test_failed_coordinate_change_is_atomic():
     editor = molecule.to_builder()
     editor.add_3d_conformer([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
     molecule = editor.build()
-    before = molecule.distance_matrix_3d().values()
+    before = molecule.distance_matrix_3d.values
     with pytest.raises(ck.OperationError):
         molecule.set_atom_position_(99, [1.0, 2.0, 3.0])
-    assert molecule.distance_matrix_3d().values() == before
+    assert molecule.distance_matrix_3d.values == before
     moved = molecule.with_atom_position_with_params(1, [3.0, 0.0, 0.0], ck.AtomPositionParams(conformer_id=0))
     assert molecule.distance_matrix_3d().get(0, 1) == 2.0
     assert moved.distance_matrix_3d().get(0, 1) == 3.0
@@ -49,7 +49,7 @@ def test_failed_coordinate_change_is_atomic():
 def test_sanitize_flags_preserve_invalid_bits_error():
     flags = ck.SanitizeOperations.PROPERTIES | ck.SanitizeOperations.KEKULIZE
     assert flags.contains(ck.SanitizeOperations.PROPERTIES)
-    assert not flags.is_empty()
+    assert not flags.is_empty
     with pytest.raises(ck.SanitizeError) as error:
         ck.SanitizeOperations.from_bits(1 << 31)
     assert error.value.domain == "sanitize"

@@ -112,7 +112,8 @@ pub fn sample(task: &str, count: usize, seed: u64) -> Result<Vec<Value>> {
             }
             // These have a finite enumerated parameter space; selecting a
             // historical profile is the complete available sampling operation.
-            "cip" | "valence" | "fingerprint_maccs" => (),
+            "cip" | "valence" | "fingerprint_maccs" | "inchi_write" | "inchi_key"
+            | "inchi_roundtrip" => (),
             task if crate::descriptors::TASKS
                 .iter()
                 .any(|(name, _)| *name == task) =>

@@ -229,7 +229,7 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
     assert_eq!(output.property("_CIPComputed"), None);
     assert_eq!(output.atoms()[0].prop("_CIPCode"), None);
     assert_eq!(output.bonds()[0].prop("_CIPCode"), None);
-    assert!(output.atoms().iter().all(Atom::is_aromatic));
+    assert!(output.atoms().iter().all(|atom| atom.is_aromatic()));
     assert!(output.bonds().iter().all(Bond::is_aromatic));
     assert!(
         output

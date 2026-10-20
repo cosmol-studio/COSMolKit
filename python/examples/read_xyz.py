@@ -26,9 +26,9 @@ def main() -> None:
     xyz = Path(sys.argv[1]).read_text(encoding="utf-8") if len(sys.argv) > 1 else DEMO_XYZ
     mol = ck.mol_from_xyz_block(xyz)
 
-    print("atoms:", mol.num_atoms())
-    print("bonds:", mol.num_bonds())
-    print("3d conformers:", mol.num_3d_conformers())
+    print("atoms:", mol.num_atoms)
+    print("bonds:", mol.num_bonds)
+    print("3d conformers:", mol.num_3d_conformers)
     print("coords:")
     print(mol.coordinates_3d())
 

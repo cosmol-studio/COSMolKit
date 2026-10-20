@@ -11,9 +11,9 @@ def main() -> None:
     laid_out = original.with_2d_coordinates()
     params = ck.Coordinate2DParams(coordinate_map={0: [-0.0, 1.5]})
     configured = original.with_2d_coordinates_with_params(params)
-    assert original.coordinates_2d() is None
-    assert laid_out.coordinates_2d() is not None
-    assert configured.coordinates_2d() is not None
+    assert original.coordinates_2d is None
+    assert laid_out.coordinates_2d is not None
+    assert configured.coordinates_2d is not None
 
     svg = laid_out.to_svg(300, 200)
     png = laid_out.to_png(300, 200)

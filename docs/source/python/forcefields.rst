@@ -34,7 +34,7 @@ directly; it is not a conformer-generation algorithm:
        [-0.240, 0.930, 0.000], # H
    ])
    mol = builder.build().with_assigned_valence()
-   conformer_id = mol.conformers_3d()[0].id()
+   conformer_id = mol.conformers_3d[0].id
 
 An application can instead supply a molecule loaded from a 3D molecular file
 or produced by a conformer-generation API. Force-field calls below do not
@@ -66,8 +66,8 @@ MMFF parameters, energy, and gradient
    if evaluation is None:
        raise ValueError("MMFF typing did not produce a valid force field")
 
-   print(evaluation.energy())
-   gradient = np.asarray(evaluation.gradient(), dtype=np.float64).reshape(-1, 3)
+   print(evaluation.energy)
+   gradient = np.asarray(evaluation.gradient, dtype=np.float64).reshape(-1, 3)
    print(gradient.shape)
 
 The short forms ``mol.mmff_properties()`` and ``mol.mmff_energy_gradient()``
@@ -88,16 +88,16 @@ MMFF single- and multiple-conformer optimization
            non_bonded_threshold=100.0,
        )
    )
-   optimized = result.molecule()
-   print(result.status_code())
-   print(result.needs_more())
+   optimized = result.molecule
+   print(result.status_code)
+   print(result.needs_more)
 
    # The single-conformer MMFF result has no energy() accessor.
    final_evaluation = optimized.mmff_energy_gradient_with_params(
        ck.MmffEvaluationParams(conformer_id=conformer_id)
    )
    if final_evaluation is not None:
-       print(final_evaluation.energy())
+       print(final_evaluation.energy)
 
    # Optimize every stored 3D conformer independently.
    multiple = mol.with_mmff_optimized_conformers_with_params(
@@ -108,9 +108,9 @@ MMFF single- and multiple-conformer optimization
            non_bonded_threshold=100.0,
        )
    )
-   for row in multiple.conformer_results():
-       print(row.status_code(), row.needs_more(), row.energy())
-   optimized_conformers = multiple.molecule()
+   for row in multiple.conformer_results:
+       print(row.status_code, row.needs_more, row.energy)
+   optimized_conformers = multiple.molecule
 
 These value-style calls leave ``mol`` unchanged. Status ``0`` indicates
 convergence, ``1`` indicates that more iterations are needed, and MMFF status
@@ -133,20 +133,20 @@ UFF evaluation and optimization
    evaluation = mol.uff_energy_gradient_with_params(
        ck.UffEvaluationParams(conformer_id=conformer_id, vdw_threshold=10.0)
    )
-   print(evaluation.energy())
-   gradient = np.asarray(evaluation.gradient(), dtype=np.float64).reshape(-1, 3)
+   print(evaluation.energy)
+   gradient = np.asarray(evaluation.gradient, dtype=np.float64).reshape(-1, 3)
 
    result = mol.with_uff_optimized_with_params(
        ck.UffOptimizationParams(max_iterations=200, conformer_id=conformer_id)
    )
-   optimized = result.molecule()
-   print(result.status_code(), result.needs_more(), result.energy())
+   optimized = result.molecule
+   print(result.status_code, result.needs_more, result.energy)
 
    multiple = mol.with_uff_optimized_conformers_with_params(
        ck.UffConformerOptimizationParams(num_threads=1, max_iterations=200)
    )
-   for row in multiple.conformer_results():
-       print(row.conformer_id(), row.status_code(), row.energy())
+   for row in multiple.conformer_results:
+       print(row.conformer_id, row.status_code, row.energy)
 
 The corresponding default calls are ``uff_energy_gradient()``,
 ``with_uff_optimized()``, and ``with_uff_optimized_conformers()``. Default UFF
@@ -189,7 +189,7 @@ Interactive Python workflow
    ff.set_position_(1, (x + 0.4, y, z))
    outcome = ff.minimize_(max_iterations=20)
 
-   positions = ff.positions()  # independent writable NumPy snapshot
+   positions = ff.positions  # independent writable NumPy snapshot
    positions[:, 2] += 0.1
    ff.set_positions_(positions)
    ff.set_fixed_atoms_([])      # replace the fixed set with an empty set

@@ -39,7 +39,7 @@ fn io44_sdf_row196_wedges_use_final_symmetrized_ring_carrier() {
         .filter_map(|(i, l)| (l[9..12].trim() != "0").then_some(i))
         .collect();
     assert_eq!(rows, vec![19, 30, 34, 55]);
-    assert_eq!(mol.atoms(), peer.atoms());
+    assert_eq!(mol.topology().atoms, peer.topology().atoms);
     assert_eq!(mol.bonds(), peer.bonds());
     assert_eq!(
         mol.to_mol_with_params(&MolBlockWriteParams {
@@ -82,6 +82,6 @@ fn io44_sdf_row3500_equal_score_source_sort_controls_wedge_centers() {
             (25, 30, 6)
         ]
     );
-    assert_eq!(mol.atoms(), peer.atoms());
+    assert_eq!(mol.topology().atoms, peer.topology().atoms);
     assert_eq!(mol.bonds(), peer.bonds());
 }

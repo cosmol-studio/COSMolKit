@@ -4,7 +4,10 @@ use pyo3::prelude::*;
 
 enum_value!(SdfFormat, { V2000, V3000 });
 enum_value!(Mol2Type, { Corina });
-enum_value!(BatchErrorMode, { Strict, KeepErrors });
+enum_value!(BatchErrorMode, {
+    Strict [RAISE] text = "raise",
+    KeepErrors [KEEP] text = "keep",
+});
 
 ck::project_configuration!(ck::BatchImageParams);
 #[derive(FromPyObject, IntoPyObject)]
@@ -91,18 +94,20 @@ impl MolCoordinateSelectionInput {
         }
     }
 }
-impl crate::parameters::Configuration for MolCoordinateSelection {
-    type Native = ck::MolCoordinateSelection;
-    const INPUT: pyo3::inspect::PyStaticExpr =
-        <MolCoordinateSelectionInput as FromPyObject<'_, '_>>::INPUT_TYPE;
-    fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
-        value.extract::<MolCoordinateSelectionInput>()?.into_rust()
-    }
-    fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
-        Ok(Self { inner })
-    }
-    fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
-        Ok(self.inner)
+crate::configuration::type_projection! {
+    impl Configuration for MolCoordinateSelection {
+        type Native = ck::MolCoordinateSelection;
+        const INPUT: pyo3::inspect::PyStaticExpr =
+            <MolCoordinateSelectionInput as FromPyObject<'_, '_>>::INPUT_TYPE;
+        fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native> {
+            value.extract::<MolCoordinateSelectionInput>()?.into_rust()
+        }
+        fn from_native(_py: Python<'_>, inner: Self::Native) -> PyResult<Self> {
+            Ok(Self { inner })
+        }
+        fn to_native(&self, _py: Python<'_>) -> PyResult<Self::Native> {
+            Ok(self.inner)
+        }
     }
 }
 ck::project_configuration!(ck::MolBlockWriteParams);

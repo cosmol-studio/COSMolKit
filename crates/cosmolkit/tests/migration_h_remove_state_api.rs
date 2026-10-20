@@ -326,7 +326,11 @@ fn live_compacting_commit_remaps_rows_and_preserves_typed_references() {
     assert_eq!(output.num_atoms(), 2);
     assert_eq!(output.num_bonds(), 1);
     assert_eq!(
-        output.atoms().iter().map(Atom::id).collect::<Vec<_>>(),
+        output
+            .atoms()
+            .iter()
+            .map(|atom| atom.id())
+            .collect::<Vec<_>>(),
         vec![AtomId::new(0), AtomId::new(1)]
     );
     assert_eq!(

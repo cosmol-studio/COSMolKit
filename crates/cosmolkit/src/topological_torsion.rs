@@ -97,7 +97,7 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<Fingerprint, TopologicalTorsionReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(TopologicalTorsionReadError::Preparation)?;
@@ -118,7 +118,7 @@ impl Molecule {
             conformer_id: params.conformer_id,
             atom_invariants_generator: params.atom_invariants_generator,
         };
-        topological_torsion_bits(&input, &params.generator, &call, output)
+        topological_torsion_bits(&input, &params.generator, &call, additional_output)
             .map_err(TopologicalTorsionReadError::Generator)
     }
     pub fn fingerprint_topological_torsion_sparse(
@@ -132,7 +132,7 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_sparse_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseBitFingerprint, TopologicalTorsionReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(TopologicalTorsionReadError::Preparation)?;
@@ -153,7 +153,7 @@ impl Molecule {
             conformer_id: params.conformer_id,
             atom_invariants_generator: params.atom_invariants_generator,
         };
-        topological_torsion_sparse_bits(&input, &params.generator, &call, output)
+        topological_torsion_sparse_bits(&input, &params.generator, &call, additional_output)
             .map_err(TopologicalTorsionReadError::Generator)
     }
     pub fn fingerprint_topological_torsion_count(
@@ -167,7 +167,7 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_count_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint32, TopologicalTorsionReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(TopologicalTorsionReadError::Preparation)?;
@@ -188,7 +188,7 @@ impl Molecule {
             conformer_id: params.conformer_id,
             atom_invariants_generator: params.atom_invariants_generator,
         };
-        topological_torsion_count(&input, &params.generator, &call, output)
+        topological_torsion_count(&input, &params.generator, &call, additional_output)
             .map_err(TopologicalTorsionReadError::Generator)
     }
     pub fn fingerprint_topological_torsion_sparse_count(
@@ -202,7 +202,7 @@ impl Molecule {
     pub fn fingerprint_topological_torsion_sparse_count_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint, TopologicalTorsionReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(TopologicalTorsionReadError::Preparation)?;
@@ -223,7 +223,7 @@ impl Molecule {
             conformer_id: params.conformer_id,
             atom_invariants_generator: params.atom_invariants_generator,
         };
-        topological_torsion_sparse_count(&input, &params.generator, &call, output)
+        topological_torsion_sparse_count(&input, &params.generator, &call, additional_output)
             .map_err(TopologicalTorsionReadError::Generator)
     }
 }
@@ -307,7 +307,7 @@ impl TopologicalTorsionFingerprintGenerator {
         &self,
         molecules: &[Option<&Molecule>],
         num_threads: i32,
-    ) -> Result<Vec<Option<Fingerprint>>, TopologicalTorsionReadError> {
+    ) -> Result<crate::FingerprintBatch, TopologicalTorsionReadError> {
         let prepared = molecules
             .iter()
             .map(|molecule| {
@@ -335,6 +335,7 @@ impl TopologicalTorsionFingerprintGenerator {
             .collect::<Vec<_>>();
         self.inner
             .fingerprints(&inputs, num_threads)
+            .map(crate::FingerprintBatch::from)
             .map_err(TopologicalTorsionReadError::Generator)
     }
     pub fn sparse_fingerprints(
@@ -494,48 +495,48 @@ impl Molecule {
         &self,
         generator: &TopologicalTorsionFingerprintGenerator,
         params: Option<&TopologicalTorsionCallParams>,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<Fingerprint, TopologicalTorsionReadError> {
         let defaults = TopologicalTorsionCallParams::default();
         let params = params.unwrap_or(&defaults);
         with_reusable_input(self, params, |input, call| {
-            generator.inner.bits(input, call, output)
+            generator.inner.bits(input, call, additional_output)
         })
     }
     pub fn fingerprint_topological_torsion_sparse_with_generator(
         &self,
         generator: &TopologicalTorsionFingerprintGenerator,
         params: Option<&TopologicalTorsionCallParams>,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseBitFingerprint, TopologicalTorsionReadError> {
         let defaults = TopologicalTorsionCallParams::default();
         let params = params.unwrap_or(&defaults);
         with_reusable_input(self, params, |input, call| {
-            generator.inner.sparse_bits(input, call, output)
+            generator.inner.sparse_bits(input, call, additional_output)
         })
     }
     pub fn fingerprint_topological_torsion_count_with_generator(
         &self,
         generator: &TopologicalTorsionFingerprintGenerator,
         params: Option<&TopologicalTorsionCallParams>,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint32, TopologicalTorsionReadError> {
         let defaults = TopologicalTorsionCallParams::default();
         let params = params.unwrap_or(&defaults);
         with_reusable_input(self, params, |input, call| {
-            generator.inner.count(input, call, output)
+            generator.inner.count(input, call, additional_output)
         })
     }
     pub fn fingerprint_topological_torsion_sparse_count_with_generator(
         &self,
         generator: &TopologicalTorsionFingerprintGenerator,
         params: Option<&TopologicalTorsionCallParams>,
-        output: Option<&mut FingerprintAdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint, TopologicalTorsionReadError> {
         let defaults = TopologicalTorsionCallParams::default();
         let params = params.unwrap_or(&defaults);
         with_reusable_input(self, params, |input, call| {
-            generator.inner.sparse_count(input, call, output)
+            generator.inner.sparse_count(input, call, additional_output)
         })
     }
 }

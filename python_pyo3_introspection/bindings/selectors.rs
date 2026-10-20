@@ -13,8 +13,8 @@ use pyo3::prelude::*;
 // One binding declaration supplies the enum, exhaustive Rust conversion and
 // string vocabulary. Input unions are ordinary official PyO3 type metadata.
 macro_rules! selector {
-    ($name:ident, $input:ident, {$($variant:ident),+ $(,)?}) => {
-        enum_value!($name, { $($variant),+ });
+    ($name:ident, $input:ident, {$($variant:ident),+ $(,)?} $(, methods = {$($method:item)*})?) => {
+        enum_value!($name, { $($variant),+ } $(, methods = {$($method)*})?);
         impl $input {
             pub(crate) fn into_rust(self) -> PyResult<ck::$name> {
                 match self {
@@ -51,7 +51,14 @@ pub enum SdfCoordinateModeInput {
 
 selector!(ValenceModel, ValenceModelInput, { RdkitLike });
 selector!(AromaticityModel, AromaticityModelInput, { Rdkit, Simple, Mdl, Mmff94, Custom });
-selector!(CoordinateZPolicy, CoordinateZPolicyInput, { Ignore, RequireZero, Error });
+selector!(CoordinateZPolicy, CoordinateZPolicyInput, { Ignore, RequireZero, Error }, methods = {
+    #[staticmethod]
+    pub(crate) fn from_name(value: &str) -> PyResult<Self> {
+        ck::CoordinateZPolicy::from_name(value)
+            .map(Into::into)
+            .map_err(crate::coordinate_input_errors::CoordinateInputError::from_rust)
+    }
+});
 selector!(SdfCoordinateMode, SdfCoordinateModeInput, { Preserve, Require2D, Require3D });
 
 fn default_valence_model() -> ValenceModelInput {

@@ -28,7 +28,7 @@ impl Molecule {
     pub fn fingerprint_atom_pair_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_param_type = "FingerprintAdditionalOutput | null")]
         additional_output: JsValue,
     ) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .atom_pair_fingerprint_with_params(
@@ -58,7 +58,7 @@ impl Molecule {
     pub fn fingerprint_atom_pair_sparse_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_param_type = "FingerprintAdditionalOutput | null")]
         additional_output: JsValue,
     ) -> Result<SparseBitFingerprint, JsValue> {
         // COSMolKit❗✔️: .atom_pair_sparse_fingerprint_with_params(
@@ -88,7 +88,7 @@ impl Molecule {
     pub fn fingerprint_atom_pair_count_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_param_type = "FingerprintAdditionalOutput | null")]
         additional_output: JsValue,
     ) -> Result<SparseCountFingerprint32, JsValue> {
         // COSMolKit❗✔️: .atom_pair_count_fingerprint_with_params(
@@ -118,7 +118,7 @@ impl Molecule {
     pub fn fingerprint_atom_pair_sparse_count_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
+        #[wasm_bindgen(js_name = additionalOutput, unchecked_param_type = "FingerprintAdditionalOutput | null")]
         additional_output: JsValue,
     ) -> Result<SparseCountFingerprint, JsValue> {
         // COSMolKit❗✔️: .atom_pair_sparse_count_fingerprint_with_params(

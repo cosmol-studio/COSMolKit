@@ -387,7 +387,7 @@ pub fn batch(
         let p: PatternProfile =
             serde_json::from_value(profile.clone()).expect("validated Pattern profile");
         batch
-            .fingerprint_pattern_list_with_params(
+            .fingerprint_pattern_with_params(
                 &PatternFingerprintParams {
                     n_bits: p.fp_size,
                     tautomeric: p.tautomeric,
@@ -407,7 +407,7 @@ pub fn batch(
             )])
         })?;
         batch
-            .fingerprint_layered_with_output_list_with_params(&params, runtime)
+            .fingerprint_layered_with_output_with_params(&params, runtime)
             .map(|v| v.into_iter().map(|v| v.map(layered_value)).collect())
     }
 }

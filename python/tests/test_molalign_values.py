@@ -47,25 +47,25 @@ def test_original_atom_map_constructor_repr_and_fields():
     with pytest.raises(OverflowError):ck.AlignmentAtomMap(-1,0)
 
 def test_all_original_result_protocols_and_detached_reads():
-    m=molecule();r=m.alignment_transform_to(m);assert isinstance(r,ck.AlignmentResult);assert repr(r)=="AlignmentResult(rmsd=0, mapped_atoms=2)";assert r.rmsd()==0.
-    t=r.transform();assert isinstance(t,ck.AlignmentTransform);assert repr(t)=="AlignmentTransform(matrix=4x4)";a=t.matrix();assert len(a)==4 and all(len(x)==4 for x in a);a[0][0]=99;assert t.matrix()[0][0]==1.
-    a=r.atom_map();assert len(a)==2;a.clear();assert len(r.atom_map())==2
-    rows=m.all_conformer_best_rmsds();assert len(rows)==1;v=rows[0];assert isinstance(v,ck.ConformerRmsd);assert repr(v)=="ConformerRmsd(probe_conformer_id=1, reference_conformer_id=0, rmsd=0)";assert (v.probe_conformer_id(),v.reference_conformer_id(),v.rmsd())==(1,0,0.)
-    aligned,report=m.with_aligned_conformers();assert isinstance(report,ck.ConformerAlignmentReport);assert repr(report)=="ConformerAlignmentReport(rmsds=1)";a=report.rmsds();assert a==[0.];a[0]=99;assert report.rmsds()==[0.]
+    m=molecule();r=m.alignment_transform_to(m);assert isinstance(r,ck.AlignmentResult);assert repr(r)=="AlignmentResult(rmsd=0, mapped_atoms=2)";assert r.rmsd==0.
+    t=r.transform;assert isinstance(t,ck.AlignmentTransform);assert repr(t)=="AlignmentTransform(matrix=4x4)";a=t.matrix;assert len(a)==4 and all(len(x)==4 for x in a);a[0][0]=99;assert t.matrix[0][0]==1.
+    a=r.atom_map;assert len(a)==2;a.clear();assert len(r.atom_map)==2
+    rows=m.all_conformer_best_rmsds();assert len(rows)==1;v=rows[0];assert isinstance(v,ck.ConformerRmsd);assert repr(v)=="ConformerRmsd(probe_conformer_id=1, reference_conformer_id=0, rmsd=0)";assert (v.probe_conformer_id,v.reference_conformer_id,v.rmsd)==(1,0,0.)
+    aligned,report=m.with_aligned_conformers();assert isinstance(report,ck.ConformerAlignmentReport);assert repr(report)=="ConformerAlignmentReport(rmsds=1)";a=report.rmsds;assert a==[0.];a[0]=99;assert report.rmsds==[0.]
     for typ in [ck.AlignmentResult,ck.AlignmentTransform,ck.ConformerRmsd,ck.ConformerAlignmentReport]:
         with pytest.raises(TypeError):typ()
 
 def test_configured_public_forms_use_same_report_and_typed_errors():
     m=molecule();ref=molecule();p=ck.AlignmentParameters();bp=ck.BestAlignmentParameters();cp=ck.CoordinateRmsdParameters();ap=ck.AllConformerRmsdParameters();fp=ck.ConformerAlignmentParameters()
-    assert m.alignment_transform_to_with_params(ref,p).rmsd()==m.alignment_transform_to(ref).rmsd()
-    assert m.best_alignment_to_with_params(ref,bp).rmsd()==m.best_alignment_to(ref).rmsd()
+    assert m.alignment_transform_to_with_params(ref,p).rmsd==m.alignment_transform_to(ref).rmsd
+    assert m.best_alignment_to_with_params(ref,bp).rmsd==m.best_alignment_to(ref).rmsd
     assert m.best_rmsd_to_with_params(ref,bp)==m.best_rmsd_to(ref)
     assert m.coordinate_rmsd_to_with_params(ref,cp)==m.coordinate_rmsd_to(ref)
     assert len(m.all_conformer_best_rmsds_with_params(ap))==len(m.all_conformer_best_rmsds())
-    assert m.with_alignment_to_with_params(ref,p)[1].rmsd()==0.
-    assert m.with_aligned_conformers_with_params(fp)[1].rmsds()==[0.]
-    assert m.align_to_with_params_(ref,p).rmsd()==0.
-    assert m.align_conformers_with_params_(fp).rmsds()==[0.]
+    assert m.with_alignment_to_with_params(ref,p)[1].rmsd==0.
+    assert m.with_aligned_conformers_with_params(fp)[1].rmsds==[0.]
+    assert m.align_to_with_params_(ref,p).rmsd==0.
+    assert m.align_conformers_with_params_(fp).rmsds==[0.]
     bad=ck.AlignmentParameters(atom_map=[ck.AlignmentAtomMap(7,0)])
     before=m.to_binary()
     with pytest.raises(ck.AlignmentError) as e:m.alignment_transform_to(ref,bad)

@@ -10,6 +10,8 @@ use ic::{InchiMolecule, InchiToolkitError as Error};
 #[derive(Default)]
 pub(super) struct Toolkit {
     pub(super) rings: Option<core::RingInfo>,
+    // Keep the full native post-processing result between source callbacks.
+    // The neutral engine graph does not represent all computed atom/bond fields.
     pub(super) final_topology: Option<TopologyBlock>,
 }
 
@@ -197,6 +199,42 @@ fn assignment(graph: &InchiMolecule) -> Result<core::ValenceAssignment, Error> {
     cached_valence(graph).ok_or_else(|| error("InChI callback requires the source property cache"))
 }
 
+#[cfg(test)]
+#[test]
+fn inchi_postprocessing_retains_hybridization_and_conjugation() {
+    use ic::InchiToMolToolkit;
+    let identifier = b"InChI=1S/C4H6/c1-3-4-2/h3-4H,1-2H2";
+    let output = ic::mol_from_inchi(&mut Toolkit::default(), identifier, false, false).unwrap();
+    for remove_hs in [false, true] {
+        let mut graph_value = output.molecule.as_ref().unwrap().clone();
+        let mut toolkit = Toolkit::default();
+        if remove_hs {
+            toolkit.remove_hydrogens(&mut graph_value).unwrap();
+        } else {
+            toolkit.sanitize_molecule(&mut graph_value).unwrap();
+        }
+        let before = toolkit.final_topology.as_ref().unwrap();
+        assert!(
+            before
+                .atoms
+                .iter()
+                .all(|a| a.hybridization() == crate::Hybridization::Sp2)
+        );
+        assert!(before.bonds.iter().all(|b| b.is_conjugated()));
+        toolkit
+            .assign_stereochemistry(&mut graph_value, true, true)
+            .unwrap();
+        let after = toolkit.final_topology.as_ref().unwrap();
+        assert!(
+            after
+                .atoms
+                .iter()
+                .all(|a| a.hybridization() == crate::Hybridization::Sp2)
+        );
+        assert!(after.bonds.iter().all(|b| b.is_conjugated()));
+    }
+}
+
 impl ic::MolToInchiToolkit for Toolkit {
     fn needs_update_property_cache(&mut self, graph: &InchiMolecule) -> Result<bool, Error> {
         Ok(graph.atoms().iter().any(|a| {
@@ -336,13 +374,29 @@ impl ic::InchiToMolToolkit for Toolkit {
         let (topology, coordinates) = model(graph_value)?;
         let value =
             core::remove_hydrogens_impl(topology, coordinates, MoleculeProperties::default())
-                .map_err(error)?;
+                .map_err(|failure| match failure {
+                    // RDKit✔️✔️:     } catch (const MolSanitizeException &) {
+                    // RDKit✔️✔️:       delete m;
+                    // RDKit✔️✔️:       throw;
+                    // InchiToMol preserves sanitization failures from either
+                    // post-processing branch; a RemoveHs wrapper is not a
+                    // different error category. Constant-time enum dispatch.
+                    core::HydrogenError::Sanitize(cause) => Error {
+                        kind: "MolSanitizeException",
+                        message: cause.to_string(),
+                    },
+                    other => error(other),
+                })?;
         *graph_value = graph(
             &value.topology,
             &value.coordinates,
             value.final_valence.as_ref(),
         )?;
         self.rings = value.final_rings;
+        // RDKit✔️✔️:           MolOps::removeHs(*m);
+        // InchiToMol continues with this same post-RemoveHs molecule. Move its
+        // full native topology forward; no copy or second sanitization pass.
+        self.final_topology = Some(value.topology);
         Ok(())
     }
     fn sanitize_molecule(&mut self, graph: &mut InchiMolecule) -> Result<(), Error> {
@@ -356,6 +410,11 @@ impl ic::InchiToMolToolkit for Toolkit {
             })?;
         install(graph, &value.topology, value.final_valence.as_ref())?;
         self.rings = value.final_rings;
+        // RDKit✔️✔️:           MolOps::sanitizeMol(*m);
+        // Retain the same sanitized atom/bond properties for the next callback,
+        // including fields not represented in the neutral InChI engine graph.
+        // Ownership moves in O(1), avoiding a lossy graph/model reconstruction.
+        self.final_topology = Some(value.topology);
         Ok(())
     }
     fn assign_stereochemistry(
@@ -369,12 +428,23 @@ impl ic::InchiToMolToolkit for Toolkit {
         if !force {
             return Err(error("neutral InChI stereo callback requires force=true"));
         }
-        let (topology, _) = model(graph)?;
+        // RDKit✔️✔️:     MolOps::assignStereochemistry(*m, true, true);
+        // InchiToMol supplies the actual post-sanitize/removeHs molecule, or
+        // the cleanup output when sanitization was not requested.
+        let topology = match self.final_topology.take() {
+            Some(topology) => topology,
+            None => model(graph)?.0,
+        };
         let mut valence = assignment(graph)?;
         let rings = match self.rings.take() {
             Some(rings) => rings,
             None => {
-                core::find_sssr(&topology, &core::RingSearchParams::default()).map_err(error)?
+                // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+                // RDKit✔️✔️:     MolOps::fastFindRings(mol);
+                // RDKit✔️✔️:   }
+                // Chirality.cpp legacyStereoPerception: preserve the source's
+                // DFS ring membership, not a different SSSR basis. O(V+E).
+                core::fast_find_rings(&topology).map_err(error)?
             }
         };
         let value = core::assign_legacy_stereochemistry_with_assignments(

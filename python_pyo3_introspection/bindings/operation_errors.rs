@@ -87,22 +87,8 @@ fn project_operation_source(inner: &RetainedError<ck::OperationError>) -> Option
         _ => unreachable!("native OperationError::source and projection disagree"),
     })
 }
-#[pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
-#[derive(Clone, Copy, PartialEq)]
-pub enum MoleculeOpOutput {
-    Single = ck::MoleculeOpOutput::Single as isize,
-    Multiple = ck::MoleculeOpOutput::Multiple as isize,
-    LazyMultiple = ck::MoleculeOpOutput::LazyMultiple as isize,
-}
-impl From<ck::MoleculeOpOutput> for MoleculeOpOutput {
-    fn from(value: ck::MoleculeOpOutput) -> Self {
-        match value {
-            ck::MoleculeOpOutput::Single => Self::Single,
-            ck::MoleculeOpOutput::Multiple => Self::Multiple,
-            ck::MoleculeOpOutput::LazyMultiple => Self::LazyMultiple,
-        }
-    }
-}
+use crate::chemical_values::enum_value;
+enum_value!(MoleculeOpOutput, { Single, Multiple, LazyMultiple });
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
 pub struct UnsupportedFeatureError {

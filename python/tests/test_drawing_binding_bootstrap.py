@@ -20,9 +20,9 @@ def test_current_selected_extension_is_imported():
 
 def test_svg_png_are_real_and_preserve_the_receiver():
     molecule = cosmolkit.Molecule.from_smiles("CCO")
-    before = (molecule.to_smiles(), molecule.num_atoms(), molecule.num_bonds())
+    before = (molecule.to_smiles(), molecule.num_atoms, molecule.num_bonds)
     assert before == ("CCO", 3, 2)
-    assert molecule.coordinates_2d() is None
+    assert molecule.coordinates_2d is None
     for _ in range(2):
         svg = molecule.to_svg(120, 80)
         assert isinstance(svg, str)
@@ -40,20 +40,20 @@ def test_svg_png_are_real_and_preserve_the_receiver():
         assert png[:8] == b"\x89PNG\r\n\x1a\n"
         assert png[12:16] == b"IHDR"
         assert struct.unpack(">II", png[16:24]) == (120, 80)
-        assert (molecule.to_smiles(), molecule.num_atoms(), molecule.num_bonds()) == before
-        assert molecule.coordinates_2d() is None
+        assert (molecule.to_smiles(), molecule.num_atoms, molecule.num_bonds) == before
+        assert molecule.coordinates_2d is None
 
 
 def test_layout_value_transform_preserves_original():
     original = cosmolkit.Molecule.from_smiles("CCO")
     positioned = original.with_2d_coordinates()
-    assert original.coordinates_2d() is None
-    before = positioned.coordinates_2d()
+    assert original.coordinates_2d is None
+    before = positioned.coordinates_2d
     assert before is not None and len(before) == 3
     assert len(positioned.to_svg(120, 80)) > 0
     assert positioned.to_png(120, 80).startswith(b"\x89PNG\r\n\x1a\n")
-    np.testing.assert_array_equal(positioned.coordinates_2d(), before)
-    assert original.coordinates_2d() is None
+    np.testing.assert_array_equal(positioned.coordinates_2d, before)
+    assert original.coordinates_2d is None
 
 
 @pytest.mark.parametrize("method", ["to_svg", "to_png"])
@@ -71,4 +71,4 @@ def test_dimension_errors_and_python_integer_conversion(method: str) -> None:
         _ = operation("120", 80)
     with pytest.raises(TypeError):
         _ = operation()
-    assert molecule.coordinates_2d() is None
+    assert molecule.coordinates_2d is None

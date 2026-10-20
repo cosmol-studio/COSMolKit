@@ -145,7 +145,7 @@ mol = ck.mol_from_smiles("c1ccccc1O")
 mol_2d = mol.with_2d_coordinates()
 
 print(mol_2d.to_smiles())
-print(mol_2d.coordinates_2d())
+print(mol_2d.coordinates_2d)
 
 mol_3d = mol.with_hydrogens().with_3d_conformer()
 print(mol_3d.coordinates_3d())
@@ -154,16 +154,16 @@ svg = mol_2d.to_svg(width=400, height=300)
 mol_2d.write_png("phenol.png", width=400, height=300)
 
 fp = mol.fingerprint_morgan()
-print(fp.on_bits())
+print(fp.on_bits)
 
 atom_pair = mol.fingerprint_atom_pair()
-print(atom_pair.on_bits())
+print(atom_pair.on_bits)
 
 layered = mol.fingerprint_layered()
-print(layered.on_bits())
+print(layered.on_bits)
 
 pattern = mol.fingerprint_pattern()
-print(pattern.on_bits())
+print(pattern.on_bits)
 
 stereoisomers = list(ck.mol_from_smiles("FC(Cl)Br").enumerate_stereoisomers())
 print([isomer.to_smiles() for isomer in stereoisomers])
@@ -177,8 +177,8 @@ batch = (
 )
 
 prepared = batch.with_hydrogens().with_2d_coordinates()
-print(prepared.valid_mask())
-print(prepared.to_smiles_list())
+print(prepared.valid_mask)
+print(prepared.to_smiles())
 
 prepared.write_images("molecule_images")
 ```
@@ -201,7 +201,7 @@ const batch = ck.MoleculeBatch.fromSmilesList(["CCO", "c1ccccc1", "CC(=O)O"]);
 console.log(mol.toSmiles(), mol.molecularWeight());
 console.log(mol2d.toSvg(400, 300));
 console.log(fp.onBits());
-console.log(batch.toSmilesList());
+console.log(batch.toSmiles());
 
 batch.free();
 fp.free();
@@ -223,12 +223,12 @@ import cosmolkit as ck
 from pathlib import Path
 
 structure = ck.BioStructure.from_pdb(Path("complex.pdb").read_text())
-print(structure.num_models(), structure.num_chains(), structure.num_atoms())
+print(structure.num_models, structure.num_chains, structure.num_atoms)
 
 # Structural format conversion remains on the complete structural value.
 mmcif_text = structure.to_mmcif()
 roundtrip = ck.BioStructure.from_mmcif(mmcif_text)
-print(roundtrip.num_atoms())
+print(roundtrip.num_atoms)
 ```
 
 This example reads your `complex.pdb` file.
@@ -238,9 +238,9 @@ The protein projection is explicit and leaves the full structure available:
 ```python
 protein = structure.protein()
 
-print(protein.num_chains())
-print(protein.num_residues())
-print(protein.num_atoms())
+print(protein.num_chains)
+print(protein.num_residues)
+print(protein.num_atoms)
 
 ```
 
@@ -259,10 +259,10 @@ dataset = ck.SdfDataset.open("library.sdf")
 print(len(dataset))
 
 record = dataset[0]
-mol = record.molecule()
+mol = record.molecule
 
 for batch in dataset.batches(size=1024, errors="keep", n_jobs=8):
-    smiles = batch.to_smiles_list()
+    smiles = batch.to_smiles()
 ```
 
 This example reads your `library.sdf` file.
@@ -277,11 +277,11 @@ mol = ck.mol_from_smiles("CC(=O)NC").with_hydrogens()
 params = ck.EmbedParams(random_seed=0xF00D, num_threads=1)
 
 embedded = mol.with_3d_conformer(params)
-print(len(embedded.conformers_3d()))
+print(len(embedded.conformers_3d))
 print(embedded.coordinates_3d())
 
 multi = mol.with_3d_conformers(5, params)
-print(len(multi.conformers_3d()))
+print(len(multi.conformers_3d))
 
 uff = embedded.uff_force_field()
 print(uff.energy())

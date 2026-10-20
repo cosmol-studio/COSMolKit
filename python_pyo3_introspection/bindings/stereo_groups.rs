@@ -6,14 +6,20 @@ use pyo3::prelude::*;
 
 enum_value!(StereoGroupKind, { Absolute, Or, And });
 
-#[pyclass(module = "cosmolkit", frozen, from_py_object)]
-#[derive(Clone)]
-pub struct StereoGroup {
-    pub(crate) inner: ck::StereoGroup,
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone)]
+    pub struct StereoGroup {
+        pub(crate) inner: ck::StereoGroup,
+    }
 }
 
 #[pymethods]
 impl StereoGroup {
+    #[new]
+    fn py_new(kind: StereoGroupKind, atoms: Vec<usize>, bonds: Vec<usize>) -> PyResult<Self> {
+        Self::new(kind, atoms, bonds)
+    }
     #[staticmethod]
     fn new(kind: StereoGroupKind, atoms: Vec<usize>, bonds: Vec<usize>) -> PyResult<Self> {
         ck::StereoGroup::new(
@@ -34,18 +40,23 @@ impl StereoGroup {
             inner: self.inner.clone().with_write_id(write_id),
         }
     }
+    #[getter]
     fn id(&self) -> Option<u32> {
         self.inner.id()
     }
+    #[getter]
     fn write_id(&self) -> u32 {
         self.inner.write_id()
     }
+    #[getter]
     fn kind(&self) -> StereoGroupKind {
         self.inner.kind().into()
     }
+    #[getter]
     fn atoms(&self) -> Vec<usize> {
         self.inner.atoms().iter().map(|id| id.index()).collect()
     }
+    #[getter]
     fn bonds(&self) -> Vec<usize> {
         self.inner.bonds().iter().map(|id| id.index()).collect()
     }

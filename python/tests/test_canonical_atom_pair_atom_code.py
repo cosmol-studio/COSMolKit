@@ -10,7 +10,7 @@ def test_source_carbon_chiral_codes_and_explicit_result_molecule():
     assert ordinary.code == 35
     assert isinstance(ordinary, ck.AtomPairAtomCodeResult)
     assert isinstance(ordinary.molecule, ck.Molecule)
-    assert ordinary.molecule.num_atoms() == source.num_atoms() == 4
+    assert ordinary.molecule.num_atoms == source.num_atoms == 4
     for legacy in [True, False]:
         result = source.with_atom_pair_atom_code(1, include_chirality=True, use_legacy_stereo_perception=legacy)
         assert result.code == 547

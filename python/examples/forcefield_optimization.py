@@ -39,17 +39,17 @@ start = mol.coordinates_3d().copy()
 
 if mol.uff_has_all_molecule_params():
     result = mol.with_uff_optimized(max_iterations=200)
-    optimized = result.molecule()
+    optimized = result.molecule
 
-    print("UFF converged:", not result.needs_more())
-    print("UFF status code:", result.status_code())
-    print("UFF energy:", result.energy())
+    print("UFF converged:", not result.needs_more)
+    print("UFF status code:", result.status_code)
+    print("UFF energy:", result.energy)
     print("coordinates changed:", not np.allclose(start, optimized.coordinates_3d()))
 
 if mol.mmff_has_all_molecule_params():
     result = mol.with_mmff_optimized(max_iterations=200)
-    print("MMFF94 converged:", not result.needs_more())
-    print("MMFF94 status code:", result.status_code())
+    print("MMFF94 converged:", not result.needs_more)
+    print("MMFF94 status code:", result.status_code)
 
 # These values are explicit example choices, not implicit numerical defaults.
 for model in ("UFF", "MMFF94", "MMFF94s"):
@@ -77,7 +77,7 @@ for model in ("UFF", "MMFF94", "MMFF94s"):
     oxygen = field.position(2)
     field.set_position_(2, [oxygen[0] + 0.3, oxygen[1] + 0.1, oxygen[2] + 0.2])
     initial = field.energy_gradient()
-    assert initial.gradient.shape == (mol.num_atoms(), 3)
+    assert initial.gradient.shape == (mol.num_atoms, 3)
     outcome = field.minimize_()
     assert np.isfinite(outcome.energy)
     assert outcome.energy <= initial.energy
@@ -85,7 +85,7 @@ for model in ("UFF", "MMFF94", "MMFF94s"):
     assert np.array_equal(mol.coordinates_3d(), start)
 
     # Evaluator edits do not change mol. Install the result explicitly in a new value.
-    positions = field.positions()
+    positions = field.positions
     relaxed = mol.with_3d_coordinates(positions, conformer_id=0)
     assert np.array_equal(relaxed.coordinates_3d(), positions)
     assert np.array_equal(mol.coordinates_3d(), start)

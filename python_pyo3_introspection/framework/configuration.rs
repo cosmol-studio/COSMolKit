@@ -5,6 +5,68 @@ use std::collections::BTreeMap;
 pub(crate) trait FieldProjection: Sized + Clone {
     type Adapter: Container<Native = Self>;
 }
+
+/// A binding declares its conversion and native field association together.
+/// No business types or runtime lookup table belong in this macro.
+macro_rules! type_projection {
+    (@association $(#[$($attribute:tt)*])* $visibility:vis struct $wrapper:ident {
+        $field_visibility:vis inner: $native:ty $(,)?
+    }) => {
+        $crate::configuration::type_projection! {
+            impl Configuration for $wrapper {
+                type Native = $native;
+                fn from_native(_py: pyo3::Python<'_>, inner: Self::Native) -> pyo3::PyResult<Self> {
+                    Ok(Self { inner })
+                }
+                fn to_native(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<Self::Native> {
+                    Ok(self.inner.clone())
+                }
+            }
+        }
+    };
+    (impl Configuration for $wrapper:ty {
+        type Native = $native:ty;
+        $($body:tt)*
+    }) => {
+        impl crate::parameters::Configuration for $wrapper {
+            type Native = $native;
+            $($body)*
+        }
+        impl crate::configuration::FieldProjection for $native {
+            type Adapter = crate::parameters::ValueField<$wrapper>;
+        }
+    };
+    (impl NativeScalar for $native:ty {
+        $($body:tt)*
+    }) => {
+        impl crate::parameters::NativeScalar for $native { $($body)* }
+        impl crate::configuration::FieldProjection for $native {
+            type Adapter = crate::parameters::NativeScalarField<Self>;
+        }
+    };
+    (impl Container for $adapter:ty {
+        type Native = $native:ty;
+        $($body:tt)*
+    }) => {
+        impl crate::parameters::Container for $adapter {
+            type Native = $native;
+            $($body)*
+        }
+        impl crate::configuration::FieldProjection for $native {
+            type Adapter = $adapter;
+        }
+    };
+    (@association $($invalid:tt)*) => {
+        compile_error!("value projection requires a single native inner field; stateful owners need an explicit adapter");
+    };
+    ($($declaration:tt)*) => {
+        // Preserve the original item tokens, including attribute spans. Rebuilding
+        // #[pyclass(...)] changes the hygiene of PyO3-generated comparison code.
+        $($declaration)*
+        $crate::configuration::type_projection!(@association $($declaration)*);
+    };
+}
+pub(crate) use type_projection;
 macro_rules! scalars {
     ($($ty:ty),+ $(,)?) => {$(
         impl FieldProjection for $ty { type Adapter = Scalar<Self>; }
@@ -31,7 +93,7 @@ scalars!(
 );
 impl<T, const N: usize> FieldProjection for [T; N]
 where
-    T: Clone,
+    T: Clone + 'static,
     for<'a, 'py> T: pyo3::FromPyObject<'a, 'py>,
     for<'py> T: pyo3::IntoPyObject<'py>,
 {
@@ -45,68 +107,6 @@ impl<T: FieldProjection> FieldProjection for Option<T> {
 }
 impl<K: FieldProjection + Ord, V: FieldProjection> FieldProjection for BTreeMap<K, V> {
     type Adapter = Dict<K::Adapter, V::Adapter>;
-}
-
-macro_rules! value_fields {
-    ($($native:ty => $projection:ty),+ $(,)?) => {$(
-        impl FieldProjection for $native {
-            type Adapter = crate::parameters::ValueField<$projection>;
-        }
-    )+};
-}
-value_fields! {
-    cosmolkit::Fingerprint => crate::native::Fingerprint,
-    cosmolkit::AlignmentAtomMap => crate::collection_params::AlignmentAtomMap,
-    cosmolkit::ReactionCoordinateSelection => crate::construction_values::ReactionCoordinateSelection,
-    cosmolkit::CxSmilesFields => crate::notation_params::CxSmilesFields,
-    cosmolkit::CxCoordinateSelection => crate::notation_params::CxCoordinateSelection,
-    cosmolkit::TautomerScoreTerm => crate::tautomer_values::TautomerScoreTerm,
-    cosmolkit::MorganInvariants => crate::morgan_configuration::MorganInvariants,
-    cosmolkit::MolCoordinateSelection => crate::io_batch_params::MolCoordinateSelection,
-    cosmolkit::SanitizeOperations => crate::sanitize_values::SanitizeOperations,
-}
-impl FieldProjection for cosmolkit::AtomId {
-    type Adapter = crate::parameters::NativeScalarField<Self>;
-}
-impl FieldProjection for cosmolkit::BondId {
-    type Adapter = crate::parameters::NativeScalarField<Self>;
-}
-impl FieldProjection for cosmolkit::LayeredFingerprintLayers {
-    type Adapter = crate::parameters::NativeScalarField<Self>;
-}
-impl crate::parameters::NativeScalar for cosmolkit::AvalonFingerprintFlags {
-    type Repr = u32;
-    fn from_scalar(value: u32) -> Self {
-        Self::from_bits_retain(value)
-    }
-    fn scalar(self) -> u32 {
-        self.bits()
-    }
-}
-impl FieldProjection for cosmolkit::AvalonFingerprintFlags {
-    type Adapter = crate::parameters::NativeScalarField<Self>;
-}
-
-/// Counted native byte text is exposed as Python text only by strict decoding.
-/// This shares the existing explicit UTF-8 boundary; no lossy replacement.
-pub(crate) struct PropertyTextField;
-impl Container for PropertyTextField {
-    type Native = cosmolkit::PropertyText;
-    const TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_identifier!("builtins", "str");
-    const INPUT: pyo3::inspect::PyStaticExpr = Self::TYPE;
-    fn extract(value: pyo3::Borrowed<'_, '_, pyo3::PyAny>) -> pyo3::PyResult<Self::Native> {
-        Ok(value.extract::<String>()?.into())
-    }
-    fn output<'py>(
-        py: pyo3::Python<'py>,
-        value: &Self::Native,
-    ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        use pyo3::IntoPyObjectExt;
-        crate::property_values::decode_source_text(py, value)?.into_bound_py_any(py)
-    }
-}
-impl FieldProjection for cosmolkit::PropertyText {
-    type Adapter = PropertyTextField;
 }
 
 #[cfg(test)]
@@ -126,6 +126,7 @@ pub mod fixture {
     #[derive(Clone, Default, cosmolkit::Configuration)]
     pub struct ProjectionExample {
         pub generator: ProjectionChild,
+        pub optional: Option<ProjectionChild>,
         pub from_atoms: Vec<u32>,
         pub replacements: BTreeMap<String, String>,
         pub limits: [u32; 2],
@@ -163,9 +164,23 @@ assert p.generator.radius == 3 and p.from_atoms == (0,)
 assert p.replacements == {"{A}": "O"}
 child = p.generator
 child.radius = 0
-assert p.generator.radius == 3
-p.generator = child
 assert p.generator.radius == 0
+p.generator = p.generator
+p.generator = ProjectionChild(radius=4)
+assert child.radius == 4
+child.radius = 0
+assert p.generator.radius == 0
+p.optional = source
+optional = p.optional
+optional.radius = 6
+assert p.optional.radius == 6 and source.radius == 9
+p.optional = None
+try:
+    optional.radius = 1
+except ReferenceError:
+    pass
+else:
+    raise AssertionError("removed optional field remained writable")
 p.from_atoms = [0, 1]
 p.replacements = {"{B}": "N"}
 p.limits = [2, 4]
@@ -198,8 +213,18 @@ assert p.limits == (2, 4)
             assert_eq!(captured.replacements["{B}"], "N");
             module.getattr("child")?.setattr("radius", 2)?;
             assert_eq!(captured.generator.radius, 0);
-            assert_eq!(object.borrow(py).inner.generator.radius, 0);
-            assert_eq!(object.borrow(py).inner.limits, [2, 4]);
+            assert_eq!(object.borrow(py).to_rust(py)?.generator.radius, 2);
+            assert_eq!(object.borrow(py).to_rust(py)?.limits, [2, 4]);
+            module.dict().del_item("p")?;
+            drop(object);
+            module.getattr("child")?.setattr("radius", 7)?;
+            assert_eq!(
+                module
+                    .getattr("child")?
+                    .getattr("radius")?
+                    .extract::<u32>()?,
+                7
+            );
             Ok(())
         })
         .unwrap();

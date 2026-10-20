@@ -44,7 +44,7 @@ def build_seed_sdf(path: Path) -> None:
 build_seed_sdf(SDF_PATH)
 
 dataset = ck.SdfDataset.open(str(SDF_PATH), coordinate_mode="require_2d")
-print("dataset path:", dataset.path())
+print("dataset path:", dataset.path)
 print("records:", len(dataset))
 
 for index in range(len(dataset)):
@@ -54,11 +54,11 @@ for index in range(len(dataset)):
         "record:",
         index,
         "bytes=",
-        metadata.byte_len(),
+        metadata.byte_len,
         "source=",
         record.data_field("source_index"),
         "smiles=",
-        record.molecule().to_smiles(),
+        record.molecule.to_smiles(),
     )
 
 selected = dataset[[0, 2, 4]]
@@ -66,13 +66,13 @@ selected = selected.with_2d_coordinates(
     errors=ck.BatchErrorMode.KEEP,
     n_jobs=2,
 )
-print("selected valid mask:", selected.valid_mask())
-print("selected smiles:", selected.to_smiles_list())
+print("selected valid mask:", selected.valid_mask)
+print("selected smiles:", selected.to_smiles())
 
-fps = selected.fingerprint_morgan_list(radius=2, fp_size=512, n_jobs=2)
+fps = selected.fingerprint_morgan(radius=2, fp_size=512, n_jobs=2)
 for index, fingerprint in enumerate(fps):
     if fingerprint is not None:
-        print("selected fingerprint:", index, "bits=", len(fingerprint.on_bits()))
+        print("selected fingerprint:", index, "bits=", len(fingerprint.on_bits))
 
 all_chunks: list[ck.MoleculeBatch] = []
 for chunk in dataset.batches(size=2, errors=ck.BatchErrorMode.KEEP, n_jobs=2):
@@ -80,7 +80,7 @@ for chunk in dataset.batches(size=2, errors=ck.BatchErrorMode.KEEP, n_jobs=2):
         errors=ck.BatchErrorMode.KEEP,
     )
     all_chunks.append(prepared)
-    print("chunk:", len(prepared), prepared.to_smiles_list())
+    print("chunk:", len(prepared), prepared.to_smiles())
 
 report = selected.write_images(
     str(OUTPUT_DIR / "selected_images"),

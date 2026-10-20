@@ -23,42 +23,42 @@ mod tests {
  let kw=PyDict::new(py);kw.set_item("operations",Py::new(py,crate::sanitize_values::SanitizeOperations{inner:ck::SanitizeOperations::NONE})?)?;
  let expected=native.sanitize().unwrap().to_binary().unwrap();
  let configured=native.sanitize_with_params(&config).unwrap().to_binary().unwrap();
- cases.append(("sanitize","sanitize_","sanitize_with_params","sanitize_with_params_",Py::new(py,crate::sanitize_values::SanitizeParams{inner:config})?,kw,expected,configured))?;
+ cases.append(("sanitize","sanitize_","sanitize_with_params","sanitize_with_params_",Py::new(py,crate::sanitize_values::SanitizeParams{inner:crate::parameters::NativeField::Owned(config)})?,kw,expected,configured))?;
 }
 {
  let config=ck::KekulizeParams::default();
  let kw=PyDict::new(py);kw.set_item("canonical",config.canonical)?;
  let expected=native.with_kekulized_bonds().unwrap().to_binary().unwrap();
  let configured=native.with_kekulized_bonds_with_params(&config).unwrap().to_binary().unwrap();
- cases.append(("with_kekulized_bonds","kekulize_bonds_","with_kekulized_bonds_with_params","kekulize_bonds_with_params_",Py::new(py,crate::params::KekulizeParams{inner:config})?,kw,expected,configured))?;
+ cases.append(("with_kekulized_bonds","kekulize_bonds_","with_kekulized_bonds_with_params","kekulize_bonds_with_params_",Py::new(py,crate::params::KekulizeParams{inner:crate::parameters::NativeField::Owned(config)})?,kw,expected,configured))?;
 }
 {
  let config=ck::AromaticityParams::default();
  let kw=PyDict::new(py);kw.set_item("model","rdkit")?;
  let expected=native.with_assigned_aromaticity().unwrap().to_binary().unwrap();
  let configured=native.with_assigned_aromaticity_with_params(&config).unwrap().to_binary().unwrap();
- cases.append(("with_assigned_aromaticity","assign_aromaticity_","with_assigned_aromaticity_with_params","assign_aromaticity_with_params_",Py::new(py,crate::selectors::AromaticityParams{inner:config})?,kw,expected,configured))?;
+ cases.append(("with_assigned_aromaticity","assign_aromaticity_","with_assigned_aromaticity_with_params","assign_aromaticity_with_params_",Py::new(py,crate::selectors::AromaticityParams{inner:crate::parameters::NativeField::Owned(config)})?,kw,expected,configured))?;
 }
 {
  let config=ck::ValenceParams::default();
  let kw=PyDict::new(py);kw.set_item("strict",config.strict)?;
  let expected=native.with_assigned_valence().unwrap().to_binary().unwrap();
  let configured=native.with_assigned_valence_with_params(&config).unwrap().to_binary().unwrap();
- cases.append(("with_assigned_valence","assign_valence_","with_assigned_valence_with_params","assign_valence_with_params_",Py::new(py,crate::selectors::ValenceParams{inner:config})?,kw,expected,configured))?;
+ cases.append(("with_assigned_valence","assign_valence_","with_assigned_valence_with_params","assign_valence_with_params_",Py::new(py,crate::selectors::ValenceParams{inner:crate::parameters::NativeField::Owned(config)})?,kw,expected,configured))?;
 }
 {
  let config=ck::RingSearchParams::default();
  let kw=PyDict::new(py);kw.set_item("include_dative_bonds",config.include_dative_bonds)?;
  let expected=native.with_assigned_ring_families().unwrap().to_binary().unwrap();
  let configured=native.with_assigned_ring_families_with_params(&config).unwrap().to_binary().unwrap();
- cases.append(("with_assigned_ring_families","assign_ring_families_","with_assigned_ring_families_with_params","assign_ring_families_with_params_",Py::new(py,crate::params::RingSearchParams{inner:config})?,kw,expected,configured))?;
+ cases.append(("with_assigned_ring_families","assign_ring_families_","with_assigned_ring_families_with_params","assign_ring_families_with_params_",Py::new(py,crate::params::RingSearchParams{inner:crate::parameters::NativeField::Owned(config)})?,kw,expected,configured))?;
 }
 {
  let config=ck::StructureTagParams::default();
  let kw=PyDict::new(py);kw.set_item("replace_existing_tags",config.replace_existing_tags)?;
  let expected=native.with_chiral_tags_from_structure().unwrap().to_binary().unwrap();
  let configured=native.with_chiral_tags_from_structure_with_params(&config).unwrap().to_binary().unwrap();
- cases.append(("with_chiral_tags_from_structure","assign_chiral_tags_from_structure_","with_chiral_tags_from_structure_with_params","assign_chiral_tags_from_structure_with_params_",Py::new(py,crate::params::StructureTagParams{inner:config})?,kw,expected,configured))?;
+ cases.append(("with_chiral_tags_from_structure","assign_chiral_tags_from_structure_","with_chiral_tags_from_structure_with_params","assign_chiral_tags_from_structure_with_params_",Py::new(py,crate::params::StructureTagParams{inner:crate::parameters::NativeField::Owned(config)})?,kw,expected,configured))?;
 }
 {
  let config=ck::CipLabelOptions::default();
@@ -79,7 +79,7 @@ mod tests {
  let kw=PyDict::new(py);kw.set_item("sanitize",config.sanitize)?;
  let expected=native.without_hydrogens().unwrap().to_binary().unwrap();
  let configured=native.without_hydrogens_with_params(&config).unwrap().to_binary().unwrap();
- cases.append(("without_hydrogens","remove_hydrogens_","without_hydrogens_with_params","remove_hydrogens_with_params_",Py::new(py,crate::params::RemoveHsParams{inner:config})?,kw,expected,configured))?;
+ cases.append(("without_hydrogens","remove_hydrogens_","without_hydrogens_with_params","remove_hydrogens_with_params_",Py::new(py,crate::params::RemoveHsParams{inner:crate::parameters::NativeField::Owned(config)})?,kw,expected,configured))?;
 }
 
  let simple=PyList::empty(py);
@@ -180,12 +180,12 @@ pub(crate) fn sanitize(
 ) -> PyResult<crate::sanitize_values::SanitizeParams> {
     let defaults = ck::SanitizeParams::default();
     Ok(crate::sanitize_values::SanitizeParams {
-        inner: ck::SanitizeParams {
+        inner: crate::parameters::NativeField::Owned(ck::SanitizeParams {
             operations: operations
                 .map(|v| v.into_rust())
                 .transpose()?
                 .unwrap_or(defaults.operations),
-        },
+        }),
     })
 }
 pub(crate) fn kekulize(
@@ -195,11 +195,11 @@ pub(crate) fn kekulize(
 ) -> PyResult<crate::params::KekulizeParams> {
     let defaults = ck::KekulizeParams::default();
     Ok(crate::params::KekulizeParams {
-        inner: ck::KekulizeParams {
+        inner: crate::parameters::NativeField::Owned(ck::KekulizeParams {
             mark_atoms_bonds: mark_atoms_bonds.unwrap_or(defaults.mark_atoms_bonds),
             canonical: canonical.unwrap_or(defaults.canonical),
             max_backtracks: max_backtracks.unwrap_or(defaults.max_backtracks),
-        },
+        }),
     })
 }
 pub(crate) fn aromaticity(
@@ -207,12 +207,12 @@ pub(crate) fn aromaticity(
 ) -> PyResult<crate::selectors::AromaticityParams> {
     let defaults = ck::AromaticityParams::default();
     Ok(crate::selectors::AromaticityParams {
-        inner: ck::AromaticityParams {
+        inner: crate::parameters::NativeField::Owned(ck::AromaticityParams {
             model: model
                 .map(|v| v.into_rust())
                 .transpose()?
                 .unwrap_or(defaults.model),
-        },
+        }),
     })
 }
 pub(crate) fn valence(
@@ -221,13 +221,13 @@ pub(crate) fn valence(
 ) -> PyResult<crate::selectors::ValenceParams> {
     let defaults = ck::ValenceParams::default();
     Ok(crate::selectors::ValenceParams {
-        inner: ck::ValenceParams {
+        inner: crate::parameters::NativeField::Owned(ck::ValenceParams {
             model: model
                 .map(|v| v.into_rust())
                 .transpose()?
                 .unwrap_or(defaults.model),
             strict: strict.unwrap_or(defaults.strict),
-        },
+        }),
     })
 }
 pub(crate) fn rings(
@@ -236,11 +236,11 @@ pub(crate) fn rings(
 ) -> PyResult<crate::params::RingSearchParams> {
     let defaults = ck::RingSearchParams::default();
     Ok(crate::params::RingSearchParams {
-        inner: ck::RingSearchParams {
+        inner: crate::parameters::NativeField::Owned(ck::RingSearchParams {
             include_dative_bonds: include_dative_bonds.unwrap_or(defaults.include_dative_bonds),
             include_hydrogen_bonds: include_hydrogen_bonds
                 .unwrap_or(defaults.include_hydrogen_bonds),
-        },
+        }),
     })
 }
 pub(crate) fn structure(
@@ -249,10 +249,10 @@ pub(crate) fn structure(
 ) -> PyResult<crate::params::StructureTagParams> {
     let defaults = ck::StructureTagParams::default();
     Ok(crate::params::StructureTagParams {
-        inner: ck::StructureTagParams {
+        inner: crate::parameters::NativeField::Owned(ck::StructureTagParams {
             conformer_id: conformer_id.unwrap_or(defaults.conformer_id),
             replace_existing_tags: replace_existing_tags.unwrap_or(defaults.replace_existing_tags),
-        },
+        }),
     })
 }
 pub(crate) fn potential(
@@ -262,11 +262,11 @@ pub(crate) fn potential(
 ) -> PyResult<crate::params::PotentialStereoParams> {
     let defaults = ck::PotentialStereoParams::default();
     Ok(crate::params::PotentialStereoParams {
-        inner: ck::PotentialStereoParams {
+        inner: crate::parameters::NativeField::Owned(ck::PotentialStereoParams {
             clean: clean.unwrap_or(defaults.clean),
             flag_possible: flag_possible.unwrap_or(defaults.flag_possible),
             allow_nontetrahedral: allow_nontetrahedral.unwrap_or(defaults.allow_nontetrahedral),
-        },
+        }),
     })
 }
 pub(crate) fn hydrogens(
@@ -308,7 +308,7 @@ pub(crate) fn remove_hydrogens(
 ) -> PyResult<crate::params::RemoveHsParams> {
     let defaults = ck::RemoveHsParams::default();
     Ok(crate::params::RemoveHsParams {
-        inner: ck::RemoveHsParams {
+        inner: crate::parameters::NativeField::Owned(ck::RemoveHsParams {
             remove_degree_zero: remove_degree_zero.unwrap_or(defaults.remove_degree_zero),
             remove_higher_degrees: remove_higher_degrees.unwrap_or(defaults.remove_higher_degrees),
             remove_only_h_neighbors: remove_only_h_neighbors
@@ -332,7 +332,7 @@ pub(crate) fn remove_hydrogens(
             remove_nontetrahedral_neighbors: remove_nontetrahedral_neighbors
                 .unwrap_or(defaults.remove_nontetrahedral_neighbors),
             sanitize: sanitize.unwrap_or(defaults.sanitize),
-        },
+        }),
     })
 }
 pub(crate) fn cip(

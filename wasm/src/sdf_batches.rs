@@ -18,9 +18,10 @@ impl MoleculeBatch {
         read: &ck::SdfReadParams,
         mode: ck::BatchErrorMode,
         n_jobs: Option<usize>,
+        progress_bar: bool,
     ) -> Result<Self, ck::BatchValidationError> {
-        // COSMolKit❗✔️: ck::MoleculeBatch::from_sdf_records_with_params(text,read,mode,n_jobs)
-        ck::MoleculeBatch::from_sdf_records_with_params(text, read, mode, n_jobs)
+        // COSMolKit❗✔️: ck::MoleculeBatch::from_sdf_records_with_params(text,read,mode,n_jobs,progress_bar)
+        ck::MoleculeBatch::from_sdf_records_with_params(text, read, mode, n_jobs, progress_bar)
             .map(|inner| Self { inner })
     }
     pub fn read_sdf(path: &str) -> Result<Self, ck::BatchValidationError> {
@@ -52,6 +53,9 @@ impl MoleculeBatch {
             .get(index)
             .cloned()
             .map(|inner| BatchRecord { inner })
+    }
+    pub fn select(&self, indices: &[usize]) -> Option<Self> {
+        self.inner.select(indices).map(|inner| Self { inner })
     }
     pub fn records(&self) -> Vec<BatchRecord> {
         self.inner
@@ -182,10 +186,10 @@ mod tests {
         let read = ck::SdfReadParams::default();
         for mode in [ck::BatchErrorMode::Strict, ck::BatchErrorMode::KeepErrors] {
             for jobs in [None, Some(1), Some(2)] {
-                let b =
-                    MoleculeBatch::from_sdf_records_with_params(&text, &read, mode, jobs).unwrap();
+                let b = MoleculeBatch::from_sdf_records_with_params(&text, &read, mode, jobs, true)
+                    .unwrap();
                 let owner =
-                    ck::MoleculeBatch::from_sdf_records_with_params(&text, &read, mode, jobs)
+                    ck::MoleculeBatch::from_sdf_records_with_params(&text, &read, mode, jobs, true)
                         .unwrap();
                 masks(&b, &owner);
                 for progress in [false, true] {
@@ -245,7 +249,8 @@ mod tests {
                 &text,
                 &read,
                 ck::BatchErrorMode::Strict,
-                Some(0)
+                Some(0),
+                false
             )
             .is_err()
         );
