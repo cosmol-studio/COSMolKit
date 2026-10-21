@@ -1554,7 +1554,7 @@ impl BioResidueRow {
     #[wasm_bindgen(js_name=siftsUnp)]
     pub fn sifts_unp(&self) -> BioSiftsUnpResidue {
         BioSiftsUnpResidue {
-            inner: self.inner.residues()[self.index].sifts_unp(),
+            inner: self.inner.residue(ck::BioResidueId::new(self.index as u32)).expect("validated BIO residue").sifts_unp(),
         }
     }
 }

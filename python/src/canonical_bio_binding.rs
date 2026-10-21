@@ -1608,12 +1608,11 @@ impl BioStructure {
     /// Return the atom rows belonging to the specified residue.
     fn residue_atoms(&self, residue: u32) -> Option<Vec<BioAtomRow>> {
         let rows = self.inner.residue_atoms(ck::BioResidueId::new(residue))?;
-        let start = self.inner.residues()[residue as usize].atom_span().start() as usize;
         Some(
-            (start..start + rows.len())
-                .map(|index| BioAtomRow {
+            rows.into_iter()
+                .map(|atom| BioAtomRow {
                     inner: self.inner.clone(),
-                    index,
+                    index: atom.id().index(),
                 })
                 .collect(),
         )
@@ -1849,11 +1848,18 @@ impl BioModelRow {
     }
     /// Model number recorded in the source structure.
     fn source_model_number(&self) -> Option<i32> {
-        self.inner.models()[self.index].source_model_number()
+        self.inner
+            .model(ck::BioModelId::new(self.index as u32))
+            .expect("validated BIO model")
+            .source_model_number()
     }
     /// Return chain rows/references in stored hierarchy order.
     fn chains(&self) -> Vec<BioChainRow> {
-        let span = self.inner.models()[self.index].chain_span();
+        let span = self
+            .inner
+            .model(ck::BioModelId::new(self.index as u32))
+            .expect("validated BIO model")
+            .chain_span();
         (span.start() as usize..span.end() as usize)
             .map(|index| BioChainRow {
                 inner: self.inner.clone(),
@@ -1862,7 +1868,11 @@ impl BioModelRow {
             .collect()
     }
     fn __len__(&self) -> usize {
-        self.inner.models()[self.index].chain_span().len() as usize
+        self.inner
+            .model(ck::BioModelId::new(self.index as u32))
+            .expect("validated BIO model")
+            .chain_span()
+            .len() as usize
     }
 }
 
@@ -1874,8 +1884,10 @@ pub(crate) struct BioChainRow {
     index: usize,
 }
 impl BioChainRow {
-    fn row(&self) -> &ck::BioChainRow {
-        &self.inner.chains()[self.index]
+    fn row(&self) -> ck::BioChain {
+        self.inner
+            .chain(ck::BioChainId::new(self.index as u32))
+            .expect("validated BIO row")
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
@@ -1917,9 +1929,9 @@ impl BioChainRow {
     }
     /// Return atom rows in stored graph/hierarchy order.
     fn atoms(&self) -> Vec<BioAtomRow> {
-        let span = self.row().residue_span();
-        self.inner.residues()[span.start() as usize..span.end() as usize]
-            .iter()
+        self.row()
+            .residues()
+            .into_iter()
             .flat_map(|r| r.atom_span().start() as usize..r.atom_span().end() as usize)
             .map(|index| BioAtomRow {
                 inner: self.inner.clone(),
@@ -1940,8 +1952,10 @@ pub(crate) struct BioResidueRow {
     index: usize,
 }
 impl BioResidueRow {
-    fn row(&self) -> &ck::BioResidueRow {
-        &self.inner.residues()[self.index]
+    fn row(&self) -> ck::BioResidue {
+        self.inner
+            .residue(ck::BioResidueId::new(self.index as u32))
+            .expect("validated BIO row")
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
@@ -2020,8 +2034,10 @@ pub(crate) struct BioAtomRow {
     index: usize,
 }
 impl BioAtomRow {
-    fn row(&self) -> &ck::BioAtomRow {
-        &self.inner.atoms()[self.index]
+    fn row(&self) -> ck::BioAtom {
+        self.inner
+            .atom(ck::BioAtomId::new(self.index as u32))
+            .expect("validated BIO row")
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]

@@ -443,8 +443,8 @@ pub struct BioModelRow {
     pub(crate) index: usize,
 }
 impl BioModelRow {
-    fn row(&self) -> &ck::BioModelRow {
-        &self.inner.models()[self.index]
+    fn row(&self) -> ck::BioModel {
+        self.inner.model(ck::BioModelId::new(self.index as u32)).expect("validated BIO row")
     }
 }
 #[wasm_bindgen]
@@ -481,8 +481,8 @@ pub struct BioChainRow {
     pub(crate) index: usize,
 }
 impl BioChainRow {
-    fn row(&self) -> &ck::BioChainRow {
-        &self.inner.chains()[self.index]
+    fn row(&self) -> ck::BioChain {
+        self.inner.chain(ck::BioChainId::new(self.index as u32)).expect("validated BIO row")
     }
 }
 #[wasm_bindgen]
@@ -529,9 +529,8 @@ impl BioChainRow {
     }
     #[wasm_bindgen(unchecked_return_type = "BioAtomRow[]")]
     pub fn atoms(&self) -> js_sys::Array {
-        let s = self.row().residue_span();
-        self.inner.residues()[s.start() as usize..s.end() as usize]
-            .iter()
+        self.row().residues()
+            .into_iter()
             .flat_map(|r| r.atom_span().start() as usize..r.atom_span().end() as usize)
             .map(|index| -> JsValue {
                 BioAtomRow {
@@ -549,8 +548,8 @@ pub struct BioResidueRow {
     pub(crate) index: usize,
 }
 impl BioResidueRow {
-    fn row(&self) -> &ck::BioResidueRow {
-        &self.inner.residues()[self.index]
+    fn row(&self) -> ck::BioResidue {
+        self.inner.residue(ck::BioResidueId::new(self.index as u32)).expect("validated BIO row")
     }
 }
 #[wasm_bindgen]
@@ -617,8 +616,8 @@ pub struct BioAtomRow {
     pub(crate) index: usize,
 }
 impl BioAtomRow {
-    fn row(&self) -> &ck::BioAtomRow {
-        &self.inner.atoms()[self.index]
+    fn row(&self) -> ck::BioAtom {
+        self.inner.atom(ck::BioAtomId::new(self.index as u32)).expect("validated BIO row")
     }
 }
 #[wasm_bindgen]

@@ -16,6 +16,7 @@ mod batch_query_params;
 mod binary_archive;
 mod bio_errors;
 mod bio_geometry_values;
+mod bio_hierarchy;
 mod bio_metadata_values;
 mod bio_mmcif_reader;
 mod bio_mmcif_writer;
@@ -596,9 +597,9 @@ pub mod native {
     use super::double_stereo_errors::{DoubleBondStereoError, DoubleBondStereoErrorKind};
     #[pymodule_export]
     use super::embedding_values::{
-        ConformerError, ConformerErrorKind, CoordinateDimension, EmbedMoleculeResult,
-        EmbedMultipleConfsResult, EmbedParams, EmbedFailureCause,
-        EmbedFailureCountError, EmbedFailureCountErrorKind,
+        ConformerError, ConformerErrorKind, CoordinateDimension, EmbedFailureCause,
+        EmbedFailureCountError, EmbedFailureCountErrorKind, EmbedMoleculeResult,
+        EmbedMultipleConfsResult, EmbedParams,
     };
     #[pymodule_export]
     use super::io_source_errors::{ExternalError, IoError, IoErrorKind};
@@ -682,7 +683,7 @@ pub mod native {
 
     #[pymodule_export]
     use super::atom_bond_values::{
-        Atom, MoleculeAtom, Bond, CipDescriptor, CipDescriptorError, CipDescriptorErrorKind,
+        Atom, Bond, CipDescriptor, CipDescriptorError, CipDescriptorErrorKind, MoleculeAtom,
     };
 
     #[pymodule_export]
@@ -696,6 +697,8 @@ pub mod native {
         ConformerAlignmentReport, ConformerRmsd, CoordinateRmsdParameters,
     };
 
+    #[pymodule_export]
+    use super::bio_hierarchy::{BioAtom, BioChain, BioModel, BioResidue};
     #[pymodule_export]
     use super::bio_structure::{BioStructure, BioStructureParts};
 

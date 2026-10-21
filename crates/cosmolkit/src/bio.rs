@@ -4,7 +4,7 @@ mod runtime;
 use crate::{
     BioMmcifReadError, BioPdbReadError, BioReadError, BioStructureError, ProteinProjectionError,
 };
-pub use runtime::{BioStructure, Protein};
+pub use runtime::{BioAtom, BioChain, BioModel, BioResidue, BioStructure, Protein};
 
 /// Conversion retains the detached owner failure or checked construction failure.
 #[cfg(all(feature = "cap-bio", feature = "cap-io"))]

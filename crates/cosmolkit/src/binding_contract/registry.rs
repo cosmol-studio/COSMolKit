@@ -7,6 +7,114 @@ pub static BINDING_CONTRACT_PYTHON_COLLECTIONS: &[(&str, &str)] = &[];
 
 binding_contract! {
     pub static BINDING_CONTRACT = [
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioModel.num_chains",item:callable,owner:type_,rust:crate::BioModel::num_chains,python:"num_chains",python_property:getter,javascript:"numChains",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BioModel)->usize,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioChain.num_residues",item:callable,owner:type_,rust:crate::BioChain::num_residues,python:"num_residues",python_property:getter,javascript:"numResidues",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BioChain)->usize,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.num_atoms",item:callable,owner:type_,rust:crate::BioResidue::num_atoms,python:"num_atoms",python_property:getter,javascript:"numAtoms",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->usize,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.atomic_number",item:callable,owner:type_,rust:crate::BioAtom::atomic_number,python:"atomic_number",python_property:getter,javascript:"atomicNumber",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->u8,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioModel.chain_span",item:callable,owner:type_,rust:crate::BioModel::chain_span,python:"chain_span",python_property:getter,javascript:"chainSpan",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioRowSpan<crate::BioChainId>,error:none,state:read_only,operation:none,signature:fn(&crate::BioModel)->crate::BioRowSpan<crate::BioChainId>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioChain.model_id",item:callable,owner:type_,rust:crate::BioChain::model_id,python:"model_id",python_property:getter,javascript:"modelId",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioModelId,error:none,state:read_only,operation:none,signature:fn(&crate::BioChain)->crate::BioModelId,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioChain.entity_id",item:callable,owner:type_,rust:crate::BioChain::entity_id,python:"entity_id",python_property:getter,javascript:"entityId",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:Option<crate::BioEntityId>,error:none,state:read_only,operation:none,signature:fn(&crate::BioChain)->Option<crate::BioEntityId>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioChain.residue_span",item:callable,owner:type_,rust:crate::BioChain::residue_span,python:"residue_span",python_property:getter,javascript:"residueSpan",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioRowSpan<crate::BioResidueId>,error:none,state:read_only,operation:none,signature:fn(&crate::BioChain)->crate::BioRowSpan<crate::BioResidueId>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.chain_id",item:callable,owner:type_,rust:crate::BioResidue::chain_id,python:"chain_id",python_property:getter,javascript:"chainId",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioChainId,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->crate::BioChainId,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.atom_span",item:callable,owner:type_,rust:crate::BioResidue::atom_span,python:"atom_span",python_property:getter,javascript:"atomSpan",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioRowSpan<crate::BioAtomId>,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->crate::BioRowSpan<crate::BioAtomId>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.residue_info_kind",item:callable,owner:type_,rust:crate::BioResidue::residue_info_kind,python:"residue_info_kind",python_property:getter,javascript:"residueInfoKind",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::ResidueInfoKind,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->crate::ResidueInfoKind,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.entity_kind",item:callable,owner:type_,rust:crate::BioResidue::entity_kind,python:"entity_kind",python_property:getter,javascript:"entityKind",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::EntityKind,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->crate::EntityKind,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.entity_id",item:callable,owner:type_,rust:crate::BioResidue::entity_id,python:"entity_id",python_property:getter,javascript:"entityId",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:Option<crate::BioEntityId>,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->Option<crate::BioEntityId>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.het_flag",item:callable,owner:type_,rust:crate::BioResidue::het_flag,python:"het_flag",python_property:getter,javascript:"hetFlag",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:Option<u8>,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->Option<u8>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.source",item:callable,owner:type_,rust:crate::BioResidue::source,python:"source",python_property:getter,javascript:"source",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:&crate::ResidueSourceIds,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->&crate::ResidueSourceIds,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.sifts_unp",item:callable,owner:type_,rust:crate::BioResidue::sifts_unp,python:"sifts_unp",python_property:getter,javascript:"siftsUnp",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioSiftsUnpResidue,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->crate::BioSiftsUnpResidue,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.residue_id",item:callable,owner:type_,rust:crate::BioAtom::residue_id,python:"residue_id",python_property:getter,javascript:"residueId",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioResidueId,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->crate::BioResidueId,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.isotope_mass_number",item:callable,owner:type_,rust:crate::BioAtom::isotope_mass_number,python:"isotope_mass_number",python_property:getter,javascript:"isotopeMassNumber",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:Option<u16>,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->Option<u16>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.altloc",item:callable,owner:type_,rust:crate::BioAtom::altloc,python:"altloc",python_property:getter,javascript:"altloc",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:Option<crate::AltLocLabel>,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->Option<crate::AltLocLabel>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.formal_charge",item:callable,owner:type_,rust:crate::BioAtom::formal_charge,python:"formal_charge",python_property:getter,javascript:"formalCharge",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:i8,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->i8,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.calculation_flag",item:callable,owner:type_,rust:crate::BioAtom::calculation_flag,python:"calculation_flag",python_property:getter,javascript:"calculationFlag",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioCalcFlag,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->crate::BioCalcFlag,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.anisou",item:callable,owner:type_,rust:crate::BioAtom::anisou,python:"anisou",python_property:getter,javascript:"anisou",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:&[f64; 6],error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->&[f64; 6],},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.tls_group_id",item:callable,owner:type_,rust:crate::BioAtom::tls_group_id,python:"tls_group_id",python_property:getter,javascript:"tlsGroupId",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:i16,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->i16,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.fraction",item:callable,owner:type_,rust:crate::BioAtom::fraction,python:"fraction",python_property:getter,javascript:"fraction",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->f64,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.source",item:callable,owner:type_,rust:crate::BioAtom::source,python:"source",python_property:getter,javascript:"source",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:&crate::AtomSourceIds,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->&crate::AtomSourceIds,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioStructure.model",item:callable,owner:type_,rust:crate::BioStructure::model,python:"model",javascript:"model",feature:"cap-bio",status:experimental,kind:instance,parameters:[{name:id,type:crate::BioModelId,default:required}],output:Option<crate::BioModel>,error:none,state:read_only,operation:none,signature:fn(&crate::BioStructure,crate::BioModelId)->Option<crate::BioModel>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioStructure.chain",item:callable,owner:type_,rust:crate::BioStructure::chain,python:"chain",javascript:"chain",feature:"cap-bio",status:experimental,kind:instance,parameters:[{name:id,type:crate::BioChainId,default:required}],output:Option<crate::BioChain>,error:none,state:read_only,operation:none,signature:fn(&crate::BioStructure,crate::BioChainId)->Option<crate::BioChain>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioStructure.residue",item:callable,owner:type_,rust:crate::BioStructure::residue,python:"residue",javascript:"residue",feature:"cap-bio",status:experimental,kind:instance,parameters:[{name:id,type:crate::BioResidueId,default:required}],output:Option<crate::BioResidue>,error:none,state:read_only,operation:none,signature:fn(&crate::BioStructure,crate::BioResidueId)->Option<crate::BioResidue>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioStructure.atom",item:callable,owner:type_,rust:crate::BioStructure::atom,python:"atom",javascript:"atom",feature:"cap-bio",status:experimental,kind:instance,parameters:[{name:id,type:crate::BioAtomId,default:required}],output:Option<crate::BioAtom>,error:none,state:read_only,operation:none,signature:fn(&crate::BioStructure,crate::BioAtomId)->Option<crate::BioAtom>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"types.BioModel",item:type,owner:type_,rust:crate::BioModel,python:"BioModel",javascript:"BioModel",feature:"cap-bio",status:experimental,role:result,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioModel.id",item:callable,owner:type_,rust:crate::BioModel::id,python:"id",python_property:getter,javascript:"id",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioModelId,error:none,state:read_only,operation:none,signature:fn(&crate::BioModel)->crate::BioModelId,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioModel.value",item:callable,owner:type_,rust:crate::BioModel::value,python:"value",javascript:"value",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:&crate::BioModelRow,error:none,state:read_only,operation:none,signature:fn(&crate::BioModel)->&crate::BioModelRow,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioModel.chains",item:callable,owner:type_,rust:crate::BioModel::chains,python:"chains",python_property:getter,javascript:"chains",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:Vec<crate::BioChain>,error:none,state:read_only,operation:none,signature:fn(&crate::BioModel)->Vec<crate::BioChain>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioModel.source_model_number",item:callable,owner:type_,rust:crate::BioModel::source_model_number,python:"source_model_number",python_property:getter,javascript:"sourceModelNumber",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:Option<i32>,error:none,state:read_only,operation:none,signature:fn(&crate::BioModel)->Option<i32>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"types.BioChain",item:type,owner:type_,rust:crate::BioChain,python:"BioChain",javascript:"BioChain",feature:"cap-bio",status:experimental,role:result,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioChain.id",item:callable,owner:type_,rust:crate::BioChain::id,python:"id",python_property:getter,javascript:"id",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioChainId,error:none,state:read_only,operation:none,signature:fn(&crate::BioChain)->crate::BioChainId,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioChain.value",item:callable,owner:type_,rust:crate::BioChain::value,python:"value",javascript:"value",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:&crate::BioChainRow,error:none,state:read_only,operation:none,signature:fn(&crate::BioChain)->&crate::BioChainRow,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioChain.residues",item:callable,owner:type_,rust:crate::BioChain::residues,python:"residues",python_property:getter,javascript:"residues",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:Vec<crate::BioResidue>,error:none,state:read_only,operation:none,signature:fn(&crate::BioChain)->Vec<crate::BioResidue>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioChain.kind",item:callable,owner:type_,rust:crate::BioChain::kind,python:"kind",python_property:getter,javascript:"kind",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::ChainKind,error:none,state:read_only,operation:none,signature:fn(&crate::BioChain)->crate::ChainKind,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioChain.source",item:callable,owner:type_,rust:crate::BioChain::source,python:"source",python_property:getter,javascript:"source",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:&crate::ChainSourceIds,error:none,state:read_only,operation:none,signature:fn(&crate::BioChain)->&crate::ChainSourceIds,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"types.BioResidue",item:type,owner:type_,rust:crate::BioResidue,python:"BioResidue",javascript:"BioResidue",feature:"cap-bio",status:experimental,role:result,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.id",item:callable,owner:type_,rust:crate::BioResidue::id,python:"id",python_property:getter,javascript:"id",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioResidueId,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->crate::BioResidueId,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.value",item:callable,owner:type_,rust:crate::BioResidue::value,python:"value",javascript:"value",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:&crate::BioResidueRow,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->&crate::BioResidueRow,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.atoms",item:callable,owner:type_,rust:crate::BioResidue::atoms,python:"atoms",python_property:getter,javascript:"atoms",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:Vec<crate::BioAtom>,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->Vec<crate::BioAtom>,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.name",item:callable,owner:type_,rust:crate::BioResidue::name,python:"name",python_property:getter,javascript:"name",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::ResidueName,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->crate::ResidueName,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioResidue.kind",item:callable,owner:type_,rust:crate::BioResidue::kind,python:"kind",python_property:getter,javascript:"kind",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::ResidueKind,error:none,state:read_only,operation:none,signature:fn(&crate::BioResidue)->crate::ResidueKind,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"types.BioAtom",item:type,owner:type_,rust:crate::BioAtom,python:"BioAtom",javascript:"BioAtom",feature:"cap-bio",status:experimental,role:result,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.id",item:callable,owner:type_,rust:crate::BioAtom::id,python:"id",python_property:getter,javascript:"id",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::BioAtomId,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->crate::BioAtomId,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.value",item:callable,owner:type_,rust:crate::BioAtom::value,python:"value",javascript:"value",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:&crate::BioAtomRow,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->&crate::BioAtomRow,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.position",item:callable,owner:type_,rust:crate::BioAtom::position,python:"position",python_property:getter,javascript:"position",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:[f64; 3],error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->[f64; 3],},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.name",item:callable,owner:type_,rust:crate::BioAtom::name,python:"name",python_property:getter,javascript:"name",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::AtomName,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->crate::AtomName,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.element",item:callable,owner:type_,rust:crate::BioAtom::element,python:"element",python_property:getter,javascript:"element",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:crate::Element,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->crate::Element,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.occupancy",item:callable,owner:type_,rust:crate::BioAtom::occupancy,python:"occupancy",python_property:getter,javascript:"occupancy",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->f64,},
+        #[cfg(feature="cap-bio")]
+        {semantic_id:"BioAtom.b_iso",item:callable,owner:type_,rust:crate::BioAtom::b_iso,python:"b_iso",python_property:getter,javascript:"bIso",feature:"cap-bio",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::BioAtom)->f64,},
         {semantic_id:"types.MoleculeAtom",item:type,owner:type_,rust:crate::MoleculeAtom,
             python:"MoleculeAtom",javascript:"MoleculeAtom",feature:"runtime",status:native,role:result,},
         {semantic_id:"MoleculeAtom.template_attachment_order",item:callable,owner:type_,rust:crate::MoleculeAtom::template_attachment_order,
@@ -8195,8 +8303,8 @@ binding_contract! {
             rust: crate::BioStructure::models, python: "models", python_property: getter, javascript: "models",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
-            output: &[crate::BioModelRow], error: none, state: read_only, operation: none,
-            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioModelRow],
+            output: Vec<crate::BioModel>, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> Vec<crate::BioModel>,
         },
         #[cfg(feature = "cap-bio")]
         {
@@ -8204,8 +8312,8 @@ binding_contract! {
             rust: crate::BioStructure::chains, python: "chains", python_property: getter, javascript: "chains",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
-            output: &[crate::BioChainRow], error: none, state: read_only, operation: none,
-            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioChainRow],
+            output: Vec<crate::BioChain>, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> Vec<crate::BioChain>,
         },
         #[cfg(feature = "cap-bio")]
         {
@@ -8213,8 +8321,8 @@ binding_contract! {
             rust: crate::BioStructure::residues, python: "residues", python_property: getter, javascript: "residues",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
-            output: &[crate::BioResidueRow], error: none, state: read_only, operation: none,
-            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioResidueRow],
+            output: Vec<crate::BioResidue>, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> Vec<crate::BioResidue>,
         },
         #[cfg(feature = "cap-bio")]
         {
@@ -8222,8 +8330,8 @@ binding_contract! {
             rust: crate::BioStructure::atoms, python: "atoms", python_property: getter, javascript: "atoms",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [],
-            output: &[crate::BioAtomRow], error: none, state: read_only, operation: none,
-            signature: for<'a> fn(&'a crate::BioStructure) -> &'a [crate::BioAtomRow],
+            output: Vec<crate::BioAtom>, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioStructure) -> Vec<crate::BioAtom>,
         },
         #[cfg(feature = "cap-bio")]
         {
@@ -8357,8 +8465,8 @@ binding_contract! {
             rust: crate::BioStructure::find_atom, python: "find_atom", javascript: "findAtom",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: residue_id, type: crate::BioResidueId, default: required }, { name: name, type: crate::AtomName, default: required }, { name: request, type: crate::AltLocRequest, default: required }, { name: element, type: Option<crate::Element>, default: required }],
-            output: Option<(crate::BioAtomId, &crate::BioAtomRow)>, error: none, state: read_only, operation: none,
-            signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId, crate::AtomName, crate::AltLocRequest, Option<crate::Element>) -> Option<(crate::BioAtomId, &'a crate::BioAtomRow)>,
+            output: Option<(crate::BioAtomId, crate::BioAtom)>, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId, crate::AtomName, crate::AltLocRequest, Option<crate::Element>) -> Option<(crate::BioAtomId, crate::BioAtom)>,
         },
         #[cfg(feature = "cap-bio")]
         {
@@ -8366,8 +8474,8 @@ binding_contract! {
             rust: crate::BioStructure::atom_by_altloc, python: "atom_by_altloc", javascript: "atomByAltloc",
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: residue_id, type: crate::BioResidueId, default: required }, { name: name, type: crate::AtomName, default: required }, { name: altloc, type: Option<crate::AltLocLabel>, default: required }],
-            output: (crate::BioAtomId, &crate::BioAtomRow), error: crate::BioStructureError, state: read_only, operation: none,
-            signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId, crate::AtomName, Option<crate::AltLocLabel>) -> Result<(crate::BioAtomId, &'a crate::BioAtomRow), crate::BioStructureError>,
+            output: (crate::BioAtomId, crate::BioAtom), error: crate::BioStructureError, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId, crate::AtomName, Option<crate::AltLocLabel>) -> Result<(crate::BioAtomId, crate::BioAtom), crate::BioStructureError>,
         },
         #[cfg(feature = "cap-bio")]
         { semantic_id: "types.BioStrand", item: type, owner: type_, rust: crate::BioStrand, python: "BioStrand", javascript: "BioStrand", feature: "cap-bio", status: experimental, role: value, },
@@ -8542,8 +8650,8 @@ binding_contract! {
             python: "residue_atoms", javascript: "residueAtoms", feature: "cap-bio", status: experimental,
             kind: instance,
             parameters: [{ name: residue, type: crate::BioResidueId, default: required }],
-            output: Option<&[crate::BioAtomRow]>, error: none, state: read_only, operation: none,
-            signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId) -> Option<&'a [crate::BioAtomRow]>,
+            output: Option<Vec<crate::BioAtom>>, error: none, state: read_only, operation: none,
+            signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId) -> Option<Vec<crate::BioAtom>>,
         },
         #[cfg(feature = "cap-bio")]
         {

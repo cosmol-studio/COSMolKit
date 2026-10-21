@@ -256,9 +256,12 @@ crate::configuration::type_projection! {
         pub(crate) inner: ck::MoleculeAtom,
     }
 }
-atom_accessors!(MoleculeAtom,
+atom_accessors!(
+    MoleculeAtom,
     fn value(&self) -> Atom {
-        Atom { inner: self.inner.value().clone() }
+        Atom {
+            inner: self.inner.value().clone(),
+        }
     },
     #[getter]
     fn degree(&self) -> usize {
@@ -266,19 +269,27 @@ atom_accessors!(MoleculeAtom,
     },
     #[getter]
     fn explicit_valence(&self) -> PyResult<i32> {
-        self.inner.explicit_valence().map_err(crate::valence_errors::ValenceError::from_rust)
+        self.inner
+            .explicit_valence()
+            .map_err(crate::valence_errors::ValenceError::from_rust)
     },
     #[getter]
     fn implicit_hydrogens(&self) -> PyResult<i32> {
-        self.inner.implicit_hydrogens().map_err(crate::valence_errors::ValenceError::from_rust)
+        self.inner
+            .implicit_hydrogens()
+            .map_err(crate::valence_errors::ValenceError::from_rust)
     },
     #[getter]
     fn total_hydrogens(&self) -> PyResult<i32> {
-        self.inner.total_hydrogens().map_err(crate::valence_errors::ValenceError::from_rust)
+        self.inner
+            .total_hydrogens()
+            .map_err(crate::valence_errors::ValenceError::from_rust)
     },
     #[getter]
     fn total_valence(&self) -> PyResult<i32> {
-        self.inner.total_valence().map_err(crate::valence_errors::ValenceError::from_rust)
+        self.inner
+            .total_valence()
+            .map_err(crate::valence_errors::ValenceError::from_rust)
     }
 );
 

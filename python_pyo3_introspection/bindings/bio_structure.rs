@@ -304,9 +304,26 @@ let params = pyo3::Python::attach(|py| params.to_rust(py))?;
             fn into_parts(&self) -> BioStructureParts { BioStructureParts { inner: self.inner.clone().into_parts() } }
             #[getter]
             fn input_format(&self) -> BioCoordinateFormat { self.inner.input_format().into() }
-            $(#[getter] fn $list(&self) -> Vec<$value> {
-                self.inner.$list().iter().cloned().map(|inner| $value { inner }).collect()
-            })+
+            #[getter] fn models(&self) -> Vec<crate::bio_hierarchy::BioModel> {
+                self.inner.models().into_iter().map(|inner| crate::bio_hierarchy::BioModel { inner }).collect()
+            }
+            #[getter] fn chains(&self) -> Vec<crate::bio_hierarchy::BioChain> {
+                self.inner.chains().into_iter().map(|inner| crate::bio_hierarchy::BioChain { inner }).collect()
+            }
+            #[getter] fn residues(&self) -> Vec<crate::bio_hierarchy::BioResidue> {
+                self.inner.residues().into_iter().map(|inner| crate::bio_hierarchy::BioResidue { inner }).collect()
+            }
+            #[getter] fn atoms(&self) -> Vec<crate::bio_hierarchy::BioAtom> {
+                self.inner.atoms().into_iter().map(|inner| crate::bio_hierarchy::BioAtom { inner }).collect()
+            }
+            #[getter] fn entities(&self) -> Vec<BioEntityRow> { self.inner.entities().iter().cloned().map(|inner| BioEntityRow { inner }).collect() }
+            #[getter] fn connections(&self) -> Vec<BioConnection> { self.inner.connections().iter().cloned().map(|inner| BioConnection { inner }).collect() }
+            #[getter] fn cispeps(&self) -> Vec<BioCisPep> { self.inner.cispeps().iter().cloned().map(|inner| BioCisPep { inner }).collect() }
+            #[getter] fn mod_residues(&self) -> Vec<BioModRes> { self.inner.mod_residues().iter().cloned().map(|inner| BioModRes { inner }).collect() }
+            #[getter] fn helices(&self) -> Vec<BioHelix> { self.inner.helices().iter().cloned().map(|inner| BioHelix { inner }).collect() }
+            #[getter] fn sheets(&self) -> Vec<BioSheet> { self.inner.sheets().iter().cloned().map(|inner| BioSheet { inner }).collect() }
+            #[getter] fn ncs_operators(&self) -> Vec<BioNcsOperator> { self.inner.ncs_operators().iter().cloned().map(|inner| BioNcsOperator { inner }).collect() }
+            #[getter] fn assemblies(&self) -> Vec<BioAssembly> { self.inner.assemblies().iter().cloned().map(|inner| BioAssembly { inner }).collect() }
             #[getter]
             fn metadata(&self) -> BioMetadata { BioMetadata { inner: self.inner.metadata().clone() } }
             #[getter]
@@ -318,9 +335,21 @@ let params = pyo3::Python::attach(|py| params.to_rust(py))?;
             #[getter]
             fn num_models(&self) -> usize { self.inner.num_models() }
             fn __len__(&self) -> usize { self.inner.num_models() }
-            fn __getitem__(&self, index: crate::indexing::Integer) -> PyResult<BioModelRow> {
+            fn model(&self, id: u32) -> Option<crate::bio_hierarchy::BioModel> {
+                self.inner.model(ck::BioModelId::new(id)).map(|inner| crate::bio_hierarchy::BioModel { inner })
+            }
+            fn chain(&self, id: u32) -> Option<crate::bio_hierarchy::BioChain> {
+                self.inner.chain(ck::BioChainId::new(id)).map(|inner| crate::bio_hierarchy::BioChain { inner })
+            }
+            fn residue(&self, id: u32) -> Option<crate::bio_hierarchy::BioResidue> {
+                self.inner.residue(ck::BioResidueId::new(id)).map(|inner| crate::bio_hierarchy::BioResidue { inner })
+            }
+            fn atom(&self, id: u32) -> Option<crate::bio_hierarchy::BioAtom> {
+                self.inner.atom(ck::BioAtomId::new(id)).map(|inner| crate::bio_hierarchy::BioAtom { inner })
+            }
+            fn __getitem__(&self, index: crate::indexing::Integer) -> PyResult<crate::bio_hierarchy::BioModel> {
                 let index = crate::indexing::normalize(index, self.inner.num_models())?;
-                Ok(BioModelRow { inner: self.inner.models()[index].clone() })
+                Ok(crate::bio_hierarchy::BioModel { inner: self.inner.model(ck::BioModelId::new(index as u32)).expect("normalized model index") })
             }
             #[getter]
             fn num_chains(&self) -> usize { self.inner.num_chains() }
@@ -343,8 +372,8 @@ let params = pyo3::Python::attach(|py| params.to_rust(py))?;
             #[getter]
             fn ter_status(&self) -> u8 { self.inner.ter_status() }
             fn atom_position(&self, atom: u32) -> Option<[f64;3]> { self.inner.atom_position(ck::BioAtomId::new(atom)) }
-            fn residue_atoms(&self, residue: u32) -> Option<Vec<BioAtomRow>> {
-                self.inner.residue_atoms(ck::BioResidueId::new(residue)).map(|rows| rows.iter().cloned().map(|inner| BioAtomRow { inner }).collect())
+            fn residue_atoms(&self, residue: u32) -> Option<Vec<crate::bio_hierarchy::BioAtom>> {
+                self.inner.residue_atoms(ck::BioResidueId::new(residue)).map(|rows| rows.into_iter().map(|inner| crate::bio_hierarchy::BioAtom { inner }).collect())
             }
             fn find_entity(&self, source_id: &str) -> Option<(u32, BioEntityRow)> {
                 self.inner.find_entity(source_id).map(|(id, value)| (id.value(), BioEntityRow { inner: value.clone() }))
@@ -353,12 +382,12 @@ let params = pyo3::Python::attach(|py| params.to_rust(py))?;
                 self.inner.find_entity_of_subchain(subchain).map(|(id, value)| (id.value(), BioEntityRow { inner: value.clone() }))
             }
             #[pyo3(signature=(residue_id, name, request, element=None))]
-            fn find_atom(&self, residue_id: u32, name: &AtomName, request: &AltLocRequest, element: Option<&Element>) -> Option<(u32, BioAtomRow)> {
-                self.inner.find_atom(ck::BioResidueId::new(residue_id), name.inner, request.inner, element.map(|value| value.inner)).map(|(id, value)| (id.value(), BioAtomRow { inner: value.clone() }))
+            fn find_atom(&self, residue_id: u32, name: &AtomName, request: &AltLocRequest, element: Option<&Element>) -> Option<(u32, crate::bio_hierarchy::BioAtom)> {
+                self.inner.find_atom(ck::BioResidueId::new(residue_id), name.inner, request.inner, element.map(|value| value.inner)).map(|(id, value)| (id.value(), crate::bio_hierarchy::BioAtom { inner: value }))
             }
             #[pyo3(signature=(residue_id, name, altloc=None))]
-            fn atom_by_altloc(&self, residue_id: u32, name: &AtomName, altloc: Option<&AltLocLabel>) -> PyResult<(u32, BioAtomRow)> {
-                self.inner.atom_by_altloc(ck::BioResidueId::new(residue_id), name.inner, altloc.map(|value| value.inner)).map(|(id, value)| (id.value(), BioAtomRow { inner: value.clone() })).map_err(BioStructureError::from_rust)
+            fn atom_by_altloc(&self, residue_id: u32, name: &AtomName, altloc: Option<&AltLocLabel>) -> PyResult<(u32, crate::bio_hierarchy::BioAtom)> {
+                self.inner.atom_by_altloc(ck::BioResidueId::new(residue_id), name.inner, altloc.map(|value| value.inner)).map(|(id, value)| (id.value(), crate::bio_hierarchy::BioAtom { inner: value })).map_err(BioStructureError::from_rust)
             }
         }
     };

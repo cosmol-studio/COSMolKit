@@ -1,8 +1,8 @@
 use crate::chemical_values::{EnumValue, enum_value};
 use crate::native::Molecule;
 use cosmolkit as ck;
-use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 use std::collections::BTreeMap;
 use std::error::Error;
 
@@ -180,7 +180,9 @@ impl EmbedMoleculeResult {
         self.inner.failure_counts().map(FailureCounts)
     }
     fn failure_count(&self, cause: EmbedFailureCauseInput) -> PyResult<Option<u32>> {
-        self.inner.failure_count(cause.into_rust()?).map_err(EmbedFailureCountError::from_rust)
+        self.inner
+            .failure_count(cause.into_rust()?)
+            .map_err(EmbedFailureCountError::from_rust)
     }
     #[new]
     fn new(
@@ -234,7 +236,9 @@ impl EmbedMultipleConfsResult {
         self.inner.failure_counts().map(FailureCounts)
     }
     fn failure_count(&self, cause: EmbedFailureCauseInput) -> PyResult<Option<u32>> {
-        self.inner.failure_count(cause.into_rust()?).map_err(EmbedFailureCountError::from_rust)
+        self.inner
+            .failure_count(cause.into_rust()?)
+            .map_err(EmbedFailureCountError::from_rust)
     }
     #[new]
     fn new(

@@ -1,6 +1,8 @@
 //! Private storage and generated transactions; sibling operation bodies see only access structs.
 use crate::*;
 use cosmolkit_bio::BioStructureData;
+mod hierarchy;
+pub use hierarchy::{BioAtom, BioChain, BioModel, BioResidue};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BioStructure {
@@ -216,32 +218,20 @@ impl BioStructure {
     fn validate_operation(&self) -> Result<(), BioOperationError> {
         self.data.validate().map_err(BioOperationError::Structure)
     }
-    pub fn models(&self) -> &[cosmolkit_bio::BioModelRow] {
-        self.data.models()
-    }
     pub fn num_models(&self) -> usize {
         self.data.models().len()
-    }
-    pub fn chains(&self) -> &[cosmolkit_bio::BioChainRow] {
-        self.data.chains()
     }
     pub fn num_chains(&self) -> usize {
         self.data.chains().len()
     }
-    pub fn residues(&self) -> &[cosmolkit_bio::BioResidueRow] {
-        self.data.residues()
-    }
     pub fn num_residues(&self) -> usize {
         self.data.residues().len()
-    }
-    pub fn atoms(&self) -> &[cosmolkit_bio::BioAtomRow] {
-        self.data.atoms()
     }
     pub fn atom_position(&self, atom: BioAtomId) -> Option<[f64; 3]> {
         self.data.atom_position(atom)
     }
-    pub fn residue_atoms(&self, residue: BioResidueId) -> Option<&[BioAtomRow]> {
-        self.data.residue_atoms(residue)
+    pub fn residue_atoms(&self, residue: BioResidueId) -> Option<Vec<BioAtom>> {
+        self.residue(residue).map(|residue| residue.atoms())
     }
     pub fn num_atoms(&self) -> usize {
         self.data.atoms().len()
@@ -316,16 +306,18 @@ impl BioStructure {
         name: AtomName,
         request: AltLocRequest,
         element: Option<Element>,
-    ) -> Option<(BioAtomId, &BioAtomRow)> {
-        self.data.find_atom(residue_id, name, request, element)
+    ) -> Option<(BioAtomId, BioAtom)> {
+        let (id, _) = self.data.find_atom(residue_id, name, request, element)?;
+        Some((id, self.atom(id).expect("resolved BIO atom")))
     }
     pub fn atom_by_altloc(
         &self,
         residue_id: BioResidueId,
         name: AtomName,
         altloc: Option<AltLocLabel>,
-    ) -> Result<(BioAtomId, &BioAtomRow), BioStructureError> {
-        self.data.atom_by_altloc(residue_id, name, altloc)
+    ) -> Result<(BioAtomId, BioAtom), BioStructureError> {
+        let (id, _) = self.data.atom_by_altloc(residue_id, name, altloc)?;
+        Ok((id, self.atom(id).expect("resolved BIO atom")))
     }
 }
 
@@ -439,16 +431,16 @@ impl Protein {
             .map_err(BioOperationError::Protein)
     }
     pub fn num_models(&self) -> usize {
-        self.structure.models().len()
+        self.structure.num_models()
     }
     pub fn num_chains(&self) -> usize {
-        self.structure.chains().len()
+        self.structure.num_chains()
     }
     pub fn num_residues(&self) -> usize {
-        self.structure.residues().len()
+        self.structure.num_residues()
     }
     pub fn num_atoms(&self) -> usize {
-        self.structure.atoms().len()
+        self.structure.num_atoms()
     }
     pub fn selection_summary(&self) -> ProteinSelectionSummary {
         cosmolkit_bio::protein_selection_summary(&self.structure.data)
@@ -820,10 +812,10 @@ mod tests {
                     let value = source.with_selection(&selection).unwrap();
                     let mut inplace = source.clone();
                     inplace.retain_selection_(&selection).unwrap();
-                    assert_eq!(inplace.models(), value.models());
-                    assert_eq!(inplace.chains(), value.chains());
-                    assert_eq!(inplace.residues(), value.residues());
-                    assert_eq!(inplace.atoms(), value.atoms());
+                    assert_eq!(inplace.data.models(), value.data.models());
+                    assert_eq!(inplace.data.chains(), value.data.chains());
+                    assert_eq!(inplace.data.residues(), value.data.residues());
+                    assert_eq!(inplace.data.atoms(), value.data.atoms());
                     assert_eq!(inplace.coordinates(), value.coordinates());
                     value
                 };
@@ -1005,7 +997,7 @@ mod tests {
         let water = BioStructure::from_pdb(&ATOM.replace("ALA", "HOH")).unwrap();
         let mut value = source.clone();
         let error = value
-            .probe_residues_(water.residues().to_vec())
+            .probe_residues_(water.data.residues().to_vec())
             .unwrap_err();
         assert!(matches!(
             error,
@@ -1059,7 +1051,7 @@ mod tests {
             let water = BioStructure::from_pdb(&ATOM.replace("ALA", "HOH")).unwrap();
             let mut candidate = source.clone();
             assert!(matches!(
-                candidate.probe_residues_(water.residues().to_vec()),
+                candidate.probe_residues_(water.data.residues().to_vec()),
                 Err(BioOperationError::Protein(
                     ProteinProjectionError::NonAminoAcidResidue { index: 0 }
                 ))

@@ -214,7 +214,10 @@ pub use binding_contract::{
 #[cfg(feature = "cap-bio")]
 mod bio;
 #[cfg(feature = "cap-bio")]
-pub use bio::{BioOperationError, BioSelection, BioStructure, Protein, ProteinReadError};
+pub use bio::{
+    BioAtom, BioChain, BioModel, BioOperationError, BioResidue, BioSelection, BioStructure,
+    Protein, ProteinReadError,
+};
 #[cfg(feature = "cap-bio")]
 #[doc(hidden)]
 pub use cosmolkit_bio::__ck_configuration_BioCrystalCell;

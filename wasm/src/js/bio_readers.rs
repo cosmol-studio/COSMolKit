@@ -332,12 +332,11 @@ impl BioStructure {
             .inner
             .residue_atoms(ck::BioResidueId::new(id))
             .map_or(JsValue::NULL, |rows| {
-                let start = self.inner.residues()[id as usize].atom_span().start() as usize;
-                (start..start + rows.len())
-                    .map(|index| -> JsValue {
+                rows.into_iter()
+                    .map(|atom| -> JsValue {
                         BioAtomRow {
                             inner: Rc::clone(&self.inner),
-                            index,
+                            index: atom.id().index(),
                         }
                         .into()
                     })
