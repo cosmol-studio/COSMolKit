@@ -194,6 +194,67 @@ fn write_params(value: &JsValue) -> Result<ck::InchiWriteParams, JsValue> {
     Ok(InchiWriteParams::from_js_configuration(value)?.inner)
 }
 
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub enum InchiDiagnosticLevel {
+    Warning,
+    Error,
+}
+#[wasm_bindgen]
+pub struct InchiResult {
+    inner: ck::InchiResult,
+}
+#[wasm_bindgen]
+impl InchiResult {
+    #[wasm_bindgen(getter, js_name=inchi)]
+    pub fn inchi(&self) -> String {
+        self.inner.inchi().to_owned()
+    }
+    #[wasm_bindgen(getter, js_name=returnCode)]
+    pub fn return_code(&self) -> i32 {
+        self.inner.return_code()
+    }
+    #[wasm_bindgen(getter, js_name=message)]
+    pub fn message(&self) -> String {
+        self.inner.message().to_owned()
+    }
+    #[wasm_bindgen(getter, js_name=log)]
+    pub fn log(&self) -> String {
+        self.inner.log().to_owned()
+    }
+    #[wasm_bindgen(getter, js_name=auxInfo)]
+    pub fn aux_info(&self) -> String {
+        self.inner.aux_info().to_owned()
+    }
+    #[wasm_bindgen(getter, js_name=diagnostics)]
+    pub fn diagnostics(&self) -> Vec<InchiDiagnostic> {
+        self.inner
+            .diagnostics()
+            .iter()
+            .cloned()
+            .map(|inner| InchiDiagnostic { inner })
+            .collect()
+    }
+}
+#[wasm_bindgen]
+pub struct InchiDiagnostic {
+    inner: ck::InchiDiagnostic,
+}
+#[wasm_bindgen]
+impl InchiDiagnostic {
+    #[wasm_bindgen(getter, js_name=level)]
+    pub fn level(&self) -> InchiDiagnosticLevel {
+        match self.inner.level() {
+            ck::InchiDiagnosticLevel::Warning => InchiDiagnosticLevel::Warning,
+            ck::InchiDiagnosticLevel::Error => InchiDiagnosticLevel::Error,
+        }
+    }
+    #[wasm_bindgen(getter, js_name=message)]
+    pub fn message(&self) -> String {
+        self.inner.message().to_owned()
+    }
+}
+
 #[wasm_bindgen(js_name=inchiToKey)]
 pub fn inchi_to_key(text: &str) -> Result<String, JsValue> {
     ck::inchi_to_key(text).map_err(error)
@@ -201,6 +262,29 @@ pub fn inchi_to_key(text: &str) -> Result<String, JsValue> {
 
 #[wasm_bindgen]
 impl Molecule {
+    #[wasm_bindgen(js_name=toInchiResult)]
+    pub fn to_inchi_result(
+        &self,
+        #[wasm_bindgen(
+            unchecked_optional_param_type = "InchiWriteParams | InchiWriteParamsOptions"
+        )]
+        params: JsValue,
+    ) -> Result<InchiResult, JsValue> {
+        self.inner
+            .to_inchi_result_with_params(&write_params(&params)?)
+            .map(|inner| InchiResult { inner })
+            .map_err(error)
+    }
+    #[wasm_bindgen(js_name=toInchiResultWithParams)]
+    pub fn to_inchi_result_with_params(
+        &self,
+        params: &InchiWriteParams,
+    ) -> Result<InchiResult, JsValue> {
+        self.inner
+            .to_inchi_result_with_params(&params.inner)
+            .map(|inner| InchiResult { inner })
+            .map_err(error)
+    }
     #[wasm_bindgen(js_name=fromInchi)]
     pub fn from_inchi(
         text: &str,

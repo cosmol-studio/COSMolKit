@@ -527,10 +527,10 @@ fn uff_remaining_all_product_() {
                                 "stored source row order for count={count}, iterations={iterations}, threshold={threshold}, ignore={ignore_interfragment_interactions}, warm_rings={warm_rings}, arc_peer={arc_peer}"
                             );
                             assert!(result.conformers.iter().all(|row| matches!(
-                                row.status,
+                                row.status_code(),
                                 0 | 1
                             )
-                                && row.energy.is_finite()));
+                                && row.energy().unwrap().is_finite()));
                             assert_eq!(
                                 output
                                     .conformers_3d()
@@ -746,12 +746,12 @@ fn uff_remaining_all_reference_() {
                 .collect::<Vec<_>>(),
             IDS[..count]
         );
-        assert!(result.conformers.iter().all(|row| row.status == 1));
+        assert!(result.conformers.iter().all(|row| row.status_code() == 1));
         assert_eq!(
             result
                 .conformers
                 .iter()
-                .map(|row| row.energy.to_bits())
+                .map(|row| row.energy().unwrap().to_bits())
                 .collect::<Vec<_>>(),
             expected_energy_bits
         );

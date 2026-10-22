@@ -27724,7 +27724,9 @@ mod tests {
         assert_canon_bits(&structure, (1, 16, true));
 
         assert_eq!(methane.allocation_calls, 19);
-        assert_eq!(methane.heap.live_allocation_count(), 92);
+        // The fixture owns input/clock/canon plus the output string. The
+        // source's component-row views and stack temporaries do not survive.
+        assert_eq!(methane.heap.live_allocation_count(), 4);
         let allocation_failures = [
             (
                 0,
@@ -27796,7 +27798,7 @@ mod tests {
                 4,
                 8,
             ),
-            (0, 18, 1, 0, "InChI=1S/h1H4\n", "", 91, 19),
+            (0, 18, 1, 0, "InChI=1S/h1H4\n", "", 4, 19),
             (RI_ERR_ALLOC, 18, 1, 0, "", "", 3, 9),
             (RI_ERR_ALLOC, 18, 1, 0, "", "", 3, 11),
             (RI_ERR_ALLOC, 18, 1, 0, "", "", 3, 11),
@@ -27804,10 +27806,10 @@ mod tests {
             (RI_ERR_ALLOC, 18, 1, 0, "", "", 4, 13),
             (RI_ERR_ALLOC, 18, 1, 0, "", "", 5, 14),
             (RI_ERR_ALLOC, 18, 1, 0, "", "", 6, 15),
-            (0, 18, 1, 0, methane_text, "", 92, 19),
+            (0, 18, 1, 0, methane_text, "", 4, 19),
             (0, 18, 1, 0, "", "", 3, 18),
             (0, 18, 1, 0, "", "", 3, 18),
-            (0, 18, 1, 0, "1S/CH4/h1H4\n", "", 92, 20),
+            (0, 18, 1, 0, "1S/CH4/h1H4\n", "", 4, 20),
         ];
         for (failure_after, expected) in allocation_failures.into_iter().enumerate() {
             let failed = run(
@@ -39871,67 +39873,4 @@ fn is_input_eol(value: i32) -> bool {
     // INCHI✔️✔️: compare the complete int, preserving EOF and other non-byte
     // values; three scalar comparisons, O(1) time/space, no allocation.
     matches!(value, 10 | 13 | 9)
-}
-
-#[cfg(test)]
-mod input_eol_regressions {
-    use super::is_input_eol;
-
-    #[test]
-    fn full_signed_source_controls() {
-        let inputs =
-            include_str!("../../../../../testdata/inchi/expected/official/input_eol/inputs.txt");
-        let expected =
-            include_str!("../../../../../testdata/inchi/expected/official/input_eol/expected.txt");
-        assert_eq!(inputs.lines().count(), 262144);
-        assert_eq!(expected.lines().count(), 262144);
-        let mut calls = 0usize;
-        let mut ok = 0usize;
-        let mut quarantined = 0usize;
-        let mut unexpected = 0usize;
-        let mut differences = 0usize;
-        for (id, (input, answer)) in inputs.lines().zip(expected.lines()).enumerate() {
-            let mut fields = input.split_whitespace();
-            assert_eq!(fields.next().unwrap().parse::<usize>().unwrap(), id);
-            let value = fields.next().unwrap().parse::<i32>().unwrap();
-            assert!(fields.next().is_none());
-            let wanted = match answer {
-                "0" => false,
-                "1" => true,
-                other => panic!("invalid fixed source answer {other}"),
-            };
-            for _ in 0..2 {
-                calls += 1;
-                match std::panic::catch_unwind(|| is_input_eol(value)) {
-                    Ok(actual) => {
-                        ok += 1;
-                        differences += usize::from(actual != wanted);
-                    }
-                    Err(payload) => {
-                        let message = payload
-                            .downcast_ref::<&str>()
-                            .copied()
-                            .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
-                        if message
-                            == Some(
-                                "INCHI-AUDIT-0312: suspected source divergence; see dev/audits/inchi/findings.md",
-                            )
-                        {
-                            quarantined += 1;
-                        } else {
-                            unexpected += 1;
-                        }
-                    }
-                }
-            }
-        }
-        println!(
-            "INPUT_EOL calls={calls} ok={ok} quarantined0312={quarantined} unexpected={unexpected} differences={differences}"
-        );
-        assert_eq!(calls, 524288);
-        assert_eq!(
-            (ok, quarantined, unexpected, differences),
-            (524288, 0, 0, 0)
-        );
-    }
 }

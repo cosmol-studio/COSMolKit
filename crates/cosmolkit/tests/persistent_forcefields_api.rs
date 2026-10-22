@@ -148,14 +148,12 @@ fn uff_optimizer_returns_the_energy_of_its_own_force_field() {
     let mut state = 17_u64;
     let positions = (0..mol.num_atoms())
         .map(|_| {
-            (0..3)
-                .map(|_| {
-                    state = state
-                        .wrapping_mul(6364136223846793005)
-                        .wrapping_add(1442695040888963407);
-                    (((state >> 32) % 257) as f64 - 128.) / 16.
-                })
-                .collect()
+            std::array::from_fn(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                (((state >> 32) % 257) as f64 - 128.) / 16.
+            })
         })
         .collect();
     mol = mol.with_added_3d_conformer(positions).unwrap();
@@ -167,7 +165,7 @@ fn uff_optimizer_returns_the_energy_of_its_own_force_field() {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(result.energy.to_bits(), expected);
+        assert_eq!(result.energy().unwrap().to_bits(), expected);
         mol = result.molecule;
     }
 }
@@ -214,14 +212,12 @@ fn mmff_observation_does_not_precondition_the_next_optimizer() {
     let mut state = 17_u64;
     let coordinates = (0..mol.num_atoms())
         .map(|_| {
-            (0..3)
-                .map(|_| {
-                    state = state
-                        .wrapping_mul(6364136223846793005)
-                        .wrapping_add(1442695040888963407);
-                    (((state >> 32) % 257) as f64 - 128.) / 16.
-                })
-                .collect()
+            std::array::from_fn(|_| {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                (((state >> 32) % 257) as f64 - 128.) / 16.
+            })
         })
         .collect();
     let mol = mol.with_added_3d_conformer(coordinates).unwrap();
@@ -232,13 +228,13 @@ fn mmff_observation_does_not_precondition_the_next_optimizer() {
             let before = queried.clone();
             queried
                 .mmff_properties_with_params(&MmffPropertiesParams {
-                    mmff_variant: variant.into(),
+                    mmff_variant: cosmolkit::MmffVariant::from_rdkit_constructor_arg(variant),
                 })
                 .unwrap();
             queried
                 .mmff_force_field_with_params(&MmffForceFieldParams::new(
                     None,
-                    variant.into(),
+                    cosmolkit::MmffVariant::from_rdkit_constructor_arg(variant),
                     100.,
                     true,
                 ))
@@ -247,7 +243,7 @@ fn mmff_observation_does_not_precondition_the_next_optimizer() {
                 .unwrap();
             assert_eq!(queried, before, "{variant}: observing must not write back");
             let params = MmffOptimizationParams {
-                mmff_variant: variant.into(),
+                mmff_variant: cosmolkit::MmffVariant::from_rdkit_constructor_arg(variant),
                 max_iterations: 2,
                 ..Default::default()
             };
@@ -277,7 +273,7 @@ fn mmff_observation_does_not_precondition_the_next_optimizer() {
 fn immutable_defaults_and_registered_properties() {
     let mmff = MmffForceFieldParams::default();
     assert_eq!(mmff.conformer_id(), None);
-    assert_eq!(mmff.mmff_variant(), "MMFF94");
+    assert_eq!(mmff.mmff_variant(), cosmolkit::MmffVariant::Mmff94);
     assert_eq!(mmff.non_bonded_threshold(), 100.);
     assert!(mmff.ignore_interfragment_interactions());
     let uff = UffForceFieldParams::default();
@@ -494,18 +490,19 @@ fn missing_conformer_and_invalid_parameterization_fail_without_embedding() {
     let mmff = mol
         .mmff_force_field_with_params(&MmffForceFieldParams::new(
             Some(100),
-            "MMFF94".into(),
+            cosmolkit::MmffVariant::Mmff94,
             100.,
             true,
         ))
         .unwrap_err();
     assert_eq!(mmff.kind(), MolecularForceFieldErrorKind::MissingConformer);
     assert_eq!(mmff.requested(), Some(100));
-    // Pinned AtomTyper.cpp constructor: d_mmffs(mmffVariant == "MMFF94s").
+    // The public configuration represents the default variant explicitly.
+    // RDKit's arbitrary-string fallback is confined to the source constructor.
     let fallback = mol
         .mmff_force_field_with_params(&MmffForceFieldParams::new(
             None,
-            "unknown".into(),
+            cosmolkit::MmffVariant::Mmff94,
             100.,
             true,
         ))

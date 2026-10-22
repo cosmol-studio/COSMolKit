@@ -3,6 +3,53 @@ use crate::native::Molecule;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
+crate::configuration::type_projection! {
+    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
+    #[derive(Clone, Copy)]
+    pub struct OptimizationOutcome { pub(crate) inner: ck::OptimizationOutcome }
+}
+#[pymethods]
+impl OptimizationOutcome {
+    #[staticmethod]
+    fn converged_with_energy(energy: f64) -> Self {
+        Self {
+            inner: ck::OptimizationOutcome::converged_with_energy(energy),
+        }
+    }
+    #[staticmethod]
+    fn not_converged_with_energy(energy: f64) -> Self {
+        Self {
+            inner: ck::OptimizationOutcome::not_converged_with_energy(energy),
+        }
+    }
+    #[staticmethod]
+    fn missing_parameters() -> Self {
+        Self {
+            inner: ck::OptimizationOutcome::missing_parameters(),
+        }
+    }
+    #[getter]
+    fn status(&self) -> crate::leaf_values::OptimizationStatus {
+        self.inner.status().into()
+    }
+    #[getter]
+    fn energy(&self) -> Option<f64> {
+        self.inner.energy()
+    }
+    #[getter]
+    fn converged(&self) -> bool {
+        self.inner.converged()
+    }
+    #[getter]
+    fn needs_more(&self) -> bool {
+        self.inner.needs_more()
+    }
+    #[getter]
+    fn status_code(&self) -> i32 {
+        self.inner.status_code()
+    }
+}
+
 macro_rules! gradient_result {
     ($name:ident) => {
         crate::configuration::type_projection! {
@@ -43,13 +90,18 @@ crate::configuration::type_projection! {
 }
 #[pymethods]
 impl UffOptimizationResult {
+    #[getter]
+    fn outcome(&self) -> OptimizationOutcome {
+        OptimizationOutcome {
+            inner: self.inner.outcome(),
+        }
+    }
     #[new]
-    fn new(molecule: &Molecule, status: i32, energy: f64) -> Self {
+    fn new(molecule: &Molecule, outcome: &OptimizationOutcome) -> Self {
         Self {
             inner: ck::UffOptimizationResult {
                 molecule: molecule.inner.clone(),
-                status,
-                energy,
+                outcome: outcome.inner,
             },
         }
     }
@@ -68,7 +120,7 @@ impl UffOptimizationResult {
         self.inner.needs_more()
     }
     #[getter]
-    fn energy(&self) -> f64 {
+    fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
 }
@@ -82,13 +134,18 @@ crate::configuration::type_projection! {
 }
 #[pymethods]
 impl UffConformerResult {
+    #[getter]
+    fn outcome(&self) -> OptimizationOutcome {
+        OptimizationOutcome {
+            inner: self.inner.outcome(),
+        }
+    }
     #[new]
-    fn new(conformer_id: usize, status: i32, energy: f64) -> Self {
+    fn new(conformer_id: usize, outcome: &OptimizationOutcome) -> Self {
         Self {
             inner: ck::UffConformerResult {
                 conformer_id,
-                status,
-                energy,
+                outcome: outcome.inner,
             },
         }
     }
@@ -105,7 +162,7 @@ impl UffConformerResult {
         self.inner.needs_more()
     }
     #[getter]
-    fn energy(&self) -> f64 {
+    fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
 }
@@ -154,12 +211,22 @@ crate::configuration::type_projection! {
 }
 #[pymethods]
 impl MmffOptimizeMoleculeResult {
+    #[getter]
+    fn energy(&self) -> Option<f64> {
+        self.inner.energy()
+    }
+    #[getter]
+    fn outcome(&self) -> OptimizationOutcome {
+        OptimizationOutcome {
+            inner: self.inner.outcome(),
+        }
+    }
     #[new]
-    fn new(molecule: &Molecule, needs_more: i32) -> Self {
+    fn new(molecule: &Molecule, outcome: &OptimizationOutcome) -> Self {
         Self {
             inner: ck::MmffOptimizeMoleculeResult {
                 molecule: molecule.inner.clone(),
-                needs_more,
+                outcome: outcome.inner,
             },
         }
     }
@@ -188,10 +255,18 @@ crate::configuration::type_projection! {
 }
 #[pymethods]
 impl MmffOptimizeMoleculeConfResult {
+    #[getter]
+    fn outcome(&self) -> OptimizationOutcome {
+        OptimizationOutcome {
+            inner: self.inner.outcome(),
+        }
+    }
     #[new]
-    fn new(needs_more: i32, energy: f64) -> Self {
+    fn new(outcome: &OptimizationOutcome) -> Self {
         Self {
-            inner: ck::MmffOptimizeMoleculeConfResult { needs_more, energy },
+            inner: ck::MmffOptimizeMoleculeConfResult {
+                outcome: outcome.inner,
+            },
         }
     }
     #[getter]
@@ -203,7 +278,7 @@ impl MmffOptimizeMoleculeConfResult {
         self.inner.needs_more()
     }
     #[getter]
-    fn energy(&self) -> f64 {
+    fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
 }

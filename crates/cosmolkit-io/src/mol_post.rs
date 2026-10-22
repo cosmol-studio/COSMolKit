@@ -3,8 +3,9 @@
 use cosmolkit_core::{
     RemoveHsParams, RingSearchParams, SanitizeOperations, SanitizeParams, StructureTagParams,
     ValenceModel, assign_chiral_tags_from_structure, assign_chiral_types_from_bond_dirs,
-    assign_valence_for_topology, calculate_explicit_valence_for_topology,
-    clear_single_bond_directions, expand_attachment_points, remove_hydrogens_with_query_state,
+    assign_valence_for_topology, assign_valence_with_options_for_topology,
+    calculate_explicit_valence_for_topology, clear_single_bond_directions,
+    expand_attachment_points, remove_hydrogens_with_query_state,
     sanitize_topology_with_query_state, set_double_bond_neighbor_directions, symmetrized_sssr,
 };
 use cosmolkit_model::{
@@ -1045,8 +1046,12 @@ fn apply_stereo_and_sanitize(
     let first_3d = coordinates.conformers_3d.first();
     if let Some(conformer) = first_3d {
         if conformer.is_3d() {
-            let valence = assign_valence_for_topology(&topology, ValenceModel::RdkitLike)
-                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+            // RDKit✔️✔️: res->updatePropertyCache(false);
+            // Pre-sanitization 3D stereo uses non-strict valence; the later
+            // requested sanitization retains its own strict checks.
+            let valence =
+                assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)
+                    .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             topology = assign_chiral_tags_from_structure(
                 &topology,
                 &coordinates,

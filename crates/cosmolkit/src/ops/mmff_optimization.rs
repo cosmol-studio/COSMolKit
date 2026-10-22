@@ -9,14 +9,20 @@ use std::{error::Error, fmt, sync::Arc};
 pub struct MmffOptimizeMoleculeResult<M = Molecule> {
     #[pending_molecule]
     pub molecule: M,
-    pub needs_more: i32,
+    pub outcome: crate::OptimizationOutcome,
 }
 impl<M> MmffOptimizeMoleculeResult<M> {
     pub const fn needs_more(&self) -> bool {
-        self.needs_more > 0
+        self.outcome.needs_more()
     }
     pub const fn status_code(&self) -> i32 {
-        self.needs_more
+        self.outcome.status_code()
+    }
+    pub const fn outcome(&self) -> crate::OptimizationOutcome {
+        self.outcome
+    }
+    pub const fn energy(&self) -> Option<f64> {
+        self.outcome.energy()
     }
 }
 #[derive(Clone, Debug, PartialEq, MoleculeResult)]
@@ -134,7 +140,7 @@ pub(crate) fn with_mmff_optimized_impl(
     parts.apply_cip_policy()?;
     Ok(MmffOptimizeMoleculeResult {
         molecule: parts.pending_molecule()?,
-        needs_more: outcome.status,
+        outcome: outcome.outcome,
     })
 }
 
@@ -298,7 +304,7 @@ mod original_public_optimization_tests {
         ignore: bool,
     ) -> Result<MmffOptimizeMoleculeResult, OperationError> {
         input.with_mmff_optimized_with_params(&MmffOptimizationParams {
-            mmff_variant: variant.into(),
+            mmff_variant: crate::MmffVariant::from_rdkit_constructor_arg(variant),
             max_iterations: iters,
             non_bonded_threshold: threshold,
             conformer_id: if id == -1 {
@@ -323,7 +329,7 @@ mod original_public_optimization_tests {
         input.with_mmff_optimized_conformers_with_params(&MmffConformerOptimizationParams {
             num_threads: threads,
             max_iterations: iters,
-            mmff_variant: variant.into(),
+            mmff_variant: crate::MmffVariant::from_rdkit_constructor_arg(variant),
             non_bonded_threshold: threshold,
             ignore_interfragment_interactions: ignore,
         })
@@ -341,7 +347,10 @@ mod original_public_optimization_tests {
         let result = mmff_optimize_molecule(&molecule, "MMFF94", 25, 100.0, -1, true)
             .expect("typed MMFF molecule should optimize");
 
-        assert_eq!(result.needs_more, 0);
+        assert_eq!(result.status_code(), 0);
+        assert!(
+            matches!(result.outcome, crate::OptimizationOutcome::Converged { energy } if energy.is_finite())
+        );
         assert_ne!(
             result.molecule.conformers_3d()[0].coordinates(),
             original_coords
@@ -357,7 +366,12 @@ mod original_public_optimization_tests {
         let result = mmff_optimize_molecule(&molecule, "MMFF94", 25, 100.0, -1, true)
             .expect("missing MMFF atom typing should map to wrapper -1 result");
 
-        assert_eq!(result.needs_more, -1);
+        assert_eq!(result.status_code(), -1);
+        assert_eq!(
+            result.outcome,
+            crate::OptimizationOutcome::MissingParameters
+        );
+        assert_eq!(result.energy(), None);
         assert_eq!(
             result.molecule.conformers_3d()[0].coordinates(),
             original_coords
@@ -379,7 +393,7 @@ mod original_public_optimization_tests {
         let result = mmff_optimize_molecule(&molecule, "MMFF94S", 25, 100.0, -1, true)
             .expect("invalid uppercase MMFF variant should fall back like RDKit parser");
 
-        assert_eq!(result.needs_more, reference.needs_more);
+        assert_eq!(result.status_code(), reference.status_code());
         assert_eq!(
             result.molecule.conformers_3d()[0].coordinates(),
             reference.molecule.conformers_3d()[0].coordinates()
@@ -399,7 +413,10 @@ mod original_public_optimization_tests {
         let result = mmff_optimize_molecule(&molecule, "MMFF94", 0, 100.0, -1, true)
             .expect("empty-typed MMFF optimize should run");
 
-        assert_eq!(result.needs_more, 1);
+        assert_eq!(result.status_code(), 1);
+        assert!(
+            matches!(result.outcome, crate::OptimizationOutcome::NotConverged { energy } if energy.is_finite())
+        );
         assert_eq!(
             result.molecule.conformers_3d()[0].coordinates(),
             original_coords
@@ -421,7 +438,7 @@ mod original_public_optimization_tests {
         let result = mmff_optimize_molecule(&molecule, "MMFF94", 25, 100.0, 7, true)
             .expect("MMFF optimize should preserve unselected conformers");
 
-        assert_eq!(result.needs_more, 0);
+        assert_eq!(result.status_code(), 0);
         assert_eq!(
             result.molecule.conformers_3d()[0].coordinates(),
             first_coords
@@ -453,7 +470,7 @@ mod original_public_optimization_tests {
             result
                 .conformer_results
                 .iter()
-                .all(|entry| entry.needs_more == 0 && entry.energy.is_finite())
+                .all(|entry| entry.status_code() == 0 && entry.energy().unwrap().is_finite())
         );
         assert_ne!(
             result.molecule.conformers_3d()[0].coordinates(),
@@ -476,8 +493,8 @@ mod original_public_optimization_tests {
             .expect("missing MMFF atom typing should map to wrapper -1 result");
 
         assert_eq!(result.conformer_results.len(), 1);
-        assert_eq!(result.conformer_results[0].needs_more, -1);
-        assert_eq!(result.conformer_results[0].energy, -1.0);
+        assert_eq!(result.conformer_results[0].status_code(), -1);
+        assert_eq!(result.conformer_results[0].energy(), None);
         assert_eq!(
             result.molecule.conformers_3d()[0].coordinates(),
             original_coords
@@ -538,9 +555,9 @@ mod original_public_optimization_tests {
             .iter()
             .zip(negative_threads.conformer_results.iter())
         {
-            assert_eq!(left.needs_more, right.needs_more);
-            assert!(left.energy.is_finite());
-            assert!(right.energy.is_finite());
+            assert_eq!(left.status_code(), right.status_code());
+            assert!(left.energy().unwrap().is_finite());
+            assert!(right.energy().unwrap().is_finite());
         }
     }
 
@@ -558,8 +575,8 @@ mod original_public_optimization_tests {
             .expect("current modeled MMFF wrapper path should return -1 before minimization");
 
         assert_eq!(result.conformer_results.len(), 1);
-        assert_eq!(result.conformer_results[0].needs_more, 1);
-        assert!(result.conformer_results[0].energy.is_finite());
+        assert_eq!(result.conformer_results[0].status_code(), 1);
+        assert!(result.conformer_results[0].energy().unwrap().is_finite());
         assert_eq!(
             result.molecule.conformers_3d()[0].coordinates(),
             original_coords
@@ -674,7 +691,7 @@ mod original_public_optimization_tests {
                     ..Default::default()
                 })
                 .unwrap();
-            assert_eq!(result.needs_more, 1);
+            assert_eq!(result.status_code(), 1);
             assert_eq!(source, peer);
             assert_eq!(
                 result.molecule.properties().prop("_MMFFSanitized"),

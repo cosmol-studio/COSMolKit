@@ -653,9 +653,15 @@ impl Molecule {
     ) -> PyResult<Option<String>> {
         self.inner
             .atom_property_string(ck::AtomId::new(id), key)
-            .map_err(|source| crate::canonical_property_values::property_string_pyerr(py, source))?
-            .map(|text| crate::canonical_sdf::decode_source_text(py, &text))
-            .transpose()
+            .map_err(|source| match source {
+                ck::AtomPropertyReadError::Operation(e) => operation_pyerr(py, e),
+                ck::AtomPropertyReadError::Type(e) => {
+                    crate::canonical_atom_bond::property_pyerr(py, e)
+                }
+                ck::AtomPropertyReadError::Utf8(e) => {
+                    pyo3::exceptions::PyUnicodeError::new_err(e.to_string())
+                }
+            })
     }
 
     /// Return the string projection of a bond property; invalid indices/types raise an error.
@@ -2176,7 +2182,7 @@ impl Molecule {
     ) -> PyResult<crate::persistent_forcefields::MolecularForceField> {
         let params = ::cosmolkit::MmffForceFieldParams::new(
             conformer_id,
-            mmff_variant,
+            ::cosmolkit::MmffVariant::from_rdkit_constructor_arg(&mmff_variant),
             non_bonded_threshold,
             ignore_interfragment_interactions,
         );
@@ -2876,12 +2882,7 @@ impl Molecule {
         py: Python<'_>,
         coordinates: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .with_3d_coordinates(rows)
             .map(|inner| Self { inner })
@@ -2894,12 +2895,7 @@ impl Molecule {
         coordinates: &Bound<'_, PyAny>,
         params: &crate::canonical_coordinate_input::Replace3DCoordinatesParams,
     ) -> PyResult<Self> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .with_3d_coordinates_with_params(rows, &params.inner)
             .map(|inner| Self { inner })
@@ -2911,12 +2907,7 @@ impl Molecule {
         py: Python<'_>,
         coordinates: &Bound<'_, PyAny>,
     ) -> PyResult<()> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .set_3d_coordinates_(rows)
             .map_err(|e| operation_pyerr(py, e))
@@ -2928,12 +2919,7 @@ impl Molecule {
         coordinates: &Bound<'_, PyAny>,
         params: &crate::canonical_coordinate_input::Replace3DCoordinatesParams,
     ) -> PyResult<()> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .set_3d_coordinates_with_params_(rows, &params.inner)
             .map_err(|e| operation_pyerr(py, e))
@@ -2944,12 +2930,7 @@ impl Molecule {
         py: Python<'_>,
         coordinates: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .with_added_3d_conformer(rows)
             .map(|inner| Self { inner })
@@ -2962,12 +2943,7 @@ impl Molecule {
         coordinates: &Bound<'_, PyAny>,
         params: &crate::canonical_coordinate_input::Coordinate3DInputParams,
     ) -> PyResult<Self> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .with_added_3d_conformer_with_params(rows, &params.inner)
             .map(|inner| Self { inner })
@@ -2979,12 +2955,7 @@ impl Molecule {
         py: Python<'_>,
         coordinates: &Bound<'_, PyAny>,
     ) -> PyResult<usize> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .add_3d_conformer_(rows)
             .map_err(|e| operation_pyerr(py, e))
@@ -2996,12 +2967,7 @@ impl Molecule {
         coordinates: &Bound<'_, PyAny>,
         params: &crate::canonical_coordinate_input::Coordinate3DInputParams,
     ) -> PyResult<usize> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .add_3d_conformer_with_params_(rows, &params.inner)
             .map_err(|e| operation_pyerr(py, e))
@@ -3012,12 +2978,7 @@ impl Molecule {
         py: Python<'_>,
         coordinates: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .with_only_3d_conformer(rows)
             .map(|inner| Self { inner })
@@ -3030,12 +2991,7 @@ impl Molecule {
         coordinates: &Bound<'_, PyAny>,
         params: &crate::canonical_coordinate_input::Coordinate3DInputParams,
     ) -> PyResult<Self> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .with_only_3d_conformer_with_params(rows, &params.inner)
             .map(|inner| Self { inner })
@@ -3047,12 +3003,7 @@ impl Molecule {
         py: Python<'_>,
         coordinates: &Bound<'_, PyAny>,
     ) -> PyResult<usize> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .set_only_3d_conformer_(rows)
             .map_err(|e| operation_pyerr(py, e))
@@ -3064,12 +3015,7 @@ impl Molecule {
         coordinates: &Bound<'_, PyAny>,
         params: &crate::canonical_coordinate_input::Coordinate3DInputParams,
     ) -> PyResult<usize> {
-        let rows = crate::canonical_coordinate_input::matrix(
-            py,
-            coordinates,
-            self.inner.num_atoms(),
-            false,
-        )?;
+        let rows = coordinates.extract::<Vec<[f64; 3]>>()?;
         self.inner
             .set_only_3d_conformer_with_params_(rows, &params.inner)
             .map_err(|e| operation_pyerr(py, e))

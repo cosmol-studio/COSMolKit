@@ -16,7 +16,6 @@ pub(crate) fn call_keywords(
     ignore_atoms: Option<Vec<u32>>,
     custom_atom_invariants: Option<Vec<u32>>,
     custom_bond_invariants: Option<Vec<u32>>,
-    conformer_id: Option<i32>,
     use_legacy_stereo_perception: Option<bool>,
 ) -> PyResult<TopologicalTorsionCallParams> {
     let defaults = ck::TopologicalTorsionCallParams::default();
@@ -27,7 +26,6 @@ pub(crate) fn call_keywords(
             ignore_atoms,
             custom_atom_invariants,
             custom_bond_invariants,
-            conformer_id: conformer_id.unwrap_or(defaults.conformer_id),
             use_legacy_stereo_perception: use_legacy_stereo_perception
                 .unwrap_or(defaults.use_legacy_stereo_perception),
         },

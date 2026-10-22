@@ -33,7 +33,7 @@ impl MmffForceFieldParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "number | null")] conformer_id: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "string")] mmff_variant: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "MmffVariant | 'MMFF94' | 'MMFF94s'")] mmff_variant: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] non_bonded_threshold: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")]
         ignore_interfragment_interactions: JsValue,
@@ -45,11 +45,9 @@ impl MmffForceFieldParams {
             optional_index(&conformer_id, "conformerId")?
         };
         let mmff_variant = if mmff_variant.is_undefined() {
-            defaults.mmff_variant().to_owned()
+            defaults.mmff_variant()
         } else {
-            mmff_variant
-                .as_string()
-                .ok_or_else(|| type_error("mmffVariant"))?
+            crate::forcefield_properties::mmff_variant_input(&mmff_variant)?
         };
         let non_bonded_threshold = if non_bonded_threshold.is_undefined() {
             defaults.non_bonded_threshold()
@@ -81,8 +79,8 @@ impl MmffForceFieldParams {
             .map_or(JsValue::NULL, |v| JsValue::from_f64(v as f64))
     }
     #[wasm_bindgen(getter, js_name = mmffVariant)]
-    pub fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant().to_owned()
+    pub fn mmff_variant(&self) -> crate::forcefield_properties::MmffVariant {
+        self.inner.mmff_variant().into()
     }
     #[wasm_bindgen(getter, js_name = nonBondedThreshold)]
     pub fn non_bonded_threshold(&self) -> f64 {

@@ -11,6 +11,23 @@ use cosmolkit_wasm::rust as ck;
 
 #[wasm_bindgen]
 #[derive(Clone, Copy)]
+pub enum EmbedTermination {
+    Completed,
+    TimedOut,
+    Interrupted,
+}
+impl From<ck::EmbedTermination> for EmbedTermination {
+    fn from(value: ck::EmbedTermination) -> Self {
+        match value {
+            ck::EmbedTermination::Completed => Self::Completed,
+            ck::EmbedTermination::TimedOut => Self::TimedOut,
+            ck::EmbedTermination::Interrupted => Self::Interrupted,
+        }
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
 pub enum EmbedFailureCause {
     InitialCoords = 0,
     FirstMinimization = 1,
@@ -110,6 +127,10 @@ pub struct EmbedMoleculeResult {
 }
 #[wasm_bindgen]
 impl EmbedMoleculeResult {
+    #[wasm_bindgen(getter)]
+    pub fn termination(&self) -> EmbedTermination {
+        self.inner.termination().into()
+    }
     #[wasm_bindgen(getter, js_name=failuresTracked)]
     pub fn failures_tracked(&self) -> bool {
         self.inner.failures_tracked()
@@ -135,7 +156,7 @@ impl EmbedMoleculeResult {
         }
     }
     #[wasm_bindgen(js_name=confId)]
-    pub fn conf_id(&self) -> i32 {
+    pub fn conf_id(&self) -> Option<u32> {
         self.inner.conf_id()
     }
     pub fn ok(&self) -> bool {
@@ -148,6 +169,10 @@ pub struct EmbedMultipleConfsResult {
 }
 #[wasm_bindgen]
 impl EmbedMultipleConfsResult {
+    #[wasm_bindgen(getter)]
+    pub fn termination(&self) -> EmbedTermination {
+        self.inner.termination().into()
+    }
     #[wasm_bindgen(getter, js_name=failuresTracked)]
     pub fn failures_tracked(&self) -> bool {
         self.inner.failures_tracked()
@@ -173,7 +198,7 @@ impl EmbedMultipleConfsResult {
         }
     }
     #[wasm_bindgen(js_name=confIds)]
-    pub fn conf_ids(&self) -> Vec<i32> {
+    pub fn conf_ids(&self) -> Vec<u32> {
         self.inner.conf_ids().to_vec()
     }
     #[wasm_bindgen(js_name=requestedNumConfs)]

@@ -23,7 +23,7 @@ test('PDB writer call forms, dimension selection and structured failures', () =>
     params.coordinateSelection = null;
     params.allConformers = true;
     assert.deepEqual(positions(molecule.toPdb(params)), [[1.25,-2.5,0],[4,5,6]]);
-    params.flavor = 16;
+    params.flavor = ck.PdbWriteFlags.MASTER;
     assert.ok(molecule.toPdb(params).includes('MASTER'));
     assert.throws(() => { params.allConformers = 'true'; }, TypeError);
     assert.equal(params.allConformers, true);
@@ -35,7 +35,7 @@ test('PDB writer call forms, dimension selection and structured failures', () =>
     assert.equal(benzene.toSmiles(), 'c1ccccc1');
 });
 test('BIO-enabled molecular readers support params/options and generated conveniences', {skip: !ck.BioMoleculeParams}, () => {
-    const params = new ck.BioMoleculeParams(true,false,0,false);
+    const params = new ck.BioMoleculeParams(true,false,ck.PdbReadFlags.NONE,false);
     for (const read of [ck.Molecule.fromPdb, ck.molFromPdb]) {
         assert.equal(read(pdb).numAtoms(), 1);
         assert.equal(read(pdb, params).numAtoms(), 2);

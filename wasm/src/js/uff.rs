@@ -6,6 +6,43 @@ use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
 use std::{error::Error as RustError, sync::Arc};
 use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen]
+#[derive(Clone, Copy)]
+pub enum OptimizationStatus { Converged, NotConverged, MissingParameters }
+#[wasm_bindgen]
+pub struct OptimizationOutcome { pub(crate) inner: ck::OptimizationOutcome }
+#[wasm_bindgen]
+impl OptimizationOutcome {
+    #[wasm_bindgen(js_name=convergedWithEnergy)]
+    pub fn converged_with_energy(energy: f64) -> Self {
+        Self { inner: ck::OptimizationOutcome::converged_with_energy(energy) }
+    }
+    #[wasm_bindgen(js_name=notConvergedWithEnergy)]
+    pub fn not_converged_with_energy(energy: f64) -> Self {
+        Self { inner: ck::OptimizationOutcome::not_converged_with_energy(energy) }
+    }
+    #[wasm_bindgen(js_name=missingParameters)]
+    pub fn missing_parameters() -> Self {
+        Self { inner: ck::OptimizationOutcome::missing_parameters() }
+    }
+    #[wasm_bindgen(getter)]
+    pub fn status(&self) -> OptimizationStatus {
+        match self.inner.status() {
+            ck::OptimizationStatus::Converged => OptimizationStatus::Converged,
+            ck::OptimizationStatus::NotConverged => OptimizationStatus::NotConverged,
+            ck::OptimizationStatus::MissingParameters => OptimizationStatus::MissingParameters,
+        }
+    }
+    #[wasm_bindgen(getter, unchecked_return_type="number | null")]
+    pub fn energy(&self) -> JsValue { self.inner.energy().map_or(JsValue::NULL, JsValue::from) }
+    #[wasm_bindgen(getter)]
+    pub fn converged(&self) -> bool { self.inner.converged() }
+    #[wasm_bindgen(getter, js_name=needsMore)]
+    pub fn needs_more(&self) -> bool { self.inner.needs_more() }
+    #[wasm_bindgen(getter, js_name=statusCode)]
+    pub fn status_code(&self) -> i32 { self.inner.status_code() }
+}
 pub(crate) fn source_conformer_id(value: &JsValue) -> Result<Option<usize>, JsValue> {
     // COSMolKit❗✔️: let conformer_id = conformer_id.and_then(crate::mmff_binding::source_conformer_id);
     if value.is_null() || value.is_undefined() {
@@ -193,6 +230,7 @@ pub struct UffOptimizationResult {
 }
 #[wasm_bindgen]
 impl UffOptimizationResult {
+    pub fn outcome(&self) -> OptimizationOutcome { OptimizationOutcome { inner: self.inner.outcome() } }
     pub fn molecule(&self) -> Molecule {
         Molecule {
             inner: Arc::new(self.inner.molecule()),
@@ -206,9 +244,8 @@ impl UffOptimizationResult {
     pub fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
-    pub fn energy(&self) -> f64 {
-        self.inner.energy()
-    }
+    #[wasm_bindgen(unchecked_return_type="number | null")]
+    pub fn energy(&self) -> JsValue { self.inner.energy().map_or(JsValue::NULL, JsValue::from) }
 }
 #[wasm_bindgen]
 pub struct UffConformerResult {
@@ -216,6 +253,7 @@ pub struct UffConformerResult {
 }
 #[wasm_bindgen]
 impl UffConformerResult {
+    pub fn outcome(&self) -> OptimizationOutcome { OptimizationOutcome { inner: self.inner.outcome() } }
     #[wasm_bindgen(js_name=conformerId)]
     pub fn conformer_id(&self) -> usize {
         self.inner.conformer_id()
@@ -228,9 +266,8 @@ impl UffConformerResult {
     pub fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
-    pub fn energy(&self) -> f64 {
-        self.inner.energy()
-    }
+    #[wasm_bindgen(unchecked_return_type="number | null")]
+    pub fn energy(&self) -> JsValue { self.inner.energy().map_or(JsValue::NULL, JsValue::from) }
 }
 #[wasm_bindgen]
 pub struct UffConformerOptimizationResult {

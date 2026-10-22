@@ -16,7 +16,7 @@ pub struct MmffEvaluationParams {
 impl MmffEvaluationParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "string")] mmff_variant: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "MmffVariant | 'MMFF94' | 'MMFF94s'")] mmff_variant: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] non_bonded_threshold: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number | null")] conformer_id: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")]
@@ -25,9 +25,7 @@ impl MmffEvaluationParams {
         // COSMolKit❗✔️: inner: ck::MmffEvaluationParams {
         let mut inner = ck::MmffEvaluationParams::default();
         if !mmff_variant.is_undefined() {
-            inner.mmff_variant = mmff_variant
-                .as_string()
-                .ok_or_else(|| type_error("mmffVariant"))?;
+            inner.mmff_variant = crate::forcefield_properties::mmff_variant_input(&mmff_variant)?;
         }
         if !non_bonded_threshold.is_undefined() {
             inner.non_bonded_threshold = non_bonded_threshold
@@ -46,8 +44,8 @@ impl MmffEvaluationParams {
         Ok(Self { inner })
     }
     #[wasm_bindgen(getter,js_name=mmffVariant)]
-    pub fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant.clone()
+    pub fn mmff_variant(&self) -> crate::forcefield_properties::MmffVariant {
+        self.inner.mmff_variant.into()
     }
     #[wasm_bindgen(getter,js_name=nonBondedThreshold)]
     pub fn non_bonded_threshold(&self) -> f64 {
@@ -73,7 +71,7 @@ pub struct MmffOptimizationParams {
 impl MmffOptimizationParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "string")] mmff_variant: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "MmffVariant | 'MMFF94' | 'MMFF94s'")] mmff_variant: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] max_iterations: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] non_bonded_threshold: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number | null")] conformer_id: JsValue,
@@ -83,9 +81,7 @@ impl MmffOptimizationParams {
         // COSMolKit❗✔️: inner: ck::MmffOptimizationParams {
         let mut inner = ck::MmffOptimizationParams::default();
         if !mmff_variant.is_undefined() {
-            inner.mmff_variant = mmff_variant
-                .as_string()
-                .ok_or_else(|| type_error("mmffVariant"))?;
+            inner.mmff_variant = crate::forcefield_properties::mmff_variant_input(&mmff_variant)?;
         }
         if !max_iterations.is_undefined() {
             inner.max_iterations = i32_value(&max_iterations, "maxIterations")?;
@@ -107,8 +103,8 @@ impl MmffOptimizationParams {
         Ok(Self { inner })
     }
     #[wasm_bindgen(getter,js_name=mmffVariant)]
-    pub fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant.clone()
+    pub fn mmff_variant(&self) -> crate::forcefield_properties::MmffVariant {
+        self.inner.mmff_variant.into()
     }
     #[wasm_bindgen(getter,js_name=maxIterations)]
     pub fn max_iterations(&self) -> i32 {
@@ -140,7 +136,7 @@ impl MmffConformerOptimizationParams {
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "number")] num_threads: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] max_iterations: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "string")] mmff_variant: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "MmffVariant | 'MMFF94' | 'MMFF94s'")] mmff_variant: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] non_bonded_threshold: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")]
         ignore_interfragment_interactions: JsValue,
@@ -154,9 +150,7 @@ impl MmffConformerOptimizationParams {
             inner.max_iterations = i32_value(&max_iterations, "maxIterations")?;
         }
         if !mmff_variant.is_undefined() {
-            inner.mmff_variant = mmff_variant
-                .as_string()
-                .ok_or_else(|| type_error("mmffVariant"))?;
+            inner.mmff_variant = crate::forcefield_properties::mmff_variant_input(&mmff_variant)?;
         }
         if !non_bonded_threshold.is_undefined() {
             inner.non_bonded_threshold = non_bonded_threshold
@@ -180,8 +174,8 @@ impl MmffConformerOptimizationParams {
         self.inner.max_iterations
     }
     #[wasm_bindgen(getter,js_name=mmffVariant)]
-    pub fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant.clone()
+    pub fn mmff_variant(&self) -> crate::forcefield_properties::MmffVariant {
+        self.inner.mmff_variant.into()
     }
     #[wasm_bindgen(getter,js_name=nonBondedThreshold)]
     pub fn non_bonded_threshold(&self) -> f64 {
@@ -216,6 +210,9 @@ pub struct MmffOptimizeMoleculeResult {
 }
 #[wasm_bindgen]
 impl MmffOptimizeMoleculeResult {
+    #[wasm_bindgen(unchecked_return_type="number | null")]
+    pub fn energy(&self) -> JsValue { self.inner.energy().map_or(JsValue::NULL, JsValue::from) }
+    pub fn outcome(&self) -> crate::uff::OptimizationOutcome { crate::uff::OptimizationOutcome { inner: self.inner.outcome() } }
     pub fn molecule(&self) -> Molecule {
         Molecule {
             inner: Arc::new(self.inner.molecule()),
@@ -236,6 +233,7 @@ pub struct MmffOptimizeMoleculeConfResult {
 }
 #[wasm_bindgen]
 impl MmffOptimizeMoleculeConfResult {
+    pub fn outcome(&self) -> crate::uff::OptimizationOutcome { crate::uff::OptimizationOutcome { inner: self.inner.outcome() } }
     #[wasm_bindgen(js_name=statusCode)]
     pub fn status_code(&self) -> i32 {
         self.inner.status_code()
@@ -244,9 +242,8 @@ impl MmffOptimizeMoleculeConfResult {
     pub fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
-    pub fn energy(&self) -> f64 {
-        self.inner.energy()
-    }
+    #[wasm_bindgen(unchecked_return_type="number | null")]
+    pub fn energy(&self) -> JsValue { self.inner.energy().map_or(JsValue::NULL, JsValue::from) }
 }
 #[wasm_bindgen]
 pub struct MmffOptimizeMoleculeConfsResult {

@@ -1,6 +1,7 @@
 //! BIO chemistry conversion is delegated to canonical root APIs, preserving typed failures.
 use crate::alignment_values::{set, source_error};
-use crate::host_values::{bool_value, u32_value};
+use crate::host_values::bool_value;
+use crate::pdb_flags::PdbReadFlags;
 use crate::{Molecule, bio_protein::Protein, bio_readers::BioStructure};
 use cosmolkit_wasm::rust as ck;
 use std::{error::Error as RustError, sync::Arc};
@@ -16,7 +17,7 @@ impl BioMoleculeParams {
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] sanitize: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] remove_hs: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "number")] flavor: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "PdbReadFlags")] flavor: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] proximity_bonding: JsValue,
     ) -> Result<Self, JsValue> {
         let mut inner = ck::BioMoleculeParams::default();
@@ -27,7 +28,7 @@ impl BioMoleculeParams {
             inner.remove_hs = bool_value(&remove_hs, "removeHs")?;
         }
         if !flavor.is_undefined() {
-            inner.flavor = u32_value(&flavor, "flavor")?;
+            inner.flavor = PdbReadFlags::extract(&flavor)?;
         }
         if !proximity_bonding.is_undefined() {
             inner.proximity_bonding = bool_value(&proximity_bonding, "proximityBonding")?;
@@ -43,8 +44,8 @@ impl BioMoleculeParams {
         self.inner.remove_hs
     }
     #[wasm_bindgen(getter)]
-    pub fn flavor(&self) -> u32 {
-        self.inner.flavor
+    pub fn flavor(&self) -> PdbReadFlags {
+        PdbReadFlags { inner: self.inner.flavor }
     }
     #[wasm_bindgen(getter,js_name=proximityBonding)]
     pub fn proximity_bonding(&self) -> bool {

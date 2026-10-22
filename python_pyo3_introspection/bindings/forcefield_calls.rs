@@ -21,14 +21,14 @@ pub(crate) fn uff_energy_gradient_params(
     }
 }
 pub(crate) fn mmff_energy_gradient_params(
-    mmff_variant: Option<String>,
+    mmff_variant: Option<crate::leaf_values::MmffVariantInput>,
     non_bonded_threshold: Option<f64>,
     conformer_id: Option<usize>,
     ignore_interfragment_interactions: Option<bool>,
 ) -> crate::params::MmffEvaluationParams {
     let mut inner = ck::MmffEvaluationParams::default();
     if let Some(value) = mmff_variant {
-        inner.mmff_variant = value;
+        inner.mmff_variant = value.0;
     }
     if let Some(value) = non_bonded_threshold {
         inner.non_bonded_threshold = value;
@@ -90,7 +90,7 @@ pub(crate) fn with_uff_optimized_conformers_params(
     }
 }
 pub(crate) fn with_mmff_optimized_params(
-    mmff_variant: Option<String>,
+    mmff_variant: Option<crate::leaf_values::MmffVariantInput>,
     max_iterations: Option<i32>,
     non_bonded_threshold: Option<f64>,
     conformer_id: Option<usize>,
@@ -98,7 +98,7 @@ pub(crate) fn with_mmff_optimized_params(
 ) -> crate::params::MmffOptimizationParams {
     let mut inner = ck::MmffOptimizationParams::default();
     if let Some(value) = mmff_variant {
-        inner.mmff_variant = value;
+        inner.mmff_variant = value.0;
     }
     if let Some(value) = max_iterations {
         inner.max_iterations = value;
@@ -119,7 +119,7 @@ pub(crate) fn with_mmff_optimized_params(
 pub(crate) fn with_mmff_optimized_conformers_params(
     num_threads: Option<i32>,
     max_iterations: Option<i32>,
-    mmff_variant: Option<String>,
+    mmff_variant: Option<crate::leaf_values::MmffVariantInput>,
     non_bonded_threshold: Option<f64>,
     ignore_interfragment_interactions: Option<bool>,
 ) -> crate::params::MmffConformerOptimizationParams {
@@ -131,7 +131,7 @@ pub(crate) fn with_mmff_optimized_conformers_params(
         inner.max_iterations = value;
     }
     if let Some(value) = mmff_variant {
-        inner.mmff_variant = value;
+        inner.mmff_variant = value.0;
     }
     if let Some(value) = non_bonded_threshold {
         inner.non_bonded_threshold = value;
@@ -368,7 +368,7 @@ mod tests {
                         actual.inner.molecule().to_binary().unwrap(),
                         want.molecule().to_binary().unwrap()
                     );
-                    assert_eq!(actual.inner.energy().to_bits(), want.energy().to_bits());
+                    assert_eq!(actual.inner.energy().unwrap().to_bits(), want.energy().unwrap().to_bits());
                     assert_eq!(projected.borrow(py).inner.to_binary().unwrap(), before);
                 }
                 let mixed = projected
@@ -424,11 +424,11 @@ mod tests {
                             .inner
                             .conformer_results()
                             .iter()
-                            .map(|v| v.energy().to_bits())
+                            .map(|v| v.energy().unwrap().to_bits())
                             .collect::<Vec<_>>(),
                         want.conformer_results()
                             .iter()
-                            .map(|v| v.energy().to_bits())
+                            .map(|v| v.energy().unwrap().to_bits())
                             .collect::<Vec<_>>()
                     );
                     assert_eq!(projected.borrow(py).inner.to_binary().unwrap(), before);
@@ -536,11 +536,11 @@ mod tests {
                             .inner
                             .conformer_results()
                             .iter()
-                            .map(|v| v.energy().to_bits())
+                            .map(|v| v.energy().unwrap().to_bits())
                             .collect::<Vec<_>>(),
                         want.conformer_results()
                             .iter()
-                            .map(|v| v.energy().to_bits())
+                            .map(|v| v.energy().unwrap().to_bits())
                             .collect::<Vec<_>>()
                     );
                     assert_eq!(projected.borrow(py).inner.to_binary().unwrap(), before);

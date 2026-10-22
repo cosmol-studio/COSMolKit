@@ -16,7 +16,7 @@ fn pipeline_parameter_product_uses_one_checked_molecule_boundary() {
                         sanitize,
                         remove_hs,
                         proximity_bonding,
-                        flavor: 0,
+                        flavor: cosmolkit::PdbReadFlags::NONE,
                     })
                     .unwrap();
                 assert_eq!(
@@ -55,7 +55,7 @@ fn all_bio_models_and_typed_failure_stay_at_the_value_boundary() {
         sanitize: false,
         remove_hs: false,
         proximity_bonding: false,
-        flavor: 0,
+        flavor: cosmolkit::PdbReadFlags::NONE,
     };
     assert_eq!(source.num_models(), 2);
     assert_eq!(

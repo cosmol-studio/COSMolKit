@@ -6,6 +6,12 @@ pub struct MmffOptimizeMoleculeResult {
     inner: ck::MmffOptimizeMoleculeResult,
 }
 impl MmffOptimizeMoleculeResult {
+    pub fn outcome(&self) -> ck::OptimizationOutcome {
+        self.inner.outcome()
+    }
+    pub fn energy(&self) -> Option<f64> {
+        self.inner.energy()
+    }
     pub fn molecule(&self) -> Molecule {
         // COSMolKit❗✔️: inner: self.inner.molecule.clone(),
         Molecule {
@@ -109,7 +115,7 @@ $$$$
         );
         for variant in ["MMFF94", "MMFF94s"] {
             let p = ck::MmffEvaluationParams {
-                mmff_variant: variant.into(),
+                mmff_variant: ck::MmffVariant::from_rdkit_constructor_arg(variant),
                 non_bonded_threshold: 5.,
                 conformer_id: Some(0),
                 ignore_interfragment_interactions: false,
@@ -120,7 +126,7 @@ $$$$
             assert_eq!(a.gradient(), b.gradient());
             assert_eq!(a.gradient().len(), 9);
             let p = ck::MmffOptimizationParams {
-                mmff_variant: variant.into(),
+                mmff_variant: ck::MmffVariant::from_rdkit_constructor_arg(variant),
                 max_iterations: 2,
                 ..Default::default()
             };
@@ -130,7 +136,7 @@ $$$$
             assert_eq!(a.needs_more(), b.needs_more());
             assert_eq!(*a.molecule().inner.borrow(), *b.molecule());
             let p = ck::MmffConformerOptimizationParams {
-                mmff_variant: variant.into(),
+                mmff_variant: ck::MmffVariant::from_rdkit_constructor_arg(variant),
                 max_iterations: 2,
                 ..Default::default()
             };

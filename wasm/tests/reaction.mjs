@@ -129,14 +129,14 @@ test("Reaction failures preserve error kinds, contextual fields and validation r
  assert.throws(()=>empty.withInitializedWithParams(new b.ReactionValidationParams(true)),e=>e.name==="ReactionInitializationError"&&e.kind==="Invalid"&&e.report.numErrors===2&&e.detail.report instanceof b.ReactionValidationReport);
 });
 test('reaction optionally copies typed atom properties by reagent origins',()=>{
- const carbon=b.Molecule.fromSmiles('C').withAtomProperty(0,'tracking_id',42);
- const oxygen=b.Molecule.fromSmiles('O').withAtomProperty(0,'tracking_id',84);
+ const carbon=b.Molecule.fromSmiles('C').withAtomPropertyInt(0,'tracking_id',42);
+ const oxygen=b.Molecule.fromSmiles('O').withAtomPropertyInt(0,'tracking_id',84);
  const rxn=b.Reaction.fromSmirks('[C:1].[O:2]>>[C:1][O:2]');
  const params=new b.ReactionRunParams(undefined,undefined,true);
  assert.equal(params.copyAtomProperties,true);
  const product=rxn.run([carbon,oxygen],params)[0][0];
- assert.deepEqual([0,1].map(i=>product.atomProperty(i,'tracking_id')),[42,84]);
+ assert.deepEqual([0,1].map(i=>product.atomPropertyInt(i,'tracking_id')),[42,84]);
  params.copyAtomProperties=false;
- assert.deepEqual([0,1].map(i=>rxn.run([carbon,oxygen],params)[0][0].atomProperty(i,'tracking_id')),[null,null]);
+ assert.deepEqual([0,1].map(i=>rxn.run([carbon,oxygen],params)[0][0].atomPropertyInt(i,'tracking_id')),[null,null]);
  assert.equal(product.toSmiles(),'CO');
 });

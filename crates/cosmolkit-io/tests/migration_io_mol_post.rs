@@ -523,6 +523,43 @@ fn finished_center_tag_and_group_count(
     }
 }
 
+#[test]
+fn unsanitized_3d_valence_is_nonstrict_before_stereo() {
+    // RDKit MolFileParser.cpp finishMolProcessing calls updatePropertyCache(false)
+    // before 3D stereo perception, even when later sanitization is requested.
+    let block = v3000_tetrahedral_case(["H"; 4], false, "1", 0, false)
+        .replace("M  V30 1 C ", "M  V30 1 N ");
+    let parsed = read_mol_block_detached(&block).unwrap();
+    let finished = finish_mol_block_record(parsed.clone(), false, unsanitized(), None)
+        .expect("unsanitized neutral tetravalent N must remain readable");
+    let MolBlockRecord::Concrete {
+        topology,
+        coordinates,
+        ..
+    } = finished
+    else {
+        panic!("concrete molecule expected");
+    };
+    assert_eq!(topology.atoms.len(), 5);
+    assert_eq!(topology.bonds.len(), 4);
+    assert_eq!(topology.atoms[0].formal_charge(), 0);
+    assert_eq!(topology.atoms[0].chiral_tag(), ChiralTag::TetrahedralCw);
+    assert!(coordinates.conformers_3d[0].is_3d());
+    assert!(
+        finish_mol_block_record(
+            parsed,
+            false,
+            MolPostParams {
+                sanitize: true,
+                ..unsanitized()
+            },
+            None
+        )
+        .is_err(),
+        "explicit sanitization must still reject invalid valence"
+    );
+}
+
 fn v3000_alkene_stereo_case(query_atom: bool) -> String {
     let query = if query_atom { " RBCNT=1" } else { "" };
     format!(

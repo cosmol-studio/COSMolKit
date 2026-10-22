@@ -247,3 +247,29 @@ The examples are intentionally small and use only the published package:
 - [`examples/vanilla/forcefield_optimization.js`](./examples/vanilla/forcefield_optimization.js)
 - [`examples/react/MoleculePanel.jsx`](./examples/react/MoleculePanel.jsx)
 - [`examples/vue/MoleculePanel.vue`](./examples/vue/MoleculePanel.vue)
+
+## Ring queries
+
+```javascript
+const rings = mol.symmetrizedSssr({ includeDativeBonds: true });
+console.log(rings.numRings, rings.atomRings, rings.bondRings);
+rings.free();
+```
+
+Available with `cap-rings`. The result owns the symmetrized SSSR rows; the query
+does not change the molecule or its ring cache and does not enumerate all cycles.
+
+## Typed atom properties
+
+```javascript
+const tagged = mol.withAtomPropertyInt(0, "tracking_id", 42);
+const id = tagged.atomPropertyInt(0, "tracking_id"); // number | null
+tagged.setAtomPropertyString_(0, "label", "CA");
+const label = tagged.atomPropertyString(0, "label"); // string | null
+```
+
+The suffixes are `String`, `Int`, `Uint`, `Double`, `Bool`, `IntVector` and
+`StringVector`. Reads require the exact stored type; missing keys return null.
+Invalid atom IDs, wrong types and invalid UTF-8 throw `AtomPropertyReadError`.
+Generic enum-valued atom-property access is available only in Rust.
+

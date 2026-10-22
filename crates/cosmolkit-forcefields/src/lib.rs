@@ -3,7 +3,9 @@
 mod geometry;
 mod kernel;
 mod mmff;
+mod optimization_outcome;
 mod optimizer;
+pub use optimization_outcome::{OptimizationOutcome, OptimizationStatus};
 mod uff;
 pub use kernel::{
     AngleIndexArgument as ForceFieldAngleIndexArgument,

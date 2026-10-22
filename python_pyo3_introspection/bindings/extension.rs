@@ -186,7 +186,7 @@ impl crate::indexing::Collection for MoleculeBatch {
 }
 
 batch_fingerprint_methods! {
-[crate::morgan_configuration::MorganFingerprintParams, py, crate::fingerprint_calls::morgan_keywords(radius,include_chirality,use_bond_types,include_ring_membership,only_nonzero_invariants,include_redundant_environments,fp_size,count_simulation,bits_per_feature,count_bounds,from_atoms,ignore_atoms,custom_atom_invariants,custom_bond_invariants,conformer_id,invariants),
+[crate::morgan_configuration::MorganFingerprintParams, py, crate::fingerprint_calls::morgan_keywords(radius,include_chirality,use_bond_types,include_ring_membership,only_nonzero_invariants,include_redundant_environments,fp_size,count_simulation,bits_per_feature,count_bounds,from_atoms,ignore_atoms,custom_atom_invariants,custom_bond_invariants,invariants),
 {radius: FieldInput<Scalar<u32>> = FieldInput::<Scalar<u32>>::Default,
 include_chirality: FieldInput<Scalar<bool>> = FieldInput::<Scalar<bool>>::Default,
 use_bond_types: FieldInput<Scalar<bool>> = FieldInput::<Scalar<bool>>::Default,
@@ -201,7 +201,6 @@ from_atoms: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Defau
 ignore_atoms: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Default,
 custom_atom_invariants: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Default,
 custom_bond_invariants: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Default,
-conformer_id: FieldInput<Scalar<i32>> = FieldInput::<Scalar<i32>>::Default,
 invariants: FieldInput<ConfigurationField<crate::morgan_configuration::MorganInvariants>> = FieldInput::<ConfigurationField<crate::morgan_configuration::MorganInvariants>>::Default}
 {
 fingerprint_morgan, _fingerprint_morgan_params, _fingerprint_morgan_keywords, fingerprint_morgan_with_params,
@@ -223,7 +222,7 @@ from_atoms: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Defau
 ignore_atoms: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Default,
 custom_atom_invariants: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Default,
 custom_bond_invariants: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Default,
-conformer_id: FieldInput<Scalar<i32>> = FieldInput::<Scalar<i32>>::Default,
+conformer_id: FieldInput<Option<Scalar<usize>>> = FieldInput::<Option<Scalar<usize>>>::Default,
 atom_invariants_generator: FieldInput<Option<ConfigurationField<crate::fingerprint_providers::AtomPairAtomInvariantsGenerator>>> = FieldInput::<Option<ConfigurationField<crate::fingerprint_providers::AtomPairAtomInvariantsGenerator>>>::Default,
 use_legacy_stereo_perception: FieldInput<Scalar<bool>> = FieldInput::<Scalar<bool>>::Default}
 {
@@ -239,7 +238,7 @@ fingerprint_atom_pair_with_output, _fingerprint_atom_pair_with_output_params, _f
 Vec<Option<crate::batch_fingerprint_values::BatchFingerprintOutput>>, |rows| rows.into_iter().map(|row| row.map(crate::batch_fingerprint_values::BatchFingerprintOutput::from_rust)).collect(), {collect_additional_output: bool = true};
 }
 
-crate::fingerprint_configuration::TopologicalTorsionFingerprintParams, py, crate::fingerprint_calls::topological_torsion_keywords(torsion_atom_count,only_shortest_paths,include_chirality,count_simulation,fp_size,bits_per_feature,count_bounds,from_atoms,ignore_atoms,custom_atom_invariants,custom_bond_invariants,conformer_id,atom_invariants_generator,use_legacy_stereo_perception),
+crate::fingerprint_configuration::TopologicalTorsionFingerprintParams, py, crate::fingerprint_calls::topological_torsion_keywords(torsion_atom_count,only_shortest_paths,include_chirality,count_simulation,fp_size,bits_per_feature,count_bounds,from_atoms,ignore_atoms,custom_atom_invariants,custom_bond_invariants,atom_invariants_generator,use_legacy_stereo_perception),
 {torsion_atom_count: FieldInput<Scalar<u32>> = FieldInput::<Scalar<u32>>::Default,
 only_shortest_paths: FieldInput<Scalar<bool>> = FieldInput::<Scalar<bool>>::Default,
 include_chirality: FieldInput<Scalar<bool>> = FieldInput::<Scalar<bool>>::Default,
@@ -251,7 +250,6 @@ from_atoms: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Defau
 ignore_atoms: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Default,
 custom_atom_invariants: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Default,
 custom_bond_invariants: FieldInput<Option<Vec<u32>>> = FieldInput::<Option<Vec<u32>>>::Default,
-conformer_id: FieldInput<Scalar<i32>> = FieldInput::<Scalar<i32>>::Default,
 atom_invariants_generator: FieldInput<Option<ConfigurationField<crate::fingerprint_providers::AtomPairAtomInvariantsGenerator>>> = FieldInput::<Option<ConfigurationField<crate::fingerprint_providers::AtomPairAtomInvariantsGenerator>>>::Default,
 use_legacy_stereo_perception: FieldInput<Scalar<bool>> = FieldInput::<Scalar<bool>>::Default}
 {

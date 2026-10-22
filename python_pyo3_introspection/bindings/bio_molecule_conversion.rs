@@ -113,7 +113,7 @@ error_projection!(retained BioMoleculeError,BioMoleculeErrorKind,ck::BioMolecule
 pub(crate) fn keywords(
     sanitize: Option<bool>,
     remove_hs: Option<bool>,
-    flavor: Option<u32>,
+    flavor: Option<crate::pdb_flags::PdbReadFlags>,
     proximity_bonding: Option<bool>,
 ) -> crate::params::BioMoleculeParams {
     let defaults = ck::BioMoleculeParams::default();
@@ -121,7 +121,7 @@ pub(crate) fn keywords(
         inner: crate::parameters::NativeField::Owned(ck::BioMoleculeParams {
             sanitize: sanitize.unwrap_or(defaults.sanitize),
             remove_hs: remove_hs.unwrap_or(defaults.remove_hs),
-            flavor: flavor.unwrap_or(defaults.flavor),
+            flavor: flavor.map(|value| value.inner).unwrap_or(defaults.flavor),
             proximity_bonding: proximity_bonding.unwrap_or(defaults.proximity_bonding),
         }),
     }
@@ -145,11 +145,11 @@ mod tests {
             let protein=bio.protein().unwrap();
             let original=bio.to_mmcif().unwrap();
             let defaults=ck::BioMoleculeParams::default();
-            let configured=ck::BioMoleculeParams{sanitize:false,remove_hs:false,flavor:1,proximity_bonding:false};
+            let configured=ck::BioMoleculeParams{sanitize:false,remove_hs:false,flavor:ck::PdbReadFlags::KEEP_ALTERNATE_AND_PSEUDO_ATOMS,proximity_bonding:false};
             let params=Py::new(py,crate::params::BioMoleculeParams{inner:crate::parameters::NativeField::Owned(configured)})?;
             let kwargs=PyDict::new(py);
             kwargs.set_item("sanitize",false)?;kwargs.set_item("remove_hs",false)?;
-            kwargs.set_item("flavor",1)?;kwargs.set_item("proximity_bonding",false)?;
+            kwargs.set_item("flavor",Py::new(py,crate::pdb_flags::PdbReadFlags{inner:configured.flavor})?)?;kwargs.set_item("proximity_bonding",false)?;
             let python_bio=Py::new(py,BioStructure{inner:bio.clone()})?;
             let python_protein=Py::new(py,Protein{inner:Arc::new(protein.clone())})?;
             let snapshot=|value:&Py<PyAny>|->PyResult<String>{

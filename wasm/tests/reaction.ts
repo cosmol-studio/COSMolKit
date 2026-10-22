@@ -3,9 +3,9 @@ ReactionApplyParams,ReactionWriteParams,ReactionParseParams,ReactionValidationPa
 ReactionCoordinateSelection,ReactionValidationReport,ReactionRole,ReactionParseError,parseSmirks,
 parseSmirksWithParams,CxSmilesFields} from "cosmolkit-generated";
 declare const molecule:Molecule;
-const tagged:Molecule=molecule.withAtomProperty(0,"tracking_id",42);
-const tracking:boolean|number|string|number[]|string[]|null=tagged.atomProperty(0,"tracking_id");
-tagged.setAtomProperty_(0,"tracking_id","tracked");
+const tagged:Molecule=molecule.withAtomPropertyInt(0,"tracking_id",42);
+const tracking:number|null=tagged.atomPropertyInt(0,"tracking_id");
+tagged.setAtomPropertyString_(0,"tracking_id","tracked");
 const copying=new ReactionRunParams(undefined,undefined,true);
 copying.copyAtomProperties=false;
 const rxn:Reaction=parseSmirks("[C:1]>>[N:1]");

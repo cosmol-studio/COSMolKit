@@ -5177,9 +5177,19 @@ pub enum EmbeddingDiagnostic {
     HydrogenRemoval(cosmolkit_core::HydrogenWarning),
     Interrupted,
 }
+/// Why the embedding call ended, independent of optional failure counters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbedTermination {
+    /// Normal completion, including unsuccessful attempts or pruning.
+    Completed,
+    TimedOut,
+    Interrupted,
+}
+
 /// Generated coordinate values and source IDs; the facade alone commits them.
 #[derive(Debug)]
 pub struct GeneratedConformers {
+    pub termination: EmbedTermination,
     pub clear_existing: bool,
     pub conformers: Vec<cosmolkit_model::Conformer3D>,
     pub conf_ids: Vec<i32>,
@@ -5639,6 +5649,7 @@ pub fn generate_conformers(
         cosmolkit_core::ValenceModel::RdkitLike,
     )?;
     let mut result = GeneratedConformers {
+        termination: EmbedTermination::Completed,
         clear_existing: params.clear_conformers,
         conformers: Vec::new(),
         conf_ids: Vec::new(),
@@ -5895,9 +5906,11 @@ pub fn generate_conformers(
                 )
             })?;
             result.conf_ids.push(-1);
+            result.termination = EmbedTermination::TimedOut;
             return Ok(result);
         }
         if source_got_signal() {
+            result.termination = EmbedTermination::Interrupted;
             result.diagnostics.push(EmbeddingDiagnostic::Interrupted);
             return Ok(result);
         }
@@ -6488,6 +6501,7 @@ mod original_complete_generation_conditions {
         )
         .unwrap();
         assert_eq!(result.conf_ids, vec![-1]);
+        assert_eq!(result.termination, EmbedTermination::TimedOut);
         assert!(result.conformers.is_empty());
         assert_eq!(
             params.failures[crate::EmbedFailureCause::ExceededTimeout as usize],

@@ -10583,9 +10583,13 @@ mod tests {
             stereo0d: vec![inchi_Stereo0D::default()],
             options_with_nul: Some(b"-AuxNone\0".to_vec()),
         };
-        for successful_allocations in 0..=2 {
+        // Official GetINCHI: options-copy failure is fatal; failed log growth
+        // is tolerated before the invalid blank atom yields ERROR; failure of
+        // inchi_strbuf_init is fatal. Confirmed by malloc/calloc/realloc
+        // injection into the pinned unmodified official objects: [3, 2, 3].
+        for (successful_allocations, expected_code) in [3, 2, 3].into_iter().enumerate() {
             let mut heap = SourceHeap::default();
-            heap.fail_after_allocations(successful_allocations);
+            heap.fail_after_allocations(successful_allocations as u64);
             let mut source_engine = SourceInchiGenerationEngine {
                 heap: &mut heap,
                 stdout: SourceMutPointer::null(),
@@ -10597,10 +10601,15 @@ mod tests {
                 clock_result: 1_000,
                 pending_output: None,
             };
-            assert_eq!(
-                source_engine.get_inchi(&allocation_input),
-                Err(SourceHeapError::AllocationFailed)
-            );
+            // inchi.cpp passes borrowed input.atom/input.stereo0D to GetINCHI.
+            // Injection now reaches native allocations, whose failure is a
+            // native return code, not a failure copying adapter input arrays.
+            let output = source_engine.get_inchi(&allocation_input).unwrap();
+            assert_eq!(output.return_code, expected_code);
+            assert!(output.inchi.is_none());
+            assert!(source_engine.pending_output.is_some());
+            // RDKit calls FreeINCHI(&output) even when GetINCHI returned an error.
+            source_engine.free_inchi().unwrap();
             assert!(source_engine.pending_output.is_none());
             drop(source_engine);
             assert_eq!(heap.live_source_allocation_count(), 0);

@@ -257,7 +257,7 @@ pub fn coordinates_2d_from_input(
 /// Interpret finite XYZ rows without changing is_3d or projecting dimensions.
 pub fn coordinates_3d_from_input(
     atom_count: usize,
-    rows: Vec<Vec<f64>>,
+    rows: Vec<[f64; 3]>,
 ) -> Result<Vec<[f64; 3]>, CoordinateInputError> {
     // Pinned COSMolKit d892 original numeric ingress, verbatim source:
     // fn extract_3d_coordinates(
@@ -272,11 +272,24 @@ pub fn coordinates_3d_from_input(
     // }
     // COSMolKit✔️✔️: Original validation order and linear numeric conversion.
 
-    validate_matrix(atom_count, &rows, "3D", &[3], "3")?;
-    Ok(rows
-        .into_iter()
-        .map(|row| [row[0], row[1], row[2]])
-        .collect())
+    // Fixed-width input makes shape valid by construction. Preserve row-count
+    // and finite-value checks, and move the original allocation into storage.
+    if rows.len() != atom_count {
+        return Err(CoordinateInputError::RowCount {
+            dimension: "3D",
+            expected: atom_count,
+            actual: rows.len(),
+        });
+    }
+    if let Some((row, column, value)) = cosmolkit_model::first_non_finite_coordinate(&rows) {
+        return Err(CoordinateInputError::NonFinite {
+            dimension: "3D",
+            row,
+            column,
+            value,
+        });
+    }
+    Ok(rows)
 }
 
 fn source_dimension(block: &CoordinateBlock) -> Option<CoordinateDimension> {
@@ -352,7 +365,7 @@ pub fn install_2d_coordinates(
 pub fn replace_3d_coordinates(
     block: &mut CoordinateBlock,
     atom_count: usize,
-    rows: Vec<Vec<f64>>,
+    rows: Vec<[f64; 3]>,
     params: &Replace3DCoordinatesParams,
 ) -> Result<(), CoordinateInputError> {
     // Pinned COSMolKit d892 original Rust, verbatim source anchor:
@@ -410,7 +423,7 @@ pub fn replace_3d_coordinates(
 pub fn append_3d_conformer(
     block: &mut CoordinateBlock,
     atom_count: usize,
-    rows: Vec<Vec<f64>>,
+    rows: Vec<[f64; 3]>,
     params: &Coordinate3DInputParams,
 ) -> Result<usize, CoordinateInputError> {
     // Pinned COSMolKit d892 original Rust, verbatim source anchor:
@@ -467,7 +480,7 @@ pub fn append_3d_conformer(
 pub fn install_only_3d_conformer(
     block: &mut CoordinateBlock,
     atom_count: usize,
-    rows: Vec<Vec<f64>>,
+    rows: Vec<[f64; 3]>,
     params: &Coordinate3DInputParams,
 ) -> Result<usize, CoordinateInputError> {
     // Pinned COSMolKit d892 original Rust, verbatim source anchor:

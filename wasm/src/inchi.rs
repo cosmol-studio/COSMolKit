@@ -1,5 +1,14 @@
 //! InChI transport delegates every conversion to the public facade.
 impl crate::Molecule {
+    pub fn to_inchi_result(&self) -> Result<cosmolkit::InchiResult, cosmolkit::InchiError> {
+        self.inner.borrow().to_inchi_result()
+    }
+    pub fn to_inchi_result_with_params(
+        &self,
+        params: &cosmolkit::InchiWriteParams,
+    ) -> Result<cosmolkit::InchiResult, cosmolkit::InchiError> {
+        self.inner.borrow().to_inchi_result_with_params(params)
+    }
     pub fn from_inchi(text: &str) -> Result<Self, cosmolkit::InchiError> {
         cosmolkit::Molecule::from_inchi(text).map(|inner| Self {
             inner: inner.into(),

@@ -41,11 +41,11 @@ fn assert_coordinates_close(actual: &[[f64; 3]], expected: &[[f64; 3]]) {
 
 #[test]
 fn operation_output_signatures_preserve_existing_operations_and_type_alignment_reports() {
-    let _: fn(&Molecule, Vec<Vec<f64>>) -> Result<Molecule, OperationError> =
+    let _: fn(&Molecule, Vec<[f64; 3]>) -> Result<Molecule, OperationError> =
         Molecule::with_only_3d_conformer;
     let _: fn(
         &Molecule,
-        Vec<Vec<f64>>,
+        Vec<[f64; 3]>,
         &Coordinate3DInputParams,
     ) -> Result<Molecule, OperationError> = Molecule::with_only_3d_conformer_with_params;
     let _: fn(
@@ -115,7 +115,7 @@ fn coordinate_value_transforms_leave_the_source_unchanged() {
     let molecule = Molecule::from_smiles("CC").expect("ethane");
     let with_coordinates = molecule
         .with_only_3d_conformer_with_params(
-            vec![vec![0.0, 0.0, 0.0], vec![1.5, 0.0, 0.0]],
+            vec![[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]],
             &Coordinate3DInputParams { is_3d: true },
         )
         .expect("3D conformer");
@@ -148,7 +148,7 @@ fn conformer_identity_is_preserved_by_value_transforms() {
     let molecule = Molecule::from_smiles("C").expect("methane graph");
     let molecule = molecule
         .with_only_3d_conformer_with_params(
-            vec![vec![0.0, 0.0, 0.0]],
+            vec![[0.0, 0.0, 0.0]],
             &Coordinate3DInputParams { is_3d: true },
         )
         .expect("3D conformer");
@@ -189,7 +189,7 @@ fn best_alignment_accepts_source_thread_count_semantics() {
     let molecule = Molecule::from_smiles("C").expect("methane graph");
     let molecule = molecule
         .with_only_3d_conformer_with_params(
-            vec![vec![0.0, 0.0, 0.0]],
+            vec![[0.0, 0.0, 0.0]],
             &Coordinate3DInputParams { is_3d: true },
         )
         .expect("3D conformer");

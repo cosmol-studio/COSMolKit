@@ -12,7 +12,7 @@ use std::collections::HashMap;
 pub struct BioMoleculeParams {
     pub sanitize: bool,
     pub remove_hs: bool,
-    pub flavor: u32,
+    pub flavor: crate::PdbReadFlags,
     pub proximity_bonding: bool,
 }
 impl Default for BioMoleculeParams {
@@ -27,7 +27,7 @@ impl Default for BioMoleculeParams {
         Self {
             sanitize: true,
             remove_hs: true,
-            flavor: 0,
+            flavor: crate::PdbReadFlags::NONE,
             proximity_bonding: true,
         }
     }
@@ -86,7 +86,9 @@ pub fn bio_structure_to_molecule_parts(
         let chain = &data.chains()[residue.chain_id().index()];
         let atom_name = row.name();
         let name = atom_name.as_bytes();
-        if params.flavor & 1 == 0
+        if !params
+            .flavor
+            .contains(crate::PdbReadFlags::KEEP_ALTERNATE_AND_PSEUDO_ATOMS)
             && (row
                 .altloc()
                 .is_some_and(|a| a.value() != b'A' && a.value() != b'1')
@@ -267,7 +269,7 @@ pub fn bio_structure_to_molecule_parts(
         &coordinates,
         crate::PdbPostprocessParams {
             proximity_bonding: params.proximity_bonding,
-            flavor: params.flavor,
+            flavor: params.flavor.bits(),
         },
     )?;
     if params.sanitize {

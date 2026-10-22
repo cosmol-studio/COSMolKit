@@ -1515,7 +1515,7 @@ fn execute_serial_slot(
     optimize_force_field(field, max_iterations)
 }
 
-pub(super) fn optimize_force_field(
+pub(crate) fn optimize_force_field(
     force_field: &mut ForceField<'_>,
     max_iterations: u32,
 ) -> Result<OptimizationOutcome, OptimizationStageError> {

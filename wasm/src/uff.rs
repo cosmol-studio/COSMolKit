@@ -6,6 +6,9 @@ pub struct UffOptimizationResult {
     inner: ck::UffOptimizationResult,
 }
 impl UffOptimizationResult {
+    pub fn outcome(&self) -> ck::OptimizationOutcome {
+        self.inner.outcome()
+    }
     pub fn molecule(&self) -> Molecule {
         // COSMolKit❗✔️: inner: self.inner.molecule().clone(),
         Molecule {
@@ -18,7 +21,7 @@ impl UffOptimizationResult {
     pub fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
-    pub fn energy(&self) -> f64 {
+    pub fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
 }
@@ -124,7 +127,7 @@ $$$$
         );
         let a = m.with_uff_optimized().unwrap();
         let b = core.with_uff_optimized().unwrap();
-        assert_eq!(a.energy().to_bits(), b.energy().to_bits());
+        assert_eq!(a.energy().unwrap().to_bits(), b.energy().unwrap().to_bits());
         assert_eq!(a.status_code(), b.status_code());
         assert_eq!(a.needs_more(), b.needs_more());
         assert_eq!(*a.molecule().inner.borrow(), *b.molecule());
@@ -134,7 +137,7 @@ $$$$
         };
         let a = m.with_uff_optimized_with_params(&p).unwrap();
         let b = core.with_uff_optimized_with_params(&p).unwrap();
-        assert_eq!(a.energy().to_bits(), b.energy().to_bits());
+        assert_eq!(a.energy().unwrap().to_bits(), b.energy().unwrap().to_bits());
         assert_eq!(a.status_code(), b.status_code());
         let a = m.with_uff_optimized_conformers().unwrap();
         let b = core.with_uff_optimized_conformers().unwrap();
@@ -214,7 +217,7 @@ mod multiple_conformer_tests {
             };
             let a = m.with_uff_optimized_with_params(&p).unwrap();
             let b = core.with_uff_optimized_with_params(&p).unwrap();
-            assert_eq!(a.energy().to_bits(), b.energy().to_bits());
+            assert_eq!(a.energy().unwrap().to_bits(), b.energy().unwrap().to_bits());
             assert_eq!(*a.molecule().inner.borrow(), *b.molecule());
         }
         assert_eq!(*m.inner.borrow(), core);

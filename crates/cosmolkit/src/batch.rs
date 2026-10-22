@@ -1540,7 +1540,6 @@ impl MoleculeBatch {
             options.ignore_atoms.clone(),
             options.custom_atom_invariants.clone(),
             options.custom_bond_invariants.clone(),
-            options.conformer_id,
         );
         (atom, call)
     }

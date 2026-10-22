@@ -27,7 +27,7 @@ MODULE_GROUPS = {
     "cap-transforms": "fragments",
     "cap-fingerprints+core": "avalon",
     "cap-stereo": "stereo_queries stereo_operations stereo_errors atom_bond",
-    "core": "operation_metadata construction coordinate_input coordinate_errors notation_writers query_values valence_operations element_boundary aromaticity_boundary smiles_boundary host_values smiles_parameters transform_parameters transform_errors property_values group_values io_errors sdf_reading property_strings xyz_mol2 xyz_mol2_errors mol_sdf_writing mol_write_errors pdb_io sdf_datasets kekulize matrices matrix_errors bond_order radicals rings sanitize valence_errors hydrogens",
+    "core": "operation_metadata construction coordinate_input coordinate_errors notation_writers query_values valence_operations element_boundary aromaticity_boundary smiles_boundary host_values smiles_parameters transform_parameters transform_errors property_values group_values io_errors sdf_reading property_strings xyz_mol2 xyz_mol2_errors mol_sdf_writing mol_write_errors pdb_flags pdb_io sdf_datasets kekulize matrices matrix_errors bond_order radicals rings sanitize valence_errors hydrogens",
     "cap-search": "query_construction search search_errors mcs",
     "cap-alignment": "alignment_parameters alignment_operations",
     "cap-io": "alignment_values",

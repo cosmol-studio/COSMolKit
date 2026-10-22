@@ -1,6 +1,6 @@
 //! Canonical conformer value/query projections; generation has one detached owner.
 use crate::Molecule;
-pub use cosmolkit_conformer::{ConformerError, EmbedFailureCause, EmbedParams};
+pub use cosmolkit_conformer::{ConformerError, EmbedFailureCause, EmbedParams, EmbedTermination};
 use std::{error::Error, fmt, sync::Arc};
 #[derive(Clone, Debug)]
 pub struct ConformerRunError(Arc<ConformerRunFailure>);
@@ -78,19 +78,24 @@ impl Molecule {
 
 pub(crate) struct EmbedConformerReport {
     pub conf_ids: Vec<i32>,
+    pub termination: EmbedTermination,
     pub params: EmbedParams,
     pub requested_num_confs: u32,
 }
 #[derive(Clone)]
 pub struct EmbedMoleculeResult {
     pub molecule: Molecule,
-    pub conf_id: i32,
+    /// The newly generated ID, or None when no conformer was generated.
+    pub conf_id: Option<u32>,
+    pub termination: EmbedTermination,
     pub params: EmbedParams,
 }
 #[derive(Clone)]
 pub struct EmbedMultipleConfsResult {
     pub molecule: Molecule,
-    pub conf_ids: Vec<i32>,
+    /// IDs generated and retained by this call, excluding pre-existing IDs.
+    pub conf_ids: Vec<u32>,
+    pub termination: EmbedTermination,
     pub requested_num_confs: u32,
     pub params: EmbedParams,
 }
@@ -141,6 +146,32 @@ mod failure_diagnostic_tests {
     use super::*;
 
     #[test]
+    fn embedding_results_exclude_source_failure_ids_and_keep_termination() {
+        for (ids, termination, expected) in [
+            (vec![-1], EmbedTermination::TimedOut, vec![]),
+            (vec![], EmbedTermination::Interrupted, vec![]),
+            (vec![], EmbedTermination::Completed, vec![]),
+            (vec![7, 9], EmbedTermination::Completed, vec![7, 9]),
+        ] {
+            let report = || EmbedConformerReport {
+                conf_ids: ids.clone(),
+                termination,
+                params: EmbedParams::etkdg_v3(),
+                requested_num_confs: 2,
+            };
+            let single = EmbedMoleculeResult::from((Molecule::default(), report()));
+            assert_eq!(single.conf_id(), expected.first().copied());
+            assert_eq!(single.ok(), !expected.is_empty());
+            assert_eq!(single.termination(), termination);
+            let multiple = EmbedMultipleConfsResult::from((Molecule::default(), report()));
+            assert_eq!(multiple.conf_ids(), expected);
+            assert_eq!(multiple.generated_count(), expected.len());
+            assert_eq!(multiple.termination(), termination);
+            assert!(!multiple.failures_tracked());
+        }
+    }
+
+    #[test]
     fn direct_result_diagnostics_distinguish_untracked_zero_and_invalid_access() {
         let mut params = EmbedParams::etkdg_v3();
         params.failures = vec![0; EmbedFailureCause::EndOfEnum as usize];
@@ -148,6 +179,7 @@ mod failure_diagnostic_tests {
         let mut result = EmbedMultipleConfsResult {
             molecule: Molecule::default(),
             conf_ids: vec![],
+            termination: EmbedTermination::Completed,
             requested_num_confs: 8,
             params,
         };
@@ -173,7 +205,8 @@ mod failure_diagnostic_tests {
         assert_eq!(result.failure_count(EmbedFailureCause::Clash), Ok(Some(0)));
         let single = EmbedMoleculeResult {
             molecule: result.molecule.clone(),
-            conf_id: -1,
+            conf_id: None,
+            termination: EmbedTermination::Completed,
             params: result.params.clone(),
         };
         assert!(single.failures_tracked());
@@ -209,7 +242,12 @@ impl From<(Molecule, EmbedConformerReport)> for EmbedMoleculeResult {
         // Only its source ID selection and configuration move occur after checked finish.
         Self {
             molecule,
-            conf_id: report.conf_ids.first().copied().unwrap_or(-1),
+            conf_id: report
+                .conf_ids
+                .first()
+                .copied()
+                .and_then(|id| u32::try_from(id).ok()),
+            termination: report.termination,
             params: report.params,
         }
     }
@@ -218,13 +256,21 @@ impl From<(Molecule, EmbedConformerReport)> for EmbedMultipleConfsResult {
     fn from((molecule, report): (Molecule, EmbedConformerReport)) -> Self {
         Self {
             molecule,
-            conf_ids: report.conf_ids,
+            conf_ids: report
+                .conf_ids
+                .into_iter()
+                .filter_map(|id| u32::try_from(id).ok())
+                .collect(),
+            termination: report.termination,
             requested_num_confs: report.requested_num_confs,
             params: report.params,
         }
     }
 }
 impl EmbedMoleculeResult {
+    pub fn termination(&self) -> EmbedTermination {
+        self.termination
+    }
     /// Whether failure events were collected for this invocation.
     pub fn failures_tracked(&self) -> bool {
         self.params.track_failures
@@ -247,22 +293,26 @@ impl EmbedMoleculeResult {
     pub fn params(&self) -> &EmbedParams {
         &self.params
     }
-    pub fn conf_id(&self) -> i32 {
+    pub fn conf_id(&self) -> Option<u32> {
         self.conf_id
     }
     pub fn ok(&self) -> bool {
-        self.conf_id >= 0
+        self.conf_id.is_some()
     }
 }
 impl fmt::Debug for EmbedMoleculeResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EmbedMoleculeResult")
             .field("conf_id", &self.conf_id)
+            .field("termination", &self.termination)
             .field("ok", &self.ok())
             .finish()
     }
 }
 impl EmbedMultipleConfsResult {
+    pub fn termination(&self) -> EmbedTermination {
+        self.termination
+    }
     /// Whether failure events were collected for this invocation.
     pub fn failures_tracked(&self) -> bool {
         self.params.track_failures
@@ -285,7 +335,7 @@ impl EmbedMultipleConfsResult {
     pub fn params(&self) -> &EmbedParams {
         &self.params
     }
-    pub fn conf_ids(&self) -> &[i32] {
+    pub fn conf_ids(&self) -> &[u32] {
         &self.conf_ids
     }
     pub fn requested_num_confs(&self) -> u32 {
@@ -299,6 +349,7 @@ impl fmt::Debug for EmbedMultipleConfsResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EmbedMultipleConfsResult")
             .field("requested_num_confs", &self.requested_num_confs)
+            .field("termination", &self.termination)
             .field("generated_count", &self.generated_count())
             .finish()
     }

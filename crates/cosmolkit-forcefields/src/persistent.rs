@@ -513,7 +513,7 @@ pub fn prepare_mmff_force_field(
     let props = crate::mmff::mol_properties::MmffMolProperties::new_prepared(
         topology,
         properties.prop("_MMFFSanitized").is_some(),
-        &params.mmff_variant,
+        params.mmff_variant.as_rdkit_str(),
         0,
         supplied_rings,
     )
@@ -912,7 +912,7 @@ mod tests {
                     &coordinates,
                     &MoleculeProperties::default(),
                     &crate::MmffEvaluationParams {
-                        mmff_variant: variant.into(),
+                        mmff_variant: crate::MmffVariant::from_rdkit_constructor_arg(variant),
                         ..Default::default()
                     },
                     None,
@@ -1220,7 +1220,7 @@ mod tests {
         )
         .unwrap();
         let (converged, iterations, energy) = field.minimize(20, 1.0e-4, 1.0e-6).unwrap();
-        assert_eq!(converged, expected.status == 0);
+        assert_eq!(converged, expected.outcome.converged());
         assert!(iterations > 0 && iterations <= 20);
         assert_eq!(
             field.positions(),

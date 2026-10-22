@@ -275,10 +275,11 @@ fn bio_public_counts_use_authoritative_blocks_and_filtered_protein_view() {
         source.atom_position(BioAtomId::new(1)),
         Some([4.0, 5.0, 6.0])
     );
-    assert_eq!(
-        source.residue_atoms(BioResidueId::new(1)),
-        Some(&source.atoms()[1..2])
-    );
+    let water_atoms = source.residue_atoms(BioResidueId::new(1)).unwrap();
+    assert_eq!(water_atoms.len(), 1);
+    assert_eq!(water_atoms[0].id(), BioAtomId::new(1));
+    assert_eq!(water_atoms[0].value(), source.atoms()[1].value());
+    assert_eq!(water_atoms[0].position(), [4.0, 5.0, 6.0]);
     assert_eq!(view.atom_position(BioAtomId::new(0)), Some([1.0, 2.0, 3.0]));
     for (name, method) in [
         (
@@ -311,7 +312,7 @@ fn bio_public_counts_use_authoritative_blocks_and_filtered_protein_view() {
 }
 
 #[test]
-fn bio_public_navigation_preserves_bits_borrows_and_empty_residues() {
+fn bio_public_navigation_preserves_bits_snapshots_and_empty_residues() {
     let mut parts = empty_parts();
     parts.models = vec![BioModelRow::new(BioRowSpan::new(0, 1).unwrap(), Some(7))];
     parts.chains = vec![BioChainRow::new(
@@ -361,7 +362,7 @@ fn bio_public_navigation_preserves_bits_borrows_and_empty_residues() {
         AtomSourceIds::default(),
     )];
     parts.coordinates = BioCoordinateBlock::new(vec![[-0.0, f64::from_bits(1), 3.0]]);
-    let structure = BioStructure::from_parts(parts).unwrap();
+    let mut structure = BioStructure::from_parts(parts).unwrap();
     assert_eq!(
         structure
             .atom_position(BioAtomId::new(0))
@@ -373,12 +374,29 @@ fn bio_public_navigation_preserves_bits_borrows_and_empty_residues() {
     assert_eq!(structure.atom_position(BioAtomId::new(u32::MAX)), None);
     let first = structure.residue_atoms(BioResidueId::new(0)).unwrap();
     assert_eq!(first.len(), 1);
-    assert!(std::ptr::eq(first.as_ptr(), structure.atoms().as_ptr()));
-    assert_eq!(structure.residue_atoms(BioResidueId::new(1)), Some(&[][..]));
-    assert_eq!(structure.residue_atoms(BioResidueId::new(2)), None);
+    assert_eq!(first[0].id(), BioAtomId::new(0));
+    assert!(std::ptr::eq(first[0].value(), structure.atoms()[0].value()));
+    assert_eq!(
+        first[0].position().map(f64::to_bits),
+        [(-0.0_f64).to_bits(), 1, 3.0_f64.to_bits()]
+    );
+    assert!(
+        structure
+            .residue_atoms(BioResidueId::new(1))
+            .unwrap()
+            .is_empty()
+    );
+    assert!(structure.residue_atoms(BioResidueId::new(2)).is_none());
     let _: fn(&BioStructure, BioAtomId) -> Option<[f64; 3]> = BioStructure::atom_position;
-    let _: for<'a> fn(&'a BioStructure, BioResidueId) -> Option<&'a [BioAtomRow]> =
+    let _: fn(&BioStructure, BioResidueId) -> Option<Vec<cosmolkit::BioAtom>> =
         BioStructure::residue_atoms;
+    structure.translate_([1.0, 0.0, 0.0]).unwrap();
+    assert_eq!(structure.atom_position(BioAtomId::new(0)).unwrap()[0], 1.0);
+    drop(structure);
+    assert_eq!(
+        first[0].position().map(f64::to_bits),
+        [(-0.0_f64).to_bits(), 1, 3.0_f64.to_bits()]
+    );
     for name in ["atom_position", "residue_atoms"] {
         let row = BINDING_CONTRACT
             .iter()

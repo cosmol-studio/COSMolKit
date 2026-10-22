@@ -2,6 +2,7 @@ use crate::chemical_values::enum_value;
 use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use std::error::Error;
 
 enum_value!(PropertyValueKind, { String, Int, UInt, IntVector, StringVector, Double, Bool });
 
@@ -220,3 +221,19 @@ crate::configuration::type_projection! {
         }
     }
 }
+crate::error_framework::error_projection!(AtomPropertyReadError, AtomPropertyReadErrorKind, ck::AtomPropertyReadError, "property", {
+    Operation(_), Type(_), Utf8(_),
+}, cause = |error: &ck::AtomPropertyReadError| Some(match error {
+    ck::AtomPropertyReadError::Operation(source) => crate::operation_errors::OperationError::from_rust(source.clone()),
+    ck::AtomPropertyReadError::Type(source) => PropertyValueError::from_rust(source.clone()),
+    ck::AtomPropertyReadError::Utf8(source) => pyo3::exceptions::PyUnicodeError::new_err(source.to_string()),
+}), methods = {
+    #[getter]
+    fn valid_up_to(&self) -> Option<usize> {
+        match &self.inner { ck::AtomPropertyReadError::Utf8(e) => Some(e.valid_up_to()), _ => None }
+    }
+    #[getter]
+    fn error_len(&self) -> Option<usize> {
+        match &self.inner { ck::AtomPropertyReadError::Utf8(e) => e.error_len(), _ => None }
+    }
+});

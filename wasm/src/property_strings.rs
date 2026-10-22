@@ -1,65 +1,257 @@
-//! Property string queries delegate source formatting to the canonical owner.
+//! Exact-type atom properties delegate to the Rust facade.
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
-    pub fn atom_property(
+    pub fn atom_property_int(
         &self,
         atom: usize,
         key: &str,
-    ) -> Result<Option<ck::PropertyValue>, ck::OperationError> {
+    ) -> Result<Option<i32>, ck::AtomPropertyReadError> {
         self.inner
             .borrow()
-            .atom_property(ck::AtomId::new(atom), key)
-            .map(|v| v.cloned())
+            .atom_property_int(ck::AtomId::new(atom), key)
     }
     #[cfg(feature = "cap-transforms")]
-    pub fn with_atom_property(
+    pub fn with_atom_property_int(
         &self,
         atom: usize,
         key: &str,
-        value: &ck::PropertyValue,
+        value: i32,
     ) -> Result<Self, ck::OperationError> {
         self.inner
             .borrow()
-            .with_atom_property(ck::AtomId::new(atom), key, value)
+            .with_atom_property_int(ck::AtomId::new(atom), key, value)
             .map(|inner| Self {
                 inner: inner.into(),
             })
     }
     #[cfg(feature = "cap-transforms")]
-    pub fn set_atom_property_(
+    pub fn set_atom_property_int_(
         &self,
         atom: usize,
         key: &str,
-        value: &ck::PropertyValue,
+        value: i32,
     ) -> Result<(), ck::OperationError> {
         self.inner
             .borrow_mut()
-            .set_atom_property_(ck::AtomId::new(atom), key, value)
+            .set_atom_property_int_(ck::AtomId::new(atom), key, value)
+    }
+    pub fn atom_property_uint(
+        &self,
+        atom: usize,
+        key: &str,
+    ) -> Result<Option<u32>, ck::AtomPropertyReadError> {
+        self.inner
+            .borrow()
+            .atom_property_uint(ck::AtomId::new(atom), key)
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn with_atom_property_uint(
+        &self,
+        atom: usize,
+        key: &str,
+        value: u32,
+    ) -> Result<Self, ck::OperationError> {
+        self.inner
+            .borrow()
+            .with_atom_property_uint(ck::AtomId::new(atom), key, value)
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn set_atom_property_uint_(
+        &self,
+        atom: usize,
+        key: &str,
+        value: u32,
+    ) -> Result<(), ck::OperationError> {
+        self.inner
+            .borrow_mut()
+            .set_atom_property_uint_(ck::AtomId::new(atom), key, value)
+    }
+    pub fn atom_property_double(
+        &self,
+        atom: usize,
+        key: &str,
+    ) -> Result<Option<f64>, ck::AtomPropertyReadError> {
+        self.inner
+            .borrow()
+            .atom_property_double(ck::AtomId::new(atom), key)
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn with_atom_property_double(
+        &self,
+        atom: usize,
+        key: &str,
+        value: f64,
+    ) -> Result<Self, ck::OperationError> {
+        self.inner
+            .borrow()
+            .with_atom_property_double(ck::AtomId::new(atom), key, value)
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn set_atom_property_double_(
+        &self,
+        atom: usize,
+        key: &str,
+        value: f64,
+    ) -> Result<(), ck::OperationError> {
+        self.inner
+            .borrow_mut()
+            .set_atom_property_double_(ck::AtomId::new(atom), key, value)
+    }
+    pub fn atom_property_bool(
+        &self,
+        atom: usize,
+        key: &str,
+    ) -> Result<Option<bool>, ck::AtomPropertyReadError> {
+        self.inner
+            .borrow()
+            .atom_property_bool(ck::AtomId::new(atom), key)
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn with_atom_property_bool(
+        &self,
+        atom: usize,
+        key: &str,
+        value: bool,
+    ) -> Result<Self, ck::OperationError> {
+        self.inner
+            .borrow()
+            .with_atom_property_bool(ck::AtomId::new(atom), key, value)
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn set_atom_property_bool_(
+        &self,
+        atom: usize,
+        key: &str,
+        value: bool,
+    ) -> Result<(), ck::OperationError> {
+        self.inner
+            .borrow_mut()
+            .set_atom_property_bool_(ck::AtomId::new(atom), key, value)
     }
     pub fn atom_property_string(
         &self,
-        id: usize,
+        atom: usize,
         key: &str,
-    ) -> Result<Option<ck::PropertyText>, ck::PropertyStringError> {
-        // COSMolKit❗✔️: self.inner.atom_property_string(ck::AtomId::new(id),key)
+    ) -> Result<Option<String>, ck::AtomPropertyReadError> {
         self.inner
             .borrow()
-            .atom_property_string(ck::AtomId::new(id), key)
+            .atom_property_string(ck::AtomId::new(atom), key)
     }
+    #[cfg(feature = "cap-transforms")]
+    pub fn with_atom_property_string(
+        &self,
+        atom: usize,
+        key: &str,
+        value: &str,
+    ) -> Result<Self, ck::OperationError> {
+        self.inner
+            .borrow()
+            .with_atom_property_string(ck::AtomId::new(atom), key, value)
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn set_atom_property_string_(
+        &self,
+        atom: usize,
+        key: &str,
+        value: &str,
+    ) -> Result<(), ck::OperationError> {
+        self.inner
+            .borrow_mut()
+            .set_atom_property_string_(ck::AtomId::new(atom), key, value)
+    }
+    pub fn atom_property_int_vector(
+        &self,
+        atom: usize,
+        key: &str,
+    ) -> Result<Option<Vec<i32>>, ck::AtomPropertyReadError> {
+        self.inner
+            .borrow()
+            .atom_property_int_vector(ck::AtomId::new(atom), key)
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn with_atom_property_int_vector(
+        &self,
+        atom: usize,
+        key: &str,
+        value: &[i32],
+    ) -> Result<Self, ck::OperationError> {
+        self.inner
+            .borrow()
+            .with_atom_property_int_vector(ck::AtomId::new(atom), key, value)
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn set_atom_property_int_vector_(
+        &self,
+        atom: usize,
+        key: &str,
+        value: &[i32],
+    ) -> Result<(), ck::OperationError> {
+        self.inner
+            .borrow_mut()
+            .set_atom_property_int_vector_(ck::AtomId::new(atom), key, value)
+    }
+    pub fn atom_property_string_vector(
+        &self,
+        atom: usize,
+        key: &str,
+    ) -> Result<Option<Vec<String>>, ck::AtomPropertyReadError> {
+        self.inner
+            .borrow()
+            .atom_property_string_vector(ck::AtomId::new(atom), key)
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn with_atom_property_string_vector(
+        &self,
+        atom: usize,
+        key: &str,
+        value: &[String],
+    ) -> Result<Self, ck::OperationError> {
+        self.inner
+            .borrow()
+            .with_atom_property_string_vector(ck::AtomId::new(atom), key, value)
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
+    }
+    #[cfg(feature = "cap-transforms")]
+    pub fn set_atom_property_string_vector_(
+        &self,
+        atom: usize,
+        key: &str,
+        value: &[String],
+    ) -> Result<(), ck::OperationError> {
+        self.inner
+            .borrow_mut()
+            .set_atom_property_string_vector_(ck::AtomId::new(atom), key, value)
+    }
+    #[cfg(feature = "cap-io")]
     pub fn bond_property_string(
         &self,
         id: usize,
         key: &str,
     ) -> Result<Option<ck::PropertyText>, ck::PropertyStringError> {
-        // COSMolKit❗✔️: self.inner.bond_property_string(ck::BondId::new(id),key)
         self.inner
             .borrow()
             .bond_property_string(ck::BondId::new(id), key)
     }
 }
-
-#[cfg(test)]
+#[cfg(all(test, feature = "cap-io"))]
 mod tests {
     use super::*;
     #[test]
@@ -98,20 +290,31 @@ mod tests {
         for (i, (_, expected)) in cases.iter().enumerate() {
             let key = format!("v{i}");
             assert_eq!(
-                m.atom_property_string(0, &key).unwrap(),
-                Some((*expected).into())
+                m.inner
+                    .borrow()
+                    .atom_property(ck::AtomId::new(0), &key)
+                    .unwrap(),
+                Some(&cases[i].0)
             );
             assert_eq!(
                 m.bond_property_string(0, &key).unwrap(),
                 Some((*expected).into())
             );
-            assert_eq!(
-                m.atom_property_string(0, &key),
-                original.atom_property_string(ck::AtomId::new(0), &key)
-            );
+            if i == 0 {
+                assert_eq!(
+                    m.atom_property_string(0, &key).unwrap(),
+                    Some((*expected).into())
+                );
+            } else {
+                assert!(m.atom_property_string(0, &key).is_err());
+            }
         }
         for id in [0, 1, usize::MAX] {
-            assert_eq!(m.atom_property_string(id, "missing"), Ok(None));
+            if id < 2 {
+                assert_eq!(m.atom_property_string(id, "missing"), Ok(None));
+            } else {
+                assert!(m.atom_property_string(id, "missing").is_err());
+            }
             assert_eq!(m.bond_property_string(id, "missing"), Ok(None));
         }
         assert_eq!(*m.inner.borrow(), original);

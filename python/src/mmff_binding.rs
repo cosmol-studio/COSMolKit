@@ -104,7 +104,7 @@ impl MmffOptimizationParams {
         let conformer_id = conformer_id.and_then(source_conformer_id);
         Self {
             inner: ck::MmffOptimizationParams {
-                mmff_variant: mmff_variant.into(),
+                mmff_variant: ck::MmffVariant::from_rdkit_constructor_arg(mmff_variant),
                 max_iterations,
                 non_bonded_threshold,
                 conformer_id,
@@ -115,7 +115,7 @@ impl MmffOptimizationParams {
     /// MMFF parameterization variant, normally "MMFF94" or "MMFF94s".
     #[getter]
     fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant.clone()
+        self.inner.mmff_variant.as_rdkit_str().to_owned()
     }
     /// Maximum iterations allowed by the optimizer or embedding algorithm.
     #[getter]
@@ -167,7 +167,7 @@ impl MmffConformerOptimizationParams {
             inner: ck::MmffConformerOptimizationParams {
                 num_threads,
                 max_iterations,
-                mmff_variant: mmff_variant.into(),
+                mmff_variant: ck::MmffVariant::from_rdkit_constructor_arg(mmff_variant),
                 non_bonded_threshold,
                 ignore_interfragment_interactions,
             },
@@ -186,7 +186,7 @@ impl MmffConformerOptimizationParams {
     /// MMFF parameterization variant, normally "MMFF94" or "MMFF94s".
     #[getter]
     fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant.clone()
+        self.inner.mmff_variant.as_rdkit_str().to_owned()
     }
     /// MMFF nonbonded interaction distance threshold in angstroms.
     #[getter]
@@ -220,14 +220,14 @@ impl MmffPropertiesParams {
     fn new(mmff_variant: &str) -> Self {
         Self {
             inner: ck::MmffPropertiesParams {
-                mmff_variant: mmff_variant.into(),
+                mmff_variant: ck::MmffVariant::from_rdkit_constructor_arg(mmff_variant),
             },
         }
     }
     /// MMFF parameterization variant, normally "MMFF94" or "MMFF94s".
     #[getter]
     fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant.clone()
+        self.inner.mmff_variant.as_rdkit_str().to_owned()
     }
 }
 /// Molecule produced by single-conformer MMFF optimization with convergence/status information.
@@ -258,7 +258,7 @@ impl MmffOptimizeMoleculeResult {
     fn __repr__(&self) -> String {
         format!(
             "MmffOptimizeMoleculeResult(needs_more={})",
-            self.inner.needs_more
+            self.inner.status_code()
         )
     }
 }
@@ -282,13 +282,14 @@ impl MmffOptimizeMoleculeConfResult {
         self.inner.status_code()
     }
     /// Force-field potential energy in kcal/mol.
-    fn energy(&self) -> f64 {
-        self.inner.energy
+    fn energy(&self) -> Option<f64> {
+        self.inner.energy()
     }
     fn __repr__(&self) -> String {
         format!(
-            "MmffOptimizeMoleculeConfResult(needs_more={}, energy={})",
-            self.inner.needs_more, self.inner.energy
+            "MmffOptimizeMoleculeConfResult(needs_more={}, energy={:?})",
+            self.inner.status_code(),
+            self.inner.energy()
         )
     }
 }
@@ -498,7 +499,7 @@ impl MmffEvaluationParams {
         let conformer_id = conformer_id.and_then(source_conformer_id);
         Self {
             inner: ck::MmffEvaluationParams {
-                mmff_variant: mmff_variant.into(),
+                mmff_variant: ck::MmffVariant::from_rdkit_constructor_arg(mmff_variant),
                 non_bonded_threshold,
                 conformer_id,
                 ignore_interfragment_interactions,
@@ -508,7 +509,7 @@ impl MmffEvaluationParams {
     /// MMFF parameterization variant, normally "MMFF94" or "MMFF94s".
     #[getter]
     fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant.clone()
+        self.inner.mmff_variant.as_rdkit_str().to_owned()
     }
     /// MMFF nonbonded interaction distance threshold in angstroms.
     #[getter]

@@ -98,7 +98,7 @@ mod tests {
                 ""
             );
             let xyz_source = molecule
-                .with_only_3d_conformer(vec![vec![0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0]])
+                .with_only_3d_conformer(vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
                 .unwrap();
             let xyz_before = xyz_source.to_binary().unwrap();
             let error = xyz_source

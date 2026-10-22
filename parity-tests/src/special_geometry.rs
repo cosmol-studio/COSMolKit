@@ -108,7 +108,11 @@ fn embedding(task: &str, row: &Json) -> Result<Vec<u8>> {
     );
     let (output, status, failures) = if c["mode"] == "single" {
         let r = m.with_3d_conformer_result_with_params(&p)?;
-        (r.molecule, Value::Int(r.conf_id as i64), r.params.failures)
+        (
+            r.molecule,
+            Value::Int(r.conf_id.map(i64::from).unwrap_or(-1)),
+            r.params.failures,
+        )
     } else {
         let r = m.with_3d_conformers_result_with_params(
             c["num_confs"].as_u64().ok_or("missing conformer count")? as u32,
@@ -116,12 +120,16 @@ fn embedding(task: &str, row: &Json) -> Result<Vec<u8>> {
         )?;
         (
             r.molecule,
-            Value::List(
+            // Reconstruct the source oracle's timeout sentinel at the comparison
+            // boundary; it is not a public conformer ID.
+            Value::List(if r.termination == EmbedTermination::TimedOut {
+                vec![Value::Int(-1)]
+            } else {
                 r.conf_ids
                     .into_iter()
                     .map(|v| Value::Int(v as i64))
-                    .collect(),
-            ),
+                    .collect()
+            }),
             r.params.failures,
         )
     };
@@ -162,7 +170,7 @@ fn optimizer(row: &Json) -> Result<Value> {
     let field = if mmff {
         m.mmff_force_field_with_params(&MmffForceFieldParams::new(
             Some(0),
-            "MMFF94".into(),
+            MmffVariant::Mmff94,
             100.0,
             true,
         ))?
@@ -185,7 +193,7 @@ fn optimizer(row: &Json) -> Result<Value> {
     let single = if mmff {
         let r = m.with_mmff_optimized_with_params(&MmffOptimizationParams {
             max_iterations: 2,
-            mmff_variant: "MMFF94".into(),
+            mmff_variant: cosmolkit::MmffVariant::Mmff94,
             non_bonded_threshold: 100.0,
             ignore_interfragment_interactions: true,
             ..Default::default()
@@ -203,8 +211,8 @@ fn optimizer(row: &Json) -> Result<Value> {
             ..Default::default()
         })?;
         Value::List(vec![
-            Value::Int(r.status as i64),
-            Value::float(r.energy),
+            Value::Int(r.outcome.status_code() as i64),
+            Value::float(crate::geometry::optimization_energy(r.outcome)),
             crate::geometry::coordinates(&r.molecule),
         ])
     };
@@ -220,7 +228,7 @@ fn optimizer(row: &Json) -> Result<Value> {
         let r =
             multi.with_mmff_optimized_conformers_with_params(&MmffConformerOptimizationParams {
                 max_iterations: 2,
-                mmff_variant: "MMFF94".into(),
+                mmff_variant: cosmolkit::MmffVariant::Mmff94,
                 non_bonded_threshold: 100.0,
                 ignore_interfragment_interactions: true,
                 num_threads: 1,
@@ -232,7 +240,7 @@ fn optimizer(row: &Json) -> Result<Value> {
                     .map(|r| {
                         Value::List(vec![
                             Value::Int(r.status_code() as i64),
-                            Value::float(r.energy()),
+                            Value::float(crate::geometry::optimization_energy(r.outcome)),
                         ])
                     })
                     .collect(),
@@ -251,7 +259,12 @@ fn optimizer(row: &Json) -> Result<Value> {
             Value::List(
                 r.conformers
                     .iter()
-                    .map(|r| Value::List(vec![Value::Int(r.status as i64), Value::float(r.energy)]))
+                    .map(|r| {
+                        Value::List(vec![
+                            Value::Int(r.outcome.status_code() as i64),
+                            Value::float(crate::geometry::optimization_energy(r.outcome)),
+                        ])
+                    })
                     .collect(),
             ),
             crate::geometry::coordinates(&r.molecule),

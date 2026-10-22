@@ -8,7 +8,7 @@ mod tests {
     fn complete_molecular_io_files_records_and_native_suppliers_preserve_options_and_errors() {
         Python::initialize();
         Python::attach(|py|->PyResult<()>{
-let source=ck::Molecule::from_smiles("CO").unwrap().with_added_3d_conformer(vec![vec![0.,0.,0.],vec![1.,0.2,0.4]]).unwrap();
+let source=ck::Molecule::from_smiles("CO").unwrap().with_added_3d_conformer(vec![[0.,0.,0.],[1.,0.2,0.4]]).unwrap();
 let before=source.to_binary().unwrap();
 let mol=Py::new(py,Molecule{inner:source.clone()})?;
 let write=ck::MolBlockWriteParams{precision:3,include_coordinates:false,..Default::default()};
@@ -36,12 +36,12 @@ let directory=std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("artifac
 let path=directory.join("source.sdf");std::fs::write(&path,format!("{sd}{sd}")).unwrap();
 let native=ck::SdfDataset::open(path_text(&path)?).unwrap();
 let dataset=py.get_type::<crate::sdf_sources::SdfDataset>().call_method1("open",(&path,))?;
-assert_eq!(dataset.call_method0("len")?.extract::<usize>()?,native.len());
+assert_eq!(dataset.getattr("len")?.extract::<usize>()?,native.len());
 assert_eq!(dataset.call_method1("record_text",(0,))?.extract::<String>()?,native.record_text(0).unwrap());
 let records=dataset.call_method0("iter")?.try_iter()?.collect::<PyResult<Vec<_>>>()?;assert_eq!(records.len(),2);
-drop(dataset);assert_eq!(records[0].call_method0("molecule")?.extract::<Py<Molecule>>()?.borrow(py).inner,native.record(0).unwrap().molecule().unwrap().clone());
+drop(dataset);assert_eq!(records[0].getattr("molecule")?.extract::<Py<Molecule>>()?.borrow(py).inner,native.record(0).unwrap().molecule().unwrap().clone());
 let stream=py.get_type::<crate::sdf_sources::SdfRecordStream>().call_method1("open",(&path,))?;
-assert!(stream.call_method0("next_record")?.extract::<Option<Py<crate::sdf_records::SdfRecord>>>()?.is_some());assert_eq!(stream.call_method0("records_consumed")?.extract::<usize>()?,1);
+assert!(stream.call_method0("next_record")?.extract::<Option<Py<crate::sdf_records::SdfRecord>>>()?.is_some());assert_eq!(stream.getattr("records_consumed")?.extract::<usize>()?,1);
 assert!(stream.call_method0("next_record")?.extract::<Option<Py<crate::sdf_records::SdfRecord>>>()?.is_some());assert!(stream.call_method0("next_record")?.is_none());
 let reader=py.get_type::<crate::sdf_sources::SdfReader>().call_method1("open",(&path,))?;
 let iterator=reader.call_method1("batches",(1,crate::io_batch_params::BatchErrorMode::Strict,Some(1)))?;
@@ -95,7 +95,7 @@ pub(crate) fn mol_write_keywords(
 pub(crate) fn pdb_write_keywords(
     coordinate_selection: Option<MolCoordinateSelectionInput>,
     all_conformers: Option<bool>,
-    flavor: Option<u32>,
+    flavor: Option<crate::pdb_flags::PdbWriteFlags>,
 ) -> PyResult<crate::io_batch_params::PdbWriteParams> {
     let defaults = ck::PdbWriteParams::default();
     Ok(crate::io_batch_params::PdbWriteParams {
@@ -105,7 +105,7 @@ pub(crate) fn pdb_write_keywords(
                 .transpose()?
                 .unwrap_or(defaults.coordinate_selection),
             all_conformers: all_conformers.unwrap_or(defaults.all_conformers),
-            flavor: flavor.unwrap_or(defaults.flavor),
+            flavor: flavor.map(|value| value.inner).unwrap_or(defaults.flavor),
         }),
     })
 }
@@ -159,7 +159,7 @@ pub(crate) fn avalon_keywords(
 pub(crate) fn bio_keywords(
     sanitize: Option<bool>,
     remove_hs: Option<bool>,
-    flavor: Option<u32>,
+    flavor: Option<crate::pdb_flags::PdbReadFlags>,
     proximity_bonding: Option<bool>,
 ) -> PyResult<crate::params::BioMoleculeParams> {
     Ok(crate::bio_molecule_conversion::keywords(
@@ -194,7 +194,7 @@ pub fn mol_from_pdb(
     params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>,
     sanitize: crate::arguments::Argument<Option<bool>>,
     remove_hs: crate::arguments::Argument<Option<bool>>,
-    flavor: crate::arguments::Argument<Option<u32>>,
+    flavor: crate::arguments::Argument<Option<crate::pdb_flags::PdbReadFlags>>,
     proximity_bonding: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Molecule> {
     let keyword_form = sanitize.is_supplied()
@@ -227,7 +227,7 @@ pub fn _mol_from_pdb_keywords(
     text: &str,
     sanitize: Option<bool>,
     remove_hs: Option<bool>,
-    flavor: Option<u32>,
+    flavor: Option<crate::pdb_flags::PdbReadFlags>,
     proximity_bonding: Option<bool>,
 ) -> PyResult<Molecule> {
     Molecule::_io_from_pdb_keywords(py, text, sanitize, remove_hs, flavor, proximity_bonding)
@@ -240,7 +240,7 @@ pub fn mol_from_mmcif(
     params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>,
     sanitize: crate::arguments::Argument<Option<bool>>,
     remove_hs: crate::arguments::Argument<Option<bool>>,
-    flavor: crate::arguments::Argument<Option<u32>>,
+    flavor: crate::arguments::Argument<Option<crate::pdb_flags::PdbReadFlags>>,
     proximity_bonding: crate::arguments::Argument<Option<bool>>,
 ) -> PyResult<Molecule> {
     let keyword_form = sanitize.is_supplied()
@@ -273,7 +273,7 @@ pub fn _mol_from_mmcif_keywords(
     text: &str,
     sanitize: Option<bool>,
     remove_hs: Option<bool>,
-    flavor: Option<u32>,
+    flavor: Option<crate::pdb_flags::PdbReadFlags>,
     proximity_bonding: Option<bool>,
 ) -> PyResult<Molecule> {
     Molecule::_io_from_mmcif_keywords(py, text, sanitize, remove_hs, flavor, proximity_bonding)

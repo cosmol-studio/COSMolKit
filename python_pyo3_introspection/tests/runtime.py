@@ -155,19 +155,19 @@ def structured_errors():
 def value_ownership_and_callbacks():
     molecule = ck.mol_from_smiles("CCO")
     copied = molecule.copy()
-    copied.set_atom_property_(0, "tracking_id", ck.PropertyValue.Int(42))
-    assert copied.atom_property(0, "tracking_id").as_int() == 42
-    assert molecule.atom_property(0, "tracking_id") is None
+    copied.set_atom_property_int_(0, "tracking_id", 42)
+    assert copied.atom_property_int(0, "tracking_id") == 42
+    assert molecule.atom_property_int(0, "tracking_id") is None
 
     retained = []
     def accept(target, indices):
-        target.set_atom_property_(indices[0], "callback", ck.PropertyValue.Bool(True))
+        target.set_atom_property_bool_(indices[0], "callback", True)
         retained.append(target)
         return True
     query = ck.parse_smarts("O")
     assert molecule.has_substruct_match(query, ck.SubstructMatchParams(final_match=accept))
-    assert retained and molecule.atom_property(2, "callback") is None
-    assert retained[0].atom_property(2, "callback").as_bool()
+    assert retained and molecule.atom_property_bool(2, "callback") is None
+    assert retained[0].atom_property_bool(2, "callback")
     original_error = RuntimeError("callback failure")
     def reject(target, indices):
         raise original_error

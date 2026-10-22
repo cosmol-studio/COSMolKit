@@ -27,3 +27,4 @@ web-time = "=1.1.0"
 
 [dev-dependencies]
 serde_json = "1.0.150"
+cosmolkit = { path = "../cosmolkit", default-features = false, features = ["cap-io", "cap-inchi", "op-contracts-strict"] }

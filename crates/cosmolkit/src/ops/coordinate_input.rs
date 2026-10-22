@@ -32,7 +32,7 @@ pub(crate) fn with_2d_coordinate_block_impl(
 }
 #[mol_op_body(with_3d_coordinates, parts)]
 pub(crate) fn with_3d_coordinates_impl(
-    coordinates: Vec<Vec<f64>>,
+    coordinates: Vec<[f64; 3]>,
     params: &Replace3DCoordinatesParams,
 ) -> Result<(), OperationError> {
     let atom_count = parts.topology()?.atoms.len();
@@ -55,7 +55,7 @@ pub(crate) fn with_3d_coordinates_impl(
 }
 #[mol_op_body(with_added_3d_conformer, parts)]
 pub(crate) fn with_added_3d_conformer_impl(
-    coordinates: Vec<Vec<f64>>,
+    coordinates: Vec<[f64; 3]>,
     params: &Coordinate3DInputParams,
 ) -> Result<usize, OperationError> {
     let atom_count = parts.topology()?.atoms.len();
@@ -78,7 +78,7 @@ pub(crate) fn with_added_3d_conformer_impl(
 }
 #[mol_op_body(with_only_3d_conformer, parts)]
 pub(crate) fn with_only_3d_conformer_impl(
-    coordinates: Vec<Vec<f64>>,
+    coordinates: Vec<[f64; 3]>,
     params: &Coordinate3DInputParams,
 ) -> Result<usize, OperationError> {
     let atom_count = parts.topology()?.atoms.len();

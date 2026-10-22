@@ -10,15 +10,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let molecule = Molecule::from_smiles("CCO")?.with_hydrogens()?.sanitize()?;
 
     let molecule = molecule.with_added_3d_conformer(vec![
-        vec![0.000, 0.000, 0.000],
-        vec![1.540, 0.000, 0.000],
-        vec![2.100, 1.200, 0.000],
-        vec![-0.600, 0.900, 0.000],
-        vec![-0.600, -0.900, 0.000],
-        vec![0.000, 0.000, 1.000],
-        vec![1.900, -0.900, 0.000],
-        vec![1.700, 0.000, 1.000],
-        vec![2.900, 1.200, 0.000],
+        [0.000, 0.000, 0.000],
+        [1.540, 0.000, 0.000],
+        [2.100, 1.200, 0.000],
+        [-0.600, 0.900, 0.000],
+        [-0.600, -0.900, 0.000],
+        [0.000, 0.000, 1.000],
+        [1.900, -0.900, 0.000],
+        [1.700, 0.000, 1.000],
+        [2.900, 1.200, 0.000],
     ])?;
 
     if molecule.uff_has_all_molecule_params()? {
@@ -29,9 +29,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ignore_interfragment_interactions: true,
         })?;
         println!(
-            "UFF needs_more={} energy={:.6}",
-            result.status > 0,
-            result.energy
+            "UFF needs_more={} energy={:?}",
+            result.needs_more(),
+            result.energy()
         );
         println!(
             "optimized first atom: {:?}",
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if molecule.mmff_has_all_molecule_params()? {
         let result = molecule.with_mmff_optimized_with_params(&MmffOptimizationParams {
-            mmff_variant: "MMFF94".into(),
+            mmff_variant: cosmolkit::MmffVariant::Mmff94,
             max_iterations: 200,
             non_bonded_threshold: 100.0,
             conformer_id: None,
@@ -63,7 +63,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             molecule.mmff_force_field_with_params(&MmffForceFieldParams::new(
                 None,
-                model.into(),
+                if model == "MMFF94s" {
+                    cosmolkit::MmffVariant::Mmff94s
+                } else {
+                    cosmolkit::MmffVariant::Mmff94
+                },
                 100.0,
                 true,
             ))?
@@ -114,8 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Explicit value-style coordinate installation creates a new molecule.
         let positions = field.positions();
-        let relaxed =
-            molecule.with_3d_coordinates(positions.iter().map(|row| row.to_vec()).collect())?;
+        let relaxed = molecule.with_3d_coordinates(positions.to_vec())?;
         assert_eq!(
             relaxed.conformers_3d()[0].coordinates(),
             positions.as_slice()
@@ -125,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             original.as_slice()
         );
         println!(
-            "{model} restrained: energy={:.6} -> {:.6}, converged={}, iterations={}",
+            "{model} restrained: energy={:?} -> {:.6}, converged={}, iterations={}",
             initial.energy(),
             result.energy(),
             result.converged(),

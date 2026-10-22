@@ -6,6 +6,9 @@ pub struct EmbedMoleculeResult {
     inner: ck::EmbedMoleculeResult,
 }
 impl EmbedMoleculeResult {
+    pub fn termination(&self) -> ck::EmbedTermination {
+        self.inner.termination()
+    }
     pub fn failures_tracked(&self) -> bool {
         self.inner.failures_tracked()
     }
@@ -27,7 +30,7 @@ impl EmbedMoleculeResult {
     pub fn params(&self) -> &ck::EmbedParams {
         self.inner.params()
     }
-    pub fn conf_id(&self) -> i32 {
+    pub fn conf_id(&self) -> Option<u32> {
         self.inner.conf_id()
     }
     pub fn ok(&self) -> bool {
@@ -39,6 +42,9 @@ pub struct EmbedMultipleConfsResult {
     inner: ck::EmbedMultipleConfsResult,
 }
 impl EmbedMultipleConfsResult {
+    pub fn termination(&self) -> ck::EmbedTermination {
+        self.inner.termination()
+    }
     pub fn failures_tracked(&self) -> bool {
         self.inner.failures_tracked()
     }
@@ -60,7 +66,7 @@ impl EmbedMultipleConfsResult {
     pub fn params(&self) -> &ck::EmbedParams {
         self.inner.params()
     }
-    pub fn conf_ids(&self) -> &[i32] {
+    pub fn conf_ids(&self) -> &[u32] {
         self.inner.conf_ids()
     }
     pub fn requested_num_confs(&self) -> u32 {

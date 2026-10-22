@@ -263,12 +263,21 @@ mod tests {
                 MmffVariant::Mmff94 as isize
             );
             let mut retained = Vec::new();
-            for variant in ["MMFF94", "MMFF94s", "source-defined-unknown"] {
+            let invalid = PyDict::new(py);
+            invalid.set_item("mmff_variant", "source-defined-unknown")?;
+            assert!(
+                molecule
+                    .bind(py)
+                    .call_method("mmff_properties", (), Some(&invalid))
+                    .unwrap_err()
+                    .is_instance_of::<pyo3::exceptions::PyValueError>(py)
+            );
+            for variant in ["MMFF94", "MMFF94s"] {
                 let params = Py::new(
                     py,
                     MmffPropertiesParams {
                         inner: crate::parameters::NativeField::Owned(ck::MmffPropertiesParams {
-                            mmff_variant: variant.into(),
+                            mmff_variant: ck::MmffVariant::from_rdkit_constructor_arg(variant),
                         }),
                     },
                 )?;

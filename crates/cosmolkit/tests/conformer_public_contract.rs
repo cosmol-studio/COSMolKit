@@ -4,9 +4,6 @@ use cosmolkit::{
 };
 use cosmolkit_model::{Conformer2D, Conformer3D, CoordinateBlock};
 
-fn input(coords: Vec<[f64; 3]>) -> Vec<Vec<f64>> {
-    coords.into_iter().map(|row| row.to_vec()).collect()
-}
 fn replace(id: usize) -> Replace3DCoordinatesParams {
     Replace3DCoordinatesParams { conformer_id: id }
 }
@@ -56,7 +53,7 @@ fn manual_replacement_selects_actual_id_and_preserves_other_rows_and_2d() {
     let before = source.clone();
     let coords = vec![[7.0, 8.0, 9.0]; 3];
     let value = source
-        .with_3d_coordinates_with_params(input(coords.clone()), &replace(9))
+        .with_3d_coordinates_with_params(coords.clone(), &replace(9))
         .unwrap();
     assert_eq!(source, before);
     assert_eq!(value.conformers_3d()[0], source.conformers_3d()[0]);
@@ -65,11 +62,11 @@ fn manual_replacement_selects_actual_id_and_preserves_other_rows_and_2d() {
     preserved_other_blocks(&value, &source);
     let mut inplace = source.clone();
     inplace
-        .set_3d_coordinates_with_params_(input(coords), &replace(9))
+        .set_3d_coordinates_with_params_(coords, &replace(9))
         .unwrap();
     assert_eq!(inplace, value);
     let error = inplace
-        .set_3d_coordinates_with_params_(input(vec![[0.0; 3]; 3]), &replace(0))
+        .set_3d_coordinates_with_params_(vec![[0.0; 3]; 3], &replace(0))
         .unwrap_err();
     assert_eq!(
         error,
@@ -86,7 +83,7 @@ fn manual_append_only_and_clear_preserve_independent_dimension() {
     let source = fixture();
     let coords = vec![[1.0, 0.0, 0.0]; 3];
     let appended = source
-        .with_added_3d_conformer_with_params(input(coords.clone()), &flags(true))
+        .with_added_3d_conformer_with_params(coords.clone(), &flags(true))
         .unwrap();
     assert_eq!(appended.num_3d_conformers(), 3);
     assert_eq!(appended.conformers_3d()[2].id(), 10);
@@ -94,13 +91,13 @@ fn manual_append_only_and_clear_preserve_independent_dimension() {
     let mut inplace = source.clone();
     assert_eq!(
         inplace
-            .add_3d_conformer_with_params_(input(coords.clone()), &flags(true))
+            .add_3d_conformer_with_params_(coords.clone(), &flags(true))
             .unwrap(),
         2
     );
     assert_eq!(inplace, appended);
     let only = source
-        .with_only_3d_conformer_with_params(input(coords.clone()), &flags(false))
+        .with_only_3d_conformer_with_params(coords.clone(), &flags(false))
         .unwrap();
     assert_eq!(only.num_3d_conformers(), 1);
     assert_eq!(only.conformers_3d()[0].id(), 0);
@@ -108,7 +105,7 @@ fn manual_append_only_and_clear_preserve_independent_dimension() {
     preserved_other_blocks(&only, &source);
     assert_eq!(
         inplace
-            .set_only_3d_conformer_with_params_(input(coords), &flags(false))
+            .set_only_3d_conformer_with_params_(coords, &flags(false))
             .unwrap(),
         0
     );
@@ -126,7 +123,7 @@ fn manual_invalid_rows_nonfinite_and_id_overflow_are_atomic() {
     let source = fixture();
     let mut inplace = source.clone();
     assert!(matches!(
-        inplace.add_3d_conformer_with_params_(input(vec![[0.0; 3]; 2]), &flags(true)),
+        inplace.add_3d_conformer_with_params_(vec![[0.0; 3]; 2], &flags(true)),
         Err(OperationError::CoordinateInput(
             CoordinateInputError::RowCount {
                 expected: 3,
@@ -137,8 +134,7 @@ fn manual_invalid_rows_nonfinite_and_id_overflow_are_atomic() {
     ));
     assert_eq!(inplace, source);
     assert!(matches!(
-        inplace
-            .set_only_3d_conformer_with_params_(input(vec![[f64::NAN, 0.0, 0.0]; 3]), &flags(true)),
+        inplace.set_only_3d_conformer_with_params_(vec![[f64::NAN, 0.0, 0.0]; 3], &flags(true)),
         Err(OperationError::CoordinateInput(
             CoordinateInputError::NonFinite {
                 row: 0,
@@ -149,10 +145,7 @@ fn manual_invalid_rows_nonfinite_and_id_overflow_are_atomic() {
     ));
     assert_eq!(inplace, source);
     assert!(matches!(
-        inplace.set_3d_coordinates_with_params_(
-            input(vec![[0.0, f64::INFINITY, 0.0]; 3]),
-            &replace(4)
-        ),
+        inplace.set_3d_coordinates_with_params_(vec![[0.0, f64::INFINITY, 0.0]; 3], &replace(4)),
         Err(OperationError::CoordinateInput(
             CoordinateInputError::NonFinite {
                 row: 0,
@@ -174,7 +167,7 @@ fn manual_invalid_rows_nonfinite_and_id_overflow_are_atomic() {
     .unwrap();
     let mut retained = overflow.clone();
     assert!(matches!(
-        retained.add_3d_conformer_with_params_(input(vec![[0.0; 3]; 3]), &flags(true)),
+        retained.add_3d_conformer_with_params_(vec![[0.0; 3]; 3], &flags(true)),
         Err(OperationError::CoordinateInput(
             CoordinateInputError::ConformerIdOverflow { max_id: usize::MAX }
         ))
@@ -191,7 +184,8 @@ fn canonical_reports_append_ids_copy_params_and_commit_inplace_after_validation(
         .with_3d_conformer_result_with_params(&params)
         .unwrap();
     assert!(value.ok());
-    assert_eq!(value.conf_id(), 10);
+    assert_eq!(value.conf_id(), Some(10));
+    assert_eq!(value.termination(), cosmolkit::EmbedTermination::Completed);
     assert_eq!(value.molecule().num_3d_conformers(), 3);
     assert_eq!(value.params().random_seed, 42);
     // RDKit .6 EmbedFailureCauses::END_OF_ENUM is 15.
@@ -214,6 +208,10 @@ fn canonical_reports_append_ids_copy_params_and_commit_inplace_after_validation(
     assert_eq!(multiple.conf_ids(), &[10, 11, 12]);
     assert_eq!(multiple.requested_num_confs(), 3);
     assert_eq!(multiple.generated_count(), 3);
+    assert_eq!(
+        multiple.termination(),
+        cosmolkit::EmbedTermination::Completed
+    );
     assert_eq!(multiple.molecule().num_3d_conformers(), 5);
     let mut inplace = source.clone();
     let report = inplace

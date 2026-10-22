@@ -45,7 +45,6 @@ pub(crate) fn morgan_keywords(
     ignore_atoms: FieldInput<Option<Vec<u32>>>,
     custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
     custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
-    conformer_id: FieldInput<Scalar<i32>>,
     invariants: FieldInput<ConfigurationField<MorganInvariants>>,
 ) -> ck::MorganFingerprintParams {
     let mut params = ck::MorganFingerprintParams::default();
@@ -91,9 +90,6 @@ pub(crate) fn morgan_keywords(
     if let FieldInput::Value(value) = custom_bond_invariants {
         params.custom_bond_invariants = value;
     }
-    if let FieldInput::Value(value) = conformer_id {
-        params.conformer_id = value;
-    }
     if let FieldInput::Value(value) = invariants {
         params.invariants = value;
     }
@@ -113,7 +109,7 @@ pub(crate) fn atom_pair_keywords(
     ignore_atoms: FieldInput<Option<Vec<u32>>>,
     custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
     custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
-    conformer_id: FieldInput<Scalar<i32>>,
+    conformer_id: FieldInput<Option<Scalar<usize>>>,
     atom_invariants_generator: FieldInput<
         Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
     >,
@@ -180,7 +176,6 @@ pub(crate) fn topological_torsion_keywords(
     ignore_atoms: FieldInput<Option<Vec<u32>>>,
     custom_atom_invariants: FieldInput<Option<Vec<u32>>>,
     custom_bond_invariants: FieldInput<Option<Vec<u32>>>,
-    conformer_id: FieldInput<Scalar<i32>>,
     atom_invariants_generator: FieldInput<
         Option<ConfigurationField<AtomPairAtomInvariantsGenerator>>,
     >,
@@ -219,9 +214,6 @@ pub(crate) fn topological_torsion_keywords(
     }
     if let FieldInput::Value(value) = custom_bond_invariants {
         params.custom_bond_invariants = value;
-    }
-    if let FieldInput::Value(value) = conformer_id {
-        params.conformer_id = value;
     }
     if let FieldInput::Value(value) = atom_invariants_generator {
         params.atom_invariants_generator = value;

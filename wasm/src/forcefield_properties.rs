@@ -42,9 +42,9 @@ mod tests {
                 m.mmff_properties().unwrap(),
                 core.mmff_properties().unwrap()
             );
-            for variant in ["MMFF94", "MMFF94s", "source-fallback"] {
+            for variant in ["MMFF94", "MMFF94s"] {
                 let p = ck::MmffPropertiesParams {
-                    mmff_variant: variant.into(),
+                    mmff_variant: ck::MmffVariant::from_rdkit_constructor_arg(variant),
                 };
                 let a = m.mmff_properties_with_params(&p).unwrap();
                 let b = core.mmff_properties_with_params(&p).unwrap();

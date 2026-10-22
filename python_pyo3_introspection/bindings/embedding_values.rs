@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 enum_value!(CoordinateDimension, { TwoD, ThreeD });
+enum_value!(EmbedTermination, { Completed, TimedOut, Interrupted });
 
 enum_value!(EmbedFailureCause, {
     InitialCoords, FirstMinimization, CheckTetrahedralCenters, CheckChiralCenters,
@@ -172,6 +173,10 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl EmbedMoleculeResult {
     #[getter]
+    fn termination(&self) -> EmbedTermination {
+        self.inner.termination().into()
+    }
+    #[getter]
     fn failures_tracked(&self) -> bool {
         self.inner.failures_tracked()
     }
@@ -185,16 +190,19 @@ impl EmbedMoleculeResult {
             .map_err(EmbedFailureCountError::from_rust)
     }
     #[new]
+    #[pyo3(signature = (molecule, conf_id, params, termination=EmbedTermination::Completed))]
     fn new(
         py: Python<'_>,
         molecule: &Molecule,
-        conf_id: i32,
+        conf_id: Option<u32>,
         params: &EmbedParams,
+        termination: EmbedTermination,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: ck::EmbedMoleculeResult {
                 molecule: molecule.inner.clone(),
                 conf_id,
+                termination: termination.into(),
                 params: params.to_rust(py)?,
             },
         })
@@ -206,7 +214,7 @@ impl EmbedMoleculeResult {
         }
     }
     #[getter]
-    fn conf_id(&self) -> i32 {
+    fn conf_id(&self) -> Option<u32> {
         self.inner.conf_id()
     }
     #[getter]
@@ -228,6 +236,10 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl EmbedMultipleConfsResult {
     #[getter]
+    fn termination(&self) -> EmbedTermination {
+        self.inner.termination().into()
+    }
+    #[getter]
     fn failures_tracked(&self) -> bool {
         self.inner.failures_tracked()
     }
@@ -241,17 +253,20 @@ impl EmbedMultipleConfsResult {
             .map_err(EmbedFailureCountError::from_rust)
     }
     #[new]
+    #[pyo3(signature = (molecule, conf_ids, requested_num_confs, params, termination=EmbedTermination::Completed))]
     fn new(
         py: Python<'_>,
         molecule: &Molecule,
-        conf_ids: Vec<i32>,
+        conf_ids: Vec<u32>,
         requested_num_confs: u32,
         params: &EmbedParams,
+        termination: EmbedTermination,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: ck::EmbedMultipleConfsResult {
                 molecule: molecule.inner.clone(),
                 conf_ids,
+                termination: termination.into(),
                 requested_num_confs,
                 params: params.to_rust(py)?,
             },
@@ -264,7 +279,7 @@ impl EmbedMultipleConfsResult {
         }
     }
     #[getter]
-    fn conf_ids(&self) -> &[i32] {
+    fn conf_ids(&self) -> &[u32] {
         self.inner.conf_ids()
     }
     #[getter]

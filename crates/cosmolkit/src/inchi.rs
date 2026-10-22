@@ -3,6 +3,75 @@ mod toolkit;
 
 use crate::{InchiError, InchiErrorKind, Molecule};
 
+/// Complete InChI generation output, including nonfatal engine diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InchiResult {
+    inchi: String,
+    return_code: i32,
+    message: String,
+    log: String,
+    aux_info: String,
+    diagnostics: Vec<InchiDiagnostic>,
+}
+
+pub use cosmolkit_inchi::InchiDiagnosticLevel;
+
+/// A diagnostic emitted by the native adapter, separate from engine text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InchiDiagnostic(cosmolkit_inchi::InchiDiagnostic);
+
+impl InchiDiagnostic {
+    pub fn level(&self) -> InchiDiagnosticLevel {
+        self.0.level
+    }
+    pub fn message(&self) -> &str {
+        &self.0.message
+    }
+}
+
+impl InchiResult {
+    pub fn inchi(&self) -> &str {
+        &self.inchi
+    }
+    pub fn return_code(&self) -> i32 {
+        self.return_code
+    }
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+    pub fn log(&self) -> &str {
+        &self.log
+    }
+    pub fn aux_info(&self) -> &str {
+        &self.aux_info
+    }
+    pub fn diagnostics(&self) -> &[InchiDiagnostic] {
+        &self.diagnostics
+    }
+
+    fn from_native(output: cosmolkit_inchi::MolToInchiOutput) -> Result<Self, InchiError> {
+        fn decode(bytes: Vec<u8>) -> Result<String, InchiError> {
+            String::from_utf8(bytes).map_err(|error| InchiError {
+                operation: "to_inchi_result",
+                kind: InchiErrorKind::InvalidSourceOutput,
+                detail: error.to_string(),
+            })
+        }
+        Ok(Self {
+            inchi: decode(output.inchi)?,
+            return_code: output.return_values.return_code,
+            message: decode(output.return_values.message)?,
+            log: decode(output.return_values.log)?,
+            aux_info: decode(output.return_values.aux_info)?,
+            diagnostics: output
+                .diagnostics
+                .into_iter()
+                .map(InchiDiagnostic)
+                .collect(),
+        })
+    }
+}
+
 /// Controls the source-defined InChI post-processing stages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
@@ -131,18 +200,37 @@ impl Molecule {
     }
 
     pub fn to_inchi_with_params(&self, params: &InchiWriteParams) -> Result<String, InchiError> {
+        let output = self.inchi_generation_output(params)?;
+        text(output.inchi, "to_inchi")
+    }
+
+    /// Generate the identifier and diagnostics without discarding warning/error statuses.
+    pub fn to_inchi_result(&self) -> Result<InchiResult, InchiError> {
+        self.to_inchi_result_with_params(&InchiWriteParams::default())
+    }
+
+    pub fn to_inchi_result_with_params(
+        &self,
+        params: &InchiWriteParams,
+    ) -> Result<InchiResult, InchiError> {
+        InchiResult::from_native(self.inchi_generation_output(params)?)
+    }
+
+    fn inchi_generation_output(
+        &self,
+        params: &InchiWriteParams,
+    ) -> Result<cosmolkit_inchi::MolToInchiOutput, InchiError> {
         let graph = toolkit::graph(
             self.topology(),
             self.coordinate_block_runtime(),
             self.derived_cache_runtime().valence_assignment(),
         )
         .map_err(toolkit::public_error)?;
-        let output = cosmolkit_inchi::mol_to_inchi(
+        cosmolkit_inchi::mol_to_inchi(
             &mut toolkit::Toolkit::default(),
             &graph,
             Some(params.options.as_bytes()),
-        )?;
-        text(output.inchi, "to_inchi")
+        )
     }
 
     /// Generates an InChIKey without changing the receiver.

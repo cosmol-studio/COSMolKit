@@ -6,6 +6,55 @@ declared overloads, indexing and NumPy annotations. See the
 
 Run all commands from the repository root.
 
+## Typed atom properties
+
+```python
+tagged = mol.with_atom_property_int(0, "tracking_id", 42)
+assert tagged.atom_property_int(0, "tracking_id") == 42
+tagged.set_atom_property_string_(0, "label", "CA")
+assert tagged.atom_property_string(0, "label") == "CA"
+```
+
+Use `string`, `int`, `uint`, `double`, `bool`, `int_vector` or `string_vector`
+after `with_atom_property_`, `set_atom_property_` (with a final `_`) or
+`atom_property_`. Reads return `None` only for missing keys; wrong types, invalid
+atom indices and invalid UTF-8 raise `AtomPropertyReadError`. No numeric or
+text coercion is performed. Generic enum-valued atom access is Rust-only.
+
+## Embedding results
+
+Explicit 3D coordinate inputs use Rust `Vec<[f64; 3]>`. Python lists, tuples
+and NumPy rows are extracted directly by PyO3, which requires exactly three
+components per row. Rust checks atom count and finite values. The official
+stub describes a length-bearing sequence; it does not encode the length 3.
+
+```python
+result = mol.with_3d_conformers_result(8)
+for conformer_id in result.conf_ids:  # successful IDs only, never -1
+    print(conformer_id)
+print(result.generated_count, result.termination)
+
+single = mol.with_3d_conformer_result()
+if single.conf_id is not None:
+    print(single.conf_id)
+```
+
+`EmbedTermination` is `Completed`, `TimedOut`, or `Interrupted`, even when failure
+tracking is disabled. `Completed` means normal completion, not that all requested
+conformers survived embedding and pruning. Counts describe this call, not the
+molecule's pre-existing conformers. Invalid inputs still raise their Rust error.
+
+## Ring queries
+
+```python
+rings = mol.symmetrized_sssr()
+rings = mol.symmetrized_sssr(include_dative_bonds=True)
+print(rings.num_rings, rings.atom_rings, rings.bond_rings)
+```
+
+The result owns the symmetrized SSSR rows. The query does not modify the molecule
+or its ring cache. It does not enumerate every possible cycle.
+
 ## Prepare
 
 Install development tools and the extractor matching PyO3:

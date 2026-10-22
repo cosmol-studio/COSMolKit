@@ -106,9 +106,9 @@ pub use mol2::{
 };
 #[cfg(feature = "molecule")]
 pub use pdb::{
-    PdbExportParams, PdbReadError, PdbReadParams, PdbWriteError, PdbWriteParams, read_pdb_detached,
-    read_pdb_detached_with_params, write_pdb_detached, write_pdb_detached_with_params,
-    write_pdb_export_with_params,
+    PdbExportParams, PdbReadError, PdbReadFlags, PdbReadParams, PdbWriteError, PdbWriteFlags,
+    PdbWriteParams, read_pdb_detached, read_pdb_detached_with_params, write_pdb_detached,
+    write_pdb_detached_with_params, write_pdb_export_with_params,
 };
 #[cfg(feature = "molecule")]
 pub use pdb_chemistry::{

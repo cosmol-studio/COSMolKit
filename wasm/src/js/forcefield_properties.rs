@@ -12,6 +12,28 @@ pub enum MmffVariant {
     Mmff94,
     Mmff94s,
 }
+impl From<ck::MmffVariant> for MmffVariant {
+    fn from(value: ck::MmffVariant) -> Self {
+        match value {
+            ck::MmffVariant::Mmff94 => Self::Mmff94,
+            ck::MmffVariant::Mmff94s => Self::Mmff94s,
+        }
+    }
+}
+pub(crate) fn mmff_variant_input(value: &JsValue) -> Result<ck::MmffVariant, JsValue> {
+    if let Some(text) = value.as_string() {
+        return match text.as_str() {
+            "MMFF94" => Ok(ck::MmffVariant::Mmff94),
+            "MMFF94s" => Ok(ck::MmffVariant::Mmff94s),
+            _ => Err(type_error("mmffVariant: expected MMFF94 or MMFF94s")),
+        };
+    }
+    match value.as_f64() {
+        Some(n) if n == MmffVariant::Mmff94 as u32 as f64 => Ok(ck::MmffVariant::Mmff94),
+        Some(n) if n == MmffVariant::Mmff94s as u32 as f64 => Ok(ck::MmffVariant::Mmff94s),
+        _ => Err(type_error("mmffVariant: expected MmffVariant")),
+    }
+}
 #[wasm_bindgen]
 pub struct MmffPropertiesParams {
     inner: ck::MmffPropertiesParams,
@@ -21,20 +43,18 @@ pub struct MmffPropertiesParams {
 impl MmffPropertiesParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "string")] mmff_variant: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "MmffVariant | 'MMFF94' | 'MMFF94s'")] mmff_variant: JsValue,
     ) -> Result<Self, JsValue> {
         // COSMolKit❗✔️: mmff_variant: mmff_variant.into(),
         let mut inner = ck::MmffPropertiesParams::default();
         if !mmff_variant.is_undefined() {
-            inner.mmff_variant = mmff_variant
-                .as_string()
-                .ok_or_else(|| type_error("mmffVariant"))?;
+            inner.mmff_variant = crate::forcefield_properties::mmff_variant_input(&mmff_variant)?;
         }
         Ok(Self { inner })
     }
     #[wasm_bindgen(getter,js_name=mmffVariant)]
-    pub fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant.clone()
+    pub fn mmff_variant(&self) -> crate::forcefield_properties::MmffVariant {
+        self.inner.mmff_variant.into()
     }
 }
 #[wasm_bindgen]

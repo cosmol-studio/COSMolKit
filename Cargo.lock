@@ -345,6 +345,7 @@ name = "cosmolkit-inchi"
 version = "0.5.1-rc.5"
 dependencies = [
  "bytemuck",
+ "cosmolkit",
  "cpu-time",
  "hexf-parse",
  "memchr",

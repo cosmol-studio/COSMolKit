@@ -162,14 +162,13 @@ pub(crate) struct MorganFingerprintParams {
 impl MorganFingerprintParams {
     /// Configure Morgan generator selection and per-call atom/bond invariants; omitted fields use the defaults shown in the signature.
     #[new]
-    #[pyo3(signature = (*, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=-1, invariants=None))]
+    #[pyo3(signature = (*, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, invariants=None))]
     fn new(
         generator: Option<&MorganGeneratorParams>,
         from_atoms: Option<Vec<u32>>,
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
         custom_bond_invariants: Option<Vec<u32>>,
-        conformer_id: i32,
         invariants: Option<&MorganInvariants>,
     ) -> Self {
         Self {
@@ -181,7 +180,6 @@ impl MorganFingerprintParams {
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
-                conformer_id,
                 invariants: invariants
                     .map(|value| value.inner.clone())
                     .unwrap_or(ck::MorganInvariants::Connectivity),
@@ -216,11 +214,6 @@ impl MorganFingerprintParams {
     #[getter]
     fn custom_bond_invariants(&self) -> Option<Vec<u32>> {
         self.inner.custom_bond_invariants.clone()
-    }
-    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
-    #[getter]
-    fn conformer_id(&self) -> i32 {
-        self.inner.conformer_id
     }
     /// Morgan atom-invariant selection, such as connectivity or feature invariants.
     #[getter]
@@ -478,14 +471,14 @@ pub(crate) struct AtomPairFingerprintParams {
 impl AtomPairFingerprintParams {
     /// Configure atom-pair generator selection and per-call invariants; omitted fields use the defaults shown in the signature.
     #[new]
-    #[pyo3(signature = (*, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=-1, atom_invariants_generator=None, use_legacy_stereo_perception=true))]
+    #[pyo3(signature = (*, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=None, atom_invariants_generator=None, use_legacy_stereo_perception=true))]
     fn new(
         generator: Option<&AtomPairGeneratorParams>,
         from_atoms: Option<Vec<u32>>,
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
         custom_bond_invariants: Option<Vec<u32>>,
-        conformer_id: i32,
+        conformer_id: Option<usize>,
         atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
         use_legacy_stereo_perception: bool,
     ) -> Self {
@@ -520,7 +513,7 @@ impl AtomPairFingerprintParams {
     }
     /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
     #[getter]
-    fn conformer_id(&self) -> i32 {
+    fn conformer_id(&self) -> Option<usize> {
         self.inner.conformer_id
     }
     /// Whether legacy stereochemistry perception is used by the fingerprint operation.
@@ -654,14 +647,13 @@ pub(crate) struct TopologicalTorsionFingerprintParams {
 impl TopologicalTorsionFingerprintParams {
     /// Configure topological-torsion generator selection and per-call invariants; omitted fields use the defaults shown in the signature.
     #[new]
-    #[pyo3(signature = (*, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, conformer_id=-1, atom_invariants_generator=None, use_legacy_stereo_perception=true))]
+    #[pyo3(signature = (*, generator=None, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None, custom_bond_invariants=None, atom_invariants_generator=None, use_legacy_stereo_perception=true))]
     fn new(
         generator: Option<&TopologicalTorsionGeneratorParams>,
         from_atoms: Option<Vec<u32>>,
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
         custom_bond_invariants: Option<Vec<u32>>,
-        conformer_id: i32,
         atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
         use_legacy_stereo_perception: bool,
     ) -> Self {
@@ -674,7 +666,6 @@ impl TopologicalTorsionFingerprintParams {
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
-                conformer_id,
                 atom_invariants_generator: atom_invariants_generator.map(|value| value.inner),
                 use_legacy_stereo_perception,
             },
@@ -693,11 +684,6 @@ impl TopologicalTorsionFingerprintParams {
         self.inner
             .atom_invariants_generator
             .map(|inner| AtomPairAtomInvariantsGenerator { inner })
-    }
-    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
-    #[getter]
-    fn conformer_id(&self) -> i32 {
-        self.inner.conformer_id
     }
     /// Whether legacy stereochemistry perception is used by the fingerprint operation.
     #[getter]
@@ -769,13 +755,12 @@ pub(crate) struct TopologicalTorsionCallParams {
 impl TopologicalTorsionCallParams {
     /// Configure per-call topological-torsion atom selection and invariants; omitted fields use the defaults shown in the signature.
     #[new]
-    #[pyo3(signature=(*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=-1,use_legacy_stereo_perception=true))]
+    #[pyo3(signature=(*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,use_legacy_stereo_perception=true))]
     fn new(
         from_atoms: Option<Vec<u32>>,
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
         custom_bond_invariants: Option<Vec<u32>>,
-        conformer_id: i32,
         use_legacy_stereo_perception: bool,
     ) -> Self {
         Self {
@@ -784,7 +769,6 @@ impl TopologicalTorsionCallParams {
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
-                conformer_id,
                 use_legacy_stereo_perception,
             },
         }
@@ -808,11 +792,6 @@ impl TopologicalTorsionCallParams {
     #[getter]
     fn custom_bond_invariants(&self) -> Option<Vec<u32>> {
         self.inner.custom_bond_invariants.clone()
-    }
-    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
-    #[getter]
-    fn conformer_id(&self) -> i32 {
-        self.inner.conformer_id
     }
     /// Whether legacy stereochemistry perception is used by the fingerprint operation.
     #[getter]
@@ -1425,31 +1404,28 @@ pub(crate) struct MorganCallParams {
 impl MorganCallParams {
     /// Configure per-call Morgan atom selection and invariants; omitted fields use the defaults shown in the signature.
     #[new]
-    #[pyo3(signature=(*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=-1))]
+    #[pyo3(signature=(*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None))]
     fn py_new(
         from_atoms: Option<Vec<u32>>,
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
         custom_bond_invariants: Option<Vec<u32>>,
-        conformer_id: i32,
     ) -> Self {
         Self::new(
             from_atoms,
             ignore_atoms,
             custom_atom_invariants,
             custom_bond_invariants,
-            conformer_id,
         )
     }
     /// Configure per-call Morgan atom selection and invariants; omitted fields use the defaults shown in the signature.
     #[staticmethod]
-    #[pyo3(signature=(*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=-1))]
+    #[pyo3(signature=(*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None))]
     fn new(
         from_atoms: Option<Vec<u32>>,
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
         custom_bond_invariants: Option<Vec<u32>>,
-        conformer_id: i32,
     ) -> Self {
         Self {
             inner: ck::MorganCallParams::new(
@@ -1457,7 +1433,6 @@ impl MorganCallParams {
                 ignore_atoms,
                 custom_atom_invariants,
                 custom_bond_invariants,
-                conformer_id,
             ),
         }
     }
@@ -1480,11 +1455,6 @@ impl MorganCallParams {
     #[getter]
     fn custom_bond_invariants(&self) -> Option<Vec<u32>> {
         self.inner.custom_bond_invariants.clone()
-    }
-    /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
-    #[getter]
-    fn conformer_id(&self) -> i32 {
-        self.inner.conformer_id
     }
 }
 /// Reusable Morgan fingerprint generator. settings() is a live view; later edits affect subsequent calls, not previously returned fingerprints.

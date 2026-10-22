@@ -44,23 +44,18 @@ struct AlphaCarbon {
 fn alpha_carbons(structure: &BioStructure) -> impl Iterator<Item = AlphaCarbon> + '_ {
     structure
         .residues()
-        .iter()
+        .into_iter()
         .enumerate()
         .filter(|(_, residue)| residue.kind() == ResidueKind::AminoAcid)
         .filter_map(|(residue_index, residue)| {
-            let start = residue.atom_span().start() as usize;
-            let end = residue.atom_span().end() as usize;
-            (start..end)
-                .find(|&atom_index| {
-                    matches!(
-                        structure.atoms()[atom_index].name().as_bytes(),
-                        b"CA" | b" CA " | b"CA  "
-                    )
-                })
-                .map(|atom_index| AlphaCarbon {
+            residue
+                .atoms()
+                .into_iter()
+                .find(|atom| matches!(atom.name().as_bytes(), b"CA" | b" CA " | b"CA  "))
+                .map(|atom| AlphaCarbon {
                     residue_index,
                     residue_name: residue.name(),
-                    position: structure.coordinates().positions()[atom_index],
+                    position: atom.position(),
                 })
         })
 }

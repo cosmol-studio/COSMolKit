@@ -284,7 +284,10 @@ pub(crate) fn default_conformer() -> Option<usize> {
     ck::MmffForceFieldParams::default().conformer_id()
 }
 pub(crate) fn default_variant() -> String {
-    ck::MmffForceFieldParams::default().mmff_variant().into()
+    ck::MmffForceFieldParams::default()
+        .mmff_variant()
+        .as_rdkit_str()
+        .into()
 }
 pub(crate) fn default_non_bonded() -> f64 {
     ck::MmffForceFieldParams::default().non_bonded_threshold()
@@ -512,7 +515,7 @@ impl MmffForceFieldParams {
         Self {
             inner: ck::MmffForceFieldParams::new(
                 conformer_id,
-                mmff_variant,
+                ck::MmffVariant::from_rdkit_constructor_arg(&mmff_variant),
                 non_bonded_threshold,
                 ignore_interfragment_interactions,
             ),
@@ -526,7 +529,7 @@ impl MmffForceFieldParams {
     /// MMFF parameterization variant, normally "MMFF94" or "MMFF94s".
     #[getter]
     fn mmff_variant(&self) -> String {
-        self.inner.mmff_variant().into()
+        self.inner.mmff_variant().as_rdkit_str().into()
     }
     /// MMFF nonbonded interaction distance threshold in angstroms.
     #[getter]

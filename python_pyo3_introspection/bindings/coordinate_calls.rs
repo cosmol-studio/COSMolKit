@@ -81,10 +81,10 @@ mod tests {
     fn coordinate_families_forward_native_bits_enums_results_and_value_inplace_ownership() {
         Python::initialize();
         Python::attach(|py|->PyResult<()> {
-            let molecule=ck::Molecule::from_smiles("CCO").unwrap().with_added_3d_conformer(vec![vec![0.,0.,0.],vec![1.,0.,0.],vec![2.,1.,0.]]).unwrap();
+            let molecule=ck::Molecule::from_smiles("CCO").unwrap().with_added_3d_conformer(vec![[0.,0.,0.],[1.,0.,0.],[2.,1.,0.]]).unwrap();
             let before=molecule.to_binary().unwrap();
             let rows2=vec![vec![0.,-0.],vec![1.2,0.],vec![2.1,0.7]];
-            let rows3=vec![vec![0.,-0.,0.1],vec![1.2,0.,0.2],vec![2.1,0.7,0.3]];
+            let rows3=vec![[0.,-0.,0.1],[1.2,0.,0.2],[2.1,0.7,0.3]];
             let options2=ck::Coordinate2DInputParams {z_policy:ck::CoordinateZPolicy::RequireZero};
             let options3=ck::Coordinate3DInputParams {is_3d:false};
             let replace=ck::Replace3DCoordinatesParams {conformer_id:0};

@@ -259,7 +259,7 @@ pub struct AtomPairPreparedInput<'a> {
 pub struct AtomPairCall<'a> {
     pub from_atoms: Option<&'a [u32]>,
     pub ignore_atoms: Option<&'a [u32]>,
-    pub conformer_id: i32,
+    pub conformer_id: Option<usize>,
     pub custom_atom_invariants: Option<&'a [u32]>,
     pub custom_bond_invariants: Option<&'a [u32]>,
     pub atom_invariants_generator: Option<AtomPairAtomInvariantsGenerator>,
@@ -269,7 +269,7 @@ impl Default for AtomPairCall<'_> {
         Self {
             from_atoms: None,
             ignore_atoms: None,
-            conformer_id: -1,
+            conformer_id: None,
             custom_atom_invariants: None,
             custom_bond_invariants: None,
             atom_invariants_generator: None,
@@ -396,7 +396,7 @@ fn environments(
     arguments: &AtomPairGeneratorParams,
     from_atoms: Option<&[u32]>,
     ignore_atoms: Option<&[u32]>,
-    conf_id: i32,
+    conf_id: Option<usize>,
 ) -> Result<Vec<AtomPairEnvironment>, AtomPairError> {
     // RDKit source file: AtomPairGenerator.cpp
     // RDKit source: AtomPairGenerator.cpp lines 177-237
@@ -435,7 +435,7 @@ fn environments(
             input.topology,
             input.coordinates,
             &DistanceMatrix3dParams {
-                conformer_id: (conf_id >= 0).then_some(conf_id as usize),
+                conformer_id: conf_id,
                 use_atom_weights: false,
             },
         )
@@ -694,7 +694,9 @@ fn count_helper(
         ignore_atoms: call.ignore_atoms,
         custom_atom_invariants: call.custom_atom_invariants,
         custom_bond_invariants: call.custom_bond_invariants,
-        conformer_id: call.conformer_id,
+        // The common preparation does not select coordinates. The typed ID is
+        // passed directly to environments below, without an i32 narrowing cast.
+        ..FingerprintFuncArguments::default()
     };
     with_fingerprint_environment_inputs_and_output(
         input.topology,
@@ -1109,7 +1111,7 @@ mod tests {
         from_atoms: Option<&[u32]>,
         ignore_atoms: Option<&[u32]>,
     ) -> Vec<AtomPairEnvironment> {
-        environments(&molecule.input(), arguments, from_atoms, ignore_atoms, -1).unwrap()
+        environments(&molecule.input(), arguments, from_atoms, ignore_atoms, None).unwrap()
     }
     fn three_atom_3d_molecule() -> TestMolecule {
         let mut builder = TestBuilder::default();
@@ -1340,7 +1342,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            environments(&molecule.input(), &arguments, None, None, -1).unwrap(),
+            environments(&molecule.input(), &arguments, None, None, None).unwrap(),
             [
                 AtomPairEnvironment::new(0, 1, 1),
                 AtomPairEnvironment::new(0, 2, 2),
@@ -1348,7 +1350,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            environments(&molecule.input(), &arguments, None, None, 2).unwrap(),
+            environments(&molecule.input(), &arguments, None, None, Some(2)).unwrap(),
             [
                 AtomPairEnvironment::new(0, 1, 3),
                 AtomPairEnvironment::new(0, 2, 4),

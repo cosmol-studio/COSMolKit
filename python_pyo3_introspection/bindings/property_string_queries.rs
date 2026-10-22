@@ -47,7 +47,7 @@ fn native_property_strings_preserve_all_kinds_absence_bytes_and_source() {
             ck::Molecule::from_parts(topology, Default::default(), Default::default()).unwrap();
         let before = native.to_binary().unwrap();
         let molecule = Py::new(py, Molecule { inner: native })?;
-        for method in ["atom_property_string", "bond_property_string"] {
+        for method in ["bond_property_string"] {
             for (key, value) in &values {
                 let expected = ck::property_value_to_text(value).unwrap();
                 let actual = molecule.bind(py).call_method1(method, (0, *key));
@@ -78,6 +78,53 @@ fn native_property_strings_preserve_all_kinds_absence_bytes_and_source() {
                     .is_instance_of::<pyo3::exceptions::PyOverflowError>(py)
             );
         }
+        assert_eq!(
+            molecule
+                .bind(py)
+                .call_method1("atom_property_string", (0, "string"))?
+                .extract::<String>()?,
+            "a\0b\u{e9}"
+        );
+        let wrong = molecule
+            .bind(py)
+            .call_method1("atom_property_string", (0, "int"))
+            .unwrap_err();
+        assert!(wrong.is_instance_of::<crate::property_values::AtomPropertyReadError>(py));
+        assert!(
+            wrong
+                .cause(py)
+                .unwrap()
+                .is_instance_of::<crate::property_values::PropertyValueError>(py)
+        );
+        let invalid = molecule
+            .bind(py)
+            .call_method1("atom_property_string", (0, "bytes"))
+            .unwrap_err();
+        assert!(
+            invalid
+                .cause(py)
+                .unwrap()
+                .is_instance_of::<pyo3::exceptions::PyUnicodeError>(py)
+        );
+        assert_eq!(
+            invalid
+                .value(py)
+                .getattr("valid_up_to")?
+                .extract::<usize>()?,
+            1
+        );
+        assert!(
+            molecule
+                .bind(py)
+                .call_method1("atom_property_string", (0, "missing"))?
+                .is_none()
+        );
+        assert!(
+            molecule
+                .bind(py)
+                .call_method1("atom_property_string", (usize::MAX, "string"))
+                .is_err()
+        );
         assert_eq!(molecule.borrow(py).inner.to_binary().unwrap(), before);
         Ok(())
     })

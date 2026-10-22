@@ -142,7 +142,8 @@ test('WASM deadlines use the host monotonic clock and preserve timeout reports a
   try {
    assert.ok(reads>1);
    assert.equal(report.ok(),false);
-   assert.equal(report.confId(),-1);
+   assert.equal(report.confId(),undefined);
+   assert.equal(report.termination,b.EmbedTermination.TimedOut);
    assert.equal(out.num3dConformers(),0);
    assert.equal(returned.failures()[11],1); // pinned EmbedFailureCauses::EXCEEDED_TIMEOUT
    assert.deepEqual(snapshot(source),before);

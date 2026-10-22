@@ -112,7 +112,11 @@ fn protein_input_format_preserves_all_source_formats() {
         parts.input_format = format;
         let source = BioStructure::from_parts(parts).unwrap();
         let protein = source.protein().unwrap();
-        let atoms = protein.as_bio_structure().atoms().as_ptr();
+        let atoms = protein
+            .as_bio_structure()
+            .atoms()
+            .first()
+            .map_or(std::ptr::null(), |view| view.value() as *const _);
         assert_eq!(protein.input_format(), format);
         assert_eq!(
             protein.input_format(),
@@ -120,7 +124,14 @@ fn protein_input_format_preserves_all_source_formats() {
         );
         assert_eq!(source.input_format(), format);
         assert_eq!(protein.clone().input_format(), format);
-        assert_eq!(protein.as_bio_structure().atoms().as_ptr(), atoms);
+        assert_eq!(
+            protein
+                .as_bio_structure()
+                .atoms()
+                .first()
+                .map_or(std::ptr::null(), |view| view.value() as *const _),
+            atoms
+        );
     }
 }
 
@@ -187,10 +198,19 @@ fn public_protein_structure_view_and_move_use_the_same_filtered_storage() {
         0x7ff8_0000_0000_0042
     );
 
-    let row_ptr = first.atoms().as_ptr();
+    let row_ptr = first
+        .atoms()
+        .first()
+        .map_or(std::ptr::null(), |view| view.value() as *const _);
     let coordinate_ptr = first.coordinates().positions().as_ptr();
     let moved = protein.into_bio_structure();
-    assert_eq!(moved.atoms().as_ptr(), row_ptr);
+    assert_eq!(
+        moved
+            .atoms()
+            .first()
+            .map_or(std::ptr::null(), |view| view.value() as *const _),
+        row_ptr
+    );
     assert_eq!(moved.coordinates().positions().as_ptr(), coordinate_ptr);
     assert_eq!(moved.atoms().len(), 1);
     let translated = moved.with_translated_coordinates([1.0, 0.0, 0.0]).unwrap();

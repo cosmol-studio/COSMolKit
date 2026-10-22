@@ -185,13 +185,21 @@ fn bio_cid_c29_public_pdb_mmcif_selection_matrices_and_sharing() {
     let pdb_peer = pdb.clone();
     let pointers = |s: &BioStructure| {
         (
-            s.models().as_ptr(),
+            s.models()
+                .first()
+                .map_or(std::ptr::null(), |view| view.value() as *const _),
             s.models().len(),
-            s.chains().as_ptr(),
+            s.chains()
+                .first()
+                .map_or(std::ptr::null(), |view| view.value() as *const _),
             s.chains().len(),
-            s.residues().as_ptr(),
+            s.residues()
+                .first()
+                .map_or(std::ptr::null(), |view| view.value() as *const _),
             s.residues().len(),
-            s.atoms().as_ptr(),
+            s.atoms()
+                .first()
+                .map_or(std::ptr::null(), |view| view.value() as *const _),
             s.atoms().len(),
         )
     };
@@ -217,19 +225,43 @@ fn bio_cid_c29_public_pdb_mmcif_selection_matrices_and_sharing() {
         assert_eq!(current, pdb_pointers_before, "original pointers {label}");
         assert_eq!(current, peer_now, "peer tuple {label}");
         assert!(
-            std::ptr::eq(current.0, pdb_peer.models().as_ptr()),
+            std::ptr::eq(
+                current.0,
+                pdb_peer
+                    .models()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "models {label}"
         );
         assert!(
-            std::ptr::eq(current.2, pdb_peer.chains().as_ptr()),
+            std::ptr::eq(
+                current.2,
+                pdb_peer
+                    .chains()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "chains {label}"
         );
         assert!(
-            std::ptr::eq(current.4, pdb_peer.residues().as_ptr()),
+            std::ptr::eq(
+                current.4,
+                pdb_peer
+                    .residues()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "residues {label}"
         );
         assert!(
-            std::ptr::eq(current.6, pdb_peer.atoms().as_ptr()),
+            std::ptr::eq(
+                current.6,
+                pdb_peer
+                    .atoms()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "atoms {label}"
         );
         assert_eq!(positions(&pdb), pdb_positions_before, "bits {label}");
@@ -249,19 +281,43 @@ fn bio_cid_c29_public_pdb_mmcif_selection_matrices_and_sharing() {
         let after = pointers(&pdb);
         assert_eq!(after, pdb_pointers_before, "pointers {cid}");
         assert!(
-            std::ptr::eq(after.0, pdb_peer.models().as_ptr()),
+            std::ptr::eq(
+                after.0,
+                pdb_peer
+                    .models()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "models {cid}"
         );
         assert!(
-            std::ptr::eq(after.2, pdb_peer.chains().as_ptr()),
+            std::ptr::eq(
+                after.2,
+                pdb_peer
+                    .chains()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "chains {cid}"
         );
         assert!(
-            std::ptr::eq(after.4, pdb_peer.residues().as_ptr()),
+            std::ptr::eq(
+                after.4,
+                pdb_peer
+                    .residues()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "residues {cid}"
         );
         assert!(
-            std::ptr::eq(after.6, pdb_peer.atoms().as_ptr()),
+            std::ptr::eq(
+                after.6,
+                pdb_peer
+                    .atoms()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "atoms {cid}"
         );
         // Exact coordinate bits per existing atom ID after every query.
@@ -311,19 +367,43 @@ fn bio_cid_c29_public_pdb_mmcif_selection_matrices_and_sharing() {
         );
         assert_eq!(current, peer_now, "cif peer tuple {label}");
         assert!(
-            std::ptr::eq(current.0, cif_peer.models().as_ptr()),
+            std::ptr::eq(
+                current.0,
+                cif_peer
+                    .models()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "cif models {label}"
         );
         assert!(
-            std::ptr::eq(current.2, cif_peer.chains().as_ptr()),
+            std::ptr::eq(
+                current.2,
+                cif_peer
+                    .chains()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "cif chains {label}"
         );
         assert!(
-            std::ptr::eq(current.4, cif_peer.residues().as_ptr()),
+            std::ptr::eq(
+                current.4,
+                cif_peer
+                    .residues()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "cif residues {label}"
         );
         assert!(
-            std::ptr::eq(current.6, cif_peer.atoms().as_ptr()),
+            std::ptr::eq(
+                current.6,
+                cif_peer
+                    .atoms()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "cif atoms {label}"
         );
         assert_eq!(positions(&cif), cif_positions_before, "cif bits {label}");
@@ -341,19 +421,43 @@ fn bio_cid_c29_public_pdb_mmcif_selection_matrices_and_sharing() {
         let after = pointers(&cif);
         assert_eq!(after, cif_pointers_before, "cif pointers {cid}");
         assert!(
-            std::ptr::eq(after.0, cif_peer.models().as_ptr()),
+            std::ptr::eq(
+                after.0,
+                cif_peer
+                    .models()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "cif models {cid}"
         );
         assert!(
-            std::ptr::eq(after.2, cif_peer.chains().as_ptr()),
+            std::ptr::eq(
+                after.2,
+                cif_peer
+                    .chains()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "cif chains {cid}"
         );
         assert!(
-            std::ptr::eq(after.4, cif_peer.residues().as_ptr()),
+            std::ptr::eq(
+                after.4,
+                cif_peer
+                    .residues()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "cif residues {cid}"
         );
         assert!(
-            std::ptr::eq(after.6, cif_peer.atoms().as_ptr()),
+            std::ptr::eq(
+                after.6,
+                cif_peer
+                    .atoms()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "cif atoms {cid}"
         );
         assert_eq!(positions(&cif), cif_positions_before, "cif bits {cid}");
@@ -407,13 +511,21 @@ fn bio_cid_c30_protein_projection_and_same_selector_behavior() {
     let peer = protein.clone();
     let pointers = |s: &BioStructure| {
         (
-            s.models().as_ptr(),
+            s.models()
+                .first()
+                .map_or(std::ptr::null(), |view| view.value() as *const _),
             s.models().len(),
-            s.chains().as_ptr(),
+            s.chains()
+                .first()
+                .map_or(std::ptr::null(), |view| view.value() as *const _),
             s.chains().len(),
-            s.residues().as_ptr(),
+            s.residues()
+                .first()
+                .map_or(std::ptr::null(), |view| view.value() as *const _),
             s.residues().len(),
-            s.atoms().as_ptr(),
+            s.atoms()
+                .first()
+                .map_or(std::ptr::null(), |view| view.value() as *const _),
             s.atoms().len(),
         )
     };
@@ -443,19 +555,43 @@ fn bio_cid_c30_protein_projection_and_same_selector_behavior() {
         assert_eq!(current, pointers_before, "original pointers {label}");
         assert_eq!(current, peer_now, "peer tuple {label}");
         assert!(
-            std::ptr::eq(current.0, peer.as_bio_structure().models().as_ptr()),
+            std::ptr::eq(
+                current.0,
+                peer.as_bio_structure()
+                    .models()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "models {label}"
         );
         assert!(
-            std::ptr::eq(current.2, peer.as_bio_structure().chains().as_ptr()),
+            std::ptr::eq(
+                current.2,
+                peer.as_bio_structure()
+                    .chains()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "chains {label}"
         );
         assert!(
-            std::ptr::eq(current.4, peer.as_bio_structure().residues().as_ptr()),
+            std::ptr::eq(
+                current.4,
+                peer.as_bio_structure()
+                    .residues()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "residues {label}"
         );
         assert!(
-            std::ptr::eq(current.6, peer.as_bio_structure().atoms().as_ptr()),
+            std::ptr::eq(
+                current.6,
+                peer.as_bio_structure()
+                    .atoms()
+                    .first()
+                    .map_or(std::ptr::null(), |view| view.value() as *const _)
+            ),
             "atoms {label}"
         );
         assert_eq!(

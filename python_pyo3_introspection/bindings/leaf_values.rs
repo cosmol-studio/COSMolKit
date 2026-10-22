@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 
 enum_value!(TautomerEnumerationStatus, { Completed, MaxTautomersReached, MaxTransformsReached, Canceled });
 enum_value!(UffParameterErrorKind, { Preparation, ParameterTable, Typing });
-enum_value!(MmffVariant, { Mmff94, Mmff94s });
+enum_value!(MmffVariant, { Mmff94 text = "MMFF94", Mmff94s text = "MMFF94s" });
+enum_value!(OptimizationStatus, { Converged, NotConverged, MissingParameters });
+pub(crate) type MmffVariantInput =
+    crate::parameters::ContainerInput<crate::parameters::EnumField<MmffVariant>>;
 
 #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]

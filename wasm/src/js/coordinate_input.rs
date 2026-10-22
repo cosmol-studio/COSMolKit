@@ -1,5 +1,5 @@
 //! Checked numeric transport; interpretation remains in canonical coordinate APIs.
-use crate::construction::matrix;
+use crate::construction::{matrix, fixed_matrix};
 use crate::{Molecule, host_values::*};
 use cosmolkit_wasm::rust as ck;
 use wasm_bindgen::prelude::*;
@@ -216,7 +216,7 @@ impl Molecule {
     #[wasm_bindgen(js_name=with3dCoordinates)]
     pub fn with_3d_coordinates(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         #[wasm_bindgen(
             unchecked_optional_param_type = "Replace3DCoordinatesParams | Replace3DCoordinatesParamsOptions"
         )]
@@ -230,12 +230,12 @@ impl Molecule {
     #[wasm_bindgen(js_name=with3dCoordinatesWithParams)]
     pub fn with_3d_coordinates_with_params(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         params: &Replace3DCoordinatesParams,
     ) -> Result<Molecule, JsValue> {
         operation(
             self.inner
-                .with_3d_coordinates_with_params(matrix(&coordinates)?, &params.inner),
+                .with_3d_coordinates_with_params(fixed_matrix::<3>(&coordinates)?, &params.inner),
         )
         .map(|inner| Molecule {
             inner: inner.into(),
@@ -244,7 +244,7 @@ impl Molecule {
     #[wasm_bindgen(js_name=set3dCoordinates_)]
     pub fn set_3d_coordinates_(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         #[wasm_bindgen(
             unchecked_optional_param_type = "Replace3DCoordinatesParams | Replace3DCoordinatesParamsOptions"
         )]
@@ -258,18 +258,18 @@ impl Molecule {
     #[wasm_bindgen(js_name=set3dCoordinatesWithParams_)]
     pub fn set_3d_coordinates_with_params_(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         params: &Replace3DCoordinatesParams,
     ) -> Result<(), JsValue> {
         operation(
             self.inner
-                .set_3d_coordinates_with_params_(matrix(&coordinates)?, &params.inner),
+                .set_3d_coordinates_with_params_(fixed_matrix::<3>(&coordinates)?, &params.inner),
         )
     }
     #[wasm_bindgen(js_name=withAdded3dConformer)]
     pub fn with_added_3d_conformer(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         #[wasm_bindgen(
             unchecked_optional_param_type = "Coordinate3DInputParams | Coordinate3DInputParamsOptions"
         )]
@@ -283,12 +283,12 @@ impl Molecule {
     #[wasm_bindgen(js_name=withAdded3dConformerWithParams)]
     pub fn with_added_3d_conformer_with_params(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         params: &Coordinate3DInputParams,
     ) -> Result<Molecule, JsValue> {
         operation(
             self.inner
-                .with_added_3d_conformer_with_params(matrix(&coordinates)?, &params.inner),
+                .with_added_3d_conformer_with_params(fixed_matrix::<3>(&coordinates)?, &params.inner),
         )
         .map(|inner| Molecule {
             inner: inner.into(),
@@ -297,7 +297,7 @@ impl Molecule {
     #[wasm_bindgen(js_name=add3dConformer_)]
     pub fn add_3d_conformer_(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         #[wasm_bindgen(
             unchecked_optional_param_type = "Coordinate3DInputParams | Coordinate3DInputParamsOptions"
         )]
@@ -311,18 +311,18 @@ impl Molecule {
     #[wasm_bindgen(js_name=add3dConformerWithParams_)]
     pub fn add_3d_conformer_with_params_(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         params: &Coordinate3DInputParams,
     ) -> Result<usize, JsValue> {
         operation(
             self.inner
-                .add_3d_conformer_with_params_(matrix(&coordinates)?, &params.inner),
+                .add_3d_conformer_with_params_(fixed_matrix::<3>(&coordinates)?, &params.inner),
         )
     }
     #[wasm_bindgen(js_name=withOnly3dConformer)]
     pub fn with_only_3d_conformer(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         #[wasm_bindgen(
             unchecked_optional_param_type = "Coordinate3DInputParams | Coordinate3DInputParamsOptions"
         )]
@@ -336,12 +336,12 @@ impl Molecule {
     #[wasm_bindgen(js_name=withOnly3dConformerWithParams)]
     pub fn with_only_3d_conformer_with_params(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         params: &Coordinate3DInputParams,
     ) -> Result<Molecule, JsValue> {
         operation(
             self.inner
-                .with_only_3d_conformer_with_params(matrix(&coordinates)?, &params.inner),
+                .with_only_3d_conformer_with_params(fixed_matrix::<3>(&coordinates)?, &params.inner),
         )
         .map(|inner| Molecule {
             inner: inner.into(),
@@ -350,7 +350,7 @@ impl Molecule {
     #[wasm_bindgen(js_name=setOnly3dConformer_)]
     pub fn set_only_3d_conformer_(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         #[wasm_bindgen(
             unchecked_optional_param_type = "Coordinate3DInputParams | Coordinate3DInputParamsOptions"
         )]
@@ -364,12 +364,12 @@ impl Molecule {
     #[wasm_bindgen(js_name=setOnly3dConformerWithParams_)]
     pub fn set_only_3d_conformer_with_params_(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "number[][]")] coordinates: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ReadonlyArray<readonly [number, number, number]>")] coordinates: JsValue,
         params: &Coordinate3DInputParams,
     ) -> Result<usize, JsValue> {
         operation(
             self.inner
-                .set_only_3d_conformer_with_params_(matrix(&coordinates)?, &params.inner),
+                .set_only_3d_conformer_with_params_(fixed_matrix::<3>(&coordinates)?, &params.inner),
         )
     }
     #[wasm_bindgen(js_name=withCleared3dConformers)]

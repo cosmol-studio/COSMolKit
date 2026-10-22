@@ -2,6 +2,15 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
+    pub fn symmetrized_sssr(&self) -> Result<ck::RingSearchResult, ck::OperationError> {
+        self.inner.borrow().symmetrized_sssr()
+    }
+    pub fn symmetrized_sssr_with_params(
+        &self,
+        params: &ck::RingSearchParams,
+    ) -> Result<ck::RingSearchResult, ck::OperationError> {
+        self.inner.borrow().symmetrized_sssr_with_params(params)
+    }
     pub fn with_assigned_rings(&self) -> Result<Self, ck::OperationError> {
         // COSMolKit❗✔️: self.inner.with_assigned_rings()
         self.inner.borrow().with_assigned_rings().map(|inner| Self {

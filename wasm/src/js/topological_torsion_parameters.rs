@@ -142,7 +142,6 @@ impl TopologicalTorsionFingerprintParams {
         custom_atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
         custom_bond_invariants: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "number")] conformer_id: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "AtomPairAtomInvariantsGenerator | null")]
         atom_invariants_generator: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")]
@@ -170,9 +169,6 @@ impl TopologicalTorsionFingerprintParams {
             optional_u32_array(&custom_atom_invariants, "customAtomInvariants")?;
         inner.custom_bond_invariants =
             optional_u32_array(&custom_bond_invariants, "customBondInvariants")?;
-        if !conformer_id.is_undefined() {
-            inner.conformer_id = i32_value(&conformer_id, "conformerId")?;
-        }
         if !use_legacy_stereo_perception.is_undefined() {
             inner.use_legacy_stereo_perception =
                 bool_value(&use_legacy_stereo_perception, "useLegacyStereoPerception")?;
@@ -192,10 +188,6 @@ impl TopologicalTorsionFingerprintParams {
             .map_or(JsValue::NULL, |inner| {
                 AtomPairAtomInvariantsGenerator { inner }.into()
             })
-    }
-    #[wasm_bindgen(getter,js_name=conformerId)]
-    pub fn conformer_id(&self) -> i32 {
-        self.inner.conformer_id
     }
     #[wasm_bindgen(getter,js_name=useLegacyStereoPerception)]
     pub fn use_legacy_stereo_perception(&self) -> bool {
@@ -234,7 +226,6 @@ impl TopologicalTorsionCallParams {
         custom_atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
         custom_bond_invariants: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "number")] conformer_id: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")]
         use_legacy_stereo_perception: JsValue,
     ) -> Result<Self, JsValue> {
@@ -243,7 +234,6 @@ impl TopologicalTorsionCallParams {
             ignore_atoms,
             custom_atom_invariants,
             custom_bond_invariants,
-            conformer_id,
             use_legacy_stereo_perception,
         )
     }
@@ -252,7 +242,6 @@ impl TopologicalTorsionCallParams {
         ignore_atoms: JsValue,
         custom_atom_invariants: JsValue,
         custom_bond_invariants: JsValue,
-        conformer_id: JsValue,
         use_legacy_stereo_perception: JsValue,
     ) -> Result<Self, JsValue> {
         // COSMolKit❗✔️: inner: ck::TopologicalTorsionCallParams {
@@ -263,9 +252,6 @@ impl TopologicalTorsionCallParams {
             optional_u32_array(&custom_atom_invariants, "customAtomInvariants")?;
         inner.custom_bond_invariants =
             optional_u32_array(&custom_bond_invariants, "customBondInvariants")?;
-        if !conformer_id.is_undefined() {
-            inner.conformer_id = i32_value(&conformer_id, "conformerId")?;
-        }
         if !use_legacy_stereo_perception.is_undefined() {
             inner.use_legacy_stereo_perception =
                 bool_value(&use_legacy_stereo_perception, "useLegacyStereoPerception")?;
@@ -291,11 +277,6 @@ impl TopologicalTorsionCallParams {
     pub fn custom_bond_invariants(&self) -> JsValue {
         // COSMolKit❗✔️: self.inner.custom_bond_invariants
         optional_array(self.inner.custom_bond_invariants.as_deref())
-    }
-    #[wasm_bindgen(getter,js_name=conformerId)]
-    pub fn conformer_id(&self) -> i32 {
-        // COSMolKit❗✔️: self.inner.conformer_id
-        self.inner.conformer_id
     }
     #[wasm_bindgen(getter,js_name=useLegacyStereoPerception)]
     pub fn use_legacy_stereo_perception(&self) -> bool {

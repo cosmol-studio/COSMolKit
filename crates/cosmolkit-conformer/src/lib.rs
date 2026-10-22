@@ -32,7 +32,7 @@ pub use pruning::{PruningError, PruningMatches, PruningQueryProjection, pruning_
 
 #[doc(hidden)]
 pub use generation::{
-    EmbeddingDiagnostic, GeneratedConformers, GenerationError, GenerationFailure,
+    EmbedTermination, EmbeddingDiagnostic, GeneratedConformers, GenerationError, GenerationFailure,
     PreparationDiagnostic, generate_conformers,
 };
 

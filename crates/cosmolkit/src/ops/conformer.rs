@@ -24,10 +24,10 @@ pub(crate) fn with_3d_conformer_impl(params: &crate::EmbedParams) -> Result<(), 
             coordinates
                 .install_generated_3d(generated.clear_existing, generated.conformers)
                 .map_err(OperationError::InvalidCoordinates)?;
-            Ok(generated.conf_ids)
+            Ok((generated.conf_ids, generated.termination))
         });
     parts.install_coordinates(coordinates)?;
-    let conf_ids = metadata?;
+    let (conf_ids, termination) = metadata?;
     parts.clear_cache(DerivedState::STEREO.union(DerivedState::DRAWING))?;
     parts.prove_preserved(
         DerivedState::RINGS
@@ -38,7 +38,7 @@ pub(crate) fn with_3d_conformer_impl(params: &crate::EmbedParams) -> Result<(), 
         PreservationProof::CoordinateOnly,
     )?;
     parts.apply_cip_policy()?;
-    let _ = conf_ids;
+    let _ = (conf_ids, termination);
     Ok(())
 }
 
@@ -66,10 +66,10 @@ pub(crate) fn with_3d_conformer_result_impl(
             coordinates
                 .install_generated_3d(generated.clear_existing, generated.conformers)
                 .map_err(OperationError::InvalidCoordinates)?;
-            Ok(generated.conf_ids)
+            Ok((generated.conf_ids, generated.termination))
         });
     parts.install_coordinates(coordinates)?;
-    let conf_ids = metadata?;
+    let (conf_ids, termination) = metadata?;
     parts.clear_cache(DerivedState::STEREO.union(DerivedState::DRAWING))?;
     parts.prove_preserved(
         DerivedState::RINGS
@@ -82,6 +82,7 @@ pub(crate) fn with_3d_conformer_result_impl(
     parts.apply_cip_policy()?;
     Ok(crate::conformer::EmbedConformerReport {
         conf_ids,
+        termination,
         params: run_params,
         requested_num_confs: 1,
     })
@@ -112,10 +113,10 @@ pub(crate) fn with_3d_conformers_impl(
             coordinates
                 .install_generated_3d(generated.clear_existing, generated.conformers)
                 .map_err(OperationError::InvalidCoordinates)?;
-            Ok(generated.conf_ids)
+            Ok((generated.conf_ids, generated.termination))
         });
     parts.install_coordinates(coordinates)?;
-    let conf_ids = metadata?;
+    let (conf_ids, termination) = metadata?;
     parts.clear_cache(DerivedState::STEREO.union(DerivedState::DRAWING))?;
     parts.prove_preserved(
         DerivedState::RINGS
@@ -126,7 +127,7 @@ pub(crate) fn with_3d_conformers_impl(
         PreservationProof::CoordinateOnly,
     )?;
     parts.apply_cip_policy()?;
-    let _ = conf_ids;
+    let _ = (conf_ids, termination);
     Ok(())
 }
 
@@ -155,10 +156,10 @@ pub(crate) fn with_3d_conformers_result_impl(
             coordinates
                 .install_generated_3d(generated.clear_existing, generated.conformers)
                 .map_err(OperationError::InvalidCoordinates)?;
-            Ok(generated.conf_ids)
+            Ok((generated.conf_ids, generated.termination))
         });
     parts.install_coordinates(coordinates)?;
-    let conf_ids = metadata?;
+    let (conf_ids, termination) = metadata?;
     parts.clear_cache(DerivedState::STEREO.union(DerivedState::DRAWING))?;
     parts.prove_preserved(
         DerivedState::RINGS
@@ -171,6 +172,7 @@ pub(crate) fn with_3d_conformers_result_impl(
     parts.apply_cip_policy()?;
     Ok(crate::conformer::EmbedConformerReport {
         conf_ids,
+        termination,
         params: run_params,
         requested_num_confs: num_confs,
     })

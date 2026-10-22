@@ -40,7 +40,7 @@ impl PdbWriteParams {
                 coordinate_selection: coordinate_selection
                     .map_or(ck::MolCoordinateSelection::Auto, |s| s.inner),
                 all_conformers,
-                flavor,
+                flavor: cosmolkit::PdbWriteFlags::from_bits(flavor),
             },
         }
     }
@@ -61,7 +61,7 @@ impl PdbWriteParams {
     /// directions, 8 suppresses bond multiplicity, 16 adds MASTER, 32 adds TER.
     #[getter]
     fn flavor(&self) -> u32 {
-        self.inner.flavor
+        self.inner.flavor.bits()
     }
 }
 

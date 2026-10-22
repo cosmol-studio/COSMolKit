@@ -465,10 +465,10 @@ use cosmolkit::{AlignmentAtomMap, AlignmentParameters, Molecule};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reference = Molecule::from_smiles("CCC")?.with_only_3d_conformer(
-        vec![vec![0.0, 0.0, 0.0], vec![1.0, 0.0, 0.0], vec![0.0, 2.0, 0.0]],
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
     )?;
     let probe = Molecule::from_smiles("CCC")?.with_only_3d_conformer(
-        vec![vec![3.0, -2.0, 1.0], vec![4.0, -2.0, 1.0], vec![3.0, 0.0, 1.0]],
+        vec![[3.0, -2.0, 1.0], [4.0, -2.0, 1.0], [3.0, 0.0, 1.0]],
     )?;
     let params = AlignmentParameters {
         atom_map: Some(

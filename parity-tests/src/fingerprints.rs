@@ -141,7 +141,6 @@ impl MorganProfile {
                     .map(|index| index as u32 + self.custom_bond_offset)
                     .collect()
             }),
-            -1,
         )
     }
 }

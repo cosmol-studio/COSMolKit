@@ -45,6 +45,6 @@ test('Chiral-center query clears stale selected CIP labels without changing its 
     // Candidate clearSelectedCIPProperties runs before configuration discovery.
     assert.deepEqual(source.findChiralCenters(true), [[1, '?']]);
     assert.deepEqual(source.findChiralCenters(), []);
-    assert.equal(source.atomProperty(1,'_CIPCode'),'foo');
+    assert.equal(source.atomPropertyString(1,'_CIPCode'),'foo');
   } finally { source.free(); params.free(); }
 });

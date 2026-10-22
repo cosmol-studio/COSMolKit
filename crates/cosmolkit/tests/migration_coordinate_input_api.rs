@@ -62,8 +62,8 @@ fn transform_molecule() -> Molecule {
     Molecule::from_parts(topology, coordinates, properties).unwrap()
 }
 
-fn rows() -> Vec<Vec<f64>> {
-    vec![vec![9., 8., 7.], vec![6., 5., 4.]]
+fn rows() -> Vec<[f64; 3]> {
+    vec![[9., 8., 7.], [6., 5., 4.]]
 }
 fn unchanged_graph(source: &Molecule, result: &Molecule) {
     assert!(std::ptr::eq(source.topology(), result.topology()));
@@ -85,7 +85,9 @@ fn unchanged_graph(source: &Molecule, result: &Molecule) {
 fn two_dimensional_install_is_value_cow_with_original_mixed_provenance() {
     let source = transform_molecule();
     let before = source.to_builder();
-    let result = source.with_2d_coordinate_block(rows()).unwrap();
+    let result = source
+        .with_2d_coordinate_block(rows().into_iter().map(Vec::from).collect())
+        .unwrap();
     assert_eq!(source.to_builder().coordinates(), before.coordinates());
     assert_eq!(result.conformers_3d(), source.conformers_3d());
     assert_eq!(result.coordinates_2d().unwrap(), &[[9., 8.], [6., 5.]]);
@@ -215,13 +217,9 @@ fn public_coordinate_errors_are_atomic_for_all_live_input_transitions() {
         ))
     ));
     coordinate_views::assert_shared_coordinates(&source, &observer);
-    assert!(
-        source
-            .add_3d_conformer_(vec![vec![f64::NAN; 3]; 2])
-            .is_err()
-    );
+    assert!(source.add_3d_conformer_(vec![[f64::NAN; 3]; 2]).is_err());
     coordinate_views::assert_shared_coordinates(&source, &observer);
-    assert!(source.set_only_3d_conformer_(vec![vec![0.; 2]; 2]).is_err());
+    assert!(source.set_only_3d_conformer_(vec![[0.; 3]]).is_err());
     coordinate_views::assert_shared_coordinates(&source, &observer);
     unchanged_graph(&observer, &source);
 }
@@ -340,7 +338,7 @@ mod source_order_regression {
         let before = source.to_builder();
         let result = source
             .with_added_3d_conformer_with_params(
-                vec![vec![2.0, 3.0, 4.0]],
+                vec![[2.0, 3.0, 4.0]],
                 &Coordinate3DInputParams { is_3d: false },
             )
             .unwrap();

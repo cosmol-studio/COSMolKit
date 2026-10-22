@@ -18,7 +18,6 @@ pub struct TopologicalTorsionFingerprintParams {
     pub ignore_atoms: Option<Vec<u32>>,
     pub custom_atom_invariants: Option<Vec<u32>>,
     pub custom_bond_invariants: Option<Vec<u32>>,
-    pub conformer_id: i32,
     pub atom_invariants_generator: Option<AtomPairAtomInvariantsGenerator>,
     pub use_legacy_stereo_perception: bool,
 }
@@ -50,7 +49,6 @@ impl
             ignore_atoms: call.ignore_atoms,
             custom_atom_invariants: call.custom_atom_invariants,
             custom_bond_invariants: call.custom_bond_invariants,
-            conformer_id: call.conformer_id,
             atom_invariants_generator: None,
             use_legacy_stereo_perception: call.use_legacy_stereo_perception,
         }
@@ -115,7 +113,7 @@ impl Molecule {
             ignore_atoms: params.ignore_atoms.as_deref(),
             custom_atom_invariants: params.custom_atom_invariants.as_deref(),
             custom_bond_invariants: params.custom_bond_invariants.as_deref(),
-            conformer_id: params.conformer_id,
+            conformer_id: -1,
             atom_invariants_generator: params.atom_invariants_generator,
         };
         topological_torsion_bits(&input, &params.generator, &call, additional_output)
@@ -150,7 +148,7 @@ impl Molecule {
             ignore_atoms: params.ignore_atoms.as_deref(),
             custom_atom_invariants: params.custom_atom_invariants.as_deref(),
             custom_bond_invariants: params.custom_bond_invariants.as_deref(),
-            conformer_id: params.conformer_id,
+            conformer_id: -1,
             atom_invariants_generator: params.atom_invariants_generator,
         };
         topological_torsion_sparse_bits(&input, &params.generator, &call, additional_output)
@@ -185,7 +183,7 @@ impl Molecule {
             ignore_atoms: params.ignore_atoms.as_deref(),
             custom_atom_invariants: params.custom_atom_invariants.as_deref(),
             custom_bond_invariants: params.custom_bond_invariants.as_deref(),
-            conformer_id: params.conformer_id,
+            conformer_id: -1,
             atom_invariants_generator: params.atom_invariants_generator,
         };
         topological_torsion_count(&input, &params.generator, &call, additional_output)
@@ -220,7 +218,7 @@ impl Molecule {
             ignore_atoms: params.ignore_atoms.as_deref(),
             custom_atom_invariants: params.custom_atom_invariants.as_deref(),
             custom_bond_invariants: params.custom_bond_invariants.as_deref(),
-            conformer_id: params.conformer_id,
+            conformer_id: -1,
             atom_invariants_generator: params.atom_invariants_generator,
         };
         topological_torsion_sparse_count(&input, &params.generator, &call, additional_output)
@@ -245,7 +243,6 @@ pub struct TopologicalTorsionCallParams {
     pub ignore_atoms: Option<Vec<u32>>,
     pub custom_atom_invariants: Option<Vec<u32>>,
     pub custom_bond_invariants: Option<Vec<u32>>,
-    pub conformer_id: i32,
     pub use_legacy_stereo_perception: bool,
 }
 impl Default for TopologicalTorsionCallParams {
@@ -255,7 +252,6 @@ impl Default for TopologicalTorsionCallParams {
             ignore_atoms: None,
             custom_atom_invariants: None,
             custom_bond_invariants: None,
-            conformer_id: -1,
             use_legacy_stereo_perception: true,
         }
     }
@@ -267,7 +263,7 @@ impl TopologicalTorsionCallParams {
             ignore_atoms: self.ignore_atoms.as_deref(),
             custom_atom_invariants: self.custom_atom_invariants.as_deref(),
             custom_bond_invariants: self.custom_bond_invariants.as_deref(),
-            conformer_id: self.conformer_id,
+            conformer_id: -1,
             atom_invariants_generator: None,
         }
     }

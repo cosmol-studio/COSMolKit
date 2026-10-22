@@ -1483,7 +1483,7 @@ impl BioStructure {
             .to_molecule_with_params(&ck::BioMoleculeParams {
                 sanitize,
                 remove_hs,
-                flavor,
+                flavor: cosmolkit::PdbReadFlags::from_bits(flavor),
                 proximity_bonding,
             })
             .map(crate::drawing_binding::Molecule::from_inner)
@@ -2348,7 +2348,7 @@ impl Protein {
             .to_molecule_with_params(&ck::BioMoleculeParams {
                 sanitize,
                 remove_hs,
-                flavor,
+                flavor: cosmolkit::PdbReadFlags::from_bits(flavor),
                 proximity_bonding,
             })
             .map(crate::drawing_binding::Molecule::from_inner)
@@ -2784,7 +2784,7 @@ impl BioMoleculeParams {
             inner: ck::BioMoleculeParams {
                 sanitize,
                 remove_hs,
-                flavor,
+                flavor: cosmolkit::PdbReadFlags::from_bits(flavor),
                 proximity_bonding,
             },
         }
@@ -2802,7 +2802,7 @@ impl BioMoleculeParams {
     /// Bit mask controlling BIO-to-molecule conversion behavior.
     #[getter]
     fn flavor(&self) -> u32 {
-        self.inner.flavor
+        self.inner.flavor.bits()
     }
     /// Whether spatially close atoms are considered when building molecular bonds.
     #[getter]

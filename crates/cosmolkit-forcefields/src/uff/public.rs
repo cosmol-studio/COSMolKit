@@ -15,8 +15,7 @@ pub struct UffSingleOptions {
 /// Scalar outcome; coordinates are written to the borrowed block.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UffSingleOutcome {
-    pub status: i32,
-    pub energy: f64,
+    pub outcome: crate::OptimizationOutcome,
 }
 
 /// Concrete source chain without exposing builder or optimizer machinery.
@@ -47,8 +46,7 @@ pub struct UffConformerOptions {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UffConformerOutcome {
     pub conformer_id: usize,
-    pub status: i32,
-    pub energy: f64,
+    pub outcome: crate::OptimizationOutcome,
 }
 
 /// Concrete source chain without exposing builder or optimizer machinery.
@@ -101,8 +99,7 @@ pub fn optimize_uff_single_prepared(
     )
     .map_err(UffSingleError)?;
     Ok(UffSingleOutcome {
-        status: outcome.status,
-        energy: outcome.energy,
+        outcome: outcome.into(),
     })
 }
 
@@ -214,8 +211,7 @@ pub fn optimize_uff_conformers_prepared(
         .enumerate()
         .map(|(index, outcome)| UffConformerOutcome {
             conformer_id: coordinates.conformers_3d[index].id(),
-            status: outcome.status,
-            energy: outcome.energy,
+            outcome: outcome.into(),
         })
         .collect())
 }
@@ -389,7 +385,11 @@ mod tests {
                         .collect::<Vec<_>>(),
                     IDS[..count]
                 );
-                assert!(outcomes.iter().all(|outcome| outcome.status == 1));
+                assert!(
+                    outcomes
+                        .iter()
+                        .all(|outcome| outcome.outcome.status_code() == 1)
+                );
                 let expected_energy_bits: &[u64] = match (count, max_iterations) {
                     (1, 0) => &[4634709622640018448],
                     (1, 1) => &[4622575255082429943],
@@ -408,7 +408,7 @@ mod tests {
                 assert_eq!(
                     outcomes
                         .iter()
-                        .map(|outcome| outcome.energy.to_bits())
+                        .map(|outcome| outcome.outcome.energy().unwrap().to_bits())
                         .collect::<Vec<_>>(),
                     expected_energy_bits
                 );
@@ -511,7 +511,11 @@ mod tests {
                             .collect::<Vec<_>>(),
                         IDS[..count]
                     );
-                    assert!(outcomes.iter().all(|outcome| outcome.status == 1));
+                    assert!(
+                        outcomes
+                            .iter()
+                            .all(|outcome| outcome.outcome.status_code() == 1)
+                    );
                     let expected_energy_bits: &[u64] = match (count, max_iterations) {
                         (1, 0) => &[4634709622640018448],
                         (1, 1) => &[4622575255082429943],
@@ -530,7 +534,7 @@ mod tests {
                     assert_eq!(
                         outcomes
                             .iter()
-                            .map(|outcome| outcome.energy.to_bits())
+                            .map(|outcome| outcome.outcome.energy().unwrap().to_bits())
                             .collect::<Vec<_>>(),
                         expected_energy_bits
                     );

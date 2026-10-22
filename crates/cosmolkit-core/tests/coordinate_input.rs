@@ -1,8 +1,8 @@
 use cosmolkit_core::*;
 use cosmolkit_model::{Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension};
 
-fn xyz() -> Vec<Vec<f64>> {
-    vec![vec![0., 0., 0.], vec![1., 2., 3.]]
+fn xyz() -> Vec<[f64; 3]> {
+    vec![[0., 0., 0.], [1., 2., 3.]]
 }
 fn mixed() -> CoordinateBlock {
     CoordinateBlock {
@@ -60,8 +60,20 @@ fn policy_defaults_casefold_and_original_zero_threshold() {
 
 #[test]
 fn matrix_validation_keeps_row_shape_finite_order_including_ignored_z() {
+    let rows = xyz();
+    let allocation = rows.as_ptr();
+    let checked = coordinates_3d_from_input(2, rows).unwrap();
+    assert_eq!(checked.as_ptr(), allocation);
     assert!(matches!(
-        coordinates_3d_from_input(2, vec![vec![f64::NAN]]),
+        coordinates_3d_from_input(1, vec![[0., f64::INFINITY, 0.]]),
+        Err(CoordinateInputError::NonFinite {
+            row: 0,
+            column: 1,
+            ..
+        })
+    ));
+    assert!(matches!(
+        coordinates_3d_from_input(2, vec![[f64::NAN; 3]]),
         Err(CoordinateInputError::RowCount {
             expected: 2,
             actual: 1,
@@ -69,10 +81,14 @@ fn matrix_validation_keeps_row_shape_finite_order_including_ignored_z() {
         })
     ));
     assert!(matches!(
-        coordinates_3d_from_input(2, vec![vec![f64::NAN; 3], vec![0.; 2]]),
+        coordinates_2d_from_input(
+            2,
+            vec![vec![f64::NAN; 3], vec![0.; 4]],
+            &Coordinate2DInputParams::default()
+        ),
         Err(CoordinateInputError::Shape {
             row: 1,
-            columns: 2,
+            columns: 4,
             ..
         })
     ));
@@ -94,7 +110,13 @@ fn matrix_validation_keeps_row_shape_finite_order_including_ignored_z() {
 fn two_dimensional_install_preserves_xyz_metadata_and_explicit_provenance() {
     let mut block = mixed();
     let old = block.conformers_3d.clone();
-    install_2d_coordinates(&mut block, 2, xyz(), &Coordinate2DInputParams::default()).unwrap();
+    install_2d_coordinates(
+        &mut block,
+        2,
+        xyz().into_iter().map(Vec::from).collect(),
+        &Coordinate2DInputParams::default(),
+    )
+    .unwrap();
     assert_eq!(block.conformers_2d.len(), 1);
     assert_eq!(block.conformers_2d[0].id(), 0);
     assert_eq!(block.conformers_2d[0].coordinates(), &[[0., 0.], [1., 2.]]);
@@ -196,7 +218,7 @@ fn every_fallible_transition_is_atomic_including_identifier_overflow() {
         append_3d_conformer(
             &mut block,
             2,
-            vec![vec![f64::NAN; 3]; 2],
+            vec![[f64::NAN; 3]; 2],
             &Coordinate3DInputParams::default()
         )
         .is_err()
@@ -206,7 +228,7 @@ fn every_fallible_transition_is_atomic_including_identifier_overflow() {
         install_only_3d_conformer(
             &mut block,
             2,
-            vec![vec![0.; 2]; 2],
+            vec![[0.; 3]],
             &Coordinate3DInputParams::default()
         )
         .is_err()
@@ -306,7 +328,7 @@ mod source_order_regression {
         let position = append_3d_conformer(
             &mut block,
             1,
-            vec![vec![2.0, 3.0, 4.0]],
+            vec![[2.0, 3.0, 4.0]],
             &Coordinate3DInputParams { is_3d: false },
         )
         .unwrap();

@@ -77,7 +77,11 @@ pub(crate) fn molecule(row: &Json) -> Result<Molecule> {
 fn mmff(m: &Molecule, variant: &str) -> Result<Value> {
     let available = m.mmff_has_all_molecule_params()?;
     let p = m.mmff_properties_with_params(&MmffPropertiesParams {
-        mmff_variant: variant.into(),
+        mmff_variant: match variant {
+            "MMFF94" => MmffVariant::Mmff94,
+            "MMFF94s" => MmffVariant::Mmff94s,
+            _ => return Err(format!("unknown MMFF variant: {variant}").into()),
+        },
     })?;
     let atoms = if p.is_valid() {
         Value::List(

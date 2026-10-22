@@ -189,7 +189,6 @@ impl MorganFingerprintParams {
         custom_atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
         custom_bond_invariants: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "number")] conformer_id: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "MorganInvariants | null")]
         invariants: JsValue,
     ) -> Result<Self, JsValue> {
@@ -210,9 +209,6 @@ impl MorganFingerprintParams {
             optional_u32_array(&custom_atom_invariants, "customAtomInvariants")?;
         inner.custom_bond_invariants =
             optional_u32_array(&custom_bond_invariants, "customBondInvariants")?;
-        if !conformer_id.is_undefined() {
-            inner.conformer_id = i32_value(&conformer_id, "conformerId")?;
-        }
         Ok(Self { inner })
     }
     #[wasm_bindgen(getter)]
@@ -226,10 +222,6 @@ impl MorganFingerprintParams {
         MorganInvariants {
             inner: self.inner.invariants.clone(),
         }
-    }
-    #[wasm_bindgen(getter,js_name=conformerId)]
-    pub fn conformer_id(&self) -> i32 {
-        self.inner.conformer_id
     }
     #[wasm_bindgen(getter,js_name=fromAtoms,unchecked_return_type="number[] | null")]
     pub fn from_atoms(&self) -> JsValue {
@@ -375,14 +367,12 @@ impl MorganCallParams {
         custom_atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
         custom_bond_invariants: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "number")] conformer_id: JsValue,
     ) -> Result<Self, JsValue> {
         Self::new(
             from_atoms,
             ignore_atoms,
             custom_atom_invariants,
             custom_bond_invariants,
-            conformer_id,
         )
     }
     #[wasm_bindgen(js_name=new)]
@@ -394,7 +384,6 @@ impl MorganCallParams {
         custom_atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
         custom_bond_invariants: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "number")] conformer_id: JsValue,
     ) -> Result<Self, JsValue> {
         Ok(Self {
             inner: ck::MorganCallParams::new(
@@ -402,11 +391,6 @@ impl MorganCallParams {
                 optional_u32_array(&ignore_atoms, "ignoreAtoms")?,
                 optional_u32_array(&custom_atom_invariants, "customAtomInvariants")?,
                 optional_u32_array(&custom_bond_invariants, "customBondInvariants")?,
-                if conformer_id.is_undefined() {
-                    -1
-                } else {
-                    i32_value(&conformer_id, "conformerId")?
-                },
             ),
         })
     }
@@ -425,9 +409,5 @@ impl MorganCallParams {
     #[wasm_bindgen(getter,js_name=customBondInvariants,unchecked_return_type="number[] | null")]
     pub fn custom_bond_invariants(&self) -> JsValue {
         optional_array(self.inner.custom_bond_invariants.as_deref())
-    }
-    #[wasm_bindgen(getter,js_name=conformerId)]
-    pub fn conformer_id(&self) -> i32 {
-        self.inner.conformer_id
     }
 }

@@ -2,7 +2,7 @@
 //! RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8 (BSD license).
 use super::{
     builder::{MmffBuilderError, MmffConformerContext, construct_force_field_with_props},
-    mol_properties::{MmffMolProperties, MmffMolPropertiesError},
+    mol_properties::{MmffMolProperties, MmffMolPropertiesError, MmffVariant},
 };
 use crate::kernel::{ForceField, ForceFieldKernelError};
 use crate::uff::convenience::{
@@ -15,7 +15,7 @@ use cosmolkit_model::{CoordinateBlock, MoleculeProperties, TopologyBlock};
 #[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct MmffOptimizationParams {
-    pub mmff_variant: String,
+    pub mmff_variant: MmffVariant,
     pub max_iterations: i32,
     pub non_bonded_threshold: f64,
     pub conformer_id: Option<usize>,
@@ -28,9 +28,9 @@ impl Default for MmffOptimizationParams {
         // RDKit❗✔️:                          int confId = -1,
         // RDKit❗✔️:                          bool ignoreInterfragInteractions = true) {
         // Behavior: exact Wrap/rdForceFields.cpp defaults, -1 represented by None.
-        // Complexity: fixed parameter storage and one variant string allocation.
+        // Complexity: fixed parameter storage without string allocation.
         Self {
-            mmff_variant: "MMFF94".into(),
+            mmff_variant: MmffVariant::Mmff94,
             max_iterations: 200,
             non_bonded_threshold: 100.,
             conformer_id: None,
@@ -43,7 +43,7 @@ impl Default for MmffOptimizationParams {
 pub struct MmffConformerOptimizationParams {
     pub num_threads: i32,
     pub max_iterations: i32,
-    pub mmff_variant: String,
+    pub mmff_variant: MmffVariant,
     pub non_bonded_threshold: f64,
     pub ignore_interfragment_interactions: bool,
 }
@@ -54,11 +54,11 @@ impl Default for MmffConformerOptimizationParams {
         // RDKit❗✔️:                                       double nonBondedThresh = 10.0,
         // RDKit❗✔️:                                       bool ignoreInterfragInteractions = true) {
         // Behavior: MMFF.h multi-conformer defaults; no numerical work.
-        // Complexity: constant storage plus one variant string allocation.
+        // Complexity: constant storage without string allocation.
         Self {
             num_threads: 1,
             max_iterations: 1000,
-            mmff_variant: "MMFF94".into(),
+            mmff_variant: MmffVariant::Mmff94,
             non_bonded_threshold: 10.,
             ignore_interfragment_interactions: true,
         }
@@ -66,23 +66,25 @@ impl Default for MmffConformerOptimizationParams {
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MmffOptimizeMoleculeConfResult {
-    pub needs_more: i32,
-    pub energy: f64,
+    pub outcome: crate::OptimizationOutcome,
 }
 impl MmffOptimizeMoleculeConfResult {
     pub const fn needs_more(&self) -> bool {
-        self.needs_more > 0
+        self.outcome.needs_more()
     }
     pub const fn status_code(&self) -> i32 {
-        self.needs_more
+        self.outcome.status_code()
     }
-    pub const fn energy(&self) -> f64 {
-        self.energy
+    pub const fn energy(&self) -> Option<f64> {
+        self.outcome.energy()
+    }
+    pub const fn outcome(&self) -> crate::OptimizationOutcome {
+        self.outcome
     }
 }
 #[derive(Debug)]
 pub struct MmffSingleOutcome {
-    pub status: i32,
+    pub outcome: crate::OptimizationOutcome,
     pub aromatic_ring_count: usize,
     pub acquired_rings: Option<cosmolkit_core::RingInfo>,
 }
@@ -211,14 +213,14 @@ pub fn optimize_mmff_single(
     let props = MmffMolProperties::new_prepared(
         topology,
         properties.prop("_MMFFSanitized").is_some(),
-        &params.mmff_variant,
+        params.mmff_variant.as_rdkit_str(),
         0,
         supplied_rings,
     )
     .map_err(|e| MmffOptimizationError(Failure::Properties(e)))?;
-    let result = (|| -> Result<i32, Failure> {
+    let result = (|| -> Result<crate::OptimizationOutcome, Failure> {
         if !props.is_valid() {
-            return Ok(-1);
+            return Ok(crate::OptimizationOutcome::MissingParameters);
         }
         let mut field = construct_selected_field(
             &props,
@@ -228,14 +230,24 @@ pub fn optimize_mmff_single(
             params.non_bonded_threshold,
             params.ignore_interfragment_interactions,
         )?;
-        field.initialize()?;
-        Ok(field.minimize(params.max_iterations as u32, 1e-4, 1e-6)?)
+        // RDKit✔️✔️:     res = ForceFieldsHelper::OptimizeMolecule(*ff, maxIters);
+        // MMFF.h uses the shared initialize/minimize/final-energy driver.
+        // Reuse that driver and this field, without rebuilding or copying it.
+        Ok(
+            crate::uff::convenience::optimize_force_field(&mut field, params.max_iterations as u32)
+                .map_err(|error| match error {
+                    OptimizationStageError::Initialize(error)
+                    | OptimizationStageError::Minimize(error)
+                    | OptimizationStageError::FinalEnergy(error) => Failure::Kernel(error),
+                })?
+                .into(),
+        )
     })();
     let aromatic_ring_count = props.aromatic_ring_count;
     *topology = props.topology;
     result
-        .map(|status| MmffSingleOutcome {
-            status,
+        .map(|outcome| MmffSingleOutcome {
+            outcome,
             aromatic_ring_count,
             acquired_rings: props.acquired_rings,
         })
@@ -277,7 +289,7 @@ pub fn optimize_mmff_conformers(
     let props = MmffMolProperties::new_prepared(
         topology,
         properties.prop("_MMFFSanitized").is_some(),
-        &params.mmff_variant,
+        params.mmff_variant.as_rdkit_str(),
         0,
         supplied_rings,
     )
@@ -286,8 +298,7 @@ pub fn optimize_mmff_conformers(
         if !props.is_valid() {
             return Ok(vec![
                 MmffOptimizeMoleculeConfResult {
-                    needs_more: -1,
-                    energy: -1.
+                    outcome: crate::OptimizationOutcome::MissingParameters,
                 };
                 coordinates.conformers_3d.len()
             ]);
@@ -354,10 +365,7 @@ pub fn optimize_mmff_conformers(
         }
         Ok(results
             .into_iter()
-            .map(|r| MmffOptimizeMoleculeConfResult {
-                needs_more: r.status,
-                energy: r.energy,
-            })
+            .map(|r| MmffOptimizeMoleculeConfResult { outcome: r.into() })
             .collect())
     })();
     let aromatic_ring_count = props.aromatic_ring_count;
@@ -535,7 +543,7 @@ mod original_optimization_tests {
     ) -> Result<SingleTestResult, MmffOptimizationError> {
         let mut molecule = input.clone();
         let params = MmffOptimizationParams {
-            mmff_variant: variant.into(),
+            mmff_variant: MmffVariant::from_rdkit_constructor_arg(variant),
             max_iterations: iters,
             non_bonded_threshold: threshold,
             conformer_id: if id == -1 {
@@ -554,7 +562,7 @@ mod original_optimization_tests {
         )?;
         Ok(SingleTestResult {
             molecule,
-            needs_more: outcome.status,
+            needs_more: outcome.outcome.status_code(),
         })
     }
     fn mmff_optimize_molecule_confs(
@@ -569,7 +577,7 @@ mod original_optimization_tests {
         let params = MmffConformerOptimizationParams {
             num_threads: threads,
             max_iterations: iters,
-            mmff_variant: variant.into(),
+            mmff_variant: MmffVariant::from_rdkit_constructor_arg(variant),
             non_bonded_threshold: threshold,
             ignore_interfragment_interactions: ignore,
         };
@@ -710,7 +718,7 @@ mod original_optimization_tests {
             result
                 .conformer_results
                 .iter()
-                .all(|entry| entry.needs_more == 0 && entry.energy.is_finite())
+                .all(|entry| entry.status_code() == 0 && entry.energy().unwrap().is_finite())
         );
         assert_ne!(
             result.molecule.conformers_3d()[0].coordinates(),
@@ -733,8 +741,8 @@ mod original_optimization_tests {
             .expect("missing MMFF atom typing should map to wrapper -1 result");
 
         assert_eq!(result.conformer_results.len(), 1);
-        assert_eq!(result.conformer_results[0].needs_more, -1);
-        assert_eq!(result.conformer_results[0].energy, -1.0);
+        assert_eq!(result.conformer_results[0].status_code(), -1);
+        assert_eq!(result.conformer_results[0].energy(), None);
         assert_eq!(
             result.molecule.conformers_3d()[0].coordinates(),
             original_coords
@@ -795,9 +803,9 @@ mod original_optimization_tests {
             .iter()
             .zip(negative_threads.conformer_results.iter())
         {
-            assert_eq!(left.needs_more, right.needs_more);
-            assert!(left.energy.is_finite());
-            assert!(right.energy.is_finite());
+            assert_eq!(left.status_code(), right.status_code());
+            assert!(left.energy().unwrap().is_finite());
+            assert!(right.energy().unwrap().is_finite());
         }
     }
 
@@ -815,8 +823,8 @@ mod original_optimization_tests {
             .expect("current modeled MMFF wrapper path should return -1 before minimization");
 
         assert_eq!(result.conformer_results.len(), 1);
-        assert_eq!(result.conformer_results[0].needs_more, 1);
-        assert!(result.conformer_results[0].energy.is_finite());
+        assert_eq!(result.conformer_results[0].status_code(), 1);
+        assert!(result.conformer_results[0].energy().unwrap().is_finite());
         assert_eq!(
             result.molecule.conformers_3d()[0].coordinates(),
             original_coords
@@ -872,7 +880,7 @@ mod original_optimization_tests {
 #[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct MmffEvaluationParams {
-    pub mmff_variant: String,
+    pub mmff_variant: MmffVariant,
     pub non_bonded_threshold: f64,
     pub conformer_id: Option<usize>,
     pub ignore_interfragment_interactions: bool,
@@ -880,7 +888,7 @@ pub struct MmffEvaluationParams {
 impl Default for MmffEvaluationParams {
     fn default() -> Self {
         Self {
-            mmff_variant: "MMFF94".into(),
+            mmff_variant: MmffVariant::Mmff94,
             non_bonded_threshold: 100.,
             conformer_id: None,
             ignore_interfragment_interactions: true,
@@ -919,7 +927,7 @@ pub fn evaluate_mmff(
         let props = MmffMolProperties::new_prepared(
             topology,
             properties.prop("_MMFFSanitized").is_some(),
-            &params.mmff_variant,
+            params.mmff_variant.as_rdkit_str(),
             0,
             supplied_rings,
         )?;

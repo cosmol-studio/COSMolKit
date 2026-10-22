@@ -417,7 +417,7 @@ def test_conformer_generation_failure_tracking_and_forcefield_post_optimization(
     failed = failed_result.molecule
 
     assert failed.num_3d_conformers == 0
-    assert failed_result.conf_id == -1
+    assert failed_result.conf_id is None
     assert failed_result.ok is False
     assert chiral_params.failures == []
     assert failed_result.params.failures

@@ -4,6 +4,65 @@ use cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+enum_value!(InchiDiagnosticLevel, { Warning, Error });
+#[pyclass(module = "cosmolkit", frozen)]
+pub struct InchiResult {
+    pub(crate) inner: ck::InchiResult,
+}
+#[pymethods]
+impl InchiResult {
+    #[getter]
+    fn inchi(&self) -> &str {
+        self.inner.inchi()
+    }
+    #[getter]
+    fn return_code(&self) -> i32 {
+        self.inner.return_code()
+    }
+    #[getter]
+    fn message(&self) -> &str {
+        self.inner.message()
+    }
+    #[getter]
+    fn log(&self) -> &str {
+        self.inner.log()
+    }
+    #[getter]
+    fn aux_info(&self) -> &str {
+        self.inner.aux_info()
+    }
+    #[getter]
+    fn diagnostics(&self) -> Vec<InchiDiagnostic> {
+        self.inner
+            .diagnostics()
+            .iter()
+            .cloned()
+            .map(|inner| InchiDiagnostic { inner })
+            .collect()
+    }
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.inner)
+    }
+}
+#[pyclass(module = "cosmolkit", frozen)]
+pub struct InchiDiagnostic {
+    pub(crate) inner: ck::InchiDiagnostic,
+}
+#[pymethods]
+impl InchiDiagnostic {
+    #[getter]
+    fn level(&self) -> InchiDiagnosticLevel {
+        self.inner.level().into()
+    }
+    #[getter]
+    fn message(&self) -> &str {
+        self.inner.message()
+    }
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.inner)
+    }
+}
+
 enum_value!(InchiErrorKind, {
     AllocationFailed, UnsupportedState, InvalidInput, InvalidSourceOutput,
     SanitizeFailed, Toolkit, SourcePort

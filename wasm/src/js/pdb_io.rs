@@ -1,7 +1,8 @@
 //! Molecular structural IO projections; parsing and chemistry belong to CK.
 use crate::Molecule;
 use crate::alignment_values::{set, source_error};
-use crate::host_values::{bool_value, type_error, u32_value};
+use crate::host_values::{bool_value, type_error};
+use crate::pdb_flags::PdbWriteFlags;
 use crate::io_errors::io_error;
 use crate::mol_sdf_writing::{MolCoordinateSelection, visit_selection};
 use cosmolkit_wasm::rust as ck;
@@ -21,7 +22,7 @@ impl PdbWriteParams {
         #[wasm_bindgen(unchecked_optional_param_type = "MolCoordinateSelection | null")]
         coordinate_selection: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] all_conformers: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "number")] flavor: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "PdbWriteFlags")] flavor: JsValue,
     ) -> Result<Self, JsValue> {
         let mut inner = ck::PdbWriteParams::default();
         if !coordinate_selection.is_undefined() && !coordinate_selection.is_null() {
@@ -33,7 +34,7 @@ impl PdbWriteParams {
             inner.all_conformers = bool_value(&all_conformers, "allConformers")?;
         }
         if !flavor.is_undefined() {
-            inner.flavor = u32_value(&flavor, "flavor")?;
+            inner.flavor = PdbWriteFlags::extract(&flavor)?;
         }
         Ok(Self { inner })
     }
@@ -52,8 +53,8 @@ impl PdbWriteParams {
     }
     /// RDKit PDB writer flavor bit mask.
     #[wasm_bindgen(getter)]
-    pub fn flavor(&self) -> u32 {
-        self.inner.flavor
+    pub fn flavor(&self) -> PdbWriteFlags {
+        PdbWriteFlags { inner: self.inner.flavor }
     }
 }
 #[wasm_bindgen(

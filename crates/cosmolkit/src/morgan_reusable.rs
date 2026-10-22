@@ -81,7 +81,6 @@ pub struct MorganCallParams {
     pub ignore_atoms: Option<Vec<u32>>,
     pub custom_atom_invariants: Option<Vec<u32>>,
     pub custom_bond_invariants: Option<Vec<u32>>,
-    pub conformer_id: i32,
 }
 impl MorganCallParams {
     #[must_use]
@@ -90,14 +89,12 @@ impl MorganCallParams {
         ignore_atoms: Option<Vec<u32>>,
         custom_atom_invariants: Option<Vec<u32>>,
         custom_bond_invariants: Option<Vec<u32>>,
-        conformer_id: i32,
     ) -> Self {
         Self {
             from_atoms,
             ignore_atoms,
             custom_atom_invariants,
             custom_bond_invariants,
-            conformer_id,
         }
     }
     fn owner_call(&self) -> MorganCall<'_> {
@@ -106,13 +103,13 @@ impl MorganCallParams {
             ignore_atoms: self.ignore_atoms.as_deref(),
             custom_atom_invariants: self.custom_atom_invariants.as_deref(),
             custom_bond_invariants: self.custom_bond_invariants.as_deref(),
-            conformer_id: self.conformer_id,
+            conformer_id: -1,
         }
     }
 }
 impl Default for MorganCallParams {
     fn default() -> Self {
-        Self::new(None, None, None, None, -1)
+        Self::new(None, None, None, None)
     }
 }
 impl MorganFingerprintGenerator {

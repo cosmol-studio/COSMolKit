@@ -4,7 +4,9 @@ pub use cosmolkit_io::{
     Mol2PostError, Mol2ReadError, Mol2Type, MolBlockWriteParams, MolCoordinateSelection,
     MolWriteError, SdfFormat, XyzReadError, XyzWriteError, XyzWriteParams,
 };
-pub use cosmolkit_io::{PdbExportParams as PdbWriteParams, PdbWriteError};
+pub use cosmolkit_io::{
+    PdbExportParams as PdbWriteParams, PdbReadFlags, PdbWriteError, PdbWriteFlags,
+};
 use std::{
     fmt,
     fs::File,
@@ -154,19 +156,6 @@ impl Molecule {
             .map_err(MolecularIoError::MmcifRead)?
             .to_molecule_with_params(params)
             .map_err(MolecularIoError::BioMolecule)
-    }
-    /// Render an atom property using the source lexical conversion.
-    pub fn atom_property_string(
-        &self,
-        id: crate::AtomId,
-        key: &str,
-    ) -> Result<Option<crate::PropertyText>, crate::PropertyStringError> {
-        self.topology()
-            .atoms
-            .get(id.index())
-            .and_then(|atom| atom.prop(key))
-            .map(crate::property_value_to_text)
-            .transpose()
     }
     /// Render a bond property using the source lexical conversion.
     pub fn bond_property_string(

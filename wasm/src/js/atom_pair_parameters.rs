@@ -201,7 +201,7 @@ impl AtomPairFingerprintParams {
         custom_atom_invariants: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number[] | Uint32Array | null")]
         custom_bond_invariants: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "number")] conformer_id: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "number | null")] conformer_id: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "AtomPairAtomInvariantsGenerator | null")]
         atom_invariants_generator: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")]
@@ -229,8 +229,8 @@ impl AtomPairFingerprintParams {
             optional_u32_array(&custom_atom_invariants, "customAtomInvariants")?;
         inner.custom_bond_invariants =
             optional_u32_array(&custom_bond_invariants, "customBondInvariants")?;
-        if !conformer_id.is_undefined() {
-            inner.conformer_id = i32_value(&conformer_id, "conformerId")?;
+        if !conformer_id.is_undefined() && !conformer_id.is_null() {
+            inner.conformer_id = Some(crate::host_values::usize_value(&conformer_id, "conformerId")?);
         }
         if !use_legacy_stereo_perception.is_undefined() {
             inner.use_legacy_stereo_perception =
@@ -252,9 +252,9 @@ impl AtomPairFingerprintParams {
                 AtomPairAtomInvariantsGenerator { inner }.into()
             })
     }
-    #[wasm_bindgen(getter,js_name=conformerId)]
-    pub fn conformer_id(&self) -> i32 {
-        self.inner.conformer_id
+    #[wasm_bindgen(getter,js_name=conformerId,unchecked_return_type="number | null")]
+    pub fn conformer_id(&self) -> JsValue {
+        self.inner.conformer_id.map_or(JsValue::NULL, |id| JsValue::from_f64(id as f64))
     }
     #[wasm_bindgen(getter,js_name=useLegacyStereoPerception)]
     pub fn use_legacy_stereo_perception(&self) -> bool {

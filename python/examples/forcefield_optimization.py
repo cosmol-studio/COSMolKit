@@ -41,14 +41,14 @@ if mol.uff_has_all_molecule_params():
     result = mol.with_uff_optimized(max_iterations=200)
     optimized = result.molecule
 
-    print("UFF converged:", not result.needs_more)
+    print("UFF converged:", result.outcome.converged)
     print("UFF status code:", result.status_code)
     print("UFF energy:", result.energy)
     print("coordinates changed:", not np.allclose(start, optimized.coordinates_3d()))
 
 if mol.mmff_has_all_molecule_params():
     result = mol.with_mmff_optimized(max_iterations=200)
-    print("MMFF94 converged:", not result.needs_more)
+    print("MMFF94 converged:", result.outcome.converged)
     print("MMFF94 status code:", result.status_code)
 
 # These values are explicit example choices, not implicit numerical defaults.

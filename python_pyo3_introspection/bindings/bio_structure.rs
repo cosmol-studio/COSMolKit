@@ -209,7 +209,7 @@ let params = pyo3::Python::attach(|py| params.to_rust(py))?;
                     .map_err(crate::bio_selection_errors::BioOperationError::from_rust)
             }
 #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, sanitize=crate::arguments::Argument::Missing, remove_hs=crate::arguments::Argument::Missing, flavor=crate::arguments::Argument::Missing, proximity_bonding=crate::arguments::Argument::Missing))]
-            fn to_molecule(&self, py: Python<'_>, params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>, sanitize: crate::arguments::Argument<Option<bool>>, remove_hs: crate::arguments::Argument<Option<bool>>, flavor: crate::arguments::Argument<Option<u32>>, proximity_bonding: crate::arguments::Argument<Option<bool>>) -> PyResult<crate::native::Molecule> {
+            fn to_molecule(&self, py: Python<'_>, params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>, sanitize: crate::arguments::Argument<Option<bool>>, remove_hs: crate::arguments::Argument<Option<bool>>, flavor: crate::arguments::Argument<Option<crate::pdb_flags::PdbReadFlags>>, proximity_bonding: crate::arguments::Argument<Option<bool>>) -> PyResult<crate::native::Molecule> {
         let keyword_form = sanitize.is_supplied() || remove_hs.is_supplied() || flavor.is_supplied() || proximity_bonding.is_supplied();
         crate::arguments::configuration_arguments!(params; sanitize, remove_hs, flavor, proximity_bonding);
         let params = params.as_deref();
@@ -225,7 +225,7 @@ let params = pyo3::Python::attach(|py| params.map(|value| value.to_rust(py)).tra
             }
             #[doc = r#"{"role":"overload","target":"BioStructure.to_molecule"}"#]
             #[pyo3(signature=(*, sanitize=None, remove_hs=None, flavor=None, proximity_bonding=None))]
-            fn _to_molecule_keywords(&self, py: Python<'_>, sanitize: Option<bool>, remove_hs: Option<bool>, flavor: Option<u32>, proximity_bonding: Option<bool>) -> PyResult<crate::native::Molecule> {
+            fn _to_molecule_keywords(&self, py: Python<'_>, sanitize: Option<bool>, remove_hs: Option<bool>, flavor: Option<crate::pdb_flags::PdbReadFlags>, proximity_bonding: Option<bool>) -> PyResult<crate::native::Molecule> {
                 let params = crate::bio_molecule_conversion::keywords(sanitize, remove_hs, flavor, proximity_bonding);
                 self._to_molecule_params(py, Some(&params))
             }

@@ -376,8 +376,8 @@ impl EmbedMoleculeResult {
             inner: self.inner.params().clone(),
         }
     }
-    /// Identifier of the generated conformer, or the operation failure sentinel.
-    fn conf_id(&self) -> i32 {
+    /// Identifier of the generated conformer, or None if none was generated.
+    fn conf_id(&self) -> Option<u32> {
         self.inner.conf_id()
     }
     /// Whether the embedding attempt produced a conformer.
@@ -386,7 +386,7 @@ impl EmbedMoleculeResult {
     }
     fn __repr__(&self) -> String {
         format!(
-            "EmbedMoleculeResult(conf_id={}, ok={})",
+            "EmbedMoleculeResult(conf_id={:?}, ok={})",
             self.inner.conf_id(),
             self.inner.ok()
         )
@@ -417,7 +417,7 @@ impl EmbedMultipleConfsResult {
         }
     }
     /// Identifiers of the successfully generated conformers in generation order.
-    fn conf_ids(&self) -> Vec<i32> {
+    fn conf_ids(&self) -> Vec<u32> {
         self.inner.conf_ids().to_vec()
     }
     /// Number of successfully generated conformers.

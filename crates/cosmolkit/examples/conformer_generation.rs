@@ -34,15 +34,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ignore_interfragment_interactions: true,
         })?;
         println!(
-            "UFF needs_more={} energy={:.6}",
-            result.status > 0,
-            result.energy
+            "UFF needs_more={} energy={:?}",
+            result.needs_more(),
+            result.energy()
         );
     }
 
     if embedded.mmff_has_all_molecule_params()? {
         let result = embedded.with_mmff_optimized_with_params(&MmffOptimizationParams {
-            mmff_variant: "MMFF94".into(),
+            mmff_variant: cosmolkit::MmffVariant::Mmff94,
             max_iterations: 200,
             non_bonded_threshold: 100.0,
             conformer_id: None,

@@ -1,14 +1,10 @@
 use cosmolkit::{AlignmentAtomMap, AlignmentParameters, Molecule};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let reference_coordinates = vec![
-        vec![0.0, 0.0, 0.0],
-        vec![1.0, 0.0, 0.0],
-        vec![0.0, 2.0, 0.0],
-    ];
+    let reference_coordinates = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
     let probe_coordinates = reference_coordinates
         .iter()
-        .map(|point| vec![point[0] + 3.0, point[1] - 2.0, point[2] + 1.0])
+        .map(|point| [point[0] + 3.0, point[1] - 2.0, point[2] + 1.0])
         .collect();
 
     let reference = Molecule::from_smiles("CCC")?.with_only_3d_conformer(reference_coordinates)?;

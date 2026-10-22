@@ -1161,7 +1161,7 @@ molecule_ops! {
         default_inplace_method: set_2d_coordinates_,
     }
     #[cfg(feature = "cap-transforms")]
-    op with_3d_coordinates(coordinates: Vec<Vec<f64>>, params: &cosmolkit_core::Replace3DCoordinatesParams) {
+    op with_3d_coordinates(coordinates: Vec<[f64; 3]>, params: &cosmolkit_core::Replace3DCoordinatesParams) {
         method: with_3d_coordinates_with_params,
         impl_fn: crate::ops::coordinate_input::with_3d_coordinates_impl,
         domain: coordinate,
@@ -1184,7 +1184,7 @@ molecule_ops! {
         default_inplace_method: set_3d_coordinates_,
     }
     #[cfg(feature = "cap-transforms")]
-    op with_added_3d_conformer(coordinates: Vec<Vec<f64>>, params: &cosmolkit_core::Coordinate3DInputParams) {
+    op with_added_3d_conformer(coordinates: Vec<[f64; 3]>, params: &cosmolkit_core::Coordinate3DInputParams) {
         method: with_added_3d_conformer_with_params,
         impl_fn: crate::ops::coordinate_input::with_added_3d_conformer_impl,
         inplace_result_type: usize,
@@ -1208,7 +1208,7 @@ molecule_ops! {
         default_inplace_method: add_3d_conformer_,
     }
     #[cfg(feature = "cap-transforms")]
-    op with_only_3d_conformer(coordinates: Vec<Vec<f64>>, params: &cosmolkit_core::Coordinate3DInputParams) {
+    op with_only_3d_conformer(coordinates: Vec<[f64; 3]>, params: &cosmolkit_core::Coordinate3DInputParams) {
         method: with_only_3d_conformer_with_params,
         impl_fn: crate::ops::coordinate_input::with_only_3d_conformer_impl,
         inplace_result_type: usize,

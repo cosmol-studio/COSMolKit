@@ -65,7 +65,7 @@ mod tests {
                             let params = ck::BioMoleculeParams {
                                 sanitize,
                                 remove_hs,
-                                flavor,
+                                flavor: ck::PdbReadFlags::from_bits(flavor),
                                 proximity_bonding,
                             };
                             assert_eq!(

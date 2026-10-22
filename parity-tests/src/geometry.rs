@@ -152,12 +152,7 @@ pub fn xyz(atom_count: usize, seed: u64) -> Vec<[f64; 3]> {
 fn with_coordinates(m: &Molecule, seed: u64, count: usize) -> Result<Molecule> {
     let mut result = m.with_cleared_3d_conformers()?;
     for index in 0..count {
-        result = result.with_added_3d_conformer(
-            xyz(m.num_atoms(), seed + index as u64)
-                .into_iter()
-                .map(Vec::from)
-                .collect(),
-        )?;
+        result = result.with_added_3d_conformer(xyz(m.num_atoms(), seed + index as u64))?;
     }
     Ok(result)
 }
@@ -363,7 +358,11 @@ fn forcefield(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
         Ok(if mmff {
             mol.mmff_force_field_with_params(&MmffForceFieldParams::new(
                 None,
-                variant.into(),
+                match variant {
+                    "MMFF94" => MmffVariant::Mmff94,
+                    "MMFF94s" => MmffVariant::Mmff94s,
+                    _ => return Err(format!("unknown MMFF variant: {variant}").into()),
+                },
                 threshold,
                 ignore,
             ))?
@@ -410,7 +409,11 @@ fn forcefield(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
                     let r = m.with_mmff_optimized_conformers_with_params(
                         &MmffConformerOptimizationParams {
                             max_iterations: iterations,
-                            mmff_variant: variant.into(),
+                            mmff_variant: match variant {
+                                "MMFF94" => MmffVariant::Mmff94,
+                                "MMFF94s" => MmffVariant::Mmff94s,
+                                _ => return Err(format!("unknown MMFF variant: {variant}").into()),
+                            },
                             non_bonded_threshold: threshold,
                             ignore_interfragment_interactions: ignore,
                             num_threads: 1,
@@ -423,7 +426,7 @@ fn forcefield(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
                             .map(|r| {
                                 Value::List(vec![
                                     Value::Int(r.status_code() as i64),
-                                    Value::float(r.energy()),
+                                    Value::float(crate::geometry::optimization_energy(r.outcome)),
                                 ])
                             })
                             .collect(),
@@ -443,8 +446,8 @@ fn forcefield(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
                             .iter()
                             .map(|r| {
                                 Value::List(vec![
-                                    Value::Int(r.status as i64),
-                                    Value::float(r.energy),
+                                    Value::Int(r.outcome.status_code() as i64),
+                                    Value::float(crate::geometry::optimization_energy(r.outcome)),
                                 ])
                             })
                             .collect(),
@@ -453,7 +456,11 @@ fn forcefield(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
             } else if mmff {
                 let r = m.with_mmff_optimized_with_params(&MmffOptimizationParams {
                     max_iterations: iterations,
-                    mmff_variant: variant.into(),
+                    mmff_variant: match variant {
+                        "MMFF94" => MmffVariant::Mmff94,
+                        "MMFF94s" => MmffVariant::Mmff94s,
+                        _ => return Err(format!("unknown MMFF variant: {variant}").into()),
+                    },
                     non_bonded_threshold: threshold,
                     ignore_interfragment_interactions: ignore,
                     ..Default::default()
@@ -472,7 +479,10 @@ fn forcefield(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
                     ..Default::default()
                 })?;
                 m = r.molecule;
-                Value::List(vec![Value::Int(r.status as i64), Value::float(r.energy)])
+                Value::List(vec![
+                    Value::Int(r.outcome.status_code() as i64),
+                    Value::float(crate::geometry::optimization_energy(r.outcome)),
+                ])
             };
             outcomes.push(Value::List(vec![result, coordinates(&m)]));
         }
@@ -529,7 +539,7 @@ fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
             if count == 1 {
                 let r = m.with_3d_conformer_result_with_params(&params)?;
                 Value::List(vec![
-                    Value::List(vec![Value::Int(r.conf_id as i64)]),
+                    Value::List(vec![Value::Int(r.conf_id.map(i64::from).unwrap_or(-1))]),
                     coordinates(&r.molecule),
                     Value::List(
                         r.params
@@ -542,7 +552,13 @@ fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
             } else {
                 let r = m.with_3d_conformers_result_with_params(count as u32, &params)?;
                 Value::List(vec![
-                    Value::List(r.conf_ids.iter().map(|n| Value::Int(*n as i64)).collect()),
+                    // Retained RDKit references use -1 for whole-call timeout;
+                    // the public result represents it with a typed status.
+                    Value::List(if r.termination == EmbedTermination::TimedOut {
+                        vec![Value::Int(-1)]
+                    } else {
+                        r.conf_ids.iter().map(|n| Value::Int(*n as i64)).collect()
+                    }),
                     coordinates(&r.molecule),
                     Value::List(
                         r.params
@@ -816,5 +832,13 @@ mod tests {
                 }
             }
         }
+    }
+}
+/// Encode the typed CK outcome in the pinned reference pair representation.
+pub(crate) fn optimization_energy(outcome: cosmolkit::OptimizationOutcome) -> f64 {
+    match outcome {
+        cosmolkit::OptimizationOutcome::Converged { energy }
+        | cosmolkit::OptimizationOutcome::NotConverged { energy } => energy,
+        cosmolkit::OptimizationOutcome::MissingParameters => -1.0,
     }
 }

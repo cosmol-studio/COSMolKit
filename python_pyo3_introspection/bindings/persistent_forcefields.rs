@@ -394,7 +394,7 @@ impl Molecule {
         &self,
         py: Python<'_>,
         conformer_id: Option<usize>,
-        mmff_variant: Option<String>,
+        mmff_variant: Option<crate::leaf_values::MmffVariantInput>,
         non_bonded_threshold: Option<f64>,
         ignore_interfragment_interactions: Option<bool>,
     ) -> PyResult<MolecularForceField> {
@@ -402,7 +402,9 @@ impl Molecule {
         let params = MmffForceFieldParams {
             inner: crate::parameters::NativeField::Owned(ck::MmffForceFieldParams::new(
                 conformer_id.or(defaults.conformer_id()),
-                mmff_variant.unwrap_or_else(|| defaults.mmff_variant().to_owned()),
+                mmff_variant
+                    .map(|value| value.0)
+                    .unwrap_or(defaults.mmff_variant()),
                 non_bonded_threshold.unwrap_or(defaults.non_bonded_threshold()),
                 ignore_interfragment_interactions
                     .unwrap_or(defaults.ignore_interfragment_interactions()),
@@ -608,7 +610,8 @@ mod tests {
             let mut native = molecule.mmff_force_field().unwrap();
             let field = mol.call_method0("mmff_force_field")?;
             same_field(py, &field, &native)?;
-            let selection = ck::MmffForceFieldParams::new(Some(0), "MMFF94s".into(), 20., false);
+            let selection =
+                ck::MmffForceFieldParams::new(Some(0), ck::MmffVariant::Mmff94s, 20., false);
             let params = Py::new(
                 py,
                 MmffForceFieldParams {

@@ -184,8 +184,6 @@ pub struct MorganFingerprintParams {
     pub custom_atom_invariants: Option<Vec<u32>>,
     /// Optional caller-supplied bond invariants.
     pub custom_bond_invariants: Option<Vec<u32>>,
-    /// Source conformer identifier; the source generator currently ignores it.
-    pub conformer_id: i32,
     /// Atom invariant generation policy.
     #[configuration(none_default)]
     pub invariants: MorganInvariants,
@@ -213,7 +211,6 @@ impl From<(MorganGeneratorParams, crate::MorganCallParams)> for MorganFingerprin
             ignore_atoms: call.ignore_atoms,
             custom_atom_invariants: call.custom_atom_invariants,
             custom_bond_invariants: call.custom_bond_invariants,
-            conformer_id: call.conformer_id,
             invariants: MorganInvariants::Connectivity,
         }
     }
@@ -253,7 +250,7 @@ impl Molecule {
             ignore_atoms: params.ignore_atoms.as_deref(),
             custom_atom_invariants: params.custom_atom_invariants.as_deref(),
             custom_bond_invariants: params.custom_bond_invariants.as_deref(),
-            conformer_id: params.conformer_id,
+            conformer_id: -1,
         };
         let invariants = match &params.invariants {
             MorganInvariants::Connectivity => MorganAtomInvariants::Connectivity,
@@ -292,7 +289,7 @@ impl Molecule {
             ignore_atoms: params.ignore_atoms.as_deref(),
             custom_atom_invariants: params.custom_atom_invariants.as_deref(),
             custom_bond_invariants: params.custom_bond_invariants.as_deref(),
-            conformer_id: params.conformer_id,
+            conformer_id: -1,
         };
         let invariants = match &params.invariants {
             MorganInvariants::Connectivity => MorganAtomInvariants::Connectivity,
@@ -331,7 +328,7 @@ impl Molecule {
             ignore_atoms: params.ignore_atoms.as_deref(),
             custom_atom_invariants: params.custom_atom_invariants.as_deref(),
             custom_bond_invariants: params.custom_bond_invariants.as_deref(),
-            conformer_id: params.conformer_id,
+            conformer_id: -1,
         };
         let invariants = match &params.invariants {
             MorganInvariants::Connectivity => MorganAtomInvariants::Connectivity,
@@ -370,7 +367,7 @@ impl Molecule {
             ignore_atoms: params.ignore_atoms.as_deref(),
             custom_atom_invariants: params.custom_atom_invariants.as_deref(),
             custom_bond_invariants: params.custom_bond_invariants.as_deref(),
-            conformer_id: params.conformer_id,
+            conformer_id: -1,
         };
         let invariants = match &params.invariants {
             MorganInvariants::Connectivity => MorganAtomInvariants::Connectivity,
@@ -833,7 +830,6 @@ mod tests {
         assert!(params.ignore_atoms.is_none());
         assert!(params.custom_atom_invariants.is_none());
         assert!(params.custom_bond_invariants.is_none());
-        assert_eq!(params.conformer_id, -1);
         assert!(matches!(params.invariants, MorganInvariants::Connectivity));
         assert_eq!(params.generator, MorganGeneratorParams::default());
 
@@ -2104,7 +2100,6 @@ mod tests {
         let ignored_arguments = MorganFingerprintParams {
             generator: radius_zero.clone(),
             ignore_atoms: Some(vec![0, 1, 2]),
-            conformer_id: 12345,
             ..MorganFingerprintParams::default()
         };
         assert_outputs(

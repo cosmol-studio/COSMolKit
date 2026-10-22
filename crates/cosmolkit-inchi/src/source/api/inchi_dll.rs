@@ -9795,7 +9795,9 @@ mod tests {
         );
         assert_eq!(trace_result, Ok(0));
         assert_eq!(trace_heap.source_allocation_calls(), 20);
-        assert_eq!(trace_heap.live_allocation_count(), 92);
+        // Input plus the three returned strings; borrowed component rows and
+        // stack temporaries in ReadWriteInChI are not surviving heap objects.
+        assert_eq!(trace_heap.live_allocation_count(), 4);
         assert_eq!(
             text(&trace_heap, trace_output.szInChI).as_deref(),
             Some("InChI=1S/CH4/h1H4")
@@ -9813,9 +9815,7 @@ mod tests {
         let expected_calls = [
             1, 21, 3, 4, 5, 6, 7, 8, 9, 10, 20, 12, 14, 14, 15, 16, 20, 19, 19, 21,
         ];
-        let expected_live = [
-            1, 92, 2, 3, 3, 3, 3, 3, 3, 3, 91, 3, 3, 3, 3, 4, 92, 3, 3, 92,
-        ];
+        let expected_live = [1, 4, 2, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 4, 4, 3, 3, 4];
         let expected_inchi = [
             None,
             Some("InChI=1S/CH4/h1H4"),

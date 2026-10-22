@@ -32,12 +32,20 @@ pub(crate) fn matrix(value: &JsValue) -> Result<Vec<Vec<f64>>, JsValue> {
         })
         .collect()
 }
-fn fixed_matrix<const D: usize>(value: &JsValue) -> Result<Vec<[f64; D]>, JsValue> {
-    matrix(value)?
-        .into_iter()
+pub(crate) fn fixed_matrix<const D: usize>(value: &JsValue) -> Result<Vec<[f64; D]>, JsValue> {
+    sequence(value, "coordinates")?
+        .iter()
         .map(|row| {
-            row.try_into()
-                .map_err(|_| js_sys::RangeError::new("incorrect coordinate row width").into())
+            let row = sequence(&row, "coordinate row")?;
+            if row.length() as usize != D {
+                return Err(js_sys::RangeError::new("incorrect coordinate row width").into());
+            }
+            let mut values = [0.0; D];
+            for (index, value) in values.iter_mut().enumerate() {
+                *value = row.get(index as u32).as_f64()
+                    .ok_or_else(|| type_error("coordinate component"))?;
+            }
+            Ok(values)
         })
         .collect()
 }

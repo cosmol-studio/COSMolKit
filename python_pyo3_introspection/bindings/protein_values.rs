@@ -256,7 +256,7 @@ impl Protein {
         params: crate::arguments::Argument<Option<PyRef<'_, crate::params::BioMoleculeParams>>>,
         sanitize: crate::arguments::Argument<Option<bool>>,
         remove_hs: crate::arguments::Argument<Option<bool>>,
-        flavor: crate::arguments::Argument<Option<u32>>,
+        flavor: crate::arguments::Argument<Option<crate::pdb_flags::PdbReadFlags>>,
         proximity_bonding: crate::arguments::Argument<Option<bool>>,
     ) -> PyResult<crate::native::Molecule> {
         let keyword_form = sanitize.is_supplied()
@@ -294,7 +294,7 @@ impl Protein {
         py: Python<'_>,
         sanitize: Option<bool>,
         remove_hs: Option<bool>,
-        flavor: Option<u32>,
+        flavor: Option<crate::pdb_flags::PdbReadFlags>,
         proximity_bonding: Option<bool>,
     ) -> PyResult<crate::native::Molecule> {
         let params = crate::bio_molecule_conversion::keywords(

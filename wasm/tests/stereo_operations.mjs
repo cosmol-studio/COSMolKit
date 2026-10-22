@@ -31,14 +31,14 @@ test('CIP configuration forwards selected atoms and propagates concrete errors a
  const assigned=mol.withCipLabels(options);
  // Candidate CIPLabeler.cpp sets the molecule marker only for a full selection.
  assert.equal(assigned.cipComputed(),false);
- assert.equal(assigned.atomProperty(1,'_CIPCode'),'R');
+ assert.equal(assigned.atomPropertyString(1,'_CIPCode'),'R');
  assert.deepEqual(assigned.findChiralCenters(),[[1,'R']]);
  assert.equal(mol.withCipLabels({atoms:[1],maxRecursiveIterations:2000}).cipComputed(),false);
  mol.assignCipLabelsWithOptions_(options);assert.equal(mol.cipComputed(),false);
- assert.equal(mol.atomProperty(1,'_CIPCode'),'R');
+ assert.equal(mol.atomPropertyString(1,'_CIPCode'),'R');
  assert.throws(()=>mol.assignCipLabels_({atoms:[99]}),e=>e.name==='OperationError'&&e.cause.name==='CipLabelerError'&&e.cause.detail instanceof ck.CipLabelerError);
  assert.equal(mol.toSmiles(),before);assert.equal(mol.cipComputed(),false);
- assert.equal(mol.atomProperty(1,'_CIPCode'),'R');
+ assert.equal(mol.atomPropertyString(1,'_CIPCode'),'R');
  const complete=mol.withCipLabels();assert.equal(complete.cipComputed(),true);complete.free();
  const frames=assigned.tetrahedralStereo();assert.equal(frames.length,1);
  assert.equal(frames[0].center,1);assert.equal(frames[0].ligands.length,4);

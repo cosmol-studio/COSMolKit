@@ -16,7 +16,7 @@ const r12:EmbedMultipleConfsResult=m.with3dConformersResult(2);
 const r13:EmbedMultipleConfsResult=m.with3dConformersResultWithParams(2,p);
 const r14:EmbedMultipleConfsResult=m.embed3dConformersResult_(2);
 const r15:EmbedMultipleConfsResult=m.embed3dConformersResultWithParams_(2,p);
-declare const single:EmbedMoleculeResult;declare const multiple:EmbedMultipleConfsResult;const returned:Molecule=single.molecule(),options:EmbedParams=single.params(),ok:boolean=single.ok(),id:number=single.confId(),ids:Int32Array=multiple.confIds(),requested:number=multiple.requestedNumConfs(),generated:number=multiple.generatedCount();declare const err:ConformerError;declare const run:ConformerRunError;const detail:string|null=err.detail,cause:Error|null=run.cause;
+declare const single:EmbedMoleculeResult;declare const multiple:EmbedMultipleConfsResult;const returned:Molecule=single.molecule(),options:EmbedParams=single.params(),ok:boolean=single.ok(),id:number|undefined=single.confId(),ids:Uint32Array=multiple.confIds(),requested:number=multiple.requestedNumConfs(),generated:number=multiple.generatedCount();declare const err:ConformerError;declare const run:ConformerRunError;const detail:string|null=err.detail,cause:Error|null=run.cause;
 // @ts-expect-error checked number argument
 m.with3dConformersWithParams('2',p);
 p.randomSeed=42;

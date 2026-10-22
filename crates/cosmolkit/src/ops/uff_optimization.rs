@@ -33,8 +33,7 @@ impl Default for UffOptimizationParams {
 pub struct UffOptimizationResult<M = Molecule> {
     #[pending_molecule]
     pub molecule: M,
-    pub status: i32,
-    pub energy: f64,
+    pub outcome: crate::OptimizationOutcome,
 }
 
 /// Options for source-ordered optimization of every stored 3D conformer.
@@ -68,8 +67,7 @@ impl Default for UffConformerOptimizationParams {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UffConformerResult {
     pub conformer_id: usize,
-    pub status: i32,
-    pub energy: f64,
+    pub outcome: crate::OptimizationOutcome,
 }
 
 /// A runtime-finalized molecule and its source-ordered conformer outcomes.
@@ -234,8 +232,7 @@ pub(crate) fn with_uff_optimized_impl(
     parts.apply_cip_policy()?;
     Ok(UffOptimizationResult {
         molecule: parts.pending_molecule()?,
-        status: outcome.status,
-        energy: outcome.energy,
+        outcome: outcome.outcome,
     })
 }
 
@@ -341,8 +338,7 @@ pub(crate) fn with_uff_optimized_conformers_impl(
             .into_iter()
             .map(|outcome| UffConformerResult {
                 conformer_id: outcome.conformer_id,
-                status: outcome.status,
-                energy: outcome.energy,
+                outcome: outcome.outcome,
             })
             .collect(),
     })
@@ -405,8 +401,8 @@ mod tests {
                             };
                             let result = source.with_uff_optimized_with_params(&params).unwrap();
                             calls += 1;
-                            assert!(matches!(result.status, 0 | 1));
-                            assert!(result.energy.is_finite());
+                            assert!(matches!(result.status_code(), 0 | 1));
+                            assert!(result.energy().unwrap().is_finite());
                             let output = &result.molecule;
                             assert!(std::ptr::eq(source.topology(), output.topology()));
                             assert!(std::ptr::eq(source.properties(), output.properties()));
@@ -584,13 +580,16 @@ impl UffOptimizationResult {
         &self.molecule
     }
     pub fn status_code(&self) -> i32 {
-        self.status
+        self.outcome.status_code()
     }
     pub fn needs_more(&self) -> bool {
-        self.status > 0
+        self.outcome.needs_more()
     }
-    pub fn energy(&self) -> f64 {
-        self.energy
+    pub fn energy(&self) -> Option<f64> {
+        self.outcome.energy()
+    }
+    pub fn outcome(&self) -> crate::OptimizationOutcome {
+        self.outcome
     }
 }
 impl UffConformerResult {
@@ -598,13 +597,16 @@ impl UffConformerResult {
         self.conformer_id
     }
     pub fn status_code(&self) -> i32 {
-        self.status
+        self.outcome.status_code()
     }
     pub fn needs_more(&self) -> bool {
-        self.status > 0
+        self.outcome.needs_more()
     }
-    pub fn energy(&self) -> f64 {
-        self.energy
+    pub fn energy(&self) -> Option<f64> {
+        self.outcome.energy()
+    }
+    pub fn outcome(&self) -> crate::OptimizationOutcome {
+        self.outcome
     }
 }
 impl UffConformerOptimizationResult {

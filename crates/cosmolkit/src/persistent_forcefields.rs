@@ -1,5 +1,5 @@
 //! Public persistent force fields: owned detached state, no implicit molecule writeback.
-use crate::{AtomId, BINDING_CONTRACT, BindingDefault, Molecule};
+use crate::{AtomId, BINDING_CONTRACT, BindingDefault, MmffVariant, Molecule};
 pub use cosmolkit_forcefields::{ForceFieldError, MolecularForceFieldErrorKind};
 use std::{error::Error, fmt, sync::Mutex};
 
@@ -154,14 +154,14 @@ fn contract_default(constructor: &str, name: &str) -> &'static str {
 #[configuration(scalar)]
 pub struct MmffForceFieldParams {
     pub conformer_id: Option<usize>,
-    pub mmff_variant: String,
+    pub mmff_variant: MmffVariant,
     pub non_bonded_threshold: f64,
     pub ignore_interfragment_interactions: bool,
 }
 impl MmffForceFieldParams {
     pub fn new(
         conformer_id: Option<usize>,
-        mmff_variant: String,
+        mmff_variant: MmffVariant,
         non_bonded_threshold: f64,
         ignore_interfragment_interactions: bool,
     ) -> Self {
@@ -175,8 +175,8 @@ impl MmffForceFieldParams {
     pub fn conformer_id(&self) -> Option<usize> {
         self.conformer_id
     }
-    pub fn mmff_variant(&self) -> &str {
-        &self.mmff_variant
+    pub fn mmff_variant(&self) -> MmffVariant {
+        self.mmff_variant
     }
     pub fn non_bonded_threshold(&self) -> f64 {
         self.non_bonded_threshold
@@ -196,9 +196,7 @@ impl Default for MmffForceFieldParams {
                 );
                 Self::new(
                     None,
-                    contract_default("MmffForceFieldParams.new", "mmff_variant")
-                        .trim_matches('"')
-                        .into(),
+                    MmffVariant::Mmff94,
                     contract_default("MmffForceFieldParams.new", "non_bonded_threshold")
                         .parse()
                         .expect("registered numeric default"),
@@ -614,7 +612,7 @@ impl Molecule {
         params: &MmffForceFieldParams,
     ) -> Result<MolecularForceField, MmffForceFieldError> {
         let options = cosmolkit_forcefields::MmffEvaluationParams {
-            mmff_variant: params.mmff_variant.clone(),
+            mmff_variant: params.mmff_variant,
             conformer_id: params.conformer_id,
             non_bonded_threshold: params.non_bonded_threshold,
             ignore_interfragment_interactions: params.ignore_interfragment_interactions,

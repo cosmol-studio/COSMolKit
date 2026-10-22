@@ -52,7 +52,6 @@ pub(crate) fn call_keywords(
     ignore_atoms: Option<Vec<u32>>,
     custom_atom_invariants: Option<Vec<u32>>,
     custom_bond_invariants: Option<Vec<u32>>,
-    conformer_id: Option<i32>,
 ) -> PyResult<crate::params::MorganCallParams> {
     crate::params::MorganCallParams::from_rust(
         py,
@@ -61,7 +60,6 @@ pub(crate) fn call_keywords(
             ignore_atoms,
             custom_atom_invariants,
             custom_bond_invariants,
-            conformer_id.unwrap_or_else(|| ck::MorganCallParams::default().conformer_id),
         ),
     )
 }
@@ -284,7 +282,7 @@ mod tests {
                 py,
                 MorganFingerprintGenerator::new(py, Some(&params), None, None)?,
             )?;
-            let settings = generator.bind(py).call_method0("settings")?;
+            let settings = generator.bind(py).getattr("settings")?;
             settings.setattr("radius", 3)?;
             assert_eq!(generator.borrow(py).inner.settings().radius().unwrap(), 3);
             assert_eq!(params.to_rust(py)?, native_params);
@@ -297,7 +295,7 @@ mod tests {
                 recreated.inner.settings().params().unwrap(),
                 generator.borrow(py).inner.settings().params().unwrap()
             );
-            let call = call_keywords(py, Some(vec![0, 2]), None, None, None, None)?;
+            let call = call_keywords(py, Some(vec![0, 2]), None, None, None)?;
             let call = Py::new(py, call)?;
             let output = Py::new(
                 py,
@@ -478,7 +476,7 @@ mod tests {
                 );
             }
             assert_eq!(
-                output.bind(py).call_method0("atom_counts")?.len()?,
+                output.bind(py).getattr("atom_counts")?.len()?,
                 source.num_atoms()
             );
             assert_eq!(molecule.borrow(py).inner.to_binary().unwrap(), before);
@@ -542,13 +540,7 @@ mod tests {
             drop(error);
             drop(writer);
             drop(recursive);
-            assert_eq!(
-                query
-                    .bind(py)
-                    .call_method0("num_atoms")?
-                    .extract::<usize>()?,
-                2
-            );
+            assert_eq!(query.bind(py).getattr("num_atoms")?.extract::<usize>()?, 2);
             Ok(())
         })
         .unwrap();

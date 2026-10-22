@@ -56,6 +56,8 @@ pub use cosmolkit_forcefields::{
     UffTypingError, UffTypingInput,
 };
 #[cfg(feature = "cap-forcefields")]
+pub use cosmolkit_forcefields::{OptimizationOutcome, OptimizationStatus};
+#[cfg(feature = "cap-forcefields")]
 pub use forcefields::{
     MmffAtomProperties, MmffMolPropertiesError, MmffProperties, MmffPropertiesParams, MmffVariant,
     UffParameterError, UffParameterErrorKind, UffParameterQueryError,
@@ -112,7 +114,10 @@ mod molecule_builder;
 #[cfg(feature = "cap-inchi")]
 pub use cosmolkit_inchi::{InchiError, InchiErrorKind};
 #[cfg(feature = "cap-inchi")]
-pub use inchi::{InchiReadParams, InchiWriteParams, inchi_to_key};
+pub use inchi::{
+    InchiDiagnostic, InchiDiagnosticLevel, InchiReadParams, InchiResult, InchiWriteParams,
+    inchi_to_key,
+};
 #[cfg(feature = "cap-reaction")]
 mod reaction;
 #[cfg(all(feature = "cap-reaction", not(feature = "cap-smiles")))]
@@ -245,12 +250,16 @@ pub use cosmolkit_bio::{
 };
 #[cfg(feature = "cap-rings")]
 pub use cosmolkit_core::RingSearchParams;
+#[cfg(feature = "cap-rings")]
+mod rings;
 #[cfg(feature = "cap-hydrogens")]
 pub use cosmolkit_core::{AddHsParams, HydrogenError, RemoveHsParams};
 #[cfg(feature = "cap-aromaticity")]
 pub use cosmolkit_core::{AromaticityError, AromaticityModel, AromaticityParams};
 #[cfg(feature = "cap-valence")]
 pub use cosmolkit_core::{ValenceModel, ValenceParams};
+#[cfg(feature = "cap-rings")]
+pub use rings::RingSearchResult;
 // Detached metadata and its error are always-present model vocabulary.
 #[cfg(feature = "cap-smiles")]
 pub use cosmolkit_core::{
@@ -372,6 +381,8 @@ pub(crate) use ops::{FragmentsAccess, LargestFragmentAccess};
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
 #[doc(inline)]
 pub use ops::{OperationError, UnsupportedFeatureError};
+mod atom_property_access;
+pub use atom_property_access::AtomPropertyReadError;
 pub(crate) use ops::{PendingMolecule, PendingResult, ResultFinalizer};
 #[cfg(feature = "cap-rings")]
 pub(crate) use ops::{WithAssignedRingFamiliesAccess, WithAssignedRingsAccess};
@@ -595,7 +606,7 @@ pub use cosmolkit_forcefields::{
 };
 
 #[cfg(feature = "cap-conformer")]
-pub use conformer::{EmbedMoleculeResult, EmbedMultipleConfsResult};
+pub use conformer::{EmbedMoleculeResult, EmbedMultipleConfsResult, EmbedTermination};
 
 #[cfg(feature = "cap-conformer")]
 pub(crate) use ops::{
@@ -640,8 +651,8 @@ mod sdf_supplier;
 #[cfg(feature = "cap-io")]
 pub use molecular_io::{
     Mol2PostError, Mol2ReadError, Mol2ReadParams, Mol2Type, MolBlockWriteParams,
-    MolCoordinateSelection, MolWriteError, MolecularIoError, PdbWriteError, PdbWriteParams,
-    SdfFormat, XyzReadError, XyzWriteError, XyzWriteParams,
+    MolCoordinateSelection, MolWriteError, MolecularIoError, PdbReadFlags, PdbWriteError,
+    PdbWriteFlags, PdbWriteParams, SdfFormat, XyzReadError, XyzWriteError, XyzWriteParams,
 };
 #[cfg(feature = "cap-stereoisomers")]
 pub use ops::StereoisomerIterator;

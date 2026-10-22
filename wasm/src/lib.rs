@@ -733,7 +733,6 @@ mod sdf_reading;
 #[cfg(feature = "cap-io")]
 pub use sdf_reading::{SdfGraph, SdfRecord};
 
-#[cfg(feature = "cap-io")]
 mod property_strings;
 
 #[cfg(feature = "cap-io")]

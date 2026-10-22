@@ -14,6 +14,52 @@ use cosmolkit_model::{
 };
 use cosmolkit_types::{BondOrder, Element};
 
+macro_rules! pdb_flags {
+    ($(#[$doc:meta])* $name:ident { $($(#[$flag_doc:meta])* $flag:ident = $bits:expr),+ $(,)? }) => {
+        $(#[$doc])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+        pub struct $name(u32);
+        impl $name {
+            pub const NONE: Self = Self(0);
+            $($(#[$flag_doc])* pub const $flag: Self = Self($bits);)+
+            /// Preserve raw source bits, including bits ignored by this reader/writer.
+            pub const fn from_bits(bits: u32) -> Self { Self(bits) }
+            pub const fn bits(self) -> u32 { self.0 }
+            pub const fn contains(self, flags: Self) -> bool { self.0 & flags.0 == flags.0 }
+            pub const fn is_empty(self) -> bool { self.0 == 0 }
+        }
+        impl std::ops::BitOr for $name {
+            type Output = Self;
+            fn bitor(self, rhs: Self) -> Self { Self(self.0 | rhs.0) }
+        }
+        impl std::ops::BitAnd for $name {
+            type Output = Self;
+            fn bitand(self, rhs: Self) -> Self { Self(self.0 & rhs.0) }
+        }
+    };
+}
+pdb_flags! {
+    /// Source-defined molecular PDB reader controls; defaults retain source filtering.
+    PdbReadFlags {
+        /// Keep alternate locations and XPLOR/NMR pseudo atoms and dummy residues together.
+        KEEP_ALTERNATE_AND_PSEUDO_ATOMS = 1,
+        /// Assign standard-residue bond orders even without proximity bonding.
+        STANDARD_RESIDUE_BOND_ORDERS = 8,
+    }
+}
+pdb_flags! {
+    /// Source-defined molecular PDB block writer controls.
+    PdbWriteFlags {
+        /// Omit single/aromatic CONECT entries, not multiple-bond entries.
+        OMIT_SINGLE_CONECT = 2,
+        BIDIRECTIONAL_CONECT = 4,
+        /// Do not repeat neighbors to encode bond order.
+        NO_BOND_ORDER = 8,
+        MASTER = 16,
+        TER = 32,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PdbReadError {
     #[error("PDB contains no atom records after source-defined filtering")]
@@ -64,10 +110,8 @@ pub enum PdbWriteError {
 /// Controls the source-defined PDB block-reader flavor flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PdbReadParams {
-    /// Bit 1 keeps alternate conformations and pseudo/dummy records. Bit 8
-    /// requests standard-residue bond-order correction, which is not yet
-    /// available in the detached format layer.
-    pub flavor: u32,
+    /// Alternate/pseudo-record filtering and standard-residue bond-order policy.
+    pub flavor: PdbReadFlags,
 }
 
 /// Controls PDB conformer selection and writer flavor flags.
@@ -76,10 +120,8 @@ pub struct PdbWriteParams {
     /// Select a conformer by its detached id. `None` writes all conformers when
     /// there is more than one, matching RDKit's negative `confId` behavior.
     pub conformer_id: Option<usize>,
-    /// Bit 2 suppresses single/aromatic `CONECT` entries, bit 4 writes both
-    /// directions, bit 8 suppresses bond-order multiplicity, bit 16 adds
-    /// `MASTER`, and bit 32 adds `TER`.
-    pub flavor: u32,
+    /// CONECT encoding and optional MASTER/TER records.
+    pub flavor: PdbWriteFlags,
 }
 
 /// Public exporter policy: unique-or-explicit coordinates, or all stored sets.
@@ -92,7 +134,7 @@ pub struct PdbExportParams {
     #[configuration(none_default)]
     pub coordinate_selection: crate::MolCoordinateSelection,
     pub all_conformers: bool,
-    pub flavor: u32,
+    pub flavor: PdbWriteFlags,
 }
 
 fn bytes_field(line: &str, start: usize, end: usize) -> &str {
@@ -890,7 +932,7 @@ pub fn read_pdb_detached_with_params(
         let line_number = line_index + 1;
         if line.starts_with("ATOM  ") || line.starts_with("HETATM") {
             if !multi_conformer {
-                if !include_atom_record(line, params.flavor) {
+                if !include_atom_record(line, params.flavor.bits()) {
                     continue;
                 }
                 let id = AtomId::new(atoms.len());
@@ -979,7 +1021,7 @@ pub fn read_pdb_detached_with_params(
         &coordinate_block,
         crate::PdbPostprocessParams {
             proximity_bonding: false,
-            flavor: params.flavor,
+            flavor: params.flavor.bits(),
         },
     )?;
     let properties = title.map_or_else(MoleculeProperties::default, |value| {
@@ -1582,7 +1624,13 @@ pub fn write_pdb_detached_with_params(
 ) -> Result<PropertyText, PdbWriteError> {
     let topology = pdb_writer_topology(topology)?;
     let conformers = selected_conformers(coordinates, params.conformer_id)?;
-    write_selected_pdb(&topology, &conformers, properties, params.flavor, false)
+    write_selected_pdb(
+        &topology,
+        &conformers,
+        properties,
+        params.flavor.bits(),
+        false,
+    )
 }
 
 fn pdb_writer_topology(topology: &TopologyBlock) -> Result<TopologyBlock, PdbWriteError> {
@@ -1669,7 +1717,7 @@ pub fn write_pdb_export_with_params(
         &topology,
         &conformers,
         properties,
-        params.flavor,
+        params.flavor.bits(),
         params.all_conformers,
     )
 }
@@ -1942,11 +1990,16 @@ mod tests {
             1
         );
         assert_eq!(
-            read_pdb_detached_with_params(&input, PdbReadParams { flavor: 1 })
-                .expect("unfiltered")
-                .0
-                .atoms
-                .len(),
+            read_pdb_detached_with_params(
+                &input,
+                PdbReadParams {
+                    flavor: PdbReadFlags::KEEP_ALTERNATE_AND_PSEUDO_ATOMS
+                }
+            )
+            .expect("unfiltered")
+            .0
+            .atoms
+            .len(),
             3
         );
     }
@@ -2083,9 +2136,14 @@ mod tests {
             "",
         );
         let input = format!("{carbon}\n{oxygen}\nCONECT    1    2\n");
-        let topology = read_pdb_detached_with_params(&input, PdbReadParams { flavor: 8 })
-            .expect("flavor-8 PDB")
-            .0;
+        let topology = read_pdb_detached_with_params(
+            &input,
+            PdbReadParams {
+                flavor: PdbReadFlags::STANDARD_RESIDUE_BOND_ORDERS,
+            },
+        )
+        .expect("flavor-8 PDB")
+        .0;
         assert_eq!(topology.bonds.len(), 1);
         assert_eq!(topology.bonds[0].order(), BondOrder::Double);
     }
@@ -2344,7 +2402,7 @@ mod tests {
                 &MoleculeProperties::default().with_name("models"),
                 PdbWriteParams {
                     conformer_id: None,
-                    flavor: 16 | 32
+                    flavor: PdbWriteFlags::MASTER | PdbWriteFlags::TER
                 }
             ),
             Err(PdbWriteError::ConformerNotFound { id: 0 })
@@ -2362,7 +2420,7 @@ mod tests {
             &MoleculeProperties::default().with_name("models"),
             PdbWriteParams {
                 conformer_id: None,
-                flavor: 16 | 32,
+                flavor: PdbWriteFlags::MASTER | PdbWriteFlags::TER,
             },
         )
         .map(super::fixture_writer_text)
@@ -2383,7 +2441,7 @@ mod tests {
             &MoleculeProperties::default(),
             PdbWriteParams {
                 conformer_id: Some(9),
-                flavor: 0,
+                flavor: PdbWriteFlags::NONE,
             },
         )
         .map(super::fixture_writer_text)
@@ -2414,7 +2472,7 @@ mod tests {
                 &MoleculeProperties::default(),
                 PdbWriteParams {
                     conformer_id: None,
-                    flavor,
+                    flavor: PdbWriteFlags::from_bits(flavor),
                 },
             )
             .map(super::fixture_writer_text)
@@ -2440,7 +2498,7 @@ mod tests {
             &MoleculeProperties::default(),
             PdbWriteParams {
                 conformer_id: Some(8),
-                flavor: 0,
+                flavor: PdbWriteFlags::NONE,
             },
         )
         .map(super::fixture_writer_text)

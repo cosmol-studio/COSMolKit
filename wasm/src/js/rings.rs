@@ -5,6 +5,28 @@ use crate::host_values::*;
 use cosmolkit_wasm::rust as ck;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+/// Owned symmetrized SSSR result, independent of subsequent molecule edits.
+#[wasm_bindgen]
+pub struct RingSearchResult {
+    inner: ck::RingSearchResult,
+}
+#[wasm_bindgen]
+impl RingSearchResult {
+    #[wasm_bindgen(getter, js_name=atomRings, unchecked_return_type="number[][]")]
+    pub fn atom_rings(&self) -> js_sys::Array {
+        self.inner.atom_rings().iter().map(|ring| {
+            ring.iter().map(|id| JsValue::from(id.index() as u32)).collect::<js_sys::Array>()
+        }).collect()
+    }
+    #[wasm_bindgen(getter, js_name=bondRings, unchecked_return_type="number[][]")]
+    pub fn bond_rings(&self) -> js_sys::Array {
+        self.inner.bond_rings().iter().map(|ring| {
+            ring.iter().map(|id| JsValue::from(id.index() as u32)).collect::<js_sys::Array>()
+        }).collect()
+    }
+    #[wasm_bindgen(getter, js_name=numRings)]
+    pub fn num_rings(&self) -> usize { self.inner.num_rings() }
+}
 #[wasm_bindgen]
 pub struct RingSearchParams {
     inner: ck::RingSearchParams,
@@ -45,6 +67,34 @@ extern "C" {
 }
 #[wasm_bindgen]
 impl Molecule {
+    #[wasm_bindgen(js_name=symmetrizedSssr)]
+    pub fn symmetrized_sssr(
+        &self,
+        #[wasm_bindgen(unchecked_optional_param_type="RingSearchParams | RingSearchParamsOptions")]
+        params: JsValue,
+    ) -> Result<RingSearchResult, JsValue> {
+        if params.is_undefined() {
+            return self.inner.symmetrized_sssr().map(|inner| RingSearchResult { inner })
+                .map_err(|e| operation_error(&e).unwrap_or_else(|e| e));
+        }
+        let params = RingSearchParams::from_js_configuration(&params)?;
+        self.inner.symmetrized_sssr_with_params(&params.inner)
+            .map(|inner| RingSearchResult { inner })
+            .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    }
+    #[wasm_bindgen(js_name=symmetrizedSssrWithParams)]
+    pub fn symmetrized_sssr_with_params(
+        &self,
+        #[wasm_bindgen(unchecked_param_type="RingSearchParams")] params: JsValue,
+    ) -> Result<RingSearchResult, JsValue> {
+        let mut result = None;
+        visit_params(&params, &mut |p: &RingSearchParams| {
+            result = Some(self.inner.symmetrized_sssr_with_params(&p.inner)
+                .map(|inner| RingSearchResult { inner })
+                .map_err(|e| operation_error(&e).unwrap_or_else(|e| e)));
+        })?;
+        result.ok_or_else(|| type_error("params"))?
+    }
     #[wasm_bindgen(js_name=withAssignedRings)]
     pub fn with_assigned_rings(&self) -> Result<Self, JsValue> {
         // COSMolKit❗✔️: self.inner.with_assigned_rings()

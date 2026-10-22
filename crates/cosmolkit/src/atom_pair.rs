@@ -18,7 +18,9 @@ pub struct AtomPairFingerprintParams {
     pub ignore_atoms: Option<Vec<u32>>,
     pub custom_atom_invariants: Option<Vec<u32>>,
     pub custom_bond_invariants: Option<Vec<u32>>,
-    pub conformer_id: i32,
+    /// Stored conformer ID for 3D distances; None uses the native default selection.
+    /// Not used when the generator's use_2d option is true.
+    pub conformer_id: Option<usize>,
     pub atom_invariants_generator: Option<AtomPairAtomInvariantsGenerator>,
     pub use_legacy_stereo_perception: bool,
 }
@@ -35,7 +37,7 @@ impl From<AtomPairGeneratorParams> for AtomPairFingerprintParams {
             ignore_atoms: None,
             custom_atom_invariants: None,
             custom_bond_invariants: None,
-            conformer_id: -1,
+            conformer_id: None,
             atom_invariants_generator: None,
             use_legacy_stereo_perception: true,
         }

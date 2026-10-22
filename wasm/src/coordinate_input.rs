@@ -38,7 +38,7 @@ impl Molecule {
     }
     pub fn with_3d_coordinates(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
     ) -> Result<Self, ck::OperationError> {
         self.inner
             .borrow()
@@ -47,7 +47,7 @@ impl Molecule {
     }
     pub fn with_3d_coordinates_with_params(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
         params: &ck::Replace3DCoordinatesParams,
     ) -> Result<Self, ck::OperationError> {
         self.inner
@@ -57,13 +57,13 @@ impl Molecule {
     }
     pub fn set_3d_coordinates_(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
     ) -> Result<(), ck::OperationError> {
         self.inner.borrow_mut().set_3d_coordinates_(coordinates)
     }
     pub fn set_3d_coordinates_with_params_(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
         params: &ck::Replace3DCoordinatesParams,
     ) -> Result<(), ck::OperationError> {
         self.inner
@@ -72,7 +72,7 @@ impl Molecule {
     }
     pub fn with_added_3d_conformer(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
     ) -> Result<Self, ck::OperationError> {
         self.inner
             .borrow()
@@ -81,7 +81,7 @@ impl Molecule {
     }
     pub fn with_added_3d_conformer_with_params(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
         params: &ck::Coordinate3DInputParams,
     ) -> Result<Self, ck::OperationError> {
         self.inner
@@ -91,13 +91,13 @@ impl Molecule {
     }
     pub fn add_3d_conformer_(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
     ) -> Result<usize, ck::OperationError> {
         self.inner.borrow_mut().add_3d_conformer_(coordinates)
     }
     pub fn add_3d_conformer_with_params_(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
         params: &ck::Coordinate3DInputParams,
     ) -> Result<usize, ck::OperationError> {
         self.inner
@@ -106,7 +106,7 @@ impl Molecule {
     }
     pub fn with_only_3d_conformer(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
     ) -> Result<Self, ck::OperationError> {
         self.inner
             .borrow()
@@ -115,7 +115,7 @@ impl Molecule {
     }
     pub fn with_only_3d_conformer_with_params(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
         params: &ck::Coordinate3DInputParams,
     ) -> Result<Self, ck::OperationError> {
         self.inner
@@ -125,13 +125,13 @@ impl Molecule {
     }
     pub fn set_only_3d_conformer_(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
     ) -> Result<usize, ck::OperationError> {
         self.inner.borrow_mut().set_only_3d_conformer_(coordinates)
     }
     pub fn set_only_3d_conformer_with_params_(
         &self,
-        coordinates: Vec<Vec<f64>>,
+        coordinates: Vec<[f64; 3]>,
         params: &ck::Coordinate3DInputParams,
     ) -> Result<usize, ck::OperationError> {
         self.inner

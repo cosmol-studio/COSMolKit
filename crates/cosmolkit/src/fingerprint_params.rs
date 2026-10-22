@@ -87,13 +87,12 @@ mod tests {
     fn native_composition_moves_buffers_and_preserves_absent_and_empty_selections() {
         let options = MorganGeneratorParams::default();
         let count_bounds = options.count_bounds.as_ptr();
-        let call = MorganCallParams::new(Some(vec![]), None, Some(vec![11]), None, 7);
+        let call = MorganCallParams::new(Some(vec![]), None, Some(vec![11]), None);
         let atom_invariants = call.custom_atom_invariants.as_ref().unwrap().as_ptr();
         let params = MorganFingerprintParams::from((options, call));
         assert_eq!(params.count_bounds().as_ptr(), count_bounds);
         assert_eq!(params.from_atoms, Some(vec![]));
         assert_eq!(params.ignore_atoms, None);
-        assert_eq!(params.conformer_id, 7);
         assert_eq!(
             params.custom_atom_invariants.as_ref().unwrap().as_ptr(),
             atom_invariants
@@ -102,7 +101,6 @@ mod tests {
         let call = TopologicalTorsionCallParams {
             ignore_atoms: Some(vec![]),
             use_legacy_stereo_perception: false,
-            conformer_id: 9,
             ..Default::default()
         };
         let params = TopologicalTorsionFingerprintParams::from((
@@ -111,7 +109,6 @@ mod tests {
         ));
         assert_eq!(params.from_atoms, None);
         assert_eq!(params.ignore_atoms, Some(vec![]));
-        assert_eq!(params.conformer_id, 9);
         assert!(!params.use_legacy_stereo_perception);
     }
 }

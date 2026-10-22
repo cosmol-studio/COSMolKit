@@ -241,12 +241,12 @@ impl UffOptimizationResult {
         self.inner.status_code()
     }
     /// Force-field potential energy in kcal/mol.
-    fn energy(&self) -> f64 {
+    fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
     fn __repr__(&self) -> String {
         format!(
-            "UffOptimizationResult(needs_more={}, energy={})",
+            "UffOptimizationResult(needs_more={}, energy={:?})",
             self.inner.status_code(),
             self.inner.energy()
         )
@@ -272,7 +272,7 @@ impl UffConformerResult {
         self.inner.status_code()
     }
     /// Force-field potential energy in kcal/mol.
-    fn energy(&self) -> f64 {
+    fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
     /// Stored 3D conformer identifier used by this operation; not its position in the conformer list.
@@ -281,7 +281,7 @@ impl UffConformerResult {
     }
     fn __repr__(&self) -> String {
         format!(
-            "UffConformerResult(needs_more={}, energy={})",
+            "UffConformerResult(needs_more={}, energy={:?})",
             self.inner.status_code(),
             self.inner.energy()
         )

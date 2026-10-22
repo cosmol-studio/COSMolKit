@@ -8,13 +8,13 @@ use super::mol_properties::{
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct MmffPropertiesParams {
-    pub mmff_variant: String,
+    pub mmff_variant: MmffVariant,
 }
 
 impl Default for MmffPropertiesParams {
     fn default() -> Self {
         Self {
-            mmff_variant: "MMFF94".to_owned(),
+            mmff_variant: MmffVariant::Mmff94,
         }
     }
 }
@@ -68,7 +68,7 @@ pub fn mmff_properties(
     let properties = MmffMolProperties::new_prepared(
         topology,
         mmff_sanitized,
-        &params.mmff_variant,
+        params.mmff_variant.as_rdkit_str(),
         0,
         supplied_rings,
     )?;
