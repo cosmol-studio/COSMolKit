@@ -65,20 +65,25 @@ pub(crate) fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
     let mut attributes = Vec::new();
     let mut flattened_exports = Vec::new();
     for (index, field) in fields.named.into_iter().enumerate() {
-        let custom = field.attrs.iter().any(|a| {
-            a.path().is_ident("configuration")
-                && a.meta
-                    .require_list()
-                    .is_ok_and(|m| ["state", "adapter"].contains(&m.tokens.to_string().as_str()))
+        let policy = field.attrs.iter().find_map(|a| {
+            a.path()
+                .is_ident("configuration")
+                .then(|| a.meta.require_list().ok().map(|m| m.tokens.to_string()))
+                .flatten()
+                .filter(|value| matches!(value.as_str(), "state" | "adapter"))
         });
-        if custom {
+        if let Some(policy) = policy {
             if !stateful {
                 return Err(syn::Error::new_spanned(
                     field,
                     "state/adapter fields require an explicit stateful projection",
                 ));
             }
-            continue;
+            // Runtime state is not editable input. Adapter inputs retain their
+            // declared type and marker for language-specific ownership adapters.
+            if policy == "state" {
+                continue;
+            }
         }
         if !matches!(field.vis, Visibility::Public(_)) && !accessors {
             return Err(syn::Error::new_spanned(
@@ -432,6 +437,18 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
     if let Some(consumer) = consumer {
         let mut leaves = Vec::new();
         collect_leaves(&fields, TokenStream::new(), &mut leaves);
+        // Explicit Python ownership adapters generate their ordinary properties
+        // from this callback and implement marked fields themselves. Keep that
+        // protocol unchanged; the raw metadata export includes adapter fields.
+        leaves.retain(|(field, _)| {
+            !field.attrs.iter().any(|attribute| {
+                attribute.path().is_ident("configuration")
+                    && attribute
+                        .meta
+                        .require_list()
+                        .is_ok_and(|meta| meta.tokens.to_string() == "adapter")
+            })
+        });
         let names = leaves.iter().map(|(field, _)| &field.name);
         let types: Vec<_> = leaves.iter().map(|(field, _)| &field.ty).collect();
         return Ok(quote! {
@@ -644,6 +661,36 @@ pub(crate) fn project(input: TokenStream) -> syn::Result<TokenStream> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adapter_metadata_keeps_types_without_rebuilding_state() {
+        let expanded = derive(syn::parse_quote! {
+            #[configuration(stateful)]
+            struct Options {
+                pub limit: usize,
+                #[configuration(adapter)]
+                pub callback: Option<Callback>,
+                #[configuration(state)]
+                pub cache: Cache,
+            }
+        })
+        .unwrap()
+        .to_string();
+        assert!(expanded.contains("type Field1 = Option < Callback >"));
+        assert!(expanded.contains("configuration (adapter)"));
+        assert!(!expanded.contains("Field2"));
+        assert!(!expanded.contains("cache :"));
+        let projected = emit_projection(syn::parse_quote! {
+            @adapter Options {
+                limit: usize,
+                #[configuration(adapter)]
+                callback: Option<Callback>
+            } methods {} using scalar_properties
+        })
+        .unwrap()
+        .to_string();
+        assert_eq!(projected, "scalar_properties ! { limit : usize }");
+    }
 
     #[test]
     fn rejects_non_input_shapes_instead_of_guessing_a_projection() {

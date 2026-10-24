@@ -139,7 +139,7 @@ ROWS: list[Row] = [
 
 INFO_READS = ["element", "symbol", "atomic_number", "period", "outer_electrons", "valences", "rb0", "atomic_weight"]
 ELEMENT_READS = ["atomic_number", "symbol"]
-STUB = Path(__file__).resolve().parents[1] / "cosmolkit.pyi"
+STUB = Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
 
 
 def invoke(value: object, *args: object, **kwargs: object) -> object:

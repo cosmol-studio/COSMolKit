@@ -624,7 +624,8 @@ validator must reject a projection that violates any of these requirements:
    `builtins.int`; this does not promise an independently exported wrapper class.
    Configuration records and object adapters cannot use that scalar projection.
 
-`stub_gen` runs these checks before replacing the existing `.pyi`; the WASM
+`python/registry_check.py` checks the built package and generated `.pyi`
+before release artifacts are accepted; the WASM
 build runs them before exporting a distribution. Neither gate may synthesize
 declarations for missing implementations. Existing violations remain failed
 delivery gates until the bindings or their incorrect registration are fixed.

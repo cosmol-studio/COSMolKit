@@ -121,6 +121,18 @@ pub enum StateModel {
     ReadOnly,
 }
 
+/// JavaScript representation/platform boundary; never an implementation status.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BindingJavascriptProjection {
+    Runtime,
+    /// Project a native method as a domain-qualified module function.
+    ModuleFunction(&'static str),
+    TypeOnly,
+    NativeValue(&'static str),
+    ErrorDetails,
+    HostFilesystem,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BindingContractEntry {
     pub semantic_id: &'static str,
@@ -136,6 +148,7 @@ pub struct BindingContractEntry {
     pub python_configuration: Option<&'static [BindingConfigurationField]>,
     pub python_property: Option<BindingPropertyAccess>,
     pub javascript_name: &'static str,
+    pub javascript_projection: BindingJavascriptProjection,
     pub feature: &'static str,
     /// Additional capability selectors required together with the owning feature.
     pub required_capabilities: &'static [&'static str],

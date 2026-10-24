@@ -14,13 +14,12 @@ python3 dev/tools/bump_rust_version.py 0.5.0
 
 Updates the shared Rust crate version, explicitly listed internal dependencies,
 and the marked installation example in `crates/cosmolkit/README.md`.
-Also updates the Python and WASM binding crate package versions, including
-`python_pyo3_introspection/Cargo.toml`, and project.version in both
-`python/pyproject.toml` and `python_pyo3_introspection/pyproject.toml`.
+Also updates the Python and WASM binding crate package versions and
+project.version in `python/pyproject.toml`.
 Rust prerelease spelling is converted
 to Python's PEP 440 spelling; stable `0.5.0` stays `0.5.0`.
-Then `cargo update --workspace` refreshes the root and standalone Python
-lockfiles without upgrading already-locked third-party dependencies. Historical records and
+Then `cargo update --workspace` refreshes the workspace lockfile
+without upgrading already-locked third-party dependencies. Historical records and
 unmarked version examples remain unchanged.
 
 The script lists each manifest, section and dependency name in `DEPENDENCIES`.

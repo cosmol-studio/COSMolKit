@@ -3,7 +3,7 @@ from pathlib import Path
 
 DOCS = Path(__file__).resolve().parents[1]
 ROOT = DOCS.parent
-sys.path.insert(0, str(ROOT / "python"))
+sys.path.insert(0, str(ROOT / "python/artifacts/smoke/package"))
 sys.path.insert(0, str(DOCS))
 
 project = "COSMolKit"
@@ -42,7 +42,7 @@ ts_sphinx_js_config = str(DOCS / "sphinx-js.config.ts")
 
 autosummary_generate = True
 autodoc_typehints = "signature"
-python_api_stub = str(ROOT / "python/cosmolkit.pyi")
+python_api_stub = str(ROOT / "python/artifacts/smoke/package/cosmolkit/__init__.pyi")
 autoclass_content = "both"
 
 templates_path = ["_templates"]

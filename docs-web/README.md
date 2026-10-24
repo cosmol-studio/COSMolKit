@@ -102,7 +102,9 @@ Prepare both bindings before building the documentation:
 
 ```sh
 uv sync --group dev
-uv run --group dev maturin develop --manifest-path python/Cargo.toml
+cargo install pyo3-introspection --version 0.30.1 --locked
+uv run --group dev python python/build.py
+uv run --group dev python python/registry_check.py
 npm ci --prefix docs --no-audit --no-fund
 python3 wasm/tools/wasm_binding/run.py --preset full --skip-binding-contract --out-dir target/docs-js-package
 uv run --group dev python -m sphinx --keep-going -E -b html docs/source docs/build/html

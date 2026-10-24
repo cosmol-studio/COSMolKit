@@ -94,7 +94,7 @@ def test_invariant_generator_source_metadata_repr_and_frozen_protocol(chiral, co
         setattr(generator, name, original)
     for name in ("info_string", "to_json", "__repr__"):
         with pytest.raises(TypeError): getattr(generator, name)(0)
-    stub = ast.parse((Path(__file__).resolve().parents[1] / "cosmolkit.pyi").read_text())
+    stub = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     node = next(n for n in stub.body if isinstance(n, ast.ClassDef) and n.name == "AtomPairAtomInvariantsGenerator")
     methods = {n.name: n for n in node.body if isinstance(n, ast.FunctionDef)}
     assert set(methods) == {"__new__", "include_chirality", "topological_torsion_correction", "info_string", "to_json", "__repr__"}

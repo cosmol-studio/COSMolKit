@@ -197,7 +197,7 @@ def test_torsion_batch_thin_bindings_match_scalar_and_propagate_callback_errors(
 
 
 def test_generated_big_integer_annotations_are_python_int() -> None:
-    tree = ast.parse((Path(__file__).resolve().parents[1] / "cosmolkit.pyi").read_text())
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     for name in ["stereoisomer_count", "stereoisomer_count_with_options"]:
         method = next(node for node in classes["Molecule"].body if isinstance(node, ast.FunctionDef) and node.name == name)
@@ -213,7 +213,7 @@ def test_generated_big_integer_annotations_are_python_int() -> None:
 
 
 def test_dynamic_batch_types_have_stubs_and_preserve_error_fields() -> None:
-    tree = ast.parse((Path(__file__).resolve().parents[1] / "cosmolkit.pyi").read_text())
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     for name in ["BatchErrorMode", "BatchValidationError", "PropertyStringError"]:
         assert len([node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name]) == 1
     assert int(ck.BatchErrorMode.RAISE) == 1 and int(ck.BatchErrorMode.KEEP) == 2

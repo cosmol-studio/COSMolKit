@@ -704,7 +704,7 @@ binding_contract! {
           parameters:[{name:data,type:&'a [(&'b str,&'b str,&'b str,&'b str)],default:required}], output:crate::TautomerParams, error:crate::TautomerCatalogError, state:value_returning, operation:none,
           signature:for<'a,'b:'a> fn(&'a [(&'b str,&'b str,&'b str,&'b str)]) -> Result<crate::TautomerParams,crate::TautomerCatalogError>, },
         #[cfg(feature="cap-tautomer")]
-        { semantic_id:"TautomerParams.from_transform_file", item:callable, owner:type_, rust:crate::TautomerParams::from_transform_file, python:"from_transform_file", javascript:"fromTransformFile", feature:"cap-tautomer", status:experimental, kind:static_,
+        { semantic_id:"TautomerParams.from_transform_file", item:callable, owner:type_, rust:crate::TautomerParams::from_transform_file, python:"from_transform_file", javascript:"fromTransformFile", javascript_projection: host_filesystem, feature:"cap-tautomer", status:experimental, kind:static_,
           parameters:[{name:path,type:&'a str,default:required}], output:crate::TautomerParams, error:crate::TautomerCatalogError, state:value_returning, operation:none,
           signature:for<'a> fn(&'a str) -> Result<crate::TautomerParams,crate::TautomerCatalogError>, },
         #[cfg(feature="cap-tautomer")]
@@ -1951,7 +1951,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.write_mmcif_with_params", item: callable, owner: type_,
-            rust: crate::BioStructure::write_mmcif_with_params, python: "write_mmcif_with_params", javascript: "writeMmcifWithParams",
+            rust: crate::BioStructure::write_mmcif_with_params, python: "write_mmcif_with_params", javascript: "writeMmcifWithParams", javascript_projection: host_filesystem,
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: path, type: &std::path::Path, default: required }, { name: params, type: &crate::BioMmcifWriteParams, default: required }],
             output: (), error: crate::BioMmcifWriteError, state: read_only, operation: none,
@@ -1960,7 +1960,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.write_mmcif", item: callable, owner: type_,
-            rust: crate::BioStructure::write_mmcif, python: "write_mmcif", javascript: "writeMmcif",
+            rust: crate::BioStructure::write_mmcif, python: "write_mmcif", javascript: "writeMmcif", javascript_projection: host_filesystem,
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: path, type: &std::path::Path, default: required }],
             output: (), error: crate::BioMmcifWriteError, state: read_only, operation: none,
@@ -2006,7 +2006,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.write_pdb_with_params", item: callable, owner: type_,
-            rust: crate::BioStructure::write_pdb_with_params, python: "write_pdb_with_params", javascript: "writePdbWithParams",
+            rust: crate::BioStructure::write_pdb_with_params, python: "write_pdb_with_params", javascript: "writePdbWithParams", javascript_projection: host_filesystem,
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: path, type: &std::path::Path, default: required }, { name: params, type: &crate::BioPdbWriteParams, default: required }],
             output: (), error: crate::BioPdbWriteError, state: read_only, operation: none,
@@ -2015,7 +2015,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.write_pdb", item: callable, owner: type_,
-            rust: crate::BioStructure::write_pdb, python: "write_pdb", javascript: "writePdb",
+            rust: crate::BioStructure::write_pdb, python: "write_pdb", javascript: "writePdb", javascript_projection: host_filesystem,
             feature: "cap-bio", status: experimental, kind: instance,
             parameters: [{ name: path, type: &std::path::Path, default: required }],
             output: (), error: crate::BioPdbWriteError, state: read_only, operation: none,
@@ -2042,7 +2042,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.read_with_format", item: callable, owner: type_,
-            rust: crate::BioStructure::read_with_format, python: "read_with_format", javascript: "readWithFormat",
+            rust: crate::BioStructure::read_with_format, python: "read_with_format", javascript: "readWithFormat", javascript_projection: host_filesystem,
             feature: "cap-bio", status: experimental, kind: static_,
             parameters: [{ name: path, type: &std::path::Path, default: required }, { name: format, type: crate::BioCoordinateFormat, default: required }],
             output: crate::BioStructure, error: crate::BioReadError, state: value_returning, operation: none,
@@ -2051,7 +2051,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioStructure.read", item: callable, owner: type_,
-            rust: crate::BioStructure::read, python: "read", javascript: "read",
+            rust: crate::BioStructure::read, python: "read", javascript: "read", javascript_projection: host_filesystem,
             feature: "cap-bio", status: experimental, kind: static_,
             parameters: [{ name: path, type: &std::path::Path, default: required }],
             output: crate::BioStructure, error: crate::BioReadError, state: value_returning, operation: none,
@@ -2078,7 +2078,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.read_with_format", item: callable, owner: type_,
-            rust: crate::Protein::read_with_format, python: "read_with_format", javascript: "readWithFormat",
+            rust: crate::Protein::read_with_format, python: "read_with_format", javascript: "readWithFormat", javascript_projection: host_filesystem,
             feature: "cap-bio", status: experimental, kind: static_,
             parameters: [{ name: path, type: &std::path::Path, default: required }, { name: format, type: crate::BioCoordinateFormat, default: required }],
             output: crate::Protein, error: crate::ProteinReadError, state: value_returning, operation: none,
@@ -2087,7 +2087,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "Protein.read", item: callable, owner: type_,
-            rust: crate::Protein::read, python: "read", javascript: "read",
+            rust: crate::Protein::read, python: "read", javascript: "read", javascript_projection: host_filesystem,
             feature: "cap-bio", status: experimental, kind: static_,
             parameters: [{ name: path, type: &std::path::Path, default: required }],
             output: crate::Protein, error: crate::ProteinReadError, state: value_returning, operation: none,
@@ -2150,7 +2150,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioPdbReadError.stage", item: callable, owner: type_,
-            rust: crate::BioPdbReadError::stage, python: "stage", python_property: getter, javascript: "stage",
+            rust: crate::BioPdbReadError::stage, python: "stage", python_property: getter, javascript: "stage", javascript_projection: error_details,
             feature: "cap-bio", status: experimental, kind: instance, parameters: [],
             output: crate::BioPdbReadStage, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioPdbReadError) -> crate::BioPdbReadStage,
@@ -2158,7 +2158,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioPdbReadError.line_number", item: callable, owner: type_,
-            rust: crate::BioPdbReadError::line_number, python: "line_number", python_property: getter, javascript: "lineNumber",
+            rust: crate::BioPdbReadError::line_number, python: "line_number", python_property: getter, javascript: "lineNumber", javascript_projection: error_details,
             feature: "cap-bio", status: experimental, kind: instance, parameters: [],
             output: Option<i32>, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioPdbReadError) -> Option<i32>,
@@ -2166,7 +2166,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioPdbReadError.record_tag", item: callable, owner: type_,
-            rust: crate::BioPdbReadError::record_tag, python: "record_tag", python_property: getter, javascript: "recordTag",
+            rust: crate::BioPdbReadError::record_tag, python: "record_tag", python_property: getter, javascript: "recordTag", javascript_projection: error_details,
             feature: "cap-bio", status: experimental, kind: instance, parameters: [],
             output: Option<[u8; 4]>, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioPdbReadError) -> Option<[u8; 4]>,
@@ -2174,7 +2174,7 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "BioMmcifReadError.stage", item: callable, owner: type_,
-            rust: crate::BioMmcifReadError::stage, python: "stage", python_property: getter, javascript: "stage",
+            rust: crate::BioMmcifReadError::stage, python: "stage", python_property: getter, javascript: "stage", javascript_projection: error_details,
             feature: "cap-bio", status: experimental, kind: instance, parameters: [],
             output: crate::BioMmcifReadStage, error: none, state: read_only, operation: none,
             signature: fn(&crate::BioMmcifReadError) -> crate::BioMmcifReadStage,
@@ -4173,7 +4173,7 @@ binding_contract! {
             owner: type_,
             rust: crate::UffParameterError::kind,
             python: "kind", python_property: getter,
-            javascript: "kind",
+            javascript: "kind", javascript_projection: error_details,
             feature: "cap-forcefields",
             status: experimental,
             kind: instance,
@@ -4237,7 +4237,7 @@ binding_contract! {
             owner: type_,
             rust: crate::PropertyValueError::expected,
             python: "expected", python_property: getter,
-            javascript: "expected",
+            javascript: "expected", javascript_projection: error_details,
             feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
@@ -4253,7 +4253,7 @@ binding_contract! {
             owner: type_,
             rust: crate::PropertyValueError::actual,
             python: "actual", python_property: getter,
-            javascript: "actual",
+            javascript: "actual", javascript_projection: error_details,
             feature: "runtime", status: experimental,
             kind: instance,
             parameters: [],
@@ -5023,13 +5023,13 @@ binding_contract! {
         #[cfg(feature = "cap-depict")]
         {
             semantic_id: "types.DrawingWriteError", item: type, owner: type_,
-            rust: crate::DrawingWriteError, python: "DrawingWriteError", javascript: "DrawingWriteError",
+            rust: crate::DrawingWriteError, python: "DrawingWriteError", javascript: "DrawingWriteError", javascript_projection: host_filesystem,
             feature: "cap-depict", status: experimental, role: error,
         },
         #[cfg(feature = "cap-depict")]
         {
             semantic_id: "Molecule.write_svg", item: callable, owner: molecule,
-            rust: crate::Molecule::write_svg, python: "write_svg", javascript: "writeSvg",
+            rust: crate::Molecule::write_svg, python: "write_svg", javascript: "writeSvg", javascript_projection: host_filesystem,
             feature: "cap-depict",
             status: parity_with_differences(
                 "RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8 MolDraw2DSVG",
@@ -5046,7 +5046,7 @@ binding_contract! {
         #[cfg(feature = "cap-depict")]
         {
             semantic_id: "Molecule.write_png", item: callable, owner: molecule,
-            rust: crate::Molecule::write_png, python: "write_png", javascript: "writePng",
+            rust: crate::Molecule::write_png, python: "write_png", javascript: "writePng", javascript_projection: host_filesystem,
             feature: "cap-depict", status: experimental, kind: instance,
             parameters: [
                 { name: path, type: &std::path::Path, default: required },
@@ -6058,7 +6058,7 @@ binding_contract! {
             owner: type_,
             rust: crate::PotentialStereoCenter,
             python: "PotentialStereoCenter",
-            javascript: "PotentialStereoCenter",
+            javascript: "PotentialStereoCenter", javascript_projection: type_only,
             feature: "cap-stereo", status: experimental,
             role: value,
         },
@@ -7175,7 +7175,7 @@ binding_contract! {
         #[cfg(feature = "cap-forcefields")]
         {
             semantic_id: "UffOptimizationError.kind", item: callable, owner: type_,
-            rust: crate::UffOptimizationError::kind, python: "kind", python_property: getter, javascript: "kind",
+            rust: crate::UffOptimizationError::kind, python: "kind", python_property: getter, javascript: "kind", javascript_projection: error_details,
             feature: "cap-forcefields", status: experimental, kind: instance,
             parameters: [], output: crate::UffOptimizationErrorKind, error: none,
             state: read_only, operation: none,
@@ -7459,6 +7459,7 @@ binding_contract! {
             semantic_id: "ResidueInfoKind.name", item: callable,
             owner: type_, rust: crate::ResidueInfoKind::name,
             python: "name", python_property: getter, javascript: "name",
+            javascript_projection: module_function("residueInfoKindName"),
             feature: "cap-bio", status: experimental, kind: instance, receiver: owned,
             parameters: [], output: &'static str, error: none,
             state: value_returning, operation: none,
@@ -7490,7 +7491,7 @@ binding_contract! {
         {
             semantic_id: "ResidueCodeParseError.input", item: callable,
             owner: type_, rust: crate::ResidueCodeParseError::input,
-            python: "input", python_property: getter, javascript: "input",
+            python: "input", python_property: getter, javascript: "input", javascript_projection: error_details,
             feature: "cap-bio", status: experimental, kind: instance, receiver: shared,
             parameters: [], output: &str, error: none,
             state: read_only, operation: none,
@@ -7967,7 +7968,7 @@ binding_contract! {
             rust: crate::BioAtomId,
             python: "BioAtomId",
             python_native: "builtins.int",
-            javascript: "BioAtomId",
+            javascript: "BioAtomId", javascript_projection: native("number"),
             feature: "cap-bio", status: experimental,
             role: value,
         },
@@ -7979,7 +7980,7 @@ binding_contract! {
             rust: crate::BioResidueId,
             python: "BioResidueId",
             python_native: "builtins.int",
-            javascript: "BioResidueId",
+            javascript: "BioResidueId", javascript_projection: native("number"),
             feature: "cap-bio", status: experimental,
             role: value,
         },
@@ -7991,7 +7992,7 @@ binding_contract! {
             rust: crate::BioChainId,
             python: "BioChainId",
             python_native: "builtins.int",
-            javascript: "BioChainId",
+            javascript: "BioChainId", javascript_projection: native("number"),
             feature: "cap-bio", status: experimental,
             role: value,
         },
@@ -8003,7 +8004,7 @@ binding_contract! {
             rust: crate::BioEntityId,
             python: "BioEntityId",
             python_native: "builtins.int",
-            javascript: "BioEntityId",
+            javascript: "BioEntityId", javascript_projection: native("number"),
             feature: "cap-bio", status: experimental,
             role: value,
         },
@@ -8015,7 +8016,7 @@ binding_contract! {
             rust: crate::BioModelId,
             python: "BioModelId",
             python_native: "builtins.int",
-            javascript: "BioModelId",
+            javascript: "BioModelId", javascript_projection: native("number"),
             feature: "cap-bio", status: experimental,
             role: value,
         },
@@ -8027,7 +8028,7 @@ binding_contract! {
             rust: crate::BioAssemblyId,
             python: "BioAssemblyId",
             python_native: "builtins.int",
-            javascript: "BioAssemblyId",
+            javascript: "BioAssemblyId", javascript_projection: native("number"),
             feature: "cap-bio", status: experimental,
             role: value,
         },
@@ -8039,7 +8040,7 @@ binding_contract! {
             rust: crate::BioAltLocGroupId,
             python: "BioAltLocGroupId",
             python_native: "builtins.int",
-            javascript: "BioAltLocGroupId",
+            javascript: "BioAltLocGroupId", javascript_projection: native("number"),
             feature: "cap-bio", status: experimental,
             role: value,
         },
@@ -8269,19 +8270,19 @@ binding_contract! {
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ProteinChainIter", item: type, owner: type_,
-            rust: crate::ProteinChainIter<'static>, python: "ProteinChainIter", python_native: "list[ProteinChainRef]", javascript: "ProteinChainIter",
+            rust: crate::ProteinChainIter<'static>, python: "ProteinChainIter", python_native: "list[ProteinChainRef]", javascript: "ProteinChainIter", javascript_projection: native("ReadonlyArray<ProteinChainRef>"),
             feature: "cap-bio", status: experimental, role: value,
         },
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ProteinResidueIter", item: type, owner: type_,
-            rust: crate::ProteinResidueIter<'static>, python: "ProteinResidueIter", python_native: "list[ProteinResidueRef]", javascript: "ProteinResidueIter",
+            rust: crate::ProteinResidueIter<'static>, python: "ProteinResidueIter", python_native: "list[ProteinResidueRef]", javascript: "ProteinResidueIter", javascript_projection: native("ReadonlyArray<ProteinResidueRef>"),
             feature: "cap-bio", status: experimental, role: value,
         },
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.ProteinAtomIter", item: type, owner: type_,
-            rust: crate::ProteinAtomIter<'static>, python: "ProteinAtomIter", python_native: "list[ProteinAtomRef]", javascript: "ProteinAtomIter",
+            rust: crate::ProteinAtomIter<'static>, python: "ProteinAtomIter", python_native: "list[ProteinAtomRef]", javascript: "ProteinAtomIter", javascript_projection: native("ReadonlyArray<ProteinAtomRef>"),
             feature: "cap-bio", status: experimental, role: value,
         },
         #[cfg(feature = "cap-bio")]
@@ -9386,7 +9387,7 @@ binding_contract! {
             owner: type_,
             rust: crate::SdfGraph,
             python: "SdfGraph",
-            javascript: "SdfGraph",
+            javascript: "SdfGraph", javascript_projection: type_only,
             feature: "cap-io", status: experimental,
             role: result,
         },
@@ -10816,7 +10817,7 @@ binding_contract! {
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.coordinates_3d",item:callable,owner:molecule,rust:crate::Molecule::coordinates_3d,python:"coordinates_3d",javascript:"coordinates3d",feature:"cap-transforms",status:native,kind:instance,parameters:[{name:conformer_id,type:usize,default:"0"}],output:&'a [[f64;3]],error:crate::Coordinate3DReadError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::Molecule,usize)->Result<&'a [[f64;3]],crate::Coordinate3DReadError>,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"CoordinateZPolicy.from_name",item:callable,owner:type_,rust:crate::CoordinateZPolicy::from_name,python:"from_name",javascript:"fromName",feature:"cap-transforms",status:native,kind:static_,parameters:[{name:value,type:&'a str,default:required}],output:crate::CoordinateZPolicy,error:crate::CoordinateInputError,state:value_returning,operation:none,signature:for<'a> fn(&'a str)->Result<crate::CoordinateZPolicy,crate::CoordinateInputError>,},
+        {semantic_id:"CoordinateZPolicy.from_name",item:callable,owner:type_,rust:crate::CoordinateZPolicy::from_name,python:"from_name",javascript:"fromName",javascript_projection:module_function("coordinateZPolicyFromName"),feature:"cap-transforms",status:native,kind:static_,parameters:[{name:value,type:&'a str,default:required}],output:crate::CoordinateZPolicy,error:crate::CoordinateInputError,state:value_returning,operation:none,signature:for<'a> fn(&'a str)->Result<crate::CoordinateZPolicy,crate::CoordinateInputError>,},
         #[cfg(feature="cap-transforms")]
         {semantic_id:"Molecule.with_2d_coordinate_block",item:callable,owner:molecule,rust:crate::Molecule::with_2d_coordinate_block,python:"with_2d_coordinate_block",javascript:"with2dCoordinateBlock",feature:"cap-transforms",kind:instance,parameters:[{name:coordinates,type:Vec<Vec<f64>>,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_2d_coordinate_block",signature:for<'a,'b> fn(&'a crate::Molecule,Vec<Vec<f64>>)->Result<crate::Molecule,crate::OperationError>,},
         #[cfg(feature="cap-transforms")]
@@ -11130,7 +11131,7 @@ binding_contract! {
 #[cfg(feature="cap-io")]
 {semantic_id:"types.PropertyStringError",item:type,owner:type_,rust:crate::PropertyStringError,python:"PropertyStringError",javascript:"PropertyStringError",feature:"cap-io",status:experimental,role:error,},
 #[cfg(feature="cap-io")]
-{semantic_id:"PropertyStringError.kind",item:callable,owner:type_,rust:crate::PropertyStringError::kind,python:"kind", python_property: getter,javascript:"kind",feature:"cap-io",status:experimental,kind:instance,receiver:owned,parameters:[],output:crate::PropertyValueKind,error:none,state:value_returning,operation:none,signature:fn(crate::PropertyStringError)->crate::PropertyValueKind,},
+{semantic_id:"PropertyStringError.kind",item:callable,owner:type_,rust:crate::PropertyStringError::kind,python:"kind", python_property: getter,javascript:"kind", javascript_projection: error_details,feature:"cap-io",status:experimental,kind:instance,receiver:owned,parameters:[],output:crate::PropertyValueKind,error:none,state:value_returning,operation:none,signature:fn(crate::PropertyStringError)->crate::PropertyValueKind,},
 
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.bond_property_string",item:callable,owner:molecule,rust:crate::Molecule::bond_property_string,python:"bond_property_string",javascript:"bondPropertyString",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:id,type:crate::BondId,default:required},{name:key,type:&str,default:required}],output:Option<crate::PropertyText>,error:crate::PropertyStringError,state:read_only,operation:none,signature:fn(&crate::Molecule,crate::BondId,&str)->Result<Option<crate::PropertyText>,crate::PropertyStringError>,},
@@ -11202,33 +11203,33 @@ binding_contract! {
                 { name: precision, python_type: "builtins.int", default: "6" },
             ], role:parameter,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"types.SdfDataset",item:type,owner:type_,rust:crate::SdfDataset,python:"SdfDataset",javascript:"SdfDataset",feature:"cap-io",status:experimental,role:value,},
+        {semantic_id:"types.SdfDataset",item:type,owner:type_,rust:crate::SdfDataset,python:"SdfDataset",javascript:"SdfDataset", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,role:value,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"types.SdfDatasetIterator",item:type,owner:type_,rust:crate::SdfDatasetIterator,python:"SdfDatasetIterator",javascript:"SdfDatasetIterator",feature:"cap-io",status:experimental,role:value,},
+        {semantic_id:"types.SdfDatasetIterator",item:type,owner:type_,rust:crate::SdfDatasetIterator,python:"SdfDatasetIterator",javascript:"SdfDatasetIterator", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,role:value,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"types.SdfRecordMetadata",item:type,owner:type_,rust:crate::SdfRecordMetadata,python:"SdfRecordMetadata",javascript:"SdfRecordMetadata",feature:"cap-io",status:experimental,role:result,},
+        {semantic_id:"types.SdfRecordMetadata",item:type,owner:type_,rust:crate::SdfRecordMetadata,python:"SdfRecordMetadata",javascript:"SdfRecordMetadata", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,role:result,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"types.SdfRecordStream",item:type,owner:type_,rust:crate::SdfRecordStream<std::io::BufReader<std::fs::File>>,python:"SdfRecordStream",javascript:"SdfRecordStream",feature:"cap-io",status:experimental,role:value,},
+        {semantic_id:"types.SdfRecordStream",item:type,owner:type_,rust:crate::SdfRecordStream<std::io::BufReader<std::fs::File>>,python:"SdfRecordStream",javascript:"SdfRecordStream", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,role:value,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.from_xyz_block", convenience: mol_from_xyz_block,item:callable,owner:molecule,rust:crate::Molecule::from_xyz_block,python:"from_xyz_block",javascript:"fromXyzBlock",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.read_xyz",item:callable,owner:molecule,rust:crate::Molecule::read_xyz,python:"read_xyz",javascript:"readXyz",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.read_xyz",item:callable,owner:molecule,rust:crate::Molecule::read_xyz,python:"read_xyz",javascript:"readXyz", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.from_mol2", convenience: mol_from_mol2,item:callable,owner:molecule,rust:crate::Molecule::from_mol2,python:"from_mol2",javascript:"fromMol2",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.read_mol2",item:callable,owner:molecule,rust:crate::Molecule::read_mol2,python:"read_mol2",javascript:"readMol2",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.read_mol2",item:callable,owner:molecule,rust:crate::Molecule::read_mol2,python:"read_mol2",javascript:"readMol2", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.read_mol",item:callable,owner:molecule,rust:crate::Molecule::read_mol,python:"read_mol",javascript:"readMol",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.read_mol",item:callable,owner:molecule,rust:crate::Molecule::read_mol,python:"read_mol",javascript:"readMol", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.read_sdf",item:callable,owner:molecule,rust:crate::Molecule::read_sdf,python:"read_sdf",javascript:"readSdf",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.read_sdf",item:callable,owner:molecule,rust:crate::Molecule::read_sdf,python:"read_sdf",javascript:"readSdf", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.from_mol2_with_params",item:callable,owner:molecule,rust:crate::Molecule::from_mol2_with_params,python:"from_mol2_with_params",javascript:"fromMol2WithParams",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:params,type:&crate::Mol2ReadParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::Mol2ReadParams)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.read_mol2_with_params",item:callable,owner:molecule,rust:crate::Molecule::read_mol2_with_params,python:"read_mol2_with_params",javascript:"readMol2WithParams",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::Mol2ReadParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::Mol2ReadParams)->Result<crate::Molecule,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.read_mol2_with_params",item:callable,owner:molecule,rust:crate::Molecule::read_mol2_with_params,python:"read_mol2_with_params",javascript:"readMol2WithParams", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::Mol2ReadParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::Mol2ReadParams)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.read_mol_with_params",item:callable,owner:molecule,rust:crate::Molecule::read_mol_with_params,python:"read_mol_with_params",javascript:"readMolWithParams",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::SdfReadParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams)->Result<crate::Molecule,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.read_mol_with_params",item:callable,owner:molecule,rust:crate::Molecule::read_mol_with_params,python:"read_mol_with_params",javascript:"readMolWithParams", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::SdfReadParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.read_sdf_with_params",item:callable,owner:molecule,rust:crate::Molecule::read_sdf_with_params,python:"read_sdf_with_params",javascript:"readSdfWithParams",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::SdfReadParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams)->Result<crate::Molecule,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.read_sdf_with_params",item:callable,owner:molecule,rust:crate::Molecule::read_sdf_with_params,python:"read_sdf_with_params",javascript:"readSdfWithParams", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::SdfReadParams,default:required}],output:crate::Molecule,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams)->Result<crate::Molecule,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.from_mol", convenience: mol_from_mol,item:callable,owner:molecule,rust:crate::Molecule::from_mol,python:"from_mol",javascript:"fromMol",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::Molecule,error:crate::SdfError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::Molecule,crate::SdfError>,},
         #[cfg(feature = "cap-io")]
@@ -11238,9 +11239,9 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.to_xyz_with_params",item:callable,owner:molecule,rust:crate::Molecule::to_xyz_with_params,python:"to_xyz_with_params",javascript:"toXyzWithParams",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:params,type:&crate::XyzWriteParams,default:required}],output:String,error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::XyzWriteParams)->Result<String,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.write_xyz",item:callable,owner:molecule,rust:crate::Molecule::write_xyz,python:"write_xyz",javascript:"writeXyz",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str)->Result<(),crate::MolecularIoError>,},
+        {semantic_id:"Molecule.write_xyz",item:callable,owner:molecule,rust:crate::Molecule::write_xyz,python:"write_xyz",javascript:"writeXyz", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str)->Result<(),crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.write_xyz_with_params",item:callable,owner:molecule,rust:crate::Molecule::write_xyz_with_params,python:"write_xyz_with_params",javascript:"writeXyzWithParams",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::XyzWriteParams,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,&crate::XyzWriteParams)->Result<(),crate::MolecularIoError>,},
+        {semantic_id:"Molecule.write_xyz_with_params",item:callable,owner:molecule,rust:crate::Molecule::write_xyz_with_params,python:"write_xyz_with_params",javascript:"writeXyzWithParams", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::XyzWriteParams,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,&crate::XyzWriteParams)->Result<(),crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"SdfDataset.open",item:callable,owner:type_,rust:crate::SdfDataset::open,python:"open",javascript:"open",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::SdfDataset,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::SdfDataset,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
@@ -11294,19 +11295,19 @@ binding_contract! {
         #[cfg(feature="cap-io")]
         {semantic_id:"SdfRecord.data_field",item:callable,owner:type_,rust:crate::SdfRecord::data_field,python:"data_field",javascript:"dataField",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:name,type:&'b str,default:required}],output:Option<&'a crate::PropertyText>,error:none,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::SdfRecord,&'b str)->Option<&'a crate::PropertyText>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"types.SdfBatchIterator",item:type,owner:type_,rust:crate::SdfBatchIterator,python:"SdfBatchIterator",javascript:"SdfBatchIterator",feature:"cap-io",requires:["cap-batch"],status:experimental,role:value,},
+        {semantic_id:"types.SdfBatchIterator",item:type,owner:type_,rust:crate::SdfBatchIterator,python:"SdfBatchIterator",javascript:"SdfBatchIterator", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,role:value,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"types.SdfReaderBatchIterator",item:type,owner:type_,rust:crate::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>,python:"SdfReaderBatchIterator",javascript:"SdfReaderBatchIterator",feature:"cap-io",requires:["cap-batch"],status:experimental,role:value,},
+        {semantic_id:"types.SdfReaderBatchIterator",item:type,owner:type_,rust:crate::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>,python:"SdfReaderBatchIterator",javascript:"SdfReaderBatchIterator", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,role:value,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"MoleculeBatch.from_sdf_records", convenience: mols_from_sdf_records,item:callable,owner:type_,rust:crate::MoleculeBatch::from_sdf_records,python:"from_sdf_records",javascript:"fromSdfRecords",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"MoleculeBatch.from_sdf_records_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::from_sdf_records_with_params,python:"from_sdf_records_with_params",javascript:"fromSdfRecordsWithParams",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:text,type:&str,default:required},{name:read,type:&crate::SdfReadParams,default:required},{name:mode,type:crate::BatchErrorMode,default:required},{name:n_jobs,type:Option<usize>,default:required},{name:progress_bar,type:bool,default:boolean(false)}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams,crate::BatchErrorMode,Option<usize>,bool)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.read_sdf",item:callable,owner:type_,rust:crate::MoleculeBatch::read_sdf,python:"read_sdf",javascript:"readSdf",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+        {semantic_id:"MoleculeBatch.read_sdf",item:callable,owner:type_,rust:crate::MoleculeBatch::read_sdf,python:"read_sdf",javascript:"readSdf", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.read_sdf_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::read_sdf_with_params,python:"read_sdf_with_params",javascript:"readSdfWithParams",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:read,type:&crate::SdfReadParams,default:required},{name:mode,type:crate::BatchErrorMode,default:required},{name:n_jobs,type:Option<usize>,default:required},{name:progress_bar,type:bool,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams,crate::BatchErrorMode,Option<usize>,bool)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+        {semantic_id:"MoleculeBatch.read_sdf_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::read_sdf_with_params,python:"read_sdf_with_params",javascript:"readSdfWithParams", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required},{name:read,type:&crate::SdfReadParams,default:required},{name:mode,type:crate::BatchErrorMode,default:required},{name:n_jobs,type:Option<usize>,default:required},{name:progress_bar,type:bool,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&str,&crate::SdfReadParams,crate::BatchErrorMode,Option<usize>,bool)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.from_dataset_indices",item:callable,owner:type_,rust:crate::MoleculeBatch::from_dataset_indices,python:"from_dataset_indices",javascript:"fromDatasetIndices",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:dataset,type:&crate::SdfDataset,default:required},{name:indices,type:&[usize],default:required},{name:mode,type:crate::BatchErrorMode,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&crate::SdfDataset,&[usize],crate::BatchErrorMode)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
+        {semantic_id:"MoleculeBatch.from_dataset_indices",item:callable,owner:type_,rust:crate::MoleculeBatch::from_dataset_indices,python:"from_dataset_indices",javascript:"fromDatasetIndices", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,kind:static_,parameters:[{name:dataset,type:&crate::SdfDataset,default:required},{name:indices,type:&[usize],default:required},{name:mode,type:crate::BatchErrorMode,default:required}],output:crate::MoleculeBatch,error:crate::BatchValidationError,state:value_returning,operation:none,signature:fn(&crate::SdfDataset,&[usize],crate::BatchErrorMode)->Result<crate::MoleculeBatch,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"MoleculeBatch.get",item:callable,owner:type_,rust:crate::MoleculeBatch::get,python:"get",javascript:"get",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:index,type:usize,default:required}],output:Option<&'a crate::BatchRecord>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch,usize)->Option<&'a crate::BatchRecord>,},
         #[cfg(feature = "cap-io")]
@@ -11318,7 +11319,7 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"SdfReaderBatchIterator.next_batch",item:callable,owner:type_,rust:crate::SdfReaderBatchIterator::<std::io::BufReader<std::fs::File>>::next_batch,python:"next_batch",javascript:"nextBatch",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,receiver:mutable,parameters:[],output:Option<crate::MoleculeBatch>,error:crate::BatchValidationError,state:in_place,operation:none,signature:fn(&mut crate::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>)->Result<Option<crate::MoleculeBatch>,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"types.SdfReader",item:type,owner:type_,rust:crate::SdfReader,python:"SdfReader",javascript:"SdfReader",feature:"cap-io",status:experimental,role:value,},
+        {semantic_id:"types.SdfReader",item:type,owner:type_,rust:crate::SdfReader,python:"SdfReader",javascript:"SdfReader", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,role:value,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"SdfReader.open",item:callable,owner:type_,rust:crate::SdfReader::open,python:"open",javascript:"open",feature:"cap-io",status:experimental,kind:static_,parameters:[{name:path,type:&str,default:required}],output:crate::SdfReader,error:crate::MolecularIoError,state:value_returning,operation:none,signature:fn(&str)->Result<crate::SdfReader,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
@@ -11363,19 +11364,19 @@ binding_contract! {
         #[cfg(feature = "cap-io")]
         {semantic_id:"Molecule.to_sdf_3d_with_params",item:callable,owner:molecule,rust:crate::Molecule::to_sdf_3d_with_params,python:"to_sdf_3d_with_params",javascript:"toSdf3dWithParams",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:params,type:&crate::MolBlockWriteParams,default:required}],output:String,error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::MolBlockWriteParams)->Result<String,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.write_mol",item:callable,owner:molecule,rust:crate::Molecule::write_mol,python:"write_mol",javascript:"writeMol",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str)->Result<(),crate::MolecularIoError>,},
+        {semantic_id:"Molecule.write_mol",item:callable,owner:molecule,rust:crate::Molecule::write_mol,python:"write_mol",javascript:"writeMol", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str)->Result<(),crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.write_mol_with_params",item:callable,owner:molecule,rust:crate::Molecule::write_mol_with_params,python:"write_mol_with_params",javascript:"writeMolWithParams",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::MolBlockWriteParams,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,&crate::MolBlockWriteParams)->Result<(),crate::MolecularIoError>,},
+        {semantic_id:"Molecule.write_mol_with_params",item:callable,owner:molecule,rust:crate::Molecule::write_mol_with_params,python:"write_mol_with_params",javascript:"writeMolWithParams", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::MolBlockWriteParams,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,&crate::MolBlockWriteParams)->Result<(),crate::MolecularIoError>,},
             #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.write_sdf",item:callable,owner:molecule,rust:crate::Molecule::write_sdf,python:"write_sdf",javascript:"writeSdf",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str)->Result<(),crate::MolecularIoError>,},
+        {semantic_id:"Molecule.write_sdf",item:callable,owner:molecule,rust:crate::Molecule::write_sdf,python:"write_sdf",javascript:"writeSdf", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str)->Result<(),crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.write_sdf_with_params",item:callable,owner:molecule,rust:crate::Molecule::write_sdf_with_params,python:"write_sdf_with_params",javascript:"writeSdfWithParams",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::MolBlockWriteParams,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,&crate::MolBlockWriteParams)->Result<(),crate::MolecularIoError>,},
+        {semantic_id:"Molecule.write_sdf_with_params",item:callable,owner:molecule,rust:crate::Molecule::write_sdf_with_params,python:"write_sdf_with_params",javascript:"writeSdfWithParams", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::MolBlockWriteParams,default:required}],output:(),error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,&crate::MolBlockWriteParams)->Result<(),crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.write_sdf_files",item:callable,owner:molecule,rust:crate::Molecule::write_sdf_files,python:"write_sdf_files",javascript:"writeSdfFiles",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:directory,type:&str,default:required},{name:file_name,type:Option<&str>,default:required}],output:std::path::PathBuf,error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,Option<&str>)->Result<std::path::PathBuf,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.write_sdf_files",item:callable,owner:molecule,rust:crate::Molecule::write_sdf_files,python:"write_sdf_files",javascript:"writeSdfFiles", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:instance,parameters:[{name:directory,type:&str,default:required},{name:file_name,type:Option<&str>,default:required}],output:std::path::PathBuf,error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,Option<&str>)->Result<std::path::PathBuf,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"Molecule.write_sdf_files_with_params",item:callable,owner:molecule,rust:crate::Molecule::write_sdf_files_with_params,python:"write_sdf_files_with_params",javascript:"writeSdfFilesWithParams",feature:"cap-io",status:experimental,kind:instance,parameters:[{name:directory,type:&str,default:required},{name:file_name,type:Option<&str>,default:required},{name:params,type:&crate::MolBlockWriteParams,default:required}],output:std::path::PathBuf,error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,Option<&str>,&crate::MolBlockWriteParams)->Result<std::path::PathBuf,crate::MolecularIoError>,},
+        {semantic_id:"Molecule.write_sdf_files_with_params",item:callable,owner:molecule,rust:crate::Molecule::write_sdf_files_with_params,python:"write_sdf_files_with_params",javascript:"writeSdfFilesWithParams", javascript_projection: host_filesystem,feature:"cap-io",status:experimental,kind:instance,parameters:[{name:directory,type:&str,default:required},{name:file_name,type:Option<&str>,default:required},{name:params,type:&crate::MolBlockWriteParams,default:required}],output:std::path::PathBuf,error:crate::MolecularIoError,state:read_only,operation:none,signature:fn(&crate::Molecule,&str,Option<&str>,&crate::MolBlockWriteParams)->Result<std::path::PathBuf,crate::MolecularIoError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"types.BatchExportParams",item:type,owner:type_,rust:crate::BatchExportParams,python:"BatchExportParams",javascript:"BatchExportParams",feature:"cap-io",requires:["cap-batch"],status:experimental,
+        {semantic_id:"types.BatchExportParams",item:type,owner:type_,rust:crate::BatchExportParams,python:"BatchExportParams",javascript:"BatchExportParams", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,
             python_configuration: [
                 { name: format, python_type: "typing.Optional[builtins.str]", default: "None" },
                 { name: errors, python_type: "typing.Optional[typing.Any]", default: "None" },
@@ -11383,13 +11384,13 @@ binding_contract! {
                 { name: progress_bar, python_type: "typing.Optional[builtins.bool]", default: "None" },
             ], role:parameter,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.write_sdf",item:callable,owner:type_,rust:crate::MoleculeBatch::write_sdf,python:"write_sdf",javascript:"writeSdf",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::MoleculeBatch,&str)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
+        {semantic_id:"MoleculeBatch.write_sdf",item:callable,owner:type_,rust:crate::MoleculeBatch::write_sdf,python:"write_sdf",javascript:"writeSdf", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::MoleculeBatch,&str)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.write_sdf_files",item:callable,owner:type_,rust:crate::MoleculeBatch::write_sdf_files,python:"write_sdf_files",javascript:"writeSdfFiles",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::MoleculeBatch,&str)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
+        {semantic_id:"MoleculeBatch.write_sdf_files",item:callable,owner:type_,rust:crate::MoleculeBatch::write_sdf_files,python:"write_sdf_files",javascript:"writeSdfFiles", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::MoleculeBatch,&str)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.write_sdf_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::write_sdf_with_params,python:"write_sdf_with_params",javascript:"writeSdfWithParams",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::BatchExportParams,default:required},{name:report_path,type:Option<&str>,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::MoleculeBatch,&str,&crate::BatchExportParams,Option<&str>)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
+        {semantic_id:"MoleculeBatch.write_sdf_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::write_sdf_with_params,python:"write_sdf_with_params",javascript:"writeSdfWithParams", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:path,type:&str,default:required},{name:params,type:&crate::BatchExportParams,default:required},{name:report_path,type:Option<&str>,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::MoleculeBatch,&str,&crate::BatchExportParams,Option<&str>)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
-        {semantic_id:"MoleculeBatch.write_sdf_files_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::write_sdf_files_with_params,python:"write_sdf_files_with_params",javascript:"writeSdfFilesWithParams",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:directory,type:&str,default:required},{name:params,type:&crate::BatchExportParams,default:required},{name:filenames,type:Option<&[Option<String>]>,default:required},{name:report_path,type:Option<&str>,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::MoleculeBatch,&str,&crate::BatchExportParams,Option<&[Option<String>]>,Option<&str>)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
+        {semantic_id:"MoleculeBatch.write_sdf_files_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::write_sdf_files_with_params,python:"write_sdf_files_with_params",javascript:"writeSdfFilesWithParams", javascript_projection: host_filesystem,feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[{name:directory,type:&str,default:required},{name:params,type:&crate::BatchExportParams,default:required},{name:filenames,type:Option<&[Option<String>]>,default:required},{name:report_path,type:Option<&str>,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:fn(&crate::MoleculeBatch,&str,&crate::BatchExportParams,Option<&[Option<String>]>,Option<&str>)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
         #[cfg(feature = "cap-io")]
         {semantic_id:"BatchExportReport.total",item:callable,owner:type_,rust:crate::BatchExportReport::total,python:"total", python_property: getter,javascript:"total",feature:"cap-io",requires:["cap-batch"],status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::BatchExportReport)->usize,},
         #[cfg(feature = "cap-io")]
@@ -11405,7 +11406,7 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 { semantic_id:"types.MoleculeBatch", item:type, owner:type_, rust:crate::MoleculeBatch, python:"MoleculeBatch", javascript:"MoleculeBatch", feature:"cap-batch", status:experimental, role:value, },
 #[cfg(feature="cap-batch")]
-{ semantic_id:"types.BatchRecord", item:type, owner:type_, rust:crate::BatchRecord, python:"BatchRecord", python_native: "Molecule | BatchError", javascript:"BatchRecord", feature:"cap-batch", status:native, role:value, },
+{ semantic_id:"types.BatchRecord", item:type, owner:type_, rust:crate::BatchRecord, python:"BatchRecord", python_native: "Molecule | BatchError", javascript:"BatchRecord", javascript_projection: native("Molecule | BatchError"), feature:"cap-batch", status:native, role:value, },
 #[cfg(feature="cap-batch")]
 { semantic_id:"types.BatchError", item:type, owner:type_, rust:crate::BatchError, python:"BatchError", javascript:"BatchError", feature:"cap-batch", status:native, role:error, },
 #[cfg(feature="cap-batch")]
@@ -11420,7 +11421,7 @@ binding_contract! {
                 { name: progress_bar, python_type: "typing.Optional[builtins.bool]", default: "None" },
             ], role:parameter, },
 #[cfg(feature="cap-batch")]
-{ semantic_id:"types.BatchExportReport", item:type, owner:type_, rust:crate::BatchExportReport, python:"BatchExportReport", javascript:"BatchExportReport", feature:"cap-batch", status:native, role:result, },
+{ semantic_id:"types.BatchExportReport", item:type, owner:type_, rust:crate::BatchExportReport, python:"BatchExportReport", javascript:"BatchExportReport", javascript_projection: host_filesystem, feature:"cap-batch", status:native, role:result, },
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.len",item:callable,owner:type_,rust:crate::MoleculeBatch::len,python:"len", python_property:getter,javascript:"len",feature:"cap-batch",status:native,kind:instance,receiver:shared,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->usize,},
 #[cfg(feature="cap-batch")]
@@ -11495,7 +11496,7 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.to_svg_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::to_svg_with_params,python:"to_svg_with_params",javascript:"toSvgWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:width,type:u32,default:required},{name:height,type:u32,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<String>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeBatch,u32,u32,&'b crate::BatchQueryParams)->Result<Vec<Option<String>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"types.BatchImageParams",item:type,owner:type_,rust:crate::BatchImageParams,python:"BatchImageParams",javascript:"BatchImageParams",feature:"cap-batch",requires:["cap-depict"],status:native,
+{semantic_id:"types.BatchImageParams",item:type,owner:type_,rust:crate::BatchImageParams,python:"BatchImageParams",javascript:"BatchImageParams", javascript_projection: host_filesystem,feature:"cap-batch",requires:["cap-depict"],status:native,
             python_configuration: [
                 { name: format, python_type: "builtins.str", default: "'png'" },
                 { name: width, python_type: "builtins.int", default: "300" },
@@ -11505,11 +11506,11 @@ binding_contract! {
                 { name: report_path, python_type: "typing.Optional[builtins.str]", default: "None" },
             ], role:parameter,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"types.BatchImageError",item:type,owner:type_,rust:crate::BatchImageError,python:"BatchImageError",javascript:"BatchImageError",feature:"cap-batch",requires:["cap-depict"],status:native,role:error,},
+{semantic_id:"types.BatchImageError",item:type,owner:type_,rust:crate::BatchImageError,python:"BatchImageError",javascript:"BatchImageError", javascript_projection: host_filesystem,feature:"cap-batch",requires:["cap-depict"],status:native,role:error,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.write_images",item:callable,owner:type_,rust:crate::MoleculeBatch::write_images,python:"write_images",javascript:"writeImages",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:directory,type:&std::path::Path,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeBatch,&'b std::path::Path)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.write_images",item:callable,owner:type_,rust:crate::MoleculeBatch::write_images,python:"write_images",javascript:"writeImages", javascript_projection: host_filesystem,feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:directory,type:&std::path::Path,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeBatch,&'b std::path::Path)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.write_images_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::write_images_with_params,python:"write_images_with_params",javascript:"writeImagesWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:directory,type:&std::path::Path,default:required},{name:options,type:&crate::BatchImageParams,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b std::path::Path,&'c crate::BatchImageParams)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.write_images_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::write_images_with_params,python:"write_images_with_params",javascript:"writeImagesWithParams", javascript_projection: host_filesystem,feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:directory,type:&std::path::Path,default:required},{name:options,type:&crate::BatchImageParams,default:required}],output:crate::BatchExportReport,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b std::path::Path,&'c crate::BatchImageParams)->Result<crate::BatchExportReport,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.fingerprint_atom_pair",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair,python:"fingerprint_atom_pair",javascript:"fingerprintAtomPair",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]

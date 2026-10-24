@@ -9,8 +9,9 @@ From the repository root, prepare the bindings and documentation tools:
 
 ```sh
 uv sync --group dev
-.venv/bin/maturin develop --manifest-path python/Cargo.toml
-cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
+cargo install pyo3-introspection --version 0.30.1 --locked
+.venv/bin/python python/build.py
+.venv/bin/python python/registry_check.py
 npm ci --prefix docs --no-audit --no-fund
 .venv/bin/python wasm/tools/wasm_binding/run.py --preset full --out-dir target/docs-js-package
 ```

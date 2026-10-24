@@ -193,7 +193,7 @@ def test_source_null_provider_preconditions_json_fallback_and_live_error_recover
     assert ck.MorganFingerprintGenerator.from_json(text).settings.fp_size == 1
 
 def test_original_stub_projects_all_five_types_methods_and_settings():
-    tree = ast.parse((ROOT / "python/cosmolkit.pyi").read_text())
+    tree = ast.parse((ROOT / "python/artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     for name in ("MorganFingerprintGenerator", "MorganSettings", "MorganCallParams", "MorganAtomInvariantsGenerator", "MorganBondInvariantsGenerator"):
         assert name in classes

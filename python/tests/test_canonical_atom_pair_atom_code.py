@@ -47,7 +47,7 @@ def test_boundary_error_remains_structured_and_source_molecule_usable():
     with pytest.raises(TypeError): source.with_atom_pair_atom_code("0")
 
 def test_original_generated_stub_exposes_only_explicit_value_transform():
-    tree = ast.parse((Path(__file__).resolve().parents[1] / "cosmolkit.pyi").read_text())
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     result = {node.name: node for node in classes["AtomPairAtomCodeResult"].body if isinstance(node, ast.FunctionDef)}
     assert set(result) == {"code", "molecule"}

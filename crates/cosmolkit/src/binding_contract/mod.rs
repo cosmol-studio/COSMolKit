@@ -11,7 +11,8 @@ pub use registry::{
 };
 pub use types::{
     BindingCallableContract, BindingConfigurationField, BindingContractEntry,
-    BindingConvenienceContract, BindingDefault, BindingItem, BindingKeywordContract, BindingKind,
-    BindingOwner, BindingParameterContract, BindingPropertyAccess, BindingPropertyContract,
-    BindingPythonAdapterContract, BindingReceiver, BindingTypeRole, FunctionStatus, StateModel,
+    BindingConvenienceContract, BindingDefault, BindingItem, BindingJavascriptProjection,
+    BindingKeywordContract, BindingKind, BindingOwner, BindingParameterContract,
+    BindingPropertyAccess, BindingPropertyContract, BindingPythonAdapterContract, BindingReceiver,
+    BindingTypeRole, FunctionStatus, StateModel,
 };

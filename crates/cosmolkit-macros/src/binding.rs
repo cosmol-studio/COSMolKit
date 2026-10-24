@@ -189,6 +189,51 @@ impl Parse for BindingKeywordProjection {
     }
 }
 
+enum JavascriptProjection {
+    Runtime,
+    ModuleFunction(LitStr),
+    TypeOnly,
+    Native(LitStr),
+    ErrorDetails,
+    HostFilesystem,
+}
+
+impl Parse for JavascriptProjection {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let name: Ident = input.parse()?;
+        match name.to_string().as_str() {
+            "runtime" => Ok(Self::Runtime),
+            "type_only" => Ok(Self::TypeOnly),
+            "error_details" => Ok(Self::ErrorDetails),
+            "host_filesystem" => Ok(Self::HostFilesystem),
+            "module_function" => {
+                let content;
+                syn::parenthesized!(content in input);
+                let value: LitStr = content.parse()?;
+                let identifier: Ident = syn::parse_str(&value.value())?;
+                if identifier.to_string() != value.value() || !content.is_empty() {
+                    return Err(content.error("expected one module function identifier"));
+                }
+                Ok(Self::ModuleFunction(value))
+            }
+            "native" => {
+                let content;
+                syn::parenthesized!(content in input);
+                let value: LitStr = content.parse()?;
+                require_nonempty(&value, "javascript_projection.native")?;
+                if !content.is_empty() {
+                    return Err(content.error("expected one native TypeScript type"));
+                }
+                Ok(Self::Native(value))
+            }
+            _ => Err(syn::Error::new_spanned(
+                name,
+                "unknown JavaScript projection",
+            )),
+        }
+    }
+}
+
 struct BindingEntry {
     cfg_attrs: Vec<Attribute>,
     semantic_id: LitStr,
@@ -201,6 +246,7 @@ struct BindingEntry {
     exhaustive_configuration: bool,
     python_property: Option<PythonProperty>,
     javascript: LitStr,
+    javascript_projection: JavascriptProjection,
     feature: LitStr,
     requires: Vec<LitStr>,
     status: Option<FunctionStatus>,
@@ -346,6 +392,7 @@ struct BindingEntryDraft {
     exhaustive_configuration: Option<syn::LitBool>,
     python_property: Option<Ident>,
     javascript: Option<LitStr>,
+    javascript_projection: Option<JavascriptProjection>,
     feature: Option<LitStr>,
     requires: Option<Vec<LitStr>>,
     status: Option<FunctionStatus>,
@@ -426,6 +473,9 @@ fn parse_binding_entry(
                 set_once(&mut draft.exhaustive_configuration, input.parse()?, &key)?
             }
             "javascript" => set_once(&mut draft.javascript, input.parse()?, &key)?,
+            "javascript_projection" => {
+                set_once(&mut draft.javascript_projection, input.parse()?, &key)?
+            }
             "feature" => set_once(&mut draft.feature, input.parse()?, &key)?,
             "requires" => {
                 let values;
@@ -516,6 +566,37 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         ));
     }
     let javascript = required(draft.javascript, "javascript")?;
+    let javascript_projection = draft
+        .javascript_projection
+        .unwrap_or(JavascriptProjection::Runtime);
+    if matches!(
+        javascript_projection,
+        JavascriptProjection::ModuleFunction(_)
+    ) && item != ItemClass::Callable
+    {
+        return Err(syn::Error::new_spanned(
+            &javascript,
+            "module_function projection requires a callable",
+        ));
+    }
+    if matches!(
+        javascript_projection,
+        JavascriptProjection::Native(_) | JavascriptProjection::TypeOnly
+    ) && item != ItemClass::Type
+    {
+        return Err(syn::Error::new_spanned(
+            &javascript,
+            "native/type_only projection requires a type",
+        ));
+    }
+    if matches!(javascript_projection, JavascriptProjection::ErrorDetails)
+        && item != ItemClass::Callable
+    {
+        return Err(syn::Error::new_spanned(
+            &javascript,
+            "error_details projection requires an accessor",
+        ));
+    }
     let feature = required(draft.feature, "feature")?;
     require_nonempty(&semantic_id, "semantic_id")?;
     require_nonempty(&python, "python")?;
@@ -592,6 +673,22 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
             (None, Some(parse_type_role(&role_ident)?))
         }
     };
+    if matches!(javascript_projection, JavascriptProjection::ErrorDetails)
+        && !callable.as_ref().is_some_and(|call| {
+            call.kind == CallableKind::Instance
+                && call.parameters.is_empty()
+                && matches!(
+                    (call.receiver, call.state),
+                    (Some(Receiver::Shared), StateModel::ReadOnly)
+                        | (Some(Receiver::Owned), StateModel::ValueReturning)
+                )
+        })
+    {
+        return Err(syn::Error::new_spanned(
+            &javascript,
+            "error_details requires a shared or Copy-owned read accessor",
+        ));
+    }
     Ok(BindingEntry {
         cfg_attrs,
         semantic_id,
@@ -606,6 +703,7 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
             .is_some_and(|flag| flag.value),
         python_property,
         javascript,
+        javascript_projection,
         feature,
         requires,
         status: draft.status,
@@ -941,6 +1039,27 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
         )?;
     }
     for entry in entries {
+        if matches!(
+            entry.javascript_projection,
+            JavascriptProjection::ErrorDetails
+        ) {
+            let type_id = format!(
+                "types.{}",
+                entry
+                    .semantic_id
+                    .value()
+                    .rsplit_once('.')
+                    .map_or("", |(owner, _)| owner)
+            );
+            if !entries.iter().any(|owner| {
+                owner.semantic_id.value() == type_id && owner.type_role == Some(TypeRole::Error)
+            }) {
+                return Err(syn::Error::new_spanned(
+                    &entry.semantic_id,
+                    "error_details requires a registered error owner",
+                ));
+            }
+        }
         if let Some(payload) = &entry.callable {
             validate_callable(
                 &entry.semantic_id,
@@ -977,10 +1096,16 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
                 ));
             }
         }
+        let (javascript_owner, javascript_name) = match &entry.javascript_projection {
+            JavascriptProjection::ModuleFunction(name) => {
+                (owner_key(Owner::Module).to_owned(), name)
+            }
+            _ => (owner, &entry.javascript),
+        };
         insert_unique(
             &mut javascript,
-            format!("{owner}:{}", entry.javascript.value()),
-            &entry.javascript,
+            format!("{javascript_owner}:{}", javascript_name.value()),
+            javascript_name,
             "duplicate JavaScript binding projection in one owner scope",
         )?;
     }
@@ -1624,6 +1749,22 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             Some(PythonProperty::Setter) => quote!(Some(crate::BindingPropertyAccess::Setter)),
         };
         let javascript = &entry.javascript;
+        let javascript_projection = match &entry.javascript_projection {
+            JavascriptProjection::Runtime => quote!(crate::BindingJavascriptProjection::Runtime),
+            JavascriptProjection::ModuleFunction(name) => {
+                quote!(crate::BindingJavascriptProjection::ModuleFunction(#name))
+            }
+            JavascriptProjection::TypeOnly => quote!(crate::BindingJavascriptProjection::TypeOnly),
+            JavascriptProjection::Native(value) => {
+                quote!(crate::BindingJavascriptProjection::NativeValue(#value))
+            }
+            JavascriptProjection::ErrorDetails => {
+                quote!(crate::BindingJavascriptProjection::ErrorDetails)
+            }
+            JavascriptProjection::HostFilesystem => {
+                quote!(crate::BindingJavascriptProjection::HostFilesystem)
+            }
+        };
         let feature = &entry.feature;
         let status = match (&entry.callable, &entry.status) {
             (Some(payload), status)
@@ -1700,6 +1841,7 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             crate::BindingContractEntry {
                 semantic_id: #semantic_id, item: #item, owner: #owner,
                 rust_path: stringify!(#rust), python_name: #python, python_native: #python_native, python_configuration: #python_configuration, python_property: #python_property, javascript_name: #javascript,
+                javascript_projection: #javascript_projection,
                 feature: #feature, required_capabilities: &[#(#requires),*], status: #status,
                 callable: #callable, type_role: #role,
             }
@@ -1710,7 +1852,11 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
                 let signature = &payload.signature;
                 // By-value vocabulary accessors are valid properties only when
                 // the compiler proves reading cannot consume the Python value.
-                let copy_check = if entry.python_property == Some(PythonProperty::Getter)
+                let copy_check = if (entry.python_property == Some(PythonProperty::Getter)
+                    || matches!(
+                        entry.javascript_projection,
+                        JavascriptProjection::ErrorDetails
+                    ))
                     && payload.receiver == Some(Receiver::Owned)
                 {
                     let receiver = &signature.inputs.first().expect("instance receiver").ty;

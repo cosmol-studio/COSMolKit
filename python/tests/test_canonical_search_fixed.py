@@ -204,7 +204,7 @@ def test_both_explicit_factories_preserve_unsupported_error_details():
 
 
 def test_flat_functions_and_class_factories_have_real_generated_signatures():
-    stub = ast.parse((Path(__file__).resolve().parents[1] / 'cosmolkit.pyi').read_text())
+    stub = ast.parse((Path(__file__).resolve().parents[1] / 'artifacts/smoke/package/cosmolkit/__init__.pyi').read_text())
     functions = {n.name: n for n in stub.body if isinstance(n, ast.FunctionDef)}
     query = next(n for n in stub.body if isinstance(n, ast.ClassDef) and n.name == 'QueryGraph')
     methods = {}

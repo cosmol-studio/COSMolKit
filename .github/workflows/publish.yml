@@ -30,7 +30,9 @@ jobs:
                   python-version: "3.12"
 
             - name: Install stub dependencies
-              run: python -m pip install "numpy>=1.23"
+              run: |
+                  python -m pip install numpy basedpyright
+                  cargo install pyo3-introspection --version 0.30.1 --locked
 
             - name: Check release policy
               id: release_policy
@@ -41,13 +43,18 @@ jobs:
                   python dev/tools/publish_policy.py
 
             - name: Generate pyi stubs (release pipeline only)
-              run: cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
+              run: |
+                  python python/build.py
+                  python python/registry_check.py
 
             - name: Upload pyi artifact
               uses: actions/upload-artifact@v4
               with:
                   name: python-stubs
-                  path: python/cosmolkit.pyi
+                  path: |
+                      python/artifacts/smoke/package/cosmolkit/__init__.py
+                      python/artifacts/smoke/package/cosmolkit/__init__.pyi
+                      python/artifacts/smoke/package/cosmolkit/py.typed
                   if-no-files-found: error
 
     build-wasm:
@@ -132,7 +139,7 @@ jobs:
               uses: actions/download-artifact@v4
               with:
                   name: python-stubs
-                  path: python
+                  path: python/artifacts/smoke/package/cosmolkit
 
             - name: Setup CPython 3.11
               if: runner.os != 'Linux'
@@ -258,7 +265,7 @@ jobs:
               uses: actions/download-artifact@v4
               with:
                   name: python-stubs
-                  path: python
+                  path: python/artifacts/smoke/package/cosmolkit
 
             - name: Copy README into python package
               run: cp README.md python/README.md

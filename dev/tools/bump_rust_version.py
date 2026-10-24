@@ -17,7 +17,7 @@ DEPENDENCIES = [
      "cosmolkit-io cosmolkit-reaction cosmolkit-search cosmolkit-smiles cosmolkit-stereo cosmolkit-tautomer"),
     ("crates/cosmolkit-alignment/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-search cosmolkit-macros"),
     ("crates/cosmolkit-batch/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-io cosmolkit-macros"),
-    ("crates/cosmolkit-bio/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-types"),
+    ("crates/cosmolkit-bio/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-types cosmolkit-macros"),
     ("crates/cosmolkit-conformer/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-core cosmolkit-forcefields cosmolkit-alignment cosmolkit-search cosmolkit-macros"),
     ("crates/cosmolkit-conformer/Cargo.toml", "dev-dependencies", "cosmolkit-model cosmolkit-smiles cosmolkit-io"),
     ("crates/cosmolkit-core/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-ringdecomposer cosmolkit-types cosmolkit-macros"),
@@ -44,17 +44,17 @@ DEPENDENCIES = [
     ("crates/cosmolkit-stereo/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
     ("crates/cosmolkit-tautomer/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-smiles cosmolkit-types cosmolkit-macros"),
     ("crates/cosmolkit-tautomer/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
-    ("python/Cargo.toml", "dependencies", "cosmolkit cosmolkit-macros"),
+    ("python/Cargo.toml", "dependencies", "cosmolkit"),
     ("wasm/Cargo.toml", "dependencies", "cosmolkit cosmolkit-macros"),
 ]
 README = "crates/cosmolkit/README.md"
 # Binding crate package version is separate from its cosmolkit dependency.
-PACKAGE_VERSIONS = ["python/Cargo.toml", "wasm/Cargo.toml", "python_pyo3_introspection/Cargo.toml"]
-PYTHON_VERSIONS = ["python/pyproject.toml", "python_pyo3_introspection/pyproject.toml"]
+PACKAGE_VERSIONS = ["python/Cargo.toml", "wasm/Cargo.toml"]
+PYTHON_VERSIONS = ["python/pyproject.toml"]
 BEGIN = "<!-- rust-install-version:start -->"
 END = "<!-- rust-install-version:end -->"
 LOCK_REFRESH = ["cargo", "update", "--workspace"]
-LOCK_ROOTS = [".", "python_pyo3_introspection"]
+LOCK_ROOTS = ["."]
 
 
 def update_field(text, section, key, version):
@@ -147,7 +147,6 @@ def main():
             print(f"Updated {file}")
     if args.dry_run:
         print("Would then run cargo update --workspace.")
-        print("Would also refresh python_pyo3_introspection/Cargo.lock with cargo update --workspace.")
     else:
         for directory in LOCK_ROOTS:
             if subprocess.run(LOCK_REFRESH, cwd=root / directory).returncode:

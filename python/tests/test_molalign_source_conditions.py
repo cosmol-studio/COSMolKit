@@ -127,7 +127,7 @@ def test_positive_infinite_weight_preserves_pinned_jacobi_nan_branch_rotation():
 
 
 def test_registered_alignment_error_has_one_source_typed_standard_stub_declaration():
-    path = Path(__file__).parents[1] / "cosmolkit.pyi"
+    path = Path(__file__).parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
     tree = ast.parse(path.read_text())
     matches = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "AlignmentError"]
     assert len(matches) == 1

@@ -29,7 +29,28 @@ def read_stub(path):
                         if isinstance(target, ast.Name):
                             aliases[target.id] = ast.unparse(node.value)
 
-    visit(ast.parse(Path(path).read_text(encoding="utf-8")).body)
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    imported = {
+        alias.asname or alias.name: f"{node.module}.{alias.name}"
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module and not node.level
+        for alias in node.names
+    }
+
+    class QualifyTypes(ast.NodeTransformer):
+        def visit_Name(self, node):
+            if node.id in imported:
+                return ast.copy_location(ast.parse(imported[node.id], mode="eval").body, node)
+            return node
+
+    # Resolve annotation imports, not enum members with the same short name.
+    qualify = QualifyTypes()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and node.annotation is not None:
+            node.annotation = qualify.visit(node.annotation)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is not None:
+            node.returns = qualify.visit(node.returns)
+    visit(tree.body)
     for alias, target in aliases.items():
         if target in entries:
             entries[alias] = entries[target]

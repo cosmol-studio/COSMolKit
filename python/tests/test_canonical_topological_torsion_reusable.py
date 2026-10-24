@@ -93,7 +93,7 @@ def test_source_reusable_output_is_unique_and_empty_roots_are_distinct():
 
 
 def test_generated_reusable_constructor_bound_settings_and_bulk_protocols():
-    tree=ast.parse((Path(__file__).resolve().parents[1]/"cosmolkit.pyi").read_text());classes={n.name:n for n in tree.body if isinstance(n,ast.ClassDef)}
+    tree=ast.parse((Path(__file__).resolve().parents[1]/"artifacts/smoke/package/cosmolkit/__init__.pyi").read_text());classes={n.name:n for n in tree.body if isinstance(n,ast.ClassDef)}
     for name in ["TopologicalTorsionFingerprintGenerator","TopologicalTorsionSettings","TopologicalTorsionCallParams"]:assert name in classes
     generator={n.name:n for n in classes["TopologicalTorsionFingerprintGenerator"].body if isinstance(n,ast.FunctionDef)}
     assert set(generator)=={"__new__","new","from_json","settings","info_string","to_json","__repr__","fingerprints","sparse_fingerprints","counts","sparse_counts"}

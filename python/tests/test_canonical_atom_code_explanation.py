@@ -44,7 +44,7 @@ def test_owned_frozen_value_and_conversion_failures():
     with pytest.raises(OverflowError): ck.AtomCodeExplanation.from_code(41, 1 << 63)
 
 def test_original_generated_stub_has_complete_error_and_value_protocols():
-    tree = ast.parse((Path(__file__).resolve().parents[1] / "cosmolkit.pyi").read_text())
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     for name, base in [("AtomPairReadError", "builtins.ValueError"), ("TopologicalTorsionReadError", "builtins.ValueError"), ("AtomCodeExplanationError", "builtins.KeyError")]:
         declaration = classes[name]

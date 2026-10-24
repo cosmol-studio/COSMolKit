@@ -8,7 +8,7 @@ from typing import Callable, cast
 import cosmolkit
 import pytest
 
-STUB = Path(__file__).resolve().parents[1] / "cosmolkit.pyi"
+STUB = Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
 
 
 def test_fingerprint_additional_output_domain_explicit_public_name():

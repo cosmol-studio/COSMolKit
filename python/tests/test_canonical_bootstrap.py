@@ -252,7 +252,7 @@ def test_complete_count_arithmetic_delegates_and_preserves_inputs(factory: objec
 
 
 def test_generated_stubs_match_installed_canonical_surface():
-    stub = Path(__file__).resolve().parents[1] / "cosmolkit.pyi"
+    stub = Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
     tree = ast.parse(stub.read_text())
     classes = {n.name: n for n in tree.body if isinstance(n, ast.ClassDef)}
     assert {"Molecule", "SmilesParseParams", "SmilesWriteParams", "Fingerprint", "SparseBitFingerprint",

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.9.4,<2.0"]
+requires = ["maturin==1.15.0"]
 build-backend = "maturin"
 
 [project]
@@ -9,37 +9,26 @@ description = "Python bindings for the COSMolKit Rust-native cheminformatics too
 readme = "../README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [
-    { name = "COSMolKit Contributors" },
-]
-keywords = [ "cheminformatics", "molecular-informatics", "rust", "rdkit", "molecular-modeling", ]
-classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Rust",
-    "Topic :: Scientific/Engineering :: Chemistry",
-]
-dependencies = [
-    "numpy>=1.23",
-]
+authors = [{ name = "COSMolKit Contributors" }]
+dependencies = ["numpy"]
 
 [project.urls]
 Homepage = "https://tools.cosmol.org/"
 Documentation = "https://kit.cosmol.org/"
-"Technical overview" = "https://tools.cosmol.org/rust-cheminformatics"
-"Rust API" = "https://docs.rs/cosmolkit"
 Repository = "https://github.com/cosmol-studio/COSMolKit"
 Issues = "https://github.com/cosmol-studio/COSMolKit/issues"
 
 [tool.maturin]
-module-name = "cosmolkit"
-manifest-path = "Cargo.toml"
+module-name = "cosmolkit._native"
+python-source = "artifacts/smoke/package"
 features = ["release-abi3-py39"]
+exclude = ["artifacts/smoke/package/cosmolkit/_native.so", "artifacts/smoke/package/cosmolkit/_native.pyd"]
+# Generated Python sources are ignored by Git; include these package files explicitly.
+include = [
+    { path = "cosmolkit/__init__.py", format = "wheel" },
+    { path = "cosmolkit/__init__.pyi", format = "wheel" },
+    { path = "cosmolkit/py.typed", format = "wheel" },
+    { path = "artifacts/smoke/package/cosmolkit/*.py", format = "sdist" },
+    { path = "artifacts/smoke/package/cosmolkit/*.pyi", format = "sdist" },
+    { path = "artifacts/smoke/package/cosmolkit/py.typed", format = "sdist" },
+]

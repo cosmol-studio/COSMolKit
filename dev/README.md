@@ -53,7 +53,9 @@ cargo fmt --all --check
 cargo test --workspace --locked --no-fail-fast \
     --exclude cosmolkit-parity-tests \
     --features cosmolkit/op-contracts-strict
-cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
+cargo install pyo3-introspection --version 0.30.1 --locked
+.venv/bin/python python/build.py
+.venv/bin/python python/registry_check.py
 .venv/bin/maturin develop --manifest-path python/Cargo.toml
 python3 wasm/tools/wasm_binding/run.py --profile dev
 .venv/bin/pytest python/tests
@@ -76,10 +78,10 @@ Test the freshly built Python extension, not an older installation. Rerun
 affected checks after further changes. This checklist does not authorize Git
 operations.
 
-Stub generation and WASM packaging enforce the compiled binding registry:
+Python registry reconciliation and WASM packaging enforce the compiled binding registry:
 configuration records require writable fields, consistent configuration call
 forms/defaults, and complete enabled language projections. A failed gate does
-not write a replacement stub or export an npm distribution. Do not bypass it
+not publish a Python package or export an npm distribution. Do not bypass it
 with handwritten declarations or a second API inventory.
 
 For `SubstructMatchParams`, the registry exhaustively names the Rust fields;

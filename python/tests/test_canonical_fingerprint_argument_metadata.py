@@ -103,7 +103,7 @@ def test_derived_fields_and_source_omitted_morgan_policies():
 
 
 def test_original_generated_stub_projects_value_update_and_structured_error():
-    stub = Path(__file__).resolve().parents[1] / 'cosmolkit.pyi'
+    stub = Path(__file__).resolve().parents[1] / 'artifacts/smoke/package/cosmolkit/__init__.pyi'
     classes = {node.name: node for node in ast.parse(stub.read_text()).body
                if isinstance(node, ast.ClassDef)}
     for name in ('MorganGeneratorParams', 'AtomPairGeneratorParams', 'TopologicalTorsionGeneratorParams'):

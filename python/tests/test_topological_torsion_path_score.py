@@ -70,7 +70,7 @@ def test_generated_path_error_class_matches_native_public_fields():
     import ast
     from pathlib import Path
 
-    stub = ast.parse((Path(__file__).resolve().parents[2] / "python/cosmolkit.pyi").read_text())
+    stub = ast.parse((Path(__file__).resolve().parents[2] / "python/artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     declarations = [node for node in stub.body if isinstance(node, ast.ClassDef) and node.name == "TopologicalTorsionPathScoreError"]
     assert len(declarations) == 1
     declaration = declarations[0]

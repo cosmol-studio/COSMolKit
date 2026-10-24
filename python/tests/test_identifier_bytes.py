@@ -41,7 +41,7 @@ def test_identifier_inputs_are_not_coerced_or_lossily_decoded(call):
 
 
 def test_generated_identifier_stubs_include_bytes():
-    stub = Path(__file__).parents[1] / "cosmolkit.pyi"
+    stub = Path(__file__).parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
     tree = ast.parse(stub.read_text())
     molecule = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Molecule")
     functions = [n for n in molecule.body if isinstance(n, ast.FunctionDef) and n.name in (

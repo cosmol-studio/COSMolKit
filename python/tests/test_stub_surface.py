@@ -12,7 +12,7 @@ import pytest
 
 
 def _stub_module() -> ast.Module:
-    path = Path(__file__).resolve().parents[1] / "cosmolkit.pyi"
+    path = Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
     return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 
 

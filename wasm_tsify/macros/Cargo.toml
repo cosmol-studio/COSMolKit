@@ -1,0 +1,13 @@
+[package]
+name = "cosmolkit-tsify-macros"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+heck = "0.5"

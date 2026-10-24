@@ -10,19 +10,3 @@ API Reference
    :member-order: alphabetical
    :no-show-inheritance:
 
-.. autodata:: cosmolkit.BATCH_ERROR_MODE_MAP
-   :no-value:
-
-   Read-only mapping from ``"raise"`` and ``"keep"`` to
-   :class:`cosmolkit.BatchErrorMode` values.
-
-.. autodata:: cosmolkit.RESIDUE_CODE_MAP
-   :no-value:
-
-   Read-only mapping from residue names to :class:`cosmolkit.ResidueCode` values.
-
-.. autodata:: cosmolkit.RESIDUE_INFO_KIND_MAP
-   :no-value:
-
-   Read-only mapping from residue-kind names to
-   :class:`cosmolkit.ResidueInfoKind` values.

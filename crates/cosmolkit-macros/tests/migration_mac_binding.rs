@@ -7,6 +7,50 @@ mod binding;
 use binding::expand_binding_contract;
 use quote::quote;
 
+#[test]
+fn javascript_projection_metadata_is_explicit_and_rejects_wrong_item_kinds() {
+    let type_entry = |projection: proc_macro2::TokenStream| {
+        quote! {
+            static VALUES = [{semantic_id:"types.Value",item:type,owner:type_,
+                rust:crate::Value,python:"Value",javascript:"Value",
+                javascript_projection:#projection,feature:"runtime",role:value,}];
+        }
+    };
+    for (projection, expected) in [
+        (quote!(runtime), "Runtime"),
+        (quote!(type_only), "TypeOnly"),
+        (quote!(native("number")), "NativeValue"),
+        (quote!(host_filesystem), "HostFilesystem"),
+    ] {
+        let generated = expand_binding_contract(type_entry(projection))
+            .unwrap()
+            .to_string();
+        assert!(generated.contains(&format!("BindingJavascriptProjection :: {expected}")));
+    }
+    for projection in [quote!(ignored), quote!(native("")), quote!(error_details)] {
+        assert!(expand_binding_contract(type_entry(projection)).is_err());
+    }
+    let accessor = |projection: proc_macro2::TokenStream| {
+        quote! {
+            static VALUES = [
+                {semantic_id:"types.Failure",item:type,owner:type_,rust:crate::Failure,
+                    python:"Failure",javascript:"Failure",feature:"runtime",role:error,},
+                {semantic_id:"Failure.offset",item:callable,owner:type_,rust:crate::Failure::offset,
+                    python:"offset",javascript:"offset",javascript_projection:#projection,
+                    feature:"runtime",kind:instance,parameters:[],output:usize,error:none,
+                    state:read_only,operation:none,signature:fn(&crate::Failure)->usize,}
+            ];
+        }
+    };
+    assert!(expand_binding_contract(accessor(quote!(error_details))).is_ok());
+    assert!(expand_binding_contract(accessor(quote!(type_only))).is_err());
+    assert!(expand_binding_contract(accessor(quote!(native("number")))).is_err());
+    let non_error = accessor(quote!(error_details))
+        .to_string()
+        .replace("role : error", "role : value");
+    assert!(expand_binding_contract(non_error.parse().unwrap()).is_err());
+}
+
 struct Molecule {
     value: String,
 }
@@ -109,6 +153,13 @@ enum BindingPropertyAccess {
     Getter,
     Setter,
 }
+enum BindingJavascriptProjection {
+    Runtime,
+    TypeOnly,
+    NativeValue(&'static str),
+    ErrorDetails,
+    HostFilesystem,
+}
 struct BindingContractEntry {
     semantic_id: &'static str,
     item: BindingItem,
@@ -119,6 +170,7 @@ struct BindingContractEntry {
     python_configuration: Option<&'static [BindingConfigurationField]>,
     python_property: Option<BindingPropertyAccess>,
     javascript_name: &'static str,
+    javascript_projection: BindingJavascriptProjection,
     feature: &'static str,
     required_capabilities: &'static [&'static str],
     status: FunctionStatus,

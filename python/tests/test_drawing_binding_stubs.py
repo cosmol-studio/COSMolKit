@@ -8,7 +8,7 @@ from typing import cast
 import cosmolkit
 
 
-STUB = Path(__file__).resolve().parents[1] / "cosmolkit.pyi"
+STUB = Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
 
 
 def declarations() -> dict[str, ast.ClassDef]:

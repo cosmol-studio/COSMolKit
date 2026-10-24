@@ -62,11 +62,11 @@ jobs:
             - name: Test deployment scripts
               run: .venv/bin/python -m unittest discover -s docs-web/scripts -p 'test_*.py' -v
 
-            - name: Build checkout package for autodoc
-              run: .venv/bin/maturin develop --profile dev-test --manifest-path python/Cargo.toml
-
             - name: Generate checked Python API type declarations
-              run: cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
+              run: |
+                  cargo install pyo3-introspection --version 0.30.1 --locked
+                  .venv/bin/python python/build.py
+                  .venv/bin/python python/registry_check.py
 
             - name: Generate checkout JavaScript type declarations
               env:
@@ -75,6 +75,8 @@ jobs:
               run: .venv/bin/python wasm/tools/wasm_binding/run.py --preset full --out-dir target/docs-js-package
 
             - name: Build Sphinx source
+              env:
+                  PYTHONPATH: ${{ github.workspace }}/python/artifacts/smoke/package
               run: |
                   .venv/bin/python -m unittest discover -s dev/tools -p 'test_python_docs.py' -v
                   rm -rf docs/build/html

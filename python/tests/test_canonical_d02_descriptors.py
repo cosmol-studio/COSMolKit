@@ -177,7 +177,7 @@ def test_d02_original_module_names_are_not_added_as_aliases():
 
 
 def test_d02_generated_stub_query_parameters_and_exception_context():
-    path = Path(__file__).resolve().parents[1] / "cosmolkit.pyi"
+    path = Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
     classes = {n.name: n for n in ast.parse(path.read_text()).body if isinstance(n, ast.ClassDef)}
     methods = {n.name: n for n in classes["Molecule"].body if isinstance(n, ast.FunctionDef)}
     for name, parameter in PARAMETERS.items():

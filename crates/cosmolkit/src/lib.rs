@@ -189,7 +189,7 @@ pub use search::{
 #[cfg(feature = "cap-smiles")]
 mod smiles;
 mod strict;
-#[cfg(feature = "cap-search")]
+#[cfg(any(feature = "cap-search", feature = "cap-io"))]
 pub use cosmolkit_core::WedgeError;
 #[cfg(feature = "cap-search")]
 pub use cosmolkit_core::parser_stereo_order::CxStereoGroupMergeError;
@@ -203,6 +203,9 @@ pub use cosmolkit_search::{
     SubstructMatchParams,
 };
 #[cfg(feature = "cap-search")]
+#[doc(hidden)]
+pub use cosmolkit_search::{ExtraAtomCheck, ExtraBondCheck, ExtraFinalCheck, SearchTarget};
+#[cfg(feature = "cap-search")]
 pub use cosmolkit_smiles::SmartsTraversalError;
 
 pub use binding_contract::conveniences::*;
@@ -212,9 +215,9 @@ pub use binding_contract::{
     BINDING_CONTRACT_PROPERTIES, BINDING_CONTRACT_PYTHON_ADAPTERS,
     BINDING_CONTRACT_PYTHON_COLLECTIONS, BindingCallableContract, BindingConfigurationField,
     BindingContractEntry, BindingConvenienceContract, BindingDefault, BindingItem,
-    BindingKeywordContract, BindingKind, BindingOwner, BindingParameterContract,
-    BindingPropertyAccess, BindingPropertyContract, BindingPythonAdapterContract, BindingReceiver,
-    BindingTypeRole, FunctionStatus, StateModel,
+    BindingJavascriptProjection, BindingKeywordContract, BindingKind, BindingOwner,
+    BindingParameterContract, BindingPropertyAccess, BindingPropertyContract,
+    BindingPythonAdapterContract, BindingReceiver, BindingTypeRole, FunctionStatus, StateModel,
 };
 #[cfg(feature = "cap-bio")]
 mod bio;
@@ -524,8 +527,10 @@ pub use ops::{UffEnergyGradient, UffEvaluationParams};
 
 #[cfg(feature = "cap-hashing")]
 mod molecular_hash;
+#[cfg(any(feature = "cap-hashing", feature = "cap-smiles"))]
+pub use cosmolkit_core::CipRankError;
 #[cfg(feature = "cap-hashing")]
-pub use cosmolkit_core::{CipRankError, ScaffoldError};
+pub use cosmolkit_core::ScaffoldError;
 #[cfg(feature = "cap-hashing")]
 pub use cosmolkit_fingerprints::MoleculeHashError;
 
@@ -559,7 +564,7 @@ pub use cosmolkit_alignment::{
     AllConformerRmsdParameters, BestAlignmentParameters, ConformerAlignmentParameters,
     ConformerAlignmentReport, ConformerRmsd, CoordinateRmsdParameters, ThreadSelectionError,
 };
-#[cfg(feature = "cap-alignment")]
+#[cfg(any(feature = "cap-alignment", feature = "cap-fingerprints"))]
 pub use cosmolkit_core::ThreadCountError;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{

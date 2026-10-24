@@ -54,7 +54,7 @@ def test_legacy_owned_inputs_conversion_and_generated_constructor_protocol():
     assert p.fp_size == 10
     for keyword, value, error in [("fp_size", -1, OverflowError), ("torsion_atom_count", 4294967296, OverflowError), ("bits_per_entry", 1.5, TypeError), ("from_atoms", [-1], OverflowError)]:
         with pytest.raises(error): ck.LegacyTopologicalTorsionParams(**{keyword: value})
-    tree = ast.parse((Path(__file__).resolve().parents[1] / "cosmolkit.pyi").read_text())
+    tree = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "LegacyTopologicalTorsionParams")
     methods = {}
     for node in cls.body:

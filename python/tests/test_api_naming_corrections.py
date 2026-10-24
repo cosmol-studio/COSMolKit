@@ -108,7 +108,7 @@ def test_targeted_option_names_and_fingerprint_discovery():
 
 
 def test_generated_stub_describes_enum_input_but_typed_output():
-    stub = Path(__file__).resolve().parents[1] / "cosmolkit.pyi"
+    stub = Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
     tree = ast.parse(stub.read_text())
     params = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "SdfReadParams")
     getter = next(node for node in params.body if isinstance(node, ast.FunctionDef) and node.name == "coordinate_mode" and any(isinstance(d, ast.Name) and d.id == "property" for d in node.decorator_list))

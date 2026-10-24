@@ -20,7 +20,7 @@ class DocumentationWorkflowTests(unittest.TestCase):
     def test_generates_checked_stub_before_documentation_consumers(self):
         workflow = (ROOT / ".github/workflows/docs-web.yml").read_text(encoding="utf-8")
         generate = workflow.index(
-            "cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen"
+            "python python/build.py"
         )
         for consumer in (
             "unittest discover -s dev/tools -p 'test_python_docs.py'",
@@ -32,10 +32,13 @@ class DocumentationWorkflowTests(unittest.TestCase):
 class PythonApiTypesTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.entries = read_stub(ROOT / "python/cosmolkit.pyi")
+        cls.entries = read_stub(ROOT / "python/artifacts/smoke/package/cosmolkit/__init__.pyi")
 
     def test_factory_alias_reuses_method_types(self):
-        self.assertIs(self.entries["mol_from_smiles"], self.entries["Molecule.from_smiles"])
+        self.assertEqual(
+            {type_text(n.returns) for n in self.entries["mol_from_smiles"]},
+            {type_text(n.returns) for n in self.entries["Molecule.from_smiles"]},
+        )
         self.assertEqual({type_text(n.returns) for n in self.entries["mol_from_smiles"]}, {"Molecule"})
 
     def test_property_getter_is_not_replaced_by_setter(self):
@@ -46,15 +49,17 @@ class PythonApiTypesTests(unittest.TestCase):
     def test_existing_arguments_and_optional_results_are_preserved(self):
         app = SimpleNamespace(_python_api_types=self.entries)
         result = return_signature(app, "method", "cosmolkit.Molecule.atom", None, None, "(atom_id)", None)
-        self.assertEqual(result, ("(atom_id)", "typing.Optional[Atom]"))
+        self.assertEqual(result, ("(atom_id)", "MoleculeAtom | None"))
         self.assertIsNone(return_signature(app, "method", "other.Molecule.atom", None, None, "()", None))
 
     def test_overload_arguments_remain_paired_with_results(self):
         app = SimpleNamespace(_python_api_types=self.entries)
         signature, result = return_signature(app, "method", "cosmolkit.MoleculeBatch.__getitem__", None, None, "(key)", None)
         self.assertIsNone(result)
-        self.assertIn("(key: int) -> Molecule | None", signature)
-        self.assertIn("(key: slice | typing.Sequence[int] | typing.Sequence[bool]) -> MoleculeBatch", signature)
+        self.assertIn("index: typing.SupportsIndex", signature)
+        self.assertIn("-> Molecule | None", signature)
+        self.assertIn("index: slice | _typeshed.SupportsGetItem[int, typing.SupportsIndex] | _typeshed.SupportsGetItem[int, bool]", signature)
+        self.assertIn("-> MoleculeBatch", signature)
         self.assertNotIn("self", signature)
 
     def test_sphinx_renders_native_function_method_and_property_types(self):
@@ -63,7 +68,7 @@ class PythonApiTypesTests(unittest.TestCase):
             (root / "conf.py").write_text(
                 f"import sys\nsys.path.insert(0, {str(DOCS)!r})\n"
                 "extensions = ['sphinx.ext.autodoc', 'api_types']\n"
-                f"python_api_stub = {str(ROOT / 'python/cosmolkit.pyi')!r}\n",
+                f"python_api_stub = {str(ROOT / 'python/artifacts/smoke/package/cosmolkit/__init__.pyi')!r}\n",
                 encoding="utf-8",
             )
             (root / "index.rst").write_text(
@@ -85,11 +90,11 @@ class PythonApiTypesTests(unittest.TestCase):
             self.assertEqual(len(signatures), 6)
             self.assertIn("-> Molecule", signatures[0].astext())
             self.assertIn("-> str", signatures[1].astext())
-            self.assertIn("Optional[Atom]", signatures[2].astext())
+            self.assertIn("Atom | None", signatures[2].astext())
             self.assertIn("bool", signatures[3].astext())
-            self.assertIn("key: int", signatures[4].astext())
+            self.assertIn("index: SupportsIndex", signatures[4].astext())
             self.assertIn("-> Molecule | None", signatures[4].astext())
-            self.assertIn("key: slice", signatures[5].astext())
+            self.assertIn("index: slice", signatures[5].astext())
             self.assertIn("-> MoleculeBatch", signatures[5].astext())
 
 
