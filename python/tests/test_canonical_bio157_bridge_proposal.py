@@ -33,7 +33,7 @@ def test_source_atom_filters_and_original_coordinate_bytes(flavor,expected):
           atom(5," C5 ","C",9999.,9999.,9999.)+"END\n")
     source=ck.BioStructure.from_pdb(text)
     assert source.num_atoms==5
-    result=source.to_molecule(sanitize=False,remove_hs=False,proximity_bonding=False,flavor=flavor)
+    result=source.to_molecule(sanitize=False,remove_hs=False,proximity_bonding=False,flavor=ck.PdbReadFlags.from_bits(flavor))
     assert result.num_atoms==expected
     assert result.num_bonds==0
 
@@ -56,10 +56,10 @@ def test_empty_structure_checked_conversion():
 def test_real_sanitize_failure_preserves_source_and_domain_error():
     text="".join(atom(i," C  ","C",10.*i) for i in range(1,7))+"CONECT    1    2    3    4    5\nCONECT    1    6\nEND\n"
     source=ck.BioStructure.from_pdb(text)
-    before=[row.position() for row in source.atoms]
+    before=[row.position for row in source.atoms]
     with pytest.raises(ck.BioMoleculeError) as observed:
         source.to_molecule(proximity_bonding=False,remove_hs=False)
     assert observed.value.domain=="bio"
-    assert observed.value.kind=="Conversion"
+    assert observed.value.variant.name=="Conversion"
     assert observed.value.__cause__ is not None
-    assert [row.position() for row in source.atoms]==before
+    assert [row.position for row in source.atoms]==before

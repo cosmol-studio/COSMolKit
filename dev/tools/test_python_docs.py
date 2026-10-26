@@ -1,5 +1,7 @@
 """Generated native API documentation must retain the checked stub's types."""
 
+import ast
+import importlib.util
 import io
 from pathlib import Path
 import sys
@@ -13,10 +15,45 @@ from sphinx.application import Sphinx
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
 sys.path.insert(0, str(DOCS))
-from api_types import read_stub, return_signature, type_text
+from api_types import public_description, read_stub, return_signature, type_text
 
 
 class DocumentationWorkflowTests(unittest.TestCase):
+    def test_projection_metadata_preserves_help(self):
+        spec = importlib.util.spec_from_file_location("binding_generate", ROOT / "python/generate.py")
+        generate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generate)
+        tree = ast.parse('''
+class Sample:
+    def values(self) -> object:
+        \"\"\"{"role":"return_type","type":"list[int]"}
+
+        Return an independent list of selected values.
+        \"\"\"
+    def select(self, value):
+        \"\"\"Select one value without changing the source.\"\"\"
+    def _select_int(self, value: int) -> int:
+        \"\"\"{"role":"overload","target":"Sample.select"}\"\"\"
+    def _select_text(self, value: str) -> str:
+        \"\"\"{"role":"overload","target":"Sample.select"}
+
+        Select by its exact text label.
+        \"\"\"
+''')
+        generate.declared_return_types(tree)
+        generate.declared_overloads(tree)
+        methods = tree.body[0].body
+        self.assertEqual(ast.unparse(methods[0].returns), "list[int]")
+        self.assertEqual(ast.get_docstring(methods[0]), "Return an independent list of selected values.")
+        self.assertEqual(ast.get_docstring(methods[1]), "Select one value without changing the source.")
+        self.assertEqual(ast.get_docstring(methods[2]), "Select by its exact text label.")
+        lines = ['{"role":"return_type","type":"list[int]"}', "", "Return selected values."]
+        public_description(None, "method", "cosmolkit.Sample.values", None, None, lines)
+        self.assertEqual(lines, ["Return selected values."])
+        prose = ['{"example": 2}', "This is a documented data example."]
+        public_description(None, "method", "cosmolkit.Sample.example", None, None, prose)
+        self.assertEqual(prose, ['{"example": 2}', "This is a documented data example."])
+
     def test_generates_checked_stub_before_documentation_consumers(self):
         workflow = (ROOT / ".github/workflows/docs-web.yml").read_text(encoding="utf-8")
         generate = workflow.index(
@@ -76,7 +113,8 @@ class PythonApiTypesTests(unittest.TestCase):
                 ".. automethod:: cosmolkit.Molecule.to_smiles\n\n"
                 ".. automethod:: cosmolkit.Molecule.atom\n\n"
                 ".. autoattribute:: cosmolkit.AddHsParams.explicit_only\n\n"
-                ".. automethod:: cosmolkit.MoleculeBatch.__getitem__\n",
+                ".. automethod:: cosmolkit.MoleculeBatch.__getitem__\n\n"
+                ".. autoproperty:: cosmolkit.PropertyValueError.expected\n",
                 encoding="utf-8",
             )
             warnings = io.StringIO()
@@ -87,7 +125,7 @@ class PythonApiTypesTests(unittest.TestCase):
             self.assertEqual(app.statuscode, 0, warnings.getvalue())
             from sphinx import addnodes
             signatures = list(app.env.get_doctree("index").findall(addnodes.desc_signature))
-            self.assertEqual(len(signatures), 6)
+            self.assertEqual(len(signatures), 7)
             self.assertIn("-> Molecule", signatures[0].astext())
             self.assertIn("-> str", signatures[1].astext())
             self.assertIn("Atom | None", signatures[2].astext())
@@ -96,6 +134,7 @@ class PythonApiTypesTests(unittest.TestCase):
             self.assertIn("-> Molecule | None", signatures[4].astext())
             self.assertIn("index: slice", signatures[5].astext())
             self.assertIn("-> MoleculeBatch", signatures[5].astext())
+            self.assertIn("PropertyValueKind", signatures[6].astext())
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ crate::error_framework::error_projection!(FingerprintBatchError, FingerprintBatc
     WidthMismatch { index, actual: u32, expected: u32 },
 }, methods = {
     #[getter]
-    fn index(&self) -> usize {
+    #[doc = "Zero-based row containing a missing fingerprint or incompatible width."] fn index(&self) -> usize {
         match self.inner {
             ck::FingerprintBatchError::MissingRow { index }
             | ck::FingerprintBatchError::WidthMismatch { index, .. } => index,
@@ -20,6 +20,10 @@ crate::error_framework::error_projection!(FingerprintBatchError, FingerprintBatc
 
 crate::sequence::project_sequence!(FingerprintBatch, ck::FingerprintBatch, Fingerprint, {
     #[doc = r#"{"role":"return_type","imports":["numpy"],"type":"numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]"}"#]
+    /// Return an independent uint8 matrix of shape (number_of_records, n_bits).
+    /// Rows retain batch order; columns are increasing bit indices, containing
+    /// 0 or 1. None rows and unequal widths raise FingerprintBatchError rather
+    /// than silently dropping records or padding fingerprints.
     fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray2<u8>>> {
         self.inner
             .validate_matrix()

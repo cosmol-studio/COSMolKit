@@ -19,10 +19,15 @@ use cosmolkit_types::Element;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct BioPdbWriteParams {
+    /// Write TER records at polymer chain endings.
     pub ter_records: bool,
+    /// Assign serial numbers to TER records.
     pub numbered_ter: bool,
+    /// Write TER records without restricting them to polymer entities.
     pub ter_ignores_type: bool,
+    /// Preserve atom serial numbers instead of renumbering output.
     pub preserve_serial: bool,
+    /// Write the terminating END record.
     pub end_record: bool,
 }
 

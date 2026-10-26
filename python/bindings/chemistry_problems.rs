@@ -15,12 +15,12 @@ error_projection!(ChemistryProblemError, ChemistryProblemErrorKind, ck::Chemistr
 }), source = Option<KekulizeSource>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of ChemistryProblemError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::ChemistryProblemError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kekulize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>> { match &self.inner {
+    #[doc = "Structured KekulizeError payload of ChemistryProblemError.Kekulize; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn kekulize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>> { match &self.inner {
         ck::ChemistryProblemError::Kekulize(value) => KekulizeError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -28,6 +28,7 @@ error_projection!(ChemistryProblemError, ChemistryProblemErrorKind, ck::Chemistr
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// One sanitization-stage diagnostic with its concrete native error.
     pub struct ChemistryProblem {
         pub(crate) inner: ck::ChemistryProblem,
     }
@@ -48,10 +49,12 @@ impl ChemistryProblem {
         }
     }
     #[getter]
+    /// Sanitization stage that reported this chemistry problem.
     fn operation(&self) -> SanitizeStage {
         self.inner.operation.into()
     }
     #[getter]
+    /// Concrete structured error associated with this chemistry problem.
     fn error(
         &self,
         py: Python<'_>,
@@ -66,6 +69,7 @@ impl ChemistryProblem {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Ordered chemistry problems reported by the non-throwing native detector.
     pub struct ChemistryProblemReport {
         pub(crate) inner: ck::ChemistryProblemReport,
     }
@@ -85,6 +89,7 @@ impl ChemistryProblemReport {
         }
     }
     #[getter]
+    /// Independent list of chemistry problems in native detection order.
     fn problems(&self) -> Vec<ChemistryProblem> {
         self.inner
             .problems

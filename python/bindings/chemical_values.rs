@@ -45,6 +45,11 @@ macro_rules! enum_value {
     (@text $variant:ident, $text:literal) => { String::from($text) };
     (@mapped $name:ident, $(input = $input:ty,)? {$($(#[$($attribute:tt)*])* $variant:ident => $source:ident $([$($alias:ident),*])? $(text = $text:literal)?),+ $(,)?}
         $(, constructor = $constructor:ident)? $(, methods = {$($method:item)*})?) => {
+        #[doc = concat!("Typed ", stringify!($name), " values corresponding to the Rust enum.\n\n",
+            "Members: ", $("``", stringify!($variant), "``, ",)+
+            "\nCompare members by value. names and values provide readonly lookups; ",
+            "pickle preserves the type and value. Use the declared constructor signature ",
+            "rather than relying on implicit string conversion.")]
         #[pyo3::pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
         #[derive(Clone, Copy, PartialEq)]
         pub enum $name { $($(#[$($attribute)*])* $variant = const {

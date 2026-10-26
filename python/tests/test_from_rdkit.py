@@ -41,7 +41,7 @@ def _topology_signature(mol):
         (
             atom.id,
             atom.atomic_number,
-            atom.formal_charge(),
+            atom.formal_charge,
             atom.chiral_tag,
             atom.isotope,
             atom.atom_map,
@@ -65,7 +65,7 @@ def _feature_signature(mol):
         (
             atom.id,
             atom.atomic_number,
-            atom.formal_charge(),
+            atom.formal_charge,
             atom.chiral_tag,
             atom.isotope,
             atom.atom_map,
@@ -74,7 +74,7 @@ def _feature_signature(mol):
             atom.no_implicit,
             atom.radical_electrons,
             atom.hybridization,
-            atom.degree(),
+            atom.degree,
             atom.explicit_valence,
             atom.implicit_hydrogens,
             atom.total_hydrogens,
@@ -245,7 +245,7 @@ def test_from_rdkit_sanitize_false_preserves_unprepared_graph_state():
     # fingerprint facade's earlier prepared-assignment precondition.
     with pytest.raises(cosmolkit.ValenceError) as error:
         raw.atom_metadata(recalculate=False)
-    assert error.value.kind == "ExplicitValenceCacheNotInitialized"
+    assert error.value.variant.name == "ExplicitValenceCacheNotInitialized"
     assert error.value.atom == 0
     with pytest.raises(cosmolkit.AtomPairReadError, match="Fingerprint preparation requires a valid prepared valence assignment"):
         raw.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(use_2d=False), None)
@@ -279,7 +279,7 @@ def test_from_rdkit_does_not_copy_2d_conformer():
 
 
 def test_from_rdkit_rejects_non_object():
-    with pytest.raises(ValueError, match="from_rdkit failed calling GetNumAtoms"):
+    with pytest.raises(TypeError, match="expected rdkit.Chem.rdchem.Mol"):
         cosmolkit.Molecule.from_rdkit(object())
 
 

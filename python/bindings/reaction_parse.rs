@@ -23,15 +23,16 @@ pub struct CxParseError {
 }
 crate::error_framework::error_projection! {methods impl CxParseError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "cx"
     }
     #[getter]
-    fn offset(&self) -> usize {
+    #[doc = "Byte offset of the CXSMILES parsing failure."] fn offset(&self) -> usize {
         self.inner.offset
     }
     #[getter]
-    fn message(&self) -> &str {
+    #[doc = "Original CXSMILES parser explanation."] fn message(&self) -> &str {
         &self.inner.message
     }
     fn __str__(&self) -> String {
@@ -100,43 +101,43 @@ error_projection!(ReactionParseError, ReactionParseErrorKind, ck::ReactionParseE
     | ck::ReactionParseError::OffsetOverflow => None,
 }, source = Option<ParseSource>, methods = {
     #[getter]
-    fn role(&self) -> Option<ReactionRole> { match self.inner {
+    #[doc = "Role of the affected reaction template or transformation participant. Present for `ReactionParseError.ParserCleanup`, `ReactionParseError.TemplateAtomBounds`, `ReactionParseError.Smarts`, `ReactionParseError.Smiles`, `ReactionParseError.ComponentEncoding`, `ReactionParseError.Model`, `ReactionParseError.CxParse`, `ReactionParseError.CxLowering`; None when unavailable."] fn role(&self) -> Option<ReactionRole> { match self.inner {
         ck::ReactionParseError::ParserCleanup { role, .. } | ck::ReactionParseError::TemplateAtomBounds { role, .. }
         | ck::ReactionParseError::Smarts { role, .. } | ck::ReactionParseError::Smiles { role, .. }
         | ck::ReactionParseError::ComponentEncoding { role, .. } | ck::ReactionParseError::Model { role, .. }
         | ck::ReactionParseError::CxParse { role, .. } | ck::ReactionParseError::CxLowering { role, .. } => Some(role.into()), _ => None,
     } }
     #[getter]
-    fn template(&self) -> Option<usize> { match self.inner {
+    #[doc = "Index of the affected reaction template. Present for `ReactionParseError.ParserCleanup`, `ReactionParseError.TemplateAtomBounds`, `ReactionParseError.Smarts`, `ReactionParseError.Smiles`, `ReactionParseError.ComponentEncoding`, `ReactionParseError.Model`, `ReactionParseError.CxParse`, `ReactionParseError.CxLowering`; None when unavailable."] fn template(&self) -> Option<usize> { match self.inner {
         ck::ReactionParseError::ParserCleanup { template, .. } | ck::ReactionParseError::TemplateAtomBounds { template, .. }
         | ck::ReactionParseError::Smarts { template, .. } | ck::ReactionParseError::Smiles { template, .. }
         | ck::ReactionParseError::ComponentEncoding { template, .. } | ck::ReactionParseError::Model { template, .. }
         | ck::ReactionParseError::CxParse { template, .. } | ck::ReactionParseError::CxLowering { template, .. } => Some(template), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom index involved in the failure. Present for `ReactionParseError.TemplateAtomBounds`, `ReactionParseError.StereoInversionFlag`, `ReactionParseError.StereoOrder`; None when unavailable."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::ReactionParseError::TemplateAtomBounds { atom, .. } | ck::ReactionParseError::StereoInversionFlag { atom, .. }
         | ck::ReactionParseError::StereoOrder { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn product(&self) -> Option<usize> { match self.inner {
+    #[doc = "Product-template index associated with the failure. Present for `ReactionParseError.StereoDegreeArithmetic`, `ReactionParseError.StereoInversionFlag`, `ReactionParseError.StereoOrder`; None when unavailable."] fn product(&self) -> Option<usize> { match self.inner {
         ck::ReactionParseError::StereoDegreeArithmetic { product, .. } => Some(product as usize),
         ck::ReactionParseError::StereoInversionFlag { product, .. } | ck::ReactionParseError::StereoOrder { product, .. } => Some(product), _ => None,
     } }
     #[getter]
-    fn count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Count observed when the failure occurred. Present for `ReactionParseError.Separators`, `ReactionParseError.MultiStep`; None when unavailable."] fn count(&self) -> Option<usize> { match self.inner {
         ck::ReactionParseError::Separators { count } | ck::ReactionParseError::MultiStep { count } => Some(count), _ => None,
     } }
     #[getter]
-    fn start_atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Starting atom offset for the reaction template. Present for `ReactionParseError.CxParse`, `ReactionParseError.CxLowering`; None when unavailable."] fn start_atom(&self) -> Option<usize> { match self.inner {
         ck::ReactionParseError::CxParse { start_atom, .. } | ck::ReactionParseError::CxLowering { start_atom, .. } => Some(start_atom), _ => None,
     } }
     #[getter]
-    fn start_bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Starting bond offset for the reaction template. Present for `ReactionParseError.CxParse`, `ReactionParseError.CxLowering`; None when unavailable."] fn start_bond(&self) -> Option<usize> { match self.inner {
         ck::ReactionParseError::CxParse { start_bond, .. } | ck::ReactionParseError::CxLowering { start_bond, .. } => Some(start_bond), _ => None,
     } }
     #[getter]
-    fn text(&self, py: Python<'_>) -> PyResult<Option<String>> { match &self.inner {
+    #[doc = "Original input text retained by the error. Present for `ReactionParseError.Smarts`, `ReactionParseError.Smiles`, `ReactionParseError.ComponentEncoding`; None when unavailable."] fn text(&self, py: Python<'_>) -> PyResult<Option<String>> { match &self.inner {
         ck::ReactionParseError::Smarts { text, .. } | ck::ReactionParseError::Smiles { text, .. }
         | ck::ReactionParseError::ComponentEncoding { text, .. } => decode_source_text(py, text).map(Some), _ => Ok(None),
     } }
@@ -161,6 +162,7 @@ pub(crate) fn keywords(
 
 #[pyfunction]
 #[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, use_smiles=crate::arguments::Argument::Missing, sanitize=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing))]
+/// Parse reaction SMIRKS into a Reaction using the selected native parsing parameters.
 pub fn parse_smirks(
     text: &str,
     params: crate::arguments::Argument<Option<PyRef<'_, ReactionParseParams>>>,
@@ -228,12 +230,14 @@ pub fn _parse_smirks_keywords(
         .map_err(ReactionParseError::from_rust)
 }
 #[pyfunction]
+/// Parse reaction SMIRKS into a Reaction with explicit ReactionParseParams.
 pub fn parse_smirks_with_params(text: &str, params: &ReactionParseParams) -> PyResult<Reaction> {
     _parse_smirks_params(text, Some(params))
 }
 
 #[pyfunction]
 #[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, use_smiles=crate::arguments::Argument::Missing, sanitize=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing))]
+/// Construct a Reaction from SMIRKS using the same canonical parser as parse_smirks.
 pub fn reaction_from_smirks(
     text: &str,
     params: crate::arguments::Argument<Option<PyRef<'_, ReactionParseParams>>>,

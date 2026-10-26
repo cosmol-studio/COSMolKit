@@ -10,7 +10,8 @@ def install(exception, payload):
     def getter(descriptor):
         def read(self):
             return descriptor.__get__(self._ck_error_payload, payload)
-        read.__wrapped__ = descriptor
+        # A getset descriptor is not callable, so it is not a __wrapped__ function.
+        read._ck_native_descriptor = descriptor
         return property(read, doc=descriptor.__doc__)
 
     def method(descriptor):
@@ -35,7 +36,7 @@ def install(exception, payload):
         elif isinstance(descriptor, staticmethod):
             function = descriptor.__func__
             doc = (function.__doc__ or '').strip()
-            if doc.startswith('{') and json.loads(doc).get('role') in {'error_source', 'error_payload'}:
+            if doc.startswith('{') and json.JSONDecoder().raw_decode(doc)[0].get('role') in {'error_source', 'error_payload'}:
                 setattr(exception, name, source(function))
             else:
                 raise TypeError(f'Unsupported error projection static method: {name}')

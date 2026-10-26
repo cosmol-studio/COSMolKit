@@ -55,6 +55,7 @@ value_kind!(AtomRangeDataFunctionKind, AtomRangeDataFunction, {
 
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only native atom predicate retained by a SMARTS writer diagnostic; variant determines its payload.
 pub struct AtomQueryPredicate {
     pub(crate) owner: RetainedError<ck::SmartsWriteError>,
 }
@@ -85,10 +86,12 @@ type AtomValue = Source<
 #[pymethods]
 impl AtomQueryPredicate {
     #[getter]
+    /// Exact native predicate or bound variant; payload availability follows this variant.
     fn variant(&self) -> AtomQueryPredicateKind {
         self.inner().into()
     }
     #[getter]
+    /// Atomic number in an AtomType predicate, or None for other variants.
     fn atomic_number(&self) -> Option<u8> {
         match self.inner() {
             ck::AtomQueryPredicate::AtomType { atomic_number, .. } => Some(*atomic_number),
@@ -96,6 +99,7 @@ impl AtomQueryPredicate {
         }
     }
     #[getter]
+    /// Aromaticity requirement in an AtomType predicate, or None for other variants.
     fn aromatic(&self) -> Option<bool> {
         match self.inner() {
             ck::AtomQueryPredicate::AtomType { aromatic, .. } => Some(*aromatic),
@@ -103,6 +107,7 @@ impl AtomQueryPredicate {
         }
     }
     #[getter]
+    /// Property name in a PropertyValue predicate, or None for other variants.
     fn name(&self) -> Option<String> {
         match self.inner() {
             ck::AtomQueryPredicate::PropertyValue { name, .. } => Some(name.clone()),
@@ -110,6 +115,7 @@ impl AtomQueryPredicate {
         }
     }
     #[getter]
+    /// Typed payload of the selected predicate or one-sided bound; None for payload-free or differently structured variants.
     fn value(&self) -> Option<AtomValue> {
         use ck::AtomQueryPredicate as P;
         match self.inner() {
@@ -196,6 +202,7 @@ impl AtomQueryPredicate {
 
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only native bond predicate retained by a SMARTS writer diagnostic; variant determines its payload.
 pub struct BondQueryPredicate {
     pub(crate) owner: RetainedError<ck::SmartsWriteError>,
 }
@@ -217,10 +224,12 @@ impl BondQueryPredicate {
 #[pymethods]
 impl BondQueryPredicate {
     #[getter]
+    /// Exact native predicate or bound variant; payload availability follows this variant.
     fn variant(&self) -> BondQueryPredicateKind {
         self.inner().into()
     }
     #[getter]
+    /// Property name in a PropertyValue predicate, or None for other variants.
     fn name(&self) -> Option<String> {
         match self.inner() {
             ck::BondQueryPredicate::PropertyValue { name, .. } => Some(name.clone()),
@@ -228,6 +237,7 @@ impl BondQueryPredicate {
         }
     }
     #[getter]
+    /// Typed payload of the selected predicate or one-sided bound; None for payload-free or differently structured variants.
     fn value(&self) -> Option<BondValue> {
         use ck::BondQueryPredicate as P;
         match self.inner() {
@@ -272,6 +282,7 @@ impl BondQueryPredicate {
 
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only recursive SMARTS query retained by its owning diagnostic.
 pub struct RecursiveStructureQuery {
     owner: RetainedError<ck::SmartsWriteError>,
 }
@@ -289,11 +300,13 @@ impl RecursiveStructureQuery {
 #[pymethods]
 impl RecursiveStructureQuery {
     #[getter]
+    /// Initialized recursive query graph, or None when not initialized.
     fn query_graph(&self) -> Option<QueryGraph> {
         self.inner().query_graph()?;
         Some(QueryGraph::from_writer_recursive(self.owner.clone()))
     }
     #[getter]
+    /// Original recursive SMARTS text, or None if not retained.
     fn source_smarts(&self, py: Python<'_>) -> PyResult<Option<String>> {
         self.inner()
             .source_smarts()
@@ -301,10 +314,12 @@ impl RecursiveStructureQuery {
             .transpose()
     }
     #[getter]
+    /// Native recursive-query serial identifier.
     fn serial_number(&self) -> u32 {
         self.inner().serial_number()
     }
     #[getter]
+    /// Whether the recursive query has an initialized graph.
     fn initialized(&self) -> bool {
         self.inner().is_initialized()
     }
@@ -313,6 +328,7 @@ impl RecursiveStructureQuery {
 crate::configuration::type_projection! {
     #[doc = r#"{"role":"error_value"}"#]
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Native atom-data function and numeric range predicate.
     pub struct AtomRangeQuery {
         inner: ck::AtomRangeQuery,
     }
@@ -320,12 +336,14 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl AtomRangeQuery {
     #[getter]
+    /// Numeric bounds applied by this range query.
     fn bounds(&self) -> AtomRangeBounds {
         AtomRangeBounds {
             inner: self.inner.bounds(),
         }
     }
     #[getter]
+    /// Native atom-data function evaluated before applying the bounds.
     fn data_function(&self) -> AtomRangeDataFunction {
         AtomRangeDataFunction {
             inner: self.inner.data_function(),
@@ -336,6 +354,7 @@ impl AtomRangeQuery {
 crate::configuration::type_projection! {
     #[doc = r#"{"role":"error_value"}"#]
     #[pyclass(module = "cosmolkit", frozen)]
+    /// One-sided or two-sided numeric bounds with endpoint inclusion flags.
     pub struct AtomRangeBounds {
         inner: ck::AtomRangeBounds,
     }
@@ -343,10 +362,12 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl AtomRangeBounds {
     #[getter]
+    /// Exact native predicate or bound variant; payload availability follows this variant.
     fn variant(&self) -> AtomRangeBoundsKind {
         (&self.inner).into()
     }
     #[getter]
+    /// Typed payload of the selected predicate or one-sided bound; None for payload-free or differently structured variants.
     fn value(&self) -> Option<i32> {
         match self.inner {
             ck::AtomRangeBounds::LessEqual(v) | ck::AtomRangeBounds::GreaterEqual(v) => Some(v),
@@ -354,6 +375,7 @@ impl AtomRangeBounds {
         }
     }
     #[getter]
+    /// Lower range endpoint, or None when this variant has no lower endpoint.
     fn lower(&self) -> Option<i32> {
         match self.inner {
             ck::AtomRangeBounds::Inclusive { lower, .. } => Some(lower),
@@ -361,6 +383,7 @@ impl AtomRangeBounds {
         }
     }
     #[getter]
+    /// Upper range endpoint, or None when this variant has no upper endpoint.
     fn upper(&self) -> Option<i32> {
         match self.inner {
             ck::AtomRangeBounds::Inclusive { upper, .. } => Some(upper),
@@ -368,6 +391,7 @@ impl AtomRangeBounds {
         }
     }
     #[getter]
+    /// Whether the lower endpoint is excluded, or None when not applicable.
     fn lower_open(&self) -> Option<bool> {
         match self.inner {
             ck::AtomRangeBounds::Inclusive { lower_open, .. } => Some(lower_open),
@@ -375,6 +399,7 @@ impl AtomRangeBounds {
         }
     }
     #[getter]
+    /// Whether the upper endpoint is excluded, or None when not applicable.
     fn upper_open(&self) -> Option<bool> {
         match self.inner {
             ck::AtomRangeBounds::Inclusive { upper_open, .. } => Some(upper_open),
@@ -386,6 +411,7 @@ impl AtomRangeBounds {
 crate::configuration::type_projection! {
     #[doc = r#"{"role":"error_value"}"#]
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Native atom-data selector used by a range predicate, optionally constrained to ring sizes.
     pub struct AtomRangeDataFunction {
         inner: ck::AtomRangeDataFunction,
     }
@@ -393,10 +419,12 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl AtomRangeDataFunction {
     #[getter]
+    /// Exact native predicate or bound variant; payload availability follows this variant.
     fn variant(&self) -> AtomRangeDataFunctionKind {
         (&self.inner).into()
     }
     #[getter]
+    /// Lower range endpoint, or None when this variant has no lower endpoint.
     fn lower(&self) -> Option<i32> {
         match self.inner {
             ck::AtomRangeDataFunction::AtomRingSize { lower, .. } => Some(lower),
@@ -404,6 +432,7 @@ impl AtomRangeDataFunction {
         }
     }
     #[getter]
+    /// Upper range endpoint, or None when this variant has no upper endpoint.
     fn upper(&self) -> Option<i32> {
         match self.inner {
             ck::AtomRangeDataFunction::AtomRingSize { upper, .. } => Some(upper),
@@ -411,6 +440,7 @@ impl AtomRangeDataFunction {
         }
     }
     #[getter]
+    /// Whether the lower endpoint is excluded, or None when not applicable.
     fn lower_open(&self) -> Option<bool> {
         match self.inner {
             ck::AtomRangeDataFunction::AtomRingSize { lower_open, .. } => Some(lower_open),
@@ -418,6 +448,7 @@ impl AtomRangeDataFunction {
         }
     }
     #[getter]
+    /// Whether the upper endpoint is excluded, or None when not applicable.
     fn upper_open(&self) -> Option<bool> {
         match self.inner {
             ck::AtomRangeDataFunction::AtomRingSize { upper_open, .. } => Some(upper_open),

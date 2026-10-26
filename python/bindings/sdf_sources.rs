@@ -12,6 +12,7 @@ use pyo3::prelude::*;
 use std::{fs::File, io::BufReader, path::PathBuf};
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// Indexed SDF file for random record access. Integer indexing returns SdfRecord; slices and selections parse records into a MoleculeBatch.
 pub struct SdfDataset {
     pub(crate) inner: ck::SdfDataset,
 }
@@ -41,6 +42,8 @@ impl crate::indexing::Collection for SdfDataset {
 #[pymethods]
 impl SdfDataset {
     #[doc = r#"{"role":"indexing","protocol":"integer_selection","selection":"MoleculeBatch"}"#]
+    /// Read an SdfRecord by integer index, or parse a selection into a MoleculeBatch.
+    /// Negative indices, slices, integer sequences and length-matched boolean masks are supported.
     fn __getitem__(
         &self,
         py: Python<'_>,
@@ -49,6 +52,7 @@ impl SdfDataset {
         crate::indexing::get(self, py, index)
     }
     #[pyo3(signature=(index,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+    /// Parse a zero-based record using a parameter object or mutually exclusive reader keywords; native record failures propagate.
     fn record(
         &self,
         py: Python<'_>,
@@ -125,6 +129,7 @@ impl SdfDataset {
         )?;
         self._record_params(py, index, Some(&p))
     }
+    /// Parse a zero-based record using explicit SDF reader parameters.
     fn record_with_params(
         &self,
         py: Python<'_>,
@@ -136,6 +141,7 @@ impl SdfDataset {
 
     #[staticmethod]
     #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+    /// Open an SDF filesystem path using a parameter object or mutually exclusive reader keywords.
     fn open(
         py: Python<'_>,
         path: PathBuf,
@@ -214,11 +220,13 @@ impl SdfDataset {
         Self::_open_params(py, path, Some(&p))
     }
     #[staticmethod]
+    /// Open an SDF filesystem path using explicit reader parameters.
     fn open_with_params(py: Python<'_>, path: PathBuf, params: &SdfReadParams) -> PyResult<Self> {
         Self::_open_params(py, path, Some(params))
     }
 
     #[getter]
+    /// Number of indexed SDF records.
     fn len(&self) -> usize {
         self.inner.len()
     }
@@ -226,23 +234,28 @@ impl SdfDataset {
         self.inner.len()
     }
     #[getter]
+    /// Whether the indexed dataset contains zero records.
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
     #[getter]
+    /// Filesystem path associated with this SDF source.
     fn path(&self) -> PathBuf {
         self.inner.path().to_path_buf()
     }
+    /// Return byte-offset and source-location metadata for the indexed record, or None when out of range.
     fn metadata(&self, index: usize) -> Option<crate::detached_values::SdfRecordMetadata> {
         self.inner
             .metadata(index)
             .cloned()
             .map(|inner| crate::detached_values::SdfRecordMetadata { inner })
     }
+    /// Read the indexed record's source text; native IO and index errors propagate.
     fn record_text(&self, py: Python<'_>, index: usize) -> PyResult<String> {
         py.detach(|| self.inner.record_text(index))
             .map_err(SdfError::from_rust)
     }
+    /// Create an independent forward iterator over this indexed dataset.
     fn iter(&self) -> SdfDatasetIterator {
         SdfDatasetIterator {
             inner: self.inner.iter(),
@@ -252,6 +265,7 @@ impl SdfDataset {
         self.iter()
     }
     #[pyo3(signature=(size,mode=None,n_jobs=None,progress_bar=false))]
+    /// Create a batch iterator over this indexed dataset with the requested batch size and native execution settings.
     fn batches(
         &self,
         py: Python<'_>,
@@ -270,6 +284,7 @@ impl SdfDataset {
     }
 }
 #[pyclass(module = "cosmolkit")]
+/// Forward iterator over the records of an indexed SDF dataset.
 pub struct SdfDatasetIterator {
     inner: ck::SdfDatasetIterator,
 }
@@ -286,6 +301,7 @@ impl SdfDatasetIterator {
     }
 }
 #[pyclass(module = "cosmolkit")]
+/// Single-pass SDF record reader. Calling batches transfers its cursor; subsequent use of this stream raises RuntimeError.
 pub struct SdfRecordStream {
     inner: Option<ck::SdfRecordStream<BufReader<File>>>,
 }
@@ -303,6 +319,7 @@ impl SdfRecordStream {
 impl SdfRecordStream {
     #[staticmethod]
     #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+    /// Open an SDF filesystem path using a parameter object or mutually exclusive reader keywords.
     fn open(
         py: Python<'_>,
         path: PathBuf,
@@ -381,10 +398,12 @@ impl SdfRecordStream {
         Self::_open_params(py, path, Some(&p))
     }
     #[staticmethod]
+    /// Open an SDF filesystem path using explicit reader parameters.
     fn open_with_params(py: Python<'_>, path: PathBuf, params: &SdfReadParams) -> PyResult<Self> {
         Self::_open_params(py, path, Some(params))
     }
 
+    /// Consume the next SDF record, or return None at end of input; parse errors propagate.
     fn next_record(&mut self, py: Python<'_>) -> PyResult<Option<SdfRecord>> {
         let inner = self.inner.as_mut().ok_or_else(Self::transferred)?;
         py.detach(|| inner.next_record())
@@ -399,18 +418,22 @@ impl SdfRecordStream {
         self.next_record(py)
     }
     #[getter]
+    /// Whether the native stream has reached end of input; unavailable after ownership transfers to batches.
     fn is_end(&self) -> PyResult<bool> {
         Ok(self.active()?.is_end())
     }
     #[getter]
+    /// Number of records consumed by the native stream; unavailable after transfer to batches.
     fn records_consumed(&self) -> PyResult<usize> {
         Ok(self.active()?.records_consumed())
     }
     #[getter]
+    /// Number of source bytes consumed by the native stream; unavailable after transfer to batches.
     fn bytes_consumed(&self) -> PyResult<u64> {
         Ok(self.active()?.bytes_consumed())
     }
     #[getter]
+    /// Number of source lines consumed by the native stream; unavailable after transfer to batches.
     fn lines_consumed(&self) -> PyResult<usize> {
         Ok(self.active()?.lines_consumed())
     }
@@ -436,6 +459,7 @@ impl SdfRecordStream {
     }
 }
 #[pyclass(module = "cosmolkit", frozen)]
+/// SDF source path and parsing configuration used to create native batch iterators.
 pub struct SdfReader {
     inner: ck::SdfReader,
 }
@@ -443,6 +467,7 @@ pub struct SdfReader {
 impl SdfReader {
     #[staticmethod]
     #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+    /// Open an SDF filesystem path using a parameter object or mutually exclusive reader keywords.
     fn open(
         py: Python<'_>,
         path: PathBuf,
@@ -521,21 +546,25 @@ impl SdfReader {
         Self::_open_params(py, path, Some(&p))
     }
     #[staticmethod]
+    /// Open an SDF filesystem path using explicit reader parameters.
     fn open_with_params(py: Python<'_>, path: PathBuf, params: &SdfReadParams) -> PyResult<Self> {
         Self::_open_params(py, path, Some(params))
     }
 
     #[getter]
+    /// Filesystem path associated with this SDF source.
     fn path(&self) -> PathBuf {
         self.inner.path().to_path_buf()
     }
     #[getter]
+    /// Independent value copy of this reader's SDF parsing configuration.
     fn params(&self) -> SdfReadParams {
         SdfReadParams {
             inner: crate::parameters::NativeField::Owned(*self.inner.params()),
         }
     }
     #[pyo3(signature=(size,mode=None,n_jobs=None))]
+    /// Open this source as an iterator yielding molecule batches of at most size records.
     fn batches(
         &self,
         py: Python<'_>,
@@ -553,6 +582,7 @@ impl SdfReader {
     }
 }
 #[pyclass(module = "cosmolkit")]
+/// Forward iterator yielding MoleculeBatch values from a native SDF source.
 pub struct SdfBatchIterator {
     inner: ck::SdfBatchIterator,
 }
@@ -561,6 +591,7 @@ impl SdfBatchIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
+    /// Consume the next molecule batch, or return None when the native iterator is exhausted.
     fn next_batch(&mut self, py: Python<'_>) -> PyResult<Option<MoleculeBatch>> {
         py.detach(|| self.inner.next_batch())
             .map(|v| v.map(|inner| MoleculeBatch { inner }))
@@ -571,6 +602,7 @@ impl SdfBatchIterator {
     }
 }
 #[pyclass(module = "cosmolkit")]
+/// Forward iterator yielding molecule batches from an SDF reader.
 pub struct SdfReaderBatchIterator {
     inner: ck::SdfReaderBatchIterator<BufReader<File>>,
 }
@@ -579,6 +611,7 @@ impl SdfReaderBatchIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
+    /// Consume the next molecule batch, or return None when the native iterator is exhausted.
     fn next_batch(&mut self, py: Python<'_>) -> PyResult<Option<MoleculeBatch>> {
         py.detach(|| self.inner.next_batch())
             .map(|v| v.map(|inner| MoleculeBatch { inner }))
@@ -643,7 +676,7 @@ mod tests {
             assert!(!stream.call_method0("next_record")?.is_none());
             assert_eq!(
                 stream
-                    .call_method0("records_consumed")?
+                    .getattr("records_consumed")?
                     .extract::<usize>()?,
                 1
             );
@@ -652,7 +685,7 @@ mod tests {
             let mut expected = native
                 .batches(1, ck::BatchErrorMode::default(), Some(1))
                 .unwrap();
-            let iterator = stream.call_method1("batches", (1, "strict", 1))?;
+            let iterator = stream.call_method1("batches", (1, "raise", 1))?;
             assert_transferred(&stream)?;
             assert_transferred(&alias)?;
             drop(stream);
@@ -700,7 +733,7 @@ mod tests {
             assert!(stream.call_method1("batches", ("invalid",)).is_err());
             assert_eq!(
                 stream
-                    .call_method0("records_consumed")?
+                    .getattr("records_consumed")?
                     .extract::<usize>()?,
                 0
             );

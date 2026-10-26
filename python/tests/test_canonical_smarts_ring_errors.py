@@ -12,7 +12,7 @@ def test_source_ring_syntax_errors(smarts, kind, fields, diagnostic):
             constructor(smarts)
         error = caught.value
         assert str(error) == diagnostic
-        assert error.kind == kind
+        assert error.variant.name == kind
         assert error.domain == "search"
         for name, value in fields.items():
             assert getattr(error, name) == value
@@ -21,5 +21,5 @@ def test_source_ring_syntax_errors(smarts, kind, fields, diagnostic):
 def test_source_unclosed_ring_preserves_separate_parse_error():
     with pytest.raises(cosmolkit.SmartsParseError) as caught:
         cosmolkit.parse_smarts("C1CC")
-    assert caught.value.kind == "Parse"
+    assert caught.value.variant.name == "Parse"
     assert str(caught.value) == "SMARTS parse error: unclosed ring"

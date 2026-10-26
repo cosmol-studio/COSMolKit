@@ -5,9 +5,13 @@ use std::{error::Error, fmt};
 
 #[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// UFF energy/gradient evaluation settings for a selected stored conformer.
 pub struct UffEvaluationParams {
+    /// Cutoff multiplier relative to the van der Waals contact distance for UFF non-bonded interactions.
     pub vdw_threshold: f64,
+    /// Stored 3D conformer identifier, or None for the native default selection.
     pub conformer_id: Option<usize>,
+    /// Omit non-bonded interactions between disconnected molecular fragments.
     pub ignore_interfragment_interactions: bool,
 }
 impl Default for UffEvaluationParams {

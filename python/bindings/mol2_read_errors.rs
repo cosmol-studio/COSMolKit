@@ -32,12 +32,12 @@ error_projection!(Mol2ReadError, Mol2ReadErrorKind, ck::Mol2ReadError, "io", {
     | ck::Mol2ReadError::PropertyString(_) => None,
 }, source = Option<Mol2Source>, methods = {
     #[getter]
-    fn message(&self) -> Option<&str> {
+    #[doc = "Detailed native diagnostic message. Applies to Mol2ReadError.Parse. None when this payload is absent."] fn message(&self) -> Option<&str> {
         match &self.inner { ck::Mol2ReadError::Parse(value) => Some(value), _ => None }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn property_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> {
+    #[doc = "Structured PropertyStringError payload of Mol2ReadError.PropertyString; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn property_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> {
         match self.inner {
             ck::Mol2ReadError::PropertyString(value) => PropertyStringError::from_rust(value)
                 .value(py).extract().map(Some).map_err(Into::into),

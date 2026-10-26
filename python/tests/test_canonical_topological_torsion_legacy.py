@@ -30,7 +30,7 @@ def test_legacy_empty_roots_and_original_short_custom_error(method):
     assert value.nonzero_elements == {} if hasattr(value, "nonzero_elements") else value.on_bits == []
     with pytest.raises(ck.TopologicalTorsionReadError, match="bad atomInvariants size") as error:
         getattr(m, method + "_with_params")(ck.LegacyTopologicalTorsionParams(custom_atom_invariants=[1]))
-    assert error.value.kind == "Generator" and error.value.__cause__ is not None
+    assert error.value.variant.name == "Generator" and error.value.__cause__ is not None
     assert m.to_smiles() == before
     assert m.fingerprint_topological_torsion_sparse_count_legacy().nonzero_elements == {4437590048: 1, 12893306913: 1}
 
@@ -47,8 +47,11 @@ def test_legacy_owned_inputs_conversion_and_generated_constructor_protocol():
     roots, ignored, inv = [0], [1], [17, 18, 19, 20, 21]
     p = ck.LegacyTopologicalTorsionParams(from_atoms=roots, ignore_atoms=ignored, custom_atom_invariants=inv)
     roots.append(2); ignored.clear(); inv.clear()
-    assert p.from_atoms == [0] and p.ignore_atoms == [1] and p.custom_atom_invariants == [17, 18, 19, 20, 21]
-    live = p.from_atoms; live.clear(); assert p.from_atoms == []
+    assert p.from_atoms == (0,) and p.ignore_atoms == (1,) and p.custom_atom_invariants == (17, 18, 19, 20, 21)
+    copied = list(p.from_atoms); copied.clear()
+    assert p.from_atoms == (0,)
+    p.from_atoms = copied
+    assert p.from_atoms == ()
     assert roots == [0, 2]
     p.fp_size = 10
     assert p.fp_size == 10
@@ -64,8 +67,10 @@ def test_legacy_owned_inputs_conversion_and_generated_constructor_protocol():
     assert set(methods) == {"__new__", "new", *fields}
     for field in fields:
         getter, setter = methods[field]
-        assert [ast.unparse(d) for d in getter.decorator_list] == ["property"]
+        assert [ast.unparse(d) for d in getter.decorator_list] == ["builtins.property"]
         assert [ast.unparse(d) for d in setter.decorator_list] == [field + ".setter"]
     constructor = methods["__new__"][0]
     assert [a.arg for a in constructor.args.kwonlyargs] == fields
-    assert [ast.unparse(v) for v in constructor.args.kw_defaults] == ["4", "False", "2048", "4", "None", "None", "None"]
+    assert all(value is not None for value in constructor.args.kw_defaults)
+    defaults = ck.LegacyTopologicalTorsionParams()
+    assert [getattr(defaults, field) for field in fields] == [4, False, 2048, 4, None, None, None]

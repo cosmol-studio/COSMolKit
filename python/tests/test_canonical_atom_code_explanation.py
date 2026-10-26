@@ -23,14 +23,14 @@ def test_optional_chirality_unused_subtract_full_source_table_and_high_bits():
     assert fields(ck.AtomCodeExplanation.from_code(547 | (1 << 63), 0, True)) == ["C", 3, 0, "R"]
     assert fields(ck.AtomCodeExplanation.from_code((1 << 64) - 1)) == ["*", 7, 3]
 
-def test_source_key_error_three_retains_class_arguments_and_fields():
+def test_source_unknown_chirality_retains_typed_error_and_fields():
     for code in [1536, (1 << 64) - 1]:
         with pytest.raises(ck.AtomCodeExplanationError) as raised:
             ck.AtomCodeExplanation.from_code(code, include_chirality=True)
         error = raised.value
-        assert isinstance(error, KeyError)
-        assert error.args == (3,) and str(error) == "3"
-        assert (error.domain, error.kind, error.code) == ("Fingerprint", "UnknownChirality", 3)
+        assert isinstance(error, ValueError)
+        assert str(error) == "3"
+        assert (error.domain, error.variant.name, error.code) == ("fingerprint", "UnknownChirality", 3)
         assert ck.AtomCodeExplanation.from_code(code).chirality is None
 
 def test_owned_frozen_value_and_conversion_failures():
@@ -46,12 +46,13 @@ def test_owned_frozen_value_and_conversion_failures():
 def test_original_generated_stub_has_complete_error_and_value_protocols():
     tree = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
-    for name, base in [("AtomPairReadError", "builtins.ValueError"), ("TopologicalTorsionReadError", "builtins.ValueError"), ("AtomCodeExplanationError", "builtins.KeyError")]:
+    for name, base in [("AtomPairReadError", "ValueError"), ("TopologicalTorsionReadError", "ValueError"), ("AtomCodeExplanationError", "ValueError")]:
         declaration = classes[name]
         assert [ast.unparse(b) for b in declaration.bases] == [base]
-        attributes = {node.target.id: ast.unparse(node.annotation) for node in declaration.body if isinstance(node, ast.AnnAssign)}
-        assert attributes["domain"] == attributes["kind"] == "builtins.str"
-        if name == "AtomCodeExplanationError": assert attributes["code"] == "builtins.int"
+        attributes = {node.name: ast.unparse(node.returns) for node in declaration.body if isinstance(node, ast.FunctionDef) and any(ast.unparse(d) == "builtins.property" for d in node.decorator_list)}
+        assert attributes["domain"] == "str"
+        assert attributes["variant"] == name + "Kind"
+        if name == "AtomCodeExplanationError": assert attributes["code"] == "int | None"
         assert getattr(ck, name).__name__ == name
     value = classes["AtomCodeExplanation"]
     methods = {node.name: node for node in value.body if isinstance(node, ast.FunctionDef)}
@@ -60,5 +61,5 @@ def test_original_generated_stub_has_complete_error_and_value_protocols():
     assert [a.arg for a in constructor.args.args] == ["code", "branch_subtract", "include_chirality"]
     assert [ast.literal_eval(v) for v in constructor.args.defaults] == [0, False]
     for name in ["symbol", "branch_count", "pi_electrons", "chirality"]:
-        assert methods[name].decorator_list == []
-        assert [arg.arg for arg in methods[name].args.args] == ["self"]
+        assert [ast.unparse(d) for d in methods[name].decorator_list] == ["builtins.property"]
+        assert [arg.arg for arg in methods[name].args.posonlyargs + methods[name].args.args] == ["self"]

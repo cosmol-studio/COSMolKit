@@ -11,17 +11,24 @@ use cosmolkit_fingerprints::{
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+/// Complete reusable fingerprint call configuration, including generator settings and atom selections.
 pub struct AtomPairFingerprintParams {
     #[configuration(flatten)]
     pub generator: AtomPairGeneratorParams,
+    /// Optional zero-based atom indices restricting fingerprint contributions.
     pub from_atoms: Option<Vec<u32>>,
+    /// Optional zero-based atom indices excluded from fingerprint generation.
     pub ignore_atoms: Option<Vec<u32>>,
+    /// Optional per-atom invariant overrides in atom-index order.
     pub custom_atom_invariants: Option<Vec<u32>>,
+    /// Optional per-bond invariant overrides in bond-index order.
     pub custom_bond_invariants: Option<Vec<u32>>,
     /// Stored conformer ID for 3D distances; None uses the native default selection.
     /// Not used when the generator's use_2d option is true.
     pub conformer_id: Option<usize>,
+    /// Optional native atom-invariant provider; None uses the generator default.
     pub atom_invariants_generator: Option<AtomPairAtomInvariantsGenerator>,
+    /// Use legacy stereochemistry perception when preparing the fingerprint input.
     pub use_legacy_stereo_perception: bool,
 }
 impl Default for AtomPairFingerprintParams {

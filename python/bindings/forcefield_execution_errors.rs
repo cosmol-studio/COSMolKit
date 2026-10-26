@@ -100,14 +100,14 @@ error_projection!(FragmentCoordinateViewError,FragmentCoordinateViewErrorKind,ck
     KernelCoordinateRowWidth {id,row:usize,actual},
 },cause=|_:&ck::FragmentCoordinateViewError|None::<PyErr>,methods={
     #[getter]
-    fn id(&self)->usize { match self.inner {
+    #[doc = "Identifier involved in the native failure. Applies to FragmentCoordinateViewError.SelectedConformerMissing, FragmentCoordinateViewError.SelectedConformerDuplicated, FragmentCoordinateViewError.KernelCoordinateRowCount, FragmentCoordinateViewError.KernelCoordinateRowWidth."] fn id(&self)->usize { match self.inner {
         ck::FragmentCoordinateViewError::SelectedConformerMissing {id}
         |ck::FragmentCoordinateViewError::SelectedConformerDuplicated {id}
         |ck::FragmentCoordinateViewError::KernelCoordinateRowCount {id,..}
         |ck::FragmentCoordinateViewError::KernelCoordinateRowWidth {id,..}=>id,
     }}
     #[getter]
-    fn actual(&self)->Option<usize>{match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to FragmentCoordinateViewError.KernelCoordinateRowCount, FragmentCoordinateViewError.KernelCoordinateRowWidth. None when this payload is absent."] fn actual(&self)->Option<usize>{match self.inner {
         ck::FragmentCoordinateViewError::KernelCoordinateRowCount {actual,..}
         |ck::FragmentCoordinateViewError::KernelCoordinateRowWidth {actual,..}=>Some(actual),_=>None,
     }}
@@ -124,7 +124,7 @@ error_projection!(retained NonbondedFragmentMappingError,NonbondedFragmentMappin
     MissingAtom {atom_index},
 },cause=|inner:&RetainedError<ck::NonbondedFragmentMappingError>|inner.node().source().map(project),source=Option<FragmentSource>,methods={
     #[getter]
-    fn atom_index(&self)->Option<usize>{match self.inner.as_ref(){
+    #[doc = "Atom index involved in the native failure. Applies to NonbondedFragmentMappingError.AtomOutOfRange, NonbondedFragmentMappingError.DuplicateAtom, NonbondedFragmentMappingError.MissingAtom. None when this payload is absent."] fn atom_index(&self)->Option<usize>{match self.inner.as_ref(){
         ck::NonbondedFragmentMappingError::AtomOutOfRange {atom_index,..}
         |ck::NonbondedFragmentMappingError::DuplicateAtom {atom_index,..}
         |ck::NonbondedFragmentMappingError::MissingAtom {atom_index}=>Some(*atom_index),_=>None,
@@ -172,15 +172,16 @@ impl SerialResultCapacityError {
 }
 crate::error_framework::error_projection! {methods impl SerialResultCapacityError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "forcefield"
     }
     #[getter]
-    fn conformers(&self) -> usize {
+    #[doc = "Number of conformers requiring result slots."] fn conformers(&self) -> usize {
         self.inner.conformers()
     }
     #[getter]
-    fn result_slots(&self) -> usize {
+    #[doc = "Number of available result slots."] fn result_slots(&self) -> usize {
         self.inner.result_slots()
     }
     fn __str__(&self) -> String {
@@ -204,19 +205,20 @@ impl SerialCoordinateCountError {
 }
 crate::error_framework::error_projection! {methods impl SerialCoordinateCountError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "forcefield"
     }
     #[getter]
-    fn conformer_id(&self) -> usize {
+    #[doc = "Identifier of the conformer with an invalid coordinate count."] fn conformer_id(&self) -> usize {
         self.inner.conformer_id()
     }
     #[getter]
-    fn atoms(&self) -> usize {
+    #[doc = "Expected number of atom coordinates."] fn atoms(&self) -> usize {
         self.inner.atoms()
     }
     #[getter]
-    fn coordinates(&self) -> usize {
+    #[doc = "Number of coordinates actually present."] fn coordinates(&self) -> usize {
         self.inner.coordinates()
     }
     fn __str__(&self) -> String {
@@ -240,7 +242,7 @@ error_projection!(SerialConformerOptimizationError,SerialConformerOptimizationEr
     ck::SerialConformerOptimizationError::Optimization {source,..}=>Some(OptimizationStageError::from_rust(*source)),
 },source=Option<SerialSource>,methods={
     #[getter]
-    fn input_index(&self)->Option<usize>{match self.inner {
+    #[doc = "Index of the failing input. Applies to SerialConformerOptimizationError.CoordinateCount, SerialConformerOptimizationError.Optimization. None when this payload is absent."] fn input_index(&self)->Option<usize>{match self.inner {
         ck::SerialConformerOptimizationError::CoordinateCount {input_index,..}
         |ck::SerialConformerOptimizationError::Optimization {input_index,..}=>Some(input_index),_=>None,
     }}
@@ -314,11 +316,13 @@ macro_rules! source_record {
         }
         crate::error_framework::error_projection! {methods impl $name {
             #[getter]
+            /// Native subsystem reporting this failure, preserved independently of the human-readable message.
             fn domain(&self) -> &'static str {
                 "forcefield"
             }
             #[staticmethod]
             #[doc = r#"{"role":"error_source"}"#]
+            /// Immediate native cause, also available as __cause__; None when the native error has no cause.
             fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<$source> {
                 Ok(slf.getattr("__cause__")?.extract()?)
             }
@@ -369,27 +373,27 @@ error_projection!(retained MmffBuilderError,MmffBuilderErrorKind,ck::MmffBuilder
     Components(_),Valence(_),Rings(_),Missing3dConformer {conf_id},InvalidConformerId {conf_id},
 },cause=|inner:&RetainedError<ck::MmffBuilderError>|inner.node().source().map(project),source=Option<MmffBuilderSource>,methods={
     #[getter]
-    fn conf_id(&self)->Option<isize>{match self.inner.as_ref(){
+    #[doc = "Conformer identifier implicated in the failure. Applies to MmffBuilderError.Missing3dConformer, MmffBuilderError.InvalidConformerId. None when this payload is absent."] fn conf_id(&self)->Option<isize>{match self.inner.as_ref(){
         ck::MmffBuilderError::Missing3dConformer {conf_id}|ck::MmffBuilderError::InvalidConformerId {conf_id}=>Some(*conf_id),_=>None,
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn mol_properties(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MmffMolPropertiesError>>>{match self.inner.as_ref(){
+    #[doc = "Structured MmffMolPropertiesError payload of MmffBuilderError.MolProperties; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn mol_properties(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MmffMolPropertiesError>>>{match self.inner.as_ref(){
         ck::MmffBuilderError::MolProperties(value)=>MmffMolPropertiesError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn force_field_kernel(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ForceFieldKernelError>>>{match self.inner.as_ref(){
+    #[doc = "Structured ForceFieldKernelError payload of MmffBuilderError.ForceFieldKernel; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn force_field_kernel(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ForceFieldKernelError>>>{match self.inner.as_ref(){
         ck::MmffBuilderError::ForceFieldKernel(value)=>ForceFieldKernelError::from_rust(*value).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn torsion_bond_query(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<UffTorsionBondQueryError>>>{match self.inner.as_ref(){
+    #[doc = "Structured UffTorsionBondQueryError payload of MmffBuilderError.TorsionBondQuery; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn torsion_bond_query(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<UffTorsionBondQueryError>>>{match self.inner.as_ref(){
         ck::MmffBuilderError::TorsionBondQuery(value)=>UffTorsionBondQueryError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn fragment(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<NonbondedFragmentMappingError>>>{
+    #[doc = "Structured NonbondedFragmentMappingError payload of MmffBuilderError.Fragment; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn fragment(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<NonbondedFragmentMappingError>>>{
         if matches!(self.inner.as_ref(),ck::MmffBuilderError::Fragment(_)) {
             let node=self.inner.node().project(|parent|{
                 let ck::MmffBuilderError::Fragment(value)=parent.downcast_ref::<ck::MmffBuilderError>().expect("native MMFF builder payload owner") else {unreachable!("native fragment payload branch")};
@@ -400,17 +404,17 @@ error_projection!(retained MmffBuilderError,MmffBuilderErrorKind,ck::MmffBuilder
     }
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn components(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PathError>>>{match self.inner.as_ref(){
+    #[doc = "Structured PathError payload of MmffBuilderError.Components; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn components(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PathError>>>{match self.inner.as_ref(){
         ck::MmffBuilderError::Components(value)=>PathError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn valence(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>>{match self.inner.as_ref(){
+    #[doc = "Structured ValenceError payload of MmffBuilderError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>>{match self.inner.as_ref(){
         ck::MmffBuilderError::Valence(value)=>ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn rings(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>>{match self.inner.as_ref(){
+    #[doc = "Structured RingFindingError payload of MmffBuilderError.Rings; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn rings(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>>{match self.inner.as_ref(){
         ck::MmffBuilderError::Rings(value)=>RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
 });
@@ -423,12 +427,12 @@ error_projection!(retained MmffOptimizationFailure,MmffOptimizationFailureKind,c
 },cause=|inner:&RetainedError<ck::MmffOptimizationFailure>|inner.node().source().map(project),source=Option<MmffFailureSource>,methods={
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn properties(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MmffMolPropertiesError>>>{match self.inner.as_ref(){
+    #[doc = "Structured MmffMolPropertiesError payload of MmffOptimizationFailure.Properties; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn properties(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MmffMolPropertiesError>>>{match self.inner.as_ref(){
         ck::MmffOptimizationFailure::Properties(value)=>MmffMolPropertiesError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn builder(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MmffBuilderError>>>{
+    #[doc = "Structured MmffBuilderError payload of MmffOptimizationFailure.Builder; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn builder(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MmffBuilderError>>>{
         if matches!(self.inner.as_ref(),ck::MmffOptimizationFailure::Builder(_)) {
             let node=self.inner.node().project(|parent|{
                 let ck::MmffOptimizationFailure::Builder(value)=parent.downcast_ref::<ck::MmffOptimizationFailure>().expect("native MMFF failure payload owner") else {unreachable!("native builder payload branch")};
@@ -439,22 +443,22 @@ error_projection!(retained MmffOptimizationFailure,MmffOptimizationFailureKind,c
     }
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn kernel(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ForceFieldKernelError>>>{match self.inner.as_ref(){
+    #[doc = "Structured ForceFieldKernelError payload of MmffOptimizationFailure.Kernel; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn kernel(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ForceFieldKernelError>>>{match self.inner.as_ref(){
         ck::MmffOptimizationFailure::Kernel(value)=>ForceFieldKernelError::from_rust(*value).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn stage(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<OptimizationStageError>>>{match self.inner.as_ref(){
+    #[doc = "Structured OptimizationStageError payload of MmffOptimizationFailure.Stage; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn stage(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<OptimizationStageError>>>{match self.inner.as_ref(){
         ck::MmffOptimizationFailure::Stage(value)=>OptimizationStageError::from_rust(*value).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn serial(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<SerialConformerOptimizationError>>>{match self.inner.as_ref(){
+    #[doc = "Structured SerialConformerOptimizationError payload of MmffOptimizationFailure.Serial; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn serial(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<SerialConformerOptimizationError>>>{match self.inner.as_ref(){
         ck::MmffOptimizationFailure::Serial(value)=>SerialConformerOptimizationError::from_rust(*value).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn threads(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<UffThreadCountError>>>{match self.inner.as_ref(){
+    #[doc = "Structured UffThreadCountError payload of MmffOptimizationFailure.Threads; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn threads(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<UffThreadCountError>>>{match self.inner.as_ref(){
         ck::MmffOptimizationFailure::Threads(value)=>UffThreadCountError::from_rust(*value).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None),
     }}
 });
@@ -467,12 +471,14 @@ crate::enums::binding_enum!(UffEvaluationFailureKind, {
 });
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+#[doc = "Native UFF evaluation failure and variant-specific diagnostic data."]
 pub struct UffEvaluationFailure {
     inner: RetainedError<ck::UffEvaluationError>,
 }
 #[pymethods]
 impl UffEvaluationFailure {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> UffEvaluationFailureKind {
         match self.inner.failure() {
             ck::UffEvaluationFailure::MissingConformer { requested: _ } => {
@@ -484,6 +490,7 @@ impl UffEvaluationFailure {
         }
     }
     #[getter]
+    #[doc = "Requested conformer identifier. Present for `UffEvaluationFailure.MissingConformer`; None when unavailable."]
     fn requested(&self) -> Option<usize> {
         match self.inner.failure() {
             ck::UffEvaluationFailure::MissingConformer { requested } => *requested,
@@ -491,6 +498,7 @@ impl UffEvaluationFailure {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `UffEvaluationFailure.Preparation`; None when unavailable."]
     fn preparation(
         &self,
         py: Python<'_>,
@@ -514,6 +522,7 @@ impl UffEvaluationFailure {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `UffEvaluationFailure.Construction`; None when unavailable."]
     fn construction(
         &self,
         py: Python<'_>,
@@ -538,6 +547,7 @@ impl UffEvaluationFailure {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `UffEvaluationFailure.Kernel`; None when unavailable."]
     fn kernel(
         &self,
         py: Python<'_>,
@@ -596,18 +606,20 @@ impl UffEvaluationError {
 }
 crate::error_framework::error_projection! {methods impl UffEvaluationError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "uff"
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn failure(&self) -> UffEvaluationFailure {
+    #[doc = "Structured native UFF evaluation failure."] fn failure(&self) -> UffEvaluationFailure {
         UffEvaluationFailure {
             inner: self.inner.clone(),
         }
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<EvaluationSource>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -657,17 +669,19 @@ impl UffOptimizationError {
 }
 crate::error_framework::error_projection! {methods impl UffOptimizationError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "uff"
     }
     #[getter]
-    fn kind(&self) -> UffOptimizationErrorKind {
+    #[doc = "Native UFF optimization failure category."] fn kind(&self) -> UffOptimizationErrorKind {
         UffOptimizationErrorKind {
             inner: self.inner.kind(),
         }
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<UffSource>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }

@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use std::sync::Arc;
 
 #[pyfunction]
+/// Parse mmCIF text and construct the canonical Protein projection.
 pub fn protein_from_mmcif(py: Python<'_>, text: &str) -> PyResult<Protein> {
     py.detach(|| ck::Protein::from_mmcif(text))
         .map(|inner| Protein {
@@ -18,6 +19,7 @@ pub fn protein_from_mmcif(py: Python<'_>, text: &str) -> PyResult<Protein> {
 
 #[pyfunction]
 #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,max_line_length=crate::arguments::Argument::Missing,check_non_ascii=crate::arguments::Argument::Missing,ignore_ter=crate::arguments::Argument::Missing,split_chain_on_ter=crate::arguments::Argument::Missing,skip_remarks=crate::arguments::Argument::Missing))]
+/// Parse PDB text and construct the canonical Protein projection under the supplied reader parameters.
 pub fn protein_from_pdb(
     py: Python<'_>,
     text: &str,

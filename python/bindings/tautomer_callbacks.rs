@@ -136,6 +136,7 @@ enum ViewStorage {
 }
 
 #[pyclass(module = "cosmolkit")]
+/// Scoped enumeration molecule view. Call snapshot() during the callback to retain shared native ownership; expired live views raise ReferenceError.
 pub struct TautomerMoleculeView {
     storage: ViewStorage,
 }
@@ -172,6 +173,7 @@ impl TautomerMoleculeView {
             storage: ViewStorage::Owned(Mutex::new(value)),
         })
     }
+    /// Create an owned snapshot that remains accessible after the callback ends.
     fn to_owned(&self) -> PyResult<Self> {
         let value = self.with_native(|native| native.to_owned())?;
         Ok(Self {
@@ -179,19 +181,23 @@ impl TautomerMoleculeView {
         })
     }
     #[getter]
+    /// Number of atoms in this molecule view; expired callback views raise ReferenceError.
     fn num_atoms(&self) -> PyResult<usize> {
         self.with_native(|native| native.num_atoms())
     }
     #[getter]
+    /// Number of bonds in this molecule view; expired callback views raise ReferenceError.
     fn num_bonds(&self) -> PyResult<usize> {
         self.with_native(|native| native.num_bonds())
     }
+    /// Write the viewed molecule using the native SMILES writer.
     fn to_smiles(&self, py: Python<'_>) -> PyResult<String> {
         let text = self
             .with_native(|native| native.to_smiles())?
             .map_err(TautomerRunError::from_rust)?;
         decode_source_text(py, &text)
     }
+    /// Evaluate the native tautomer score, allowing its native score-cache updates.
     fn tautomer_score(&self) -> PyResult<TautomerScore> {
         // Only the native short loan can update its score cache. Release it
         // before converting values/errors; no Python callback runs under it.
@@ -199,9 +205,11 @@ impl TautomerMoleculeView {
             .map(|inner| TautomerScore { inner })
             .map_err(TautomerRunError::from_rust)
     }
+    /// Return the degree of the requested atom, or None for an absent atom identifier.
     fn atom_degree(&self, id: usize) -> PyResult<Option<usize>> {
         self.with_native(|native| native.atom_degree(ck::AtomId::new(id)))
     }
+    /// Compute detached valence and hydrogen metadata in atom order.
     fn atom_metadata(&self) -> PyResult<Vec<AtomMetadata>> {
         self.with_native(|native| native.atom_metadata())?
             .map(|values| {
@@ -225,6 +233,7 @@ impl TautomerMoleculeView {
         })
     }
     #[getter]
+    /// Independent detached bond values in stored order.
     fn bonds(&self) -> PyResult<Vec<Bond>> {
         self.with_native(|native| {
             native
@@ -235,6 +244,7 @@ impl TautomerMoleculeView {
                 .collect()
         })
     }
+    /// Return a detached atom value by zero-based identifier, or None if absent.
     fn atom(&self, id: usize) -> PyResult<Option<Atom>> {
         self.with_native(|native| {
             native
@@ -243,6 +253,7 @@ impl TautomerMoleculeView {
                 .map(|inner| Atom { inner })
         })
     }
+    /// Return a detached bond value by zero-based identifier, or None if absent.
     fn bond(&self, id: usize) -> PyResult<Option<Bond>> {
         self.with_native(|native| {
             native
@@ -261,17 +272,20 @@ impl TautomerMoleculeView {
 }
 
 #[pyclass(module = "cosmolkit")]
+/// Scoped enumeration progress and candidate access. Explicit snapshots retain a fixed candidate set after the callback returns.
 pub struct TautomerProgress {
     storage: ProgressStorage,
 }
 #[pymethods]
 impl TautomerProgress {
+    /// Retain this candidate set and progress metadata as an owned shared snapshot; subsequent enumeration does not alter it.
     fn snapshot(&self) -> PyResult<Self> {
         let native = self.storage.with_native(|value| value.snapshot())?;
         Ok(Self {
             storage: ProgressStorage::Owned(Arc::new(Mutex::new(native))),
         })
     }
+    /// Create an owned snapshot that remains accessible after the callback ends.
     fn to_owned(&self) -> PyResult<Self> {
         let native = self.storage.with_native(|value| value.to_owned())?;
         Ok(Self {
@@ -279,22 +293,27 @@ impl TautomerProgress {
         })
     }
     #[getter]
+    /// Number of candidates currently retained by the enumeration.
     fn len(&self) -> PyResult<usize> {
         self.storage.with_native(|native| native.len())
     }
     #[getter]
+    /// Whether no candidate is currently retained.
     fn is_empty(&self) -> PyResult<bool> {
         self.storage.with_native(|native| native.is_empty())
     }
     #[getter]
+    /// Current enumeration completion or stopping status.
     fn status(&self) -> PyResult<TautomerEnumerationStatus> {
         self.storage.with_native(|native| native.status().into())
     }
     #[getter]
+    /// Number of transform applications performed so far.
     fn num_transforms(&self) -> PyResult<u32> {
         self.storage.with_native(|native| native.num_transforms())
     }
     #[getter]
+    /// Zero-based identifiers of atoms modified during enumeration.
     fn modified_atoms(&self) -> PyResult<BTreeSet<usize>> {
         self.storage.with_native(|native| {
             native
@@ -305,6 +324,7 @@ impl TautomerProgress {
         })
     }
     #[getter]
+    /// Zero-based identifiers of bonds modified during enumeration.
     fn modified_bonds(&self) -> PyResult<BTreeSet<usize>> {
         self.storage.with_native(|native| {
             native
@@ -314,6 +334,7 @@ impl TautomerProgress {
                 .collect()
         })
     }
+    /// Return the canonical key and candidate view at an index, or None if absent. A live callback entry expires with its callback.
     fn entry(
         &self,
         py: Python<'_>,
@@ -336,6 +357,7 @@ impl TautomerProgress {
         .transpose()
     }
     #[doc = r#"{"role":"return_type","imports":["collections.abc"],"type":"collections.abc.Iterator[tuple[str, TautomerMoleculeView]]"}"#]
+    /// Iterate over canonical-key/candidate-view pairs; a live callback iterator expires when its callback returns.
     fn entries<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
         // Validate expiry now, including creation of an otherwise unused iterator.
         self.storage.with_native(|_| ())?;
@@ -483,7 +505,7 @@ retained = []
 seen = []
 def score_parts(value):
     score = value.tautomer_score()
-    return (score.ring(), score.substructure(), score.hetero_hydrogen(), score.total())
+    return (score.ring, score.substructure, score.hetero_hydrogen, score.total)
 def check(value):
     key = value.to_smiles()
     assert score_parts(value) == expected[key]
@@ -566,7 +588,7 @@ marker = LookupError('scorer marker')
 def verify_expired():
     for previous in live:
         try:
-            previous.num_atoms()
+            previous.num_atoms
         except ReferenceError:
             pass
         else:
@@ -577,11 +599,11 @@ def scorer(candidate):
     snapshots.append(candidate.snapshot())
     if failure is not None:
         raise failure
-    return candidate.num_atoms()
+    return candidate.num_atoms
 def verify_after():
     verify_expired()
     assert len(snapshots) >= 2
-    assert all(snapshot.num_atoms() == 4 for snapshot in snapshots)
+    assert all(snapshot.num_atoms == 4 for snapshot in snapshots)
 ",
                 c"<tautomer-scorer>",
                 c"scorer_lease_test",
@@ -638,13 +660,13 @@ results = []
 def during(live, snapshot, progress):
     try:
         try:
-            live.num_atoms()
+            live.num_atoms
         except RuntimeError:
             pass
         else:
             raise AssertionError('foreign thread accessed a borrowed native view')
-        results.extend([snapshot.num_atoms(), progress.entry(0)[1].num_atoms(),
-                        next(progress.entries())[1].num_atoms()])
+        results.extend([snapshot.num_atoms, progress.entry(0)[1].num_atoms,
+                        next(progress.entries())[1].num_atoms])
     except BaseException as error:
         failures.append(error)
 def callback(source, progress):
@@ -667,8 +689,8 @@ def after():
                 pass
             else:
                 raise AssertionError('expired loan must expire on every thread')
-        results.extend([retained[0].num_atoms(), retained[1].len(),
-                        retained[2].num_atoms(), next(retained[3])[1].num_atoms()])
+        results.extend([retained[0].num_atoms, retained[1].len,
+                        retained[2].num_atoms, next(retained[3])[1].num_atoms])
     except BaseException as error:
         failures.append(error)
 def verify_after():
@@ -719,12 +741,12 @@ saved = []
 def callback(source, progress):
     iterator = progress.entries()
     key, candidate = next(iterator)
-    assert source.num_atoms() == candidate.num_atoms()
-    assert progress.len() > 0  # The iterator must not keep progress borrowed.
+    assert source.num_atoms == candidate.num_atoms
+    assert progress.len > 0  # The iterator must not keep progress borrowed.
     assert progress.entry(0)[0] == key
     saved.extend([source, progress, iterator, candidate,
                   source.snapshot(), progress.snapshot(), candidate.snapshot(),
-                  source.atom(0), source.properties()])
+                  source.atom(0), source.properties])
     return False
 ",
                 c"<tautomer-lease>",
@@ -756,22 +778,22 @@ def callback(source, progress):
             assert_eq!(
                 saved
                     .get_item(4)?
-                    .call_method0("num_atoms")?
+                    .getattr("num_atoms")?
                     .extract::<usize>()?,
                 4
             );
             let owned = saved.get_item(5)?;
-            assert!(owned.call_method0("len")?.extract::<usize>()? > 0);
+            assert!(owned.getattr("len")?.extract::<usize>()? > 0);
             let child = owned.call_method1("entry", (0,))?.get_item(1)?;
             let owned_iterator = owned.call_method0("entries")?;
             saved.del_item(5)?;
             drop(owned);
-            assert_eq!(child.call_method0("num_atoms")?.extract::<usize>()?, 4);
+            assert_eq!(child.getattr("num_atoms")?.extract::<usize>()?, 4);
             assert_eq!(
                 owned_iterator
                     .call_method0("__next__")?
                     .get_item(1)?
-                    .call_method0("num_atoms")?
+                    .getattr("num_atoms")?
                     .extract::<usize>()?,
                 4
             );
@@ -779,18 +801,18 @@ def callback(source, progress):
             assert_eq!(
                 saved
                     .get_item(5)?
-                    .call_method0("num_atoms")?
+                    .getattr("num_atoms")?
                     .extract::<usize>()?,
                 4
             );
             assert_eq!(
                 saved
                     .get_item(6)?
-                    .call_method0("atomic_number")?
+                    .getattr("atomic_number")?
                     .extract::<u8>()?,
                 6
             );
-            saved.get_item(7)?.call_method0("name")?;
+            saved.get_item(7)?.getattr("name")?;
             Ok(())
         })
         .unwrap();

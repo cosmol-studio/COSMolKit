@@ -53,8 +53,10 @@ def test_write_error_has_registered_type_and_os_payload(tmp_path, suffix):
     with pytest.raises(cosmolkit.DrawingWriteError) as caught:
         getattr(molecule, "write_" + suffix)(str(path), 120, 80)
     error = caught.value
-    assert isinstance(error, OSError)
-    assert error.domain == "drawing" and error.kind == "Io"
-    assert error.errno == errno.ENOENT and error.filename == str(path)
+    assert isinstance(error, ValueError)
+    assert error.domain == "depict" and error.variant.name == "Io"
+    assert error.path == path
+    assert isinstance(error.__cause__, cosmolkit.IoError)
+    assert error.__cause__.raw_os_error == errno.ENOENT
     assert not molecule.has_2d_coordinates
     assert not path.exists()

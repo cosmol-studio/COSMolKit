@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 #[pyfunction]
 #[pyo3(signature=(inputs, params=crate::arguments::Argument::Missing, *, store_all=crate::arguments::Argument::Missing, maximize_bonds=crate::arguments::Argument::Missing, threshold=crate::arguments::Argument::Missing, timeout=crate::arguments::Argument::Missing, verbose=crate::arguments::Argument::Missing, atom_compare_parameters=crate::arguments::Argument::Missing, bond_compare_parameters=crate::arguments::Argument::Missing, atom_comparator=crate::arguments::Argument::Missing, bond_comparator=crate::arguments::Argument::Missing, initial_seed=crate::arguments::Argument::Missing))]
+/// Search for the maximum common substructure of the supplied molecules using the selected matching, timeout and callback policy.
 pub fn maximum_common_substructure(
     py: Python<'_>,
     inputs: Vec<Py<Molecule>>,
@@ -148,6 +149,7 @@ pub fn _maximum_common_substructure_keywords(
 }
 
 #[pyfunction]
+/// Search for the maximum common substructure with explicit McsParameters, retaining native completion status and diagnostics.
 pub fn maximum_common_substructure_with_params(
     py: Python<'_>,
     inputs: Vec<Py<Molecule>>,
@@ -372,10 +374,7 @@ mod tests {
             drop(baseline);
             for (query, count) in queries {
                 assert_eq!(
-                    query
-                        .bind(py)
-                        .call_method0("num_atoms")?
-                        .extract::<usize>()?,
+                    query.bind(py).getattr("num_atoms")?.extract::<usize>()?,
                     count
                 );
             }

@@ -130,9 +130,12 @@ impl Molecule {
             .map_err(crate::valence_errors::ValenceError::from_rust)
     }
 }
+#[cfg(feature = "cap-fingerprints")]
 crate::errors::enum_error!(AtomCodeExplanationError,AtomCodeExplanationErrorKind,ck::AtomCodeExplanationError,{UnknownChirality=>ck::AtomCodeExplanationError::UnknownChirality{..}},{#[wasm_bindgen(getter)]pub fn code(&self)->u8{match self.inner.as_ref(){ck::AtomCodeExplanationError::UnknownChirality{code}=>*code}}});
+#[cfg(feature = "cap-fingerprints")]
 #[wasm_bindgen]
 pub struct AtomCodeExplanation(ck::AtomCodeExplanation);
+#[cfg(feature = "cap-fingerprints")]
 #[wasm_bindgen]
 impl AtomCodeExplanation {
     #[wasm_bindgen(js_name=fromCode)]
@@ -172,12 +175,14 @@ impl AtomCodeExplanation {
         self.0.chirality().map(Into::into)
     }
 }
+#[cfg(feature = "cap-fingerprints")]
 #[derive(serde::Serialize, Tsify)]
 #[serde(transparent)]
 pub struct ExplainedPath(
     #[tsify(type = "ReadonlyArray<readonly [string, number, number]>")]
     Vec<(&'static str, u32, u32)>,
 );
+#[cfg(feature = "cap-fingerprints")]
 #[wasm_bindgen(js_name=explainPathScore)]
 pub fn explain_path_score(
     score: Ts<input::U64Input>,

@@ -12,6 +12,7 @@ pub(crate) type MmffVariantInput =
 
 #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
+/// UFF optimization failure category, including an optional requested conformer identifier.
 pub struct UffOptimizationErrorKind {
     pub(crate) inner: ck::UffOptimizationErrorKind,
 }
@@ -39,12 +40,14 @@ impl UffOptimizationErrorKind {
     };
     #[staticmethod]
     #[pyo3(name="MissingConformer", signature=(requested))]
+    /// Construct a missing-conformer category with the optional requested conformer ID.
     fn missing_conformer(requested: Option<usize>) -> Self {
         Self {
             inner: ck::UffOptimizationErrorKind::MissingConformer { requested },
         }
     }
     #[getter]
+    /// Requested conformer ID for MissingConformer, or None for unspecified requests and other categories.
     fn requested(&self) -> Option<usize> {
         match self.inner {
             ck::UffOptimizationErrorKind::MissingConformer { requested } => requested,
@@ -59,6 +62,7 @@ impl UffOptimizationErrorKind {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Optional atom-to-bit and bit-to-path provenance collected during a topological fingerprint call.
     pub struct TopologicalFingerprintOutput {
         pub(crate) inner: ck::TopologicalFingerprintOutput,
     }
@@ -79,10 +83,12 @@ impl TopologicalFingerprintOutput {
         }
     }
     #[getter]
+    /// Independent per-atom lists of associated fingerprint bits, or None if not collected.
     fn atom_bits(&self) -> Option<Vec<Vec<u32>>> {
         self.inner.atom_bits.clone()
     }
     #[getter]
+    /// Independent map from fingerprint bit to bond-index paths, or None if not collected.
     fn bit_info(&self) -> Option<BTreeMap<u32, Vec<Vec<i32>>>> {
         self.inner.bit_info.clone()
     }
@@ -91,6 +97,7 @@ impl TopologicalFingerprintOutput {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// MMFF atom type and force-field formal/partial charge values.
     pub struct MmffAtomProperties {
         pub(crate) inner: ck::MmffAtomProperties,
     }
@@ -108,14 +115,17 @@ impl MmffAtomProperties {
         }
     }
     #[getter]
+    /// MMFF atom type code.
     fn atom_type(&self) -> u8 {
         self.inner.atom_type()
     }
     #[getter]
+    /// MMFF force-field formal charge, which may be fractional.
     fn formal_charge(&self) -> f64 {
         self.inner.formal_charge()
     }
     #[getter]
+    /// MMFF partial charge assigned to this atom.
     fn partial_charge(&self) -> f64 {
         self.inner.partial_charge()
     }

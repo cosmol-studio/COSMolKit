@@ -31,14 +31,14 @@ error_projection!(PdbWriteError, PdbWriteErrorKind, ck::PdbWriteError, "io", {
     | ck::PdbWriteError::MissingCoordinate { .. } | ck::PdbWriteError::ConflictingCoordinateSelection => None,
 }, source = Option<PdbSource>, methods = {
     #[getter]
-    fn id(&self) -> Option<usize> { match self.inner {
+    #[doc = "Identifier involved in the native failure. Applies to PdbWriteError.ConformerNotFound, PdbWriteError.MissingCoordinate. None when this payload is absent."] fn id(&self) -> Option<usize> { match self.inner {
         ck::PdbWriteError::ConformerNotFound { id }
         | ck::PdbWriteError::MissingCoordinate { id, .. } => Some(id),
         _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn property_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> {
+    #[doc = "Structured PropertyStringError payload of PdbWriteError.Property; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn property_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> {
         match self.inner {
             ck::PdbWriteError::Property(value) => PropertyStringError::from_rust(value)
                 .value(py).extract().map(Some).map_err(Into::into),

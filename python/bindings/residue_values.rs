@@ -68,6 +68,7 @@ enum_value!(ResidueCode, {
                 .ok_or_else(|| PyValueError::new_err(format!("invalid ResidueCode: {code}"))),
         }
     }
+    /// Native numeric residue-table code.
     fn as_u16(&self) -> u16 {
         ck::ResidueCode::from(*self).as_u16()
     }
@@ -118,10 +119,12 @@ pub struct ResidueCodeParseError {
 }
 crate::error_framework::error_projection! {methods impl ResidueCodeParseError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
+    /// Original residue-code text rejected by the parser.
     fn input(&self) -> &str {
         self.inner.input()
     }
@@ -147,6 +150,7 @@ pub enum ResidueCodeInput {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Readonly residue-table entry containing chemical classification, sequence codes and tabulated composition information.
     pub struct ResidueInfo {
         pub(crate) inner: ck::ResidueInfo,
     }
@@ -154,58 +158,72 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl ResidueInfo {
     #[getter]
+    /// Canonical residue code associated with this table entry or identity.
     fn code(&self) -> ResidueCode {
         self.inner.code.into()
     }
     #[getter]
+    /// Stored residue name.
     fn name(&self) -> &'static str {
         self.inner.name
     }
     #[getter]
+    /// Chemical category of the residue-table entry.
     fn kind(&self) -> ResidueInfoKind {
         self.inner.kind.into()
     }
     #[getter]
+    /// Native linking-type code for this residue.
     fn linking_type(&self) -> u8 {
         self.inner.linking_type
     }
     #[getter]
+    /// One-letter code stored in the native residue table.
     fn one_letter_code(&self) -> char {
         self.inner.one_letter_code
     }
     #[getter]
+    /// Hydrogen count recorded in the residue table.
     fn hydrogen_count(&self) -> u8 {
         self.inner.hydrogen_count
     }
     #[getter]
+    /// Residue molecular weight recorded in the native table.
     fn weight(&self) -> f32 {
         self.inner.weight
     }
     #[getter]
+    /// Canonical parent one-letter code, or None when no canonical code is known.
     fn canonical_one_letter_code(&self) -> Option<char> {
         self.inner.canonical_one_letter_code()
     }
     #[getter]
+    /// Standard parent residue code for this entry, or None when unavailable.
     fn parent_standard_code(&self) -> Option<ResidueCode> {
         self.inner.parent_standard_code().map(Into::into)
     }
     #[getter]
+    /// Whether the native table classifies this as a modified amino acid.
     fn is_modified_amino_acid(&self) -> bool {
         self.inner.is_modified_amino_acid()
     }
     #[getter]
+    /// Whether this is a recognized entry rather than the unknown-residue sentinel.
     fn found(&self) -> bool {
         self.inner.found()
     }
     #[getter]
+    /// Whether this entry is classified as water.
     fn is_water(&self) -> bool {
         self.inner.is_water()
     }
     #[getter]
+    /// Whether this entry is classified as a DNA residue.
     fn is_dna(&self) -> bool {
         self.inner.is_dna()
     }
     #[getter]
+    /// Whether this entry is classified as an RNA residue.
     fn is_rna(&self) -> bool {
         self.inner.is_rna()
     }
@@ -213,6 +231,7 @@ impl ResidueInfo {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Residue name preserved together with its canonical table lookup, including unrecognized names.
     pub struct ResidueIdentity {
         pub(crate) inner: ck::ResidueIdentity,
     }
@@ -224,32 +243,38 @@ impl ResidueIdentity {
         Self::new(name)
     }
     #[staticmethod]
+    /// Create a residue identity preserving the supplied name and its native table lookup.
     fn new(name: String) -> Self {
         Self {
             inner: ck::ResidueIdentity::new(name),
         }
     }
     #[getter]
+    /// Stored residue name.
     fn name(&self) -> &str {
         self.inner.name()
     }
     #[getter]
+    /// Canonical residue code associated with this table entry or identity.
     fn code(&self) -> ResidueCode {
         self.inner.code().into()
     }
     #[getter]
+    /// Native table information for this residue identity.
     fn info(&self) -> ResidueInfo {
         ResidueInfo {
             inner: self.inner.info(),
         }
     }
     #[getter]
+    /// Whether the identity matches a known native residue-table entry.
     fn is_tabulated(&self) -> bool {
         self.inner.is_tabulated()
     }
 }
 
 #[pyfunction]
+/// Return residue-table information at the given index; invalid indices raise IndexError.
 pub fn residue_info(index: usize) -> PyResult<ResidueInfo> {
     // Rust's raw table index has a valid-index precondition. Its checked public
     // counterpart validates that boundary without a copied length or table.
@@ -258,29 +283,35 @@ pub fn residue_info(index: usize) -> PyResult<ResidueInfo> {
         .ok_or_else(|| PyIndexError::new_err("residue information index out of range"))
 }
 #[pyfunction]
+/// Return residue-table information at the given index, or None when out of bounds.
 pub fn residue_info_checked(index: usize) -> Option<ResidueInfo> {
     ck::residue_info_checked(index).map(|inner| ResidueInfo { inner })
 }
 #[pyfunction]
+/// Look up a residue name in the canonical table, preserving the native unknown-name sentinel.
 pub fn find_residue_info_index(name: &str) -> usize {
     ck::find_residue_info_index(name)
 }
 #[pyfunction]
+/// Look up canonical residue information by name, returning the native unknown-residue entry when unrecognized.
 pub fn find_residue_info(name: &str) -> ResidueInfo {
     ResidueInfo {
         inner: ck::find_residue_info(name),
     }
 }
 #[pyfunction]
+/// Convert a residue name to the canonical ResidueCode, preserving the native unknown-name value.
 pub fn residue_code(name: &str) -> ResidueCode {
     ck::residue_code(name).into()
 }
 #[pyfunction]
+/// Expand a one-letter residue code in the selected residue category; return None when the native table has no expansion.
 pub fn expand_one_letter(code: char, kind: ResidueInfoKindInput) -> PyResult<Option<&'static str>> {
     Ok(ck::expand_one_letter(code, kind.into_rust()?))
 }
 
 #[pyfunction]
+/// Expand one-letter sequence codes using the selected residue category and native sequence expansion rules.
 pub fn expand_one_letter_sequence(
     sequence: &str,
     kind: ResidueInfoKindInput,

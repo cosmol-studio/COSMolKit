@@ -21,8 +21,11 @@ pub enum ValenceModel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Valence-assignment model and strictness settings.
 pub struct ValenceParams {
+    /// Valence-assignment model to use.
     pub model: ValenceModel,
+    /// Reject invalid valence states according to the native strict valence rules.
     pub strict: bool,
 }
 

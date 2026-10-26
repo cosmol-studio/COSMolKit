@@ -43,32 +43,32 @@ error_projection!(ForceFieldKernelError,ForceFieldKernelErrorKind,ck::ForceField
 },cause=|_:&ck::ForceFieldKernelError|None::<PyErr>,methods={
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn argument(&self)->Option<KernelArgument>{match self.inner {
+    #[doc = "Argument rejected by the native operation. Applies to ForceFieldKernelError.IndexOutOfRange, ForceFieldKernelError.BondIndexOutOfRange, ForceFieldKernelError.AngleIndexOutOfRange, ForceFieldKernelError.TorsionIndexOutOfRange. None when this payload is absent."] fn argument(&self)->Option<KernelArgument>{match self.inner {
         ck::ForceFieldKernelError::IndexOutOfRange {argument,..}=>Some(Source::First(argument.into())),
         ck::ForceFieldKernelError::BondIndexOutOfRange {argument,..}=>Some(Source::Second(Source::First(argument.into()))),
         ck::ForceFieldKernelError::AngleIndexOutOfRange {argument,..}=>Some(Source::Second(Source::Second(Source::First(argument.into())))),
         ck::ForceFieldKernelError::TorsionIndexOutOfRange {argument,..}=>Some(Source::Second(Source::Second(Source::Second(argument.into())))),_=>None,
     }}
     #[getter]
-    fn index(&self)->Option<i64>{match self.inner {
+    #[doc = "Index reported by the failing native check. Applies to ForceFieldKernelError.IndexOutOfRange, ForceFieldKernelError.BondIndexOutOfRange, ForceFieldKernelError.AngleIndexOutOfRange, ForceFieldKernelError.TorsionIndexOutOfRange, ForceFieldKernelError.BadFixedPoint, ForceFieldKernelError.OopAddressOutsideDefinedSource, ForceFieldKernelError.TorsionAddressOutsideDefinedSource. None when this payload is absent."] fn index(&self)->Option<i64>{match self.inner {
         ck::ForceFieldKernelError::IndexOutOfRange {index,..}|ck::ForceFieldKernelError::BondIndexOutOfRange {index,..}
         |ck::ForceFieldKernelError::AngleIndexOutOfRange {index,..}|ck::ForceFieldKernelError::TorsionIndexOutOfRange {index,..}=>Some(i64::from(index)),
         ck::ForceFieldKernelError::BadFixedPoint {index,..}|ck::ForceFieldKernelError::OopAddressOutsideDefinedSource {index,..}=>Some(i64::from(index)),
         ck::ForceFieldKernelError::TorsionAddressOutsideDefinedSource {index,..}=>Some(i64::from(index)),_=>None,
     }}
     #[getter]
-    fn upper_bound(&self)->Option<usize>{match self.inner {
+    #[doc = "Upper bound used by the failed range check. Applies to ForceFieldKernelError.IndexOutOfRange, ForceFieldKernelError.BadFixedPoint, ForceFieldKernelError.BondIndexOutOfRange, ForceFieldKernelError.AngleIndexOutOfRange, ForceFieldKernelError.TorsionIndexOutOfRange. None when this payload is absent."] fn upper_bound(&self)->Option<usize>{match self.inner {
         ck::ForceFieldKernelError::IndexOutOfRange {upper_bound,..}|ck::ForceFieldKernelError::BadFixedPoint {upper_bound,..}=>Some(upper_bound as usize),
         ck::ForceFieldKernelError::BondIndexOutOfRange {upper_bound,..}|ck::ForceFieldKernelError::AngleIndexOutOfRange {upper_bound,..}
         |ck::ForceFieldKernelError::TorsionIndexOutOfRange {upper_bound,..}=>Some(upper_bound),_=>None,
     }}
     #[getter]
-    fn order(&self)->Option<u32>{match self.inner {ck::ForceFieldKernelError::AngleBadOrder {order}|ck::ForceFieldKernelError::TorsionBadOrder {order}=>Some(order),_=>None}}
+    #[doc = "Bond order associated with the failure. Present for `ForceFieldKernelError.AngleBadOrder`, `ForceFieldKernelError.TorsionBadOrder`; None when unavailable."] fn order(&self)->Option<u32>{match self.inner {ck::ForceFieldKernelError::AngleBadOrder {order}|ck::ForceFieldKernelError::TorsionBadOrder {order}=>Some(order),_=>None}}
     #[getter]
-    fn buffer_len(&self)->Option<usize>{match self.inner {ck::ForceFieldKernelError::TorsionAddressOutsideDefinedSource {buffer_len,..}|ck::ForceFieldKernelError::OopAddressOutsideDefinedSource {buffer_len,..}=>Some(buffer_len),_=>None}}
+    #[doc = "Buffer length used by the failed range check. Applies to ForceFieldKernelError.TorsionAddressOutsideDefinedSource, ForceFieldKernelError.OopAddressOutsideDefinedSource. None when this payload is absent."] fn buffer_len(&self)->Option<usize>{match self.inner {ck::ForceFieldKernelError::TorsionAddressOutsideDefinedSource {buffer_len,..}|ck::ForceFieldKernelError::OopAddressOutsideDefinedSource {buffer_len,..}=>Some(buffer_len),_=>None}}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn bound(&self)->Option<ForceFieldAngleRangeBound>{match self.inner {ck::ForceFieldKernelError::AngleOutOfRange {bound}=>Some(bound.into()),_=>None}}
+    #[doc = "Bound involved in the failed constraint check. Applies to ForceFieldKernelError.AngleOutOfRange. None when this payload is absent."] fn bound(&self)->Option<ForceFieldAngleRangeBound>{match self.inner {ck::ForceFieldKernelError::AngleOutOfRange {bound}=>Some(bound.into()),_=>None}}
 });
 
 error_projection!(UffInversionContributionError,UffInversionContributionErrorKind,ck::UffInversionContributionError,"uff",{
@@ -76,7 +76,7 @@ error_projection!(UffInversionContributionError,UffInversionContributionErrorKin
 },cause=|_:&ck::UffInversionContributionError|None::<PyErr>,methods={
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn argument(&self)->UffInversionIndexArgument { let ck::UffInversionContributionError::IndexOutOfRange {argument,..}=self.inner;argument.into() }
+    #[doc = "Which UFF inversion atom-index argument was out of bounds."] fn argument(&self)->UffInversionIndexArgument { let ck::UffInversionContributionError::IndexOutOfRange {argument,..}=self.inner;argument.into() }
 });
 error_projection!(UffBondMathError,UffBondMathErrorKind,ck::UffBondMathError,"uff",{
     InvalidBondOrder {bond_order:f64},
@@ -85,7 +85,7 @@ error_projection!(UffParamError,UffParamErrorKind,ck::UffParamError,"uff",{
     EmptyLine {line_number},MalformedLine {line_number,column_count:usize},ParseFloat {line_number,column_name:&'static str,value:String},
 },cause=|_:&ck::UffParamError|None::<PyErr>,methods={
     #[getter]
-    fn line_number(&self)->usize{match self.inner {ck::UffParamError::EmptyLine {line_number}|ck::UffParamError::MalformedLine {line_number,..}|ck::UffParamError::ParseFloat {line_number,..}=>line_number}}
+    #[doc = "Source line number reported by the parser. Applies to UffParamError.EmptyLine, UffParamError.MalformedLine, UffParamError.ParseFloat."] fn line_number(&self)->usize{match self.inner {ck::UffParamError::EmptyLine {line_number}|ck::UffParamError::MalformedLine {line_number,..}|ck::UffParamError::ParseFloat {line_number,..}=>line_number}}
 });
 
 type TypingSource = Source<
@@ -109,9 +109,9 @@ error_projection!(UffTypingError,UffTypingErrorKind,ck::UffTypingError,"uff",{
 },source=Option<TypingSource>,methods={
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn input(&self)->Option<UffTypingInput>{match self.inner {ck::UffTypingError::PreparedStateLength {input,..}=>Some(input.into()),_=>None}}
+    #[doc = "Input value rejected by the native parser. Applies to UffTypingError.PreparedStateLength. None when this payload is absent."] fn input(&self)->Option<UffTypingInput>{match self.inner {ck::UffTypingError::PreparedStateLength {input,..}=>Some(input.into()),_=>None}}
     #[getter]
-    fn atom_count(&self)->Option<usize>{match self.inner {ck::UffTypingError::AtomIdOutOfBounds {atom_count,..}|ck::UffTypingError::AtomIndexOutOfBounds {atom_count,..}=>Some(atom_count),_=>None}}
+    #[doc = "Atom count used when validating the reported atom reference. Applies to UffTypingError.AtomIdOutOfBounds, UffTypingError.AtomIndexOutOfBounds. None when this payload is absent."] fn atom_count(&self)->Option<usize>{match self.inner {ck::UffTypingError::AtomIdOutOfBounds {atom_count,..}|ck::UffTypingError::AtomIndexOutOfBounds {atom_count,..}=>Some(atom_count),_=>None}}
 });
 
 error_projection!(UffDefaultTorsionQueryError,UffDefaultTorsionQueryErrorKind,ck::UffDefaultTorsionQueryError,"uff",{
@@ -179,27 +179,27 @@ error_projection!(UffBuilderError,UffBuilderErrorKind,ck::UffBuilderError,"uff",
     |ck::UffBuilderError::SourceTbpEquatorialBondNotFound {..}|ck::UffBuilderError::SourceTbpCenterParamsMissing {..}=>None,
 },source=Option<BuilderSource>,methods={
     #[getter]
-    fn n_atoms(&self)->Option<usize>{match self.inner {ck::UffBuilderError::NeighborMatrixIndexOutOfRange {n_atoms,..}|ck::UffBuilderError::NeighborMatrixIndexOverflow {n_atoms}=>Some(n_atoms),_=>None}}
+    #[doc = "Atom count used by the failed structural check. Applies to UffBuilderError.NeighborMatrixIndexOutOfRange, UffBuilderError.NeighborMatrixIndexOverflow. None when this payload is absent."] fn n_atoms(&self)->Option<usize>{match self.inner {ck::UffBuilderError::NeighborMatrixIndexOutOfRange {n_atoms,..}|ck::UffBuilderError::NeighborMatrixIndexOverflow {n_atoms}=>Some(n_atoms),_=>None}}
     #[getter]
-    fn position(&self)->Option<usize>{match self.inner {ck::UffBuilderError::NeighborMatrixCellPositionOverflow {position}|ck::UffBuilderError::NeighborMatrixStorageOutOfRange {position,..}=>Some(position),_=>None}}
-    #[getter]
-    #[doc=r#"{"role":"error_payload"}"#]
-    fn field(&self)->Option<UffPreparedValenceField>{match self.inner {ck::UffBuilderError::ValenceAssignmentLengthMismatch {field,..}|ck::UffBuilderError::SourceValencePrecondition {field,..}|ck::UffBuilderError::SourceValenceOutOfRange {field,..}=>Some(field.into()),_=>None}}
-    #[getter]
-    fn atom_id(&self)->Option<usize>{match self.inner {ck::UffBuilderError::SourceValencePrecondition {atom_id,..}|ck::UffBuilderError::SourceValenceOutOfRange {atom_id,..}=>Some(atom_id.index()),_=>None}}
-    #[getter]
-    fn value(&self)->Option<i32>{match self.inner {ck::UffBuilderError::SourceValencePrecondition {value,..}|ck::UffBuilderError::SourceValenceOutOfRange {value,..}=>Some(value),_=>None}}
+    #[doc = "Position reported by the native failure. Applies to UffBuilderError.NeighborMatrixCellPositionOverflow, UffBuilderError.NeighborMatrixStorageOutOfRange. None when this payload is absent."] fn position(&self)->Option<usize>{match self.inner {ck::UffBuilderError::NeighborMatrixCellPositionOverflow {position}|ck::UffBuilderError::NeighborMatrixStorageOutOfRange {position,..}=>Some(position),_=>None}}
     #[getter]
     #[doc=r#"{"role":"error_payload"}"#]
-    fn actual(&self)->Option<Source<usize,Hybridization>>{match self.inner {ck::UffBuilderError::ValenceAssignmentLengthMismatch {actual,..}=>Some(Source::First(actual)),ck::UffBuilderError::SourceTbpHybridizationPrecondition {actual,..}=>Some(Source::Second(actual.into())),_=>None}}
+    #[doc = "Field whose content or type caused the failure. Applies to UffBuilderError.ValenceAssignmentLengthMismatch, UffBuilderError.SourceValencePrecondition, UffBuilderError.SourceValenceOutOfRange. None when this payload is absent."] fn field(&self)->Option<UffPreparedValenceField>{match self.inner {ck::UffBuilderError::ValenceAssignmentLengthMismatch {field,..}|ck::UffBuilderError::SourceValencePrecondition {field,..}|ck::UffBuilderError::SourceValenceOutOfRange {field,..}=>Some(field.into()),_=>None}}
     #[getter]
-    fn atoms(&self)->Option<usize>{match self.inner {ck::UffBuilderError::ParamsLengthMismatch {atoms,..}|ck::UffBuilderError::SelectedConformerCoordinateCountMismatch {atoms,..}=>Some(atoms),_=>None}}
+    #[doc = "Atom identifier implicated in the failure. Applies to UffBuilderError.SourceValencePrecondition, UffBuilderError.SourceValenceOutOfRange. None when this payload is absent."] fn atom_id(&self)->Option<usize>{match self.inner {ck::UffBuilderError::SourceValencePrecondition {atom_id,..}|ck::UffBuilderError::SourceValenceOutOfRange {atom_id,..}=>Some(atom_id.index()),_=>None}}
     #[getter]
-    fn conformer_id(&self)->Option<usize>{match self.inner {ck::UffBuilderError::SelectedThreeDimensionalConformerNotFound {conformer_id}|ck::UffBuilderError::SelectedConformerCoordinateCountMismatch {conformer_id,..}=>Some(conformer_id),_=>None}}
+    #[doc = "Value rejected or reported by the native operation. Applies to UffBuilderError.SourceValencePrecondition, UffBuilderError.SourceValenceOutOfRange. None when this payload is absent."] fn value(&self)->Option<i32>{match self.inner {ck::UffBuilderError::SourceValencePrecondition {value,..}|ck::UffBuilderError::SourceValenceOutOfRange {value,..}=>Some(value),_=>None}}
     #[getter]
-    fn atom_index(&self)->Option<usize>{match self.inner {ck::UffBuilderError::SourceBondIndexOverflow {atom_index}|ck::UffBuilderError::SourceTorsionIndexOverflow {atom_index}|ck::UffBuilderError::SourceAngleIndexOverflow {atom_index}|ck::UffBuilderError::SourceInversionIndexOverflow {atom_index}=>Some(atom_index),_=>None}}
+    #[doc=r#"{"role":"error_payload"}"#]
+    #[doc = "Observed value reported by the native check. Applies to UffBuilderError.ValenceAssignmentLengthMismatch, UffBuilderError.SourceTbpHybridizationPrecondition. None when this payload is absent."] fn actual(&self)->Option<Source<usize,Hybridization>>{match self.inner {ck::UffBuilderError::ValenceAssignmentLengthMismatch {actual,..}=>Some(Source::First(actual)),ck::UffBuilderError::SourceTbpHybridizationPrecondition {actual,..}=>Some(Source::Second(actual.into())),_=>None}}
     #[getter]
-    fn center_atom_index(&self)->Option<usize>{match self.inner {ck::UffBuilderError::SourceDirectionVectorBelowTolerance {center_atom_index,..}|ck::UffBuilderError::SourceTbpAtomPrecondition {center_atom_index}|ck::UffBuilderError::SourceTbpHybridizationPrecondition {center_atom_index,..}|ck::UffBuilderError::SourceTbpDegreePrecondition {center_atom_index,..}|ck::UffBuilderError::SourceTbpAxialBondNotFound {center_atom_index}|ck::UffBuilderError::SourceTbpEquatorialBondNotFound {center_atom_index,..}|ck::UffBuilderError::SourceTbpCenterParamsMissing {center_atom_index}=>Some(center_atom_index),_=>None}}
+    #[doc = "Atom identifiers implicated in the failure. Applies to UffBuilderError.ParamsLengthMismatch, UffBuilderError.SelectedConformerCoordinateCountMismatch. None when this payload is absent."] fn atoms(&self)->Option<usize>{match self.inner {ck::UffBuilderError::ParamsLengthMismatch {atoms,..}|ck::UffBuilderError::SelectedConformerCoordinateCountMismatch {atoms,..}=>Some(atoms),_=>None}}
+    #[getter]
+    #[doc = "Conformer identifier implicated in the failure. Applies to UffBuilderError.SelectedThreeDimensionalConformerNotFound, UffBuilderError.SelectedConformerCoordinateCountMismatch. None when this payload is absent."] fn conformer_id(&self)->Option<usize>{match self.inner {ck::UffBuilderError::SelectedThreeDimensionalConformerNotFound {conformer_id}|ck::UffBuilderError::SelectedConformerCoordinateCountMismatch {conformer_id,..}=>Some(conformer_id),_=>None}}
+    #[getter]
+    #[doc = "Atom index involved in the native failure. Applies to UffBuilderError.SourceBondIndexOverflow, UffBuilderError.SourceTorsionIndexOverflow, UffBuilderError.SourceAngleIndexOverflow, UffBuilderError.SourceInversionIndexOverflow. None when this payload is absent."] fn atom_index(&self)->Option<usize>{match self.inner {ck::UffBuilderError::SourceBondIndexOverflow {atom_index}|ck::UffBuilderError::SourceTorsionIndexOverflow {atom_index}|ck::UffBuilderError::SourceAngleIndexOverflow {atom_index}|ck::UffBuilderError::SourceInversionIndexOverflow {atom_index}=>Some(atom_index),_=>None}}
+    #[getter]
+    #[doc = "Atom index of the failing stereochemical center. Applies to UffBuilderError.SourceDirectionVectorBelowTolerance, UffBuilderError.SourceTbpAtomPrecondition, UffBuilderError.SourceTbpHybridizationPrecondition, UffBuilderError.SourceTbpDegreePrecondition, UffBuilderError.SourceTbpAxialBondNotFound, UffBuilderError.SourceTbpEquatorialBondNotFound, UffBuilderError.SourceTbpCenterParamsMissing. None when this payload is absent."] fn center_atom_index(&self)->Option<usize>{match self.inner {ck::UffBuilderError::SourceDirectionVectorBelowTolerance {center_atom_index,..}|ck::UffBuilderError::SourceTbpAtomPrecondition {center_atom_index}|ck::UffBuilderError::SourceTbpHybridizationPrecondition {center_atom_index,..}|ck::UffBuilderError::SourceTbpDegreePrecondition {center_atom_index,..}|ck::UffBuilderError::SourceTbpAxialBondNotFound {center_atom_index}|ck::UffBuilderError::SourceTbpEquatorialBondNotFound {center_atom_index,..}|ck::UffBuilderError::SourceTbpCenterParamsMissing {center_atom_index}=>Some(center_atom_index),_=>None}}
 });
 
 crate::error_framework::error_projection! {record
@@ -254,15 +254,17 @@ impl UffParameterError {
 }
 crate::error_framework::error_projection! {methods impl UffParameterError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "uff"
     }
     #[getter]
-    fn kind(&self) -> UffParameterErrorKind {
+    #[doc = "Native UFF parameter lookup error category."] fn kind(&self) -> UffParameterErrorKind {
         self.inner.kind().into()
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(
         slf: Bound<'_, pyo3::exceptions::PyBaseException>,
     ) -> PyResult<Source<crate::error_framework::ErrorObject<UffBuilderError>, Source<crate::error_framework::ErrorObject<UffParamError>, crate::error_framework::ErrorObject<UffTypingError>>>> {

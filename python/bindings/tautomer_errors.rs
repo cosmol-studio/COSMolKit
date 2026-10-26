@@ -63,7 +63,7 @@ error_projection!(TautomerRunError, TautomerRunErrorKind, ck::TautomerRunError, 
     | ck::TautomerRunError::Callback(_) => None,
 }), source = Option<TautomerSource>, methods = {
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to TautomerRunError.AtomMappingCount, TautomerRunError.BondMappingCount, TautomerRunError.AtomCountMismatch, TautomerRunError.BondCountMismatch, TautomerRunError.EditCount. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::TautomerRunError::AtomMappingCount { expected, .. }
         | ck::TautomerRunError::BondMappingCount { expected, .. }
         | ck::TautomerRunError::AtomCountMismatch { expected, .. }
@@ -71,7 +71,7 @@ error_projection!(TautomerRunError, TautomerRunErrorKind, ck::TautomerRunError, 
         | ck::TautomerRunError::EditCount { expected, .. } => Some(expected), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to TautomerRunError.AtomMappingCount, TautomerRunError.BondMappingCount, TautomerRunError.AtomCountMismatch, TautomerRunError.BondCountMismatch, TautomerRunError.EditCount. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::TautomerRunError::AtomMappingCount { actual, .. }
         | ck::TautomerRunError::BondMappingCount { actual, .. }
         | ck::TautomerRunError::AtomCountMismatch { actual, .. }
@@ -79,98 +79,98 @@ error_projection!(TautomerRunError, TautomerRunErrorKind, ck::TautomerRunError, 
         | ck::TautomerRunError::EditCount { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to TautomerRunError.AtomOutOfRange, TautomerRunError.HydrogenCountOutOfRange, TautomerRunError.FormalChargeOutOfRange, TautomerRunError.MissingValence. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::TautomerRunError::AtomOutOfRange { atom, .. } => Some(atom),
         ck::TautomerRunError::HydrogenCountOutOfRange { atom, .. }
         | ck::TautomerRunError::FormalChargeOutOfRange { atom, .. }
         | ck::TautomerRunError::MissingValence { atom } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to TautomerRunError.BondOutOfRange, TautomerRunError.MissingMappedBond. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::TautomerRunError::BondOutOfRange { bond, .. }
         | ck::TautomerRunError::MissingMappedBond { bond } => Some(bond), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn smiles(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SmilesParseError>>> { match &self.inner {
+    #[doc = "Structured SmilesParseError payload of TautomerRunError.Smiles; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn smiles(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SmilesParseError>>> { match &self.inner {
         ck::TautomerRunError::Smiles(value) => SmilesParseError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of TautomerRunError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::TautomerRunError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn rings(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
+    #[doc = "Structured RingFindingError payload of TautomerRunError.Rings; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn rings(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
         ck::TautomerRunError::Rings(value) => RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kekulize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>> { match &self.inner {
+    #[doc = "Structured KekulizeError payload of TautomerRunError.Kekulize; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn kekulize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>> { match &self.inner {
         ck::TautomerRunError::Kekulize(value) => KekulizeError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn sanitize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SanitizeError>>> { match &self.inner {
+    #[doc = "Structured SanitizeError payload of TautomerRunError.Sanitize; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn sanitize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SanitizeError>>> { match &self.inner {
         ck::TautomerRunError::Sanitize(value) => SanitizeError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn legacy_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<LegacyStereoError>>> { match &self.inner {
+    #[doc = "Structured LegacyStereoError payload of TautomerRunError.LegacyStereo; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn legacy_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<LegacyStereoError>>> { match &self.inner {
         ck::TautomerRunError::LegacyStereo(value) => LegacyStereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_compile(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryCompileError>>> { match &self.inner {
+    #[doc = "Structured QueryCompileError payload of TautomerRunError.QueryCompile; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_compile(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryCompileError>>> { match &self.inner {
         ck::TautomerRunError::QueryCompile(value) => QueryCompileError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn match_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SubstructMatchError>>> { match &self.inner {
+    #[doc = "Structured SubstructMatchError payload of TautomerRunError.Match; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn match_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SubstructMatchError>>> { match &self.inner {
         ck::TautomerRunError::Match(value) => SubstructMatchError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn match_context(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryMatchContextError>>> { match &self.inner {
+    #[doc = "Structured QueryMatchContextError payload of TautomerRunError.MatchContext; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn match_context(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryMatchContextError>>> { match &self.inner {
         ck::TautomerRunError::MatchContext(value) => QueryMatchContextError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
+    #[doc = "Structured CoordinateValidationError payload of TautomerRunError.Coordinates; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
         ck::TautomerRunError::Coordinates(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of TautomerRunError.Topology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::TautomerRunError::Topology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn atom_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>> { match &self.inner {
+    #[doc = "Structured AtomPropertyError payload of TautomerRunError.AtomProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn atom_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>> { match &self.inner {
         ck::TautomerRunError::AtomProperty(value) => AtomPropertyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn molecule_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
+    #[doc = "Structured MoleculePropertyError payload of TautomerRunError.MoleculeProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn molecule_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
         ck::TautomerRunError::MoleculeProperty(value) => MoleculePropertyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn bond_value(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
+    #[doc = "Structured BondValueError payload of TautomerRunError.BondValue; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn bond_value(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
         ck::TautomerRunError::BondValue(value) => BondValueError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn property_string(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
+    #[doc = "Structured PropertyStringError payload of TautomerRunError.PropertyString; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn property_string(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
         ck::TautomerRunError::PropertyString(value) => PropertyStringError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
-    fn control(&self) -> Option<&str> { match &self.inner {
+    #[doc = "Stereo control reference involved in the native check. Applies to TautomerRunError.Control. None when this payload is absent."] fn control(&self) -> Option<&str> { match &self.inner {
         ck::TautomerRunError::Control(value) => Some(value), _ => None,
     } }
     #[getter]
-    fn callback(&self) -> Option<&str> { match &self.inner {
+    #[doc = "Native callback failure message, or None for another failure."] fn callback(&self) -> Option<&str> { match &self.inner {
         ck::TautomerRunError::Callback(value) => Some(value), _ => None,
     } }
 });

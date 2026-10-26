@@ -65,6 +65,7 @@ impl ErrorRef {
 // named Final constants are convenience values, not a lossy closed enum map.
 #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
+/// Native IO failure category; named constants compare by category rather than object identity.
 pub struct IoErrorKind {
     inner: std::io::ErrorKind,
 }
@@ -149,22 +150,24 @@ impl IoError {
 }
 crate::error_framework::error_projection! {methods impl IoError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "std"
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> IoErrorKind {
+    #[doc = "Native IO error category."] fn kind(&self) -> IoErrorKind {
         IoErrorKind {
             inner: self.native().kind(),
         }
     }
     #[getter]
-    fn raw_os_error(&self) -> Option<i32> {
+    #[doc = "Original operating-system error number, or None for a non-OS error."] fn raw_os_error(&self) -> Option<i32> {
         self.native().raw_os_error()
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<StandardSource>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -198,11 +201,13 @@ impl ExternalError {
 }
 crate::error_framework::error_projection! {methods impl ExternalError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "external"
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<StandardSource>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }

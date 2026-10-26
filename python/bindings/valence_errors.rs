@@ -31,7 +31,7 @@ error_projection!(ValenceError, ValenceErrorKind, ck::ValenceError, "valence", {
     | ck::ValenceError::HydrogenCountOverflow { .. } | ck::ValenceError::BadBondType { .. } => None,
 }, source = Option<crate::error_framework::ErrorObject<TopologyValidationError>>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom index involved in the failure. Present for `ValenceError.PiElectronExplicitValenceCacheNotInitialized`, `ValenceError.PiElectronInvariant`, `ValenceError.InvalidValence`, `ValenceError.AtomOutOfRange`, `ValenceError.AdjacencyAtomOutOfRange`, `ValenceError.AdjacencyBondOutOfRange`, `ValenceError.AdjacencyEndpointMismatch`, `ValenceError.InvalidExplicitValenceInput`, `ValenceError.ExplicitValenceCacheNotInitialized`, `ValenceError.ImplicitValenceCacheNotInitialized`, `ValenceError.HydrogenCountOverflow`; None when unavailable."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::ValenceError::PiElectronExplicitValenceCacheNotInitialized { atom }
         | ck::ValenceError::PiElectronInvariant { atom, .. } | ck::ValenceError::InvalidValence { atom, .. }
         | ck::ValenceError::AtomOutOfRange { atom, .. } | ck::ValenceError::AdjacencyAtomOutOfRange { atom, .. }
@@ -42,26 +42,26 @@ error_projection!(ValenceError, ValenceErrorKind, ck::ValenceError, "valence", {
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn phase(&self) -> Option<ValencePhase> {
+    #[doc = "Processing stage in which the failure occurred. Applies to ValenceError.InvalidValence. None when this payload is absent."] fn phase(&self) -> Option<ValencePhase> {
         match self.inner { ck::ValenceError::InvalidValence { phase, .. } => Some(phase.into()), _ => None }
     }
     #[getter]
-    fn atomic_number(&self) -> Option<u8> { match self.inner {
+    #[doc = "Atomic number involved in the failed chemistry operation. Applies to ValenceError.InvalidValence, ValenceError.PeriodicTableLookup. None when this payload is absent."] fn atomic_number(&self) -> Option<u8> { match self.inner {
         ck::ValenceError::InvalidValence { atomic_number, .. }
         | ck::ValenceError::PeriodicTableLookup { atomic_number, .. } => Some(atomic_number), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to ValenceError.AtomOutOfRange, ValenceError.AdjacencyAtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::ValenceError::AtomOutOfRange { atom_count, .. }
         | ck::ValenceError::AdjacencyAtomOutOfRange { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn neighbor_atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Neighbor atom implicated in the failed topology check. Applies to ValenceError.AdjacencyAtomOutOfRange, ValenceError.AdjacencyEndpointMismatch. None when this payload is absent."] fn neighbor_atom(&self) -> Option<usize> { match self.inner {
         ck::ValenceError::AdjacencyAtomOutOfRange { neighbor_atom, .. }
         | ck::ValenceError::AdjacencyEndpointMismatch { neighbor_atom, .. } => Some(neighbor_atom), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to ValenceError.AdjacencyBondOutOfRange, ValenceError.AdjacencyEndpointMismatch, ValenceError.BadBondType. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::ValenceError::AdjacencyBondOutOfRange { bond, .. }
         | ck::ValenceError::AdjacencyEndpointMismatch { bond, .. } => Some(bond.index()),
         ck::ValenceError::BadBondType { bond, .. } => bond.map(ck::BondId::index), _ => None,

@@ -31,7 +31,7 @@ def test_atom_metadata_default_recalculates_without_installing_cache() -> None:
     assert metadata_values(molecule.atom_metadata(True)) == expected
     with pytest.raises(ck.ValenceError) as caught:
         _ = molecule.atom_metadata(recalculate=False)
-    assert caught.value.kind == "ExplicitValenceCacheNotInitialized"
+    assert caught.value.variant.name == "ExplicitValenceCacheNotInitialized"
     assert molecule.num_atoms == 1
     assert molecule.num_bonds == 0
     assert metadata_values(molecule.atom_metadata()) == expected

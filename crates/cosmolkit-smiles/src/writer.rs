@@ -92,17 +92,27 @@ struct WriterStereoFragment {
     source_bonds: Vec<BondId>,
 }
 
+/// SMILES output options controlling canonical order, explicit notation and stereochemistry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct SmilesWriteParams {
+    /// Include isotope and stereochemical distinctions in the output.
     pub isomeric_smiles: bool,
+    /// Write Kekule bond orders instead of aromatic notation.
     pub kekule: bool,
+    /// Use canonical atom ordering unless an explicit root constrains traversal.
     pub canonical: bool,
+    /// Clean stereochemical annotations while preparing the output.
     pub clean_stereo: bool,
+    /// Optional atom from which traversal starts.
     pub rooted_at_atom: Option<AtomId>,
+    /// Write explicit bond symbols where implicit notation would otherwise suffice.
     pub all_bonds_explicit: bool,
+    /// Write hydrogen counts explicitly in atom notation.
     pub all_hydrogens_explicit: bool,
+    /// Preserve dative bond notation in the output.
     pub include_dative_bonds: bool,
+    /// Ignore atom-mapping numbers when computing canonical order.
     pub ignore_atom_map_numbers: bool,
 }
 
@@ -126,9 +136,13 @@ impl Default for SmilesWriteParams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct RandomSmilesWriteParams {
+    /// Include isotope and stereochemical distinctions in random SMILES.
     pub isomeric_smiles: bool,
+    /// Write Kekule bond orders instead of aromatic notation.
     pub kekule: bool,
+    /// Write explicit bond symbols where implicit notation would otherwise suffice.
     pub all_bonds_explicit: bool,
+    /// Write hydrogen counts explicitly in atom notation.
     pub all_hydrogens_explicit: bool,
 }
 

@@ -18,18 +18,18 @@ error_projection!(AdjustHsError, AdjustHsErrorKind, ck::AdjustHsError, "adjust_h
     | ck::AdjustHsError::ExplicitHydrogenOverflow { .. } => None,
 }), source = Option<crate::error_framework::ErrorObject<TopologyValidationError>>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to AdjustHsError.InvalidValenceRow, AdjustHsError.ExplicitHydrogenOverflow. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::AdjustHsError::InvalidValenceRow { atom, .. }
         | ck::AdjustHsError::ExplicitHydrogenOverflow { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Field whose content or type caused the failure. Applies to AdjustHsError.ValenceAssignmentLength, AdjustHsError.InvalidValenceRow. None when this payload is absent."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::AdjustHsError::ValenceAssignmentLength { field, .. }
         | ck::AdjustHsError::InvalidValenceRow { field, .. } => Some(field), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of AdjustHsError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::AdjustHsError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -44,7 +44,7 @@ error_projection!(RadicalError, RadicalErrorKind, ck::RadicalError, "radicals", 
 }), source = Option<crate::error_framework::ErrorObject<TopologyValidationError>>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of RadicalError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::RadicalError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -60,34 +60,34 @@ error_projection!(HybridizationError, HybridizationErrorKind, ck::HybridizationE
     | ck::HybridizationError::InvalidValenceRow { .. } | ck::HybridizationError::IntegerOverflow { .. } => None,
 }), source = Option<crate::error_framework::ErrorObject<TopologyValidationError>>, methods = {
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to HybridizationError.ConjugatedBondAssignmentLength, HybridizationError.ValenceAssignmentLength. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::HybridizationError::ConjugatedBondAssignmentLength { actual, .. }
         | ck::HybridizationError::ValenceAssignmentLength { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to HybridizationError.ConjugatedBondAssignmentLength, HybridizationError.ValenceAssignmentLength. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::HybridizationError::ConjugatedBondAssignmentLength { expected, .. }
         | ck::HybridizationError::ValenceAssignmentLength { expected, .. } => Some(expected), _ => None,
     } }
     #[getter]
-    fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Field whose content or type caused the failure. Applies to HybridizationError.ValenceAssignmentLength, HybridizationError.InvalidValenceRow, HybridizationError.IntegerOverflow. None when this payload is absent."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::HybridizationError::ValenceAssignmentLength { field, .. }
         | ck::HybridizationError::InvalidValenceRow { field, .. }
         | ck::HybridizationError::IntegerOverflow { field, .. } => Some(field), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to HybridizationError.InvalidValenceRow, HybridizationError.IntegerOverflow. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::HybridizationError::InvalidValenceRow { atom, .. }
         | ck::HybridizationError::IntegerOverflow { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of HybridizationError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::HybridizationError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of HybridizationError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::HybridizationError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

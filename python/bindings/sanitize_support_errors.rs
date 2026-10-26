@@ -66,93 +66,93 @@ error_projection!(AromaticityError, AromaticityErrorKind, ck::AromaticityError, 
     | ck::AromaticityError::BondIdentityChanged { .. } | ck::AromaticityError::AromaticRingCountOutOfRange { .. } => None,
 }), source = Option<AromaticitySource>, methods = {
     #[getter]
-    fn ring_index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Ring index involved in the failure. Applies to AromaticityError.RingRowLengthMismatch, AromaticityError.RingAtomOutOfRange, AromaticityError.RingBondOutOfRange. None when this payload is absent."] fn ring_index(&self) -> Option<usize> { match self.inner {
         ck::AromaticityError::RingRowLengthMismatch { ring_index, .. }
         | ck::AromaticityError::RingAtomOutOfRange { ring_index, .. }
         | ck::AromaticityError::RingBondOutOfRange { ring_index, .. } => Some(ring_index), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to AromaticityError.RingRowLengthMismatch, AromaticityError.RingAtomOutOfRange, AromaticityError.AtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::AromaticityError::RingRowLengthMismatch { atom_count, .. }
         | ck::AromaticityError::RingAtomOutOfRange { atom_count, .. }
         | ck::AromaticityError::AtomOutOfRange { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn bond_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond count used when validating the reported bond reference. Applies to AromaticityError.RingRowLengthMismatch, AromaticityError.RingBondOutOfRange, AromaticityError.BondOutOfRange. None when this payload is absent."] fn bond_count(&self) -> Option<usize> { match self.inner {
         ck::AromaticityError::RingRowLengthMismatch { bond_count, .. }
         | ck::AromaticityError::RingBondOutOfRange { bond_count, .. }
         | ck::AromaticityError::BondOutOfRange { bond_count, .. } => Some(bond_count), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to AromaticityError.RingAtomOutOfRange, AromaticityError.AtomOutOfRange, AromaticityError.InvalidValenceRow. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::AromaticityError::RingAtomOutOfRange { atom, .. }
         | ck::AromaticityError::AtomOutOfRange { atom, .. }
         | ck::AromaticityError::InvalidValenceRow { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to AromaticityError.RingBondOutOfRange, AromaticityError.BondOutOfRange. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::AromaticityError::RingBondOutOfRange { bond, .. }
         | ck::AromaticityError::BondOutOfRange { bond, .. } => Some(bond.index()), _ => None,
     } }
     #[getter]
-    fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Field whose content or type caused the failure. Applies to AromaticityError.ValenceAssignmentLength, AromaticityError.InvalidValenceRow, AromaticityError.UnsupportedState, AromaticityError.IntegerOverflow. None when this payload is absent."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::AromaticityError::ValenceAssignmentLength { field, .. }
         | ck::AromaticityError::InvalidValenceRow { field, .. }
         | ck::AromaticityError::UnsupportedState { field, .. }
         | ck::AromaticityError::IntegerOverflow { field } => Some(field), _ => None,
     } }
     #[getter]
-    fn detail(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Additional native diagnostic detail. Applies to AromaticityError.UnsupportedModel, AromaticityError.UnsupportedState. None when this payload is absent."] fn detail(&self) -> Option<&'static str> { match self.inner {
         ck::AromaticityError::UnsupportedModel { detail, .. }
         | ck::AromaticityError::UnsupportedState { detail, .. } => Some(detail), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to AromaticityError.ValenceAssignmentLength, AromaticityError.AtomIdentityChanged, AromaticityError.BondIdentityChanged. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::AromaticityError::ValenceAssignmentLength { expected, .. } => Some(expected),
         ck::AromaticityError::AtomIdentityChanged { expected, .. } => Some(expected.index()),
         ck::AromaticityError::BondIdentityChanged { expected, .. } => Some(expected.index()), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to AromaticityError.ValenceAssignmentLength, AromaticityError.AromaticRingCountOutOfRange, AromaticityError.AtomIdentityChanged, AromaticityError.BondIdentityChanged. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::AromaticityError::ValenceAssignmentLength { actual, .. }
         | ck::AromaticityError::AromaticRingCountOutOfRange { actual, .. } => Some(actual),
         ck::AromaticityError::AtomIdentityChanged { actual, .. } => Some(actual.index()),
         ck::AromaticityError::BondIdentityChanged { actual, .. } => Some(actual.index()), _ => None,
     } }
     #[getter]
-    fn row(&self) -> Option<usize> { match self.inner {
+    #[doc = "Row reported by the native failure. Applies to AromaticityError.AtomIdentityChanged, AromaticityError.BondIdentityChanged. None when this payload is absent."] fn row(&self) -> Option<usize> { match self.inner {
         ck::AromaticityError::AtomIdentityChanged { row, .. }
         | ck::AromaticityError::BondIdentityChanged { row, .. } => Some(row), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn model(&self) -> Option<AromaticityModel> { match self.inner {
+    #[doc = "Structural model involved in the failure. Applies to AromaticityError.UnsupportedModel, AromaticityError.AromaticRingCountOutOfRange. None when this payload is absent."] fn model(&self) -> Option<AromaticityModel> { match self.inner {
         ck::AromaticityError::UnsupportedModel { model, .. }
         | ck::AromaticityError::AromaticRingCountOutOfRange { model, .. } => Some(model.into()), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of AromaticityError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::AromaticityError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryStateError>>> { match &self.inner {
+    #[doc = "Structured QueryStateError payload of AromaticityError.InvalidQueryState; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryStateError>>> { match &self.inner {
         ck::AromaticityError::InvalidQueryState(value) => QueryStateError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
+    #[doc = "Structured RingFindingError payload of AromaticityError.RingFinding; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
         ck::AromaticityError::RingFinding(value) => RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of AromaticityError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::AromaticityError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kekulize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>> { match &self.inner {
+    #[doc = "Structured KekulizeError payload of AromaticityError.Kekulize; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn kekulize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>> { match &self.inner {
         ck::AromaticityError::Kekulize(value) => KekulizeError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -171,29 +171,29 @@ error_projection!(ConjugationError, ConjugationErrorKind, ck::ConjugationError, 
     | ck::ConjugationError::IntegerOverflow { .. } => None,
 }), source = Option<AromaticitySource>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to ConjugationError.InvalidValenceRow, ConjugationError.AtomOutOfRange. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::ConjugationError::InvalidValenceRow { atom, .. }
         | ck::ConjugationError::AtomOutOfRange { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Field whose content or type caused the failure. Applies to ConjugationError.ValenceAssignmentLength, ConjugationError.InvalidValenceRow, ConjugationError.IntegerOverflow. None when this payload is absent."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::ConjugationError::ValenceAssignmentLength { field, .. }
         | ck::ConjugationError::InvalidValenceRow { field, .. }
         | ck::ConjugationError::IntegerOverflow { field } => Some(field), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of ConjugationError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::ConjugationError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn aromaticity(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AromaticityError>>> { match &self.inner {
+    #[doc = "Structured AromaticityError payload of ConjugationError.Aromaticity; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn aromaticity(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AromaticityError>>> { match &self.inner {
         ck::ConjugationError::Aromaticity(value) => AromaticityError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of ConjugationError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::ConjugationError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -207,17 +207,17 @@ error_projection!(CleanupError, CleanupErrorKind, ck::CleanupError, "cleanup", {
 }), source = Option<CleanupSource>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of CleanupError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::CleanupError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of CleanupError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::CleanupError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn canonical_rank(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CanonicalRankError>>> { match &self.inner {
+    #[doc = "Structured CanonicalRankError payload of CleanupError.CanonicalRank; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn canonical_rank(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CanonicalRankError>>> { match &self.inner {
         ck::CleanupError::CanonicalRank(value) => CanonicalRankError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -229,7 +229,7 @@ error_projection!(PropertyCacheError, PropertyCacheErrorKind, ck::PropertyCacheE
 }, source = Option<crate::error_framework::ErrorObject<ValenceError>>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<crate::error_framework::ErrorObject<ValenceError>> { match &self.inner {
+    #[doc = "Valence value rejected by the native check. Applies to PropertyCacheError.Valence."] fn valence(&self, py: Python<'_>) -> PyResult<crate::error_framework::ErrorObject<ValenceError>> { match &self.inner {
         ck::PropertyCacheError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map_err(Into::into),
     } }
 });

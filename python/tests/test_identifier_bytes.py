@@ -8,12 +8,23 @@ import pytest
 
 @pytest.mark.parametrize("input", ["CCO", b"CCO"])
 def test_smiles_identifier_text_forms(input):
+    if isinstance(input, bytes):
+        with pytest.raises(TypeError):
+            ck.Molecule.from_smiles(input)
+        with pytest.raises(TypeError):
+            ck.Molecule.from_smiles_with_params(input, ck.SmilesParseParams())
+        input = input.decode("utf-8")
     assert ck.Molecule.from_smiles(input).to_smiles() == "CCO"
     assert ck.Molecule.from_smiles_with_params(input, ck.SmilesParseParams()).to_smiles() == "CCO"
 
 
 @pytest.mark.parametrize("input", ["InChI=1S/CH4/h1H4", b"InChI=1S/CH4/h1H4"])
 def test_inchi_identifier_text_forms(input):
+    if isinstance(input, bytes):
+        for call in (ck.Molecule.from_inchi, ck.inchi_to_key):
+            with pytest.raises(TypeError):
+                call(input)
+        input = input.decode("utf-8")
     assert ck.Molecule.from_inchi(input).to_smiles() == "C"
     assert ck.Molecule.from_inchi_with_params(input, ck.InchiReadParams()).to_smiles() == "C"
     assert ck.Molecule.from_inchi(input, sanitize=True, remove_hs=True).to_smiles() == "C"
@@ -35,12 +46,11 @@ def test_identifier_inputs_are_not_coerced_or_lossily_decoded(call):
     for invalid in (None, 42, TextLike(), bytearray(b"CCO")):
         with pytest.raises(TypeError):
             call(invalid)
-    with pytest.raises(UnicodeDecodeError) as error:
+    with pytest.raises(TypeError):
         call(b"CCO\xff")
-    assert error.value.object == b"CCO\xff"
 
 
-def test_generated_identifier_stubs_include_bytes():
+def test_generated_identifier_stubs_require_text():
     stub = Path(__file__).parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
     tree = ast.parse(stub.read_text())
     molecule = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Molecule")
@@ -52,4 +62,4 @@ def test_generated_identifier_stubs_include_bytes():
     for function in functions:
         args = [arg for arg in function.args.args if arg.arg not in ("cls", "self")]
         annotation = ast.unparse(args[0].annotation)
-        assert "str" in annotation and "bytes" in annotation, (function.name, annotation)
+        assert annotation == "str", (function.name, annotation)

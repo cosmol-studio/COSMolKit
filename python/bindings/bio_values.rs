@@ -64,6 +64,7 @@ impl ChainKindInput {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Author and label chain identifiers retained from structural coordinate files.
     pub struct ChainSourceIds {
         pub(crate) inner: ck::ChainSourceIds,
     }
@@ -87,12 +88,14 @@ impl ChainSourceIds {
         })
     }
     #[getter]
+    /// Author-provided chain identifier, or None if absent.
     fn auth_chain_id(&self) -> Option<String> {
         self.inner
             .auth_chain_id()
             .map(|value| value.as_str().to_owned())
     }
     #[getter]
+    /// mmCIF label_asym_id identifying the asymmetric unit chain, or None.
     fn label_asym_id(&self) -> Option<&str> {
         self.inner.label_asym_id()
     }
@@ -101,6 +104,7 @@ impl ChainSourceIds {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Detached chain row containing parent identifiers and a residue span, without an owning structure.
     pub struct BioChainRow {
         pub(crate) inner: ck::BioChainRow,
     }
@@ -130,23 +134,28 @@ impl BioChainRow {
         })
     }
     #[getter]
+    /// Local index of the parent model row.
     fn model_id(&self) -> u32 {
         self.inner.model_id().value()
     }
     #[getter]
+    /// Local entity row identifier, or None if unassigned.
     fn entity_id(&self) -> Option<u32> {
         self.inner.entity_id().map(|id| id.value())
     }
     #[getter]
+    /// Half-open range of residue rows belonging to this chain.
     fn residue_span(&self) -> PyResult<BioRowSpan> {
         BioRowSpan::from_rust(self.inner.residue_span())
             .map_err(crate::bio_errors::BioStructureError::from_rust)
     }
     #[getter]
+    /// Stored chain classification.
     fn kind(&self) -> ChainKind {
         self.inner.kind().into()
     }
     #[getter]
+    /// Source-format identifiers, distinct from local row indices.
     fn source(&self) -> ChainSourceIds {
         ChainSourceIds {
             inner: self.inner.source().clone(),
@@ -156,6 +165,7 @@ impl BioChainRow {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Checked half-open range of rows represented by an inclusive start and row count.
     pub struct BioRowSpan {
         pub(crate) inner: ck::BioRowSpan<ck::BioAtomId>,
     }
@@ -173,6 +183,7 @@ impl BioRowSpan {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Detached model row containing its chain span and optional source model number.
     pub struct BioModelRow {
         pub(crate) inner: ck::BioModelRow,
     }
@@ -190,11 +201,13 @@ impl BioModelRow {
             .map_err(crate::bio_errors::BioStructureError::from_rust)
     }
     #[getter]
+    /// Half-open range of chain rows belonging to this model.
     fn chain_span(&self) -> PyResult<BioRowSpan> {
         BioRowSpan::from_rust(self.inner.chain_span())
             .map_err(crate::bio_errors::BioStructureError::from_rust)
     }
     #[getter]
+    /// Model number from the input file, or None if absent.
     fn source_model_number(&self) -> Option<i32> {
         self.inner.source_model_number()
     }
@@ -202,6 +215,7 @@ impl BioModelRow {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Validated atom-name text preserving the native structural-file representation.
     pub struct AtomName {
         pub(crate) inner: ck::AtomName,
     }
@@ -209,12 +223,15 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl AtomName {
     #[staticmethod]
+    /// Construct a validated atom name from ASCII bytes; return None if invalid.
     fn from_ascii(bytes: &[u8]) -> Option<Self> {
         ck::AtomName::from_ascii(bytes).map(|inner| Self { inner })
     }
+    /// Atom name as text.
     fn as_str(&self) -> &str {
         self.inner.as_str()
     }
+    /// Atom name as an independent bytes value.
     fn as_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, pyo3::types::PyBytes> {
         pyo3::types::PyBytes::new(py, self.inner.as_bytes())
     }
@@ -228,24 +245,29 @@ impl BioRowSpan {
             .map_err(crate::bio_errors::BioStructureError::from_rust)
     }
     #[staticmethod]
+    /// Create a checked row span from platform-sized start and length values.
     fn from_usize(start: usize, len: usize) -> PyResult<Self> {
         ck::BioRowSpan::from_usize(start, len)
             .map(|inner| Self { inner })
             .map_err(crate::bio_errors::BioStructureError::from_rust)
     }
     #[getter]
+    /// Inclusive starting row index.
     fn start(&self) -> u32 {
         self.inner.start()
     }
     #[getter]
+    /// Number of rows in the span.
     fn len(&self) -> u32 {
         self.inner.len()
     }
     #[getter]
+    /// Whether the span contains zero rows.
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
     #[getter]
+    /// Exclusive ending row index.
     fn end(&self) -> u32 {
         self.inner.end()
     }
@@ -256,6 +278,7 @@ ck::project_configuration!(ck::BioCrystalCell);
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone, Copy)]
+    /// Three-dimensional affine transform with a 3-by-3 matrix and three-component translation.
     pub struct BioTransform {
         pub(crate) inner: ck::BioTransform,
     }
@@ -269,16 +292,19 @@ impl BioTransform {
             inner: ck::BioTransform::new(matrix, translation),
         }
     }
+    /// Whether matrix and translation components match within the supplied native tolerance.
     fn approx(&self, other: &BioTransform, epsilon: f64) -> bool {
         self.inner.approx(&other.inner, epsilon)
     }
     #[getter]
     #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]]"}"#]
+    /// Independent float64 NumPy array of shape (3, 3) containing the linear transform.
     fn matrix<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray2<f64>> {
         coordinates::array(py, self.inner.matrix())
     }
     #[getter]
     #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int], numpy.dtype[numpy.float64]]"}"#]
+    /// Independent float64 NumPy array of shape (3,) containing the translation vector.
     fn translation<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray1<f64>> {
         self.inner.translation().to_vec().into_pyarray(py)
     }

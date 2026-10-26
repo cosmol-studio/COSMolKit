@@ -19,16 +19,25 @@ def test_enum_inputs_share_constructor_assignment_and_validation(cls, field, tex
     assert type(getattr(value, field)) is type(member)
     assert getattr(value, field) == member
     assert getattr(cls(**{field: member}), field) == member
-    for spelling, expected in type(member)._enum_string_values:
-        setattr(value, field, spelling)
-        assert type(getattr(value, field)) is type(member)
-        assert getattr(value, field) == expected
+    setattr(value, field, text)
+    assert type(getattr(value, field)) is type(member)
+    assert getattr(value, field) == member
     previous = getattr(value, field)
-    for bad, error in [("unknown_value", ValueError), (123, TypeError), (object(), TypeError), (None, TypeError)]:
+    for bad, error in [("unknown_value", ValueError), (123, TypeError), (object(), TypeError)]:
         with pytest.raises(error):
             cls(**{field: bad})
         with pytest.raises(error):
             setattr(value, field, bad)
+        assert getattr(value, field) == previous
+    if cls in (ck.MolBlockWriteParams, ck.Mol2ReadParams):
+        setattr(value, field, None)
+        assert getattr(value, field) == getattr(cls(), field)
+        assert getattr(cls(**{field: None}), field) == getattr(cls(), field)
+    else:
+        with pytest.raises(TypeError):
+            cls(**{field: None})
+        with pytest.raises(TypeError):
+            setattr(value, field, None)
         assert getattr(value, field) == previous
 
 
@@ -57,12 +66,17 @@ def test_dynamic_enum_inputs_use_registered_members_not_new_conversion_tables():
     assert builder.build().to_smiles() == "CC"
     builder.set_bond_order(bond, "double")
     assert builder.build().to_smiles() == "C=C"
-    assert repr(ck.BondSpec(first, second, "double")) == repr(ck.BondSpec(first, second, ck.BondOrder.DOUBLE))
+    for order in ("double", ck.BondOrder.DOUBLE):
+        fresh = ck.MoleculeBuilder.new()
+        fresh.add_atom(ck.AtomSpec(ck.Element.C))
+        fresh.add_atom(ck.AtomSpec(ck.Element.C))
+        fresh.add_bond(ck.BondSpec(first, second, order))
+        assert fresh.build().to_smiles() == "C=C"
     with pytest.raises(ValueError):
         ck.BondSpec(first, second, "not_a_bond")
     with pytest.raises(TypeError):
         ck.BondSpec(first, second, object())  # pyright: ignore[reportArgumentType] -- invalid input regression
-    for name, member in ck.ResidueInfoKind.__members__.items():
+    for name, member in ck.ResidueInfoKind.names.items():
         assert ck.expand_one_letter("A", name.lower()) == ck.expand_one_letter("A", member)
     params = ck.BioReadParams(format="pdb")
     assert params.format == ck.BioCoordinateFormat.Pdb
@@ -111,10 +125,10 @@ def test_generated_stub_describes_enum_input_but_typed_output():
     stub = Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi"
     tree = ast.parse(stub.read_text())
     params = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "SdfReadParams")
-    getter = next(node for node in params.body if isinstance(node, ast.FunctionDef) and node.name == "coordinate_mode" and any(isinstance(d, ast.Name) and d.id == "property" for d in node.decorator_list))
+    getter = next(node for node in params.body if isinstance(node, ast.FunctionDef) and node.name == "coordinate_mode" and any(ast.unparse(d) == "builtins.property" for d in node.decorator_list))
     setter = next(node for node in params.body if isinstance(node, ast.FunctionDef) and node.name == "coordinate_mode" and any(isinstance(d, ast.Attribute) and d.attr == "setter" for d in node.decorator_list))
     assert getter.returns is not None
     annotation = setter.args.args[-1].annotation
     assert annotation is not None
     assert ast.unparse(getter.returns) == "SdfCoordinateMode"
-    assert ast.unparse(annotation) == "SdfCoordinateMode | builtins.str"
+    assert ast.unparse(annotation) == "SdfCoordinateMode | str"

@@ -55,19 +55,19 @@ error_projection!(SdfReadError, SdfReadErrorKind, ck::SdfReadError, "io", {
     | ck::SdfReadError::RecordIndexOutOfRange { .. } => None,
 }, source = Option<ReadSource>, methods = {
     #[getter]
-    fn index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Index associated with the failure. Present for `SdfReadError.RecordIndexOutOfRange`, `SdfReadError.Record`; None when unavailable."] fn index(&self) -> Option<usize> { match self.inner {
         ck::SdfReadError::RecordIndexOutOfRange { index, .. } | ck::SdfReadError::Record { index, .. } => Some(index), _ => None,
     } }
     #[getter]
-    fn capability(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Capability required by this input. Present for `SdfReadError.MissingCapability`; None when unavailable."] fn capability(&self) -> Option<&'static str> { match self.inner {
         ck::SdfReadError::MissingCapability(value) => Some(value), _ => None,
     } }
     #[getter]
-    fn format(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Format associated with the failure. Present for `SdfReadError.Unsupported`; None when unavailable."] fn format(&self) -> Option<&'static str> { match self.inner {
         ck::SdfReadError::Unsupported(value) => Some(value), _ => None,
     } }
     #[getter]
-    fn message(&self) -> Option<&str> { match &self.inner {
+    #[doc = "Native diagnostic message. Present for `SdfReadError.Parse`; None when unavailable."] fn message(&self) -> Option<&str> { match &self.inner {
         ck::SdfReadError::Parse(value) => Some(value), _ => None,
     } }
 });

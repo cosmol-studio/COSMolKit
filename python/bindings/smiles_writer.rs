@@ -91,28 +91,28 @@ error_projection!(FragmentWriteInputError, FragmentWriteInputErrorKind, ck::Frag
     | ck::FragmentWriteInputError::InvalidTopology(_) | ck::FragmentWriteInputError::ValenceAssignmentLengthMismatch { .. } => None,
 }, source = Option<FragmentSource>, methods = {
     #[getter]
-    fn atom_index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom index involved in the failure. Present for `FragmentWriteInputError.RootAtomOutOfRange`, `FragmentWriteInputError.RootAtomNotSelected`, `FragmentWriteInputError.AtomOutOfRange`, `FragmentWriteInputError.RootAtomRequiresSingleFragment`; None when unavailable."] fn atom_index(&self) -> Option<usize> { match self.inner {
         ck::FragmentWriteInputError::RootAtomOutOfRange { atom_index, .. }
         | ck::FragmentWriteInputError::RootAtomNotSelected { atom_index }
         | ck::FragmentWriteInputError::AtomOutOfRange { atom_index, .. }
         | ck::FragmentWriteInputError::RootAtomRequiresSingleFragment { atom_index, .. } => Some(atom_index), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Number of atoms available to the operation. Present for `FragmentWriteInputError.RootAtomOutOfRange`, `FragmentWriteInputError.AtomOutOfRange`, `FragmentWriteInputError.ValenceAssignmentLengthMismatch`; None when unavailable."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::FragmentWriteInputError::RootAtomOutOfRange { atom_count, .. }
         | ck::FragmentWriteInputError::AtomOutOfRange { atom_count, .. }
         | ck::FragmentWriteInputError::ValenceAssignmentLengthMismatch { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn len(&self) -> Option<usize> { match self.inner {
+    #[doc = "Length of the invalid span or collection. Present for `FragmentWriteInputError.AtomSymbolsTooShort`, `FragmentWriteInputError.BondSymbolsTooShort`; None when unavailable."] fn len(&self) -> Option<usize> { match self.inner {
         ck::FragmentWriteInputError::AtomSymbolsTooShort { len, .. } | ck::FragmentWriteInputError::BondSymbolsTooShort { len, .. } => Some(len), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Expected count or value. Present for `FragmentWriteInputError.AtomSymbolsTooShort`, `FragmentWriteInputError.BondSymbolsTooShort`; None when unavailable."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::FragmentWriteInputError::AtomSymbolsTooShort { expected, .. } | ck::FragmentWriteInputError::BondSymbolsTooShort { expected, .. } => Some(expected), _ => None,
     } }
     #[getter]
-    fn detail(&self) -> Option<&str> { match &self.inner { ck::FragmentWriteInputError::InvalidTopology(value) => Some(value), _ => None } }
+    #[doc = "Additional native diagnostic detail. Present for `FragmentWriteInputError.InvalidTopology`; None when unavailable."] fn detail(&self) -> Option<&str> { match &self.inner { ck::FragmentWriteInputError::InvalidTopology(value) => Some(value), _ => None } }
 });
 
 error_projection!(retained SmilesWriteError, SmilesWriteErrorKind, ck::SmilesWriteError, "smiles", {

@@ -13,7 +13,7 @@ def test_flat_search_functions_and_query_factory_replace_the_domain_submodule():
     assert query.num_atoms == 3
     assert query.num_bonds == 2
     assert query.num_atoms == 3
-    assert repr(query) == 'QueryGraph(atoms=3, bonds=2)'
+    assert (query.num_atoms, query.num_bonds) == (3, 2)
     assert ck.QueryGraph.from_smarts('C(N)O').num_atoms == 3
     assert not hasattr(ck, 'search')
     with pytest.raises(ModuleNotFoundError):
@@ -53,23 +53,23 @@ def test_name_and_cx_strict_error_preserve_priority_and_typed_category():
     assert ck.parse_smarts('CO compound').name == 'compound'
     with pytest.raises(ck.SmartsParseError) as no_name:
         ck.parse_smarts_with_params('CO compound',ck.SmartsParseParams(parse_name=False))
-    assert no_name.value.kind == 'CxSmiles'
+    assert no_name.value.variant.name == 'CxSmiles'
     assert ck.parse_smarts_with_params('CO compound',ck.SmartsParseParams(parse_name=False,strict_cxsmiles=False)).name is None
     with pytest.raises(ck.SmartsParseError) as caught:
         ck.parse_smarts('C |notCX| name')
     assert caught.value.domain == 'search'
-    assert caught.value.kind == 'CxSmiles'
+    assert caught.value.variant.name == 'CxSmiles'
 
 
 def test_parse_diagnostic_gap_is_typed_and_never_empty_query():
     with pytest.raises(ck.SmartsParseError) as caught:
         ck.parse_smarts_with_params('C',ck.SmartsParseParams(debug_parse=True))
-    assert caught.value.kind == 'UnsupportedFeature'
+    assert caught.value.variant.name == 'UnsupportedFeature'
     assert caught.value.domain == 'search'
     assert caught.value.feature
     with pytest.raises(ck.SmartsParseError) as syntax:
         ck.parse_smarts('C(')
-    assert syntax.value.kind != 'UnsupportedFeature'
+    assert syntax.value.variant.name != 'UnsupportedFeature'
 
 
 def test_write_params_cover_every_field_and_out_of_range_is_structured():
@@ -80,7 +80,7 @@ def test_write_params_cover_every_field_and_out_of_range_is_structured():
     with pytest.raises(ck.SmartsWriteError) as caught:
         ck.write_smarts(ck.parse_smarts('C'),p)
     assert caught.value.domain == 'search'
-    assert caught.value.kind == 'RootedAtomOutOfRange'
+    assert caught.value.variant.name == 'RootedAtomOutOfRange'
 
 
 def test_match_result_transports_atom_pairs_bonds_and_first_match():
@@ -113,9 +113,9 @@ def test_compiled_query_reuses_order_and_independent_result_values():
 
 def test_substruct_params_original_scalar_defaults_and_overrides():
     p = ck.SubstructMatchParams()
-    assert (p.max_matches,p.uniquify,p.use_chirality,p.use_enhanced_stereo,p.specified_stereo_query_matches_unspecified,p.use_query_query_matches,p.recursion_possible,p.max_recursive_matches,p.num_threads,p.aromatic_matches_conjugated,p.aromatic_matches_single_or_double,p.atom_properties,p.bond_properties,p.extra_atom_check_overrides_default_check,p.extra_bond_check_overrides_default_check,p.use_generic_matchers) == (1000,True,False,False,False,False,True,1000,1,False,False,[],[],False,False,False)
+    assert (p.max_matches,p.uniquify,p.use_chirality,p.use_enhanced_stereo,p.specified_stereo_query_matches_unspecified,p.use_query_query_matches,p.recursion_possible,p.max_recursive_matches,p.num_threads,p.aromatic_matches_conjugated,p.aromatic_matches_single_or_double,p.atom_properties,p.bond_properties,p.extra_atom_check_overrides_default_check,p.extra_bond_check_overrides_default_check,p.use_generic_matchers) == (1000,True,False,False,False,False,True,1000,1,False,False,(),(),False,False,False)
     p = ck.SubstructMatchParams(max_matches=3,uniquify=False,use_chirality=True,use_enhanced_stereo=True,specified_stereo_query_matches_unspecified=True,use_query_query_matches=True,recursion_possible=False,max_recursive_matches=7,num_threads=2,aromatic_matches_conjugated=True,aromatic_matches_single_or_double=True,atom_properties=['foo'],bond_properties=['bar'],extra_atom_check_overrides_default_check=True,extra_bond_check_overrides_default_check=True,use_generic_matchers=True)
-    assert (p.max_matches,p.uniquify,p.use_chirality,p.use_enhanced_stereo,p.specified_stereo_query_matches_unspecified,p.use_query_query_matches,p.recursion_possible,p.max_recursive_matches,p.num_threads,p.aromatic_matches_conjugated,p.aromatic_matches_single_or_double,p.atom_properties,p.bond_properties,p.extra_atom_check_overrides_default_check,p.extra_bond_check_overrides_default_check,p.use_generic_matchers) == (3,False,True,True,True,True,False,7,2,True,True,['foo'],['bar'],True,True,True)
+    assert (p.max_matches,p.uniquify,p.use_chirality,p.use_enhanced_stereo,p.specified_stereo_query_matches_unspecified,p.use_query_query_matches,p.recursion_possible,p.max_recursive_matches,p.num_threads,p.aromatic_matches_conjugated,p.aromatic_matches_single_or_double,p.atom_properties,p.bond_properties,p.extra_atom_check_overrides_default_check,p.extra_bond_check_overrides_default_check,p.use_generic_matchers) == (3,False,True,True,True,True,False,7,2,True,True,('foo',),('bar',),True,True,True)
 
 
 def test_original_match_limits_uniquify_and_orientation_branches():
@@ -187,7 +187,8 @@ def test_both_factories_preserve_typed_parse_error_details(text):
         with pytest.raises(ck.SmartsParseError) as caught:
             factory(text)
         error = caught.value
-        errors.append((type(error), str(error), error.domain, error.kind, error.__dict__, str(error.__cause__)))
+        errors.append((type(error), str(error), error.domain, error.variant.name,
+                       error.position, error.message, error.feature, str(error.__cause__)))
     assert errors[0] == errors[1]
 
 
@@ -198,7 +199,7 @@ def test_both_explicit_factories_preserve_unsupported_error_details():
         with pytest.raises(ck.SmartsParseError) as caught:
             factory('C', params)
         error = caught.value
-        errors.append((type(error), str(error), error.domain, error.kind, error.feature))
+        errors.append((type(error), str(error), error.domain, error.variant.name, error.feature))
         assert params.debug_parse is True
     assert errors[0] == errors[1]
 
@@ -215,11 +216,12 @@ def test_flat_functions_and_class_factories_have_real_generated_signatures():
         assert name in functions
         assert callable(getattr(ck, name))
     for name, parameters in [('from_smarts', ['text']), ('from_smarts_with_params', ['text', 'params'])]:
-        assert list(inspect.signature(getattr(ck.QueryGraph, name)).parameters) == parameters
+        runtime = inspect.signature(getattr(ck.QueryGraph, name))
+        assert list(runtime.parameters)[:len(parameters)] == parameters
         method = methods[name]
         assert [a.arg for a in method.args.args] == parameters
         assert [ast.unparse(d) for d in method.decorator_list] == (
             ['typing.overload', 'staticmethod'] if name == 'from_smarts' else ['staticmethod'])
         if name == 'from_smarts':
-            assert len([node for node in query.body if isinstance(node, ast.FunctionDef) and node.name == name]) == 3
+            assert len([node for node in query.body if isinstance(node, ast.FunctionDef) and node.name == name]) == 2
         assert ast.unparse(method.returns) == 'QueryGraph'

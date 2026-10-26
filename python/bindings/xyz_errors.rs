@@ -14,6 +14,7 @@ pub struct ParseFloatError {
 }
 crate::error_framework::error_projection! {methods impl ParseFloatError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "std"
     }
@@ -44,11 +45,11 @@ error_projection!(XyzReadError, XyzReadErrorKind, ck::XyzReadError, "io", {
     | ck::XyzReadError::MissingCoordinates { .. } | ck::XyzReadError::AtomSymbol { .. } => None,
 }, source = Option<Source<crate::error_framework::ErrorObject<ParseFloatError>, Source<crate::error_framework::ErrorObject<TopologyValidationError>, Source<crate::error_framework::ErrorObject<CoordinateValidationError>, crate::error_framework::ErrorObject<MoleculePropertyError>>>>>, methods = {
     #[getter]
-    fn value(&self) -> Option<&str> { match &self.inner {
+    #[doc = "Original value rejected by the operation. Present for `XyzReadError.AtomCount`, `XyzReadError.Coordinate`; None when unavailable."] fn value(&self) -> Option<&str> { match &self.inner {
         ck::XyzReadError::AtomCount { value } | ck::XyzReadError::Coordinate { value, .. } => Some(value), _ => None,
     } }
     #[getter]
-    fn line(&self) -> Option<usize> { match self.inner {
+    #[doc = "Source line associated with the failure. Present for `XyzReadError.MissingCoordinates`, `XyzReadError.Coordinate`; None when unavailable."] fn line(&self) -> Option<usize> { match self.inner {
         ck::XyzReadError::MissingCoordinates { line } | ck::XyzReadError::Coordinate { line, .. } => Some(line), _ => None,
     } }
 });

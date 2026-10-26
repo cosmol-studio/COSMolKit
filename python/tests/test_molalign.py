@@ -124,7 +124,7 @@ def test_alignment_errors_are_visible_and_leave_state_unchanged():
     before = coordinates_of(reference).copy()
     with pytest.raises(ValueError, match="probe atom index 7 is out of range"):
         _ = reference.align_to_(
-            reference,
+            reference.copy(),
             cosmolkit.AlignmentParameters(
                 atom_map=[cosmolkit.AlignmentAtomMap(7, 0)]
             ),

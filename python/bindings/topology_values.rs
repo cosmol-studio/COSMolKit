@@ -5,6 +5,7 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only topology view retaining the molecule's COW storage. Requested row lists are detached copies.
 pub struct TopologyBlock {
     owner: ck::Molecule,
 }
@@ -25,6 +26,7 @@ impl TopologyBlock {
 #[pymethods]
 impl TopologyBlock {
     #[getter]
+    /// Independent detached atom rows in stored order.
     fn atoms(&self) -> Vec<Atom> {
         self.inner()
             .atoms
@@ -34,6 +36,7 @@ impl TopologyBlock {
             .collect()
     }
     #[getter]
+    /// Independent detached bond rows in stored order.
     fn bonds(&self) -> Vec<Bond> {
         self.inner()
             .bonds
@@ -43,6 +46,7 @@ impl TopologyBlock {
             .collect()
     }
     #[getter]
+    /// Independent copies of the stored substance groups.
     fn substance_groups(&self) -> Vec<SubstanceGroup> {
         self.inner()
             .substance_groups
@@ -81,7 +85,7 @@ mod tests {
                 .iter()
                 .map(|atom| {
                     atom.bind(py)
-                        .call_method0("id")
+                        .getattr("id")
                         .and_then(|value| value.extract::<usize>())
                 })
                 .collect::<PyResult<Vec<_>>>()?;

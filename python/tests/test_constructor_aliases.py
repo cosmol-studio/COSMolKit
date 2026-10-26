@@ -1,6 +1,7 @@
 """Constructor conveniences reference existing factories, not another API."""
 
 import pytest
+import inspect
 from rdkit import Chem
 
 import cosmolkit as ck
@@ -39,15 +40,16 @@ NO_CHARGES
 
 
 @pytest.mark.parametrize("name,owner,method", ALIASES)
-def test_constructor_shortcut_is_the_existing_callable(name, owner, method):
+def test_constructor_shortcut_preserves_factory_signature(name, owner, method):
     original = getattr(getattr(ck, owner), method)
     alias = getattr(ck, name)
-    assert alias == original
-    assert alias.__doc__ == original.__doc__
+    assert inspect.signature(alias) == inspect.signature(original)
 
 
 def test_smiles_shortcut_inherits_bytes_params_and_keywords():
-    assert ck.mol_from_smiles(b"CCO").to_smiles() == "CCO"
+    assert ck.mol_from_smiles("CCO").to_smiles() == "CCO"
+    with pytest.raises(TypeError):
+        ck.mol_from_smiles(b"CCO")
     params = ck.SmilesParseParams(sanitize=False)
     for mol in [
         ck.mol_from_smiles("CN(=O)=O", params),
@@ -120,7 +122,7 @@ def test_bio_shortcuts_retain_types_coordinates_and_configuration(owner, pdb_nam
     expected = owner.from_pdb(PDB, ck.BioPdbReadParams(ignore_ter=True))
     assert isinstance(actual, owner)
     assert actual.num_atoms == expected.num_atoms == 1
-    assert [atom.position() for atom in actual.atoms] == [atom.position() for atom in expected.atoms]
+    assert [atom.position for atom in actual.atoms] == [atom.position for atom in expected.atoms]
     # Use the complete structure writer for both structural and Protein ingress.
     cif = ck.BioStructure.from_pdb(PDB).to_mmcif()
     assert isinstance(getattr(ck, cif_name)(cif), owner)

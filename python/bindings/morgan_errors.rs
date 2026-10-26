@@ -147,11 +147,11 @@ error_projection!(retained AtomPairError, AtomPairErrorKind, ck::AtomPairError,"
     AtomInvariantLength { length, atom_index },
 }, cause=|inner: &RetainedError<ck::AtomPairError>| inner.node().source().map(project), source=Option<AtomPairSource>, methods={
     #[getter]
-    fn length(&self) -> Option<usize> { match self.inner.as_ref() {
+    #[doc = "Length relevant to the failed bounds check. Present for `AtomPairError.AtomInvariantLength`; None when unavailable."] fn length(&self) -> Option<usize> { match self.inner.as_ref() {
         ck::AtomPairError::AtomInvariantLength { length, .. } => Some(*length), _ => None,
     } }
     #[getter]
-    fn atom_index(&self) -> Option<usize> { match self.inner.as_ref() {
+    #[doc = "Atom index involved in the failure. Present for `AtomPairError.AtomInvariantLength`; None when unavailable."] fn atom_index(&self) -> Option<usize> { match self.inner.as_ref() {
         ck::AtomPairError::AtomInvariantLength { atom_index, .. } => Some(*atom_index), _ => None,
     } }
 });

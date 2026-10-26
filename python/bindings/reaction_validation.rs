@@ -20,21 +20,21 @@ mod tests {
             module.add_class::<crate::reaction::Reaction>()?;
             module.add_class::<crate::query_compiler::QueryGraph>()?;
             module.add_class::<crate::params::ReactionValidationParams>()?;
-            module.add_class::<ReactionValidationError>()?;
-            module.add_class::<ReactionInitializationError>()?;
+            module.add("ReactionValidationError", <ReactionValidationError as crate::error_framework::ExceptionPayload>::exception_type(py)?)?;
+            module.add("ReactionInitializationError", <ReactionInitializationError as crate::error_framework::ExceptionPayload>::exception_type(py)?)?;
             let scope = pyo3::types::PyDict::new(py);
             scope.set_item("ck", &module)?;
             py.run(c_str!(r#"
 query = ck.QueryGraph.from_smarts("[C:1]")
 reaction = ck.Reaction.from_templates([query], [query], [])
 params = ck.ReactionValidationParams(silent=True)
-assert reaction.is_initialized() is False
+assert reaction.is_initialized is False
 for report in (reaction.validate(), reaction.validate(params), reaction.validate(silent=True), reaction.validate_with_params(params)):
     assert report.is_valid and report.num_errors == 0
 for initialized in (reaction.with_initialized(), reaction.with_initialized(params), reaction.with_initialized(silent=True), reaction.with_initialized_with_params(params)):
-    assert initialized.is_initialized() is True
-    assert initialized.num_reactant_templates() == reaction.num_reactant_templates()
-    assert reaction.is_initialized() is False
+    assert initialized.is_initialized is True
+    assert initialized.num_reactant_templates == reaction.num_reactant_templates
+    assert reaction.is_initialized is False
 for method in (reaction.validate, reaction.with_initialized):
     try:
         method(params, silent=False)
@@ -58,7 +58,7 @@ except ck.ReactionInitializationError as error:
         raise AssertionError("invalid report must remain readonly")
 else:
     raise AssertionError("invalid reaction initialization succeeded")
-assert empty.is_initialized() is False
+assert empty.is_initialized is False
 "#), Some(&scope), None)?;
 
             let mut atom = ck::QueryAtom::new(ck::AtomId::new(0), ck::AtomSpec::new(ck::Element::C));
@@ -101,13 +101,13 @@ error_projection!(ReactionValidationError, ReactionValidationErrorKind, ck::Reac
     | ck::ReactionValidationError::MissingReactingAtom { .. } | ck::ReactionValidationError::QueryArithmetic { .. } => None,
 }, source = Option<Source<crate::error_framework::ErrorObject<PropertyIntReadError>, crate::error_framework::ErrorObject<AtomPropertyError>>>, methods = {
     #[getter]
-    fn role(&self) -> Option<ReactionRole> { match self.inner {
+    #[doc = "Reaction template role implicated in the failure. Applies to ReactionValidationError.Property, ReactionValidationError.MapOverflow, ReactionValidationError.AtomBounds. None when this payload is absent."] fn role(&self) -> Option<ReactionRole> { match self.inner {
         ck::ReactionValidationError::Property { role, .. }
         | ck::ReactionValidationError::MapOverflow { role, .. }
         | ck::ReactionValidationError::AtomBounds { role, .. } => Some(role.into()), _ => None,
     } }
     #[getter]
-    fn template(&self) -> usize { match self.inner {
+    #[doc = "Reaction template index involved in the failure. Applies to ReactionValidationError.Property, ReactionValidationError.MapOverflow, ReactionValidationError.AtomBounds, ReactionValidationError.MissingReactingAtom, ReactionValidationError.QueryArithmetic, ReactionValidationError.Annotation."] fn template(&self) -> usize { match self.inner {
         ck::ReactionValidationError::Property { template, .. }
         | ck::ReactionValidationError::MapOverflow { template, .. }
         | ck::ReactionValidationError::AtomBounds { template, .. }
@@ -116,7 +116,7 @@ error_projection!(ReactionValidationError, ReactionValidationErrorKind, ck::Reac
         | ck::ReactionValidationError::Annotation { template, .. } => template,
     } }
     #[getter]
-    fn atom(&self) -> usize { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to ReactionValidationError.Property, ReactionValidationError.MapOverflow, ReactionValidationError.AtomBounds, ReactionValidationError.MissingReactingAtom, ReactionValidationError.QueryArithmetic, ReactionValidationError.Annotation."] fn atom(&self) -> usize { match self.inner {
         ck::ReactionValidationError::Property { atom, .. }
         | ck::ReactionValidationError::MapOverflow { atom, .. }
         | ck::ReactionValidationError::AtomBounds { atom, .. }
@@ -125,7 +125,7 @@ error_projection!(ReactionValidationError, ReactionValidationErrorKind, ck::Reac
         | ck::ReactionValidationError::Annotation { atom, .. } => atom.index(),
     } }
     #[getter]
-    fn property(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Property name involved in the failure. Applies to ReactionValidationError.Property, ReactionValidationError.MapOverflow, ReactionValidationError.Annotation. None when this payload is absent."] fn property(&self) -> Option<&'static str> { match self.inner {
         ck::ReactionValidationError::Property { property, .. }
         | ck::ReactionValidationError::MapOverflow { property, .. }
         | ck::ReactionValidationError::Annotation { property, .. } => Some(property), _ => None,
@@ -140,7 +140,7 @@ error_projection!(ReactionInitializationError, ReactionInitializationErrorKind, 
 }, source = Option<crate::error_framework::ErrorObject<ReactionValidationError>>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn report(&self) -> Option<ReactionValidationReport> { match &self.inner {
+    #[doc = "Validation report for an invalid reaction, or None for another initialization failure."] fn report(&self) -> Option<ReactionValidationReport> { match &self.inner {
         ck::ReactionInitializationError::Invalid { report } => Some(ReactionValidationReport { inner: report.clone() }), _ => None,
     } }
 });

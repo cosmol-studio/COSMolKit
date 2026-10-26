@@ -34,6 +34,7 @@ pub(crate) fn keyword_params(
 }
 
 #[pyfunction]
+/// Calculate a layered path fingerprint for a QueryGraph using explicit LayeredFingerprintParams.
 pub fn fingerprint_layered_query_with_params(
     py: Python<'_>,
     query: &QueryGraph,
@@ -45,6 +46,7 @@ pub fn fingerprint_layered_query_with_params(
 }
 
 #[pyfunction]
+/// Calculate a QueryGraph layered fingerprint with native additional output.
 pub fn fingerprint_layered_query_with_output_with_params(
     py: Python<'_>,
     query: &QueryGraph,
@@ -251,7 +253,7 @@ mod tests {
                     for actual in retained {
                         let counts = actual
                             .bind(py)
-                            .call_method0("atom_counts")?
+                            .getattr("atom_counts")?
                             .extract::<Option<Vec<u32>>>()?;
                         assert_eq!(counts, expected.atom_counts);
                     }

@@ -14,11 +14,17 @@ use cosmolkit_model::{CoordinateBlock, MoleculeProperties, TopologyBlock};
 
 #[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// MMFF parameterization and minimization settings for one stored conformer.
 pub struct MmffOptimizationParams {
+    /// MMFF94 or MMFF94s parameterization.
     pub mmff_variant: MmffVariant,
+    /// Maximum number of minimizer iterations.
     pub max_iterations: i32,
+    /// Distance cutoff for inclusion of MMFF non-bonded interactions, in angstroms.
     pub non_bonded_threshold: f64,
+    /// Stored 3D conformer identifier, or None for the native default selection.
     pub conformer_id: Option<usize>,
+    /// Omit non-bonded interactions between disconnected molecular fragments.
     pub ignore_interfragment_interactions: bool,
 }
 impl Default for MmffOptimizationParams {
@@ -40,11 +46,17 @@ impl Default for MmffOptimizationParams {
 }
 #[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// MMFF parameterization, minimizer limits and threading for all stored conformers.
 pub struct MmffConformerOptimizationParams {
+    /// Native worker count for conformer optimization; zero requests the available hardware thread count.
     pub num_threads: i32,
+    /// Maximum number of minimizer iterations.
     pub max_iterations: i32,
+    /// MMFF94 or MMFF94s parameterization.
     pub mmff_variant: MmffVariant,
+    /// Distance cutoff for inclusion of MMFF non-bonded interactions, in angstroms.
     pub non_bonded_threshold: f64,
+    /// Omit non-bonded interactions between disconnected molecular fragments.
     pub ignore_interfragment_interactions: bool,
 }
 impl Default for MmffConformerOptimizationParams {
@@ -880,9 +892,13 @@ mod original_optimization_tests {
 #[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct MmffEvaluationParams {
+    /// MMFF94 or MMFF94s parameterization.
     pub mmff_variant: MmffVariant,
+    /// Distance cutoff for inclusion of MMFF non-bonded interactions, in angstroms.
     pub non_bonded_threshold: f64,
+    /// Stored 3D conformer identifier, or None for the native default selection.
     pub conformer_id: Option<usize>,
+    /// Omit non-bonded interactions between disconnected molecular fragments.
     pub ignore_interfragment_interactions: bool,
 }
 impl Default for MmffEvaluationParams {

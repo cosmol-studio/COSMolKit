@@ -188,6 +188,7 @@ pub(crate) fn sdf_keywords(
 }
 #[pyfunction]
 #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing,proximity_bonding=crate::arguments::Argument::Missing))]
+/// Parse PDB text into a molecular value using the selected model, connectivity and sanitization policy. This accepts file content, not a path.
 pub fn mol_from_pdb(
     py: Python<'_>,
     text: &str,
@@ -234,6 +235,7 @@ pub fn _mol_from_pdb_keywords(
 }
 #[pyfunction]
 #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing,proximity_bonding=crate::arguments::Argument::Missing))]
+/// Parse mmCIF text into a molecular value using the selected structural and chemical conversion policy. This accepts content, not a path.
 pub fn mol_from_mmcif(
     py: Python<'_>,
     text: &str,
@@ -280,6 +282,7 @@ pub fn _mol_from_mmcif_keywords(
 }
 #[pyfunction]
 #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,variant=crate::arguments::Argument::Missing,cleanup_substructures=crate::arguments::Argument::Missing))]
+/// Parse Tripos MOL2 text into a molecular value with the selected reader parameters.
 pub fn mol_from_mol2(
     py: Python<'_>,
     text: &str,
@@ -339,6 +342,7 @@ pub fn _mol_from_mol2_keywords(
     )
 }
 #[pyfunction]
+/// Parse XYZ text into a molecular value with atom identities and coordinates; XYZ does not encode chemical bonds.
 pub fn mol_from_xyz_block(py: Python<'_>, text: &str) -> PyResult<Molecule> {
     Molecule::from_xyz_block(py, text)
 }

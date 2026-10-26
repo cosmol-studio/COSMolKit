@@ -21,6 +21,7 @@ impl DimensionInput {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Detached 2D/3D conformers and source ordering metadata.
     pub struct CoordinateBlock {
         pub(crate) inner: ck::CoordinateBlock,
     }
@@ -49,6 +50,7 @@ impl CoordinateBlock {
         })
     }
     #[getter]
+    /// Independent copies of the stored two-dimensional conformers.
     fn conformers_2d(&self) -> Vec<Conformer2D> {
         self.inner
             .conformers_2d
@@ -58,6 +60,7 @@ impl CoordinateBlock {
             .collect()
     }
     #[getter]
+    /// Independent copies of the stored three-dimensional conformers.
     fn conformers_3d(&self) -> Vec<Conformer3D> {
         self.inner
             .conformers_3d
@@ -67,10 +70,12 @@ impl CoordinateBlock {
             .collect()
     }
     #[getter]
+    /// Coordinate dimensionality recorded by the source, or None.
     fn source_coordinate_dim(&self) -> Option<CoordinateDimension> {
         self.inner.source_coordinate_dim.map(Into::into)
     }
     #[getter]
+    /// Original 2D/3D conformer ordering, or None when not recorded.
     fn source_conformer_order(&self) -> Option<Vec<CoordinateDimension>> {
         self.inner
             .source_conformer_order
@@ -82,6 +87,7 @@ impl CoordinateBlock {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Record index, source byte/line ranges and optional title for indexed SDF access.
     pub struct SdfRecordMetadata {
         pub(crate) inner: ck::SdfRecordMetadata,
     }
@@ -110,26 +116,32 @@ impl SdfRecordMetadata {
         }
     }
     #[getter]
+    /// Zero-based SDF record index.
     fn index(&self) -> usize {
         self.inner.index()
     }
     #[getter]
+    /// Byte offset of the record in its source.
     fn byte_offset(&self) -> u64 {
         self.inner.byte_offset()
     }
     #[getter]
+    /// Length of the record in bytes.
     fn byte_len(&self) -> u64 {
         self.inner.byte_len()
     }
     #[getter]
+    /// Half-open byte range (start, end) for this record.
     fn byte_range(&self) -> (u64, u64) {
         self.inner.byte_range()
     }
     #[getter]
+    /// Half-open source-line range (start, end) for this record.
     fn line_range(&self) -> (usize, usize) {
         self.inner.line_range()
     }
     #[getter]
+    /// Record title, or None if absent.
     fn title(&self) -> Option<&str> {
         self.inner.title()
     }

@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// Native maximum-common-substructure result, completion state and retained query graphs.
 pub struct McsResult {
     pub(crate) inner: Arc<ck::McsResult>,
 }
@@ -14,26 +15,32 @@ pub struct McsResult {
 #[pymethods]
 impl McsResult {
     #[getter]
+    /// Maximum-common-substructure query graph, or None if no query was produced.
     fn query(&self) -> Option<QueryGraph> {
         QueryGraph::from_mcs_query(Arc::clone(&self.inner))
     }
     #[getter]
+    /// Number of atoms in the reported common substructure.
     fn atom_count(&self) -> usize {
         self.inner.atom_count
     }
     #[getter]
+    /// Number of bonds in the reported common substructure.
     fn bond_count(&self) -> usize {
         self.inner.bond_count
     }
     #[getter]
+    /// Whether the native search completed rather than stopping early.
     fn completed(&self) -> bool {
         self.inner.completed
     }
     #[getter]
+    /// SMARTS representation of the reported common substructure.
     fn smarts(&self, py: Python<'_>) -> PyResult<String> {
         decode_source_text(py, &self.inner.smarts)
     }
     #[getter]
+    /// Alternative maximum-common-substructure query graphs keyed by their SMARTS.
     fn degenerate(&self, py: Python<'_>) -> PyResult<BTreeMap<String, QueryGraph>> {
         self.inner
             .degenerate
@@ -117,20 +124,14 @@ mod tests {
             if let Some(query) = query {
                 let query = Py::new(py, query)?;
                 assert_eq!(
-                    query
-                        .bind(py)
-                        .call_method0("num_atoms")?
-                        .extract::<usize>()?,
+                    query.bind(py).getattr("num_atoms")?.extract::<usize>()?,
                     expected_atoms
                 );
             }
             for query in degenerate.into_values() {
                 let query = Py::new(py, query)?;
                 assert_eq!(
-                    query
-                        .bind(py)
-                        .call_method0("num_bonds")?
-                        .extract::<usize>()?,
+                    query.bind(py).getattr("num_bonds")?.extract::<usize>()?,
                     expected_bonds
                 );
             }

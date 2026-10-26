@@ -10,12 +10,13 @@ use pyo3::prelude::*;
 // Nested values are copied into/out of detached value objects, never rebuilt
 // from guessed fields. The source Default owns every missing-value policy.
 macro_rules! metadata_record {
-    ($name:ident, scalars {$($field:ident: $ty:ty),+ $(,)?},
-        values {$($value:ident: $value_ty:ident),* $(,)?},
-        lists {$($list:ident: $list_ty:ident),* $(,)?}) => {
+    ($(#[$class_doc:meta])* $name:ident, scalars {$($(#[$field_doc:meta])* $field:ident: $ty:ty),+ $(,)?},
+        values {$($(#[$value_doc:meta])* $value:ident: $value_ty:ident),* $(,)?},
+        lists {$($(#[$list_doc:meta])* $list:ident: $list_ty:ident),* $(,)?}) => {
         crate::configuration::type_projection! {
             #[pyclass(module="cosmolkit", frozen, from_py_object)]
             #[derive(Clone)]
+            $(#[$class_doc])*
             pub struct $name {
                 pub(crate) inner: ck::$name
             }
@@ -33,10 +34,13 @@ macro_rules! metadata_record {
                 } }
             }
             $(#[getter]
+            $(#[$field_doc])*
             fn $field(&self) -> &$ty { &self.inner.$field })+
             $(#[getter]
+            $(#[$value_doc])*
             fn $value(&self) -> $value_ty { $value_ty { inner: self.inner.$value.clone() } })*
             $(#[getter]
+            $(#[$list_doc])*
             fn $list(&self) -> Vec<$list_ty> {
                 self.inner.$list.iter().cloned().map(|inner| $list_ty { inner }).collect()
             })*
@@ -62,6 +66,7 @@ impl BioSoftwareClassificationInput {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Software provenance reported during structure determination or refinement.
     pub struct BioSoftwareItem {
         pub(crate) inner: ck::BioSoftwareItem,
     }
@@ -96,30 +101,37 @@ impl BioSoftwareItem {
         })
     }
     #[getter]
+    /// Name of the software reported in the source.
     fn name(&self) -> &str {
         &self.inner.name
     }
     #[getter]
+    /// Reported software version.
     fn version(&self) -> &str {
         &self.inner.version
     }
     #[getter]
+    /// Reported software date.
     fn date(&self) -> &str {
         &self.inner.date
     }
     #[getter]
+    /// Source description of the software.
     fn description(&self) -> &str {
         &self.inner.description
     }
     #[getter]
+    /// Contact author recorded for the software.
     fn contact_author(&self) -> &str {
         &self.inner.contact_author
     }
     #[getter]
+    /// Contact author's email address.
     fn contact_author_email(&self) -> &str {
         &self.inner.contact_author_email
     }
     #[getter]
+    /// Role of the software in structure determination.
     fn classification(&self) -> BioSoftwareClassification {
         self.inner.classification.into()
     }
@@ -128,6 +140,7 @@ impl BioSoftwareItem {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Chain and residue range to which a TLS refinement group applies.
     pub struct BioTlsSelection {
         pub(crate) inner: ck::BioTlsSelection,
     }
@@ -163,85 +176,157 @@ impl BioTlsSelection {
         })
     }
     #[getter]
+    /// Chain identifier selected by this TLS range.
     fn chain(&self) -> &str {
         self.inner.chain.as_str()
     }
     #[getter]
+    /// First residue sequence identifier of the TLS selection.
     fn res_begin(&self) -> PdbSeqId {
         PdbSeqId {
             inner: self.inner.res_begin,
         }
     }
     #[getter]
+    /// Last residue sequence identifier of the TLS selection.
     fn res_end(&self) -> PdbSeqId {
         PdbSeqId {
             inner: self.inner.res_end,
         }
     }
     #[getter]
+    /// Additional source description of this TLS selection.
     fn details(&self) -> &str {
         &self.inner.details
     }
 }
 
-metadata_record!(BioExperimentInfo,
-    scalars { method: String, number_of_crystals: i32, unique_reflections: i32,
-        b_wilson: f64, diffraction_ids: Vec<String> },
-    values { reflections: BioReflectionsInfo }, lists { shells: BioReflectionsInfo });
 metadata_record!(
+/// Experimental method and diffraction/reflection statistics reported for a structure.
+BioExperimentInfo,
+scalars {
+    /// Experimental method recorded by the source.
+    method: String,
+    /// Reported number of crystals used.
+    number_of_crystals: i32,
+    /// Reported number of unique reflections.
+    unique_reflections: i32,
+    /// Wilson B factor reported for the experiment.
+    b_wilson: f64,
+    /// Identifiers linking this experiment to diffraction records.
+    diffraction_ids: Vec<String>
+},
+values {
+    /// Overall reflection statistics.
+    reflections: BioReflectionsInfo
+}, lists {
+    /// Reflection statistics by resolution shell.
+    shells: BioReflectionsInfo
+});
+metadata_record!(
+    /// Crystal identifier, preparation description, pH and diffraction records.
     BioExperimentalCrystalInfo,
     scalars {
+        /// Crystal identifier in the source.
         id: String,
+        /// Source description of crystal preparation or properties.
         description: String,
+        /// Reported crystal preparation pH.
         ph: f64,
+        /// Source text describing the pH range.
         ph_range: String
     },
     values {},
     lists {
+        /// Diffraction measurements associated with this crystal.
         diffractions: BioDiffractionInfo
     }
 );
 metadata_record!(
+    /// Translation/libration/screw refinement group, its origin and atom selections.
     BioTlsGroup,
     scalars {
+        /// Numeric source identifier for this TLS group.
         num_id: i16,
+        /// Textual source identifier for this TLS group.
         id: String,
+        /// Cartesian origin of the TLS model.
         origin: [f64; 3],
+        /// Six independent components of the symmetric translation tensor.
         t: [f64; 6],
+        /// Six independent components of the symmetric libration tensor.
         l: [f64; 6],
+        /// Three-by-three screw tensor.
         s: [[f64; 3]; 3]
     },
     values {},
     lists {
+        /// Chain/residue selections belonging to this TLS group.
         selections: BioTlsSelection
     }
 );
 metadata_record!(
+    /// Refinement methods, quality statistics and retained restraint/TLS records.
     BioRefinementInfo,
     scalars {
+        /// Refinement identifier from the source.
         id: String,
+        /// Reported cross-validation method.
         cross_validation_method: String,
+        /// Method used to select the free-R reflection set.
         rfree_selection_method: String,
+        /// Reported number of resolution bins.
         bin_count: i32,
+        /// Mean atomic B factor.
         mean_b: f64,
+        /// Six components of the reported anisotropic B tensor.
         aniso_b: [f64; 6],
+        /// Coordinate error estimated by the Luzzati method.
         luzzati_error: f64,
+        /// Blow diffraction precision index calculated from R.
         dpi_blow_r: f64,
+        /// Blow diffraction precision index calculated from free R.
         dpi_blow_rfree: f64,
+        /// Cruickshank diffraction precision index calculated from R.
         dpi_cruickshank_r: f64,
+        /// Cruickshank diffraction precision index calculated from free R.
         dpi_cruickshank_rfree: f64,
+        /// Additional source refinement remarks.
         remarks: String
     },
     values {
+        /// Overall refinement statistics.
         basic: BioBasicRefinementInfo
     },
     lists {
+        /// Refinement statistics for each resolution bin.
         bins: BioBasicRefinementInfo,
+        /// Reported restraint statistics.
         restr_stats: BioRefinementRestraint,
+        /// Translation/libration/screw refinement groups.
         tls_groups: BioTlsGroup
     }
 );
-metadata_record!(BioMetadata,
-    scalars { authors: Vec<String>, solved_by: String, starting_model: String, remark_300_detail: String },
-    values {}, lists { experiments: BioExperimentInfo, crystals: BioExperimentalCrystalInfo,
-        refinement: BioRefinementInfo, software: BioSoftwareItem });
+metadata_record!(
+/// Detached experimental, authorship and refinement metadata for a biological structure.
+BioMetadata,
+scalars {
+    /// Source author names in retained order.
+    authors: Vec<String>,
+    /// Reported structure solution method.
+    solved_by: String,
+    /// Description of the starting structural model.
+    starting_model: String,
+    /// Retained PDB REMARK 300 details.
+    remark_300_detail: String
+},
+values {}, lists {
+    /// Experimental records.
+    experiments: BioExperimentInfo,
+    /// Crystal preparation and diffraction records.
+    crystals: BioExperimentalCrystalInfo,
+    /// Refinement records.
+    refinement: BioRefinementInfo,
+    /// Software records reported by the source.
+    software: BioSoftwareItem
+});

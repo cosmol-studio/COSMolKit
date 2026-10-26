@@ -41,6 +41,7 @@ enum_input!(BioHelixClassInput, BioHelixClass);
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone, Copy)]
+    /// Source residue address comprising numbering, insertion code, segment and residue name.
     pub struct ResidueAddress {
         pub(crate) inner: ck::ResidueAddress,
     }
@@ -48,6 +49,7 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl ResidueAddress {
     #[staticmethod]
+    /// Create a source residue address; return None if its residue name or address fields are invalid.
     fn new(
         sequence_number: Option<i32>,
         insertion_code: Option<u8>,
@@ -59,24 +61,30 @@ impl ResidueAddress {
             .map(|inner| Self { inner })
     }
     #[getter]
+    /// Author residue sequence number, or None when unspecified.
     fn sequence_number(&self) -> Option<i32> {
         self.inner.sequence_number()
     }
     #[getter]
+    /// Optional source insertion-code byte.
     fn insertion_code(&self) -> Option<u8> {
         self.inner.insertion_code()
     }
     #[getter]
+    /// Source segment identifier.
     fn segment(&self) -> &str {
         self.inner.segment()
     }
     #[getter]
+    /// Name or identifier retained in this source record.
     fn name(&self) -> String {
         self.inner.name().as_str().to_owned()
     }
+    /// Compare residue addresses using the native matching rules, including the segment.
     fn matches(&self, other: &Self) -> bool {
         self.inner.matches(&other.inner)
     }
+    /// Compare residue addresses using native matching rules while ignoring the segment.
     fn matches_without_segment(&self, other: &Self) -> bool {
         self.inner.matches_without_segment(&other.inner)
     }
@@ -85,6 +93,7 @@ impl ResidueAddress {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Source atom address comprising chain, residue, logical atom name and alternate location.
     pub struct AtomAddress {
         pub(crate) inner: ck::AtomAddress,
     }
@@ -107,20 +116,24 @@ impl AtomAddress {
         })
     }
     #[getter]
+    /// Source chain identifier.
     fn chain_name(&self) -> String {
         self.inner.chain_name().as_str().to_owned()
     }
     #[getter]
+    /// Residue address containing the referenced atom.
     fn residue(&self) -> ResidueAddress {
         ResidueAddress {
             inner: self.inner.residue(),
         }
     }
     #[getter]
+    /// Logical atom name used to resolve this address.
     fn logical_atom_name(&self) -> &str {
         self.inner.logical_atom_name()
     }
     #[getter]
+    /// Native alternate-location label byte.
     fn altloc(&self) -> u8 {
         self.inner.altloc()
     }
@@ -129,6 +142,7 @@ impl AtomAddress {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Reported inter-atom connection with partner addresses and symmetry metadata.
     pub struct BioConnection {
         pub(crate) inner: ck::BioConnection,
     }
@@ -172,38 +186,46 @@ impl BioConnection {
         })
     }
     #[getter]
+    /// Name or identifier retained in this source record.
     fn name(&self) -> &str {
         &self.inner.name
     }
     #[getter]
+    /// Chemical link identifier reported by the source.
     fn link_id(&self) -> &str {
         &self.inner.link_id
     }
     #[getter]
+    /// Native connection classification.
     fn kind(&self) -> BioConnectionKind {
         self.inner.kind.into()
     }
     #[getter]
+    /// Relationship of the connection partners to the asymmetric unit.
     fn asu(&self) -> BioAsu {
         self.inner.asu.into()
     }
     #[getter]
+    /// Address of the first connection partner.
     fn partner1(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.partner1.clone(),
         }
     }
     #[getter]
+    /// Address of the second connection partner.
     fn partner2(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.partner2.clone(),
         }
     }
     #[getter]
+    /// Inter-partner distance reported in the source.
     fn reported_distance(&self) -> f64 {
         self.inner.reported_distance
     }
     #[getter]
+    /// Four-component symmetry identifier retained for the reported connection.
     fn reported_sym(&self) -> [i16; 4] {
         self.inner.reported_sym
     }
@@ -212,6 +234,7 @@ impl BioConnection {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Cis-peptide record with partner addresses, model and reported angle.
     pub struct BioCisPep {
         pub(crate) inner: ck::BioCisPep,
     }
@@ -243,26 +266,31 @@ impl BioCisPep {
         }
     }
     #[getter]
+    /// Address of the carbon-side cis-peptide partner.
     fn partner_c(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.partner_c.clone(),
         }
     }
     #[getter]
+    /// Address of the nitrogen-side cis-peptide partner.
     fn partner_n(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.partner_n.clone(),
         }
     }
     #[getter]
+    /// Source model number associated with the cis-peptide record.
     fn model_num(&self) -> i32 {
         self.inner.model_num
     }
     #[getter]
+    /// Alternate-location restriction retained in the cis-peptide record.
     fn only_altloc(&self) -> u8 {
         self.inner.only_altloc
     }
     #[getter]
+    /// Peptide angle reported by the source, in degrees.
     fn reported_angle(&self) -> f64 {
         self.inner.reported_angle
     }
@@ -271,6 +299,7 @@ impl BioCisPep {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Modified-residue record linking a source residue to its parent chemical component.
     pub struct BioModRes {
         pub(crate) inner: ck::BioModRes,
     }
@@ -306,24 +335,29 @@ impl BioModRes {
         })
     }
     #[getter]
+    /// Source chain identifier.
     fn chain_name(&self) -> &str {
         self.inner.chain_name.as_str()
     }
     #[getter]
+    /// Address of the modified residue.
     fn res_id(&self) -> ResidueAddress {
         ResidueAddress {
             inner: self.inner.res_id,
         }
     }
     #[getter]
+    /// Parent chemical-component identifier for the modified residue.
     fn parent_comp_id(&self) -> &str {
         &self.inner.parent_comp_id
     }
     #[getter]
+    /// Modification identifier.
     fn mod_id(&self) -> &str {
         &self.inner.mod_id
     }
     #[getter]
+    /// Source explanation of the residue modification.
     fn details(&self) -> &str {
         &self.inner.details
     }
@@ -331,6 +365,7 @@ impl BioModRes {
 
 #[pyclass(module = "cosmolkit", from_py_object)]
 #[derive(Clone)]
+/// Reported helical secondary-structure segment and PDB helix classification.
 pub struct BioHelix {
     pub(crate) inner: ck::BioHelix,
 }
@@ -358,25 +393,30 @@ impl BioHelix {
         })
     }
     #[getter]
+    /// Address marking the beginning of this secondary-structure segment.
     fn start(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.start.clone(),
         }
     }
     #[getter]
+    /// Address marking the end of this secondary-structure segment.
     fn end(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.end.clone(),
         }
     }
     #[getter]
+    /// PDB helix classification.
     fn pdb_helix_class(&self) -> BioHelixClass {
         self.inner.pdb_helix_class.into()
     }
     #[getter]
+    /// Reported helix length in residues.
     fn length(&self) -> i32 {
         self.inner.length
     }
+    /// Assign the helix class using the native PDB integer-code conversion.
     fn set_helix_class_as_int(&mut self, n: i32) {
         self.inner.set_helix_class_as_int(n);
     }
@@ -385,6 +425,7 @@ impl BioHelix {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Reported beta strand with its boundaries, orientation and hydrogen-bond anchors.
     pub struct BioStrand {
         pub(crate) inner: ck::BioStrand,
     }
@@ -412,34 +453,40 @@ impl BioStrand {
         }
     }
     #[getter]
+    /// Address marking the beginning of this secondary-structure segment.
     fn start(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.start.clone(),
         }
     }
     #[getter]
+    /// Address marking the end of this secondary-structure segment.
     fn end(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.end.clone(),
         }
     }
     #[getter]
+    /// Second atom address in the reported sheet hydrogen bond.
     fn hbond_atom2(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.hbond_atom2.clone(),
         }
     }
     #[getter]
+    /// First atom address in the reported sheet hydrogen bond.
     fn hbond_atom1(&self) -> AtomAddress {
         AtomAddress {
             inner: self.inner.hbond_atom1.clone(),
         }
     }
     #[getter]
+    /// Strand orientation relative to its predecessor: native parallel/antiparallel sense code.
     fn sense(&self) -> i32 {
         self.inner.sense
     }
     #[getter]
+    /// Name or identifier retained in this source record.
     fn name(&self) -> &str {
         &self.inner.name
     }
@@ -448,6 +495,7 @@ impl BioStrand {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Named beta sheet containing ordered strand records.
     pub struct BioSheet {
         pub(crate) inner: ck::BioSheet,
     }
@@ -464,10 +512,12 @@ impl BioSheet {
         Self { inner }
     }
     #[getter]
+    /// Name or identifier retained in this source record.
     fn name(&self) -> &str {
         &self.inner.name
     }
     #[getter]
+    /// Independent strand records belonging to this sheet.
     fn strands(&self) -> Vec<BioStrand> {
         self.inner
             .strands

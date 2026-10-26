@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 #[pyfunction]
 #[pyo3(signature = (text, params=crate::arguments::Argument::Missing, *, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing, parse_name=crate::arguments::Argument::Missing, merge_hs=crate::arguments::Argument::Missing, skip_cleanup=crate::arguments::Argument::Missing, debug_parse=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing))]
+/// Parse SMARTS into a QueryGraph. Supply SmartsParseParams or keyword options, not both; syntax failures retain structured diagnostics.
 pub fn parse_smarts(
     text: &str,
     params: crate::arguments::Argument<Option<PyRef<'_, SmartsParseParams>>>,
@@ -109,6 +110,7 @@ pub fn _parse_smarts_keywords(
 }
 
 #[pyfunction]
+/// Parse SMARTS into a QueryGraph with explicit SmartsParseParams.
 pub fn parse_smarts_with_params(text: &str, params: &SmartsParseParams) -> PyResult<QueryGraph> {
     _parse_smarts_params(text, Some(params))
 }

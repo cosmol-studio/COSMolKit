@@ -66,19 +66,32 @@ impl From<cosmolkit_model::QueryGraphError> for TopologicalFingerprintError {
         Self::Query(e)
     }
 }
+/// Path-based fingerprint settings, including folding and optional atom selection.
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 pub struct TopologicalFingerprintParams {
+    /// Minimum path length measured in bonds.
     pub min_path: u32,
+    /// Maximum path length measured in bonds.
     pub max_path: u32,
+    /// Initial fingerprint length in bits, before optional density-based folding.
     pub fp_size: u32,
+    /// Number of hash-derived bits set by each path feature.
     pub num_bits_per_feature: u32,
+    /// Include explicit hydrogen atoms in paths.
     pub use_hs: bool,
+    /// Requested set-bit density for folding; zero disables density-based folding.
     pub target_density: f64,
+    /// Minimum fingerprint size allowed during density-based folding.
     pub min_size: u32,
+    /// Include branched subgraphs instead of restricting enumeration to linear paths.
     pub branched_paths: bool,
+    /// Distinguish bond orders in path feature hashes.
     pub use_bond_order: bool,
+    /// Optional caller-provided atom invariants, indexed by atom position.
     pub atom_invariants: Option<Vec<u32>>,
+    /// Optional atom indices from which path enumeration starts.
     pub from_atoms: Option<Vec<u32>>,
+    /// Optional atom indices excluded from path enumeration.
     pub ignore_atoms: Option<Vec<u32>>,
 }
 
@@ -148,10 +161,13 @@ impl TopologicalFingerprintParams {
     }
 }
 
+/// Select which path-to-bit explanations accompany a topological fingerprint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct TopologicalFingerprintOutputRequest {
+    /// Collect the fingerprint bits associated with each atom.
     pub atom_bits: bool,
+    /// Collect the bond paths associated with each fingerprint bit.
     pub bit_info: bool,
 }
 

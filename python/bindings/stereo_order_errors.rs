@@ -37,13 +37,13 @@ error_projection!(StereoOrderError, StereoOrderErrorKind, ck::StereoOrderError, 
     | ck::StereoOrderError::ImplicitReplacementRetained { .. } | ck::StereoOrderError::ImplicitReplacementNotInSource { .. } => None,
 }, source = Option<Source<crate::error_framework::ErrorObject<PropertyUIntReadError>, crate::error_framework::ErrorObject<AtomPropertyError>>>, methods = {
     #[getter]
-    fn center(&self) -> Option<usize> { match self.inner {
+    #[doc = "Stereochemical center reported by the native check. Applies to StereoOrderError.CenterOutOfRange, StereoOrderError.BondNotIncident, StereoOrderError.RemovedCenter. None when this payload is absent."] fn center(&self) -> Option<usize> { match self.inner {
         ck::StereoOrderError::CenterOutOfRange { center, .. }
         | ck::StereoOrderError::BondNotIncident { center, .. }
         | ck::StereoOrderError::RemovedCenter { center } => Some(center.index()), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to StereoOrderError.BondOutOfRange, StereoOrderError.BondNotIncident, StereoOrderError.DuplicateBondLigand, StereoOrderError.RemovedLigand, StereoOrderError.ImplicitReplacementOutOfRange, StereoOrderError.ImplicitReplacementRetained, StereoOrderError.ImplicitReplacementNotInSource. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::StereoOrderError::BondOutOfRange { bond, .. }
         | ck::StereoOrderError::BondNotIncident { bond, .. }
         | ck::StereoOrderError::DuplicateBondLigand { bond, .. }
@@ -54,12 +54,12 @@ error_projection!(StereoOrderError, StereoOrderErrorKind, ck::StereoOrderError, 
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of StereoOrderError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::StereoOrderError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn mapping(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
+    #[doc = "Structured MappingValidationError payload of StereoOrderError.InvalidMapping; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn mapping(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
         ck::StereoOrderError::InvalidMapping(value) => MappingValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

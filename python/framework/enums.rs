@@ -3,6 +3,15 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyMappingProxy};
 use std::marker::PhantomData;
 
+crate::callbacks::typed_callback!(
+    EnumMemberLookup,
+    [
+        pyo3::type_hint_identifier!("builtins", "type"),
+        pyo3::type_hint_identifier!("builtins", "str")
+    ],
+    pyo3::type_hint_identifier!("builtins", "object")
+);
+
 pub(crate) struct Member<T> {
     pub name: &'static str,
     pub aliases: &'static [&'static str],
@@ -81,11 +90,34 @@ macro_rules! enum_protocol {
                         ))),
                     }
                 }
+                fn __reduce__<'py>(
+                    &self,
+                    py: pyo3::Python<'py>,
+                ) -> (pyo3::Bound<'py, pyo3::types::PyType>, (isize,)) {
+                    (py.get_type::<Self>(), (*self as isize,))
+                }
                 $($($method)*)?
             });
     };
     (custom $name:ident, $members:tt, methods = {$($method:item)*}) => {
-        $crate::enums::enum_protocol!(@emit $name, $members, {$($method)*});
+        $crate::enums::enum_protocol!(@emit $name, $members, {
+            // Custom constructors need not accept numeric discriminants.
+            // Canonical members already exist on the public class; no new
+            // reconstruction entrypoint or parallel member table is needed.
+            fn __reduce__<'py>(
+                &self,
+                py: pyo3::Python<'py>,
+            ) -> pyo3::PyResult<(
+                $crate::enums::EnumMemberLookup,
+                (pyo3::Bound<'py, pyo3::types::PyType>, &'static str),
+            )> {
+                use pyo3::types::PyAnyMethods;
+                let getattr = py.import("builtins")?.getattr("getattr")?
+                    .extract::<$crate::enums::EnumMemberLookup>()?;
+                Ok((getattr, (py.get_type::<Self>(), self.name())))
+            }
+            $($method)*
+        });
     };
     (@emit $name:ident, {$($variant:ident => ($canonical:expr, [$($alias:ident),*])),+ $(,)?}, {$($method:item)*}) => {
         impl $crate::enums::EnumMembers for $name {
@@ -103,6 +135,7 @@ macro_rules! enum_protocol {
             $($(#[classattr]
             #[allow(non_upper_case_globals)]
             const $alias: Self = Self::$variant;)*)+
+            /// Canonical member name; aliases of the same value share this name.
             #[getter]
             fn name(&self) -> &'static str {
                 match self { $(Self::$variant => $canonical),+ }
@@ -139,6 +172,10 @@ pub(crate) use public_name;
 // one declaration. Existing discriminant expressions are preserved verbatim.
 macro_rules! binding_enum {
     ($name:ident, {$($variant:ident $(= $value:expr)?),+ $(,)?}) => {
+        #[doc = concat!("Discriminants of ", stringify!($name), ".\n\n",
+            "Members: ", $("``", stringify!($variant), "``, ",)+
+            "\nCompare members by value. names and values are readonly lookup mappings; ",
+            "pickle preserves the enum type and value.")]
         #[pyo3::pyclass(module = "cosmolkit", eq, eq_int, from_py_object)]
         #[derive(Clone, Copy, PartialEq)]
         pub enum $name { $($variant $(= $value)?),+ }

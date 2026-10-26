@@ -38,12 +38,12 @@ def test_original11_defaults_and_source_absent_output_getters():
     assert default.on_bits==[562,1183,1308,1339,1728,1772]
     result = molecule.fingerprint_topological_with_output()
     assert result.fingerprint.on_bits==default.on_bits
-    assert repr(result)=="TopologicalFingerprintResult(n_bits=2048, has_atom_bits=false, has_bit_info=false)"
+    assert result.fingerprint.n_bits == 2048
     for field in ["atom_bits","bit_info"]:
         with pytest.raises(ck.TopologicalFingerprintError) as raised: getattr(result,field)()
         assert str(raised.value)==f"topological {field} output was not requested for this fingerprint result"
-        assert raised.value.domain=="Fingerprint"
-        assert raised.value.kind=="OutputNotRequested"
+        assert raised.value.domain=="fingerprint"
+        assert raised.value.variant.name=="OutputNotRequested"
         assert raised.value.field==field
 
 @pytest.mark.parametrize("kwargs,reason",[({"min_path":0},"minPath==0"),({"max_path":0},"maxPath<minPath"),({"fp_size":0},"fpSize==0"),({"num_bits_per_feature":0},"nBitsPerHash==0")])
@@ -52,8 +52,8 @@ def test_original4_preconditions_structured_projection(kwargs,reason):
         ck.Molecule.from_smiles("CCO").fingerprint_topological_with_params(ck.TopologicalFingerprintParams(**kwargs))
     assert str(raised.value)==reason
     assert raised.value.reason==reason
-    assert raised.value.domain=="Fingerprint"
-    assert raised.value.kind=="InvalidArguments"
+    assert raised.value.domain=="fingerprint"
+    assert raised.value.variant.name=="InvalidArguments"
 
 def test_original_source_pre_fold_metadata_and_detached_native_values():
     molecule = ck.Molecule.from_smiles("CCO");before=molecule.to_smiles()
@@ -67,7 +67,7 @@ def test_original_source_pre_fold_metadata_and_detached_native_values():
     assert result.atom_bits==[[28,0],[28,59,0],[59,0]]
     assert result.bit_info=={0:[[0,1]],28:[[0]],59:[[1]]}
     roots=[];params=ck.TopologicalFingerprintParams(from_atoms=roots);roots.append(0)
-    assert params.from_atoms==[]
+    assert params.from_atoms==()
     assert molecule.fingerprint_topological_with_params(params).on_bits==[]
     assert molecule.to_smiles()==before
 

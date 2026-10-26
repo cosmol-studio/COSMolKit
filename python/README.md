@@ -55,3 +55,15 @@ not that every requested conformer survived generation and pruning. Ring queries
 do not modify the original molecule.
 
 Molecules also support `pickle.dumps(mol)` and `pickle.loads(data)`.
+
+## Filesystem paths
+
+Paths are passed literally; `~` is not expanded automatically. Expand it
+explicitly when needed:
+
+```python
+from pathlib import Path
+
+batch = ck.mols_from_smiles_list(["CCO"])
+batch.write_images(Path("~/images").expanduser())
+```

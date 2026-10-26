@@ -66,6 +66,7 @@ pub(crate) fn call_keywords(
 
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
+/// Reusable native Morgan fingerprint generator retaining its invariant providers and editable settings.
 pub struct MorganFingerprintGenerator {
     pub(crate) inner: ck::MorganFingerprintGenerator,
 }
@@ -94,6 +95,7 @@ impl MorganFingerprintGenerator {
     }
     #[staticmethod]
     #[pyo3(signature = (params=None, atom_invariants=None, bond_invariants=None))]
+    /// Create a reusable Morgan fingerprint generator with native parameter defaults and optional invariant providers.
     fn new(
         py: Python<'_>,
         params: Option<&MorganGeneratorParams>,
@@ -103,20 +105,24 @@ impl MorganFingerprintGenerator {
         Self::construct(py, params, atom_invariants, bond_invariants)
     }
     #[staticmethod]
+    /// Restore generator configuration using the native JSON reader.
     fn from_json(json: &str) -> PyResult<Self> {
         ck::MorganFingerprintGenerator::from_json(json)
             .map(|inner| Self { inner })
             .map_err(MorganReadError::from_rust)
     }
     #[getter]
+    /// Live generator settings; edits affect subsequent calculations, not previously returned fingerprints.
     fn settings(&self) -> MorganSettings {
         MorganSettings {
             inner: self.inner.settings(),
         }
     }
+    /// Return the native summary of the generator and invariant-provider settings.
     fn info_string(&self) -> PyResult<String> {
         self.inner.info_string().map_err(MorganReadError::from_rust)
     }
+    /// Serialize the generator configuration in its native JSON format.
     fn to_json(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_json()
@@ -124,6 +130,7 @@ impl MorganFingerprintGenerator {
             .and_then(|text| decode_source_text(py, &text))
     }
     #[pyo3(signature = (molecules, num_threads=1))]
+    /// Compute fixed-size bit fingerprints in input order; retain None entries and use the requested native worker count.
     fn fingerprints(
         &self,
         py: Python<'_>,
@@ -143,6 +150,7 @@ impl MorganFingerprintGenerator {
             .map_err(MorganReadError::from_rust)
     }
     #[pyo3(signature = (molecules, num_threads=1))]
+    /// Compute folded sparse count fingerprints in input order, retaining None entries.
     fn counts(
         &self,
         py: Python<'_>,
@@ -167,6 +175,7 @@ impl MorganFingerprintGenerator {
             .map_err(MorganReadError::from_rust)
     }
     #[pyo3(signature = (molecules, num_threads=1))]
+    /// Compute sparse bit fingerprints in input order, retaining None entries.
     fn sparse_fingerprints(
         &self,
         py: Python<'_>,
@@ -191,6 +200,7 @@ impl MorganFingerprintGenerator {
             .map_err(MorganReadError::from_rust)
     }
     #[pyo3(signature = (molecules, num_threads=1))]
+    /// Compute unfolded sparse count fingerprints in input order, retaining None entries.
     fn sparse_counts(
         &self,
         py: Python<'_>,
@@ -217,16 +227,18 @@ impl MorganFingerprintGenerator {
 }
 
 #[pyclass(module = "cosmolkit")]
+/// Live view of generator configuration. Property assignments update the owning generator.
 pub struct MorganSettings {
     inner: ck::MorganSettings,
 }
 
 macro_rules! live_settings {
-    ($($field:ident: $ty:ty),+ $(,)?) => {
+    ($($(#[$doc:meta])* $field:ident: $ty:ty),+ $(,)?) => {
         paste::paste! {
             #[pymethods]
             impl MorganSettings {
                 $(#[getter]
+                $(#[$doc])*
                 fn $field(&self) -> PyResult<$ty> {
                     self.inner.$field().map_err(MorganReadError::from_rust)
                 }
@@ -234,10 +246,12 @@ macro_rules! live_settings {
                 fn [<assign_ $field>](&mut self, value: $ty) -> PyResult<()> {
                     self.[<set_ $field>](value)
                 }
+                #[doc = concat!("Update the generator's ", stringify!($field), " setting; see the corresponding property for its meaning.")]
                 fn [<set_ $field>](&mut self, value: $ty) -> PyResult<()> {
                     self.inner.[<set_ $field>](value).map_err(MorganReadError::from_rust)
                 })+
                 #[getter]
+                /// Independent snapshot of the generator parameters; editing it does not change this generator.
                 fn params(&self, py: Python<'_>) -> PyResult<MorganGeneratorParams> {
                     let value = self.inner.params().map_err(MorganReadError::from_rust)?;
                     MorganGeneratorParams::from_rust(py, value)
@@ -247,9 +261,22 @@ macro_rules! live_settings {
     };
 }
 live_settings! {
-    radius: u32, only_nonzero_invariants: bool, include_redundant_environments: bool,
-    include_chirality: bool, count_simulation: bool, fp_size: u32,
-    bits_per_feature: u32, count_bounds: Vec<u32>,
+    /// Maximum Morgan environment radius in bonds.
+    radius: u32,
+    /// Restrict center atoms to those with nonzero invariants.
+    only_nonzero_invariants: bool,
+    /// Include otherwise redundant atom environments.
+    include_redundant_environments: bool,
+    /// Encode stereochemical information in the generated fingerprint.
+    include_chirality: bool,
+    /// Encode feature occurrence thresholds as simulated count bits.
+    count_simulation: bool,
+    /// Number of bits in folded bit fingerprints.
+    fp_size: u32,
+    /// Number of bits generated per feature.
+    bits_per_feature: u32,
+    /// Occurrence thresholds used for count simulation.
+    count_bounds: Vec<u32>,
 }
 
 #[cfg(test)]

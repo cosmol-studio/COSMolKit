@@ -105,15 +105,17 @@ impl Mol2PostError {
 }
 crate::error_framework::error_projection! {methods impl Mol2PostError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "io"
     }
     #[getter]
-    fn stage(&self) -> &'static str {
+    #[doc = "MOL2 post-processing stage that failed."] fn stage(&self) -> &'static str {
         self.inner.stage
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Mol2Source> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }

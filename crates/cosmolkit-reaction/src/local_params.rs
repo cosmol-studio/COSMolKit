@@ -3,7 +3,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct ReactionTemplateRemovalParams {
+    /// Native removal threshold comparing mapped-property count to heavy-atom count.
     pub threshold_unmapped_atoms: f64,
+    /// Move removed templates into the agent list.
     pub move_to_agent_templates: bool,
 }
 impl Default for ReactionTemplateRemovalParams {

@@ -9,7 +9,9 @@ use crate::Molecule;
 #[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct DistanceMatrixParams {
+    /// Weight topological path lengths by reciprocal bond order.
     pub use_bond_order: bool,
+    /// Set diagonal entries using the native atomic-number weighting.
     pub use_atom_weights: bool,
 }
 

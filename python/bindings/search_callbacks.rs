@@ -8,6 +8,7 @@ use std::sync::Arc;
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Detached native query-atom value passed to substructure callbacks; not a molecular Atom.
     pub struct QueryAtom {
         pub(crate) inner: ck::QueryAtom,
     }
@@ -15,38 +16,47 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl QueryAtom {
     #[getter]
+    /// Zero-based atom identifier in the query graph.
     fn id(&self) -> usize {
         self.inner.id().index()
     }
     #[getter]
+    /// Stored query atom atomic number; a wildcard may use zero.
     fn atomic_number(&self) -> u8 {
         self.inner.atomic_number()
     }
     #[getter]
+    /// Formal charge stored on the query atom.
     fn formal_charge(&self) -> i8 {
         self.inner.formal_charge()
     }
     #[getter]
+    /// Explicit hydrogen count stored on the query atom.
     fn explicit_hydrogens(&self) -> u8 {
         self.inner.explicit_hydrogens()
     }
     #[getter]
+    /// Explicit isotope mass number, or None when unspecified.
     fn isotope(&self) -> Option<u16> {
         self.inner.isotope()
     }
     #[getter]
+    /// Optional query atom-map number.
     fn atom_map(&self) -> Option<u32> {
         self.inner.atom_map()
     }
     #[getter]
+    /// Whether the query atom carries an aromatic flag.
     fn is_aromatic(&self) -> bool {
         self.inner.is_aromatic()
     }
     #[getter]
+    /// Whether implicit hydrogen inference is disabled.
     fn no_implicit(&self) -> bool {
         self.inner.no_implicit()
     }
     #[getter]
+    /// Radical electron count stored on the query atom.
     fn radical_electrons(&self) -> u8 {
         self.inner.radical_electrons()
     }
@@ -78,6 +88,7 @@ typed_callback!(
 );
 
 #[pyclass(module = "cosmolkit")]
+/// Reusable native substructure matching options and typed optional match callbacks.
 pub struct SubstructMatchParams {
     // Actual native inputs plus collector-visible Python callback owners.
     inner: ck::SubstructMatchParams,
@@ -231,7 +242,7 @@ impl MatchInvocation {
     }
 }
 macro_rules! match_parameters {
-    ($($field:ident: $ty:ty),+ $(,)?) => {
+    ($($(#[$doc:meta])* $field:ident: $ty:ty),+ $(,)?) => {
         impl SubstructMatchParams {
             pub(crate) fn from_keywords($($field: Option<$ty>,)+ atom_properties: Option<Vec<String>>, bond_properties: Option<Vec<String>>, final_match: Option<FinalMatch>, atom_match: Option<AtomMatch>, bond_match: Option<BondMatch>, extra_final_check: Option<FinalMatch>, extra_atom_check: Option<AtomMatch>, extra_bond_check: Option<BondMatch>) -> PyResult<MatchInvocation> {
                 let defaults = ck::SubstructMatchParams::default();
@@ -252,28 +263,44 @@ macro_rules! match_parameters {
                     let invocation = Self::from_keywords($(Some($field),)+ atom_properties, bond_properties, final_match, atom_match, bond_match, extra_final_check, extra_atom_check, extra_bond_check)?;
                     Self::from_invocation(py, invocation)
                 }
-                $(#[getter] fn $field(&self) -> $ty { self.inner.$field.clone() }
+                $($(#[$doc])* #[getter] fn $field(&self) -> $ty { self.inner.$field.clone() }
                 #[setter] fn [<set_ $field>](&mut self, value: $ty) { self.inner.$field = value; })+
-                #[getter] fn atom_properties(&self) -> crate::parameters::ContainerOutput<'_, Vec<String>> { crate::parameters::ContainerOutput(&self.inner.atom_properties) }
+                #[getter] #[doc = "Atom property names required to have equal string values; assign the complete field to change it."] fn atom_properties(&self) -> crate::parameters::ContainerOutput<'_, Vec<String>> { crate::parameters::ContainerOutput(&self.inner.atom_properties) }
                 #[setter] fn set_atom_properties(&mut self, value: Option<Vec<String>>) -> PyResult<()> {
                     self.inner.atom_properties = value.unwrap_or_else(|| ck::SubstructMatchParams::default().atom_properties);
                     Ok(())
                 }
-                #[getter] fn bond_properties(&self) -> crate::parameters::ContainerOutput<'_, Vec<String>> { crate::parameters::ContainerOutput(&self.inner.bond_properties) }
+                #[getter] #[doc = "Bond property names required to have equal string values; assign the complete field to change it."] fn bond_properties(&self) -> crate::parameters::ContainerOutput<'_, Vec<String>> { crate::parameters::ContainerOutput(&self.inner.bond_properties) }
                 #[setter] fn set_bond_properties(&mut self, value: Option<Vec<String>>) -> PyResult<()> {
                     self.inner.bond_properties = value.unwrap_or_else(|| ck::SubstructMatchParams::default().bond_properties);
                     Ok(())
                 }
+                /// Optional callback(target, atom_indices) returning whether to accept a complete match.
+                /// target is an independent COW Molecule value; indices follow query-atom order.
+                /// Callback exceptions propagate unchanged to the caller.
                 #[getter] fn final_match(&self, py: Python<'_>) -> Option<FinalMatch> { self.final_match.as_ref().map(|value| value.clone_ref(py)) }
                 #[setter] fn set_final_match(&mut self, value: Option<FinalMatch>) { self.final_match = value; }
+                /// Optional callback(query_atom, target_atom) returning whether to accept an atom pair.
+                /// Receives detached QueryAtom and Atom values, not contextual molecule views.
+                /// Callback exceptions propagate unchanged to the caller.
                 #[getter] fn atom_match(&self, py: Python<'_>) -> Option<AtomMatch> { self.atom_match.as_ref().map(|value| value.clone_ref(py)) }
                 #[setter] fn set_atom_match(&mut self, value: Option<AtomMatch>) { self.atom_match = value; }
+                /// Optional callback(query_bond, target_bond) returning whether to accept a bond pair.
+                /// Receives detached Bond values. Callback exceptions propagate unchanged to the caller.
                 #[getter] fn bond_match(&self, py: Python<'_>) -> Option<BondMatch> { self.bond_match.as_ref().map(|value| value.clone_ref(py)) }
                 #[setter] fn set_bond_match(&mut self, value: Option<BondMatch>) { self.bond_match = value; }
+                /// Optional callback(target, atom_indices) returning whether to accept a complete match.
+                /// target is an independent COW Molecule value; indices follow query-atom order.
+                /// Callback exceptions propagate unchanged to the caller.
                 #[getter] fn extra_final_check(&self, py: Python<'_>) -> Option<FinalMatch> { self.final_match(py) }
                 #[setter] fn set_extra_final_check(&mut self, value: Option<FinalMatch>) { self.set_final_match(value); }
+                /// Optional callback(query_atom, target_atom) returning whether to accept an atom pair.
+                /// Receives detached QueryAtom and Atom values, not contextual molecule views.
+                /// Callback exceptions propagate unchanged to the caller.
                 #[getter] fn extra_atom_check(&self, py: Python<'_>) -> Option<AtomMatch> { self.atom_match(py) }
                 #[setter] fn set_extra_atom_check(&mut self, value: Option<AtomMatch>) { self.set_atom_match(value); }
+                /// Optional callback(query_bond, target_bond) returning whether to accept a bond pair.
+                /// Receives detached Bond values. Callback exceptions propagate unchanged to the caller.
                 #[getter] fn extra_bond_check(&self, py: Python<'_>) -> Option<BondMatch> { self.bond_match(py) }
                 #[setter] fn set_extra_bond_check(&mut self, value: Option<BondMatch>) { self.set_bond_match(value); }
                 fn __traverse__(&self, visit: pyo3::gc::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
@@ -405,24 +432,24 @@ import copy
 other = copy.copy(mol)
 assert other is not mol and other.to_binary() == mol.to_binary()
 copied.add_hydrogens_()
-assert copied.num_atoms() == 11 and mol.num_atoms() == 3
+assert copied.num_atoms == 11 and mol.num_atoms == 3
 seen = []
 def accept(target, indices):
-    assert target is not mol and target.num_atoms() == 3
+    assert target is not mol and target.num_atoms == 3
     target.add_hydrogens_()
-    assert target.num_atoms() == 11
+    assert target.num_atoms == 11
     seen.append(target)
     return True
 matches = mol.substruct_matches(ck.QueryGraph.from_smarts("C"), final_match=accept)
 assert [value.atom_mapping for value in matches] == [[0], [1], [2]]
 assert len(seen) == 3 and len({id(value) for value in seen}) == 3
-assert mol.num_atoms() == 3
+assert mol.num_atoms == 3
 seen[0].remove_hydrogens_()
-assert seen[0].num_atoms() == 3 and seen[1].num_atoms() == 11
+assert seen[0].num_atoms == 3 and seen[1].num_atoms == 11
 mol.add_hydrogens_()
-assert other.num_atoms() == 3
+assert other.num_atoms == 3
 del mol, copied, other
-assert seen[2].num_atoms() == 11
+assert seen[2].num_atoms == 11
 "#
                 ),
                 Some(&scope),
@@ -466,7 +493,7 @@ assert [match.atom_mapping for match in mol.substruct_matches(query, max_matches
 seen = []
 def final_match(target, indices):
     assert target is not mol
-    assert target.num_atoms() == mol.num_atoms()
+    assert target.num_atoms == mol.num_atoms
     seen.append(tuple(indices))
     return True
 params.final_match = final_match
@@ -533,10 +560,10 @@ def final_filter(target, indices):
     seen.append((target, tuple(indices)))
     return True
 def atom_filter(query, target):
-    atoms.append((query.atomic_number(), target.atomic_number()))
+    atoms.append((query.atomic_number, target.atomic_number))
     return True
 def bond_filter(query, target):
-    bonds.append((query.id(), target.id()))
+    bonds.append((query.id, target.id))
     return True
 def fail(target, indices):
     raise marker

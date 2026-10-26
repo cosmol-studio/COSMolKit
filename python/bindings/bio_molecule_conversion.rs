@@ -44,7 +44,7 @@ error_projection!(PdbPostprocessError,PdbPostprocessErrorKind,ck::PdbPostprocess
     ck::PdbPostprocessError::PropertyUInt(value)=>Some(PropertyUIntReadError::from_rust(value.clone())),
     ck::PdbPostprocessError::Unsupported(_)|ck::PdbPostprocessError::InvalidState(_)=>None,
 },source=Option<PdbPostSource>,methods={
-    #[getter] fn value(&self)->Option<&str>{match &self.inner{
+    #[getter] #[doc = "Value rejected or reported by the native operation. Applies to PdbPostprocessError.Unsupported, PdbPostprocessError.InvalidState. None when this payload is absent."] fn value(&self)->Option<&str>{match &self.inner{
         ck::PdbPostprocessError::Unsupported(value)=>Some(value),ck::PdbPostprocessError::InvalidState(value)=>Some(value),_=>None}}
 });
 
@@ -110,7 +110,7 @@ error_projection!(retained BioMoleculeConversionError,BioMoleculeConversionError
 },cause=|inner:&RetainedError<ck::BioMoleculeConversionError>|Python::attach(|py|conversion_payload(inner.as_ref()).cause(py)),
 source=Option<ConversionSource>,methods={
     #[getter] #[doc=r#"{"role":"error_payload"}"#]
-    fn value(&self,py:Python<'_>)->PyResult<ConversionPayload>{
+    #[doc = "Concrete native payload describing why conversion of the biological structure failed."] fn value(&self,py:Python<'_>)->PyResult<ConversionPayload>{
         conversion_payload(self.inner.as_ref()).value(py).extract().map_err(Into::into)
     }
 });

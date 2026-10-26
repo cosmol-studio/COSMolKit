@@ -166,25 +166,29 @@ impl SmartsWriteError {
 }
 crate::error_framework::error_projection! {methods impl SmartsWriteError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "search"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> SmartsWriteErrorKind {
         self.inner.as_ref().into()
     }
     #[getter]
+    /// Message of the immediate native cause, or None when no cause exists.
     fn source_message(&self) -> Option<String> {
         self.inner.source().map(ToString::to_string)
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<WriterSource>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn predicate(&self) -> Option<Source<AtomQueryPredicate, BondQueryPredicate>> {
+    #[doc = "Unsupported atom or bond query predicate, or None for another failure."] fn predicate(&self) -> Option<Source<AtomQueryPredicate, BondQueryPredicate>> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::UnsupportedAtomQuery { .. } => {
                 Some(Source::First(AtomQueryPredicate {
@@ -200,7 +204,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn atom(&self) -> Option<usize> {
+    #[doc = "Original atom index associated with this failure, or None when not applicable."] fn atom(&self) -> Option<usize> {
         use ck::SmartsWriteError as E;
         match self.inner.as_ref() {
             E::CxSourceAtomOutOfRange { atom, .. }
@@ -219,7 +223,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn bond(&self) -> Option<usize> {
+    #[doc = "Original bond index associated with this failure, or None when not applicable."] fn bond(&self) -> Option<usize> {
         use ck::SmartsWriteError as E;
         match self.inner.as_ref() {
             E::CxRingStereoReferenceMissing { bond, .. }
@@ -232,7 +236,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn group(&self) -> Option<usize> {
+    #[doc = "Group identifier involved in the failure. Applies to SmartsWriteError.CxSgroupVectorCast, SmartsWriteError.CxSgroupPropertyWrite, SmartsWriteError.CxSgroupPropertyUInt. None when this payload is absent."] fn group(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxSgroupVectorCast { group, .. }
             | ck::SmartsWriteError::CxSgroupPropertyWrite { group, .. }
@@ -241,7 +245,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn property(&self) -> Option<&'static str> {
+    #[doc = "Property name involved in this failure, or None when not applicable."] fn property(&self) -> Option<&'static str> {
         use ck::SmartsWriteError as E;
         match self.inner.as_ref() {
             E::CxMoleculePropertyUInt { property, .. }
@@ -260,7 +264,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<Source<&'static str, PropertyValueKind>> {
+    #[doc = "Native failure-specific category or value kind. Applies to SmartsWriteError.CxOutputOrder, SmartsWriteError.CxRowCount, SmartsWriteError.CompositeChildCount, SmartsWriteError.CxAtomPropertyKind, SmartsWriteError.InvalidPropertyKind. None when this payload is absent."] fn kind(&self) -> Option<Source<&'static str, PropertyValueKind>> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxOutputOrder { kind, .. }
             | ck::SmartsWriteError::CxRowCount { kind, .. }
@@ -274,7 +278,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn actual(&self) -> Option<Source<usize, PropertyValueKind>> {
+    #[doc = "Observed value reported by the native check. Applies to SmartsWriteError.CxCoordinateSelectionArity, SmartsWriteError.CxSgroupVectorCast. None when this payload is absent."] fn actual(&self) -> Option<Source<usize, PropertyValueKind>> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxCoordinateSelectionArity { actual, .. } => {
                 Some(Source::First(*actual))
@@ -286,7 +290,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn expected(&self) -> Option<Source<usize, &'static str>> {
+    #[doc = "Required value reported by the native check. Applies to SmartsWriteError.CxCoordinateSelectionArity, SmartsWriteError.CxSgroupVectorCast. None when this payload is absent."] fn expected(&self) -> Option<Source<usize, &'static str>> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxCoordinateSelectionArity { expected, .. } => {
                 Some(Source::First(*expected))
@@ -298,7 +302,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn template(&self) -> Option<usize> {
+    #[doc = "Reaction template index associated with this failure, or None when not applicable."] fn template(&self) -> Option<usize> {
         use ck::SmartsWriteError as E;
         match self.inner.as_ref() {
             E::CxMissingOutputOrder { template }
@@ -313,7 +317,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn index(&self) -> Option<usize> {
+    #[doc = "Index reported by the failing native check. Applies to SmartsWriteError.CxRingAtomOrderIndex, SmartsWriteError.SourceAtomToLeftIndex, SmartsWriteError.SourceBondBeginIndex. None when this payload is absent."] fn index(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxRingAtomOrderIndex { index, .. }
             | ck::SmartsWriteError::SourceAtomToLeftIndex { index }
@@ -322,7 +326,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn count(&self) -> Option<usize> {
+    #[doc = "Count reported by the native failure. Applies to SmartsWriteError.CxRingAtomOrderIndex, SmartsWriteError.SourceAtomCount, SmartsWriteError.CxOutputOrder, SmartsWriteError.CxRowCount. None when this payload is absent."] fn count(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxRingAtomOrderIndex { count, .. }
             | ck::SmartsWriteError::SourceAtomCount { count }
@@ -332,42 +336,42 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn atom_count(&self) -> Option<usize> {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to SmartsWriteError.CxSourceAtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxSourceAtomOutOfRange { atom_count, .. } => Some(*atom_count),
             _ => None,
         }
     }
     #[getter]
-    fn bond_count(&self) -> Option<usize> {
+    #[doc = "Bond count used when validating the reported bond reference. Applies to SmartsWriteError.CxSourceBondOutOfRange. None when this payload is absent."] fn bond_count(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxSourceBondOutOfRange { bond_count, .. } => Some(*bond_count),
             _ => None,
         }
     }
     #[getter]
-    fn side(&self) -> Option<usize> {
+    #[doc = "Probe/reference or source/target side identified by the native check. Applies to SmartsWriteError.CxRingStereoReferenceMissing. None when this payload is absent."] fn side(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxRingStereoReferenceMissing { side, .. } => Some(*side),
             _ => None,
         }
     }
     #[getter]
-    fn row(&self) -> Option<usize> {
+    #[doc = "Row reported by the native failure. Applies to SmartsWriteError.CxOutputOrder. None when this payload is absent."] fn row(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::CxOutputOrder { row, .. } => Some(*row),
             _ => None,
         }
     }
     #[getter]
-    fn atomic_number(&self) -> Option<i32> {
+    #[doc = "Atomic number involved in the failed chemistry operation. Applies to SmartsWriteError.AtomTypeAtomicNumber. None when this payload is absent."] fn atomic_number(&self) -> Option<i32> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::AtomTypeAtomicNumber { atomic_number } => Some(*atomic_number),
             _ => None,
         }
     }
     #[getter]
-    fn value(&self) -> Option<Source<i32, String>> {
+    #[doc = "Value rejected or reported by the native operation. Applies to SmartsWriteError.ChargeMagnitudeOverflow, SmartsWriteError.InvalidGraph. None when this payload is absent."] fn value(&self) -> Option<Source<i32, String>> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::ChargeMagnitudeOverflow { value } => Some(Source::First(*value)),
             ck::SmartsWriteError::InvalidGraph(value) => Some(Source::Second(value.clone())),
@@ -375,7 +379,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn description(&self) -> Option<String> {
+    #[doc = "Native explanation of the rejected value or operation. Applies to SmartsWriteError.UnwritableBondQuery, SmartsWriteError.UnknownCombination. None when this payload is absent."] fn description(&self) -> Option<String> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::UnwritableBondQuery { description } => {
                 Some((*description).into())
@@ -385,7 +389,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
         }
     }
     #[getter]
-    fn detail(&self) -> Option<&'static str> {
+    #[doc = "Additional native diagnostic detail. Applies to SmartsWriteError.QueryGraphTraversalUnsupported, SmartsWriteError.QueryGraphCxExtensionsUnsupported. None when this payload is absent."] fn detail(&self) -> Option<&'static str> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::QueryGraphTraversalUnsupported { detail }
             | ck::SmartsWriteError::QueryGraphCxExtensionsUnsupported { detail } => Some(detail),
@@ -394,7 +398,7 @@ crate::error_framework::error_projection! {methods impl SmartsWriteError {
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn direction(&self) -> Option<BondDirection> {
+    #[doc = "Mapping or bond direction associated with the failure. Present for `SmartsWriteError.SourceBondDirection`; None when unavailable."] fn direction(&self) -> Option<BondDirection> {
         match self.inner.as_ref() {
             ck::SmartsWriteError::SourceBondDirection { direction } => Some((*direction).into()),
             _ => None,
@@ -435,6 +439,7 @@ fn mixed(params: Option<&SmartsWriteParams>, values: [bool; 4]) -> PyResult<()> 
 }
 #[pyfunction]
 #[pyo3(signature=(query, params=crate::arguments::Argument::Missing, *, include_atom_maps=crate::arguments::Argument::Missing, isomeric_smiles=crate::arguments::Argument::Missing, include_dative_bonds=crate::arguments::Argument::Missing, rooted_at_atom=crate::arguments::Argument::Missing))]
+/// Serialize a QueryGraph as SMARTS using the selected writer parameters; returns text.
 pub fn write_smarts(
     query: &QueryGraph,
     params: crate::arguments::Argument<Option<PyRef<'_, SmartsWriteParams>>>,
@@ -496,6 +501,7 @@ pub fn _write_smarts_keywords(
 }
 #[pyfunction]
 #[pyo3(signature=(query, params=crate::arguments::Argument::Missing, *, include_atom_maps=crate::arguments::Argument::Missing, isomeric_smiles=crate::arguments::Argument::Missing, include_dative_bonds=crate::arguments::Argument::Missing, rooted_at_atom=crate::arguments::Argument::Missing))]
+/// Serialize a QueryGraph as SMARTS with the selected CX extensions; returns text.
 pub fn write_cx_smarts(
     query: &QueryGraph,
     params: crate::arguments::Argument<Option<PyRef<'_, SmartsWriteParams>>>,
@@ -701,7 +707,7 @@ mod tests {
             drop(error);
             drop(predicate);
             drop(recursive);
-            assert_eq!(graph.call_method0("num_atoms")?.extract::<usize>()?, 2);
+            assert_eq!(graph.getattr("num_atoms")?.extract::<usize>()?, 2);
 
             let bounds = ck::AtomRangeBounds::Inclusive {
                 lower: -3,

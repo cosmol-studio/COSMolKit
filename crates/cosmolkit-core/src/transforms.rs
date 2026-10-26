@@ -159,7 +159,9 @@ impl Default for CanonicalTransformParams {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Stored-conformer selection for reading an atom position.
 pub struct AtomPositionParams {
+    /// Stored 3D conformer identifier, or None for default selection.
     pub conformer_id: Option<usize>,
 }
 

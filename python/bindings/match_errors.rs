@@ -25,38 +25,38 @@ error_projection!(QueryMatchContextError, QueryMatchContextErrorKind, ck::QueryM
     | ck::QueryMatchContextError::RingMembershipRows { .. } => None,
 }), source = Option<Source<crate::error_framework::ErrorObject<TopologyValidationError>, crate::error_framework::ErrorObject<RingFindingError>>>, methods = {
     #[getter]
-    fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Field whose content or type caused the failure. Applies to QueryMatchContextError.ValenceRows, QueryMatchContextError.ValencePrecondition, QueryMatchContextError.RingMembershipRows. None when this payload is absent."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::QueryMatchContextError::ValenceRows { field, .. }
         | ck::QueryMatchContextError::ValencePrecondition { field, .. }
         | ck::QueryMatchContextError::RingMembershipRows { field, .. } => Some(field), _ => None,
     } }
     #[getter]
-    fn getter(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Accessor involved in the reported failure. Applies to QueryMatchContextError.ValencePrecondition, QueryMatchContextError.RingPrecondition. None when this payload is absent."] fn getter(&self) -> Option<&'static str> { match self.inner {
         ck::QueryMatchContextError::ValencePrecondition { getter, .. }
         | ck::QueryMatchContextError::RingPrecondition { getter, .. } => Some(getter), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to QueryMatchContextError.ValenceRows, QueryMatchContextError.RingMembershipRows. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::QueryMatchContextError::ValenceRows { expected, .. }
         | ck::QueryMatchContextError::RingMembershipRows { expected, .. } => Some(expected), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to QueryMatchContextError.ValenceRows, QueryMatchContextError.RingMembershipRows. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::QueryMatchContextError::ValenceRows { actual, .. }
         | ck::QueryMatchContextError::RingMembershipRows { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to QueryMatchContextError.ValencePrecondition, QueryMatchContextError.RingPrecondition. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::QueryMatchContextError::ValencePrecondition { atom, .. } => Some(atom),
         ck::QueryMatchContextError::RingPrecondition { atom, .. } => atom, _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to QueryMatchContextError.RingPrecondition. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::QueryMatchContextError::RingPrecondition { bond, .. } => bond, _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of QueryMatchContextError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::QueryMatchContextError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -83,24 +83,24 @@ error_projection!(MatchError, MatchErrorKind, ck::MatchError, "search", {
     | ck::MatchError::UnsupportedAtomPredicate(_) | ck::MatchError::UnsupportedBondPredicate(_) => None,
 }), source = Option<MatchSource>, methods = {
     #[getter]
-    fn invalid_query(&self) -> Option<String> { match &self.inner {
+    #[doc = "Explanation of an invalid query, or None for another failure."] fn invalid_query(&self) -> Option<String> { match &self.inner {
         ck::MatchError::InvalidQuery(value) => Some(value.clone()), _ => None,
     } }
     #[getter]
-    fn invalid_target(&self) -> Option<String> { match &self.inner {
+    #[doc = "Explanation of an invalid target, or None for another failure."] fn invalid_target(&self) -> Option<String> { match &self.inner {
         ck::MatchError::InvalidTarget(value) => Some(value.clone()), _ => None,
     } }
     #[getter]
-    fn unsupported_atom_predicate(&self) -> Option<&'static str> { match &self.inner {
+    #[doc = "Unsupported atom predicate name; None for other failures."] fn unsupported_atom_predicate(&self) -> Option<&'static str> { match &self.inner {
         ck::MatchError::UnsupportedAtomPredicate(value) => Some(*value), _ => None,
     } }
     #[getter]
-    fn unsupported_bond_predicate(&self) -> Option<&'static str> { match &self.inner {
+    #[doc = "Unsupported bond predicate name; None for other failures."] fn unsupported_bond_predicate(&self) -> Option<&'static str> { match &self.inner {
         ck::MatchError::UnsupportedBondPredicate(value) => Some(*value), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn substruct(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SubstructMatchError>>> { match &self.inner {
+    #[doc = "Structured SubstructMatchError payload of MatchError.Substruct; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn substruct(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SubstructMatchError>>> { match &self.inner {
         ck::MatchError::Substruct(value) => SubstructMatchError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -126,38 +126,38 @@ error_projection!(SubstructMatchError, SubstructMatchErrorKind, ck::SubstructMat
     | ck::SubstructMatchError::UninitializedRecursiveQuery => None,
 }), source = Option<MatchSource>, methods = {
     #[getter]
-    fn side(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Probe/reference or source/target side identified by the native check. Applies to SubstructMatchError.FinalCheckMappingIndex, SubstructMatchError.FinalCheckBondEndpoint. None when this payload is absent."] fn side(&self) -> Option<&'static str> { match self.inner {
         ck::SubstructMatchError::FinalCheckMappingIndex { side, .. }
         | ck::SubstructMatchError::FinalCheckBondEndpoint { side, .. } => Some(side), _ => None,
     } }
     #[getter]
-    fn index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Index reported by the failing native check. Applies to SubstructMatchError.FinalCheckMappingIndex, SubstructMatchError.FinalCheckBondEndpoint. None when this payload is absent."] fn index(&self) -> Option<usize> { match self.inner {
         ck::SubstructMatchError::FinalCheckMappingIndex { index, .. }
         | ck::SubstructMatchError::FinalCheckBondEndpoint { index, .. } => Some(index), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to SubstructMatchError.FinalCheckMappingIndex, SubstructMatchError.FinalCheckBondEndpoint. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::SubstructMatchError::FinalCheckMappingIndex { atom_count, .. }
         | ck::SubstructMatchError::FinalCheckBondEndpoint { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn periodic_table(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PeriodicTableError>>> { match &self.inner {
+    #[doc = "Structured PeriodicTableError payload of SubstructMatchError.PeriodicTable; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn periodic_table(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PeriodicTableError>>> { match &self.inner {
         ck::SubstructMatchError::PeriodicTable(value) => PeriodicTableError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
+    #[doc = "Structured StereoOrderError payload of SubstructMatchError.StereoOrder; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
         ck::SubstructMatchError::StereoOrder(value) => StereoOrderError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn property_string(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
+    #[doc = "Structured PropertyStringError payload of SubstructMatchError.PropertyString; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn property_string(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
         ck::SubstructMatchError::PropertyString(value) => PropertyStringError::from_rust(*value).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_context(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryMatchContextError>>> { match &self.inner {
+    #[doc = "Structured QueryMatchContextError payload of SubstructMatchError.QueryContext; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_context(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryMatchContextError>>> { match &self.inner {
         ck::SubstructMatchError::QueryContext(value) => QueryMatchContextError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

@@ -9,7 +9,7 @@ import pytest
 
 
 @pytest.mark.parametrize("operation", ["missing_conformer", "no_match", "best_map", "write"])
-def test_wrapper_weight_length_error_precedes_domain_errors(operation):
+def test_native_conformer_errors_precede_weight_validation(operation):
     builder = ck.Molecule.from_smiles("CC").to_builder()
     builder.add_3d_conformer([[0., 0., 0.], [1., 0., 0.]])
     molecule = builder.build()
@@ -26,13 +26,14 @@ def test_wrapper_weight_length_error_precedes_domain_errors(operation):
         else:
             params = ck.AlignmentParameters(probe_conformer_id=999, atom_map=mapping, weights=[1.])
             if operation == "write":
-                molecule.align_to_with_params_(molecule, params)
+                molecule.align_to_with_params_(molecule.copy(), params)
             else:
                 molecule.alignment_transform_to_with_params(molecule, params)
     cause = error.value.__cause__ if operation == "write" else error.value
     assert isinstance(cause, ck.AlignmentError)
-    assert cause.kind == "WeightCountMismatch"
-    assert (cause.map_len, cause.weight_len) == (2, 1)
+    assert cause.variant.name == ("NoConformers" if operation == "no_match" else "ConformerNotFound")
+    if operation != "no_match":
+        assert cause.id == 999
     assert molecule.to_binary() == before
 
 
@@ -40,45 +41,87 @@ def test_wrapper_weight_length_error_precedes_domain_errors(operation):
     "alignment_transform", "best_alignment", "coordinate_rmsd", "align_to",
     "all_conformers", "align_conformers", "alignment_empty_map", "align_empty_map",
 ])
-def test_empty_optional_sequences_follow_source_wrapper_without_changing_fields(operation):
+def test_empty_optional_sequences_are_not_silently_normalized_to_none(operation):
     builder = ck.Molecule.from_smiles("CC").to_builder()
     for _ in range(2):
         builder.add_3d_conformer([[0., 0., 0.], [1., 0., 0.]])
     molecule = builder.build()
+    before = molecule.to_binary()
     if operation in ["alignment_transform", "align_to", "alignment_empty_map", "align_empty_map"]:
         params = ck.AlignmentParameters(**({"atom_map": []} if "empty_map" in operation else {"weights": []}))
         if "empty_map" in operation:
-            assert params.atom_map == []
+            assert params.atom_map == ()
         else:
-            assert params.weights == []
+            assert params.weights == ()
+        if operation in ["alignment_transform", "alignment_empty_map"]:
+            calls = (molecule.alignment_transform_to, molecule.alignment_transform_to_with_params)
+            error_type = ck.AlignmentError
+        else:
+            calls = (molecule.with_alignment_to, molecule.with_alignment_to_with_params,
+                     molecule.align_to_, molecule.align_to_with_params_)
+            error_type = ck.OperationError
+        reference = molecule.copy()
+        for call in calls:
+            with pytest.raises(error_type) as caught:
+                call(reference, params)
+            cause = caught.value if error_type is ck.AlignmentError else caught.value.__cause__
+            assert cause.variant.name == ("EmptyAtomMap" if "empty_map" in operation else "WeightCountMismatch")
+            assert molecule.to_binary() == before
+        if "empty_map" in operation:
+            params.atom_map = None
+        else:
+            params.weights = None
         if operation in ["alignment_transform", "alignment_empty_map"]:
             assert molecule.alignment_transform_to(molecule, params).rmsd == 0.
             assert molecule.alignment_transform_to_with_params(molecule, params).rmsd == 0.
         else:
             assert molecule.with_alignment_to(molecule, params)[1].rmsd == 0.
             assert molecule.with_alignment_to_with_params(molecule, params)[1].rmsd == 0.
-            assert molecule.align_to_(molecule, params).rmsd == 0.
-            assert molecule.align_to_with_params_(molecule, params).rmsd == 0.
+            assert molecule.align_to_(reference, params).rmsd == 0.
+            assert molecule.align_to_with_params_(reference, params).rmsd == 0.
     elif operation == "best_alignment":
         params = ck.BestAlignmentParameters(weights=[])
-        assert params.weights == []
+        assert params.weights == ()
+        for call in (molecule.best_alignment_to, molecule.best_alignment_to_with_params,
+                     molecule.best_rmsd_to, molecule.best_rmsd_to_with_params):
+            with pytest.raises(ck.AlignmentError) as caught:
+                call(molecule, params)
+            assert caught.value.variant.name == "WeightCountMismatch"
+        params.weights = None
         assert molecule.best_alignment_to(molecule, params).rmsd == 0.
         assert molecule.best_alignment_to_with_params(molecule, params).rmsd == 0.
         assert molecule.best_rmsd_to(molecule, params) == 0.
         assert molecule.best_rmsd_to_with_params(molecule, params) == 0.
     elif operation == "coordinate_rmsd":
         params = ck.CoordinateRmsdParameters(weights=[])
-        assert params.weights == []
+        assert params.weights == ()
+        for call in (molecule.coordinate_rmsd_to, molecule.coordinate_rmsd_to_with_params):
+            with pytest.raises(ck.AlignmentError) as caught:
+                call(molecule, params)
+            assert caught.value.variant.name == "WeightCountMismatch"
+        params.weights = None
         assert molecule.coordinate_rmsd_to(molecule, params) == 0.
         assert molecule.coordinate_rmsd_to_with_params(molecule, params) == 0.
     elif operation == "all_conformers":
         params = ck.AllConformerRmsdParameters(weights=[])
-        assert params.weights == []
+        assert params.weights == ()
+        for call in (molecule.all_conformer_best_rmsds, molecule.all_conformer_best_rmsds_with_params):
+            with pytest.raises(ck.AlignmentError) as caught:
+                call(params)
+            assert caught.value.variant.name == "WeightCountMismatch"
+        params.weights = None
         assert [row.rmsd for row in molecule.all_conformer_best_rmsds(params)] == [0.]
         assert [row.rmsd for row in molecule.all_conformer_best_rmsds_with_params(params)] == [0.]
     else:
         params = ck.ConformerAlignmentParameters(weights=[])
-        assert params.weights == []
+        assert params.weights == ()
+        for call in (molecule.with_aligned_conformers, molecule.with_aligned_conformers_with_params,
+                     molecule.align_conformers_, molecule.align_conformers_with_params_):
+            with pytest.raises(ck.OperationError) as caught:
+                call(params)
+            assert caught.value.__cause__.variant.name == "WeightCountMismatch"
+            assert molecule.to_binary() == before
+        params.weights = None
         assert molecule.with_aligned_conformers(params)[1].rmsds == [0.]
         assert molecule.with_aligned_conformers_with_params(params)[1].rmsds == [0.]
         assert molecule.align_conformers_(params).rmsds == [0.]
@@ -104,7 +147,7 @@ def test_empty_atom_indices_select_all_like_pinned_source_wrapper(count):
     with pytest.raises(ck.OperationError) as error:
         source.align_conformers_(ck.ConformerAlignmentParameters(atom_indices=[2]))
     assert isinstance(error.value.__cause__, ck.AlignmentError)
-    assert error.value.__cause__.kind == "ProbeAtomOutOfRange"
+    assert error.value.__cause__.variant.name == "ProbeAtomOutOfRange"
 
 
 def test_positive_infinite_weight_preserves_pinned_jacobi_nan_branch_rotation():
@@ -132,9 +175,9 @@ def test_registered_alignment_error_has_one_source_typed_standard_stub_declarati
     matches = [node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "AlignmentError"]
     assert len(matches) == 1
     declaration = matches[0]
-    assert [ast.unparse(base) for base in declaration.bases] == ["builtins.ValueError"]
-    fields = {node.target.id: ast.unparse(node.annotation) for node in declaration.body if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)}
-    required = {"domain": "builtins.str", "kind": "builtins.str", "id": "builtins.int", "index": "builtins.int", "atom_count": "builtins.int", "map_len": "builtins.int", "weight_len": "builtins.int", "message": "builtins.str"}
+    assert [ast.unparse(base) for base in declaration.bases] == ["ValueError"]
+    fields = {node.name: ast.unparse(node.returns) for node in declaration.body if isinstance(node, ast.FunctionDef) and any(ast.unparse(d) == "builtins.property" for d in node.decorator_list)}
+    required = {"domain": "str", "variant": "AlignmentErrorKind", "id": "int | None", "index": "int | None", "atom_count": "int | None", "map_len": "int | None", "weight_len": "int | None", "message": "str | None"}
     assert {key: fields.get(key) for key in required} == required
     exported = next(ast.literal_eval(node.value) for node in tree.body if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets))
     assert exported.count("AlignmentError") == 1

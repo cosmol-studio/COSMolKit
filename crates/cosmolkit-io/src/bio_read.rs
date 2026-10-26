@@ -15,10 +15,13 @@ use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+/// Structural-coordinate input format and source label used in parsing diagnostics.
 #[derive(Clone, Debug, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct BioReadParams {
+    /// Input coordinate format; detection follows the native reader's format policy.
     pub format: BioCoordinateFormat,
+    /// Source label attached to parsing diagnostics, not a file to open.
     pub source_name: String,
 }
 

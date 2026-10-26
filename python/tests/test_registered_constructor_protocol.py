@@ -43,7 +43,7 @@ def test_builder_factories_retain_ids_bond_order_and_atom_metadata():
     assert molecule.atoms[0].atom_map == 17
     assert molecule.atoms[1].isotope == 18
     assert molecule.bonds[0].order == ck.BondOrder.DOUBLE
-    with pytest.raises(ValueError, match="invalid BondOrder code"):
+    with pytest.raises(TypeError, match="BondOrderInput"):
         ck.BondSpec.new(0, 1, 999)
 
 
@@ -91,7 +91,7 @@ def test_alignment_factories_preserve_explicit_maps_and_options():
     assert value.reference_conformer_id == 9
     assert value.atom_map[0].probe_atom == 4
     assert value.atom_map[0].reference_atom == 2
-    assert value.weights == [2.5]
+    assert value.weights == (2.5,)
     assert value.reflect is True
     assert value.max_iterations == 19
     with pytest.raises(OverflowError):

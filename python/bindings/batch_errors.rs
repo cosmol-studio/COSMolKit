@@ -102,23 +102,28 @@ impl BatchError {
 }
 crate::error_framework::error_projection! {methods impl BatchError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "batch"
     }
     #[getter]
+    /// Zero-based input record index at which the batch operation failed.
     fn index(&self) -> usize {
         self.inner.index
     }
     #[getter]
+    /// Canonical name of the failed batch operation.
     fn operation(&self) -> &'static str {
         self.inner.operation
     }
     #[getter]
+    /// Native message describing this record's failure.
     fn message(&self) -> &str {
         &self.inner.message
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<BatchSource>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -153,15 +158,19 @@ impl BatchValidationError {
 }
 crate::error_framework::error_projection! {methods impl BatchValidationError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "batch"
     }
     #[getter]
+    /// Number of invalid batch records.
     fn errors(&self) -> usize {
         self.inner.errors
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
+    /// Return a copy of the per-record BatchError list, retaining record indices
+    /// and the native causes. Editing the list does not modify this exception.
     fn record_errors(&self, py: Python<'_>) -> PyResult<Vec<crate::error_framework::ErrorObject<BatchError>>> {
         self.inner
             .record_errors
@@ -178,10 +187,11 @@ error_projection!(retained BatchImageError,BatchImageErrorKind,ck::BatchImageErr
 InvalidFormat(_),Write(_),
 },cause=|inner:&RetainedError<ck::BatchImageError>|inner.node().source().map(crate::drawing_errors::DrawingWriteError::from_ref),
 source=Option<crate::error_framework::ErrorObject<crate::drawing_errors::DrawingWriteError>>,methods={
-#[getter]fn format(&self)->Option<&str>{match self.inner.as_ref(){ck::BatchImageError::InvalidFormat(v)=>Some(v),_=>None}}
+#[getter]#[doc = "Format involved in the failed conversion. Applies to BatchImageError.InvalidFormat. None when this payload is absent."] fn format(&self)->Option<&str>{match self.inner.as_ref(){ck::BatchImageError::InvalidFormat(v)=>Some(v),_=>None}}
 });
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Ordered batch export totals and retained per-record failures.
     pub struct BatchExportReport {
         pub(crate) inner: ck::BatchExportReport,
     }
@@ -189,18 +199,22 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl BatchExportReport {
     #[getter]
+    /// Total number of records processed by the export.
     fn total(&self) -> usize {
         self.inner.total()
     }
     #[getter]
+    /// Number of records successfully written.
     fn success(&self) -> usize {
         self.inner.success()
     }
     #[getter]
+    /// Number of records that failed to export.
     fn failed(&self) -> usize {
         self.inner.failed()
     }
     #[getter]
+    /// Independent list of per-record export errors, preserving structured causes.
     fn errors(
         &self,
         py: Python<'_>,
@@ -211,6 +225,7 @@ impl BatchExportReport {
             .map(|v| Ok(BatchError::from_rust(v.clone()).value(py).extract()?))
             .collect()
     }
+    /// Write the native export report to the supplied filesystem path.
     fn write_report(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
         py.detach(|| self.inner.write_report(&path))
             .map_err(BatchValidationError::from_rust)

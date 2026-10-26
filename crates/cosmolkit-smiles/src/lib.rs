@@ -237,15 +237,24 @@ impl From<cosmolkit_model::TopologyEditError> for SmilesParseError {
     }
 }
 
+/// SMILES and CXSMILES parsing options, including chemical cleanup and textual replacements.
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct SmilesParseParams {
+    /// Run chemical sanitization after parsing.
     pub sanitize: bool,
+    /// Recognize the CXSMILES extension following the core SMILES text.
     pub allow_cxsmiles: bool,
+    /// Report invalid CXSMILES extensions as errors instead of accepting a failed extension parse.
     pub strict_cxsmiles: bool,
+    /// Interpret trailing name text as the molecule name.
     pub parse_name: bool,
+    /// Remove source-eligible explicit hydrogen atom rows after parsing.
     pub remove_hs: bool,
+    /// Skip the parser's final cleanup stage.
     pub skip_cleanup: bool,
+    /// Enable parser diagnostic output.
     pub debug_parse: bool,
+    /// Text replacements applied before parsing, such as a named fragment token and its SMILES expansion.
     #[configuration(none_default)]
     pub replacements: BTreeMap<String, String>,
 }

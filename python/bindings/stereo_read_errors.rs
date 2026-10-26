@@ -40,7 +40,7 @@ error_projection!(StereoReadError, StereoReadErrorKind, ck::StereoReadError, "st
 }), source = Option<StereoReadSource>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of StereoReadError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::StereoReadError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

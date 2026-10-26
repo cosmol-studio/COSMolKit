@@ -38,7 +38,7 @@ def test_boundary_error_remains_structured_and_source_molecule_usable():
     source = ck.Molecule.from_smiles("CC")
     with pytest.raises(ck.OperationError) as raised: source.with_atom_pair_atom_code(2, include_chirality=True, use_legacy_stereo_perception=False)
     error = raised.value
-    assert error.domain == "operation" and error.kind == "AtomCode"
+    assert error.domain == "operation" and error.variant.name == "AtomCode"
     assert error.__cause__ is not None
     assert source.with_atom_pair_atom_code(0).code == 33
     for subtract in [-1, 1 << 32]:
@@ -50,13 +50,13 @@ def test_original_generated_stub_exposes_only_explicit_value_transform():
     tree = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     result = {node.name: node for node in classes["AtomPairAtomCodeResult"].body if isinstance(node, ast.FunctionDef)}
-    assert set(result) == {"code", "molecule"}
-    assert ast.unparse(result["code"].returns) == "builtins.int"
+    assert set(result) == {"__new__", "code", "molecule"}
+    assert ast.unparse(result["code"].returns) == "int"
     assert ast.unparse(result["molecule"].returns) == "Molecule"
-    for declaration in result.values(): assert [ast.unparse(d) for d in declaration.decorator_list] == ["property"]
+    for name in ("code", "molecule"): assert [ast.unparse(d) for d in result[name].decorator_list] == ["builtins.property"]
     methods = {node.name: node for node in classes["Molecule"].body if isinstance(node, ast.FunctionDef)}
     method = methods["with_atom_pair_atom_code"]
-    assert [arg.arg for arg in method.args.args] == ["self", "atom_id", "branch_subtract", "include_chirality", "use_legacy_stereo_perception"]
+    assert [arg.arg for arg in method.args.posonlyargs + method.args.args] == ["self", "atom_id", "branch_subtract", "include_chirality", "use_legacy_stereo_perception"]
     assert [ast.literal_eval(d) for d in method.args.defaults] == [0, False, True]
     assert ast.unparse(method.returns) == "AtomPairAtomCodeResult"
     assert "get_atom_code" not in methods and "atom_pair_atom_code" not in methods

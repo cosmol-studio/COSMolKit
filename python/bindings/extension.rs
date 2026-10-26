@@ -14,6 +14,7 @@ ck::project_configuration!(ck::SmilesParseParams);
 
 #[pyfunction]
 #[pyo3(signature = (text, params=Argument::Missing, *, sanitize=Argument::Missing, allow_cxsmiles=Argument::Missing, strict_cxsmiles=Argument::Missing, parse_name=Argument::Missing, remove_hs=Argument::Missing, skip_cleanup=Argument::Missing, debug_parse=Argument::Missing, replacements=Argument::Missing))]
+/// Parse SMILES into a new Molecule. Supply SmilesParseParams or keyword options, not both; the native parsing and sanitization defaults are preserved.
 pub fn mol_from_smiles(
     text: &str,
     params: Argument<Option<PyRef<'_, SmilesParseParams>>>,
@@ -158,6 +159,9 @@ fn batch_from_smiles(
 }
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// Ordered molecule/error records with native batch execution and copy-on-write transforms.
+/// Integer indexing returns a molecule or None for an error record; slices and
+/// index selections return another batch. Use records or get to inspect errors.
 pub struct MoleculeBatch {
     pub(crate) inner: ck::MoleculeBatch,
 }
@@ -282,6 +286,7 @@ crate::sequence::Output<ck::FingerprintBatch>, crate::sequence::Output, {};
 }]
 impl MoleculeBatch {
     #[pyo3(signature=(path,params=None,*,format=None,errors=None,n_jobs=None,progress_bar=None,report_path=None))]
+    /// Write batch records to one SDF file using native format, error and parallel options.
     fn write_sdf(
         &self,
         py: Python<'_>,
@@ -330,6 +335,7 @@ impl MoleculeBatch {
         .map_err(crate::batch_errors::BatchValidationError::from_rust)
     }
     #[pyo3(signature=(path,params,report_path))]
+    /// Write batch records to one SDF file with explicit batch-write parameters.
     fn write_sdf_with_params(
         &self,
         py: Python<'_>,
@@ -340,6 +346,7 @@ impl MoleculeBatch {
         self.write_sdf(py, path, Some(params), None, None, None, None, report_path)
     }
     #[pyo3(signature=(directory,params=None,*,format=None,errors=None,n_jobs=None,progress_bar=None,filenames=None,report_path=None))]
+    /// Write separate SDF files using the native batch file-writing policy and return its write result.
     fn write_sdf_files(
         &self,
         py: Python<'_>,
@@ -390,6 +397,7 @@ impl MoleculeBatch {
         .map_err(crate::batch_errors::BatchValidationError::from_rust)
     }
     #[pyo3(signature=(directory,params,filenames,report_path))]
+    /// Write separate SDF files with explicit batch-write parameters.
     fn write_sdf_files_with_params(
         &self,
         py: Python<'_>,
@@ -411,6 +419,7 @@ impl MoleculeBatch {
         )
     }
     #[pyo3(signature=(directory,options=None,*,format=None,width=None,height=None,execution=None,filenames=None,report_path=None))]
+    /// Render batch molecules to image files using native drawing and batch-write options.
     fn write_images(
         &self,
         py: Python<'_>,
@@ -455,6 +464,7 @@ impl MoleculeBatch {
         .map(|inner| crate::batch_errors::BatchExportReport { inner })
         .map_err(crate::batch_errors::BatchValidationError::from_rust)
     }
+    /// Render batch molecules to image files with explicit drawing and batch-write parameters.
     fn write_images_with_params(
         &self,
         py: Python<'_>,
@@ -475,6 +485,7 @@ impl MoleculeBatch {
     }
 
     #[pyo3(signature=(options,atom_invariants,bond_invariants,call,*,execution=None))]
+    /// Compute folded Morgan fingerprints for batch records using explicit generator configuration.
     fn fingerprint_morgan_with_generator_params(
         &self,
         py: Python<'_>,
@@ -502,6 +513,7 @@ impl MoleculeBatch {
     }
 
     #[pyo3(signature=(options,atom_invariants,bond_invariants,call,collect_additional_output,*,execution=None))]
+    /// Compute Morgan fingerprints with per-record feature provenance using explicit generator configuration.
     fn fingerprint_morgan_with_output_with_generator_params(
         &self,
         py: Python<'_>,
@@ -542,6 +554,7 @@ impl MoleculeBatch {
     }
 
     #[pyo3(signature=(options=Argument::Missing,params=None,*,n_jobs=None,progress_bar=None,isomeric_smiles=Argument::Missing,kekule=Argument::Missing,canonical=Argument::Missing,clean_stereo=Argument::Missing,rooted_at_atom=Argument::Missing,all_bonds_explicit=Argument::Missing,all_hydrogens_explicit=Argument::Missing,include_dative_bonds=Argument::Missing,ignore_atom_map_numbers=Argument::Missing))]
+    /// Return SMILES results in record order. Supply SmilesWriteParams or individual chemical options, not both; n_jobs and progress_bar control native execution.
     fn to_smiles(
         &self, py: Python<'_>,
         options: Argument<Option<PyRef<'_, crate::chemical_params::SmilesWriteParams>>>,
@@ -597,6 +610,7 @@ impl MoleculeBatch {
         let options = crate::smiles_writer::keywords(isomeric_smiles, kekule, canonical, clean_stereo, rooted_at_atom, all_bonds_explicit, all_hydrogens_explicit, include_dative_bonds, ignore_atom_map_numbers);
         self._to_smiles_params(py, Some(&options), params, n_jobs, progress_bar)
     }
+    /// Return SMILES results in record order using explicit writer and execution parameters.
     fn to_smiles_with_params(
         &self, py: Python<'_>,
         options: &crate::chemical_params::SmilesWriteParams,
@@ -605,6 +619,7 @@ impl MoleculeBatch {
         self._to_smiles_params(py, Some(options), Some(params), None, None)
     }
     #[pyo3(signature=(params=None,*,n_jobs=None,progress_bar=None))]
+    /// Return per-record distance-geometry bounds matrices using native preparation and execution options.
     fn dg_bounds_matrix(
         &self,
         py: Python<'_>,
@@ -616,6 +631,7 @@ impl MoleculeBatch {
             self.inner.dg_bounds_matrix_with_params(p)
         })
     }
+    /// Return per-record distance-geometry bounds matrices with explicit preparation and execution parameters.
     fn dg_bounds_matrix_with_params(
         &self,
         py: Python<'_>,
@@ -624,6 +640,7 @@ impl MoleculeBatch {
         self.dg_bounds_matrix(py, Some(params), None, None)
     }
     #[pyo3(signature=(width,height,params=None,*,n_jobs=None,progress_bar=None))]
+    /// Render each molecule to SVG with the requested canvas dimensions and native execution settings.
     fn to_svg(
         &self,
         py: Python<'_>,
@@ -637,6 +654,7 @@ impl MoleculeBatch {
             self.inner.to_svg_with_params(width, height, p)
         })
     }
+    /// Render each molecule to SVG with explicit drawing and execution parameters.
     fn to_svg_with_params(
         &self,
         py: Python<'_>,
@@ -649,6 +667,7 @@ impl MoleculeBatch {
 
     #[staticmethod]
     #[pyo3(signature=(smiles,parse=Argument::Missing,params=None,*,errors=None,n_jobs=None,progress_bar=None,sanitize=Argument::Missing,allow_cxsmiles=Argument::Missing,strict_cxsmiles=Argument::Missing,parse_name=Argument::Missing,remove_hs=Argument::Missing,skip_cleanup=Argument::Missing,debug_parse=Argument::Missing,replacements=Argument::Missing))]
+    /// Parse an ordered list of SMILES into a batch; error mode determines how failed records are retained or reported.
     pub(crate) fn from_smiles_list(
         py: Python<'_>, smiles: Vec<String>,
         parse: Argument<Option<PyRef<'_, SmilesParseParams>>>,
@@ -704,6 +723,7 @@ impl MoleculeBatch {
         batch_from_smiles(py, smiles, &parse, params, errors, n_jobs, progress_bar)
     }
     #[staticmethod]
+    /// Parse an ordered list of SMILES with explicit parsing and batch parameters.
     fn from_smiles_list_with_params(
         py: Python<'_>, smiles: Vec<String>, parse: &SmilesParseParams,
         params: &crate::io_batch_params::BatchParams,
@@ -712,6 +732,7 @@ impl MoleculeBatch {
     }
     #[staticmethod]
     #[pyo3(signature=(text,read=crate::arguments::Argument::Missing,*,errors=None,n_jobs=None,progress_bar=None,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+    /// Construct a batch from SDF record values using native parsing and error handling.
     pub(crate) fn from_sdf_records(
         py: Python<'_>, text: String,
         read: crate::arguments::Argument<Option<PyRef<'_, crate::selectors::SdfReadParams>>>,
@@ -766,6 +787,7 @@ impl MoleculeBatch {
     }
     #[staticmethod]
     #[pyo3(signature=(text,read,errors=None,n_jobs=None,progress_bar=None))]
+    /// Construct a batch from SDF record values with explicit parameters.
     fn from_sdf_records_with_params(
         py: Python<'_>, text: String, read: &crate::selectors::SdfReadParams,
         errors: Option<crate::io_batch_params::BatchErrorModeInput>,
@@ -776,6 +798,7 @@ impl MoleculeBatch {
 
     #[staticmethod]
     #[pyo3(signature=(path,read=crate::arguments::Argument::Missing,*,errors=None,n_jobs=None,progress_bar=None,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+    /// Read an SDF path into an ordered molecule batch.
     pub(crate) fn read_sdf(
         py: Python<'_>, path: std::path::PathBuf,
         read: crate::arguments::Argument<Option<PyRef<'_, crate::selectors::SdfReadParams>>>,
@@ -830,6 +853,7 @@ impl MoleculeBatch {
     }
     #[staticmethod]
     #[pyo3(signature=(path,read,errors=None,n_jobs=None,progress_bar=None))]
+    /// Read an SDF path into a batch using explicit read and batch parameters.
     fn read_sdf_with_params(
         py: Python<'_>, path: std::path::PathBuf, read: &crate::selectors::SdfReadParams,
         errors: Option<crate::io_batch_params::BatchErrorModeInput>,
@@ -839,6 +863,7 @@ impl MoleculeBatch {
     }
 
     #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
+    /// Return a new batch after sanitizing each molecule. Original records are unchanged; failures follow the selected batch error policy.
     fn sanitize(
         &self,
         py: Python<'_>,
@@ -898,6 +923,7 @@ impl MoleculeBatch {
         let execution = crate::batch_calls::execution(errors, n_jobs, progress_bar)?;
         self._batch_sanitize_params(py, options, Some(&execution))
     }
+    /// Return a new sanitized batch with explicit sanitization and execution parameters.
     fn sanitize_with_params(
         &self,
         py: Python<'_>,
@@ -907,6 +933,7 @@ impl MoleculeBatch {
         self._batch_sanitize_params(py, Some(options), Some(params))
     }
     #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
+    /// Return a new batch with explicit hydrogen atoms added; source records are unchanged.
     fn with_hydrogens(
         &self,
         py: Python<'_>,
@@ -965,6 +992,7 @@ impl MoleculeBatch {
         let execution = crate::batch_calls::execution(errors, n_jobs, progress_bar)?;
         self._batch_with_hydrogens_params(py, options, Some(&execution))
     }
+    /// Return a new batch with hydrogens added using explicit chemistry and execution parameters.
     fn with_hydrogens_with_params(
         &self,
         py: Python<'_>,
@@ -974,6 +1002,7 @@ impl MoleculeBatch {
         self._batch_with_hydrogens_params(py, Some(options), Some(params))
     }
     #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
+    /// Return a new batch with source-eligible hydrogen atoms removed; source records are unchanged.
     fn without_hydrogens(
         &self,
         py: Python<'_>,
@@ -1033,6 +1062,7 @@ impl MoleculeBatch {
         let execution = crate::batch_calls::execution(errors, n_jobs, progress_bar)?;
         self._batch_without_hydrogens_params(py, options, Some(&execution))
     }
+    /// Return a new batch with hydrogens removed using explicit chemistry and execution parameters.
     fn without_hydrogens_with_params(
         &self,
         py: Python<'_>,
@@ -1042,6 +1072,7 @@ impl MoleculeBatch {
         self._batch_without_hydrogens_params(py, Some(options), Some(params))
     }
     #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
+    /// Return a new batch with Kekule bond assignments; source records are unchanged.
     fn with_kekulized_bonds(
         &self,
         py: Python<'_>,
@@ -1101,6 +1132,7 @@ impl MoleculeBatch {
         let execution = crate::batch_calls::execution(errors, n_jobs, progress_bar)?;
         self._batch_with_kekulized_bonds_params(py, options, Some(&execution))
     }
+    /// Return a new Kekulized batch using explicit chemistry and execution parameters.
     fn with_kekulized_bonds_with_params(
         &self,
         py: Python<'_>,
@@ -1110,6 +1142,7 @@ impl MoleculeBatch {
         self._batch_with_kekulized_bonds_params(py, Some(options), Some(params))
     }
     #[pyo3(signature=(options=None,params=crate::arguments::Argument::Missing,*,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing))]
+    /// Return a new batch with generated two-dimensional layouts; source records are unchanged.
     fn with_2d_coordinates(
         &self,
         py: Python<'_>,
@@ -1168,6 +1201,7 @@ impl MoleculeBatch {
         let execution = crate::batch_calls::execution(errors, n_jobs, progress_bar)?;
         self._batch_with_2d_coordinates_params(py, options, Some(&execution))
     }
+    /// Return a new batch with generated layouts using explicit layout and execution parameters.
     fn with_2d_coordinates_with_params(
         &self,
         py: Python<'_>,
@@ -1178,6 +1212,7 @@ impl MoleculeBatch {
     }
 
     #[getter]
+    /// Ordered record values, each a Molecule or a structured BatchError.
     fn records(&self, py: Python<'_>) -> PyResult<Vec<crate::batch_calls::Record>> {
         self.inner
             .records()
@@ -1185,21 +1220,27 @@ impl MoleculeBatch {
             .map(|v| crate::batch_calls::record(py, v))
             .collect()
     }
+    /// Return a Molecule or BatchError record at a nonnegative index, or None when out of range.
     fn get(&self, py: Python<'_>, index: usize) -> PyResult<Option<crate::batch_calls::Record>> {
         self.inner
             .get(index)
             .map(|v| crate::batch_calls::record(py, v))
             .transpose()
     }
+    /// Return a new batch containing the specified indices in order, including duplicates; return None if an index is invalid.
     fn select(&self, indices: Vec<usize>) -> Option<Self> {
         self.inner.select(&indices).map(|inner| Self { inner })
     }
     #[doc = r#"{"role":"indexing","protocol":"integer_selection","selection":"Self"}"#]
+    /// Read a molecule or None at an integer index; return a new batch for a selection.
+    /// Negative indices, slices, integer sequences and length-matched boolean masks are supported.
+    /// Selections retain input order, duplicates and invalid rows.
     fn __getitem__(&self, py: Python<'_>, index: crate::indexing::Index<'_>)
         -> PyResult<crate::indexing::Indexed<Option<Molecule>, Self>> {
         crate::indexing::get(self, py, index)
     }
     #[getter]
+    /// Structured errors retained by the batch, preserving their native record indices and causes.
     fn errors(&self, py: Python<'_>) -> PyResult<Vec<crate::error_framework::ErrorObject<crate::batch_errors::BatchError>>> {
         self.inner
             .errors()
@@ -1212,12 +1253,14 @@ impl MoleculeBatch {
             .collect()
     }
     #[pyo3(signature=(n_jobs=None))]
+    /// Return a new batch with the requested parallel-job setting; native validation errors propagate.
     fn with_parallel_jobs(&self, py: Python<'_>, n_jobs: Option<usize>) -> PyResult<Self> {
         py.detach(|| self.inner.clone().with_parallel_jobs(n_jobs))
             .map(|inner| Self { inner })
             .map_err(crate::batch_errors::BatchValidationError::from_rust)
     }
     #[pyo3(signature=(progress_bar=None))]
+    /// Return a new batch with the requested progress-display setting.
     fn with_progress_bar(&self, progress_bar: Option<bool>) -> Self {
         Self {
             inner: self.inner.clone().with_progress_bar(progress_bar),
@@ -1225,6 +1268,7 @@ impl MoleculeBatch {
     }
     #[staticmethod]
     #[pyo3(signature=(records,mode=None))]
+    /// Construct a batch from Molecule and BatchError records using the selected error mode.
     pub(crate) fn from_records(
         py: Python<'_>,
         records: Vec<crate::batch_calls::Record>,
@@ -1244,6 +1288,7 @@ impl MoleculeBatch {
     }
     #[staticmethod]
     #[pyo3(signature=(dataset,indices,mode=None))]
+    /// Construct a batch from selected SDF dataset indices in the supplied order.
     fn from_dataset_indices(
         py: Python<'_>,
         dataset: &crate::sdf_sources::SdfDataset,
@@ -1269,41 +1314,51 @@ impl MoleculeBatch {
         self.inner.len()
     }
     #[getter]
+    /// Number of records, including failed records.
     fn len(&self) -> usize {
         self.inner.len()
     }
     #[getter]
+    /// Whether the batch contains no records.
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
     #[getter]
+    /// Error-handling mode retained by this batch.
     fn error_mode(&self) -> BatchErrorMode {
         self.inner.error_mode().into()
     }
     #[getter]
+    /// Boolean mask in record order: true for molecule records.
     fn valid_mask(&self) -> Vec<bool> {
         self.inner.valid_mask()
     }
     #[getter]
+    /// Boolean mask in record order: true for error records.
     fn invalid_mask(&self) -> Vec<bool> {
         self.inner.invalid_mask()
     }
     #[getter]
+    /// Number of molecule records.
     fn valid_count(&self) -> usize {
         self.inner.valid_count()
     }
     #[getter]
+    /// Number of error records.
     fn invalid_count(&self) -> usize {
         self.inner.invalid_count()
     }
     #[getter]
+    /// Stored parallel-job override, or None to use the native default.
     fn parallel_jobs(&self) -> Option<usize> {
         self.inner.parallel_jobs()
     }
     #[getter]
+    /// Stored progress-display override, or None to use the native default.
     fn progress_bar(&self) -> Option<bool> {
         self.inner.progress_bar()
     }
+    /// Return molecule values in record order with None placeholders for failed records.
     fn to_list(&self) -> Vec<Option<Molecule>> {
         self.inner
             .to_list()
@@ -1311,6 +1366,7 @@ impl MoleculeBatch {
             .map(|value| value.map(|inner| Molecule { inner }))
             .collect()
     }
+    /// Return a new batch containing only valid molecule records in their original order.
     fn with_valid_records(&self) -> Self {
         Self {
             inner: self.inner.with_valid_records(),
@@ -1350,64 +1406,58 @@ mod batch_owner_tests {
         Python::initialize();
         Python::attach(|py| -> PyResult<()> {
             let batch = Py::new(py, MoleculeBatch { inner: native })?;
-            assert_eq!(batch.bind(py).call_method0("len")?.extract::<usize>()?, 3);
+            assert_eq!(batch.bind(py).getattr("len")?.extract::<usize>()?, 3);
             assert_eq!(batch.bind(py).len()?, 3);
-            assert!(!batch.bind(py).call_method0("is_empty")?.extract::<bool>()?);
+            assert!(!batch.bind(py).getattr("is_empty")?.extract::<bool>()?);
             assert_eq!(
-                batch
-                    .bind(py)
-                    .call_method0("valid_count")?
-                    .extract::<usize>()?,
+                batch.bind(py).getattr("valid_count")?.extract::<usize>()?,
                 2
             );
             assert_eq!(
                 batch
                     .bind(py)
-                    .call_method0("invalid_count")?
+                    .getattr("invalid_count")?
                     .extract::<usize>()?,
                 1
             );
             assert_eq!(
                 batch
                     .bind(py)
-                    .call_method0("valid_mask")?
+                    .getattr("valid_mask")?
                     .extract::<Vec<bool>>()?,
                 vec![true, false, true]
             );
             assert_eq!(
                 batch
                     .bind(py)
-                    .call_method0("invalid_mask")?
+                    .getattr("invalid_mask")?
                     .extract::<Vec<bool>>()?,
                 vec![false, true, false]
             );
             assert!(
                 batch
                     .bind(py)
-                    .call_method0("error_mode")?
+                    .getattr("error_mode")?
                     .extract::<BatchErrorMode>()?
                     == BatchErrorMode::KeepErrors
             );
             assert_eq!(
                 batch
                     .bind(py)
-                    .call_method0("parallel_jobs")?
+                    .getattr("parallel_jobs")?
                     .extract::<Option<usize>>()?,
                 Some(2)
             );
             assert_eq!(
                 batch
                     .bind(py)
-                    .call_method0("progress_bar")?
+                    .getattr("progress_bar")?
                     .extract::<Option<bool>>()?,
                 Some(false)
             );
             let filtered = batch.bind(py).call_method0("with_valid_records")?;
-            assert_eq!(filtered.call_method0("valid_count")?.extract::<usize>()?, 2);
-            assert_eq!(
-                filtered.call_method0("invalid_count")?.extract::<usize>()?,
-                0
-            );
+            assert_eq!(filtered.getattr("valid_count")?.extract::<usize>()?, 2);
+            assert_eq!(filtered.getattr("invalid_count")?.extract::<usize>()?, 0);
             let values = batch
                 .bind(py)
                 .call_method0("to_list")?
@@ -1439,7 +1489,7 @@ mod batch_owner_tests {
                     .as_ref()
                     .unwrap()
                     .bind(py)
-                    .call_method0("num_atoms")?
+                    .getattr("num_atoms")?
                     .extract::<usize>()?,
                 3
             );

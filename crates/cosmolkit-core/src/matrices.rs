@@ -67,8 +67,11 @@ pub struct TopologicalDistanceMatrixParams {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Conformer selection and diagonal weighting for Cartesian distance matrices.
 pub struct DistanceMatrix3dParams {
+    /// Stored 3D conformer identifier, or None for default selection.
     pub conformer_id: Option<usize>,
+    /// Set diagonal entries using the native atomic-number weighting.
     pub use_atom_weights: bool,
 }
 

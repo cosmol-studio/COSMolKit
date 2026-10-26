@@ -1138,12 +1138,18 @@ impl RandomBitsSource for SharedRandomBitsSource {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, cosmolkit_macros::Configuration)]
 #[configuration(stateful)]
 pub struct StereoisomerOptions {
+    /// Attempt 3D embedding and discard candidates that cannot be embedded.
     pub try_embedding: bool,
+    /// Enumerate only stereocenters whose stereochemistry is unspecified.
     pub only_unassigned: bool,
+    /// Restrict enumeration to centers in enhanced stereochemistry groups.
     pub only_stereo_groups: bool,
+    /// Maximum number of isomers to enumerate; zero removes this limit.
     pub max_isomers: usize,
+    /// Random-bit provider; None uses the molecule-derived default seed.
     #[configuration(adapter)]
     pub random_source: Option<StereoisomerRandomSource>,
+    /// Remove duplicate stereoisomers from the output.
     pub unique: bool,
 }
 

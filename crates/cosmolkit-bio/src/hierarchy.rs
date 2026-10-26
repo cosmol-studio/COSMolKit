@@ -892,13 +892,20 @@ fn multiply_matrices(first: [[f64; 3]; 3], second: [[f64; 3]; 3]) -> [[f64; 3]; 
     result
 }
 
+/// Crystallographic unit cell: lengths in angstroms and angles in degrees.
 #[derive(Debug, Clone, Copy, PartialEq, cosmolkit_macros::Configuration)]
 pub struct BioCrystalCell {
+    /// Length of the a axis in angstroms.
     pub a: f64,
+    /// Length of the b axis in angstroms.
     pub b: f64,
+    /// Length of the c axis in angstroms.
     pub c: f64,
+    /// Angle between b and c in degrees.
     pub alpha: f64,
+    /// Angle between a and c in degrees.
     pub beta: f64,
+    /// Angle between a and b in degrees.
     pub gamma: f64,
 }
 

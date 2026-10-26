@@ -4,7 +4,9 @@ use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Diagnostic-output policy for native reaction validation.
 pub struct ReactionValidationParams {
+    /// Suppress native diagnostic logging while retaining the structured validation report.
     pub silent: bool,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

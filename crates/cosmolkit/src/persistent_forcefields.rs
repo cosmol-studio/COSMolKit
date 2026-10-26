@@ -7,9 +7,13 @@ use std::{error::Error, fmt, sync::Mutex};
 #[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar, required)]
 pub struct ForceFieldDistanceConstraintParams {
+    /// Interpret restraint bounds relative to the initial geometry instead of as absolute values.
     pub relative: bool,
+    /// Lower distance bound in angstroms.
     pub min_distance: f64,
+    /// Upper distance bound in angstroms.
     pub max_distance: f64,
+    /// Force constant multiplying the restraint penalty.
     pub force_constant: f64,
 }
 impl ForceFieldDistanceConstraintParams {
@@ -39,9 +43,13 @@ impl ForceFieldDistanceConstraintParams {
 #[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar, required)]
 pub struct ForceFieldAngleConstraintParams {
+    /// Interpret restraint bounds relative to the initial geometry instead of as absolute values.
     pub relative: bool,
+    /// Lower bond-angle bound in degrees.
     pub min_angle_deg: f64,
+    /// Upper bond-angle bound in degrees.
     pub max_angle_deg: f64,
+    /// Force constant multiplying the restraint penalty.
     pub force_constant: f64,
 }
 impl ForceFieldAngleConstraintParams {
@@ -76,9 +84,13 @@ impl ForceFieldAngleConstraintParams {
 #[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar, required)]
 pub struct ForceFieldTorsionConstraintParams {
+    /// Interpret restraint bounds relative to the initial geometry instead of as absolute values.
     pub relative: bool,
+    /// Lower dihedral-angle bound in degrees.
     pub min_dihedral_deg: f64,
+    /// Upper dihedral-angle bound in degrees.
     pub max_dihedral_deg: f64,
+    /// Force constant multiplying the restraint penalty.
     pub force_constant: f64,
 }
 impl ForceFieldTorsionConstraintParams {
@@ -113,7 +125,9 @@ impl ForceFieldTorsionConstraintParams {
 #[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar, required)]
 pub struct ForceFieldPositionConstraintParams {
+    /// Maximum displacement from the restrained initial position, in angstroms.
     pub max_displacement: f64,
+    /// Force constant multiplying the restraint penalty.
     pub force_constant: f64,
 }
 impl ForceFieldPositionConstraintParams {
@@ -152,10 +166,15 @@ fn contract_default(constructor: &str, name: &str) -> &'static str {
 }
 #[derive(Clone, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Configuration for constructing a persistent MMFF force field over a selected conformer.
 pub struct MmffForceFieldParams {
+    /// Stored 3D conformer identifier, or None for the native default selection.
     pub conformer_id: Option<usize>,
+    /// MMFF94 or MMFF94s parameterization.
     pub mmff_variant: MmffVariant,
+    /// Distance cutoff for inclusion of MMFF non-bonded interactions, in angstroms.
     pub non_bonded_threshold: f64,
+    /// Omit non-bonded interactions between disconnected molecular fragments.
     pub ignore_interfragment_interactions: bool,
 }
 impl MmffForceFieldParams {
@@ -213,9 +232,13 @@ impl Default for MmffForceFieldParams {
 }
 #[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Configuration for constructing a persistent UFF force field over a selected conformer.
 pub struct UffForceFieldParams {
+    /// Stored 3D conformer identifier, or None for the native default selection.
     pub conformer_id: Option<usize>,
+    /// Cutoff multiplier relative to the van der Waals contact distance for UFF non-bonded interactions.
     pub vdw_threshold: f64,
+    /// Omit non-bonded interactions between disconnected molecular fragments.
     pub ignore_interfragment_interactions: bool,
 }
 impl UffForceFieldParams {
@@ -265,9 +288,13 @@ impl Default for UffForceFieldParams {
 }
 #[derive(Clone, Copy, Debug, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Iteration limit and numerical tolerances for persistent force-field minimization.
 pub struct ForceFieldMinimizeParams {
+    /// Maximum number of minimizer iterations.
     pub max_iterations: u32,
+    /// Force convergence tolerance passed to the native minimizer.
     pub force_tolerance: f64,
+    /// Energy tolerance forwarded to the source-compatible minimizer; its current algorithm does not use this criterion.
     pub energy_tolerance: f64,
 }
 impl ForceFieldMinimizeParams {

@@ -28,66 +28,97 @@ use crate::cif::CifReadError;
 #[configuration(scalar)]
 pub struct BioMmcifWriteParams {
     #[configuration(none_default)]
+    /// Emit atom coordinates and associated atom-site data.
     pub atoms: bool,
     #[configuration(none_default)]
+    /// Set the CIF data-block name from the structure.
     pub block_name: bool,
     #[configuration(none_default)]
+    /// Emit entry-identification metadata.
     pub entry: bool,
     #[configuration(none_default)]
+    /// Emit deposition and database-status metadata.
     pub database_status: bool,
     #[configuration(none_default)]
+    /// Emit author information.
     pub author: bool,
     #[configuration(none_default)]
+    /// Emit crystallographic unit-cell parameters.
     pub cell: bool,
     #[configuration(none_default)]
+    /// Emit space-group symmetry metadata.
     pub symmetry: bool,
     #[configuration(none_default)]
+    /// Emit molecular entity definitions.
     pub entity: bool,
     #[configuration(none_default)]
+    /// Emit polymer entity classifications.
     pub entity_poly: bool,
     #[configuration(none_default)]
+    /// Emit reference-database links.
     pub struct_ref: bool,
     #[configuration(none_default)]
+    /// Emit chemical-component definitions.
     pub chem_comp: bool,
     #[configuration(none_default)]
+    /// Emit experimental-method metadata.
     pub exptl: bool,
     #[configuration(none_default)]
+    /// Emit diffraction-experiment metadata.
     pub diffrn: bool,
     #[configuration(none_default)]
+    /// Emit reflection statistics.
     pub reflns: bool,
     #[configuration(none_default)]
+    /// Emit refinement statistics and restraints.
     pub refine: bool,
     #[configuration(none_default)]
+    /// Emit the structure title and keywords.
     pub title_keywords: bool,
     #[configuration(none_default)]
+    /// Emit non-crystallographic symmetry operators.
     pub ncs: bool,
     #[configuration(none_default)]
+    /// Emit asymmetric-unit chain/entity associations.
     pub struct_asym: bool,
     #[configuration(none_default)]
+    /// Emit the original-coordinate transform.
     pub origx: bool,
     #[configuration(none_default)]
+    /// Emit helical and other conformational annotations.
     pub struct_conf: bool,
     #[configuration(none_default)]
+    /// Emit beta-sheet annotations.
     pub struct_sheet: bool,
     #[configuration(none_default)]
+    /// Emit biological-structure metadata.
     pub struct_biol: bool,
     #[configuration(none_default)]
+    /// Emit assembly definitions and operators.
     pub assembly: bool,
     #[configuration(none_default)]
+    /// Emit explicit structural connections.
     pub conn: bool,
     #[configuration(none_default)]
+    /// Emit cis-peptide annotations.
     pub cis: bool,
     #[configuration(none_default)]
+    /// Emit modified-residue annotations.
     pub modres: bool,
     #[configuration(none_default)]
+    /// Emit fractional-coordinate transformation information.
     pub scale: bool,
     #[configuration(none_default)]
+    /// Emit atom-type metadata.
     pub atom_type: bool,
     #[configuration(none_default)]
+    /// Emit polymer entity sequences.
     pub entity_poly_seq: bool,
     #[configuration(none_default)]
+    /// Emit translation/libration/screw refinement metadata.
     pub tls: bool,
     #[configuration(none_default)]
+    /// Emit software provenance recorded in the structure.
     pub software: bool,
 
     /// Emit the `_atom_site.group_PDB` column (ATOM/HETATM records).

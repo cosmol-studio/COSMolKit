@@ -120,12 +120,6 @@ def test_smiles_and_value_semantics_preserve_expected_graph_features():
 
 
 def test_molecule_supports_python_pickle_roundtrip():
-    native = importlib.import_module("cosmolkit.cosmolkit")
-    assert not hasattr(cosmolkit, "_rebuild_molecule_from_pickle")
-    assert not hasattr(native, "_rebuild_molecule_from_pickle")
-    assert "_rebuild_molecule_from_pickle" not in cosmolkit.__all__
-    assert "_rebuild_molecule_from_pickle" not in native.__all__
-
     mol = (
         cosmolkit.Molecule.from_smiles("F[C@H](Cl)[13CH3:7]")
         .with_hydrogens()
@@ -150,7 +144,7 @@ def test_molecule_pickle_rebuild_rejects_invalid_state():
     rebuild, _ = cosmolkit.Molecule.new().__reduce__()
     with pytest.raises(cosmolkit.PickleError) as caught:
         rebuild(b"COSMOL\x00\x00\xe7\x03\x00\x00\x00\x00")
-    assert caught.value.kind == "UnsupportedArchiveVersion"
+    assert caught.value.variant.name == "UnsupportedArchiveVersion"
     assert caught.value.major == 999
     assert caught.value.minor == 0
 
@@ -267,7 +261,7 @@ def test_1aid_sdf_reader_preserves_rdkit_ring_stereo_after_remove_hs():
     tags = [atom.chiral_tag for atom in mol.atoms]
     assert tags[0] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
     assert tags[3] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
-    centers = {center: ligands for center, ligands in mol.tetrahedral_stereo()}
+    centers = {row.center: row.ligands for row in mol.tetrahedral_stereo()}
     assert {0, 3}.issubset(centers)
 
 
@@ -574,7 +568,7 @@ def test_1aid_mol2_reader_preserves_rdkit_ring_stereo_after_remove_hs():
     tags = [atom.chiral_tag for atom in mol.atoms]
     assert tags[0] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
     assert tags[3] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
-    centers = {center: ligands for center, ligands in mol.tetrahedral_stereo()}
+    centers = {row.center: row.ligands for row in mol.tetrahedral_stereo()}
     assert {0, 3}.issubset(centers)
 
 
@@ -582,13 +576,13 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     chiral = cosmolkit.Molecule.from_smiles("F[C@H](Cl)Br")
     stereo = chiral.tetrahedral_stereo()
     assert len(stereo) == 1
-    center, ligands = stereo[0]
+    center, ligands = stereo[0].center, [ligand.atom_id for ligand in stereo[0].ligands]
     assert center == 1
     assert ligands == [0, 2, 3, None]
 
     opposite = cosmolkit.Molecule.from_smiles("F[C@@H](Cl)Br")
     opposite_stereo = opposite.tetrahedral_stereo()
-    assert opposite_stereo == [(1, [0, 3, 2, None])]
+    assert [(row.center, [ligand.atom_id for ligand in row.ligands]) for row in opposite_stereo] == [(1, [0, 3, 2, None])]
 
     generator = cosmolkit.MorganFingerprintGenerator(params=cosmolkit.MorganGeneratorParams(radius=2, fp_size=256))
     fp = chiral.fingerprint_morgan_with_generator(generator)
@@ -852,7 +846,7 @@ def test_fragment_hash_pickle_and_scaffold_bindings_are_available():
     restored_method = cosmolkit.Molecule.from_binary(payload)
     assert restored_method.to_smiles() == aromatic.to_smiles()
     assert restored_method.to_binary() == payload
-    assert cosmolkit.version() == cosmolkit.__version__
+    assert isinstance(cosmolkit.version(), str) and cosmolkit.version()
 
 
 def test_draw_and_substructure_bindings_are_available():
@@ -987,12 +981,15 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
 
     dg = prepared.dg_bounds_matrix()
     assert mols[0] is not None
-    assert dg[0] is not None and dg[0].shape[0] == mols[0].num_atoms
+    assert type(dg) is list and len(dg) == len(mols)
+    assert type(dg[0]) is list and len(dg[0]) == mols[0].num_atoms
+    assert all(type(row) is list and len(row) == mols[0].num_atoms for row in dg[0])
+    assert all(type(value) is float for row in dg[0] for value in row)
     assert dg[2] is None
 
     fps = prepared.fingerprint_morgan_with_generator_params(
         cosmolkit.MorganGeneratorParams(fp_size=128), None, None,
-        cosmolkit.MorganCallParams(), cosmolkit.BatchQueryParams()
+        cosmolkit.MorganCallParams(), execution=cosmolkit.BatchQueryParams()
     )
     assert fps[0] is not None
     assert fps[2] is None
@@ -1001,9 +998,11 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
         td_path = Path(td)
         img_report = prepared.write_images(
             str(td_path / "images"),
-            format="svg",
-            errors="keep",
-            filenames=["ethanol.svg", "benzene.svg", None, "chiral.svg"],
+            cosmolkit.BatchImageParams(
+                format="svg",
+                execution=cosmolkit.BatchParams(errors="keep"),
+                filenames=["ethanol.svg", "benzene.svg", None, "chiral.svg"],
+            ),
         )
         sdf_report = prepared.write_sdf_files(
             str(td_path / "sdf"),

@@ -34,7 +34,7 @@ error_projection!(SelectedSubstanceGroupCopyError, SelectedSubstanceGroupCopyErr
         mapped_bond: usize => |v: &ck::BondId| v.index(), bond_count: usize },
 }, cause = |_: &ck::SelectedSubstanceGroupCopyError| None::<PyErr>, methods = {
     #[getter]
-    fn group(&self) -> usize { match self.inner {
+    #[doc = "Group identifier involved in the failure. Applies to SelectedSubstanceGroupCopyError.MissingAtomMapping, SelectedSubstanceGroupCopyError.AtomOutOfRange, SelectedSubstanceGroupCopyError.MissingBondMapping, SelectedSubstanceGroupCopyError.BondOutOfRange."] fn group(&self) -> usize { match self.inner {
         ck::SelectedSubstanceGroupCopyError::MissingAtomMapping { group, .. }
         | ck::SelectedSubstanceGroupCopyError::AtomOutOfRange { group, .. }
         | ck::SelectedSubstanceGroupCopyError::MissingBondMapping { group, .. }
@@ -42,7 +42,7 @@ error_projection!(SelectedSubstanceGroupCopyError, SelectedSubstanceGroupCopyErr
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn list(&self) -> Option<SubstanceGroupAtomList> { match self.inner {
+    #[doc = "Name of the affected substance-group list. Present for `SelectedSubstanceGroupCopyError.MissingAtomMapping`, `SelectedSubstanceGroupCopyError.AtomOutOfRange`; None when unavailable."] fn list(&self) -> Option<SubstanceGroupAtomList> { match self.inner {
         ck::SelectedSubstanceGroupCopyError::MissingAtomMapping { list, .. }
         | ck::SelectedSubstanceGroupCopyError::AtomOutOfRange { list, .. } => Some(list.into()), _ => None,
     } }
@@ -64,27 +64,27 @@ error_projection!(FullCopyComponentError, FullCopyComponentErrorKind, ck::FullCo
 }), source = Option<FullSource>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn source_uint(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyUIntReadError>>> { match &self.inner {
+    #[doc = "Structured PropertyUIntReadError payload of FullCopyComponentError.SourceUInt; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn source_uint(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyUIntReadError>>> { match &self.inner {
         ck::FullCopyComponentError::SourceUInt(value) => PropertyUIntReadError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn source_text(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
+    #[doc = "Structured PropertyStringError payload of FullCopyComponentError.SourceText; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn source_text(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
         ck::FullCopyComponentError::SourceText(value) => PropertyStringError::from_rust(*value).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology_edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
+    #[doc = "Structured TopologyEditError payload of FullCopyComponentError.TopologyEdit; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology_edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
         ck::FullCopyComponentError::TopologyEdit(value) => TopologyEditError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn mapping_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
+    #[doc = "Structured MappingValidationError payload of FullCopyComponentError.MappingValidation; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn mapping_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
         ck::FullCopyComponentError::MappingValidation(value) => MappingValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinate_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
+    #[doc = "Structured CoordinateValidationError payload of FullCopyComponentError.CoordinateValidation; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinate_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
         ck::FullCopyComponentError::CoordinateValidation(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -116,32 +116,32 @@ error_projection!(AtomPathSubsetCopyError, AtomPathSubsetCopyErrorKind, ck::Atom
 }), source = Option<SubsetSource>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn computed_properties(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
+    #[doc = "Structured TopologyEditError payload of AtomPathSubsetCopyError.ComputedProperties; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn computed_properties(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
         ck::AtomPathSubsetCopyError::ComputedProperties(value) => TopologyEditError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn bond_copy(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SelectedBondCopyError>>> { match &self.inner {
+    #[doc = "Structured SelectedBondCopyError payload of AtomPathSubsetCopyError.BondCopy; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn bond_copy(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SelectedBondCopyError>>> { match &self.inner {
         ck::AtomPathSubsetCopyError::BondCopy(value) => SelectedBondCopyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn substance_group_copy(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SelectedSubstanceGroupCopyError>>> { match &self.inner {
+    #[doc = "Structured SelectedSubstanceGroupCopyError payload of AtomPathSubsetCopyError.SubstanceGroupCopy; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn substance_group_copy(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SelectedSubstanceGroupCopyError>>> { match &self.inner {
         ck::AtomPathSubsetCopyError::SubstanceGroupCopy(value) => SelectedSubstanceGroupCopyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of AtomPathSubsetCopyError.TopologyValidation; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::AtomPathSubsetCopyError::TopologyValidation(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn mapping_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
+    #[doc = "Structured MappingValidationError payload of AtomPathSubsetCopyError.MappingValidation; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn mapping_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
         ck::AtomPathSubsetCopyError::MappingValidation(value) => MappingValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn sanitize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SanitizeError>>> { match &self.inner {
+    #[doc = "Structured SanitizeError payload of AtomPathSubsetCopyError.Sanitize; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn sanitize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SanitizeError>>> { match &self.inner {
         ck::AtomPathSubsetCopyError::Sanitize(value) => SanitizeError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -161,13 +161,13 @@ error_projection!(OrderedFragmentBuildError, OrderedFragmentBuildErrorKind, ck::
     ck::OrderedFragmentBuildError::SlowFullCopy { source, .. } => Some(FullCopyComponentError::from_rust(source.clone())),
 }), source = Option<BuildSource>, methods = {
     #[getter]
-    fn component_index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Component index reported by the native failure. Applies to OrderedFragmentBuildError.FastSubset, OrderedFragmentBuildError.SlowFullCopy. None when this payload is absent."] #[doc = "Connected-component index that failed, or None for a whole-operation failure."] fn component_index(&self) -> Option<usize> { match self.inner {
         ck::OrderedFragmentBuildError::FastSubset { component_index, .. }
         | ck::OrderedFragmentBuildError::SlowFullCopy { component_index, .. } => Some(component_index), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn component_labels(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PathError>>> { match &self.inner {
+    #[doc = "Structured PathError payload of OrderedFragmentBuildError.ComponentLabels; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn component_labels(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PathError>>> { match &self.inner {
         ck::OrderedFragmentBuildError::ComponentLabels(value) => PathError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -187,13 +187,13 @@ error_projection!(MoleculeFragmentsFailure, MoleculeFragmentsFailureKind, ck::Mo
     ck::MoleculeFragmentsFailure::FinalSanitize { source, .. } => Some(SanitizeError::from_rust(source.clone())),
 }), source = Option<FailureSource>, methods = {
     #[getter]
-    fn component_index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Index of the disconnected component being processed. Present for `MoleculeFragmentsFailure.FinalComputedProperties`, `MoleculeFragmentsFailure.FinalSanitize`; None when unavailable."] #[doc = "Connected-component index that failed, or None for a whole-operation failure."] fn component_index(&self) -> Option<usize> { match self.inner {
         ck::MoleculeFragmentsFailure::FinalComputedProperties { component_index, .. }
         | ck::MoleculeFragmentsFailure::FinalSanitize { component_index, .. } => Some(component_index), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn build(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<OrderedFragmentBuildError>>> { match &self.inner {
+    #[doc = "Structured OrderedFragmentBuildError payload of MoleculeFragmentsFailure.Build; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn build(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<OrderedFragmentBuildError>>> { match &self.inner {
         ck::MoleculeFragmentsFailure::Build(value) => OrderedFragmentBuildError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -221,21 +221,23 @@ impl MoleculeFragmentsError {
 }
 crate::error_framework::error_projection! {methods impl MoleculeFragmentsError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "fragments"
     }
     #[getter]
-    fn component_index(&self) -> Option<usize> {
+    #[doc = "Connected-component index that failed, or None for a whole-operation failure."] fn component_index(&self) -> Option<usize> {
         self.inner.component_index()
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<crate::error_framework::ErrorObject<MoleculeFragmentsFailure>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn failure(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<crate::error_framework::ErrorObject<MoleculeFragmentsFailure>> {
+    #[doc = "Concrete fragment failure, identical to the exception's __cause__."] fn failure(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<crate::error_framework::ErrorObject<MoleculeFragmentsFailure>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
     fn __str__(&self) -> String {

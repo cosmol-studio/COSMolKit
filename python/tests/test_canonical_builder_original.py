@@ -12,7 +12,7 @@ def test_editing_commit_boundary_matches_sanitize_behavior():
         _ = invalid_editor.build().sanitize()
     assert isinstance(error.value, ValueError)
     assert error.value.domain == "operation"
-    assert error.value.kind == "Sanitize"
+    assert error.value.variant.name == "Sanitize"
     assert error.value.__cause__ is not None
 
     edited = invalid_editor.build()

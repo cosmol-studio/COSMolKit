@@ -195,49 +195,85 @@ impl EmbedFailureCause {
 // RDKit✔️✔️:   std::vector<unsigned int> failures;
 // RDKit✔️✔️:   bool enableSequentialRandomSeeds{false};
 // RDKit✔️✔️:   bool symmetrizeConjugatedTerminalGroupsForPruning{true};
+/// Distance-geometry embedding configuration with optional constraints and failure diagnostics.
+///
+/// Named ETDG, ETKDG and KDG constructors select their respective torsion and
+/// knowledge presets. Input configuration and returned execution diagnostics
+/// follow the embedding API's value semantics.
 #[derive(Clone, cosmolkit_macros::Configuration)]
 #[configuration(stateful)]
 pub struct EmbedParams {
+    /// Maximum embedding attempts per conformer; zero selects the algorithm's automatic limit.
     pub max_iterations: u32,
+    /// Number of embedding threads; zero requests the available hardware threads.
     pub num_threads: i32,
+    /// Random-number seed; a negative value requests an unseeded run.
     pub random_seed: i32,
+    /// Remove existing conformers from the output before adding generated conformers.
     pub clear_conformers: bool,
+    /// Start from random Cartesian coordinates instead of distance-matrix eigenvectors.
     pub use_random_coords: bool,
+    /// Random-coordinate box scaling; negative values specify a fixed box side length by magnitude.
     pub box_size_mult: f64,
+    /// Use random coordinates for components associated with negative eigenvalues.
     pub rand_neg_eig: bool,
+    /// Number of zero eigenvalues at which embedding is rejected.
     pub num_zero_fail: u32,
+    /// Optional atom-index to Cartesian-coordinate constraints, with three values per position.
     #[configuration(adapter)]
     pub coord_map: Option<BTreeMap<i32, [f64; 3]>>,
+    /// Force convergence tolerance for distance-geometry optimization.
     pub optimizer_force_tol: f64,
+    /// Continue embedding when triangle smoothing fails.
     pub ignore_smoothing_failures: bool,
+    /// Enforce the molecule's specified chirality during embedding.
     pub enforce_chirality: bool,
+    /// Apply experimental torsion-angle preferences.
     pub use_exp_torsion_angle_prefs: bool,
     #[configuration(state)]
     pub use_legacy_implementation: bool,
+    /// Apply basic geometric knowledge, including preferred planar arrangements.
     pub use_basic_knowledge: bool,
+    /// Enable verbose embedding diagnostics.
     pub verbose: bool,
+    /// Basin threshold used by the distance-geometry force field.
     pub basin_thresh: f64,
+    /// RMS threshold for pruning similar conformers; a negative value disables pruning.
     pub prune_rms_thresh: f64,
+    /// Use only heavy atoms when computing pruning RMS differences.
     pub only_heavy_atoms_for_rms: bool,
+    /// Experimental torsion parameter-set version, not the ETKDG preset number.
     pub et_version: u32,
     #[configuration(state)]
     pub(crate) bounds_mat: Option<Arc<BoundsMatrix>>,
+    /// Embed disconnected molecular fragments separately.
     pub embed_fragments_separately: bool,
+    /// Include small-ring torsion preferences.
     pub use_small_ring_torsions: bool,
+    /// Include macrocycle torsion preferences.
     pub use_macrocycle_torsions: bool,
+    /// Apply macrocycle-specific 1-4 distance-bound treatment.
     pub use_macrocycle14config: bool,
+    /// Embedding timeout in seconds; zero disables the timeout.
     pub timeout: u32,
+    /// Optional pair-indexed custom Coulomb-like interaction strengths.
     #[configuration(adapter)]
     pub cpci: Option<BTreeMap<(u32, u32), f64>>,
     #[configuration(state)]
     pub callback: Option<fn(u32)>,
+    /// Favor trans amide conformations during embedding.
     pub force_trans_amides: bool,
+    /// Account for molecular symmetry when pruning similar conformers.
     pub use_symmetry_for_pruning: bool,
+    /// Scale the bounds-matrix contribution to the embedding force field.
     pub bounds_mat_force_scaling: f64,
+    /// Collect counts of failed embedding stages in the returned diagnostics.
     pub track_failures: bool,
     #[configuration(state)]
     pub failures: Vec<u32>,
+    /// Advance seeds sequentially across conformer generation attempts.
     pub enable_sequential_random_seeds: bool,
+    /// Treat conjugated terminal groups symmetrically during RMS pruning.
     pub symmetrize_conjugated_terminal_groups_for_pruning: bool,
 }
 

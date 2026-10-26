@@ -40,20 +40,22 @@ def test_all_parameter_defaults_and_writable_fields():
         assert getattr(params, key) == expected[key]
 
 
-def test_explicit_parameter_values_and_live_map_preserve_constructor_ownership():
+def test_explicit_parameter_values_and_map_assignment_preserve_constructor_ownership():
     mapping = {0: [-0.0, 1.5]}
     params = cosmolkit.Coordinate2DParams(
-        mapping, canonical_orientation=True, clear_existing_2d=False,
+        coordinate_map=mapping, canonical_orientation=True, clear_existing_2d=False,
         flips_per_sample=7, samples=9, sample_seed=-13, permute_degree_four=True,
         force_rdkit=True, use_ring_templates=True)
     mapping[0][0] = 42.0
-    returned = params.coordinate_map
+    returned = {key: list(value) for key, value in params.coordinate_map.items()}
     assert coordinate_bits([returned[0]]) == coordinate_bits([[-0.0, 1.5]])
     returned[0][0] = 23.0
     returned[1] = [4.0, 5.0]
+    assert params.coordinate_map.keys() == {0}
+    params.coordinate_map = returned
     assert params.coordinate_map.keys() == {0, 1}
     assert coordinate_bits([params.coordinate_map[0]]) == coordinate_bits([[23.0, 1.5]])
-    assert params.coordinate_map[1] == [4.0, 5.0]
+    assert tuple(params.coordinate_map[1]) == (4.0, 5.0)
     assert mapping == {0: [42.0, 1.5]}
     assert (params.canonical_orientation, params.clear_existing_2d,
             params.flips_per_sample, params.samples, params.sample_seed,
@@ -64,7 +66,7 @@ def test_explicit_parameter_values_and_live_map_preserve_constructor_ownership()
 @pytest.mark.parametrize("mapping", [{0: [1.0]}, {0: [1.0, 2.0, 3.0]}])
 def test_coordinate_map_requires_exact_two_element_rows(mapping: dict[int, list[float]]) -> None:
     with pytest.raises(ValueError):
-        _ = cosmolkit.Coordinate2DParams(mapping)
+        _ = cosmolkit.Coordinate2DParams(coordinate_map=mapping)
 
 
 @pytest.mark.parametrize("name,value", [
@@ -80,7 +82,7 @@ def test_parameter_integer_extraction(name: Literal["flips_per_sample", "samples
 @pytest.mark.parametrize("key", [-1, 2 ** (8 * struct.calcsize("P"))])
 def test_map_key_usize_extraction(key: int) -> None:
     with pytest.raises(OverflowError):
-        _ = cosmolkit.Coordinate2DParams({key: [0.0, 0.0]})
+        _ = cosmolkit.Coordinate2DParams(coordinate_map={key: [0.0, 0.0]})
 
 
 def test_default_and_configured_layout_are_value_transforms():
@@ -107,7 +109,7 @@ def test_default_and_configured_layout_are_value_transforms():
 def test_explicit_two_atom_map_forwarding_preserves_original():
     source = cosmolkit.Molecule.from_smiles("CCO")
     before = state(source)
-    params = cosmolkit.Coordinate2DParams({0: [-0.0, 0.0], 1: [1.5, 0.0]}, force_rdkit=True)
+    params = cosmolkit.Coordinate2DParams(coordinate_map={0: [-0.0, 0.0], 1: [1.5, 0.0]}, force_rdkit=True)
     positioned = source.with_2d_coordinates_with_params(params)
     assert state(source) == before == ("CCO", 3, 2, None)
     assert positioned.num_atoms == 3 and positioned.num_bonds == 2
@@ -127,7 +129,7 @@ def test_drawing_error_typed_payload_and_absent_cause(method: Literal["to_svg", 
     assert state(source) == before
     error = caught.value
     assert isinstance(error, ValueError)
-    assert error.domain == "drawing" and error.kind == "InvalidDimensions"
+    assert error.domain == "depict" and error.variant.name == "InvalidDimensions"
     assert (error.width, error.height) == dimensions
     assert str(error) == f"invalid drawing dimensions {dimensions[0]}x{dimensions[1]}"
     assert error.__cause__ is None
@@ -136,13 +138,13 @@ def test_drawing_error_typed_payload_and_absent_cause(method: Literal["to_svg", 
 def test_operation_error_keeps_actual_source_chain():
     source = cosmolkit.Molecule.from_smiles("CCO")
     before = state(source)
-    params = cosmolkit.Coordinate2DParams({0: [0.0, 0.0], 99: [1.5, 0.0]}, force_rdkit=True)
+    params = cosmolkit.Coordinate2DParams(coordinate_map={0: [0.0, 0.0], 99: [1.5, 0.0]}, force_rdkit=True)
     with pytest.raises(cosmolkit.OperationError) as caught:
         _ = source.with_2d_coordinates_with_params(params)
     assert state(source) == before
     error = caught.value
     assert isinstance(error, ValueError)
-    assert error.domain == "operation" and error.kind == "Coordinate2D"
+    assert error.domain == "operation" and error.variant.name == "Coordinate2D"
     assert str(error) == "2D coordinate generation failed: fragment layout failed: atom 99 is out of range for 3 atoms"
     assert isinstance(error.__cause__, ValueError)
     assert str(error.__cause__) == "fragment layout failed: atom 99 is out of range for 3 atoms"
@@ -173,11 +175,12 @@ def test_file_oserror_retains_errno_and_path(tmp_path: Path, suffix: Literal["sv
     path = tmp_path / destination
     if destination == "directory":
         path.mkdir()
-    with pytest.raises(OSError) as caught:
+    with pytest.raises(cosmolkit.DrawingWriteError) as caught:
         _ = (source.write_svg if suffix == "svg" else source.write_png)(str(path), 120, 80)
     assert state(source) == before
-    assert caught.value.errno == expected_errno
-    assert cast(object, caught.value.filename) == str(path)
+    assert isinstance(caught.value.__cause__, cosmolkit.IoError)
+    assert caught.value.__cause__.raw_os_error == expected_errno
+    assert Path(caught.value.path) == path
 
 
 @pytest.mark.parametrize("suffix", ["svg", "png"])
@@ -185,25 +188,33 @@ def test_render_error_never_opens_file(tmp_path: Path, suffix: Literal["svg", "p
     source = cosmolkit.Molecule.from_smiles("CCO")
     before = state(source)
     path = tmp_path / f"invalid.{suffix}"
-    with pytest.raises(cosmolkit.DrawingError):
+    with pytest.raises(cosmolkit.DrawingWriteError) as caught:
         _ = (source.write_svg if suffix == "svg" else source.write_png)(str(path), 0, 80)
+    assert isinstance(caught.value.__cause__, cosmolkit.DrawingError)
     assert state(source) == before
     assert not path.exists()
     _ = path.write_bytes(b"existing sentinel")
-    with pytest.raises(cosmolkit.DrawingError):
+    with pytest.raises(cosmolkit.DrawingWriteError) as caught:
         _ = (source.write_svg if suffix == "svg" else source.write_png)(str(path), 120, 0)
+    assert isinstance(caught.value.__cause__, cosmolkit.DrawingError)
     assert state(source) == before
     assert path.read_bytes() == b"existing sentinel"
 
 
 @pytest.mark.parametrize("suffix", ["svg", "png"])
-def test_file_tilde_expansion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: Literal["svg", "png"]) -> None:
+def test_file_tilde_requires_explicit_caller_expansion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: Literal["svg", "png"]) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
     source = cosmolkit.Molecule.from_smiles("CCO")
     before = state(source)
     rendered = source.to_svg(120, 80).encode() if suffix == "svg" else source.to_png(120, 80)
     assert state(source) == before
-    assert (source.write_svg if suffix == "svg" else source.write_png)(f"~/ethanol.{suffix}", 120, 80) is None
+    write = source.write_svg if suffix == "svg" else source.write_png
+    with pytest.raises(cosmolkit.DrawingWriteError) as caught:
+        write(f"~/ethanol.{suffix}", 120, 80)
+    assert Path(caught.value.path) == Path(f"~/ethanol.{suffix}")
+    assert not (tmp_path / f"ethanol.{suffix}").exists()
+    assert write(str(Path(f"~/ethanol.{suffix}").expanduser()), 120, 80) is None
     assert state(source) == before
     assert (tmp_path / f"ethanol.{suffix}").read_bytes() == rendered
 

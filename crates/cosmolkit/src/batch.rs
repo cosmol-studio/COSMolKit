@@ -12,6 +12,7 @@ pub struct BatchParams {
     pub errors: Option<BatchErrorMode>,
     /// Inherit a stored batch setting when absent, otherwise default to one worker.
     pub n_jobs: Option<usize>,
+    /// Override progress-bar display, or inherit the batch setting when absent.
     pub progress_bar: Option<bool>,
 }
 #[derive(Debug, Clone)]
@@ -506,6 +507,7 @@ impl MoleculeBatch {
 pub struct BatchQueryParams {
     /// Inherit a stored batch setting when absent, otherwise default to one worker.
     pub n_jobs: Option<usize>,
+    /// Optional progress reporting; None inherits the stored batch setting.
     pub progress_bar: Option<bool>,
     /// One notification after every completed input row, including invalid rows.
     #[configuration(adapter)]
@@ -749,13 +751,20 @@ impl MoleculeBatch {
 
 #[cfg(feature = "cap-depict")]
 #[derive(Debug, Clone, cosmolkit_macros::Configuration)]
+/// Per-image output format, dimensions, names and batch execution settings.
 pub struct BatchImageParams {
+    /// Image format to write, such as png or svg.
     pub format: String,
+    /// Width of each image in pixels.
     pub width: u32,
+    /// Height of each image in pixels.
     pub height: u32,
     #[configuration(none_default)]
+    /// Batch scheduling and error-handling options.
     pub execution: BatchParams,
+    /// Optional per-record output names; absent entries use generated names.
     pub filenames: Option<Vec<Option<String>>>,
+    /// Optional path for the image export report.
     pub report_path: Option<std::path::PathBuf>,
 }
 #[cfg(feature = "cap-depict")]

@@ -90,12 +90,14 @@ use crate::chemical_values::enum_value;
 enum_value!(MoleculeOpOutput, { Single, Multiple, LazyMultiple });
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only feature identifier and explanation retained by an unsupported operation.
 pub struct UnsupportedFeatureError {
     owner: RetainedError<ck::OperationError>,
 }
 #[pymethods]
 impl UnsupportedFeatureError {
     #[getter]
+    /// Name of the unsupported capability.
     fn feature(&self) -> &'static str {
         let ck::OperationError::UnsupportedFeature { source, .. } = self.owner.as_ref() else {
             unreachable!()
@@ -103,6 +105,7 @@ impl UnsupportedFeatureError {
         source.feature
     }
     #[getter]
+    /// Explanation of why the capability is unavailable for this operation.
     fn reason(&self) -> &'static str {
         let ck::OperationError::UnsupportedFeature { source, .. } = self.owner.as_ref() else {
             unreachable!()
@@ -113,12 +116,14 @@ impl UnsupportedFeatureError {
 
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+#[doc = "Read-only derived-state mask from an operation contract failure."]
 pub struct OperationDerivedState {
     owner: RetainedError<ck::OperationError>,
 }
 #[pymethods]
 impl OperationDerivedState {
     #[getter]
+    #[doc = "Bit mask of derived molecular states involved in this contract failure."]
     fn bits(&self) -> u16 {
         match self.owner.as_ref() {
             ck::OperationError::DerivedEffectContract { states, .. }
@@ -162,12 +167,14 @@ impl OperationDerivedState {
 
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+#[doc = "Read-only mask of semantic preconditions missing for an operation."]
 pub struct OperationSemanticPreconditions {
     owner: RetainedError<ck::OperationError>,
 }
 #[pymethods]
 impl OperationSemanticPreconditions {
     #[getter]
+    #[doc = "Bit mask of missing semantic preconditions."]
     fn bits(&self) -> u16 {
         match self.owner.as_ref() {
             ck::OperationError::SemanticPreconditionContract { missing, .. } => {
@@ -197,12 +204,14 @@ impl OperationSemanticPreconditions {
 
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+#[doc = "Read-only CIP state policy from an operation contract failure."]
 pub struct OperationCipStatePolicy {
     owner: RetainedError<ck::OperationError>,
 }
 #[pymethods]
 impl OperationCipStatePolicy {
     #[getter]
+    #[doc = "Integer discriminant of the declared CIP state policy."]
     fn discriminant(&self) -> isize {
         match self.owner.as_ref() {
             ck::OperationError::CipStateContract { policy, .. } => *policy as isize,
@@ -228,12 +237,14 @@ impl OperationCipStatePolicy {
 
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+#[doc = "Read-only topology mapping requirement from an operation contract failure."]
 pub struct OperationMappingRequirement {
     owner: RetainedError<ck::OperationError>,
 }
 #[pymethods]
 impl OperationMappingRequirement {
     #[getter]
+    #[doc = "Integer discriminant of the operation's mapping requirement."]
     fn discriminant(&self) -> isize {
         match self.owner.as_ref() {
             ck::OperationError::MappingContract { requirement, .. } => *requirement as isize,
@@ -278,9 +289,10 @@ error_projection!(retained OperationError,OperationErrorKind,ck::OperationError,
  Algorithm{operation,detail:String},
 },cause=project_operation_source,methods={
  #[staticmethod] #[doc=r#"{"role":"error_source"}"#]
+ /// Immediate native cause, also available as __cause__; None when the native error has no cause.
  fn cause<'py>(slf:Bound<'py,pyo3::exceptions::PyBaseException>)->PyResult<Option<OperationSource>>{slf.getattr("__cause__")?.extract().map_err(Into::into)}
  #[getter] #[doc=r#"{"role":"error_payload"}"#]
- fn source(&self,py:Python<'_>)->PyResult<Option<Source<UnsupportedFeatureError,crate::error_framework::ErrorObject<crate::model_edit_errors::MappingValidationError>>>>{
+ #[doc = "Structured native error payload. Present for `OperationError.UnsupportedFeature`, `OperationError.InvalidTopologyMapping`; None when unavailable."] fn source(&self,py:Python<'_>)->PyResult<Option<Source<UnsupportedFeatureError,crate::error_framework::ErrorObject<crate::model_edit_errors::MappingValidationError>>>>{
   match self.inner.as_ref(){
    ck::OperationError::UnsupportedFeature{..}=>Ok(Some(Source::First(UnsupportedFeatureError{owner:self.inner.clone()}))),
    ck::OperationError::InvalidTopologyMapping{source,..}=>crate::model_edit_errors::MappingValidationError::from_rust(source.clone()).value(py).extract().map(|v|Some(Source::Second(v))).map_err(Into::into),
@@ -288,175 +300,175 @@ error_projection!(retained OperationError,OperationErrorKind,ck::OperationError,
   }
  }
 #[getter] #[doc=r#"{"role":"error_payload"}"#]
- fn operation(&self)->Option<Source<&'static str,MoleculeOpSpec>>{match self.inner.as_ref(){
+ #[doc = "Operation name or registered operation descriptor reporting the failure. Present for `OperationError.UnsupportedFeature`, `OperationError.Unsupported`, `OperationError.OutputMismatch`, `OperationError.AccessDenied`, `OperationError.BlockCheckedOut`, `OperationError.BlockNotCheckedOut`, `OperationError.IncompleteCommit`, `OperationError.MappingContract`, `OperationError.InvalidTopologyMapping`, `OperationError.AutoRemapContract`, `OperationError.OperationContract`, `OperationError.SemanticPreconditionContract`, `OperationError.CoordinateAppendRequiresValues`, `OperationError.DerivedEffectContract`, `OperationError.DerivedPreservationMismatch`, `OperationError.CipStateContract`, `OperationError.InvalidAlgorithmResult`, `OperationError.InvalidReconstructionOrigin`, `OperationError.Algorithm`; None when unavailable."] fn operation(&self)->Option<Source<&'static str,MoleculeOpSpec>>{match self.inner.as_ref(){
  ck::OperationError::UnsupportedFeature{operation,..}=>Some(Source::Second(MoleculeOpSpec::from_native(operation))),
  ck::OperationError::Unsupported{operation,..}|ck::OperationError::OutputMismatch{operation,..}|ck::OperationError::AccessDenied{operation,..}|ck::OperationError::BlockCheckedOut{operation,..}|ck::OperationError::BlockNotCheckedOut{operation,..}|ck::OperationError::IncompleteCommit{operation,..}|ck::OperationError::MappingContract{operation,..}|ck::OperationError::InvalidTopologyMapping{operation,..}|ck::OperationError::AutoRemapContract{operation,..}|ck::OperationError::OperationContract{operation,..}|ck::OperationError::SemanticPreconditionContract{operation,..}|ck::OperationError::CoordinateAppendRequiresValues{operation,..}|ck::OperationError::DerivedEffectContract{operation,..}|ck::OperationError::DerivedPreservationMismatch{operation,..}|ck::OperationError::CipStateContract{operation,..}|ck::OperationError::InvalidAlgorithmResult{operation,..}|ck::OperationError::InvalidReconstructionOrigin{operation,..}|ck::OperationError::Algorithm{operation,..}=>Some(Source::First(*operation)),_=>None}}
-#[getter] fn block(&self)->Option<&'static str>{match self.inner.as_ref(){ck::OperationError::AccessDenied{block,..}|ck::OperationError::BlockCheckedOut{block,..}|ck::OperationError::BlockNotCheckedOut{block,..}|ck::OperationError::IncompleteCommit{block,..}|ck::OperationError::AutoRemapContract{block,..}=>Some(block),_=>None}}
-#[getter] fn issue(&self)->Option<&'static str>{match self.inner.as_ref(){ck::OperationError::MappingContract{issue,..}|ck::OperationError::AutoRemapContract{issue,..}|ck::OperationError::OperationContract{issue,..}|ck::OperationError::SemanticPreconditionContract{issue,..}|ck::OperationError::DerivedEffectContract{issue,..}|ck::OperationError::CipStateContract{issue,..}=>Some(issue),_=>None}}
-#[getter] fn field(&self)->Option<&str>{match self.inner.as_ref(){
+#[getter] #[doc = "Input or structural block involved in the failure. Applies to OperationError.AccessDenied, OperationError.BlockCheckedOut, OperationError.BlockNotCheckedOut, OperationError.IncompleteCommit, OperationError.AutoRemapContract. None when this payload is absent."] fn block(&self)->Option<&'static str>{match self.inner.as_ref(){ck::OperationError::AccessDenied{block,..}|ck::OperationError::BlockCheckedOut{block,..}|ck::OperationError::BlockNotCheckedOut{block,..}|ck::OperationError::IncompleteCommit{block,..}|ck::OperationError::AutoRemapContract{block,..}=>Some(block),_=>None}}
+#[getter] #[doc = "Description of the violated operation contract. Present for `OperationError.MappingContract`, `OperationError.AutoRemapContract`, `OperationError.OperationContract`, `OperationError.SemanticPreconditionContract`, `OperationError.DerivedEffectContract`, `OperationError.CipStateContract`; None when unavailable."] fn issue(&self)->Option<&'static str>{match self.inner.as_ref(){ck::OperationError::MappingContract{issue,..}|ck::OperationError::AutoRemapContract{issue,..}|ck::OperationError::OperationContract{issue,..}|ck::OperationError::SemanticPreconditionContract{issue,..}|ck::OperationError::DerivedEffectContract{issue,..}|ck::OperationError::CipStateContract{issue,..}=>Some(issue),_=>None}}
+#[getter] #[doc = "Field whose content or type caused the failure. Applies to OperationError.DerivedPreservationMismatch, OperationError.OperationContract, OperationError.InvalidDerivedCache, OperationError.InvalidAlgorithmResult. None when this payload is absent."] fn field(&self)->Option<&str>{match self.inner.as_ref(){
  ck::OperationError::DerivedPreservationMismatch{field,..}=>Some(field.as_str()),
  ck::OperationError::OperationContract{field,..}|ck::OperationError::InvalidDerivedCache{field,..}|ck::OperationError::InvalidAlgorithmResult{field,..}=>Some(field),_=>None}}
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn expected(&self)->Option<Source<usize,Source<String,MoleculeOpOutput>>>{match self.inner.as_ref(){
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Required value reported by the native check. Applies to OperationError.InvalidDerivedCache, OperationError.InvalidAlgorithmResult, OperationError.InvalidPropertyList, OperationError.OperationContract, OperationError.DerivedPreservationMismatch, OperationError.OutputMismatch. None when this payload is absent."] fn expected(&self)->Option<Source<usize,Source<String,MoleculeOpOutput>>>{match self.inner.as_ref(){
  ck::OperationError::InvalidDerivedCache{expected,..}|ck::OperationError::InvalidAlgorithmResult{expected,..}|ck::OperationError::InvalidPropertyList{expected,..}=>Some(Source::First(*expected)),
  ck::OperationError::OperationContract{expected,..}=>Some(Source::First(*expected as usize)),
  ck::OperationError::DerivedPreservationMismatch{expected,..}=>Some(Source::Second(Source::First(expected.clone()))),
  ck::OperationError::OutputMismatch{expected,..}=>Some(Source::Second(Source::Second((*expected).into()))),_=>None}}
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn actual(&self)->Option<Source<usize,Source<String,MoleculeOpOutput>>>{match self.inner.as_ref(){
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Observed value reported by the native check. Applies to OperationError.InvalidDerivedCache, OperationError.InvalidAlgorithmResult, OperationError.OperationContract, OperationError.DerivedPreservationMismatch, OperationError.OutputMismatch. None when this payload is absent."] fn actual(&self)->Option<Source<usize,Source<String,MoleculeOpOutput>>>{match self.inner.as_ref(){
  ck::OperationError::InvalidDerivedCache{actual,..}|ck::OperationError::InvalidAlgorithmResult{actual,..}=>Some(Source::First(*actual)),
  ck::OperationError::OperationContract{actual,..}=>Some(Source::First(*actual as usize)),
  ck::OperationError::DerivedPreservationMismatch{actual,..}=>Some(Source::Second(Source::First(actual.clone()))),
  ck::OperationError::OutputMismatch{actual,..}=>Some(Source::Second(Source::Second((*actual).into()))),_=>None}}
-#[getter] fn name(&self,py:Python<'_>)->PyResult<Option<String>>{match self.inner.as_ref(){ck::OperationError::InvalidPropertyList{name,..}=>crate::property_values::decode_source_text(py,name).map(Some),_=>Ok(None)}}
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn states(&self)->Option<OperationDerivedState>{match self.inner.as_ref(){ck::OperationError::DerivedEffectContract{..}|ck::OperationError::DerivedPreservationMismatch{..}=>Some(OperationDerivedState{owner:self.inner.clone()}),_=>None}}
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn missing(&self)->Option<OperationSemanticPreconditions>{match self.inner.as_ref(){ck::OperationError::SemanticPreconditionContract{..}=>Some(OperationSemanticPreconditions{owner:self.inner.clone()}),_=>None}}
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn policy(&self)->Option<OperationCipStatePolicy>{match self.inner.as_ref(){ck::OperationError::CipStateContract{..}=>Some(OperationCipStatePolicy{owner:self.inner.clone()}),_=>None}}
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn requirement(&self)->Option<OperationMappingRequirement>{match self.inner.as_ref(){ck::OperationError::MappingContract{..}=>Some(OperationMappingRequirement{owner:self.inner.clone()}),_=>None}}
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn fragments(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MoleculeFragmentsError>>>{
+#[getter] #[doc = "Name associated with the rejected value or property list. Applies to OperationError.InvalidPropertyList. None when this payload is absent."] fn name(&self,py:Python<'_>)->PyResult<Option<String>>{match self.inner.as_ref(){ck::OperationError::InvalidPropertyList{name,..}=>crate::property_values::decode_source_text(py,name).map(Some),_=>Ok(None)}}
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Expected and observed derived-state information. Present for `OperationError.DerivedEffectContract`, `OperationError.DerivedPreservationMismatch`; None when unavailable."] fn states(&self)->Option<OperationDerivedState>{match self.inner.as_ref(){ck::OperationError::DerivedEffectContract{..}|ck::OperationError::DerivedPreservationMismatch{..}=>Some(OperationDerivedState{owner:self.inner.clone()}),_=>None}}
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Semantic preconditions missing for this operation. Present for `OperationError.SemanticPreconditionContract`; None when unavailable."] fn missing(&self)->Option<OperationSemanticPreconditions>{match self.inner.as_ref(){ck::OperationError::SemanticPreconditionContract{..}=>Some(OperationSemanticPreconditions{owner:self.inner.clone()}),_=>None}}
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "CIP state policy governing this operation. Present for `OperationError.CipStateContract`; None when unavailable."] fn policy(&self)->Option<OperationCipStatePolicy>{match self.inner.as_ref(){ck::OperationError::CipStateContract{..}=>Some(OperationCipStatePolicy{owner:self.inner.clone()}),_=>None}}
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Topology-mapping requirement declared for this operation. Present for `OperationError.MappingContract`; None when unavailable."] fn requirement(&self)->Option<OperationMappingRequirement>{match self.inner.as_ref(){ck::OperationError::MappingContract{..}=>Some(OperationMappingRequirement{owner:self.inner.clone()}),_=>None}}
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Fragments`; None when unavailable."] fn fragments(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MoleculeFragmentsError>>>{
  match self.inner.as_ref(){ck::OperationError::Fragments(value)=>{
  let projected=MoleculeFragmentsError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn scaffold(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ScaffoldError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Scaffold`; None when unavailable."] fn scaffold(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ScaffoldError>>>{
  match self.inner.as_ref(){ck::OperationError::Scaffold(value)=>{
  let projected=ScaffoldError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn reaction_run(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ReactionRunError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.ReactionRun`; None when unavailable."] fn reaction_run(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ReactionRunError>>>{
  match self.inner.as_ref(){ck::OperationError::ReactionRun(value)=>{
  let projected=ReactionRunError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn reaction_apply(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ReactionApplyError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.ReactionApply`; None when unavailable."] fn reaction_apply(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ReactionApplyError>>>{
  match self.inner.as_ref(){ck::OperationError::ReactionApply(value)=>{
  let projected=ReactionApplyError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn enumeration(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<EnumerationRunError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Enumeration`; None when unavailable."] fn enumeration(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<EnumerationRunError>>>{
  match self.inner.as_ref(){ck::OperationError::Enumeration(value)=>{
  let projected=EnumerationRunError::from_ref(self.inner.node().project(|error|{let value=error.downcast_ref::<ck::OperationError>().expect("operation payload owner");let ck::OperationError::Enumeration(child)=value else{unreachable!()};child}));
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn alignment(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<AlignmentError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Alignment`; None when unavailable."] fn alignment(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<AlignmentError>>>{
  match self.inner.as_ref(){ck::OperationError::Alignment(value)=>{
  let projected=AlignmentError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn conformer(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ConformerRunError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Conformer`; None when unavailable."] fn conformer(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ConformerRunError>>>{
  match self.inner.as_ref(){ck::OperationError::Conformer(value)=>{
  let projected=ConformerRunError::from_ref(self.inner.node().project(|error|{let value=error.downcast_ref::<ck::OperationError>().expect("operation payload owner");let ck::OperationError::Conformer(child)=value else{unreachable!()};child}));
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn tautomer(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<TautomerRunError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Tautomer`; None when unavailable."] fn tautomer(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<TautomerRunError>>>{
  match self.inner.as_ref(){ck::OperationError::Tautomer(value)=>{
  let projected=TautomerRunError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn invalid_topology(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.InvalidTopology`; None when unavailable."] fn invalid_topology(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>>{
  match self.inner.as_ref(){ck::OperationError::InvalidTopology(value)=>{
  let projected=TopologyValidationError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn invalid_topology_edit(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.InvalidTopologyEdit`; None when unavailable."] fn invalid_topology_edit(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>>{
  match self.inner.as_ref(){ck::OperationError::InvalidTopologyEdit(value)=>{
  let projected=TopologyEditError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn invalid_coordinates(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.InvalidCoordinates`; None when unavailable."] fn invalid_coordinates(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>>{
  match self.inner.as_ref(){ck::OperationError::InvalidCoordinates(value)=>{
  let projected=CoordinateValidationError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn invalid_property(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.InvalidProperty`; None when unavailable."] fn invalid_property(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>>{
  match self.inner.as_ref(){ck::OperationError::InvalidProperty(value)=>{
  let projected=MoleculePropertyError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn atom_property(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.AtomProperty`; None when unavailable."] fn atom_property(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>>{
  match self.inner.as_ref(){ck::OperationError::AtomProperty(value)=>{
  let projected=AtomPropertyError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn bond_property(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.BondProperty`; None when unavailable."] fn bond_property(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>>{
  match self.inner.as_ref(){ck::OperationError::BondProperty(value)=>{
  let projected=BondValueError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn valence(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Valence value rejected by the native check. Applies to OperationError.Valence. None when this payload is absent."] fn valence(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>>{
  match self.inner.as_ref(){ck::OperationError::Valence(value)=>{
  let projected=ValenceError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn radical(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<RadicalError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Radical`; None when unavailable."] fn radical(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<RadicalError>>>{
  match self.inner.as_ref(){ck::OperationError::Radical(value)=>{
  let projected=RadicalError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn rings(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Rings`; None when unavailable."] fn rings(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>>{
  match self.inner.as_ref(){ck::OperationError::Rings(value)=>{
  let projected=RingFindingError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn potential_stereo(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PotentialStereoError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.PotentialStereo`; None when unavailable."] fn potential_stereo(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PotentialStereoError>>>{
  match self.inner.as_ref(){ck::OperationError::PotentialStereo(value)=>{
  let projected=PotentialStereoError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn stereo(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<StereoError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Stereo`; None when unavailable."] fn stereo(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<StereoError>>>{
  match self.inner.as_ref(){ck::OperationError::Stereo(value)=>{
  let projected=StereoError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn cip_labeler(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<CipLabelerError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.CipLabeler`; None when unavailable."] fn cip_labeler(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<CipLabelerError>>>{
  match self.inner.as_ref(){ck::OperationError::CipLabeler(value)=>{
  let projected=CipLabelerError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn atom_code(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<AtomCodeError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.AtomCode`; None when unavailable."] fn atom_code(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<AtomCodeError>>>{
  match self.inner.as_ref(){ck::OperationError::AtomCode(value)=>{
  let projected=AtomCodeError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn transform(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<TransformError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Transform`; None when unavailable."] fn transform(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<TransformError>>>{
  match self.inner.as_ref(){ck::OperationError::Transform(value)=>{
  let projected=TransformError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn coordinate_input(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<CoordinateInputError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.CoordinateInput`; None when unavailable."] fn coordinate_input(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<CoordinateInputError>>>{
  match self.inner.as_ref(){ck::OperationError::CoordinateInput(value)=>{
  let projected=CoordinateInputError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn coordinate2_d(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<Coordinate2DError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Coordinate2D`; None when unavailable."] fn coordinate2_d(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<Coordinate2DError>>>{
  match self.inner.as_ref(){ck::OperationError::Coordinate2D(value)=>{
  let projected=Coordinate2DError::from_ref(self.inner.node().project(|error|{let value=error.downcast_ref::<ck::OperationError>().expect("operation payload owner");let ck::OperationError::Coordinate2D(child)=value else{unreachable!()};child}));
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn uff_optimization(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<UffOptimizationError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.UffOptimization`; None when unavailable."] fn uff_optimization(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<UffOptimizationError>>>{
  match self.inner.as_ref(){ck::OperationError::UffOptimization(value)=>{
  let projected=UffOptimizationError::from_ref(self.inner.node().project(|error|{let value=error.downcast_ref::<ck::OperationError>().expect("operation payload owner");let ck::OperationError::UffOptimization(child)=value else{unreachable!()};child}));
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn mmff_optimization(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MmffOptimizationError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.MmffOptimization`; None when unavailable."] fn mmff_optimization(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<MmffOptimizationError>>>{
  match self.inner.as_ref(){ck::OperationError::MmffOptimization(value)=>{
  let projected=MmffOptimizationError::from_ref(self.inner.node().project(|error|{let value=error.downcast_ref::<ck::OperationError>().expect("operation payload owner");let ck::OperationError::MmffOptimization(child)=value else{unreachable!()};child}));
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn kekulize(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Kekulize`; None when unavailable."] fn kekulize(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>>{
  match self.inner.as_ref(){ck::OperationError::Kekulize(value)=>{
  let projected=KekulizeError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn aromaticity(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<AromaticityError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Aromaticity`; None when unavailable."] fn aromaticity(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<AromaticityError>>>{
  match self.inner.as_ref(){ck::OperationError::Aromaticity(value)=>{
  let projected=AromaticityError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn sanitize(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<SanitizeError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Sanitize`; None when unavailable."] fn sanitize(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<SanitizeError>>>{
  match self.inner.as_ref(){ck::OperationError::Sanitize(value)=>{
  let projected=SanitizeError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}
  }
-#[getter] #[doc=r#"{"role":"error_payload"}"#] fn hydrogen(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<HydrogenError>>>{
+#[getter] #[doc=r#"{"role":"error_payload"}"#] #[doc = "Structured native error payload. Present for `OperationError.Hydrogen`; None when unavailable."] fn hydrogen(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<HydrogenError>>>{
  match self.inner.as_ref(){ck::OperationError::Hydrogen(value)=>{
  let projected=HydrogenError::from_rust(value.clone());
  projected.value(py).extract().map(Some).map_err(Into::into)},_=>Ok(None)}

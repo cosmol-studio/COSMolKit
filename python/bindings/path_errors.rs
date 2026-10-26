@@ -44,20 +44,22 @@ impl PeriodicTableError {
 }
 crate::error_framework::error_projection! {methods impl PeriodicTableError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "periodic_table"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PyResult<PeriodicTableErrorKind> {
         self.fields()?;
         Ok(PeriodicTableErrorKind::UnknownIsotope)
     }
     #[getter]
-    fn element(&self) -> PyResult<u8> {
+    #[doc = "Atomic number involved in the failed lookup."] fn element(&self) -> PyResult<u8> {
         self.fields().map(|fields| fields.0)
     }
     #[getter]
-    fn isotope(&self) -> PyResult<u16> {
+    #[doc = "Isotope mass number involved in the failed lookup."] fn isotope(&self) -> PyResult<u16> {
         self.fields().map(|fields| fields.1)
     }
     fn __str__(&self) -> String {
@@ -104,26 +106,26 @@ error_projection!(PathError, PathErrorKind, ck::PathError, "paths", {
     | ck::PathError::InvalidSubsetTopology(_) | ck::PathError::Mapping(_) => None,
 }), source = Option<PathSource>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to PathError.AtomOutOfRange, PathError.EqualShortestPathEndpoints, PathError.AtomPathOutOfRange. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::PathError::AtomOutOfRange { atom, .. } | ck::PathError::EqualShortestPathEndpoints { atom }
         | ck::PathError::AtomPathOutOfRange { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to PathError.AtomOutOfRange, PathError.AtomPathOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::PathError::AtomOutOfRange { atom_count, .. }
         | ck::PathError::AtomPathOutOfRange { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to PathError.IgnoredAtomMaskLength, PathError.ExtraInvariantLength. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::PathError::IgnoredAtomMaskLength { actual, .. } | ck::PathError::ExtraInvariantLength { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to PathError.IgnoredAtomMaskLength, PathError.ExtraInvariantLength. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::PathError::IgnoredAtomMaskLength { expected, .. } | ck::PathError::ExtraInvariantLength { expected, .. } => Some(expected), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> {
+    #[doc = "Structured TopologyValidationError payload of PathError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> {
         match &self.inner {
             ck::PathError::InvalidTopology(value) | ck::PathError::InvalidSubsetTopology(value) =>
                 TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),
@@ -132,25 +134,25 @@ error_projection!(PathError, PathErrorKind, ck::PathError, "paths", {
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn periodic_table(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PeriodicTableError>>> {
+    #[doc = "Structured PeriodicTableError payload of PathError.PeriodicTable; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn periodic_table(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PeriodicTableError>>> {
         match self.inner { ck::PathError::PeriodicTable(value) =>
             PeriodicTableError::from_rust(value).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_graph(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryGraphError>>> {
+    #[doc = "Structured QueryGraphError payload of PathError.QueryGraph; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_graph(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryGraphError>>> {
         match &self.inner { ck::PathError::QueryGraph(value) =>
             QueryGraphError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn mapping(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> {
+    #[doc = "Structured MappingValidationError payload of PathError.Mapping; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn mapping(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> {
         match &self.inner { ck::PathError::Mapping(value) =>
             MappingValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn matrix(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MatrixError>>> {
+    #[doc = "Structured MatrixError payload of PathError.Matrix; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn matrix(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MatrixError>>> {
         match &self.inner { ck::PathError::Matrix(value) =>
             MatrixError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }

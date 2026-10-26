@@ -9,6 +9,7 @@ enum_value!(StereoGroupKind, { Absolute, Or, And });
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Detached enhanced-stereochemistry group, with member atoms/bonds and source/output identifiers.
     pub struct StereoGroup {
         pub(crate) inner: ck::StereoGroup,
     }
@@ -21,6 +22,7 @@ impl StereoGroup {
         Self::new(kind, atoms, bonds)
     }
     #[staticmethod]
+    /// Create an enhanced-stereo group from zero-based atom/bond identifiers, applying native local validation.
     fn new(kind: StereoGroupKind, atoms: Vec<usize>, bonds: Vec<usize>) -> PyResult<Self> {
         ck::StereoGroup::new(
             kind.into(),
@@ -30,33 +32,40 @@ impl StereoGroup {
         .map(|inner| Self { inner })
         .map_err(StereoGroupError::from_rust)
     }
+    /// Return an independent group with the source group identifier replaced.
     fn with_id(&self, id: u32) -> Self {
         Self {
             inner: self.inner.clone().with_id(id),
         }
     }
+    /// Return an independent group with the output group identifier replaced.
     fn with_write_id(&self, write_id: u32) -> Self {
         Self {
             inner: self.inner.clone().with_write_id(write_id),
         }
     }
     #[getter]
+    /// Optional source enhanced-stereo group identifier.
     fn id(&self) -> Option<u32> {
         self.inner.id()
     }
     #[getter]
+    /// Group identifier used by output writers.
     fn write_id(&self) -> u32 {
         self.inner.write_id()
     }
     #[getter]
+    /// Absolute, OR or AND enhanced-stereochemistry relationship.
     fn kind(&self) -> StereoGroupKind {
         self.inner.kind().into()
     }
     #[getter]
+    /// Member atom identifiers in retained order.
     fn atoms(&self) -> Vec<usize> {
         self.inner.atoms().iter().map(|id| id.index()).collect()
     }
     #[getter]
+    /// Member bond identifiers in retained order.
     fn bonds(&self) -> Vec<usize> {
         self.inner.bonds().iter().map(|id| id.index()).collect()
     }
@@ -82,25 +91,16 @@ mod tests {
                     .bind(py)
                     .call_method1("with_id", (0,))?
                     .call_method1("with_write_id", (u32::MAX,))?;
-                assert!(group.bind(py).call_method0("id")?.is_none());
+                assert!(group.bind(py).getattr("id")?.is_none());
+                assert_eq!(group.bind(py).getattr("write_id")?.extract::<u32>()?, 0);
+                assert_eq!(changed.getattr("id")?.extract::<u32>()?, 0);
+                assert_eq!(changed.getattr("write_id")?.extract::<u32>()?, u32::MAX);
+                assert!(changed.getattr("kind")?.extract::<StereoGroupKind>()? == kind);
                 assert_eq!(
-                    group.bind(py).call_method0("write_id")?.extract::<u32>()?,
-                    0
-                );
-                assert_eq!(changed.call_method0("id")?.extract::<u32>()?, 0);
-                assert_eq!(
-                    changed.call_method0("write_id")?.extract::<u32>()?,
-                    u32::MAX
-                );
-                assert!(changed.call_method0("kind")?.extract::<StereoGroupKind>()? == kind);
-                assert_eq!(
-                    changed.call_method0("atoms")?.extract::<Vec<usize>>()?,
+                    changed.getattr("atoms")?.extract::<Vec<usize>>()?,
                     vec![2, 0]
                 );
-                assert_eq!(
-                    changed.call_method0("bonds")?.extract::<Vec<usize>>()?,
-                    vec![1]
-                );
+                assert_eq!(changed.getattr("bonds")?.extract::<Vec<usize>>()?, vec![1]);
             }
             let error = py
                 .get_type::<StereoGroup>()
@@ -137,7 +137,7 @@ mod tests {
                     inner: source.to_builder(),
                 },
             )?;
-            let values = builder.bind(py).call_method0("stereo_groups")?;
+            let values = builder.bind(py).getattr("stereo_groups")?;
             drop(builder);
             assert_eq!(
                 values.get_item(0)?.extract::<PyRef<StereoGroup>>()?.inner,

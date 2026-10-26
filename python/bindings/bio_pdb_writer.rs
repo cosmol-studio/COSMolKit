@@ -26,10 +26,12 @@ pub struct BioPdbWriteError {
 }
 crate::error_framework::error_projection! {methods impl BioPdbWriteError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> BioPdbWriteErrorKind {
         match self.inner.as_ref() {
             ck::BioPdbWriteError::InvalidStructure(_) => BioPdbWriteErrorKind::InvalidStructure,
@@ -57,21 +59,21 @@ crate::error_framework::error_projection! {methods impl BioPdbWriteError {
         }
     }
     #[getter]
-    fn chain(&self) -> Option<&str> {
+    #[doc = "Structural chain involved in the failure. Applies to BioPdbWriteError.ChainNameTooLong. None when this payload is absent."] fn chain(&self) -> Option<&str> {
         match self.inner.as_ref() {
             ck::BioPdbWriteError::ChainNameTooLong { chain, .. } => Some(chain),
             _ => None,
         }
     }
     #[getter]
-    fn length(&self) -> Option<usize> {
+    #[doc = "Length reported by the failed native check. Applies to BioPdbWriteError.ChainNameTooLong. None when this payload is absent."] fn length(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::BioPdbWriteError::ChainNameTooLong { length, .. } => Some(*length),
             _ => None,
         }
     }
     #[getter]
-    fn serial(&self) -> Option<i32> {
+    #[doc = "Source serial number implicated in the failure. Applies to BioPdbWriteError.NegativeSerial, BioPdbWriteError.SerialOffsetOverflow. None when this payload is absent."] fn serial(&self) -> Option<i32> {
         match self.inner.as_ref() {
             ck::BioPdbWriteError::NegativeSerial { serial }
             | ck::BioPdbWriteError::SerialOffsetOverflow { serial } => Some(*serial),
@@ -79,35 +81,35 @@ crate::error_framework::error_projection! {methods impl BioPdbWriteError {
         }
     }
     #[getter]
-    fn from_(&self) -> Option<i32> {
+    #[doc = "Starting endpoint reported by the native failure. Applies to BioPdbWriteError.SerialIncrementOverflow. None when this payload is absent."] fn from_(&self) -> Option<i32> {
         match self.inner.as_ref() {
             ck::BioPdbWriteError::SerialIncrementOverflow { from } => Some(*from),
             _ => None,
         }
     }
     #[getter]
-    fn value(&self) -> Option<i32> {
+    #[doc = "Value rejected or reported by the native operation. Applies to BioPdbWriteError.NegativeBase36Value. None when this payload is absent."] fn value(&self) -> Option<i32> {
         match self.inner.as_ref() {
             ck::BioPdbWriteError::NegativeBase36Value { value } => Some(*value),
             _ => None,
         }
     }
     #[getter]
-    fn field(&self) -> Option<&'static str> {
+    #[doc = "Field whose content or type caused the failure. Applies to BioPdbWriteError.UnrepresentableField. None when this payload is absent."] fn field(&self) -> Option<&'static str> {
         match self.inner.as_ref() {
             ck::BioPdbWriteError::UnrepresentableField { field, .. } => Some(field),
             _ => None,
         }
     }
     #[getter]
-    fn detail(&self) -> Option<&str> {
+    #[doc = "Additional native diagnostic detail. Applies to BioPdbWriteError.UnrepresentableField. None when this payload is absent."] fn detail(&self) -> Option<&str> {
         match self.inner.as_ref() {
             ck::BioPdbWriteError::UnrepresentableField { detail, .. } => Some(detail),
             _ => None,
         }
     }
     #[getter]
-    fn path(&self) -> Option<PathBuf> {
+    #[doc = "Filesystem path involved in the operation. Applies to BioPdbWriteError.Io. None when this payload is absent."] fn path(&self) -> Option<PathBuf> {
         match self.inner.as_ref() {
             ck::BioPdbWriteError::Io { path, .. } => Some(path.clone()),
             _ => None,
@@ -115,6 +117,7 @@ crate::error_framework::error_projection! {methods impl BioPdbWriteError {
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(
         slf: Bound<'_, pyo3::exceptions::PyBaseException>,
     ) -> PyResult<Option<Source<crate::error_framework::ErrorObject<BioStructureError>, crate::error_framework::ErrorObject<IoError>>>> {

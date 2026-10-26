@@ -13,20 +13,25 @@ macro_rules! sanitize_flags {
     ($($flag:ident),+ $(,)?) => {
         #[pyclass(module="cosmolkit", frozen, from_py_object, eq)]
         #[derive(Clone, Copy, PartialEq)]
+        /// Bit mask selecting sanitization stages; combine constants with the bitwise OR operator.
         pub struct SanitizeOperations { pub(crate) inner: ck::SanitizeOperations }
         #[pymethods]
         impl SanitizeOperations {
             $(#[classattr] #[allow(non_snake_case)] fn $flag() -> Self { Self { inner: ck::SanitizeOperations::$flag } })+
             #[staticmethod]
+            /// Construct a sanitization mask, rejecting bits not recognized by the native API.
             fn from_bits(bits: u32) -> PyResult<Self> {
                 ck::SanitizeOperations::from_bits(bits)
                     .map(|inner| Self { inner })
                     .map_err(crate::sanitize_errors::SanitizeError::from_rust)
             }
             #[getter]
+            /// Integer representation of this option mask.
             fn bits(&self) -> u32 { self.inner.bits() }
+            /// Whether every bit in the supplied mask is present.
             fn contains(&self, operation: &Self) -> bool { self.inner.contains(operation.inner) }
             #[getter]
+            /// Whether the mask contains no enabled options.
             fn is_empty(&self) -> bool { self.inner.is_empty() }
             fn __index__(&self) -> u32 { self.inner.bits() }
             fn __or__(&self, other: &Self) -> Self { Self { inner: self.inner | other.inner } }

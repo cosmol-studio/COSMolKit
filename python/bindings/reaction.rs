@@ -23,12 +23,15 @@ error_projection!(ReactionModelError, ReactionModelErrorKind, ck::ReactionModelE
     ck::ReactionModelError::TemplateIndex { .. } => None,
 }, source = Option<crate::error_framework::ErrorObject<QueryGraphError>>, methods = {
     #[getter]
+    /// Template role involved in the native reaction-model error.
     fn role(&self) -> ReactionRole {
         match self.inner { ck::ReactionModelError::Template { role, .. } | ck::ReactionModelError::TemplateIndex { role, .. } => role.into() }
     }
 });
 
 #[pyclass(module = "cosmolkit")]
+/// Ordered reactant, product and agent templates with native matching configuration.
+/// run() returns product sets; with_* methods preserve the source reaction.
 pub struct Reaction {
     owner: ReactionOwner,
     match_owner: Mutex<Option<Py<SubstructMatchParams>>>,
@@ -102,6 +105,7 @@ impl Reaction {
 #[pymethods]
 impl Reaction {
     #[pyo3(signature=(reactants,params=crate::arguments::Argument::Missing,*,max_products=crate::arguments::Argument::Missing,coordinate_selections=crate::arguments::Argument::Missing,copy_atom_properties=crate::arguments::Argument::Missing))]
+    /// Apply reaction templates to ordered reactants and return product sets. Supply ReactionRunParams or chemical keyword options, not both.
     fn run(
         &mut self,
         py: Python<'_>,
@@ -170,6 +174,7 @@ impl Reaction {
         );
         crate::reaction_calls::run(self, py, &reactants, &params)
     }
+    /// Assign a value copy of substructure-match parameters, retaining configured callbacks for reaction matching.
     fn set_match_params(&mut self, py: Python<'_>, params: &SubstructMatchParams) -> PyResult<()> {
         let native = params.to_rust(py)?;
         let owner = Py::new(py, params.with_native(py, native.clone())?)?;
@@ -181,6 +186,7 @@ impl Reaction {
         Ok(())
     }
     #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,canonical=crate::arguments::Argument::Missing,isomeric_smiles=crate::arguments::Argument::Missing,rooted_at_atom=crate::arguments::Argument::Missing,include_dative_bonds=crate::arguments::Argument::Missing,include_cx=crate::arguments::Argument::Missing,cx_fields=crate::arguments::Argument::Missing,coordinate_selections=crate::arguments::Argument::Missing))]
+    /// Write reaction templates as SMIRKS using a parameter object or mutually exclusive keyword options.
     fn to_smirks(
         &self,
         py: Python<'_>,
@@ -221,6 +227,7 @@ impl Reaction {
             self._writer_to_smirks_params(py, params)
         }
     }
+    /// Write reaction templates as SMIRKS using explicit writer parameters.
     fn to_smirks_with_params(
         &self,
         py: Python<'_>,
@@ -276,6 +283,7 @@ impl Reaction {
     }
 
     #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,canonical=crate::arguments::Argument::Missing,isomeric_smiles=crate::arguments::Argument::Missing,rooted_at_atom=crate::arguments::Argument::Missing,include_dative_bonds=crate::arguments::Argument::Missing,include_cx=crate::arguments::Argument::Missing,cx_fields=crate::arguments::Argument::Missing,coordinate_selections=crate::arguments::Argument::Missing))]
+    /// Write reaction templates with CXSMIRKS extensions using a parameter object or mutually exclusive keywords.
     fn to_cx_smirks(
         &self,
         py: Python<'_>,
@@ -316,6 +324,7 @@ impl Reaction {
             self._writer_to_cx_smirks_params(py, params)
         }
     }
+    /// Write reaction templates with CXSMIRKS extensions using explicit writer parameters.
     fn to_cx_smirks_with_params(
         &self,
         py: Python<'_>,
@@ -370,6 +379,7 @@ impl Reaction {
         crate::property_values::decode_source_text(py, &text)
     }
     #[getter]
+    /// Return an independent copy of this reaction's match configuration with its native callbacks retained.
     fn match_params(&self, py: Python<'_>) -> PyResult<SubstructMatchParams> {
         let native = self.inner().match_params().clone();
         match self
@@ -382,6 +392,7 @@ impl Reaction {
             None => SubstructMatchParams::from_native(py, native),
         }
     }
+    /// Return an independent reaction with the supplied match configuration; leave this reaction unchanged.
     fn with_match_params(&self, py: Python<'_>, params: &SubstructMatchParams) -> PyResult<Self> {
         let inner = self
             .inner()
@@ -414,6 +425,7 @@ impl Reaction {
     }
     #[staticmethod]
     #[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, use_smiles=crate::arguments::Argument::Missing, sanitize=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing))]
+    /// Parse SMIRKS into reaction templates using a parameter object or mutually exclusive keyword options.
     fn from_smirks(
         text: &str,
         params: crate::arguments::Argument<Option<PyRef<'_, ReactionParseParams>>>,
@@ -478,10 +490,12 @@ impl Reaction {
             .map_err(ReactionParseError::from_rust)
     }
     #[staticmethod]
+    /// Parse SMIRKS using explicit reaction-parse parameters.
     fn from_smirks_with_params(text: &str, params: &ReactionParseParams) -> PyResult<Self> {
         Self::_from_smirks_params(text, Some(params))
     }
     #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, silent=crate::arguments::Argument::Missing))]
+    /// Return native reaction-template validation findings without modifying this reaction.
     fn validate(
         &self,
         params: crate::arguments::Argument<Option<PyRef<'_, ReactionValidationParams>>>,
@@ -521,6 +535,7 @@ impl Reaction {
         };
         self._validate_params(Some(&params))
     }
+    /// Return native reaction-template validation findings using explicit validation parameters.
     fn validate_with_params(
         &self,
         params: &ReactionValidationParams,
@@ -529,6 +544,7 @@ impl Reaction {
     }
 
     #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, silent=crate::arguments::Argument::Missing))]
+    /// Return a new reaction with native template initialization applied; validation failures propagate.
     fn with_initialized(
         &self,
         params: crate::arguments::Argument<Option<PyRef<'_, ReactionValidationParams>>>,
@@ -568,15 +584,18 @@ impl Reaction {
         };
         self._with_initialized_params(Some(&params))
     }
+    /// Return a new initialized reaction using explicit validation parameters.
     fn with_initialized_with_params(&self, params: &ReactionValidationParams) -> PyResult<Self> {
         self._with_initialized_params(Some(params))
     }
 
     #[new]
+    /// Create an empty reaction with no templates.
     fn new() -> Self {
         Self::from_rust(ck::Reaction::new())
     }
     #[staticmethod]
+    /// Construct a reaction from ordered reactant, product and agent query templates.
     fn from_templates(
         py: Python<'_>,
         reactants: Vec<Py<QueryGraph>>,
@@ -594,18 +613,22 @@ impl Reaction {
             .map_err(ReactionModelError::from_rust)
     }
     #[getter]
+    /// Number of reactant query templates.
     fn num_reactant_templates(&self) -> usize {
         self.inner().num_reactant_templates()
     }
     #[getter]
+    /// Number of product query templates.
     fn num_product_templates(&self) -> usize {
         self.inner().num_product_templates()
     }
     #[getter]
+    /// Number of agent query templates.
     fn num_agent_templates(&self) -> usize {
         self.inner().num_agent_templates()
     }
     #[getter]
+    /// Reactant query templates in stored order, retaining their reaction owner.
     fn reactant_templates(&self) -> Vec<QueryGraph> {
         self.inner()
             .reactant_templates()
@@ -615,6 +638,7 @@ impl Reaction {
             .collect()
     }
     #[getter]
+    /// Product query templates in stored order, retaining their reaction owner.
     fn product_templates(&self) -> Vec<QueryGraph> {
         self.inner()
             .product_templates()
@@ -624,6 +648,7 @@ impl Reaction {
             .collect()
     }
     #[getter]
+    /// Agent query templates in stored order, retaining their reaction owner.
     fn agent_templates(&self) -> Vec<QueryGraph> {
         self.inner()
             .agent_templates()
@@ -632,36 +657,42 @@ impl Reaction {
             .map(|(index, _)| self.template_view(ck::ReactionRole::Agent, index))
             .collect()
     }
+    /// Return the reactant template at a zero-based index; invalid indices raise ReactionModelError.
     fn reactant_template(&self, index: usize) -> PyResult<QueryGraph> {
         self.inner()
             .reactant_template(index)
             .map(|_| self.template_view(ck::ReactionRole::Reactant, index))
             .map_err(ReactionModelError::from_rust)
     }
+    /// Return the product template at a zero-based index; invalid indices raise ReactionModelError.
     fn product_template(&self, index: usize) -> PyResult<QueryGraph> {
         self.inner()
             .product_template(index)
             .map(|_| self.template_view(ck::ReactionRole::Product, index))
             .map_err(ReactionModelError::from_rust)
     }
+    /// Return the agent template at a zero-based index; invalid indices raise ReactionModelError.
     fn agent_template(&self, index: usize) -> PyResult<QueryGraph> {
         self.inner()
             .agent_template(index)
             .map(|_| self.template_view(ck::ReactionRole::Agent, index))
             .map_err(ReactionModelError::from_rust)
     }
+    /// Return a new reaction with the reactant template appended.
     fn with_reactant_template(&self, template: &QueryGraph) -> PyResult<Self> {
         self.inner()
             .with_reactant_template(template.inner().clone())
             .map(|inner| self.with_native(inner))
             .map_err(ReactionModelError::from_rust)
     }
+    /// Return a new reaction with the product template appended.
     fn with_product_template(&self, template: &QueryGraph) -> PyResult<Self> {
         self.inner()
             .with_product_template(template.inner().clone())
             .map(|inner| self.with_native(inner))
             .map_err(ReactionModelError::from_rust)
     }
+    /// Return a new reaction with the agent template appended.
     fn with_agent_template(&self, template: &QueryGraph) -> PyResult<Self> {
         self.inner()
             .with_agent_template(template.inner().clone())
@@ -669,21 +700,26 @@ impl Reaction {
             .map_err(ReactionModelError::from_rust)
     }
     #[getter]
+    /// Whether native reaction template initialization has completed.
     fn is_initialized(&self) -> bool {
         self.inner().is_initialized()
     }
     #[getter]
+    /// Whether native implicit-property handling is enabled.
     fn implicit_properties(&self) -> bool {
         self.inner().implicit_properties()
     }
+    /// Return a new reaction with implicit-property handling enabled or disabled.
     fn with_implicit_properties(&self, enabled: bool) -> Self {
         self.with_native(self.inner().with_implicit_properties(enabled))
     }
+    /// Return a removal result containing a reaction without agent templates and the removed templates.
     fn without_agents(&self) -> ReactionTemplateRemoval {
         self.with_removal(self.inner().without_agents())
     }
 
     #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, threshold_unmapped_atoms=crate::arguments::Argument::Missing, move_to_agent_templates=crate::arguments::Argument::Missing))]
+    /// Return a removal result for reactant templates selected by the native unmapped-atom threshold policy.
     fn without_unmapped_reactants(
         &self,
         params: crate::arguments::Argument<Option<PyRef<'_, ReactionTemplateRemovalParams>>>,
@@ -734,6 +770,7 @@ impl Reaction {
         };
         self._without_unmapped_reactants_params(Some(&params))
     }
+    /// Return a reactant-template removal result using explicit removal parameters.
     fn without_unmapped_reactants_with_params(
         &self,
         params: &ReactionTemplateRemovalParams,
@@ -742,6 +779,7 @@ impl Reaction {
     }
 
     #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, threshold_unmapped_atoms=crate::arguments::Argument::Missing, move_to_agent_templates=crate::arguments::Argument::Missing))]
+    /// Return a removal result for product templates selected by the native unmapped-atom threshold policy.
     fn without_unmapped_products(
         &self,
         params: crate::arguments::Argument<Option<PyRef<'_, ReactionTemplateRemovalParams>>>,
@@ -792,6 +830,7 @@ impl Reaction {
         };
         self._without_unmapped_products_params(Some(&params))
     }
+    /// Return a product-template removal result using explicit removal parameters.
     fn without_unmapped_products_with_params(
         &self,
         params: &ReactionTemplateRemovalParams,
@@ -801,6 +840,7 @@ impl Reaction {
 }
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// Result of template removal containing the resulting reaction and removed query templates.
 pub struct ReactionTemplateRemoval {
     inner: Arc<ck::ReactionTemplateRemoval>,
     match_owner: Mutex<Option<Py<SubstructMatchParams>>>,
@@ -808,6 +848,7 @@ pub struct ReactionTemplateRemoval {
 #[pymethods]
 impl ReactionTemplateRemoval {
     #[getter]
+    /// Reaction after template removal, retaining ownership of the removal result.
     fn reaction(&self) -> Reaction {
         let match_owner = Python::attach(|py| {
             self.match_owner
@@ -822,6 +863,7 @@ impl ReactionTemplateRemoval {
         }
     }
     #[getter]
+    /// Removed query templates in native removal order.
     fn removed_templates(&self) -> Vec<QueryGraph> {
         self.inner
             .removed_templates()
@@ -887,17 +929,17 @@ def bond(query_bond, bond):
     return True
 params = Params(max_matches=2, num_threads=2, final_match=accept, atom_match=atom, bond_match=bond)
 configured = reaction.with_match_params(params)
-assert configured.match_params().max_matches == native_configured
-assert reaction.match_params().max_matches == native_default
+assert configured.match_params.max_matches == native_configured
+assert reaction.match_params.max_matches == native_default
 params.max_matches = 1
 params.final_match = None
-assert configured.match_params().max_matches == 2
-assert configured.match_params().final_match is accept
-copied = configured.match_params()
+assert configured.match_params.max_matches == 2
+assert configured.match_params.final_match is accept
+copied = configured.match_params
 copied.max_matches = 9
 copied.final_match = None
-assert configured.match_params().max_matches == 2
-assert configured.match_params().final_match is accept
+assert configured.match_params.max_matches == 2
+assert configured.match_params.final_match is accept
 values = [configured.with_implicit_properties(False),
           configured.with_reactant_template(configured.reactant_template(0)),
           configured.with_product_template(configured.product_template(0)),
@@ -908,7 +950,7 @@ values += [item.reaction for item in removals]
 del configured, params, copied
 gc.collect()
 for value in values:
-    stored = value.match_params()
+    stored = value.match_params
     assert stored.max_matches == 2 and stored.num_threads == 2
     assert stored.final_match is accept and stored.atom_match is atom and stored.bond_match is bond
     seen.clear()
@@ -924,7 +966,7 @@ except LookupError as error:
     assert error is marker
 else:
     raise AssertionError('original callback exception lost')
-assert values[-1].match_params().final_match is accept
+assert values[-1].match_params.final_match is accept
 class Callback:
     def __call__(self, target, indices):
         return True
@@ -944,7 +986,7 @@ for removal in (False, True):
     retained, view = make_cycle(removal)
     gc.collect()
     assert retained() is None
-    assert view.num_atoms() == 1
+    assert view.num_atoms == 1
 "#), Some(&scope), None)?;
             Ok(())
         }).unwrap();

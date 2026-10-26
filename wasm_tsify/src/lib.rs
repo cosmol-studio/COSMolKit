@@ -246,8 +246,9 @@ mod transform_errors;
 #[cfg(feature = "cap-forcefields")]
 mod uff_errors;
 mod valence_errors;
-#[cfg(feature = "cap-search")]
+#[cfg(any(feature = "cap-search", feature = "cap-io"))]
 mod wedge_errors;
+#[cfg(any(feature = "cap-alignment", feature = "cap-fingerprints"))]
 mod worker_errors;
 mod xyz_errors;
 

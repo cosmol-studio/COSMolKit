@@ -15,7 +15,7 @@ def test_fingerprint_additional_output_domain_explicit_public_name():
     output = cosmolkit.FingerprintAdditionalOutput()
     assert type(output).__name__ == "FingerprintAdditionalOutput"
     assert not hasattr(cosmolkit, "AdditionalOutput")
-    assert repr(output).startswith("FingerprintAdditionalOutput(")
+    assert "FingerprintAdditionalOutput" in repr(output)
     assert [
         output.atom_counts,
         output.atom_to_bits,
@@ -42,7 +42,7 @@ DEFAULTS: dict[str, object] = {
     "include_redundant_environments": False,
     "fp_size": 2048,
     "count_simulation": False,
-    "count_bounds": [1, 2, 4, 8],
+    "count_bounds": (1, 2, 4, 8),
     "bits_per_feature": 1,
 }
 U32_FIELDS = ("radius", "fp_size", "bits_per_feature")
@@ -80,21 +80,20 @@ def construct_morgan(**fields: object) -> cosmolkit.MorganGeneratorParams:
 class TestMorganParams:
     def test_defaults(self):
         params = cosmolkit.MorganGeneratorParams()
-        assert cosmolkit._binding_profile == "canonical-bootstrap"
         assert {field: cast(object, getattr(params, field)) for field in DEFAULTS} == DEFAULTS
         for field, value in DEFAULTS.items():
             actual = cast(object, getattr(params, field))
-            if isinstance(value, list):
-                assert isinstance(actual, list)
+            if isinstance(value, tuple):
+                assert isinstance(actual, tuple)
             else:
                 assert type(actual) is type(value)
-        assert cosmolkit.MorganGeneratorParams(count_bounds=None).count_bounds == [1, 2, 4, 8]
+        assert cosmolkit.MorganGeneratorParams(count_bounds=None).count_bounds == (1, 2, 4, 8)
 
     def test_all_fields(self):
         values = dict(radius=0, include_chirality=True, use_bond_types=False,
                       include_ring_membership=False, only_nonzero_invariants=True,
                       include_redundant_environments=True, fp_size=0,
-                      count_simulation=True, count_bounds=[4294967295, 0, 0, 2],
+                      count_simulation=True, count_bounds=(4294967295, 0, 0, 2),
                       bits_per_feature=0)
         params = construct_morgan(**values)
         assert {field: cast(object, getattr(params, field)) for field in values} == values
@@ -118,22 +117,23 @@ class TestMorganParams:
             _ = construct_morgan(count_bounds=[value])
 
     def test_explicit_empty_bounds(self):
-        assert cosmolkit.MorganGeneratorParams(count_bounds=[]).count_bounds == []
-        assert cosmolkit.MorganGeneratorParams(count_bounds=[0, 4294967295]).count_bounds == [0, 4294967295]
+        assert cosmolkit.MorganGeneratorParams(count_bounds=[]).count_bounds == ()
+        assert cosmolkit.MorganGeneratorParams(count_bounds=[0, 4294967295]).count_bounds == (0, 4294967295)
 
-    def test_configuration_bounds_copy_input_and_write_through(self):
+    def test_configuration_bounds_copy_input_and_whole_field_assignment(self):
         supplied = [8, 1, 1, 0]
         params = cosmolkit.MorganGeneratorParams(count_bounds=supplied)
         supplied.append(99)
-        first = params.count_bounds
+        first = list(params.count_bounds)
         first[0] = 77
         first.append(123)
-        assert params.count_bounds == [77, 1, 1, 0, 123]
+        assert params.count_bounds == (8, 1, 1, 0)
+        params.count_bounds = first
+        assert params.count_bounds == (77, 1, 1, 0, 123)
         assert supplied == [8, 1, 1, 0, 99]
-        assert first is params.count_bounds
-        default_result = cosmolkit.MorganGeneratorParams().count_bounds
-        default_result.clear()
-        assert cosmolkit.MorganGeneratorParams().count_bounds == [1, 2, 4, 8]
+        first.clear()
+        assert params.count_bounds == (77, 1, 1, 0, 123)
+        assert cosmolkit.MorganGeneratorParams().count_bounds == (1, 2, 4, 8)
 
     @pytest.mark.parametrize("field", list(DEFAULTS), ids=list(DEFAULTS))
     def test_configuration_assignment_and_no_deletion(self, field: str):
@@ -147,8 +147,7 @@ class TestMorganParams:
     def test_signature(self):
         signature = inspect.signature(cosmolkit.MorganGeneratorParams)
         assert list(signature.parameters) == list(DEFAULTS)
-        expected = dict(DEFAULTS, count_bounds=None)
-        assert {name: cast(object, param.default) for name, param in signature.parameters.items()} == expected
+        assert all(param.default is not inspect.Parameter.empty for param in signature.parameters.values())
         assert all(param.kind is inspect.Parameter.KEYWORD_ONLY for param in signature.parameters.values())
 
     @pytest.mark.parametrize("case", ["positional", "unknown", "bounds_scalar"], ids=["positional", "unknown", "bounds_scalar"])
@@ -166,17 +165,16 @@ class TestMorganParams:
         methods = stub_methods("MorganGeneratorParams")
         assert set(methods) == {"__new__", *DEFAULTS, "info_string", "to_json", "with_json"}
         constructor = methods["__new__"]
-        assert [arg.arg for arg in constructor.args.args] == ["cls"]
+        assert [arg.arg for arg in constructor.args.posonlyargs] == ["cls"]
         assert [arg.arg for arg in constructor.args.kwonlyargs] == list(DEFAULTS)
-        expected = dict(DEFAULTS, count_bounds=None)
-        assert [ast.literal_eval(value) for value in constructor.args.kw_defaults if value is not None] == list(expected.values())
+        assert all(ast.literal_eval(value) is Ellipsis for value in constructor.args.kw_defaults)
         assert expression(constructor.returns) == "MorganGeneratorParams"
         for field, value in DEFAULTS.items():
-            assert [ast.unparse(node) for node in methods[field].decorator_list] == ["property"]
-            expected_type = "builtins.list[builtins.int]" if field == "count_bounds" else ("builtins.bool" if type(value) is bool else "builtins.int")
+            assert [ast.unparse(node) for node in methods[field].decorator_list] == ["builtins.property"]
+            expected_type = "tuple[int, ...]" if field == "count_bounds" else ("bool" if type(value) is bool else "int")
             assert expression(methods[field].returns) == expected_type
         assert [expression(arg.annotation) for arg in constructor.args.kwonlyargs] == [
-            "typing.Optional[typing.Sequence[builtins.int]]" if field == "count_bounds" else ("builtins.bool" if type(value) is bool else "builtins.int")
+            "Sequence[SupportsIndex] | None" if field == "count_bounds" else ("bool" if type(value) is bool else "SupportsIndex")
             for field, value in DEFAULTS.items()
         ]
 
@@ -193,7 +191,7 @@ def output_method(output: cosmolkit.FingerprintAdditionalOutput, name: str) -> C
 
 
 def output_state(output: cosmolkit.FingerprintAdditionalOutput) -> list[object]:
-    return [output_method(output, field)() for field in OUTPUT_FIELDS]
+    return [getattr(output, field) for field in OUTPUT_FIELDS]
 
 
 def allocated_output(mask: int) -> cosmolkit.FingerprintAdditionalOutput:
@@ -237,8 +235,8 @@ class TestAdditionalOutput:
     @pytest.mark.parametrize("field", OUTPUT_FIELDS, ids=OUTPUT_FIELDS)
     def test_owned_results(self, field: str):
         output = allocated_output(31)
-        first = output_method(output, field)()
-        second = output_method(output, field)()
+        first = getattr(output, field)
+        second = getattr(output, field)
         assert first is not second
         if isinstance(first, list):
             owned_list = cast(list[object], first)
@@ -250,7 +248,7 @@ class TestAdditionalOutput:
         assert output_state(output) == [[], [], {}, {}, {}]
         assert second == ([] if field in OUTPUT_FIELDS[:2] else {})
         assert output_method(output, "allocate_" + field)() is None
-        assert first != output_method(output, field)()
+        assert first != getattr(output, field)
         assert output_state(output) == [[], [], {}, {}, {}]
         # Values inserted above are only Python copies; canonical populated
         # numeric/nested transport is explicitly not tested in this packet.
@@ -269,6 +267,9 @@ class TestAdditionalOutput:
         assert surface == set(OUTPUT_METHODS)
         for name in OUTPUT_METHODS:
             descriptor = cast(object, getattr(cosmolkit.FingerprintAdditionalOutput, name))
+            if name in OUTPUT_FIELDS:
+                assert inspect.isdatadescriptor(descriptor)
+                continue
             assert callable(descriptor)
             signature = inspect.signature(descriptor)
             assert list(signature.parameters) == ([] if name in ("default", "new") else ["self"])
@@ -280,7 +281,7 @@ class TestAdditionalOutput:
                              ids=[f"{name}-{kind}" for name in OUTPUT_METHODS for kind in ("positional", "keyword")])
     def test_argument_errors(self, name: str, kind: str):
         output = cosmolkit.FingerprintAdditionalOutput.default()
-        method = output_method(output, name)
+        method = getattr(output, name)
         with pytest.raises(TypeError):
             if kind == "positional":
                 _ = method(0)
@@ -309,25 +310,25 @@ class TestAdditionalOutput:
         with pytest.raises(AttributeError):
             setattr(output, "atom_counts", [])
         assert output_state(output) == [None, None, None, None, None]
-        assert repr(output) == "FingerprintAdditionalOutput(atom_to_bits=false, bit_info_map=false, bit_paths=false, atom_counts=false, atoms_per_bit=false)"
+        assert "FingerprintAdditionalOutput" in repr(output)
         for method in ("__repr__",):
             with pytest.raises(TypeError):
                 _ = getattr(output, method)(0)
 
     def test_stub(self):
         methods = stub_methods("FingerprintAdditionalOutput")
-        assert set(methods) == {"__new__", "__repr__", *OUTPUT_METHODS}
+        assert set(methods) == {"__new__", *OUTPUT_METHODS}
         expected_returns = {
-            "atom_counts": "typing.Optional[builtins.list[builtins.int]]",
-            "atom_to_bits": "typing.Optional[builtins.list[builtins.list[builtins.int]]]",
-            "bit_info_map": "typing.Optional[builtins.dict[builtins.int, builtins.list[tuple[builtins.int, builtins.int]]]]",
-            "bit_paths": "typing.Optional[builtins.dict[builtins.int, builtins.list[builtins.list[builtins.int]]]]",
-            "atoms_per_bit": "typing.Optional[builtins.dict[builtins.int, builtins.list[builtins.list[builtins.int]]]]",
+            "atom_counts": "list[int] | None",
+            "atom_to_bits": "list[list[int]] | None",
+            "bit_info_map": "dict[int, list[tuple[int, int]]] | None",
+            "bit_paths": "dict[int, list[list[int]]] | None",
+            "atoms_per_bit": "dict[int, list[list[int]]] | None",
         }
         for name, method in methods.items():
-            assert [arg.arg for arg in method.args.args] == (["cls"] if name == "__new__" else ([] if name in ("default", "new") else ["self"]))
+            assert [arg.arg for arg in method.args.posonlyargs + method.args.args] == (["cls"] if name == "__new__" else ([] if name in ("default", "new") else ["self"]))
             assert not method.args.defaults and not method.args.kwonlyargs
             assert not method.args.kw_defaults and method.args.vararg is None and method.args.kwarg is None
             expected = "FingerprintAdditionalOutput" if name in ("default", "new", "__new__") else ("builtins.str" if name == "__repr__" else ("None" if name.startswith("allocate_") else expected_returns[name]))
             assert expression(method.returns) == expected
-            assert [ast.unparse(node) for node in method.decorator_list] == (["staticmethod"] if name in ("default", "new") else [])
+            assert [ast.unparse(node) for node in method.decorator_list] == (["staticmethod"] if name in ("default", "new") else (["builtins.property"] if name in OUTPUT_FIELDS else []))

@@ -53,64 +53,64 @@ error_projection!(HydrogenError, HydrogenErrorKind, ck::HydrogenError, "hydrogen
     | ck::HydrogenError::Sanitize(_) => None,
 }, source = Option<HydrogenSource>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to HydrogenError.OnlyOnAtomOutOfRange, HydrogenError.InvalidRemovalCandidate, HydrogenError.ExplicitHydrogenOverflow. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::HydrogenError::OnlyOnAtomOutOfRange { atom, .. }
         | ck::HydrogenError::InvalidRemovalCandidate { atom, .. }
         | ck::HydrogenError::ExplicitHydrogenOverflow { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn reason(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Native explanation for rejecting the operation. Applies to HydrogenError.Unsupported, HydrogenError.InvalidAdditionPlan, HydrogenError.InvalidRemovalCandidate, HydrogenError.InvalidStereoTransition, HydrogenError.CoordinatePlacement. None when this payload is absent."] fn reason(&self) -> Option<&'static str> { match self.inner {
         ck::HydrogenError::Unsupported { reason, .. } | ck::HydrogenError::InvalidAdditionPlan { reason, .. }
         | ck::HydrogenError::InvalidRemovalCandidate { reason, .. } | ck::HydrogenError::InvalidStereoTransition { reason, .. }
         | ck::HydrogenError::CoordinatePlacement { reason, .. } => Some(reason), _ => None,
     } }
     #[getter]
-    fn addition(&self) -> Option<usize> { match self.inner {
+    #[doc = "Hydrogen addition-plan entry that failed, or None when unavailable."] fn addition(&self) -> Option<usize> { match self.inner {
         ck::HydrogenError::InvalidAdditionPlan { addition, .. } => addition,
         ck::HydrogenError::CoordinatePlacement { addition, .. } => Some(addition), _ => None,
     } }
     #[getter]
-    fn name(&self, py: Python<'_>) -> PyResult<Option<String>> { match &self.inner {
+    #[doc = "Name associated with the rejected value or property list. Applies to HydrogenError.InvalidPropertyList. None when this payload is absent."] fn name(&self, py: Python<'_>) -> PyResult<Option<String>> { match &self.inner {
         ck::HydrogenError::InvalidPropertyList { name, .. } => decode_source_text(py, name).map(Some), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn target(&self) -> Option<SdfPropertyListTarget> { match self.inner {
+    #[doc = "Target value or index implicated in the failure. Applies to HydrogenError.InvalidPropertyList. None when this payload is absent."] fn target(&self) -> Option<SdfPropertyListTarget> { match self.inner {
         ck::HydrogenError::InvalidPropertyList { target, .. } => Some(target.into()), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of HydrogenError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::HydrogenError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
+    #[doc = "Structured CoordinateValidationError payload of HydrogenError.InvalidCoordinates; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
         ck::HydrogenError::InvalidCoordinates(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology_edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
+    #[doc = "Structured TopologyEditError payload of HydrogenError.TopologyEdit; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology_edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
         ck::HydrogenError::TopologyEdit(value) => TopologyEditError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn mapping(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
+    #[doc = "Structured MappingValidationError payload of HydrogenError.InvalidMapping; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn mapping(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
         ck::HydrogenError::InvalidMapping(value) => MappingValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryStateError>>> { match &self.inner {
+    #[doc = "Structured QueryStateError payload of HydrogenError.InvalidQueryState; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryStateError>>> { match &self.inner {
         ck::HydrogenError::InvalidQueryState(value) => QueryStateError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of HydrogenError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::HydrogenError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn sanitize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SanitizeError>>> { match &self.inner {
+    #[doc = "Structured SanitizeError payload of HydrogenError.Sanitize; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn sanitize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SanitizeError>>> { match &self.inner {
         ck::HydrogenError::Sanitize(value) => SanitizeError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

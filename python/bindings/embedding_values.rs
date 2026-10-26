@@ -62,6 +62,7 @@ pub struct ConformerError {
 }
 crate::error_framework::error_projection! {methods impl ConformerError {
     #[getter]
+    /// Concrete native failure category; payload fields apply only to their corresponding variants.
     fn variant(&self) -> ConformerErrorKind {
         match &self.inner {
             ck::ConformerError::Unsupported => ConformerErrorKind::Unsupported,
@@ -75,11 +76,13 @@ crate::error_framework::error_projection! {methods impl ConformerError {
         }
     }
     #[getter]
+    /// Native error domain identifying the conformer subsystem.
     fn domain(&self) -> &'static str {
         "conformer"
     }
     // These unnamed tuple payloads contain source messages, not nested errors.
     #[getter]
+    /// Native failure message for generation or JSON parameter errors; None for variants without a message.
     fn message(&self) -> Option<&str> {
         match &self.inner {
             ck::ConformerError::GenerationFailed(message)
@@ -106,6 +109,8 @@ type CoordinateMap = crate::parameters::Dict<crate::parameters::Scalar<i32>, [f6
 type CpciMap =
     crate::parameters::Dict<crate::parameters::Scalar<(u32, u32)>, crate::parameters::Scalar<f64>>;
 
+/// Distance-geometry embedding options with native presets and optional coordinate constraints.
+/// Set fields before execution; result objects carry execution diagnostics separately.
 #[pyclass(module = "cosmolkit")]
 pub struct EmbedParams {
     // The native owner retains input fields, private bounds and diagnostics.
@@ -120,11 +125,11 @@ impl EmbedParams {
     }
 }
 macro_rules! embedding_parameters {
-    ($($field:ident: $ty:ty),+ $(,)?) => {
-        embedding_parameters!(fields {$($field: $ty),+},
+    ($($(#[$doc:meta])* $field:ident: $ty:ty),+ $(,)?) => {
+        embedding_parameters!(fields {$($(#[$doc])* $field: $ty),+},
             presets { dg, kdg, etdg, etdg_v2, etkdg, etkdg_v2, etkdg_v3, sr_etkdg_v3 });
     };
-    (fields {$($field:ident: $ty:ty),+ $(,)?}, presets {$($preset:ident),+ $(,)?}) => {
+    (fields {$($(#[$doc:meta])* $field:ident: $ty:ty),+ $(,)?}, presets {$($preset:ident),+ $(,)?}) => {
         paste::paste! {
             #[pymethods]
             impl EmbedParams {
@@ -137,25 +142,32 @@ macro_rules! embedding_parameters {
                     native.cpci = cpci.or_default(|| native.cpci.take());
                     Self::from_rust(py, native)
                 }
+                /// Create distance-geometry parameters using the native constructor defaults.
                 #[staticmethod] fn new(py: Python<'_>) -> PyResult<Self> { Self::from_rust(py, ck::EmbedParams::new()) }
-                $(#[staticmethod] fn $preset(py: Python<'_>) -> PyResult<Self> { Self::from_rust(py, ck::EmbedParams::$preset()) })+
-                $(#[getter] fn $field(&self) -> $ty { self.native.$field.clone() }
+                $(#[doc = concat!("Create parameters using the native ", stringify!($preset), " embedding preset; subsequent field edits affect this configuration only.")]
+                #[staticmethod] fn $preset(py: Python<'_>) -> PyResult<Self> { Self::from_rust(py, ck::EmbedParams::$preset()) })+
+                $($(#[$doc])* #[getter] fn $field(&self) -> $ty { self.native.$field.clone() }
                 #[setter] fn [<set_ $field>](&mut self, value: $ty) { self.native.$field = value; })+
+                /// Readonly atom-index to three-dimensional coordinate constraints, or None. Replace the whole field to edit.
                 #[getter] fn coord_map(&self) -> crate::parameters::ContainerOutput<'_, Option<CoordinateMap>> { crate::parameters::ContainerOutput(&self.native.coord_map) }
                 #[setter] fn set_coord_map(&mut self, value: crate::parameters::ContainerInput<Option<CoordinateMap>>) -> PyResult<()> {
                     self.native.coord_map = value.0;
                     Ok(())
                 }
+                /// Readonly atom-pair to custom Coulomb-like interaction strengths, or None. Replace the whole field to edit.
                 #[getter] fn cpci(&self) -> crate::parameters::ContainerOutput<'_, Option<CpciMap>> { crate::parameters::ContainerOutput(&self.native.cpci) }
                 #[setter] fn set_cpci(&mut self, value: crate::parameters::ContainerInput<Option<CpciMap>>) -> PyResult<()> {
                     self.native.cpci = value.0;
                     Ok(())
                 }
+                /// Serialize the native JSON-supported embedding options; this is not a complete execution-state archive.
                 fn to_json(&self, py: Python<'_>) -> PyResult<String> { Ok(self.to_rust(py)?.to_json()) }
+                /// Return an independent configuration updated from JSON using the native parameter parser.
                 fn with_json(&self, py: Python<'_>, json: &str) -> PyResult<Self> {
                     let native = self.to_rust(py)?.with_json(json).map_err(ConformerError::from_rust)?;
                     Self::from_rust(py, native)
                 }
+                /// Copy of recorded failure-stage counters; execution results also expose failure_counts directly.
                 #[getter] fn failures(&self) -> Vec<u32> { self.native.failures().clone() }
             }
         }
@@ -166,6 +178,7 @@ ck::project_configuration!(ck::EmbedParams, using embedding_parameters);
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Single-conformer embedding result retaining the output molecule, optional generated ID and execution diagnostics.
     pub struct EmbedMoleculeResult {
         pub(crate) inner: ck::EmbedMoleculeResult,
     }
@@ -173,17 +186,21 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl EmbedMoleculeResult {
     #[getter]
+    /// Reason embedding stopped: completed, timed out or interrupted; inspect generated IDs separately.
     fn termination(&self) -> EmbedTermination {
         self.inner.termination().into()
     }
     #[getter]
+    /// Whether failure-stage counters were enabled for this run.
     fn failures_tracked(&self) -> bool {
         self.inner.failures_tracked()
     }
     #[getter]
+    /// Readonly counts in EmbedFailureCause order, or None when tracking was disabled.
     fn failure_counts(&self) -> Option<FailureCounts<'_>> {
         self.inner.failure_counts().map(FailureCounts)
     }
+    /// Return the count for one failure cause, or None when tracking was disabled; invalid causes raise EmbedFailureCountError.
     fn failure_count(&self, cause: EmbedFailureCauseInput) -> PyResult<Option<u32>> {
         self.inner
             .failure_count(cause.into_rust()?)
@@ -208,20 +225,24 @@ impl EmbedMoleculeResult {
         })
     }
     #[getter]
+    /// Output molecule as a copy-on-write value; editing it does not alter this result.
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
     #[getter]
+    /// Generated conformer identifier, or None when no conformer was generated.
     fn conf_id(&self) -> Option<u32> {
         self.inner.conf_id()
     }
     #[getter]
+    /// Independent configuration value carrying this run's diagnostics; modifying it does not change the result.
     fn params(&self, py: Python<'_>) -> PyResult<EmbedParams> {
         EmbedParams::from_rust(py, self.inner.params().clone())
     }
     #[getter]
+    /// Whether a conformer identifier was produced by this single-conformer run.
     fn ok(&self) -> bool {
         self.inner.ok()
     }
@@ -229,6 +250,7 @@ impl EmbedMoleculeResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Multi-conformer embedding result retaining successful IDs, the requested count and execution diagnostics.
     pub struct EmbedMultipleConfsResult {
         pub(crate) inner: ck::EmbedMultipleConfsResult,
     }
@@ -236,17 +258,21 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl EmbedMultipleConfsResult {
     #[getter]
+    /// Reason embedding stopped: completed, timed out or interrupted; inspect generated IDs separately.
     fn termination(&self) -> EmbedTermination {
         self.inner.termination().into()
     }
     #[getter]
+    /// Whether failure-stage counters were enabled for this run.
     fn failures_tracked(&self) -> bool {
         self.inner.failures_tracked()
     }
     #[getter]
+    /// Readonly counts in EmbedFailureCause order, or None when tracking was disabled.
     fn failure_counts(&self) -> Option<FailureCounts<'_>> {
         self.inner.failure_counts().map(FailureCounts)
     }
+    /// Return the count for one failure cause, or None when tracking was disabled; invalid causes raise EmbedFailureCountError.
     fn failure_count(&self, cause: EmbedFailureCauseInput) -> PyResult<Option<u32>> {
         self.inner
             .failure_count(cause.into_rust()?)
@@ -273,24 +299,29 @@ impl EmbedMultipleConfsResult {
         })
     }
     #[getter]
+    /// Output molecule as a copy-on-write value; editing it does not alter this result.
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
     #[getter]
+    /// Identifiers of successfully generated conformers; failed attempts are not conformer IDs.
     fn conf_ids(&self) -> &[u32] {
         self.inner.conf_ids()
     }
     #[getter]
+    /// Number of conformers requested, which may exceed the generated count after pruning or failure.
     fn requested_num_confs(&self) -> u32 {
         self.inner.requested_num_confs()
     }
     #[getter]
+    /// Number of successfully generated conformer IDs, not the number requested or attempted.
     fn generated_count(&self) -> usize {
         self.inner.generated_count()
     }
     #[getter]
+    /// Independent configuration value carrying this run's diagnostics; modifying it does not change the result.
     fn params(&self, py: Python<'_>) -> PyResult<EmbedParams> {
         EmbedParams::from_rust(py, self.inner.params().clone())
     }
@@ -315,7 +346,7 @@ mod diagnostic_tests {
         Python::initialize();
         Python::attach(|py| -> PyResult<()> {
             let result = Py::new(py, EmbedMoleculeResult { inner: result })?;
-            let options = result.bind(py).call_method0("params")?;
+            let options = result.bind(py).getattr("params")?;
             assert_eq!(
                 options.getattr("failures")?.extract::<Vec<u32>>()?,
                 expected

@@ -12,7 +12,7 @@ error_projection!(AdjacencyError, AdjacencyErrorKind, ck::AdjacencyError, "model
     DuplicateEdge { first_bond: usize => |value: &ck::BondId| value.index(), second_bond: usize => |value: &ck::BondId| value.index(), begin: usize => |value: &ck::AtomId| value.index(), end: usize => |value: &ck::AtomId| value.index() },
 }, cause = |_: &ck::AdjacencyError| None::<PyErr>, methods = {
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to AdjacencyError.BondAtomOutOfRange, AdjacencyError.DuplicateBondId. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::AdjacencyError::BondAtomOutOfRange { bond, .. }
         | ck::AdjacencyError::DuplicateBondId { bond, .. } => Some(bond.index()), _ => None,
     } }
@@ -37,7 +37,7 @@ error_projection!(AtomPropertyError, AtomPropertyErrorKind, ck::AtomPropertyErro
 }, cause = |_: &ck::AtomPropertyError| None::<PyErr>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn computed_list_kind(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyValueError>>> {
+    #[doc = "Structured PropertyValueError payload of AtomPropertyError.ComputedListKind; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn computed_list_kind(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyValueError>>> {
         match &self.inner { ck::AtomPropertyError::ComputedListKind(value) => property_payload(py, value).map(Some), _ => Ok(None) }
     }
 });
@@ -46,7 +46,7 @@ error_projection!(BondValueError, BondValueErrorKind, ck::BondValueError, "model
 }, cause = |_: &ck::BondValueError| None::<PyErr>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn computed_list_kind(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyValueError>>> {
+    #[doc = "Structured PropertyValueError payload of BondValueError.ComputedListKind; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn computed_list_kind(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyValueError>>> {
         match &self.inner { ck::BondValueError::ComputedListKind(value) => property_payload(py, value).map(Some), _ => Ok(None) }
     }
 });
@@ -55,7 +55,7 @@ error_projection!(MoleculePropertyError, MoleculePropertyErrorKind, ck::Molecule
 }, cause = |_: &ck::MoleculePropertyError| None::<PyErr>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn computed_list_kind(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyValueError>>> {
+    #[doc = "Structured PropertyValueError payload of MoleculePropertyError.ComputedListKind; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn computed_list_kind(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyValueError>>> {
         match &self.inner { ck::MoleculePropertyError::ComputedListKind(value) => property_payload(py, value).map(Some), _ => Ok(None) }
     }
 });
@@ -66,24 +66,24 @@ error_projection!(MappingValidationError, MappingValidationErrorKind, ck::Mappin
     InverseMismatch { entity, direction, row, mapped },
 }, cause = |_: &ck::MappingValidationError| None::<PyErr>, methods = {
     #[getter]
-    fn entity(&self) -> &'static str { match self.inner {
+    #[doc = "Structural entity involved in the failure. Applies to MappingValidationError.Length, MappingValidationError.OutOfRange, MappingValidationError.InverseMismatch."] fn entity(&self) -> &'static str { match self.inner {
         ck::MappingValidationError::Length { entity, .. }
         | ck::MappingValidationError::OutOfRange { entity, .. }
         | ck::MappingValidationError::InverseMismatch { entity, .. } => entity,
     } }
     #[getter]
-    fn direction(&self) -> &'static str { match self.inner {
+    #[doc = "Direction of the atom or bond mapping that failed validation."] fn direction(&self) -> &'static str { match self.inner {
         ck::MappingValidationError::Length { direction, .. }
         | ck::MappingValidationError::OutOfRange { direction, .. }
         | ck::MappingValidationError::InverseMismatch { direction, .. } => direction,
     } }
     #[getter]
-    fn row(&self) -> Option<usize> { match self.inner {
+    #[doc = "Row reported by the native failure. Applies to MappingValidationError.OutOfRange, MappingValidationError.InverseMismatch. None when this payload is absent."] fn row(&self) -> Option<usize> { match self.inner {
         ck::MappingValidationError::OutOfRange { row, .. }
         | ck::MappingValidationError::InverseMismatch { row, .. } => Some(row), _ => None,
     } }
     #[getter]
-    fn mapped(&self) -> Option<usize> { match self.inner {
+    #[doc = "Mapped identifier rejected during validation. Present for `MappingValidationError.OutOfRange`, `MappingValidationError.InverseMismatch`; None when unavailable."] fn mapped(&self) -> Option<usize> { match self.inner {
         ck::MappingValidationError::OutOfRange { mapped, .. }
         | ck::MappingValidationError::InverseMismatch { mapped, .. } => Some(mapped), _ => None,
     } }
@@ -109,7 +109,7 @@ error_projection!(QueryStateError, QueryStateErrorKind, ck::QueryStateError, "mo
     | ck::QueryStateError::AppendedRow { .. } | ck::QueryStateError::AppendedRowCount { .. } => None,
 }, source = Option<crate::error_framework::ErrorObject<MappingValidationError>>, methods = {
     #[getter]
-    fn position(&self) -> Option<usize> { match self.inner {
+    #[doc = "Position reported by the native failure. Applies to QueryStateError.NonElementAtomIdentity, QueryStateError.AtomId, QueryStateError.BondId, QueryStateError.BondEndpoints, QueryStateError.AppendedRow. None when this payload is absent."] fn position(&self) -> Option<usize> { match self.inner {
         ck::QueryStateError::NonElementAtomIdentity { position, .. }
         | ck::QueryStateError::AtomId { position, .. }
         | ck::QueryStateError::BondId { position, .. }
@@ -117,12 +117,12 @@ error_projection!(QueryStateError, QueryStateErrorKind, ck::QueryStateError, "mo
         | ck::QueryStateError::AppendedRow { position, .. } => Some(position), _ => None,
     } }
     #[getter]
-    fn entity(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Structural entity involved in the failure. Applies to QueryStateError.AppendedRow, QueryStateError.AppendedRowCount. None when this payload is absent."] fn entity(&self) -> Option<&'static str> { match self.inner {
         ck::QueryStateError::AppendedRow { entity, .. }
         | ck::QueryStateError::AppendedRowCount { entity, .. } => Some(entity), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<IndexPayload> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to QueryStateError.AtomCount, QueryStateError.BondCount, QueryStateError.AppendedRowCount, QueryStateError.AtomId, QueryStateError.BondId, QueryStateError.BondEndpoints. None when this payload is absent."] fn actual(&self) -> Option<IndexPayload> { match self.inner {
         ck::QueryStateError::AtomCount { actual, .. }
         | ck::QueryStateError::BondCount { actual, .. }
         | ck::QueryStateError::AppendedRowCount { actual, .. } => Some(IndexPayload::Index(actual)),
@@ -132,7 +132,7 @@ error_projection!(QueryStateError, QueryStateErrorKind, ck::QueryStateError, "mo
         _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<IndexPayload> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to QueryStateError.AtomCount, QueryStateError.BondCount, QueryStateError.AppendedRowCount, QueryStateError.AtomId, QueryStateError.BondId, QueryStateError.BondEndpoints. None when this payload is absent."] fn expected(&self) -> Option<IndexPayload> { match self.inner {
         ck::QueryStateError::AtomCount { expected, .. }
         | ck::QueryStateError::BondCount { expected, .. }
         | ck::QueryStateError::AppendedRowCount { expected, .. } => Some(IndexPayload::Index(expected)),

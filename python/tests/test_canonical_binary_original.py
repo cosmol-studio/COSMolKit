@@ -46,7 +46,7 @@ def test_native_binary_errors_preserve_canonical_variant_and_carrier_fields():
             cosmolkit.Molecule.from_binary(data)
         error = caught.value
         assert error.domain == "serialization"
-        assert error.kind == kind
+        assert error.variant.name == kind
         for key, value in fields.items():
             assert getattr(error, key) == value
 

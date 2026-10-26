@@ -23,7 +23,7 @@ def test_biostructure_mmcif_string_writer_defaults_reparse_without_mutation() ->
         structure.num_chains,
         structure.num_residues,
         structure.num_atoms,
-        [atom.position() for atom in structure.atoms],
+        [atom.position for atom in structure.atoms],
     )
 
     output = structure.to_mmcif()
@@ -35,8 +35,8 @@ def test_biostructure_mmcif_string_writer_defaults_reparse_without_mutation() ->
     assert reparsed.num_chains == structure.num_chains
     assert reparsed.num_residues == structure.num_residues
     assert reparsed.num_atoms == structure.num_atoms
-    assert [atom.position() for atom in reparsed.atoms] == [
-        atom.position() for atom in structure.atoms
+    assert [atom.position for atom in reparsed.atoms] == [
+        atom.position for atom in structure.atoms
     ]
     assert before == (
         repr(structure),
@@ -45,7 +45,7 @@ def test_biostructure_mmcif_string_writer_defaults_reparse_without_mutation() ->
         structure.num_chains,
         structure.num_residues,
         structure.num_atoms,
-        [atom.position() for atom in structure.atoms],
+        [atom.position for atom in structure.atoms],
     )
 
 
@@ -54,7 +54,7 @@ def test_biostructure_mmcif_options_and_file_writer_share_serialization(
 ) -> None:
     structure = cosmolkit.BioStructure.from_pdb(PDB)
     options = cosmolkit.BioMmcifWriteParams(
-        all_groups=False, atoms=True, block_name=True, group_pdb=True, compact=True
+        entry=False, entity=False, atoms=True, block_name=True, group_pdb=True, compact=True
     )
 
     expected = structure.to_mmcif_with_params(options)
@@ -73,7 +73,7 @@ def test_biostructure_mmcif_options_and_file_writer_share_serialization(
 def test_biostructure_mmcif_writer_errors_and_api_ownership(tmp_path: Path) -> None:
     structure = cosmolkit.BioStructure.from_pdb(PDB)
 
-    with pytest.raises(OSError):
+    with pytest.raises(cosmolkit.BioMmcifWriteError):
         structure.write_mmcif(str(tmp_path / "missing" / "output.cif"))
 
     assert not hasattr(cosmolkit.Protein, "to_mmcif")

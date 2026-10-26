@@ -22,7 +22,7 @@ def test_reaction_run_without_molecule_receiver():
 
 @pytest.mark.parametrize("form", ["default", "none", "positional", "named", "keywords"])
 def test_reaction_run_configuration_forms_preserve_inputs(form):
-    carbon = ck.Molecule.from_smiles("C").with_atom_property(0, "tracking_id", 42)
+    carbon = ck.Molecule.from_smiles("C").with_atom_property_int(0, "tracking_id", 42)
     oxygen = ck.Molecule.from_smiles("O")
     before = [carbon.to_binary(), oxygen.to_binary()]
     reaction = ck.Reaction.from_smirks("[C:1].[O:2]>>[C:1][O:2]")
@@ -37,7 +37,7 @@ def test_reaction_run_configuration_forms_preserve_inputs(form):
     }[form]
     groups = reaction.run([carbon, oxygen], *args, **kwargs)
     assert [[mol.to_smiles() for mol in group] for group in groups] == [["CO"]]
-    assert groups[0][0].atom_property(0, "tracking_id") == (
+    assert groups[0][0].atom_property_int(0, "tracking_id") == (
         42 if form in ("positional", "named", "keywords") else None
     )
     assert [carbon.to_binary(), oxygen.to_binary()] == before
@@ -48,8 +48,7 @@ def test_reaction_run_keywords_limit_products_and_reject_conflicts_before_execut
     source = ck.Molecule.from_smiles("CC")
     before = source.to_binary()
     params = ck.ReactionRunParams(max_products=1)
-    for args, kwargs in [((params,), {}), ((), {"max_products": 1}),
-                         ((), {"params": None, "max_products": 1})]:
+    for args, kwargs in [((params,), {}), ((), {"max_products": 1})]:
         reaction = ck.Reaction.from_smirks("[C:1]>>[N:1]")
         groups = reaction.run([source], *args, **kwargs)
         assert [[mol.to_smiles() for mol in group] for group in groups] == [["CN"]]
@@ -57,6 +56,8 @@ def test_reaction_run_keywords_limit_products_and_reject_conflicts_before_execut
     reaction = ck.Reaction.from_smirks("[C:1]>>[N:1]")
     assert len(reaction.run([source])) == 2
     for args, kwargs, error in [
+        ((), {"params": None, "max_products": 1}, TypeError),
+        ((params,), {"max_products": None}, TypeError),
         ((params,), {"max_products": 1}, TypeError),
         ((), {"params": params, "copy_atom_properties": False}, TypeError),
         ((), {"unknown_option": True}, TypeError),
@@ -137,7 +138,7 @@ def test_reaction_parameter_defaults_and_coordinate_payloads():
     params = ck.ReactionParseParams()
     assert (params.use_smiles, params.sanitize, params.replacements, params.allow_cxsmiles, params.strict_cxsmiles) == (False, False, {}, True, True)
     assert ck.ReactionRunParams().max_products == 1000
-    assert ck.ReactionRunParams().coordinate_selections == []
+    assert ck.ReactionRunParams().coordinate_selections == ()
     assert ck.ReactionApplyParams().remove_unmatched_atoms
     assert ck.ReactionTemplateRemovalParams().threshold_unmapped_atoms == 0.2
     auto = ck.ReactionCoordinateSelection.auto()
@@ -193,9 +194,9 @@ def test_apply_value_inplace_and_failure_atomicity(explicit: bool):
     assert source.apply_reaction_(rxn) is False
     with pytest.raises(ck.OperationError) as caught:
         _ = source.apply_reaction_(ck.Reaction.from_smirks("[N:1]>>[N:1]C"))
-    assert caught.value.kind == "ReactionApply"
+    assert caught.value.variant.name == "ReactionApply"
     assert isinstance(caught.value.__cause__, ck.ReactionApplyError)
-    assert caught.value.__cause__.kind == "AddsProductAtom"
+    assert caught.value.__cause__.variant.name == "AddsProductAtom"
     assert caught.value.__cause__.atom == 1
     assert source.to_smiles() == "N"
 
@@ -203,17 +204,17 @@ def test_apply_value_inplace_and_failure_atomicity(explicit: bool):
 def test_typed_parse_validation_model_and_execution_errors():
     with pytest.raises(ck.ReactionParseError) as caught:
         _ = ck.Reaction.from_smirks("CC")
-    assert (caught.value.kind, caught.value.count) == ("Separators", 0)
+    assert (caught.value.variant.name, caught.value.count) == ("Separators", 0)
     rxn = ck.Reaction.from_smirks("[C:1]>>[N:1]")
     with pytest.raises(ck.ReactionModelError) as caught:
         _ = rxn.reactant_template(9)
-    assert caught.value.kind == "TemplateIndex" and caught.value.index == 9 and caught.value.count == 1
+    assert caught.value.variant.name == "TemplateIndex" and caught.value.index == 9 and caught.value.count == 1
     assert caught.value.role == ck.ReactionRole.Reactant
     with pytest.raises(ck.OperationError) as caught:
         _ = ck.Molecule.from_smiles("C").reaction_products(rxn, 99)
-    assert caught.value.kind == "ReactionRun"
+    assert caught.value.variant.name == "ReactionRun"
     assert isinstance(caught.value.__cause__, ck.ReactionRunError)
-    assert caught.value.__cause__.kind == "ReactantTemplateIndex" and caught.value.__cause__.index == 99
+    assert caught.value.__cause__.variant.name == "ReactantTemplateIndex" and caught.value.__cause__.index == 99
     empty = ck.Reaction()
     report = empty.validate_with_params(ck.ReactionValidationParams(silent=True))
     assert not report.is_valid and report.num_errors == 2
@@ -224,14 +225,14 @@ def test_typed_parse_validation_model_and_execution_errors():
     assert isinstance(report.errors[0].detail, str)
     with pytest.raises(ck.ReactionInitializationError) as caught:
         _ = empty.with_initialized_with_params(ck.ReactionValidationParams(silent=True))
-    assert caught.value.kind == "Invalid" and caught.value.report.num_errors == 2
+    assert caught.value.variant.name == "Invalid" and caught.value.report.num_errors == 2
 
 
 def test_reaction_template_parse_errors_keep_concrete_search_cause():
     with pytest.raises(ck.ReactionParseError) as caught:
         _ = ck.Reaction.from_smirks("[C:1]>>[")
-    assert caught.value.kind == "Smarts"
+    assert caught.value.variant.name == "Smarts"
     assert caught.value.role == ck.ReactionRole.Product
     assert caught.value.template == 0 and caught.value.text == "["
     assert isinstance(caught.value.__cause__, ck.SmartsParseError)
-    assert caught.value.__cause__.kind == "UnclosedBracket"
+    assert caught.value.__cause__.variant.name == "UnclosedBracket"

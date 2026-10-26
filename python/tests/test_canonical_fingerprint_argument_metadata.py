@@ -18,11 +18,13 @@ def test_immutable_update_owns_values_and_survives_receiver_lifetime(kind):
     assert updated is not original
     assert original.fp_size == 2048
     assert original.include_chirality is False
-    assert original.count_bounds == [1, 2, 4, 8]
-    bounds = updated.count_bounds
+    assert original.count_bounds == (1, 2, 4, 8)
+    bounds = list(updated.count_bounds)
     bounds.append(99)
-    assert updated.count_bounds == [1, 3, 7, 99]
-    assert original.count_bounds == [1, 2, 4, 8]
+    assert updated.count_bounds == (1, 3, 7)
+    updated.count_bounds = bounds
+    assert updated.count_bounds == (1, 3, 7, 99)
+    assert original.count_bounds == (1, 2, 4, 8)
     updated.fp_size = 12
     assert updated.fp_size == 12
     assert original.fp_size != 12
@@ -42,11 +44,11 @@ def test_json_leaf_types_empty_and_missing_bounds(kind):
     assert encoded["countBounds"] == ["1", "2", "4", "8"]
     for text in ('{}', '{"countBounds":[]}', '{"countBounds":""}'):
         result = original.with_json(text)
-        assert result.count_bounds == []
+        assert result.count_bounds == ()
         assert json.loads(result.to_json())["countBounds"] == ""
     for text in ('', ' \n\t'):
         assert original.with_json(text).to_json() == original.to_json()
-    assert original.count_bounds == [1, 2, 4, 8]
+    assert original.count_bounds == (1, 2, 4, 8)
 
 
 @pytest.mark.parametrize("kind", TYPES)
@@ -68,13 +70,13 @@ def test_typed_errors_retain_receiver_and_source_cause(kind, text, expected_kind
         assert type(updated) is kind
         assert updated.include_chirality is False
         assert updated.fp_size == (4294967295 if 'fpSize' in text else 2048)
-        assert updated.count_bounds == ([1, 4294967295] if 'countBounds' in text else [])
+        assert updated.count_bounds == ((1, 4294967295) if 'countBounds' in text else ())
     else:
         with pytest.raises(ck.FingerprintJsonError) as caught:
             original.with_json(text)
         assert isinstance(caught.value, ValueError)
-        assert caught.value.domain == 'fingerprints'
-        assert caught.value.kind == expected_kind
+        assert caught.value.domain == 'fingerprint'
+        assert caught.value.variant.name == expected_kind
         assert str(caught.value)
         assert isinstance(caught.value.__cause__, ValueError)
         assert str(caught.value.__cause__) == str(caught.value)
@@ -111,18 +113,18 @@ def test_original_generated_stub_projects_value_update_and_structured_error():
                    if isinstance(node, ast.FunctionDef)}
         assert {'info_string', 'to_json', 'with_json'} <= methods.keys()
         method = methods['with_json']
-        assert [arg.arg for arg in method.args.args] == ['self', 'json']
+        assert [arg.arg for arg in (method.args.posonlyargs + method.args.args)] == ['self', 'json']
         assert ast.unparse(method.returns) == name
         getters = {node.name for node in classes[name].body if isinstance(node, ast.FunctionDef)
-                   and [ast.unparse(d) for d in node.decorator_list] == ['property']}
+                   and [ast.unparse(d) for d in node.decorator_list] == ['builtins.property']}
         setters = {node.name for node in classes[name].body if isinstance(node, ast.FunctionDef)
                    and [ast.unparse(d) for d in node.decorator_list] == [node.name + '.setter']}
         constructor = methods['__new__']
         fields = {arg.arg for arg in constructor.args.kwonlyargs}
         assert getters == setters == fields
     error = classes['FingerprintJsonError']
-    assert ast.unparse(error.bases[0]) == 'builtins.ValueError'
-    assert {node.target.id for node in error.body if isinstance(node, ast.AnnAssign)} >= {'domain', 'kind'}
+    assert ast.unparse(error.bases[0]) == 'ValueError'
+    assert {node.name for node in error.body if isinstance(node, ast.FunctionDef)} >= {'domain', 'variant'}
 
 
 @pytest.mark.parametrize("kind", TYPES)
@@ -140,9 +142,9 @@ def test_independent_source_seven_cases_first_duplicate_and_all_child_iteration(
     updated = original.with_json(text)
     assert updated.fp_size == size
     assert updated.include_chirality is False
-    assert updated.count_bounds == bounds
+    assert updated.count_bounds == tuple(bounds)
     assert original.fp_size == 2048
-    assert original.count_bounds == [1,2,4,8]
+    assert original.count_bounds == (1, 2, 4, 8)
     same = kind().with_json(updated.to_json())
     assert same.to_json() == updated.to_json()
 
@@ -160,8 +162,8 @@ def test_strict_bounds_child_errors_retain_receiver_and_structured_class(kind, t
         original.with_json(text)
     error = caught.value
     assert isinstance(error, ValueError)
-    assert error.domain == 'fingerprints'
-    assert error.kind == 'Invalid'
+    assert error.domain == 'fingerprint'
+    assert error.variant.name == 'Invalid'
     assert error.__cause__ is None
     assert str(error)
     assert original.to_json() == before
@@ -184,5 +186,5 @@ def test_source_lexical_stream_retry_and_current_default_in_binding(kind):
     updated = current.with_json('{"fpSize":"bad","includeChirality":"bad","countBounds":{"z":3,"a":1,"z":7}}')
     assert updated.fp_size == 19
     assert updated.include_chirality is True
-    assert updated.count_bounds == [3,1,7]
-    assert current.count_bounds == [1,2,4,8]
+    assert updated.count_bounds == (3, 1, 7)
+    assert current.count_bounds == (1, 2, 4, 8)

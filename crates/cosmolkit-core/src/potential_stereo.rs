@@ -19,9 +19,13 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Options for identifying possible stereochemical centers and bonds.
 pub struct PotentialStereoParams {
+    /// Remove invalid existing stereochemical annotations.
     pub clean: bool,
+    /// Flag potential stereochemical elements even when unspecified.
     pub flag_possible: bool,
+    /// Consider supported non-tetrahedral stereochemical geometries.
     pub allow_nontetrahedral: bool,
 }
 

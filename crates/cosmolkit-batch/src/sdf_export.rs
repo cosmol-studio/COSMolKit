@@ -42,11 +42,15 @@ impl BatchExportReport {
 }
 #[derive(Clone, Copy, Debug, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// SDF export format and optional batch execution overrides.
 pub struct BatchExportParams {
+    /// SDF mol-block format for exported records.
     pub format: SdfFormat,
     /// The live batch resolves inheritance; detached exports default to Strict.
     pub errors: Option<BatchErrorMode>,
+    /// Optional worker count; None inherits the batch setting.
     pub n_jobs: Option<usize>,
+    /// Optional progress reporting setting; None inherits the batch setting.
     pub progress_bar: Option<bool>,
 }
 impl Default for BatchExportParams {
@@ -347,7 +351,7 @@ pub fn write_export_report(
     //
     // fn complete_batch_filenames(
     //     filenames: Option<Vec<Option<String>>>,
-    // Language boundary supplies the expanded path; Rust Path remains literal.
+    // Paths remain literal; callers explicitly perform any desired expansion.
     // User-approved report contract removes skipped: every unsuccessful input
     // contributes once to failed. Structured errors remain in the report value.
     let ext = path

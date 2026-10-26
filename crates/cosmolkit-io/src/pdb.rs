@@ -132,8 +132,11 @@ pub struct PdbWriteParams {
 #[configuration(scalar)]
 pub struct PdbExportParams {
     #[configuration(none_default)]
+    /// Select a stored 2D or 3D coordinate set when not exporting all conformers.
     pub coordinate_selection: crate::MolCoordinateSelection,
+    /// Write every stored coordinate set rather than a single selected set.
     pub all_conformers: bool,
+    /// PDB connectivity and record-format flags.
     pub flavor: PdbWriteFlags,
 }
 

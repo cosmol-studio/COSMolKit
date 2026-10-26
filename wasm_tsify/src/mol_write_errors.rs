@@ -17,9 +17,11 @@ extern "C" {
 fn source(e: &ck::MolWriteError) -> Option<MolWriteCause> {
     use ck::MolWriteError as E;
     match e {
+        #[cfg(feature = "cap-depict")]
         E::Depict(v) => crate::depict_errors::cause(v).map(JsCast::unchecked_into),
         E::QueryGraph(v) => crate::query_model_errors::cause(v).map(JsCast::unchecked_into),
         E::QueryState(v) => crate::query_errors::cause(v).map(JsCast::unchecked_into),
+        #[cfg(feature = "cap-search")]
         E::QuerySmarts(v) => crate::smarts_errors::write_source(v).map(JsCast::unchecked_into),
         E::Valence(v) => {
             Some(crate::valence_errors::ValenceError::from_rust(v.clone()).unchecked_into())
@@ -42,10 +44,12 @@ fn source(e: &ck::MolWriteError) -> Option<MolWriteCause> {
     }
 }
 enum_error!(MolWriteError,MolWriteErrorKind,ck::MolWriteError,{
-    Depict=>ck::MolWriteError::Depict(_),
+    #[cfg(feature = "cap-depict")]
+Depict=>ck::MolWriteError::Depict(_),
     MissingCapability=>ck::MolWriteError::MissingCapability(_),UnsupportedSubset=>ck::MolWriteError::UnsupportedSubset(_),Value=>ck::MolWriteError::Value(_),
     AmbiguousCoordinates=>ck::MolWriteError::AmbiguousCoordinates{..},MissingCoordinate=>ck::MolWriteError::MissingCoordinate{..},CoordinateDimensionMismatch=>ck::MolWriteError::CoordinateDimensionMismatch,
-    QueryGraph=>ck::MolWriteError::QueryGraph(_),QueryAtom=>ck::MolWriteError::QueryAtom(_),QueryState=>ck::MolWriteError::QueryState(_),QuerySmarts=>ck::MolWriteError::QuerySmarts(_),
+    QueryGraph=>ck::MolWriteError::QueryGraph(_),QueryAtom=>ck::MolWriteError::QueryAtom(_),QueryState=>ck::MolWriteError::QueryState(_),#[cfg(feature = "cap-search")]
+QuerySmarts=>ck::MolWriteError::QuerySmarts(_),
     Valence=>ck::MolWriteError::Valence(_),Kekulize=>ck::MolWriteError::Kekulize(_),Atropisomer=>ck::MolWriteError::Atropisomer(_),Wedge=>ck::MolWriteError::Wedge(_),
     Topology=>ck::MolWriteError::Topology(_),Coordinates=>ck::MolWriteError::Coordinates(_),Property=>ck::MolWriteError::Property(_),UnsignedProperty=>ck::MolWriteError::UnsignedProperty(_),Detached=>ck::MolWriteError::Detached(_),
 },{
@@ -58,10 +62,12 @@ enum_error!(MolWriteError,MolWriteErrorKind,ck::MolWriteError,{
     #[wasm_bindgen(getter)] pub fn dimension(&self)->Option<crate::enums::CoordinateDimension>{match self.inner.as_ref(){ck::MolWriteError::MissingCoordinate{dimension,..}=>Some((*dimension).into()),_=>None}}
     // The payload is distinct from cause for transparent native variants.
     #[wasm_bindgen(getter)] pub fn source(&self)->Option<MolWritePayload>{use ck::MolWriteError as E;Some(match self.inner.as_ref(){
+#[cfg(feature = "cap-depict")]
         E::Depict(v)=>crate::depict_errors::Coordinate2DError::from_rust(v.clone()),
         E::QueryGraph(v)=>crate::query_model_errors::QueryGraphError::from_rust(v.clone()),
         E::QueryAtom(v)=>crate::query_model_errors::QueryAtomConversionError::from_rust(v.clone()),
         E::QueryState(v)=>crate::query_errors::QueryStateError::from_rust(v.clone()),
+#[cfg(feature = "cap-search")]
         E::QuerySmarts(v)=>crate::smarts_errors::SmartsWriteError::from_rust(v.clone()),
         E::Valence(v)=>crate::valence_errors::ValenceError::from_rust(v.clone()),
         E::Kekulize(v)=>crate::kekulize_errors::KekulizeError::from_rust(v.clone()),

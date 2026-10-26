@@ -68,7 +68,10 @@ def _execute(profile, path, digest, count):
                 params = configured(params, max_iterations=3)
                 params = configured(params, timeout=0)
                 result = molecule.with_3d_conformer_result(params)
-                actual["status"] = result.conf_id
+                actual["conf_id"] = result.conf_id
+                # The public Option ID represents absence as None; this
+                # unchanged RDKit oracle encodes that same outcome as -1.
+                actual["status"] = result.conf_id if result.conf_id is not None else -1
                 actual["embed_ok"] = actual["status"] == 0
                 actual["failure_counts"] = result.params.failures
                 if actual["embed_ok"]:

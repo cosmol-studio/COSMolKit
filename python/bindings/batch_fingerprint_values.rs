@@ -13,6 +13,7 @@ error_projection!(BatchFingerprintOutputError, BatchFingerprintOutputErrorKind, 
 }, cause = |_: &ck::BatchFingerprintOutputError| None::<PyErr>);
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// One batch record's fingerprint and optional native provenance output.
 pub struct BatchFingerprintOutput {
     inner: Arc<ck::BatchFingerprintOutput>,
 }
@@ -28,12 +29,14 @@ impl BatchFingerprintOutput {
 #[pymethods]
 impl BatchFingerprintOutput {
     #[getter]
+    /// Bit fingerprint for this batch record.
     fn fingerprint(&self) -> Fingerprint {
         Fingerprint {
             inner: self.inner.fingerprint().clone(),
         }
     }
     #[getter]
+    /// Owner-retaining view of collected provenance; raises BatchFingerprintOutputError when provenance was not requested.
     fn additional_output(&self) -> PyResult<BatchFingerprintAdditionalOutput> {
         self.inner
             .additional_output()
@@ -62,22 +65,27 @@ impl BatchFingerprintAdditionalOutput {
 #[pymethods]
 impl BatchFingerprintAdditionalOutput {
     #[getter]
+    /// Per-atom feature contribution counts, or None when not collected.
     fn atom_counts(&self) -> PyResult<Option<Vec<u32>>> {
         Ok(self.inner()?.atom_counts().map(<[u32]>::to_vec))
     }
     #[getter]
+    /// Contributing fingerprint bit identifiers for each atom, or None when not collected.
     fn atom_to_bits(&self) -> PyResult<Option<Vec<Vec<u64>>>> {
         Ok(self.inner()?.atom_to_bits().map(<[Vec<u64>]>::to_vec))
     }
     #[getter]
+    /// Bit identifiers mapped to native feature descriptors (center/radius or atom-pair endpoints, depending on the generator), or None when not collected.
     fn bit_info_map(&self) -> PyResult<Option<BTreeMap<u64, Vec<(u32, u32)>>>> {
         Ok(self.inner()?.bit_info_map().cloned())
     }
     #[getter]
+    /// Bit identifiers mapped to contributing native paths, or None when not collected.
     fn bit_paths(&self) -> PyResult<Option<BTreeMap<u64, Vec<Vec<i32>>>>> {
         Ok(self.inner()?.bit_paths().cloned())
     }
     #[getter]
+    /// Bit identifiers mapped to participating atom sets, or None when not collected.
     fn atoms_per_bit(&self) -> PyResult<Option<BTreeMap<u64, Vec<Vec<i32>>>>> {
         Ok(self.inner()?.atoms_per_bit().cloned())
     }
@@ -127,7 +135,7 @@ mod tests {
                     let view = Py::new(py, view)?;
                     let observed = view
                         .bind(py)
-                        .call_method0("atom_counts")?
+                        .getattr("atom_counts")?
                         .extract::<Option<Vec<u32>>>()?;
                     assert_eq!(observed, expected_counts);
                 } else {

@@ -88,7 +88,7 @@ def test_inchi_python_invalid_key_input_has_canonical_structured_error() -> None
     error = captured.value
     assert error.domain == "inchi"
     assert error.operation == "inchi_to_key"
-    assert error.kind == cosmolkit.InchiErrorKind.InvalidInput
+    assert error.variant == cosmolkit.InchiErrorKind.InvalidInput
     assert error.detail == "the InChI engine returned no identifier"
 
 
@@ -101,9 +101,9 @@ def test_inchi_python_sanitize_rejection_has_canonical_structured_error() -> Non
     with pytest.raises(cosmolkit.InchiError) as captured:
         cosmolkit.Molecule.from_inchi(inchi)
     assert captured.value.domain == "inchi"
-    assert captured.value.kind == cosmolkit.InchiErrorKind.Toolkit
+    assert captured.value.variant == cosmolkit.InchiErrorKind.SanitizeFailed
     assert captured.value.operation == "mol_from_inchi"
-    assert "hydrogen-removal sanitize failed" in captured.value.detail
+    assert "MolSanitizeException: sanitization failed at Properties" in captured.value.detail
     assert "Explicit valence for atom # 15 S, 7" in captured.value.detail
 
 

@@ -28,41 +28,41 @@ error_projection!(MatrixError, MatrixErrorKind, ck::MatrixError, "matrix", {
     | ck::MatrixError::ConformerNotFound { .. } | ck::MatrixError::MatrixDimensionOverflow { .. } => None,
 }), source = Option<Source<crate::error_framework::ErrorObject<StereoGroupError>, crate::error_framework::ErrorObject<TemplateAttachmentOrderError>>>, methods = {
     #[getter]
-    fn position(&self) -> Option<usize> {
+    #[doc = "Position reported by the native failure. Applies to MatrixError.ActiveAtomOutOfRange, MatrixError.ActiveBondOutOfRange. None when this payload is absent."] fn position(&self) -> Option<usize> {
         match self.inner { ck::MatrixError::ActiveAtomOutOfRange { position, .. } | ck::MatrixError::ActiveBondOutOfRange { position, .. } => Some(position), _ => None }
     }
     #[getter]
-    fn atom(&self) -> Option<usize> {
+    #[doc = "Atom identifier implicated in the failure. Applies to MatrixError.ActiveAtomOutOfRange, MatrixError.DuplicateActiveAtom, MatrixError.ActiveBondEndpointMissing. None when this payload is absent."] fn atom(&self) -> Option<usize> {
         match self.inner { ck::MatrixError::ActiveAtomOutOfRange { atom, .. } | ck::MatrixError::DuplicateActiveAtom { atom, .. } | ck::MatrixError::ActiveBondEndpointMissing { atom, .. } => Some(atom.index()), _ => None }
     }
     #[getter]
-    fn bond(&self) -> Option<usize> {
+    #[doc = "Bond identifier implicated in the failure. Applies to MatrixError.ActiveBondOutOfRange, MatrixError.DuplicateActiveBond, MatrixError.ActiveBondEndpointMissing, MatrixError.UnsupportedBondOrder. None when this payload is absent."] fn bond(&self) -> Option<usize> {
         match self.inner { ck::MatrixError::ActiveBondOutOfRange { bond, .. } | ck::MatrixError::DuplicateActiveBond { bond, .. } | ck::MatrixError::ActiveBondEndpointMissing { bond, .. } | ck::MatrixError::UnsupportedBondOrder { bond, .. } => Some(bond.index()), _ => None }
     }
     #[getter]
-    fn atom_count(&self) -> Option<usize> {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to MatrixError.ActiveAtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> {
         match self.inner { ck::MatrixError::ActiveAtomOutOfRange { atom_count, .. } => Some(atom_count), _ => None }
     }
     #[getter]
-    fn bond_count(&self) -> Option<usize> {
+    #[doc = "Bond count used when validating the reported bond reference. Applies to MatrixError.ActiveBondOutOfRange. None when this payload is absent."] fn bond_count(&self) -> Option<usize> {
         match self.inner { ck::MatrixError::ActiveBondOutOfRange { bond_count, .. } => Some(bond_count), _ => None }
     }
     #[getter]
-    fn first_position(&self) -> Option<usize> {
+    #[doc = "First position involved in the reported conflict. Applies to MatrixError.DuplicateActiveAtom, MatrixError.DuplicateActiveBond. None when this payload is absent."] fn first_position(&self) -> Option<usize> {
         match self.inner { ck::MatrixError::DuplicateActiveAtom { first_position, .. } | ck::MatrixError::DuplicateActiveBond { first_position, .. } => Some(first_position), _ => None }
     }
     #[getter]
-    fn second_position(&self) -> Option<usize> {
+    #[doc = "Second position involved in the reported conflict. Applies to MatrixError.DuplicateActiveAtom, MatrixError.DuplicateActiveBond. None when this payload is absent."] fn second_position(&self) -> Option<usize> {
         match self.inner { ck::MatrixError::DuplicateActiveAtom { second_position, .. } | ck::MatrixError::DuplicateActiveBond { second_position, .. } => Some(second_position), _ => None }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> {
+    #[doc = "Structured TopologyValidationError payload of MatrixError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> {
         match &self.inner { ck::MatrixError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract::<crate::error_framework::ErrorObject<TopologyValidationError>>().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> {
+    #[doc = "Structured CoordinateValidationError payload of MatrixError.InvalidCoordinates; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> {
         match &self.inner { ck::MatrixError::InvalidCoordinates(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract::<crate::error_framework::ErrorObject<CoordinateValidationError>>().map(Some).map_err(Into::into), _ => Ok(None) }
     }
 });
@@ -117,7 +117,7 @@ mod tests {
             ] {
                 assert_eq!(
                     result
-                        .call_method0("values")?
+                        .getattr("values")?
                         .extract::<Vec<f64>>()?
                         .iter()
                         .map(|value| value.to_bits())
@@ -162,7 +162,7 @@ mod tests {
             ] {
                 assert_eq!(
                     result
-                        .call_method0("values")?
+                        .getattr("values")?
                         .extract::<Vec<f64>>()?
                         .iter()
                         .map(|value| value.to_bits())

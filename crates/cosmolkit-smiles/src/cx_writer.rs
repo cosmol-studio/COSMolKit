@@ -227,10 +227,13 @@ impl std::ops::BitOr for CxSmilesFields {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct CxSmilesWriteParams {
     #[configuration(none_default)]
+    /// Base SMILES formatting and stereochemistry options.
     pub smiles: SmilesWriteParams,
     #[configuration(none_default)]
+    /// CX extension fields to include in the output.
     pub fields: CxSmilesFields,
     #[configuration(none_default)]
+    /// Stored coordinate set to write in the CX extension.
     pub coordinate_selection: CxCoordinateSelection,
 }
 

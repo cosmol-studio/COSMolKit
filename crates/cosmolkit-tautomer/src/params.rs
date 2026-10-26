@@ -12,11 +12,17 @@ pub enum TautomerEnumerationStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(accessors)]
 pub struct TautomerParams {
+    /// Maximum number of retained tautomer candidates.
     max_tautomers: u32,
+    /// Maximum number of transform applications during enumeration.
     max_transforms: u32,
+    /// Remove tetrahedral stereochemistry at atoms affected by tautomerization.
     remove_sp3_stereo: bool,
+    /// Remove affected double-bond stereochemistry during tautomerization.
     remove_bond_stereo: bool,
+    /// Remove isotopic hydrogens from affected atoms.
     remove_isotopic_hydrogens: bool,
+    /// Reassign stereochemistry after enumeration changes.
     reassign_stereo: bool,
 }
 

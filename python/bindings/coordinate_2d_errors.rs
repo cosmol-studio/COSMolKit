@@ -78,15 +78,15 @@ error_projection!(retained Coordinate2DTemplateError, Coordinate2DTemplateErrorK
 }, cause=|inner:&RetainedError<ck::Coordinate2DTemplateError>|inner.node().source().map(project),
 source=Option<TemplateSource>, methods={
 #[getter]
-fn index(&self)->Option<usize>{ match self.inner.as_ref(){
+#[doc = "Index associated with the failure. Present for `Coordinate2DTemplateError.InvalidDefaultRow`, `Coordinate2DTemplateError.InvalidTopology`, `Coordinate2DTemplateError.NonElementIdentity`, `Coordinate2DTemplateError.RingInitialization`, `Coordinate2DTemplateError.ConnectedComponents`; None when unavailable."] fn index(&self)->Option<usize>{ match self.inner.as_ref(){
 ck::Coordinate2DTemplateError::InvalidDefaultRow { index, .. }|ck::Coordinate2DTemplateError::InvalidTopology { index, .. }|ck::Coordinate2DTemplateError::NonElementIdentity { index, .. }|ck::Coordinate2DTemplateError::RingInitialization { index, .. }|ck::Coordinate2DTemplateError::ConnectedComponents { index, .. } => Some(*index), _=>None,
 }}
 #[getter]
-fn path(&self)->Option<String>{ match self.inner.as_ref(){
+#[doc = "Source path associated with the failure. Present for `Coordinate2DTemplateError.ExternalOpen`, `Coordinate2DTemplateError.ExternalRead`, `Coordinate2DTemplateError.ExternalInvalidSmarts`; None when unavailable."] fn path(&self)->Option<String>{ match self.inner.as_ref(){
 ck::Coordinate2DTemplateError::ExternalOpen { path, .. }|ck::Coordinate2DTemplateError::ExternalRead { path, .. }|ck::Coordinate2DTemplateError::ExternalInvalidSmarts { path, .. } => Some(path.clone()), _=>None,
 }}
 #[getter]
-fn row(&self)->Option<String>{ match self.inner.as_ref(){
+#[doc = "Source row associated with the failure. Present for `Coordinate2DTemplateError.MissingCoordinates`, `Coordinate2DTemplateError.ThreeDimensionalCoordinates`, `Coordinate2DTemplateError.MultipleFragments`, `Coordinate2DTemplateError.NotRingSystem`; None when unavailable."] fn row(&self)->Option<String>{ match self.inner.as_ref(){
 ck::Coordinate2DTemplateError::MissingCoordinates { row, .. }|ck::Coordinate2DTemplateError::ThreeDimensionalCoordinates { row, .. }|ck::Coordinate2DTemplateError::MultipleFragments { row, .. }|ck::Coordinate2DTemplateError::NotRingSystem { row, .. } => Some(row.clone()), _=>None,
 }}
 });
@@ -112,23 +112,23 @@ error_projection!(retained Coordinate2DLayoutError,Coordinate2DLayoutErrorKind,c
 },cause=|inner:&RetainedError<ck::Coordinate2DLayoutError>|inner.node().source().map(project),
 source=Option<LayoutSource>,methods={
 #[getter]
-fn atom(&self)->Option<usize>{ match self.inner.as_ref(){
+#[doc = "Atom index involved in the failure. Present for `Coordinate2DLayoutError.AtomIndexOutOfRange`, `Coordinate2DLayoutError.AtomAlreadyEmbedded`, `Coordinate2DLayoutError.AtomNotEmbedded`, `Coordinate2DLayoutError.NotEnoughEmbeddedNeighbors`, `Coordinate2DLayoutError.EmptyAttachment`, `Coordinate2DLayoutError.InvalidRankProperty`, `Coordinate2DLayoutError.GeometryNotEnoughNeighbors`; None when unavailable."] fn atom(&self)->Option<usize>{ match self.inner.as_ref(){
 ck::Coordinate2DLayoutError::AtomIndexOutOfRange { atom, .. }|ck::Coordinate2DLayoutError::AtomAlreadyEmbedded { atom, .. }|ck::Coordinate2DLayoutError::AtomNotEmbedded { atom, .. }|ck::Coordinate2DLayoutError::NotEnoughEmbeddedNeighbors { atom, .. }|ck::Coordinate2DLayoutError::EmptyAttachment { atom, .. }|ck::Coordinate2DLayoutError::InvalidRankProperty { atom, .. }|ck::Coordinate2DLayoutError::GeometryNotEnoughNeighbors { atom, .. } => Some(*atom), _=>None,
 }}
 #[getter]
-fn atom_count(&self)->Option<usize>{ match self.inner.as_ref(){
+#[doc = "Number of atoms available to the operation. Present for `Coordinate2DLayoutError.AtomIndexOutOfRange`, `Coordinate2DLayoutError.AtomCountTooLarge`; None when unavailable."] fn atom_count(&self)->Option<usize>{ match self.inner.as_ref(){
 ck::Coordinate2DLayoutError::AtomIndexOutOfRange { atom_count, .. }|ck::Coordinate2DLayoutError::AtomCountTooLarge { atom_count, .. } => Some(*atom_count), _=>None,
 }}
 #[getter]
-fn count(&self)->Option<usize>{ match self.inner.as_ref(){
+#[doc = "Count observed when the failure occurred. Present for `Coordinate2DLayoutError.NotEnoughEmbeddedNeighbors`, `Coordinate2DLayoutError.GeometryNotEnoughNeighbors`; None when unavailable."] fn count(&self)->Option<usize>{ match self.inner.as_ref(){
 ck::Coordinate2DLayoutError::NotEnoughEmbeddedNeighbors { count, .. }|ck::Coordinate2DLayoutError::GeometryNotEnoughNeighbors { count, .. } => Some(*count), _=>None,
 }}
 #[getter]
-fn centre(&self)->Option<usize>{ match self.inner.as_ref(){
+#[doc = "Center atom involved in the coordinate-layout failure. Present for `Coordinate2DLayoutError.NonTetrahedralNoLigand`, `Coordinate2DLayoutError.NonTetrahedralLigandOverflow`; None when unavailable."] fn centre(&self)->Option<usize>{ match self.inner.as_ref(){
 ck::Coordinate2DLayoutError::NonTetrahedralNoLigand { centre, .. }|ck::Coordinate2DLayoutError::NonTetrahedralLigandOverflow { centre, .. } => Some(*centre), _=>None,
 }}
 #[getter]
-fn bond(&self)->Option<usize>{ match self.inner.as_ref(){
+#[doc = "Bond index involved in the failure. Present for `Coordinate2DLayoutError.CisTransBondInvalid`, `Coordinate2DLayoutError.CollisionBondInvalid`; None when unavailable."] fn bond(&self)->Option<usize>{ match self.inner.as_ref(){
 ck::Coordinate2DLayoutError::CisTransBondInvalid { bond, .. }|ck::Coordinate2DLayoutError::CollisionBondInvalid { bond, .. } => Some(*bond), _=>None,
 }}
 });

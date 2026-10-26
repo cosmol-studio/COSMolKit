@@ -59,19 +59,19 @@ error_projection!(CxQueryLoweringError, CxQueryLoweringErrorKind, ck::CxQueryLow
     | ck::CxQueryLoweringError::InvalidGraph(_) => None,
 }, source = Option<CxSource>, methods = {
     #[getter]
-    fn index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Index associated with the failure. Present for `CxQueryLoweringError.AtomIndex`, `CxQueryLoweringError.BondIndex`; None when unavailable."] fn index(&self) -> Option<usize> { match self.inner {
         ck::CxQueryLoweringError::AtomIndex { index } | ck::CxQueryLoweringError::BondIndex { index } => Some(index), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom index involved in the failure. Present for `CxQueryLoweringError.BondAtomMismatch`, `CxQueryLoweringError.WedgeAtomMismatch`; None when unavailable."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::CxQueryLoweringError::BondAtomMismatch { atom, .. } | ck::CxQueryLoweringError::WedgeAtomMismatch { atom, .. } => Some(atom), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond index involved in the failure. Present for `CxQueryLoweringError.BondAtomMismatch`, `CxQueryLoweringError.WedgeAtomMismatch`; None when unavailable."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::CxQueryLoweringError::BondAtomMismatch { bond, .. } | ck::CxQueryLoweringError::WedgeAtomMismatch { bond, .. } => Some(bond), _ => None,
     } }
     #[getter]
-    fn message(&self) -> Option<&str> { match &self.inner { ck::CxQueryLoweringError::InvalidGraph(value) => Some(value), _ => None } }
+    #[doc = "Native diagnostic message. Present for `CxQueryLoweringError.InvalidGraph`; None when unavailable."] fn message(&self) -> Option<&str> { match &self.inner { ck::CxQueryLoweringError::InvalidGraph(value) => Some(value), _ => None } }
 });
 
 pub(crate) type SmartsSource = Source<
@@ -121,21 +121,21 @@ error_projection!(SmartsParseError, SmartsParseErrorKind, ck::SmartsParseError, 
     | ck::SmartsParseError::Parse(_) | ck::SmartsParseError::UnsupportedFeature(_) => None,
 }, source = Option<SmartsSource>, methods = {
     #[getter]
-    fn position(&self) -> Option<usize> { match self.inner {
+    #[doc = "Position of the offending entry. Present for `SmartsParseError.UnclosedBracket`, `SmartsParseError.UnclosedParenthesis`, `SmartsParseError.UnexpectedCharacter`, `SmartsParseError.InvalidAtomPrimitive`; None when unavailable."] fn position(&self) -> Option<usize> { match self.inner {
         ck::SmartsParseError::UnclosedBracket(value) | ck::SmartsParseError::UnclosedParenthesis(value) => Some(value),
         ck::SmartsParseError::UnexpectedCharacter { position, .. }
         | ck::SmartsParseError::InvalidAtomPrimitive { position, .. } => Some(position), _ => None,
     } }
     #[getter]
-    fn ring(&self) -> Option<u32> { match self.inner {
+    #[doc = "Ring-closure label involved in the failure, or None for another failure."] fn ring(&self) -> Option<u32> { match self.inner {
         ck::SmartsParseError::UnbalancedRingClosure(value) => Some(value),
         ck::SmartsParseError::SelfRingClosure { ring, .. } | ck::SmartsParseError::DuplicateRingBond { ring, .. } => Some(ring), _ => None,
     } }
     #[getter]
-    fn message(&self) -> Option<&str> { match &self.inner {
+    #[doc = "Native diagnostic message. Present for `SmartsParseError.UnexpectedEnd`, `SmartsParseError.CxSmiles`, `SmartsParseError.Parse`; None when unavailable."] fn message(&self) -> Option<&str> { match &self.inner {
         ck::SmartsParseError::UnexpectedEnd(value) | ck::SmartsParseError::CxSmiles(value)
         | ck::SmartsParseError::Parse(value) => Some(value), _ => None,
     } }
     #[getter]
-    fn feature(&self) -> Option<&'static str> { match self.inner { ck::SmartsParseError::UnsupportedFeature(value) => Some(value), _ => None } }
+    #[doc = "Unsupported feature identified by the native implementation. Present for `SmartsParseError.UnsupportedFeature`; None when unavailable."] fn feature(&self) -> Option<&'static str> { match self.inner { ck::SmartsParseError::UnsupportedFeature(value) => Some(value), _ => None } }
 });

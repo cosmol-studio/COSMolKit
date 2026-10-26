@@ -16,12 +16,14 @@ enum_value!(PdbLinkNameCounter,{Covale,MetalC});
 value_kind!(PdbDbRefErrorKind,PdbDbRefError,{SourceIntegerOutsideDefinedRange {field_offset},MissingCurrentDbRef});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic for a malformed PDB database-reference record, retaining the native variant and field offset.
 pub struct PdbDbRefError {
     inner: ck::PdbDbRefError,
 }
 #[pymethods]
 impl PdbDbRefError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbDbRefErrorKind {
         (&self.inner).into()
     }
@@ -29,6 +31,7 @@ impl PdbDbRefError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Offset of the failing field in the source record. Applies to PdbDbRefError.SourceIntegerOutsideDefinedRange. None when this payload is absent."]
     fn field_offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbDbRefError::SourceIntegerOutsideDefinedRange { field_offset, .. } => {
@@ -46,12 +49,14 @@ value_kind!(PdbMtrixErrorKind, PdbMtrixError, {
 });
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic for invalid text in a PDB non-crystallographic matrix record.
 pub struct PdbMtrixError {
     inner: ck::PdbMtrixError,
 }
 #[pymethods]
 impl PdbMtrixError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbMtrixErrorKind {
         (&self.inner).into()
     }
@@ -59,6 +64,7 @@ impl PdbMtrixError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Offset of the failing field in the source record. Applies to PdbMtrixError.TextFieldNotUtf8. None when this payload is absent."]
     fn field_offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbMtrixError::TextFieldNotUtf8 { field_offset, .. } => Some(*field_offset),
@@ -66,6 +72,7 @@ impl PdbMtrixError {
         }
     }
     #[getter]
+    #[doc = "Length in bytes of the valid UTF-8 prefix before the encoding error. Applies to PdbMtrixError.TextFieldNotUtf8. None when this payload is absent."]
     fn valid_up_to(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbMtrixError::TextFieldNotUtf8 { valid_up_to, .. } => Some(*valid_up_to),
@@ -78,12 +85,14 @@ value_kind!(PdbConectErrorKind, PdbConectError, {
 });
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic for a PDB CONECT serial outside the native numeric range.
 pub struct PdbConectError {
     inner: ck::PdbConectError,
 }
 #[pymethods]
 impl PdbConectError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbConectErrorKind {
         (&self.inner).into()
     }
@@ -91,6 +100,7 @@ impl PdbConectError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Offset of the failing field in the source record. Applies to PdbConectError.SourceSerialOutsideDefinedRange. None when this payload is absent."]
     fn field_offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbConectError::SourceSerialOutsideDefinedRange { field_offset, .. } => {
@@ -103,12 +113,14 @@ impl PdbConectError {
 value_kind!(PdbHelixErrorKind,PdbHelixError,{ChainNameNotRepresentable {field_offset,width,non_ascii},ResidueAddress(_),IntegerOutsideSourceDefinedRange {field_offset,width}});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only HELIX-record diagnostic, including invalid chain, residue-address or integer fields.
 pub struct PdbHelixError {
     inner: ck::PdbHelixError,
 }
 #[pymethods]
 impl PdbHelixError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbHelixErrorKind {
         (&self.inner).into()
     }
@@ -116,6 +128,7 @@ impl PdbHelixError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Offset of the failing field in the source record. Applies to PdbHelixError.ChainNameNotRepresentable, PdbHelixError.IntegerOutsideSourceDefinedRange. None when this payload is absent."]
     fn field_offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbHelixError::ChainNameNotRepresentable { field_offset, .. }
@@ -126,6 +139,7 @@ impl PdbHelixError {
         }
     }
     #[getter]
+    #[doc = "Width reported by the failing native check. Applies to PdbHelixError.ChainNameNotRepresentable, PdbHelixError.IntegerOutsideSourceDefinedRange. None when this payload is absent."]
     fn width(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbHelixError::ChainNameNotRepresentable { width, .. }
@@ -134,6 +148,7 @@ impl PdbHelixError {
         }
     }
     #[getter]
+    #[doc = "Non-ASCII source content reported by the parser. Applies to PdbHelixError.ChainNameNotRepresentable. None when this payload is absent."]
     fn non_ascii(&self) -> Option<Option<u8>> {
         match &self.inner {
             ck::PdbHelixError::ChainNameNotRepresentable { non_ascii, .. } => Some(*non_ascii),
@@ -141,6 +156,7 @@ impl PdbHelixError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbHelixError.ResidueAddress`; None when unavailable."]
     fn residue_address(
         &self,
         py: Python<'_>,
@@ -158,12 +174,14 @@ impl PdbHelixError {
 value_kind!(PdbModResErrorKind,PdbModResError,{ChainNameNotRepresentable {width,non_ascii},ResidueAddress(_),TextFieldNotUtf8 {field_offset,valid_up_to}});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only modified-residue record diagnostic with source field and residue-address details.
 pub struct PdbModResError {
     inner: ck::PdbModResError,
 }
 #[pymethods]
 impl PdbModResError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbModResErrorKind {
         (&self.inner).into()
     }
@@ -171,6 +189,7 @@ impl PdbModResError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Width reported by the failing native check. Applies to PdbModResError.ChainNameNotRepresentable. None when this payload is absent."]
     fn width(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbModResError::ChainNameNotRepresentable { width, .. } => Some(*width),
@@ -178,6 +197,7 @@ impl PdbModResError {
         }
     }
     #[getter]
+    #[doc = "Non-ASCII source content reported by the parser. Applies to PdbModResError.ChainNameNotRepresentable. None when this payload is absent."]
     fn non_ascii(&self) -> Option<Option<u8>> {
         match &self.inner {
             ck::PdbModResError::ChainNameNotRepresentable { non_ascii, .. } => Some(*non_ascii),
@@ -185,6 +205,7 @@ impl PdbModResError {
         }
     }
     #[getter]
+    #[doc = "Offset of the failing field in the source record. Applies to PdbModResError.TextFieldNotUtf8. None when this payload is absent."]
     fn field_offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbModResError::TextFieldNotUtf8 { field_offset, .. } => Some(*field_offset),
@@ -192,6 +213,7 @@ impl PdbModResError {
         }
     }
     #[getter]
+    #[doc = "Length in bytes of the valid UTF-8 prefix before the encoding error. Applies to PdbModResError.TextFieldNotUtf8. None when this payload is absent."]
     fn valid_up_to(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbModResError::TextFieldNotUtf8 { valid_up_to, .. } => Some(*valid_up_to),
@@ -199,6 +221,7 @@ impl PdbModResError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbModResError.ResidueAddress`; None when unavailable."]
     fn residue_address(
         &self,
         py: Python<'_>,
@@ -216,12 +239,14 @@ impl PdbModResError {
 value_kind!(PdbSheetErrorKind,PdbSheetError,{TextFieldNotUtf8 {field_offset,valid_up_to},ChainNameNotRepresentable {field_offset,width,non_ascii},ResidueAddress {sequence_offset,source},IntegerOutsideSourceDefinedRange {field_offset,width}});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only SHEET-record diagnostic retaining source positions and nested record details.
 pub struct PdbSheetError {
     inner: ck::PdbSheetError,
 }
 #[pymethods]
 impl PdbSheetError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbSheetErrorKind {
         (&self.inner).into()
     }
@@ -229,6 +254,7 @@ impl PdbSheetError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Offset of the failing field in the source record. Applies to PdbSheetError.TextFieldNotUtf8, PdbSheetError.ChainNameNotRepresentable, PdbSheetError.IntegerOutsideSourceDefinedRange. None when this payload is absent."]
     fn field_offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbSheetError::TextFieldNotUtf8 { field_offset, .. }
@@ -240,6 +266,7 @@ impl PdbSheetError {
         }
     }
     #[getter]
+    #[doc = "Length in bytes of the valid UTF-8 prefix before the encoding error. Applies to PdbSheetError.TextFieldNotUtf8. None when this payload is absent."]
     fn valid_up_to(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbSheetError::TextFieldNotUtf8 { valid_up_to, .. } => Some(*valid_up_to),
@@ -247,6 +274,7 @@ impl PdbSheetError {
         }
     }
     #[getter]
+    #[doc = "Width reported by the failing native check. Applies to PdbSheetError.ChainNameNotRepresentable, PdbSheetError.IntegerOutsideSourceDefinedRange. None when this payload is absent."]
     fn width(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbSheetError::ChainNameNotRepresentable { width, .. }
@@ -255,6 +283,7 @@ impl PdbSheetError {
         }
     }
     #[getter]
+    #[doc = "Non-ASCII source content reported by the parser. Applies to PdbSheetError.ChainNameNotRepresentable. None when this payload is absent."]
     fn non_ascii(&self) -> Option<Option<u8>> {
         match &self.inner {
             ck::PdbSheetError::ChainNameNotRepresentable { non_ascii, .. } => Some(*non_ascii),
@@ -262,6 +291,7 @@ impl PdbSheetError {
         }
     }
     #[getter]
+    #[doc = "Position in the input sequence reported by the failure. Applies to PdbSheetError.ResidueAddress. None when this payload is absent."]
     fn sequence_offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbSheetError::ResidueAddress {
@@ -271,6 +301,7 @@ impl PdbSheetError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbSheetError.ResidueAddress`; None when unavailable."]
     fn source(
         &self,
         py: Python<'_>,
@@ -290,12 +321,14 @@ impl PdbSheetError {
 value_kind!(PdbRemark3ErrorKind,PdbRemark3Error,{IntegerOutsideSourceDefinedRange,TextNotUtf8 {valid_up_to},MissingContinuationTarget,TlsChainIdNotRepresentable {width}});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only parsing diagnostic for PDB refinement REMARK 3 records.
 pub struct PdbRemark3Error {
     inner: ck::PdbRemark3Error,
 }
 #[pymethods]
 impl PdbRemark3Error {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbRemark3ErrorKind {
         (&self.inner).into()
     }
@@ -303,6 +336,7 @@ impl PdbRemark3Error {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Length in bytes of the valid UTF-8 prefix before the encoding error. Applies to PdbRemark3Error.TextNotUtf8. None when this payload is absent."]
     fn valid_up_to(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemark3Error::TextNotUtf8 { valid_up_to, .. } => Some(*valid_up_to),
@@ -310,6 +344,7 @@ impl PdbRemark3Error {
         }
     }
     #[getter]
+    #[doc = "Width reported by the failing native check. Applies to PdbRemark3Error.TlsChainIdNotRepresentable. None when this payload is absent."]
     fn width(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemark3Error::TlsChainIdNotRepresentable { width, .. } => Some(*width),
@@ -320,12 +355,14 @@ impl PdbRemark3Error {
 value_kind!(PdbRemark200ErrorKind,PdbRemark200Error,{IntegerOutsideSourceDefinedRange,TextNotUtf8 {valid_up_to},MissingExperimentalRows,UndefinedPhNumericScreening,Software(_)});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only parsing diagnostic for experimental REMARK 200 records.
 pub struct PdbRemark200Error {
     inner: ck::PdbRemark200Error,
 }
 #[pymethods]
 impl PdbRemark200Error {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbRemark200ErrorKind {
         (&self.inner).into()
     }
@@ -333,6 +370,7 @@ impl PdbRemark200Error {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Length in bytes of the valid UTF-8 prefix before the encoding error. Applies to PdbRemark200Error.TextNotUtf8. None when this payload is absent."]
     fn valid_up_to(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemark200Error::TextNotUtf8 { valid_up_to, .. } => Some(*valid_up_to),
@@ -340,6 +378,7 @@ impl PdbRemark200Error {
         }
     }
     #[getter]
+    #[doc = "Software metadata involved in the failed write. Applies to PdbRemark200Error.Software. None when this payload is absent."]
     fn software(&self) -> Option<PdbRemark3Error> {
         match self.inner {
             ck::PdbRemark200Error::Software(inner) => Some(PdbRemark3Error { inner }),
@@ -350,12 +389,14 @@ impl PdbRemark200Error {
 value_kind!(PdbRemarkMetadataErrorKind,PdbRemarkMetadataError,{IntegerOutsideSourceDefinedRange,UndefinedResolutionField {remark_length},TextBoundaryNotUtf8 {offset}});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic from retained PDB remark metadata.
 pub struct PdbRemarkMetadataError {
     inner: ck::PdbRemarkMetadataError,
 }
 #[pymethods]
 impl PdbRemarkMetadataError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbRemarkMetadataErrorKind {
         (&self.inner).into()
     }
@@ -363,6 +404,7 @@ impl PdbRemarkMetadataError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Length of the remark involved in the failed parse. Applies to PdbRemarkMetadataError.UndefinedResolutionField. None when this payload is absent."]
     fn remark_length(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemarkMetadataError::UndefinedResolutionField { remark_length, .. } => {
@@ -372,6 +414,7 @@ impl PdbRemarkMetadataError {
         }
     }
     #[getter]
+    #[doc = "Source offset reported by the native parser. Applies to PdbRemarkMetadataError.TextBoundaryNotUtf8. None when this payload is absent."]
     fn offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemarkMetadataError::TextBoundaryNotUtf8 { offset, .. } => Some(*offset),
@@ -382,12 +425,14 @@ impl PdbRemarkMetadataError {
 value_kind!(PdbRemark350ErrorKind,PdbRemark350Error,{IntegerOutsideSourceDefinedRange,SourceUndefinedAccess {offset,width,record_length},TextNotUtf8 {field_offset,valid_up_to},StateInvariantLost});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only parsing diagnostic for biological-assembly REMARK 350 records.
 pub struct PdbRemark350Error {
     inner: ck::PdbRemark350Error,
 }
 #[pymethods]
 impl PdbRemark350Error {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbRemark350ErrorKind {
         (&self.inner).into()
     }
@@ -395,6 +440,7 @@ impl PdbRemark350Error {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Source offset reported by the native parser. Applies to PdbRemark350Error.SourceUndefinedAccess. None when this payload is absent."]
     fn offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemark350Error::SourceUndefinedAccess { offset, .. } => Some(*offset),
@@ -402,6 +448,7 @@ impl PdbRemark350Error {
         }
     }
     #[getter]
+    #[doc = "Width reported by the failing native check. Applies to PdbRemark350Error.SourceUndefinedAccess. None when this payload is absent."]
     fn width(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemark350Error::SourceUndefinedAccess { width, .. } => Some(*width),
@@ -409,6 +456,7 @@ impl PdbRemark350Error {
         }
     }
     #[getter]
+    #[doc = "Length of the source record involved in the failed parse. Applies to PdbRemark350Error.SourceUndefinedAccess. None when this payload is absent."]
     fn record_length(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemark350Error::SourceUndefinedAccess { record_length, .. } => {
@@ -418,6 +466,7 @@ impl PdbRemark350Error {
         }
     }
     #[getter]
+    #[doc = "Offset of the failing field in the source record. Applies to PdbRemark350Error.TextNotUtf8. None when this payload is absent."]
     fn field_offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemark350Error::TextNotUtf8 { field_offset, .. } => Some(*field_offset),
@@ -425,6 +474,7 @@ impl PdbRemark350Error {
         }
     }
     #[getter]
+    #[doc = "Length in bytes of the valid UTF-8 prefix before the encoding error. Applies to PdbRemark350Error.TextNotUtf8. None when this payload is absent."]
     fn valid_up_to(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbRemark350Error::TextNotUtf8 { valid_up_to, .. } => Some(*valid_up_to),
@@ -435,12 +485,14 @@ impl PdbRemark350Error {
 value_kind!(PdbSsbondRecordErrorKind,PdbSsbondRecordError,{EmptyRecord,ChainNameNotAscii {partner,byte},ResidueAddress {partner,source},CounterOutsideSourceIntRange});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic from a disulfide-bond SSBOND record.
 pub struct PdbSsbondRecordError {
     inner: ck::PdbSsbondRecordError,
 }
 #[pymethods]
 impl PdbSsbondRecordError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbSsbondRecordErrorKind {
         (&self.inner).into()
     }
@@ -448,6 +500,8 @@ impl PdbSsbondRecordError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Partner atom or endpoint involved in the native check. Applies to PdbSsbondRecordError.ChainNameNotAscii, PdbSsbondRecordError.ResidueAddress. None when this payload is absent."]
+    #[doc = "Disulfide connection partner identified by the native diagnostic."]
     fn partner(&self) -> Option<u8> {
         match &self.inner {
             ck::PdbSsbondRecordError::ChainNameNotAscii { partner, .. }
@@ -456,6 +510,7 @@ impl PdbSsbondRecordError {
         }
     }
     #[getter]
+    #[doc = "Byte value or byte position reported by the native failure. Applies to PdbSsbondRecordError.ChainNameNotAscii. None when this payload is absent."]
     fn byte(&self) -> Option<u8> {
         match &self.inner {
             ck::PdbSsbondRecordError::ChainNameNotAscii { byte, .. } => Some(*byte),
@@ -463,6 +518,7 @@ impl PdbSsbondRecordError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbSsbondRecordError.ResidueAddress`; None when unavailable."]
     fn source(
         &self,
         py: Python<'_>,
@@ -482,12 +538,14 @@ impl PdbSsbondRecordError {
 value_kind!(PdbLinkRecordErrorKind,PdbLinkRecordError,{ChainNameNotAscii {partner,byte},AtomNameNotAscii {partner,byte},LinkIdNotUtf8 {valid_up_to},ResidueAddress {partner,source},NameCounterOutsideSourceDefinedRange {counter}});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic from a PDB LINK connectivity record.
 pub struct PdbLinkRecordError {
     inner: ck::PdbLinkRecordError,
 }
 #[pymethods]
 impl PdbLinkRecordError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbLinkRecordErrorKind {
         (&self.inner).into()
     }
@@ -495,6 +553,8 @@ impl PdbLinkRecordError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Partner atom or endpoint involved in the native check. Applies to PdbLinkRecordError.ChainNameNotAscii, PdbLinkRecordError.AtomNameNotAscii, PdbLinkRecordError.ResidueAddress. None when this payload is absent."]
+    #[doc = "Disulfide connection partner identified by the native diagnostic."]
     fn partner(&self) -> Option<u8> {
         match &self.inner {
             ck::PdbLinkRecordError::ChainNameNotAscii { partner, .. }
@@ -504,6 +564,7 @@ impl PdbLinkRecordError {
         }
     }
     #[getter]
+    #[doc = "Byte value or byte position reported by the native failure. Applies to PdbLinkRecordError.ChainNameNotAscii, PdbLinkRecordError.AtomNameNotAscii. None when this payload is absent."]
     fn byte(&self) -> Option<u8> {
         match &self.inner {
             ck::PdbLinkRecordError::ChainNameNotAscii { byte, .. }
@@ -512,6 +573,7 @@ impl PdbLinkRecordError {
         }
     }
     #[getter]
+    #[doc = "Length in bytes of the valid UTF-8 prefix before the encoding error. Applies to PdbLinkRecordError.LinkIdNotUtf8. None when this payload is absent."]
     fn valid_up_to(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbLinkRecordError::LinkIdNotUtf8 { valid_up_to, .. } => Some(*valid_up_to),
@@ -519,6 +581,7 @@ impl PdbLinkRecordError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbLinkRecordError.ResidueAddress`; None when unavailable."]
     fn source(
         &self,
         py: Python<'_>,
@@ -535,6 +598,7 @@ impl PdbLinkRecordError {
         }
     }
     #[getter]
+    #[doc = "Counter value reported by the native failure. Applies to PdbLinkRecordError.NameCounterOutsideSourceDefinedRange. None when this payload is absent."]
     fn counter(&self) -> Option<PdbLinkNameCounter> {
         match self.inner {
             ck::PdbLinkRecordError::NameCounterOutsideSourceDefinedRange { counter } => {
@@ -547,12 +611,14 @@ impl PdbLinkRecordError {
 value_kind!(PdbCisPepRecordErrorKind,PdbCisPepRecordError,{RequiredFieldsPastRecord {record_len,required_len},NoModelsAfterSourceDefault,SingleModelNumberUnavailable,ChainNameNotAscii {partner,byte},ResidueAddress {partner,source},ModelNumberOutsideSourceDefinedRange});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic from a cis-peptide CISPEP record.
 pub struct PdbCisPepRecordError {
     inner: ck::PdbCisPepRecordError,
 }
 #[pymethods]
 impl PdbCisPepRecordError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbCisPepRecordErrorKind {
         (&self.inner).into()
     }
@@ -560,6 +626,7 @@ impl PdbCisPepRecordError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Observed source-record length. Applies to PdbCisPepRecordError.RequiredFieldsPastRecord. None when this payload is absent."]
     fn record_len(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbCisPepRecordError::RequiredFieldsPastRecord { record_len, .. } => {
@@ -569,6 +636,7 @@ impl PdbCisPepRecordError {
         }
     }
     #[getter]
+    #[doc = "Minimum record length required by the native parser. Applies to PdbCisPepRecordError.RequiredFieldsPastRecord. None when this payload is absent."]
     fn required_len(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbCisPepRecordError::RequiredFieldsPastRecord { required_len, .. } => {
@@ -578,6 +646,8 @@ impl PdbCisPepRecordError {
         }
     }
     #[getter]
+    #[doc = "Partner atom or endpoint involved in the native check. Applies to PdbCisPepRecordError.ChainNameNotAscii, PdbCisPepRecordError.ResidueAddress. None when this payload is absent."]
+    #[doc = "Disulfide connection partner identified by the native diagnostic."]
     fn partner(&self) -> Option<u8> {
         match &self.inner {
             ck::PdbCisPepRecordError::ChainNameNotAscii { partner, .. }
@@ -586,6 +656,7 @@ impl PdbCisPepRecordError {
         }
     }
     #[getter]
+    #[doc = "Byte value or byte position reported by the native failure. Applies to PdbCisPepRecordError.ChainNameNotAscii. None when this payload is absent."]
     fn byte(&self) -> Option<u8> {
         match &self.inner {
             ck::PdbCisPepRecordError::ChainNameNotAscii { byte, .. } => Some(*byte),
@@ -593,6 +664,7 @@ impl PdbCisPepRecordError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbCisPepRecordError.ResidueAddress`; None when unavailable."]
     fn source(
         &self,
         py: Python<'_>,
@@ -612,12 +684,14 @@ impl PdbCisPepRecordError {
 value_kind!(PdbCrystalErrorKind,PdbCrystalError,{BioStructureData(_),TextFieldNotUtf8 {field_offset,valid_up_to}});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic from PDB crystal/cell metadata.
 pub struct PdbCrystalError {
     inner: ck::PdbCrystalError,
 }
 #[pymethods]
 impl PdbCrystalError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbCrystalErrorKind {
         (&self.inner).into()
     }
@@ -625,6 +699,7 @@ impl PdbCrystalError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "Offset of the failing field in the source record. Applies to PdbCrystalError.TextFieldNotUtf8. None when this payload is absent."]
     fn field_offset(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbCrystalError::TextFieldNotUtf8 { field_offset, .. } => Some(*field_offset),
@@ -632,6 +707,7 @@ impl PdbCrystalError {
         }
     }
     #[getter]
+    #[doc = "Length in bytes of the valid UTF-8 prefix before the encoding error. Applies to PdbCrystalError.TextFieldNotUtf8. None when this payload is absent."]
     fn valid_up_to(&self) -> Option<usize> {
         match &self.inner {
             ck::PdbCrystalError::TextFieldNotUtf8 { valid_up_to, .. } => Some(*valid_up_to),
@@ -639,6 +715,7 @@ impl PdbCrystalError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbCrystalError.BioStructureData`; None when unavailable."]
     fn bio_structure_data(
         &self,
         py: Python<'_>,
@@ -658,12 +735,14 @@ impl PdbCrystalError {
 value_kind!(PdbConnectionFinalizationErrorKind,PdbConnectionFinalizationError,{SsbondRecord(_),LinkRecord(_),CisPepRecord(_),SsbondResolution(_)});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only connectivity finalization diagnostic retaining the responsible PDB record or resolution failure.
 pub struct PdbConnectionFinalizationError {
     inner: ck::PdbConnectionFinalizationError,
 }
 #[pymethods]
 impl PdbConnectionFinalizationError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbConnectionFinalizationErrorKind {
         (&self.inner).into()
     }
@@ -671,6 +750,7 @@ impl PdbConnectionFinalizationError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "SSBOND record failure details, or None for another variant."]
     fn ssbond_record(&self) -> Option<PdbSsbondRecordError> {
         match &self.inner {
             ck::PdbConnectionFinalizationError::SsbondRecord(inner) => Some(PdbSsbondRecordError {
@@ -680,6 +760,7 @@ impl PdbConnectionFinalizationError {
         }
     }
     #[getter]
+    #[doc = "LINK record failure details, or None for another variant."]
     fn link_record(&self) -> Option<PdbLinkRecordError> {
         match &self.inner {
             ck::PdbConnectionFinalizationError::LinkRecord(inner) => Some(PdbLinkRecordError {
@@ -689,6 +770,7 @@ impl PdbConnectionFinalizationError {
         }
     }
     #[getter]
+    #[doc = "CISPEP record failure details, or None for another variant."]
     fn cis_pep_record(&self) -> Option<PdbCisPepRecordError> {
         match &self.inner {
             ck::PdbConnectionFinalizationError::CisPepRecord(inner) => Some(PdbCisPepRecordError {
@@ -698,6 +780,7 @@ impl PdbConnectionFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbConnectionFinalizationError.SsbondResolution`; None when unavailable."]
     fn ssbond_resolution(
         &self,
         py: Python<'_>,
@@ -717,12 +800,14 @@ impl PdbConnectionFinalizationError {
 value_kind!(PdbRemarkFinalizationErrorKind,PdbRemarkFinalizationError,{IntegerOutsideSourceDefinedRange,Remark3(_),Remark200(_),RemarkMetadata(_),Remark350(_)});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic from converting parsed remarks into structure metadata.
 pub struct PdbRemarkFinalizationError {
     inner: ck::PdbRemarkFinalizationError,
 }
 #[pymethods]
 impl PdbRemarkFinalizationError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbRemarkFinalizationErrorKind {
         (&self.inner).into()
     }
@@ -730,6 +815,7 @@ impl PdbRemarkFinalizationError {
         format!("{:?}", self.inner)
     }
     #[getter]
+    #[doc = "REMARK 3 refinement failure details, or None for another variant."]
     fn remark3(&self) -> Option<PdbRemark3Error> {
         match self.inner {
             ck::PdbRemarkFinalizationError::Remark3(inner) => Some(PdbRemark3Error { inner }),
@@ -737,6 +823,7 @@ impl PdbRemarkFinalizationError {
         }
     }
     #[getter]
+    #[doc = "REMARK 200 experimental-data failure details, or None for another variant."]
     fn remark200(&self) -> Option<PdbRemark200Error> {
         match self.inner {
             ck::PdbRemarkFinalizationError::Remark200(inner) => Some(PdbRemark200Error { inner }),
@@ -744,6 +831,7 @@ impl PdbRemarkFinalizationError {
         }
     }
     #[getter]
+    #[doc = "General remark-metadata failure details, or None for another variant."]
     fn remark_metadata(&self) -> Option<PdbRemarkMetadataError> {
         match self.inner {
             ck::PdbRemarkFinalizationError::RemarkMetadata(inner) => {
@@ -753,6 +841,7 @@ impl PdbRemarkFinalizationError {
         }
     }
     #[getter]
+    #[doc = "REMARK 350 assembly failure details, or None for another variant."]
     fn remark350(&self) -> Option<PdbRemark350Error> {
         match self.inner {
             ck::PdbRemarkFinalizationError::Remark350(inner) => Some(PdbRemark350Error { inner }),
@@ -771,7 +860,7 @@ error_projection!(PdbInputFormatError,PdbInputFormatErrorKind,ck::PdbInputFormat
 Cif{source},Mmjson{source},
 },cause=|_:&ck::PdbInputFormatError|None::<PyErr>,methods={
 #[getter]
-fn source(&self)->&str{match &self.inner{ck::PdbInputFormatError::Cif{source}|ck::PdbInputFormatError::Mmjson{source}=>source}}
+#[doc = "Input source name whose contents were detected as CIF or mmJSON rather than PDB."] fn source(&self)->&str{match &self.inner{ck::PdbInputFormatError::Cif{source}|ck::PdbInputFormatError::Mmjson{source}=>source}}
 });
 crate::error_framework::error_projection! {record
 #[doc = r#"{"role":"error_record"}"#]
@@ -789,15 +878,16 @@ impl PdbSsbondResolutionError {
 }
 crate::error_framework::error_projection! {methods impl PdbSsbondResolutionError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
-    fn partner(&self) -> u8 {
+    #[doc = "Disulfide connection partner identified by the native diagnostic."] fn partner(&self) -> u8 {
         self.inner.partner()
     }
     #[getter]
-    fn atom_name(&self) -> &str {
+    #[doc = "Atom name that could not be resolved for the disulfide connection."] fn atom_name(&self) -> &str {
         self.inner.atom_name()
     }
     fn __str__(&self) -> String {
@@ -811,21 +901,24 @@ NonpolymerSubchainCounterOutsideSourceIntRange{chain},AnisouWithoutAtom,Duplicat
 AnisouIntegerOutsideSourceIntRange{offset:usize},ModelIdOutOfBounds{id,model_count:usize},Structure(_),
 },cause=|inner:&RetainedError<ck::PdbModelTransitionError>|match inner.as_ref(){ck::PdbModelTransitionError::Structure(value)=>Some(BioStructureError::from_rust(value.clone())),_=>None},
 source=Option<crate::error_framework::ErrorObject<BioStructureError>>,methods={
-#[getter]fn chain(&self)->Option<&str>{match self.inner.as_ref(){ck::PdbModelTransitionError::NonpolymerSubchainCounterOutsideSourceIntRange{chain}=>Some(chain.as_str()),_=>None}}
-#[getter]fn id(&self)->Option<u32>{match self.inner.as_ref(){ck::PdbModelTransitionError::ModelIdOutOfBounds{id,..}=>Some(id.value()),_=>None}}
+#[getter]#[doc = "Structural chain involved in the failure. Applies to PdbModelTransitionError.NonpolymerSubchainCounterOutsideSourceIntRange. None when this payload is absent."] fn chain(&self)->Option<&str>{match self.inner.as_ref(){ck::PdbModelTransitionError::NonpolymerSubchainCounterOutsideSourceIntRange{chain}=>Some(chain.as_str()),_=>None}}
+#[getter]#[doc = "Identifier involved in the native failure. Applies to PdbModelTransitionError.ModelIdOutOfBounds. None when this payload is absent."] fn id(&self)->Option<u32>{match self.inner.as_ref(){ck::PdbModelTransitionError::ModelIdOutOfBounds{id,..}=>Some(id.value()),_=>None}}
 });
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only diagnostic containing the invalid sign or digit of a PDB charge field.
 pub struct PdbChargeError {
     inner: ck::PdbChargeError,
 }
 #[pymethods]
 impl PdbChargeError {
     #[getter]
+    #[doc = "Original byte in the PDB charge magnitude position."]
     fn digit(&self) -> u8 {
         self.inner.digit()
     }
     #[getter]
+    #[doc = "Original byte in the PDB charge sign position."]
     fn sign(&self) -> u8 {
         self.inner.sign()
     }
@@ -837,6 +930,7 @@ impl PdbChargeError {
 value_kind!(PdbAtomFieldErrorKind,PdbAtomFieldError,{TooShort{len},SerialOutsideSourceDefinedRange,ChainNameNotRepresentable{bytes},AtomNameNotRepresentable{bytes},ResidueKey(_),Charge(_)});
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only atom-record field diagnostic retaining invalid source bytes where applicable.
 pub struct PdbAtomFieldError {
     owner: RetainedError<ck::PdbReaderCause>,
 }
@@ -851,10 +945,12 @@ impl PdbAtomFieldError {
 #[pymethods]
 impl PdbAtomFieldError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbAtomFieldErrorKind {
         self.inner().into()
     }
     #[getter]
+    #[doc = "Length reported by the native failure. Applies to PdbAtomFieldError.TooShort. None when this payload is absent."]
     fn len(&self) -> Option<usize> {
         match self.inner() {
             ck::PdbAtomFieldError::TooShort { len } => Some(*len),
@@ -862,6 +958,7 @@ impl PdbAtomFieldError {
         }
     }
     #[getter]
+    #[doc = "Unrepresentable chain-name or atom-name bytes; None for another field failure."]
     fn bytes(&self) -> Option<Source<[u8; 2], [u8; 4]>> {
         match self.inner() {
             ck::PdbAtomFieldError::ChainNameNotRepresentable { bytes } => {
@@ -874,6 +971,7 @@ impl PdbAtomFieldError {
         }
     }
     #[getter]
+    #[doc = "Residue identifier involved in the failed lookup. Applies to PdbAtomFieldError.ResidueKey. None when this payload is absent."]
     fn residue_key(
         &self,
         py: Python<'_>,
@@ -888,6 +986,7 @@ impl PdbAtomFieldError {
         }
     }
     #[getter]
+    #[doc = "Charge value rejected by the native operation. Applies to PdbAtomFieldError.Charge. None when this payload is absent."]
     fn charge(&self) -> Option<PdbChargeError> {
         match self.inner() {
             ck::PdbAtomFieldError::Charge(inner) => Some(PdbChargeError { inner: *inner }),
@@ -903,6 +1002,7 @@ Model(_),Connection(_),Remarks(_),Ccd(_),NoModelAfterDefault,SourceIdNotRepresen
 });
 #[doc = r#"{"role":"error_value"}"#]
 #[pyclass(module = "cosmolkit", frozen)]
+/// Read-only structure finalization diagnostic, including chemical-component and structure-validation failures.
 pub struct PdbStructureFinalizationError {
     owner: RetainedError<ck::PdbReaderCause>,
 }
@@ -917,10 +1017,12 @@ impl PdbStructureFinalizationError {
 #[pymethods]
 impl PdbStructureFinalizationError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PdbStructureFinalizationErrorKind {
         self.inner().into()
     }
     #[getter]
+    #[doc = "Structural model involved in the failure. Applies to PdbStructureFinalizationError.Model. None when this payload is absent."]
     fn model(
         &self,
         py: Python<'_>,
@@ -948,6 +1050,7 @@ impl PdbStructureFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Structural connection involved in the failure. Applies to PdbStructureFinalizationError.Connection. None when this payload is absent."]
     fn connection(&self) -> Option<PdbConnectionFinalizationError> {
         match self.inner() {
             ck::PdbStructureFinalizationError::Connection(inner) => {
@@ -959,6 +1062,7 @@ impl PdbStructureFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Remark records involved in the parsing failure. Applies to PdbStructureFinalizationError.Remarks. None when this payload is absent."]
     fn remarks(&self) -> Option<PdbRemarkFinalizationError> {
         match self.inner() {
             ck::PdbStructureFinalizationError::Remarks(inner) => {
@@ -968,6 +1072,7 @@ impl PdbStructureFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbStructureFinalizationError.Ccd`; None when unavailable."]
     fn ccd(
         &self,
         py: Python<'_>,
@@ -982,6 +1087,7 @@ impl PdbStructureFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Structured native error payload. Present for `PdbStructureFinalizationError.Structure`; None when unavailable."]
     fn structure(
         &self,
         py: Python<'_>,
@@ -998,6 +1104,7 @@ impl PdbStructureFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Field whose content or type caused the failure. Applies to PdbStructureFinalizationError.SourceIdNotRepresentable, PdbStructureFinalizationError.Utf8. None when this payload is absent."]
     fn field(&self) -> Option<&'static str> {
         match self.inner() {
             ck::PdbStructureFinalizationError::SourceIdNotRepresentable { field }
@@ -1006,6 +1113,7 @@ impl PdbStructureFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Length in bytes of the valid UTF-8 prefix before the encoding error. Applies to PdbStructureFinalizationError.Utf8. None when this payload is absent."]
     fn valid_up_to(&self) -> Option<usize> {
         match self.inner() {
             ck::PdbStructureFinalizationError::Utf8 { valid_up_to, .. } => Some(*valid_up_to),
@@ -1013,6 +1121,7 @@ impl PdbStructureFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Table involved in the failed lookup or consistency check. Applies to PdbStructureFinalizationError.StagingRowOrder. None when this payload is absent."]
     fn table(&self) -> Option<&'static str> {
         match self.inner() {
             ck::PdbStructureFinalizationError::StagingRowOrder { table, .. } => Some(table),
@@ -1020,6 +1129,7 @@ impl PdbStructureFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Required value reported by the native check. Applies to PdbStructureFinalizationError.StagingRowOrder. None when this payload is absent."]
     fn expected(&self) -> Option<usize> {
         match self.inner() {
             ck::PdbStructureFinalizationError::StagingRowOrder { expected, .. } => Some(*expected),
@@ -1027,6 +1137,7 @@ impl PdbStructureFinalizationError {
         }
     }
     #[getter]
+    #[doc = "Observed value reported by the native check. Applies to PdbStructureFinalizationError.StagingRowOrder. None when this payload is absent."]
     fn actual(&self) -> Option<usize> {
         match self.inner() {
             ck::PdbStructureFinalizationError::StagingRowOrder { actual, .. } => Some(*actual),
@@ -1042,30 +1153,39 @@ error_projection!(retained PdbReaderCause,PdbReaderCauseKind,ck::PdbReaderCause,
 LineNumberOutsideSourceIntRange,InputFormat(_),AtomFields(_),ModelTransition(_),Remark(_),Conect(_),ModRes(_),Helix(_),Sheet(_),Header(_),DbRef(_),Mtrix(_),Crystal(_),Finalization(_)
 },cause=|_:&RetainedError<ck::PdbReaderCause>|None::<PyErr>,methods={
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
-fn input_format(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PdbInputFormatError>>>{match self.inner.as_ref(){ck::PdbReaderCause::InputFormat(value)=>PdbInputFormatError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
+#[doc = "Structured PdbInputFormatError payload of PdbReaderCause.InputFormat; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn input_format(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PdbInputFormatError>>>{match self.inner.as_ref(){ck::PdbReaderCause::InputFormat(value)=>PdbInputFormatError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
+#[doc = "Atom-field diagnostic for AtomFields failures; None for other PDB reader variants."]
 fn atom_fields(&self)->Option<PdbAtomFieldError>{match self.inner.as_ref(){ck::PdbReaderCause::AtomFields(_)=>Some(PdbAtomFieldError{owner:self.inner.clone()}),_=>None}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
-fn model_transition(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PdbModelTransitionError>>>{match self.inner.as_ref(){ck::PdbReaderCause::ModelTransition(_)=>PdbModelTransitionError::from_ref(self.inner.node().project(|root|{let root=root.downcast_ref::<ck::PdbReaderCause>().expect("native PDB cause");let ck::PdbReaderCause::ModelTransition(error)=root else{unreachable!("native model_transition error payload")};error})).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
+#[doc = "Structured PdbModelTransitionError payload of PdbReaderCause.ModelTransition; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn model_transition(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PdbModelTransitionError>>>{match self.inner.as_ref(){ck::PdbReaderCause::ModelTransition(_)=>PdbModelTransitionError::from_ref(self.inner.node().project(|root|{let root=root.downcast_ref::<ck::PdbReaderCause>().expect("native PDB cause");let ck::PdbReaderCause::ModelTransition(error)=root else{unreachable!("native model_transition error payload")};error})).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
-fn remark(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PdbRemarkError>>>{match self.inner.as_ref(){ck::PdbReaderCause::Remark(value)=>PdbRemarkError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
+#[doc = "Structured PdbRemarkError payload of PdbReaderCause.Remark; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn remark(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PdbRemarkError>>>{match self.inner.as_ref(){ck::PdbReaderCause::Remark(value)=>PdbRemarkError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
+#[doc = "CONECT connectivity diagnostic, or None for another PDB reader variant."]
 fn conect(&self)->Option<PdbConectError>{match self.inner.as_ref(){ck::PdbReaderCause::Conect(inner)=>Some(PdbConectError{inner:inner.clone()}),_=>None}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
+#[doc = "MODRES modified-residue diagnostic, or None for another PDB reader variant."]
 fn mod_res(&self)->Option<PdbModResError>{match self.inner.as_ref(){ck::PdbReaderCause::ModRes(inner)=>Some(PdbModResError{inner:inner.clone()}),_=>None}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
+#[doc = "HELIX secondary-structure diagnostic, or None for another PDB reader variant."]
 fn helix(&self)->Option<PdbHelixError>{match self.inner.as_ref(){ck::PdbReaderCause::Helix(inner)=>Some(PdbHelixError{inner:inner.clone()}),_=>None}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
+#[doc = "SHEET secondary-structure diagnostic, or None for another PDB reader variant."]
 fn sheet(&self)->Option<PdbSheetError>{match self.inner.as_ref(){ck::PdbReaderCause::Sheet(inner)=>Some(PdbSheetError{inner:inner.clone()}),_=>None}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
-fn header(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PdbHeaderError>>>{match self.inner.as_ref(){ck::PdbReaderCause::Header(value)=>PdbHeaderError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
+#[doc = "Structured PdbHeaderError payload of PdbReaderCause.Header; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn header(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<PdbHeaderError>>>{match self.inner.as_ref(){ck::PdbReaderCause::Header(value)=>PdbHeaderError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
+#[doc = "DBREF sequence-reference diagnostic, or None for another PDB reader variant."]
 fn db_ref(&self)->Option<PdbDbRefError>{match self.inner.as_ref(){ck::PdbReaderCause::DbRef(inner)=>Some(PdbDbRefError{inner:inner.clone()}),_=>None}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
+#[doc = "MTRIX noncrystallographic transform diagnostic, or None for another PDB reader variant."]
 fn mtrix(&self)->Option<PdbMtrixError>{match self.inner.as_ref(){ck::PdbReaderCause::Mtrix(inner)=>Some(PdbMtrixError{inner:inner.clone()}),_=>None}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
+#[doc = "Crystallographic record diagnostic, or None for another PDB reader variant."]
 fn crystal(&self)->Option<PdbCrystalError>{match self.inner.as_ref(){ck::PdbReaderCause::Crystal(inner)=>Some(PdbCrystalError{inner:inner.clone()}),_=>None}}
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
+#[doc = "Structure finalization diagnostic, or None for another PDB reader variant."]
 fn finalization(&self)->Option<PdbStructureFinalizationError>{match self.inner.as_ref(){ck::PdbReaderCause::Finalization(_)=>Some(PdbStructureFinalizationError{owner:self.inner.clone()}),_=>None}}
 });
 
@@ -1097,23 +1217,25 @@ impl BioPdbReadError {
 }
 crate::error_framework::error_projection! {methods impl BioPdbReadError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
-    fn line_number(&self) -> Option<i32> {
+    #[doc = "PDB source line number, or None when unavailable."] fn line_number(&self) -> Option<i32> {
         self.inner.line_number()
     }
     #[getter]
-    fn stage(&self) -> BioPdbReadStage {
+    #[doc = "PDB reading stage that failed."] fn stage(&self) -> BioPdbReadStage {
         self.inner.stage().into()
     }
     #[getter]
-    fn record_tag(&self) -> Option<[u8; 4]> {
+    #[doc = "Original four-byte PDB record tag, or None when unavailable."] fn record_tag(&self) -> Option<[u8; 4]> {
         self.inner.record_tag()
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<crate::error_framework::ErrorObject<PdbReaderCause>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -1143,6 +1265,7 @@ pub(crate) fn keywords(
 }
 #[pyfunction]
 #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,max_line_length=crate::arguments::Argument::Missing,check_non_ascii=crate::arguments::Argument::Missing,ignore_ter=crate::arguments::Argument::Missing,split_chain_on_ter=crate::arguments::Argument::Missing,skip_remarks=crate::arguments::Argument::Missing))]
+/// Parse PDB text into a BioStructure, retaining hierarchy, coordinates and supported structural metadata under the selected reader options.
 pub fn bio_from_pdb(
     py: Python<'_>,
     text: &str,
@@ -1259,9 +1382,9 @@ let expected=ck::BioStructure::from_pdb("ATOM").unwrap_err();
 
 let error=py.get_type::<BioStructure>().call_method1("from_pdb",("ATOM",)).unwrap_err();
 assert!(error.is_instance(py, <BioPdbReadError as crate::error_framework::ExceptionPayload>::exception_type(py).expect("error backend").as_any()));assert_eq!(error.value(py).str()?.to_str()?,expected.to_string());
-assert_eq!(error.value(py).call_method0("line_number")?.extract::<Option<i32>>()?,expected.line_number());
-assert_eq!(error.value(py).call_method0("record_tag")?.extract::<Option<[u8;4]>>()?,expected.record_tag());
-assert!(error.value(py).call_method0("stage")?.extract::<BioPdbReadStage>()?==expected.stage().into());
+assert_eq!(error.value(py).getattr("line_number")?.extract::<Option<i32>>()?,expected.line_number());
+assert_eq!(error.value(py).getattr("record_tag")?.extract::<Option<[u8;4]>>()?,expected.record_tag());
+assert!(error.value(py).getattr("stage")?.extract::<BioPdbReadStage>()?==expected.stage().into());
 let cause=error.cause(py).expect("real native PDB cause");
 assert!(cause.is_instance(py, <PdbReaderCause as crate::error_framework::ExceptionPayload>::exception_type(py).expect("error backend").as_any()));assert!(cause.cause(py).is_none());
 assert!(error.value(py).getattr("source")?.is(cause.value(py)));

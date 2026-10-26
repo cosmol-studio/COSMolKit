@@ -31,5 +31,5 @@ def test_inchi_roundtrip_parameters_and_errors():
     with pytest.raises(ck.InchiError) as raised:
         ck.Molecule.from_inchi("not InChI")
     assert raised.value.domain == "inchi"
-    assert isinstance(raised.value.kind, ck.InchiErrorKind)
+    assert isinstance(raised.value.variant, ck.InchiErrorKind)
     assert molecule.to_smiles() == "CCO"

@@ -31,20 +31,20 @@ def test_complete_structure_and_protein_projection_retain_baseline_capabilities(
     assert (protein.num_models, protein.num_chains, protein.num_residues, protein.num_atoms) == (1, 1, 2, 5)
     chain = protein[0]
     assert isinstance(chain, ck.ProteinChainRef)
-    assert (chain.id, chain.kind) == (0, "Protein")
+    assert (chain.id, chain.kind) == (0, ck.ChainKind.Protein)
     residues = chain.residues
     assert all(isinstance(residue, ck.ProteinResidueRef) for residue in residues)
     assert [
         (r.id, r.name, int(r.code), r.one_letter_code, r.fasta_code,
-         r.canonical_one_letter_code, r.is_standard, r.is_modified_amino_acid,
-         int(r.parent_standard_code))
+         r.info.canonical_one_letter_code, r.is_standard, r.info.is_modified_amino_acid,
+         int(r.info.parent_standard_code))
         for r in residues
     ] == [
         (0, "MET", 16, "M", "M", "M", True, False, 16),
         (1, "GLY", 11, "G", "G", "G", True, False, 11),
     ]
     assert [
-        (a.id, a.name, a.atomic_number, a.position)
+        (a.id, a.name.as_str().strip(), a.element.atomic_number, tuple(a.position))
         for r in residues for a in r.atoms
     ] == [
         (0, "N", 7, (11.104, 13.207, 9.9)),
@@ -61,7 +61,7 @@ def test_complete_structure_and_protein_projection_retain_baseline_capabilities(
     assert ck.Protein.read(path).num_atoms == 5
     mmcif = structure.to_mmcif()
     reparsed = ck.BioStructure.from_mmcif(mmcif)
-    assert [a.position() for a in reparsed.atoms] == [a.position() for a in structure.atoms]
+    assert [a.position for a in reparsed.atoms] == [a.position for a in structure.atoms]
     assert reparsed.protein().num_atoms == 5
     assert structure.to_molecule(sanitize=False, remove_hs=False).num_atoms == 7
     assert structure.num_atoms == 7

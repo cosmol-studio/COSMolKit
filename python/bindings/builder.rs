@@ -10,6 +10,8 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 
 #[pyclass(module = "cosmolkit")]
+/// Mutable construction state for assembling atoms, bonds, coordinates and metadata.
+/// build() produces a validated Molecule without consuming this Python builder.
 pub struct MoleculeBuilder {
     pub(crate) inner: ck::MoleculeBuilder,
 }
@@ -21,12 +23,14 @@ impl MoleculeBuilder {
         Self::new()
     }
     #[staticmethod]
+    /// Create an empty molecular builder.
     fn new() -> Self {
         Self {
             inner: ck::MoleculeBuilder::new(),
         }
     }
     #[staticmethod]
+    /// Initialize a builder from detached topology, coordinate and property values.
     fn from_parts(
         topology: &TopologyBlock,
         coordinates: &CoordinateBlock,
@@ -40,20 +44,24 @@ impl MoleculeBuilder {
             ),
         }
     }
+    /// Append an atom specification and return its zero-based atom index.
     fn add_atom(&mut self, atom: &AtomSpec) -> usize {
         self.inner.add_atom(atom.inner.clone()).index()
     }
+    /// Append a bond specification and return its zero-based bond index; invalid endpoints raise OperationError.
     fn add_bond(&mut self, bond: &crate::construction_values::BondSpec) -> PyResult<usize> {
         self.inner
             .add_bond(bond.inner.clone())
             .map(ck::BondId::index)
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Update the specified atom's formal charge in this builder.
     fn set_atom_formal_charge(&mut self, atom_id: usize, formal_charge: i8) -> PyResult<()> {
         self.inner
             .set_atom_formal_charge(ck::AtomId::new(atom_id), formal_charge)
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Update the specified bond's order in this builder.
     fn set_bond_order(
         &mut self,
         bond_id: usize,
@@ -63,55 +71,65 @@ impl MoleculeBuilder {
             .set_bond_order(ck::BondId::new(bond_id), order.into_rust()?)
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Remove a bond between the two atom indices; return whether a bond was removed.
     fn remove_bond_between_atoms(&mut self, begin_atom: usize, end_atom: usize) -> PyResult<bool> {
         self.inner
             .remove_bond_between_atoms(ck::AtomId::new(begin_atom), ck::AtomId::new(end_atom))
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Return the number of neighbors of the specified atom in the current builder topology.
     fn degree(&self, atom_id: usize) -> PyResult<usize> {
         self.inner
             .degree(ck::AtomId::new(atom_id))
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Return bond indices incident to the specified atom.
     fn neighbor_bonds(&self, atom_id: usize) -> PyResult<Vec<usize>> {
         self.inner
             .neighbor_bonds(ck::AtomId::new(atom_id))
             .map(|values| values.into_iter().map(ck::BondId::index).collect())
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Return the connecting bond index, or None when no bond connects the specified atoms.
     fn bond_between_atoms(&self, begin_atom: usize, end_atom: usize) -> PyResult<Option<usize>> {
         self.inner
             .bond_between_atoms(ck::AtomId::new(begin_atom), ck::AtomId::new(end_atom))
             .map(|value| value.map(ck::BondId::index))
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Set the builder's two-dimensional coordinates from one (x, y) pair per atom.
     fn set_2d_coordinates(&mut self, coordinates: Vec<[f64; 2]>) -> PyResult<()> {
         self.inner
             .set_2d_coordinates(coordinates)
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Append a two-dimensional conformer and return its identifier.
     fn add_2d_conformer(&mut self, coordinates: Vec<[f64; 2]>) -> PyResult<usize> {
         self.inner
             .add_2d_conformer(coordinates)
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Append a three-dimensional conformer and return its identifier.
     fn add_3d_conformer(&mut self, coordinates: Vec<[f64; 3]>) -> PyResult<usize> {
         self.inner
             .add_3d_conformer(coordinates)
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Append a substance group and return its index; native structural validation errors propagate.
     fn add_substance_group(&mut self, group: &SubstanceGroup) -> PyResult<usize> {
         self.inner
             .add_substance_group(group.inner.clone())
             .map(|id| id.index())
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
+    /// Append an enhanced stereochemistry group and return its index.
     fn add_stereo_group(&mut self, group: &StereoGroup) -> PyResult<usize> {
         self.inner
             .add_stereo_group(group.inner.clone())
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
     #[getter]
+    /// Independent list of detached atom values in builder order.
     fn atoms(&self) -> Vec<Atom> {
         self.inner
             .atoms()
@@ -121,6 +139,7 @@ impl MoleculeBuilder {
             .collect()
     }
     #[getter]
+    /// Independent list of detached bond values in builder order.
     fn bonds(&self) -> Vec<Bond> {
         self.inner
             .bonds()
@@ -130,6 +149,7 @@ impl MoleculeBuilder {
             .collect()
     }
     #[getter]
+    /// Independent list of substance-group values.
     fn substance_groups(&self) -> Vec<SubstanceGroup> {
         self.inner
             .substance_groups()
@@ -139,6 +159,7 @@ impl MoleculeBuilder {
             .collect()
     }
     #[getter]
+    /// Independent list of enhanced stereochemistry-group values.
     fn stereo_groups(&self) -> Vec<StereoGroup> {
         self.inner
             .stereo_groups()
@@ -148,18 +169,21 @@ impl MoleculeBuilder {
             .collect()
     }
     #[getter]
+    /// Detached coordinate-block value from the builder.
     fn coordinates(&self) -> CoordinateBlock {
         CoordinateBlock {
             inner: self.inner.coordinates().clone(),
         }
     }
     #[getter]
+    /// Detached molecule-property value from the builder.
     fn properties(&self) -> MoleculeProperties {
         MoleculeProperties {
             inner: self.inner.properties().clone(),
         }
     }
 
+    /// Validate and construct a Molecule while keeping this Python builder reusable.
     fn build(&self) -> PyResult<crate::native::Molecule> {
         self.inner
             .clone()
@@ -168,12 +192,14 @@ impl MoleculeBuilder {
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
 
+    /// Return an independent builder value with a new molecule name.
     fn with_name(&self, name: String) -> Self {
         Self {
             inner: self.inner.clone().with_name(name),
         }
     }
 
+    /// Return an independent builder value with the specified string property.
     fn with_property(&self, key: String, value: String) -> PyResult<Self> {
         self.inner
             .clone()
@@ -182,12 +208,14 @@ impl MoleculeBuilder {
             .map_err(crate::operation_errors::OperationError::from_rust)
     }
 
+    /// Return an independent builder value with an SDF data field.
     fn with_sdf_data_field(&self, key: String, value: String) -> Self {
         Self {
             inner: self.inner.clone().with_sdf_data_field(key, value),
         }
     }
 
+    /// Return an independent builder value with the supplied molecule properties.
     fn with_properties(&self, properties: &MoleculeProperties) -> Self {
         Self {
             inner: self.inner.clone().with_properties(properties.inner.clone()),
@@ -525,13 +553,13 @@ mod tests {
             assert_eq!(projected.inner.coordinates(), native.coordinates());
             assert_eq!(projected.inner.properties(), native.properties());
             let projected = Py::new(py, projected)?;
-            assert_eq!(projected.bind(py).call_method0("atoms")?.len()?, 3);
-            assert_eq!(projected.bind(py).call_method0("bonds")?.len()?, 2);
+            assert_eq!(projected.bind(py).getattr("atoms")?.len()?, 3);
+            assert_eq!(projected.bind(py).getattr("bonds")?.len()?, 2);
             assert_eq!(
                 projected
                     .bind(py)
-                    .call_method0("properties")?
-                    .call_method0("name")?
+                    .getattr("properties")?
+                    .getattr("name")?
                     .extract::<String>()?,
                 "native source"
             );
@@ -553,11 +581,11 @@ mod tests {
             assert_eq!(native.atoms().len(), 3);
             let source = Py::new(py, Molecule { inner: source })?;
             let detached = source.bind(py).call_method0("to_builder")?;
-            assert_eq!(detached.call_method0("atoms")?.len()?, 3);
+            assert_eq!(detached.getattr("atoms")?.len()?, 3);
             assert_eq!(
                 py.get_type::<MoleculeBuilder>()
                     .call0()?
-                    .call_method0("atoms")?
+                    .getattr("atoms")?
                     .len()?,
                 0
             );

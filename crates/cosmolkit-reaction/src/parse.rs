@@ -6,11 +6,16 @@ use cosmolkit_model::{
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+/// Reaction SMARTS/SMILES parsing, sanitization and CX extension options.
 pub struct ReactionParseParams {
+    /// Parse reaction components as SMILES rather than SMARTS.
     pub use_smiles: bool,
+    /// Sanitize parsed molecular templates.
     pub sanitize: bool,
     #[configuration(none_default)]
+    /// Text replacements expanded before component parsing.
     pub replacements: BTreeMap<String, String>,
+    /// Recognize and parse reaction CXSMILES extensions.
     pub allow_cxsmiles: bool,
     /// Declared by RDKit but not consumed by parseReaction. This flag does
     /// not suppress reaction-global CX exceptions.

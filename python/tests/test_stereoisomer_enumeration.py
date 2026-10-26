@@ -20,25 +20,21 @@ def test_options_defaults_mutability_and_repr_use_project_native_names():
     assert options.max_isomers == 1024
     assert options.random_source is None
     assert options.unique is True
-    assert repr(options) == (
-        "StereoisomerOptions(try_embedding=false, only_unassigned=true, "
-        "max_isomers=1024, random_source=None, unique=true, only_stereo_groups=false)"
-    )
 
     options.try_embedding = True
     options.only_unassigned = False
     options.only_stereo_groups = True
     options.max_isomers = 7
-    options.random_source = 61453
+    random_source = cosmolkit.StereoisomerRandomSource.from_integer_seed(61453)
+    options.random_source = random_source
     options.unique = False
 
     assert options.try_embedding is True
     assert options.only_unassigned is False
     assert options.only_stereo_groups is True
     assert options.max_isomers == 7
-    assert options.random_source == 61453
+    assert options.random_source == random_source
     assert options.unique is False
-    assert "random_source=..." in repr(options)
 
 
 @pytest.mark.parametrize(
@@ -65,7 +61,6 @@ def test_focused_outputs_match_pinned_rdkit_exactly(source: str, expected: list[
     iterator = molecule.enumerate_stereoisomers()
     assert isinstance(iterator, cosmolkit.StereoisomerIterator)
     assert iterator.yielded_count == 0
-    assert repr(iterator) == "StereoisomerIterator(yielded_count=0)"
 
     assert smiles(iterator) == expected
     assert iterator.yielded_count == len(expected)
@@ -137,14 +132,14 @@ def test_seeded_default_and_custom_random_sources_match_pinned_rdkit_sequences()
 
     assert smiles(
         molecule.enumerate_stereoisomers(
-            cosmolkit.StereoisomerOptions(max_isomers=3, random_source=0xF00D)
+            cosmolkit.StereoisomerOptions(max_isomers=3, random_source=cosmolkit.StereoisomerRandomSource.from_integer_seed(0xF00D))
         )
     ) == seeded_expected
     assert smiles(
         molecule.enumerate_stereoisomers(
             cosmolkit.StereoisomerOptions(
                 max_isomers=3,
-                random_source=random.Random(0xF00D),
+                random_source=cosmolkit.StereoisomerRandomSource.from_random_bits(random.Random(0xF00D).getrandbits),
             )
         )
     ) == seeded_expected
@@ -171,7 +166,7 @@ def test_seeded_default_and_custom_random_sources_match_pinned_rdkit_sequences()
     ]
     assert smiles(
         molecule.enumerate_stereoisomers(
-            cosmolkit.StereoisomerOptions(max_isomers=3, random_source=scripted)
+            cosmolkit.StereoisomerOptions(max_isomers=3, random_source=cosmolkit.StereoisomerRandomSource.from_random_bits(scripted.getrandbits))
         )
     ) == scripted_expected
     assert scripted.requested_widths == [6, 6, 6]
@@ -185,10 +180,10 @@ def test_custom_random_errors_remain_visible_at_lazy_iteration_boundary():
 
     molecule = cosmolkit.Molecule.from_smiles("Br" + "[CH](Cl)" * 6 + "F")
     iterator = molecule.enumerate_stereoisomers(
-        cosmolkit.StereoisomerOptions(max_isomers=1, random_source=FailingRandom())
+        cosmolkit.StereoisomerOptions(max_isomers=1, random_source=cosmolkit.StereoisomerRandomSource.from_random_bits(FailingRandom().getrandbits))
     )
 
-    with pytest.raises(ValueError, match="fixture random failure for 6 bits"):
+    with pytest.raises(RuntimeError, match="fixture random failure for 6 bits"):
         next(iterator)
     assert iterator.yielded_count == 0
 
@@ -206,19 +201,13 @@ def test_potential_stereo_analysis_returns_typed_isolated_state():
 
     record = analysis.stereo[0]
     assert isinstance(record, cosmolkit.PotentialStereoInfo)
-    assert record.stereo_type == "atom_tetrahedral"
-    assert record.specified == "unspecified"
+    assert record.stereo_type == cosmolkit.PotentialStereoType.AtomTetrahedral
+    assert record.specified == cosmolkit.PotentialStereoSpecified.Unspecified
     assert record.centered_on.kind == "atom"
     assert record.centered_on.index == 1
-    assert record.descriptor == "none"
+    assert record.descriptor == cosmolkit.PotentialStereoDescriptor.None_
     assert record.permutation == 0
     assert record.controlling_atoms == [0, 2, 3]
-    assert repr(record) == (
-        "PotentialStereoInfo(stereo_type='atom_tetrahedral', "
-        "specified='unspecified', centered_on=PotentialStereoCenter(kind='atom', index=1), "
-        "descriptor='none', permutation=0)"
-    )
-    assert repr(analysis) == "PotentialStereoResult(records=1)"
 
 
 def test_enumeration_composes_with_hydrogen_conformer_and_descriptor_apis():

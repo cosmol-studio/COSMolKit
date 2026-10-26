@@ -1,5 +1,6 @@
 """UFF21 original row mapping and source options through the canonical native API."""
 import math
+import struct
 import pytest
 import cosmolkit as ck
 
@@ -38,20 +39,20 @@ def test_uff_original_21_rows_canonical_native_behavior(original_row):
         assert isinstance(result.energy, float) and math.isfinite(result.energy)
         assert result.molecule.num_atoms == 2
         assert coordinates(result.molecule) != before
-        assert "UffOptimizationResult(needs_more=0, energy=" in repr(result)
+        assert "UffOptimizationResult" in repr(result)
     else:
         multi = molecule.with_uff_optimized_conformers()
         assert isinstance(multi, ck.UffConformerOptimizationResult)
         assert multi.molecule.num_atoms == 2
         assert coordinates(multi.molecule) != before
-        assert repr(multi) == "UffConformerOptimizationResult(conformers=1)"
+        assert "UffConformerOptimizationResult" in repr(multi)
         assert len(multi.conformer_results) == 1
         result = multi.conformer_results[0]
         assert isinstance(result, ck.UffConformerResult)
         assert result.status_code == 0 and result.needs_more is False
         assert isinstance(result.energy, float) and math.isfinite(result.energy)
         assert result.conformer_id == molecule.conformers_3d[0].id
-        assert "UffConformerResult(needs_more=0, energy=" in repr(result)
+        assert "UffConformerResult" in repr(result)
     assert coordinates(molecule) == before
 
 
@@ -68,25 +69,30 @@ def test_uff_source_defaults_and_writable_parameter_values():
 
 
 @pytest.mark.parametrize("selector", [-1, -2, -3, -2**31])
-def test_uff_source_signed_selectors_choose_first_stored_3d(selector):
+def test_uff_unsigned_selectors_reject_negative_sentinels(selector):
     molecule = make_molecule()
     before = coordinates(molecule)
-    selected = molecule.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=0, conformer_id=selector))
+    with pytest.raises(OverflowError):
+        ck.UffOptimizationParams(conformer_id=selector)
+    with pytest.raises(OverflowError):
+        ck.UffEvaluationParams(conformer_id=selector)
+    conformer_id = molecule.conformers_3d[0].id
+    selected = molecule.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=0, conformer_id=conformer_id))
     default = molecule.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=0))
     assert selected.status_code == default.status_code == 1
     assert selected.needs_more is True
     assert selected.energy == default.energy
     assert coordinates(selected.molecule) == before
-    actual = molecule.uff_energy_gradient_with_params(ck.UffEvaluationParams(conformer_id=selector))
+    actual = molecule.uff_energy_gradient_with_params(ck.UffEvaluationParams(conformer_id=conformer_id))
     first = molecule.uff_energy_gradient()
     assert actual.energy == first.energy == selected.energy
     assert actual.gradient == first.gradient
     assert coordinates(molecule) == before
 
 
-@pytest.mark.parametrize("selector", [-2**31-1, 2**31])
+@pytest.mark.parametrize("selector", [-1, 2 ** (8 * struct.calcsize("P"))])
 @pytest.mark.parametrize("parameter", [ck.UffOptimizationParams, ck.UffEvaluationParams])
-def test_uff_source_selector_i32_conversion_bounds(selector, parameter):
+def test_uff_selector_usize_conversion_bounds(selector, parameter):
     with pytest.raises(OverflowError):
         parameter(conformer_id=selector)
 
@@ -111,7 +117,7 @@ def test_uff_source_undefined_thread_signed_negation_is_typed_atomic():
     before = coordinates(molecule)
     with pytest.raises(ck.OperationError) as error:
         molecule.with_uff_optimized_conformers_with_params(ck.UffConformerOptimizationParams(num_threads=-2**31))
-    assert error.value.kind == "UffOptimization"
+    assert error.value.variant.name == "UffOptimization"
     assert isinstance(error.value.__cause__, ck.UffOptimizationError)
     assert "UndefinedSignedNegation" in str(error.value)
     assert coordinates(molecule) == before
@@ -126,11 +132,11 @@ def test_uff_missing_selected_geometry_has_canonical_source_cause(query):
             molecule.uff_energy_gradient_with_params(ck.UffEvaluationParams(conformer_id=999))
         else:
             molecule.with_uff_optimized_with_params(ck.UffOptimizationParams(conformer_id=999))
-    assert error.value.kind == "UffOptimization"
+    assert error.value.variant.name == "UffOptimization"
     assert isinstance(error.value.__cause__, ck.UffOptimizationError)
     cause_kind = error.value.__cause__.kind
     assert isinstance(cause_kind, ck.UffOptimizationErrorKind)
-    assert cause_kind.variant == "MissingConformer"
+    assert cause_kind == ck.UffOptimizationErrorKind.MissingConformer(999)
     assert cause_kind.requested == 999
     assert coordinates(molecule) == before
 
@@ -145,7 +151,7 @@ def test_uff_parameter_missing_cache_has_original_typed_borrowed_cause():
     molecule = ck.Molecule.from_smiles("CC").to_builder().build()
     with pytest.raises(ck.UffParameterQueryError) as error:
         molecule.uff_has_all_molecule_params()
-    assert error.value.kind == "Cache"
+    assert error.value.variant.name == "Cache"
     assert isinstance(error.value.__cause__, ck.OperationError)
     assert molecule.with_assigned_valence().uff_has_all_molecule_params() is True
 

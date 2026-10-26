@@ -45,8 +45,8 @@ def test_optional_empty_roots_are_distinct_and_configuration_fields_are_assignab
     assert params.ignore_atoms is None
     assert molecule.fingerprint_morgan_with_params(params, None).on_bits == []
     assert molecule.fingerprint_morgan_with_params(ck.MorganFingerprintParams(), None).on_bits
-    params.conformer_id = 7
-    assert params.conformer_id == 7
+    with pytest.raises(AttributeError):
+        params.conformer_id = 7
     roots = params.from_atoms
     with pytest.raises(AttributeError):
         roots.append(0)
@@ -62,8 +62,8 @@ def test_generator_errors_keep_the_source_cause_and_input():
     )
     with pytest.raises(ck.MorganReadError) as caught:
         molecule.fingerprint_morgan_with_params(params, None)
-    assert caught.value.domain == "fingerprints"
-    assert caught.value.kind == "Generator"
+    assert caught.value.domain == "fingerprint"
+    assert caught.value.variant.name == "Generator"
     assert caught.value.__cause__ is not None
     assert "bad count bounds provided" in str(caught.value)
     assert molecule.to_smiles() == before
@@ -78,6 +78,6 @@ def test_feature_and_custom_invariant_options_reach_the_owner():
         radius=0,
     )
     assert molecule.fingerprint_morgan_sparse_count_with_params(custom, None).nonzero_elements == {1: 1}
-    features = ck.MorganFingerprintParams(invariants=ck.MorganInvariants.features())
-    connectivity = ck.MorganFingerprintParams(invariants=ck.MorganInvariants.connectivity())
+    features = ck.MorganFingerprintParams(invariants=ck.MorganInvariants.Features)
+    connectivity = ck.MorganFingerprintParams(invariants=ck.MorganInvariants.Connectivity)
     assert molecule.fingerprint_morgan_sparse_count_with_params(features, None).nonzero_elements != molecule.fingerprint_morgan_sparse_count_with_params(connectivity, None).nonzero_elements

@@ -22,6 +22,7 @@ pub(crate) fn keyword_params(
 
 #[pyfunction]
 #[pyo3(signature = (query, params=crate::arguments::Argument::Missing, *, n_bits=crate::arguments::Argument::Missing, tautomeric=crate::arguments::Argument::Missing))]
+/// Calculate the native pattern fingerprint for a QueryGraph with the selected bit width and query options.
 pub fn fingerprint_pattern_query(
     query: &QueryGraph,
     params: crate::arguments::Argument<Option<PyRef<'_, PatternFingerprintParams>>>,
@@ -65,6 +66,7 @@ pub fn _fingerprint_pattern_query_keywords(
     _fingerprint_pattern_query_params(query, Some(&params))
 }
 #[pyfunction]
+/// Calculate a QueryGraph pattern fingerprint with explicit PatternFingerprintParams.
 pub fn fingerprint_pattern_query_with_params(
     query: &QueryGraph,
     params: &PatternFingerprintParams,

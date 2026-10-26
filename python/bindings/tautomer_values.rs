@@ -8,12 +8,14 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// Retained tautomer candidates, enumeration status and modification indices; candidate molecules use COW value semantics.
 pub struct TautomerEnumeration {
     pub(crate) inner: Arc<ck::TautomerEnumeration>,
 }
 #[pymethods]
 impl TautomerEnumeration {
     #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_tautomers=crate::arguments::Argument::Missing,max_transforms=crate::arguments::Argument::Missing,remove_sp3_stereo=crate::arguments::Argument::Missing,remove_bond_stereo=crate::arguments::Argument::Missing,remove_isotopic_hydrogens=crate::arguments::Argument::Missing,reassign_stereo=crate::arguments::Argument::Missing,callback=crate::arguments::Argument::Missing,scorer=crate::arguments::Argument::Missing,score_params=crate::arguments::Argument::Missing))]
+    /// Select the canonical tautomer from these candidates using native scoring and tie-breaking; accept parameters or keyword options, not both.
     fn canonical_tautomer(
         &self,
         py: Python<'_>,
@@ -115,6 +117,7 @@ impl TautomerEnumeration {
         )?;
         crate::tautomer_producers::canonical_enumeration(py, self, Some(params))
     }
+    /// Select the canonical candidate using the supplied scoring configuration.
     fn canonical_tautomer_with_params(
         &self,
         py: Python<'_>,
@@ -124,6 +127,7 @@ impl TautomerEnumeration {
     }
 
     #[getter]
+    /// Number of retained tautomer candidates.
     fn len(&self) -> usize {
         self.inner.len()
     }
@@ -136,14 +140,17 @@ impl TautomerEnumeration {
             .ok_or_else(|| pyo3::exceptions::PyIndexError::new_err(index))
     }
     #[getter]
+    /// Whether enumeration retained no candidates.
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
     #[getter]
+    /// Enumeration completion reason, including configured limits or cancellation.
     fn status(&self) -> TautomerEnumerationStatus {
         self.inner.status().into()
     }
     #[getter]
+    /// Set of zero-based atom indices modified during enumeration.
     fn modified_atoms(&self) -> BTreeSet<usize> {
         self.inner
             .modified_atoms()
@@ -152,6 +159,7 @@ impl TautomerEnumeration {
             .collect()
     }
     #[getter]
+    /// Set of zero-based bond indices modified during enumeration.
     fn modified_bonds(&self) -> BTreeSet<usize> {
         self.inner
             .modified_bonds()
@@ -160,6 +168,7 @@ impl TautomerEnumeration {
             .collect()
     }
     #[getter]
+    /// Canonical SMILES keys in the same order as the retained candidates.
     fn canonical_smiles(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         self.inner
             .canonical_smiles()
@@ -167,12 +176,14 @@ impl TautomerEnumeration {
             .map(|text| decode_source_text(py, text))
             .collect()
     }
+    /// Return the candidate at a zero-based index, or None when out of range; the returned molecule has COW value semantics.
     fn get(&self, index: usize) -> Option<Molecule> {
         self.inner.get(index).map(|inner| Molecule {
             inner: inner.clone(),
         })
     }
     #[doc = r#"{"role":"return_type","imports":["collections.abc"],"type":"collections.abc.Iterator[Molecule]"}"#]
+    /// Iterate over candidate molecules in retained order, keeping the enumeration alive.
     fn iter<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
         Py::new(
             py,
@@ -187,6 +198,7 @@ impl TautomerEnumeration {
         .map_err(Into::into)
     }
     #[doc = r#"{"role":"return_type","imports":["collections.abc"],"type":"collections.abc.Iterator[tuple[str, Molecule]]"}"#]
+    /// Iterate over canonical-SMILES/molecule pairs in retained order, keeping the enumeration alive.
     fn entries<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyIterator>> {
         Py::new(
             py,
@@ -251,6 +263,7 @@ impl TautomerEntryIterator {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Read-only native tautomer score and its ring, substructure and heteroatom-hydrogen contributions.
     pub struct TautomerScore {
         pub(crate) inner: ck::TautomerScore,
     }
@@ -259,18 +272,22 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl TautomerScore {
     #[getter]
+    /// Contribution from ring scoring.
     fn ring(&self) -> i32 {
         self.inner.ring()
     }
     #[getter]
+    /// Contribution from matched substructure scoring terms.
     fn substructure(&self) -> i32 {
         self.inner.substructure()
     }
     #[getter]
+    /// Contribution from hydrogens attached to heteroatoms.
     fn hetero_hydrogen(&self) -> i32 {
         self.inner.hetero_hydrogen()
     }
     #[getter]
+    /// Sum of all contributions to this tautomer score.
     fn total(&self) -> i32 {
         self.inner.total()
     }
@@ -278,6 +295,7 @@ impl TautomerScore {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Named SMARTS pattern and signed weight used by tautomer scoring.
     pub struct TautomerScoreTerm {
         pub(crate) inner: ck::TautomerScoreTerm,
     }
@@ -292,24 +310,29 @@ impl TautomerScoreTerm {
         }
     }
     #[staticmethod]
+    /// Create a named SMARTS scoring term with a signed integer weight.
     fn new(name: String, smarts: String, score: i32) -> Self {
         Self::construct(name, smarts, score)
     }
     #[getter]
+    /// Human-readable name of the scoring term.
     fn name(&self) -> &str {
         self.inner.name()
     }
     #[getter]
+    /// SMARTS pattern matched by this scoring term.
     fn smarts(&self) -> &str {
         self.inner.smarts()
     }
     #[getter]
+    /// Signed integer weight assigned to a match of this term.
     fn score(&self) -> i32 {
         self.inner.score()
     }
 }
 
 #[pyfunction]
+/// Return independent values for the canonical default tautomer-scoring terms.
 pub fn default_tautomer_score_terms() -> Vec<TautomerScoreTerm> {
     ck::default_tautomer_score_terms()
         .iter()
@@ -434,27 +457,27 @@ mod tests {
             assert_eq!(
                 projected
                     .bind(py)
-                    .call_method0("canonical_smiles")?
+                    .getattr("canonical_smiles")?
                     .extract::<Vec<String>>()?,
                 expected_keys
             );
             assert_eq!(
                 projected
                     .bind(py)
-                    .call_method0("modified_atoms")?
+                    .getattr("modified_atoms")?
                     .extract::<BTreeSet<usize>>()?,
                 expected_atoms
             );
             assert_eq!(
                 projected
                     .bind(py)
-                    .call_method0("modified_bonds")?
+                    .getattr("modified_bonds")?
                     .extract::<BTreeSet<usize>>()?,
                 expected_bonds
             );
             let value = projected.bind(py).call_method1("get", (0,))?;
             assert_eq!(
-                value.call_method0("num_atoms")?.extract::<usize>()?,
+                value.getattr("num_atoms")?.extract::<usize>()?,
                 candidate.inner.num_atoms()
             );
             assert!(
@@ -511,10 +534,7 @@ mod tests {
                 .into_iter()
                 .zip(expected)
             {
-                assert_eq!(
-                    result.bind(py).call_method0(method)?.extract::<i32>()?,
-                    value
-                );
+                assert_eq!(result.bind(py).getattr(method)?.extract::<i32>()?, value);
             }
             Ok(())
         })

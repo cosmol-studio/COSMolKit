@@ -120,7 +120,7 @@ def test_d02_raw_molecule_prepared_boundary_is_typed_and_preserving(name: str):
             _ = query(molecule, name)()
     error = caught.value
     assert isinstance(error, ValueError)
-    assert error.domain == "descriptors" and error.kind == "MissingPreparedValence"
+    assert error.domain == "descriptors" and error.variant.name == "MissingPreparedValence"
     assert error.__cause__ is None
     assert (molecule.num_atoms, molecule.num_bonds, molecule.coordinates_2d) == before
 
@@ -134,7 +134,7 @@ def test_d02_raw_topology_queries_do_not_prepare(name: str, expected: object):
     assert query(molecule, name)() == expected
     with pytest.raises(ck.DescriptorReadError) as caught:
         _ = molecule.chi_0_v()
-    assert caught.value.kind == "MissingPreparedValence"
+    assert caught.value.variant.name == "MissingPreparedValence"
 
 
 @pytest.mark.parametrize("name", list(PARAMETERS))
@@ -143,21 +143,24 @@ def test_d02_native_signatures_are_canonical_receiver_methods(name: str):
     assert callable(descriptor)
     signature = inspect.signature(descriptor)
     parameter = PARAMETERS[name]
-    assert list(signature.parameters) == ["self"] + ([] if parameter is None else [parameter])
+    expected = ["self"] + ([] if parameter is None else [parameter])
+    if name.startswith("chi_") and name in PREPARED:
+        expected += ["force"]
+    assert list(signature.parameters) == expected
     for p in signature.parameters.values():
         observed_default = cast(object, p.default)
         if p.name == "force":
-            assert observed_default is False
+            assert observed_default is (None if name.startswith("chi_") else False)
         else:
             assert observed_default is inspect.Parameter.empty
     assert not hasattr(ck, name)
 
 
 @pytest.mark.parametrize("name", [n for n in PREPARED if n.startswith("chi_")])
-def test_d02_chi_unmodeled_force_is_not_silently_accepted(name: str):
+def test_d02_chi_force_recomputes_the_same_descriptor(name: str):
     molecule = ck.Molecule.from_smiles("C")
-    with pytest.raises(TypeError):
-        _ = query(molecule, name)(force=True)
+    args = (2,) if PARAMETERS[name] == "order" else ()
+    assert query(molecule, name)(*args, force=True) == query(molecule, name)(*args, force=False)
 
 
 @pytest.mark.parametrize("name", ["chi_n_v", "chi_n_n"])
@@ -182,20 +185,20 @@ def test_d02_generated_stub_query_parameters_and_exception_context():
     methods = {n.name: n for n in classes["Molecule"].body if isinstance(n, ast.FunctionDef)}
     for name, parameter in PARAMETERS.items():
         args = methods[name].args
-        assert [a.arg for a in args.args] == ["self"] + ([] if parameter is None else [parameter])
-        assert not args.vararg and not args.kwarg and not args.kwonlyargs
-        if parameter == "force":
-            assert len(args.defaults) == 1 and ast.literal_eval(args.defaults[0]) is False
-        else:
-            assert not args.defaults
-        if parameter is not None:
-            assert args.args[-1].annotation is not None
-            assert ast.unparse(args.args[-1].annotation) == ("builtins.bool" if parameter == "force" else "builtins.int")
+        declared = args.posonlyargs + args.args + args.kwonlyargs
+        assert [a.arg for a in declared] == list(inspect.signature(getattr(ck.Molecule, name)).parameters)
+        assert not args.vararg and not args.kwarg
+        if parameter == "order":
+            assert ast.unparse(next(a.annotation for a in declared if a.arg == "order")) == "SupportsIndex"
+        if name in PREPARED:
+            force = next(a for a in declared if a.arg == "force")
+            assert ast.unparse(force.annotation) == ("bool | None" if name.startswith("chi_") else "bool")
     for name in ("DescriptorReadError", "DescriptorError"):
         cls = classes[name]
-        assert [ast.unparse(x) for x in cls.bases] == ["builtins.ValueError"]
-        fields = {cast(ast.Name, n.target).id: ast.unparse(n.annotation) for n in cls.body if isinstance(n, ast.AnnAssign)}
-        assert fields["domain"] == fields["kind"] == "builtins.str"
+        assert [ast.unparse(x) for x in cls.bases] == ["ValueError"]
+        fields = {n.name: ast.unparse(n.returns) for n in cls.body if isinstance(n, ast.FunctionDef)}
+        assert fields["domain"] == "str"
+        assert fields["variant"] == name + "Kind"
         native = cast(object, getattr(ck, name))
         assert isinstance(native, type) and issubclass(native, ValueError)
     assert classes["DescriptorError"] is not classes["DescriptorReadError"]

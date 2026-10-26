@@ -105,7 +105,6 @@ length errors. No editable Python container mirror is retained.
 p = ck.MorganCallParams(from_atoms=[0])
 p.from_atoms = [0, 2]          # Assigns the actual Rust field.
 assert p.from_atoms == (0, 2)
-# p.from_atoms.append(2)      # AttributeError: tuple has no append.
 # p.from_atoms = ["wrong"]   # TypeError; the field stays (0, 2).
 ```
 

@@ -102,7 +102,7 @@ error_projection!(SanitizeError, SanitizeErrorKind, ck::SanitizeError, "sanitize
 }, source = Option<SanitizeSource>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn stage(&self) -> Option<SanitizeStage> { match self.inner {
+    #[doc = "Native processing stage that failed. Present for `SanitizeError.InvalidTopology`, `SanitizeError.InvalidQueryState`, `SanitizeError.Cleanup`, `SanitizeError.Properties`, `SanitizeError.Rings`, `SanitizeError.Kekulize`, `SanitizeError.Radicals`, `SanitizeError.Aromaticity`, `SanitizeError.Conjugation`, `SanitizeError.Hybridization`, `SanitizeError.Atropisomers`, `SanitizeError.Chirality`, `SanitizeError.AdjustHs`; None when unavailable."] fn stage(&self) -> Option<SanitizeStage> { match self.inner {
         ck::SanitizeError::InvalidTopology { stage, .. }
         | ck::SanitizeError::InvalidQueryState { stage, .. }
         | ck::SanitizeError::Cleanup { stage, .. }

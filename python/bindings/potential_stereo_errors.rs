@@ -63,7 +63,7 @@ error_projection!(PotentialStereoError, PotentialStereoErrorKind, ck::PotentialS
     | ck::PotentialStereoError::RefinementDidNotConverge { .. } => None,
 }, source = Option<PotentialSource>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to PotentialStereoError.InvalidPropertyKind, PotentialStereoError.InvalidRingStereoReference, PotentialStereoError.EmptyRingStereoReferences, PotentialStereoError.InvalidValenceValue, PotentialStereoError.AtomOutOfRange, PotentialStereoError.InvalidAtomDegree, PotentialStereoError.InvalidChiralPermutation. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::PotentialStereoError::InvalidPropertyKind { atom, .. }
         | ck::PotentialStereoError::InvalidRingStereoReference { atom, .. }
         | ck::PotentialStereoError::EmptyRingStereoReferences { atom }
@@ -73,7 +73,7 @@ error_projection!(PotentialStereoError, PotentialStereoErrorKind, ck::PotentialS
         | ck::PotentialStereoError::InvalidChiralPermutation { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to PotentialStereoError.InvalidBondDegree, PotentialStereoError.InvalidStereoReferences, PotentialStereoError.UnsupportedBondOrder, PotentialStereoError.AtropisomerDependencyUnavailable. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::PotentialStereoError::InvalidBondDegree { bond, .. }
         | ck::PotentialStereoError::InvalidStereoReferences { bond, .. }
         | ck::PotentialStereoError::UnsupportedBondOrder { bond, .. }
@@ -81,32 +81,32 @@ error_projection!(PotentialStereoError, PotentialStereoErrorKind, ck::PotentialS
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
+    #[doc = "Native failure-specific category or value kind. Applies to PotentialStereoError.InvalidPropertyKind. None when this payload is absent."] fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
         ck::PotentialStereoError::InvalidPropertyKind { kind, .. } => Some(kind.into()), _ => None,
     } }
     #[getter]
-    fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Field whose content or type caused the failure. Applies to PotentialStereoError.InvalidValence, PotentialStereoError.InvalidValenceValue. None when this payload is absent."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::PotentialStereoError::InvalidValence { field, .. }
         | ck::PotentialStereoError::InvalidValenceValue { field, .. } => Some(field), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to PotentialStereoError.InvalidValence, PotentialStereoError.AtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::PotentialStereoError::InvalidValence { atom_count, .. }
         | ck::PotentialStereoError::AtomOutOfRange { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn value<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyInt>>> { match self.inner {
+    #[doc = "Value rejected or reported by the native operation. Applies to PotentialStereoError.InvalidRingStereoReference, PotentialStereoError.InvalidValenceValue, PotentialStereoError.InvalidRingInfo. None when this payload is absent."] fn value<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyInt>>> { match self.inner {
         ck::PotentialStereoError::InvalidRingStereoReference { value, .. }
         | ck::PotentialStereoError::InvalidValenceValue { value, .. } => value.into_pyobject(py).map(Some).map_err(Into::into),
         ck::PotentialStereoError::InvalidRingInfo { value, .. } => value.into_pyobject(py).map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
-    fn reason(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Native explanation for rejecting the operation. Applies to PotentialStereoError.InvalidRingInfo, PotentialStereoError.InvalidStereoReferences. None when this payload is absent."] fn reason(&self) -> Option<&'static str> { match self.inner {
         ck::PotentialStereoError::InvalidRingInfo { reason, .. }
         | ck::PotentialStereoError::InvalidStereoReferences { reason, .. } => Some(reason), _ => None,
     } }
     #[getter]
-    fn degree(&self) -> Option<usize> { match self.inner {
+    #[doc = "Neighbor count reported by the native check. Applies to PotentialStereoError.InvalidAtomDegree, PotentialStereoError.InvalidBondDegree. None when this payload is absent."] fn degree(&self) -> Option<usize> { match self.inner {
         ck::PotentialStereoError::InvalidAtomDegree { degree, .. }
         | ck::PotentialStereoError::InvalidBondDegree { degree, .. } => Some(degree), _ => None,
     } }

@@ -22,12 +22,16 @@ macro_rules! flag_value {
     ($name:ident, {$($flag:ident),+ $(,)?}) => {
         #[pyclass(module="cosmolkit", frozen, from_py_object, eq)]
         #[derive(Clone, Copy, PartialEq)]
+        #[doc = concat!(stringify!($name), " native option bit mask. Combine named constants with the bitwise OR operator; bits exposes its integer representation.")]
         pub struct $name { pub(crate) inner: ck::$name }
         #[pymethods]
         impl $name {
             $(#[classattr] const $flag: Self = Self { inner: ck::$name::$flag };)+
+            /// Construct a mask retaining all supplied bits, including unknown bits.
             #[staticmethod] fn from_bits_retain(bits: u32) -> Self { Self { inner: ck::$name::from_bits_retain(bits) } }
+            /// Integer representation of this option mask.
             #[getter] fn bits(&self) -> u32 { self.inner.bits() }
+            /// Whether every bit in the supplied mask is present.
             fn contains(&self, other: &Self) -> bool { self.inner.contains(other.inner) }
             fn __index__(&self) -> u32 { self.inner.bits() }
             fn __or__(&self, other: &Self) -> Self { Self { inner: self.inner | other.inner } }
@@ -42,6 +46,7 @@ flag_value!(LayeredFingerprintLayers, {
 // Kept as an ordinary Rust item: PyO3's derives require non-macro item hygiene.
 #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
+/// Avalon fingerprint feature-selection bit mask. Combine named flags with the bitwise OR operator.
 pub struct AvalonFingerprintFlags {
     pub(crate) inner: ck::AvalonFingerprintFlags,
 }
@@ -136,19 +141,23 @@ impl AvalonFingerprintFlags {
         inner: ck::AvalonFingerprintFlags::SIMILARITY,
     };
     #[staticmethod]
+    /// Construct flags from an integer, returning None when unknown bits are present.
     fn from_bits(bits: u32) -> Option<Self> {
         ck::AvalonFingerprintFlags::from_bits(bits).map(|inner| Self { inner })
     }
     #[staticmethod]
+    /// Construct flags while retaining all supplied bits, including unknown bits.
     fn from_bits_retain(bits: u32) -> Self {
         Self {
             inner: ck::AvalonFingerprintFlags::from_bits_retain(bits),
         }
     }
     #[getter]
+    /// Underlying integer bit mask.
     fn bits(&self) -> u32 {
         self.inner.bits()
     }
+    /// Whether this mask includes every bit set in the supplied mask.
     fn contains(&self, other: &Self) -> bool {
         self.inner.contains(other.inner)
     }

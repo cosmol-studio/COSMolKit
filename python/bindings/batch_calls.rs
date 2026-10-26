@@ -12,14 +12,14 @@ mod tests {
         Python::attach(|py|->PyResult<()>{
 let native=ck::MoleculeBatch::from_smiles_list_with_params(&["CO".into(),"C(".into(),"N".into()],&Default::default(),&ck::BatchParams{errors:Some(ck::BatchErrorMode::KeepErrors),n_jobs:Some(1),progress_bar:Some(false)}).unwrap();
 let batch=Py::new(py,MoleculeBatch{inner:native.clone()})?;
-let values=batch.bind(py).call_method0("records")?.extract::<Vec<Record>>()?;assert_eq!(values.len(),3);
+let values=batch.bind(py).getattr("records")?.extract::<Vec<Record>>()?;assert_eq!(values.len(),3);
 let Source::First(first)=&values[0]else{panic!("valid record lost")};
 let ck::BatchRecord::Molecule(original)=native.get(0).unwrap()else{panic!("source")};
 assert!(std::ptr::eq(first.borrow(py).inner.topology(),original.topology()));
 let actual_blocks=first.borrow(py).inner.to_builder();let original_blocks=original.to_builder();
 assert!(std::ptr::eq(actual_blocks.coordinates(),original_blocks.coordinates()));
 assert!(std::ptr::eq(first.borrow(py).inner.properties(),original.properties()));
-let errors=batch.bind(py).call_method0("errors")?.extract::<Vec<crate::error_framework::ErrorObject<BatchError>>>()?;assert_eq!(errors[0].bind(py).getattr("index")?.extract::<usize>()?,1);
+let errors=batch.bind(py).getattr("errors")?.extract::<Vec<crate::error_framework::ErrorObject<BatchError>>>()?;assert_eq!(errors[0].bind(py).getattr("index")?.extract::<usize>()?,1);
 let cause=errors[0].bind(py).getattr("source")?;assert!(cause.is_instance(<crate::operation_errors::SmilesError as crate::error_framework::ExceptionPayload>::exception_type(py).expect("error backend").as_any())?);assert!(cause.is(&errors[0].bind(py).getattr("__cause__")?));
 let renamed=batch.bind(py).call_method1("with_parallel_jobs",(Some(1),))?.extract::<Py<MoleculeBatch>>()?;
 assert_eq!(renamed.borrow(py).inner.len(),native.len());let ck::BatchRecord::Molecule(copy)=renamed.borrow(py).inner.get(0).unwrap().clone()else{panic!("valid")};assert!(std::ptr::eq(copy.topology(),original.topology()));assert!(std::ptr::eq(copy.properties(),original.properties()));
@@ -41,7 +41,7 @@ macro_rules! bits{($name:ident,$alias:ident,$module:ident,$params:ident)=>{{
 let defaults=ck::$params::default();let options=py.get_type::<crate::$module::$params>().call0()?.extract::<Py<crate::$module::$params>>()?;
 let runtime=py.get_type::<crate::batch_query_params::BatchQueryParams>().call0()?;
 let want=native.$alias(&defaults,&Default::default()).unwrap();
-for actual in [batch.bind(py).call_method0(stringify!($name))?,batch.bind(py).call_method1(stringify!($alias),(&options,&runtime))?]{let got=actual.extract::<Vec<Option<Py<crate::native::Fingerprint>>>>()?;assert_eq!(got.len(),want.len());for(got,want)in got.iter().zip(&want){assert_eq!(got.as_ref().map(|v|v.borrow(py).inner.on_bits()),want.as_ref().map(ck::Fingerprint::on_bits));}}
+for actual in [batch.bind(py).call_method0(stringify!($name))?,batch.bind(py).call_method1(stringify!($alias),(&options,&runtime))?]{let got=actual.extract::<Py<crate::fingerprint_batch::FingerprintBatch>>()?;assert_eq!(got.borrow(py).inner.len(),want.len());for (index,want) in want.iter().enumerate(){let item=actual.get_item(index)?.extract::<Option<Py<crate::native::Fingerprint>>>()?;assert_eq!(item.as_ref().map(|v|v.borrow(py).inner.on_bits()),want.as_ref().map(ck::Fingerprint::on_bits));}}
 }}}
 bits!(fingerprint_morgan,fingerprint_morgan_with_params,morgan_configuration,MorganFingerprintParams);
 bits!(fingerprint_atom_pair,fingerprint_atom_pair_with_params,fingerprint_configuration,AtomPairFingerprintParams);
@@ -58,18 +58,19 @@ let fail=batch.bind(py).call_method1("to_smiles",(py.None(),&runtime)).unwrap_er
 callbacks.add("BatchQueryParams",py.get_type::<crate::batch_query_params::BatchQueryParams>())?;
 py.run(c_str!("import gc, weakref\nclass Cycle:\n    def __init__(self, params): self.params=params\n    def __call__(self): pass\np=BatchQueryParams()\nc=Cycle(p)\nobserver=weakref.ref(c)\np.progress_callback=c\ndel c,p\ngc.collect()\nassert observer() is None\n"),Some(&callbacks.dict()),None)?;
 let directory=std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("artifacts").join(format!("batch-complete-{}",std::process::id()));std::fs::create_dir_all(&directory).unwrap();
-let report=batch.bind(py).call_method1("write_sdf",(directory.join("out.sdf"),))?.extract::<Py<crate::batch_errors::BatchExportReport>>()?;assert_eq!(report.bind(py).call_method0("success")?.extract::<usize>()?,2);assert_eq!(report.bind(py).call_method0("failed")?.extract::<usize>()?,1);
+let report=batch.bind(py).call_method1("write_sdf",(directory.join("out.sdf"),))?.extract::<Py<crate::batch_errors::BatchExportReport>>()?;assert_eq!(report.bind(py).getattr("success")?.extract::<usize>()?,2);assert_eq!(report.bind(py).getattr("failed")?.extract::<usize>()?,1);
 report.bind(py).call_method1("write_report",(directory.join("report.json"),))?;assert!(std::fs::read_to_string(directory.join("report.json")).unwrap().contains("written"));
 let kw=PyDict::new(py);kw.set_item("format","svg")?;kw.set_item("width",120)?;kw.set_item("height",100)?;
-let images=batch.bind(py).call_method("write_images",(directory.join("images"),),Some(&kw))?;assert_eq!(images.call_method0("success")?.extract::<usize>()?,2);
+let images=batch.bind(py).call_method("write_images",(directory.join("images"),),Some(&kw))?;assert_eq!(images.getattr("success")?.extract::<usize>()?,2);
 let svg=batch.bind(py).call_method1("to_svg",(120,100))?;assert_eq!(svg.len()?,3);assert!(svg.get_item(1)?.is_none());
-let keep=batch.bind(py).call_method0("errors")?.get_item(0)?;drop(batch);drop(native);assert_eq!(keep.getattr("index")?.extract::<usize>()?,1);assert!(keep.getattr("source")?.is_instance(<crate::operation_errors::SmilesError as crate::error_framework::ExceptionPayload>::exception_type(py).expect("error backend").as_any())?);
+let keep=batch.bind(py).getattr("errors")?.get_item(0)?;drop(batch);drop(native);assert_eq!(keep.getattr("index")?.extract::<usize>()?,1);assert!(keep.getattr("source")?.is_instance(<crate::operation_errors::SmilesError as crate::error_framework::ExceptionPayload>::exception_type(py).expect("error backend").as_any())?);
 Ok(())}).unwrap();
     }
 }
 
 #[pyfunction]
 #[pyo3(signature=(smiles,parse=crate::arguments::Argument::Missing,params=None,*,errors=None,n_jobs=None,progress_bar=None,sanitize=crate::arguments::Argument::Missing,allow_cxsmiles=crate::arguments::Argument::Missing,strict_cxsmiles=crate::arguments::Argument::Missing,parse_name=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,skip_cleanup=crate::arguments::Argument::Missing,debug_parse=crate::arguments::Argument::Missing,replacements=crate::arguments::Argument::Missing))]
+/// Parse SMILES strings into an ordered MoleculeBatch. Parsing failures follow the selected errors policy; n_jobs controls native parallel work.
 pub fn mols_from_smiles_list(
     py: Python<'_>,
     smiles: Vec<String>,
@@ -157,6 +158,7 @@ pub fn _mols_from_smiles_list_keywords(
 }
 #[pyfunction]
 #[pyo3(signature=(records,mode=None))]
+/// Construct an ordered MoleculeBatch from the supplied native batch records, preserving missing records and their errors.
 pub fn mols_from_records(
     py: Python<'_>,
     records: Vec<Record>,
@@ -166,6 +168,7 @@ pub fn mols_from_records(
 }
 #[pyfunction]
 #[pyo3(signature=(text,read=crate::arguments::Argument::Missing,*,errors=None,n_jobs=None,progress_bar=None,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+/// Convert SDF records into an ordered MoleculeBatch using the selected native record-conversion policy.
 pub fn mols_from_sdf_records(
     py: Python<'_>,
     text: String,

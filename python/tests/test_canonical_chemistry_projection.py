@@ -27,7 +27,7 @@ def test_matrix_parameters_reach_the_owner():
 def test_fragment_selection_and_seed_transport():
     molecule = ck.Molecule.from_smiles("CCO")
     assert molecule.to_fragment_smiles([0, 1]) == "CC"
-    assert molecule.to_fragment_smiles_with_params(ck.FragmentSmilesWriteParams([1, 2])) == "CO"
+    assert molecule.to_fragment_smiles_with_params(ck.FragmentSmilesWriteParams(atoms=[1, 2])) == "CO"
     assert molecule.to_cx_smiles_with_params(ck.CxSmilesWriteParams(fields=ck.CxSmilesFields.NONE)) == "CCO"
     assert molecule.to_random_smiles(5, 42) == molecule.to_random_smiles_with_params(5, 42, ck.RandomSmilesWriteParams())
 
@@ -37,10 +37,10 @@ def test_failed_coordinate_change_is_atomic():
     editor = molecule.to_builder()
     editor.add_3d_conformer([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
     molecule = editor.build()
-    before = molecule.distance_matrix_3d.values
+    before = molecule.distance_matrix_3d().values
     with pytest.raises(ck.OperationError):
         molecule.set_atom_position_(99, [1.0, 2.0, 3.0])
-    assert molecule.distance_matrix_3d.values == before
+    assert molecule.distance_matrix_3d().values == before
     moved = molecule.with_atom_position_with_params(1, [3.0, 0.0, 0.0], ck.AtomPositionParams(conformer_id=0))
     assert molecule.distance_matrix_3d().get(0, 1) == 2.0
     assert moved.distance_matrix_3d().get(0, 1) == 3.0
@@ -53,7 +53,7 @@ def test_sanitize_flags_preserve_invalid_bits_error():
     with pytest.raises(ck.SanitizeError) as error:
         ck.SanitizeOperations.from_bits(1 << 31)
     assert error.value.domain == "sanitize"
-    assert error.value.kind == "InvalidOperations"
+    assert error.value.variant.name == "InvalidOperations"
     assert error.value.bits == 1 << 31
     assert error.value.unknown_bits == 1 << 31
     assert error.value.__cause__ is None
@@ -71,7 +71,7 @@ def test_missing_matrix_conformer_preserves_requested_id():
     molecule = ck.Molecule.from_smiles("CC")
     with pytest.raises(ck.MatrixError) as error:
         molecule.distance_matrix_3d_with_params(ck.DistanceMatrix3dParams(conformer_id=99))
-    assert error.value.kind == "ConformerNotFound"
+    assert error.value.variant.name == "ConformerNotFound"
     assert error.value.conformer_id == 99
 
 
@@ -79,7 +79,7 @@ def test_missing_matrix_conformer_preserves_requested_id():
     "smiles, stage, cause_type, kind, payload",
     [
         ("CN(C)(C)C", ck.SanitizeStage.Properties, ck.ValenceError, "InvalidValence",
-         {"atom": 1, "atomic_number": 7, "formal_charge": 0, "phase": "Explicit", "calculated": 4}),
+         {"atom": 1, "atomic_number": 7, "formal_charge": 0, "phase": ck.ValencePhase.Explicit, "calculated": 4}),
         ("c1cccc1", ck.SanitizeStage.Kekulize, ck.KekulizeError, "NotKekulizable",
          {"problem_atoms": [0, 1, 2, 3, 4]}),
     ],
@@ -93,8 +93,10 @@ def test_chemistry_problem_preserves_typed_stage_and_domain_cause(smiles, stage,
     problem = report.problems[0]
     assert problem.operation == stage
     assert isinstance(problem.error, ck.ChemistryProblemError)
-    cause = problem.error.__cause__
+    # Native transparent errors expose their variant payload separately from source().
+    cause = problem.error.valence if cause_type is ck.ValenceError else problem.error.kekulize
+    assert problem.error.__cause__ is cause.__cause__ is None
     assert isinstance(cause, cause_type)
-    assert cause.kind == kind
+    assert cause.variant.name == kind
     for field, expected in payload.items():
         assert getattr(cause, field) == expected

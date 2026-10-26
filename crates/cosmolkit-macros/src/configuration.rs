@@ -4,6 +4,11 @@ use quote::{format_ident, quote};
 use syn::{Attribute, Data, DeriveInput, Fields, Ident, Path, Token, Type, Visibility, braced};
 
 pub(crate) fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
+    let docs: Vec<_> = input
+        .attrs
+        .iter()
+        .filter(|a| a.path().is_ident("doc"))
+        .collect();
     let mut native_storage = false;
     let mut required = false;
     let mut factory = false;
@@ -159,13 +164,13 @@ pub(crate) fn derive(input: DeriveInput) -> syn::Result<TokenStream> {
         #[macro_export]
         macro_rules! #exporter {
             ($consumer:path, $native:path, using $projection:path) => {
-                $consumer! { @#marker $native { #(#(#attributes)* #names: $crate::#metadata::#aliases),* } methods {} using $projection }
+                $consumer! { @#marker #(#docs)* $native { #(#(#attributes)* #names: $crate::#metadata::#aliases),* } methods {} using $projection }
             };
             ($consumer:path, $native:path, {$($method:item)*}, {$($context:tt)*}) => {
-                $consumer! { @resume {$($context)*} @#marker $native { #(#(#attributes)* #names: $crate::#metadata::#aliases),* } methods {$($method)*} }
+                $consumer! { @resume {$($context)*} @#marker #(#docs)* $native { #(#(#attributes)* #names: $crate::#metadata::#aliases),* } methods {$($method)*} }
             };
             ($consumer:path, $native:path, {$($method:item)*}) => {
-                $consumer! { @#marker $native { #(#(#attributes)* #names: $crate::#metadata::#aliases),* } methods {$($method)*} }
+                $consumer! { @#marker #(#docs)* $native { #(#(#attributes)* #names: $crate::#metadata::#aliases),* } methods {$($method)*} }
             };
             ($consumer:path, $native:path) => {
                 $crate::#exporter!($consumer, $native, {});
@@ -221,6 +226,7 @@ impl quote::ToTokens for Field {
 }
 struct Projection {
     marker: Ident,
+    docs: Vec<Attribute>,
     native: Path,
     fields: Vec<Field>,
     methods: TokenStream,
@@ -245,6 +251,7 @@ impl syn::parse::Parse for Projection {
                 "expected native Configuration field metadata",
             ));
         }
+        let docs = input.call(Attribute::parse_outer)?;
         let native = input.parse()?;
         let body;
         braced!(body in input);
@@ -267,6 +274,7 @@ impl syn::parse::Parse for Projection {
         };
         Ok(Self {
             marker,
+            docs,
             native,
             fields,
             methods,
@@ -420,15 +428,17 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
         let child = field.ty.clone();
         let native = &projection.native;
         let marker = &projection.marker;
+        let docs = &projection.docs;
         let fields = &projection.fields;
         let methods = &projection.methods;
         let consumer = projection.consumer.as_ref().map(|path| quote!(using #path));
         return Ok(
-            quote! { #exporter!(::cosmolkit::project_configuration, #child, {}, { @#marker #native {#(#fields),*} methods {#methods} #consumer }); },
+            quote! { #exporter!(::cosmolkit::project_configuration, #child, {}, { @#marker #(#docs)* #native {#(#fields),*} methods {#methods} #consumer }); },
         );
     }
     let Projection {
         marker,
+        docs,
         native,
         fields,
         methods,
@@ -450,9 +460,19 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
             })
         });
         let names = leaves.iter().map(|(field, _)| &field.name);
+        let docs: Vec<Vec<_>> = leaves
+            .iter()
+            .map(|(field, _)| {
+                field
+                    .attrs
+                    .iter()
+                    .filter(|a| a.path().is_ident("doc"))
+                    .collect()
+            })
+            .collect();
         let types: Vec<_> = leaves.iter().map(|(field, _)| &field.ty).collect();
         return Ok(quote! {
-            #consumer! {#(#names: #types),*}
+            #consumer! {#(#(#docs)* #names: #types),*}
         });
     }
     if marker == "adapter" {
@@ -563,6 +583,7 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
         quote! {
             #[staticmethod]
             #[pyo3(name = "new", signature = (#(#required_signatures,)* #(#signatures,)*))]
+            /// Create an independent configuration through the native constructor using the supplied field values.
             fn registered_new(py: pyo3::Python<'_>, #(#required_arguments,)* #(#arguments,)*) -> pyo3::PyResult<Self> {
                 Self::from_rust(py, <#native>::new(#(#factory_inputs),*))
             }
@@ -571,6 +592,7 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
         quote!()
     };
     Ok(quote! {
+        #(#docs)*
         #[pyo3::pyclass(module = "cosmolkit")]
         pub struct #name { pub(crate) inner: crate::parameters::NativeField<#native> }
         impl #name {

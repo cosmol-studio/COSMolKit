@@ -26,10 +26,12 @@ pub struct TautomerCatalogError {
 }
 crate::error_framework::error_projection! {methods impl TautomerCatalogError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "tautomer"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> TautomerCatalogErrorKind {
         match self.inner.as_ref() {
             ck::TautomerCatalogError::BadInputFile { path: _, source: _ } => {
@@ -49,21 +51,21 @@ crate::error_framework::error_projection! {methods impl TautomerCatalogError {
         }
     }
     #[getter]
-    fn path(&self) -> Option<PathBuf> {
+    #[doc = "Filesystem path involved in the operation. Applies to TautomerCatalogError.BadInputFile. None when this payload is absent."] fn path(&self) -> Option<PathBuf> {
         match self.inner.as_ref() {
             ck::TautomerCatalogError::BadInputFile { path, .. } => Some(path.clone()),
             _ => None,
         }
     }
     #[getter]
-    fn index(&self) -> Option<usize> {
+    #[doc = "Index reported by the failing native check. Applies to TautomerCatalogError.TransformIndexOutOfRange. None when this payload is absent."] fn index(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::TautomerCatalogError::TransformIndexOutOfRange { index, .. } => Some(*index),
             _ => None,
         }
     }
     #[getter]
-    fn len(&self) -> Option<usize> {
+    #[doc = "Length reported by the native failure. Applies to TautomerCatalogError.TransformIndexOutOfRange. None when this payload is absent."] fn len(&self) -> Option<usize> {
         match self.inner.as_ref() {
             ck::TautomerCatalogError::TransformIndexOutOfRange { len, .. } => Some(*len),
             _ => None,
@@ -71,7 +73,7 @@ crate::error_framework::error_projection! {methods impl TautomerCatalogError {
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn transform(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TautomerTransformError>>> {
+    #[doc = "Structured TautomerTransformError payload of TautomerCatalogError.Transform; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn transform(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TautomerTransformError>>> {
         match self.inner.as_ref() {
             ck::TautomerCatalogError::Transform(value) => {
                 TautomerTransformError::from_rust(value.clone())
@@ -85,6 +87,7 @@ crate::error_framework::error_projection! {methods impl TautomerCatalogError {
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(
         slf: Bound<'_, pyo3::exceptions::PyBaseException>,
     ) -> PyResult<Option<Source<crate::error_framework::ErrorObject<IoError>, Source<crate::error_framework::ErrorObject<FromUtf8Error>, crate::error_framework::ErrorObject<SmartsParseError>>>>>
@@ -174,11 +177,22 @@ mod tests {
         Python::attach(|py| -> PyResult<()> {
             let module = PyModule::new(py, "tautomer_catalog_test")?;
             module.add_class::<TautomerParams>()?;
-            module.add_class::<TautomerCatalogError>()?;
+            module.add(
+                "TautomerCatalogError",
+                <TautomerCatalogError as crate::error_framework::ExceptionPayload>::exception_type(
+                    py,
+                )?,
+            )?;
             module.add_class::<TautomerCatalogErrorKind>()?;
-            module.add_class::<IoError>()?;
+            module.add(
+                "IoError",
+                <IoError as crate::error_framework::ExceptionPayload>::exception_type(py)?,
+            )?;
             module.add_class::<crate::io_source_errors::IoErrorKind>()?;
-            module.add_class::<FromUtf8Error>()?;
+            module.add(
+                "FromUtf8Error",
+                <FromUtf8Error as crate::error_framework::ExceptionPayload>::exception_type(py)?,
+            )?;
             py.run(
                 c_str!(
                     r#"
@@ -186,16 +200,16 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import os
 old = TautomerParams.v1()
-assert old.transform_count() > 0
+assert old.transform_count > 0
 custom = TautomerParams.from_transform_data([('identity', 'C', '', '')])
-assert custom.transform_count() == 1
+assert custom.transform_count == 1
 assert custom.max_tautomers == TautomerParams().max_tautomers
-assert TautomerParams.from_transform_data([]).transform_count() == 0
+assert TautomerParams.from_transform_data([]).transform_count == 0
 with TemporaryDirectory() as folder:
     path = Path(folder) / 'transforms.tsv'
     path.write_text('identity\tC\n', encoding='utf-8')
-    assert TautomerParams.from_transform_file(path).transform_count() == 1
-    assert TautomerParams.from_transform_file(os.fspath(path)).transform_count() == 1
+    assert TautomerParams.from_transform_file(path).transform_count == 1
+    assert TautomerParams.from_transform_file(os.fspath(path)).transform_count == 1
     missing = Path(folder) / 'missing.tsv'
     try:
         TautomerParams.from_transform_file(missing)

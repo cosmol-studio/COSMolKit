@@ -78,7 +78,7 @@ def test_atom_and_bond_callbacks_receive_readonly_source_values_including_wildca
 
     assert [list(match.atom_mapping) for match in molecule.substruct_matches(query, atom_match=oxygen_only)] == [[1]]
     assert seen[0].atomic_number == 0  # Query wildcard must not become carbon.
-    assert seen[0].id == 0 and seen[0].degree() == 0
+    assert seen[0].id == 0 and seen[0].degree == 0
     assert {tuple(match.atom_mapping) for match in ck.Molecule.from_smiles("CC=C").substruct_matches(
         ck.parse_smarts("C~C"), uniquify=False,
         bond_match=lambda query_bond, target_bond: target_bond.order_name == "DOUBLE",
@@ -112,9 +112,10 @@ def test_callback_assignment_validation_and_cycle_collection():
     assert params.extra_final_check is original
     with pytest.raises(AttributeError):
         params.extra_final_chek = original
-    owner = weakref.ref(params)
-    params.final_match = lambda *_args, keep=params: keep is not None
-    del params
+    callback = lambda *_args, keep=params: keep is not None
+    owner = weakref.ref(callback)
+    params.final_match = callback
+    del params, callback
     gc.collect()
     assert owner() is None
 

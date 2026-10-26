@@ -52,6 +52,7 @@ fn draw_random_bits(run: impl FnOnce(Python<'_>) -> PyResult<BigUint>) -> Result
     })
 }
 
+/// Stateful random-bit source for stereoisomer enumeration, created from a seed or callback.
 #[pyclass(module = "cosmolkit", weakref, eq)]
 pub struct StereoisomerRandomSource {
     pub(crate) inner: ck::StereoisomerRandomSource,
@@ -68,6 +69,7 @@ impl PartialEq for StereoisomerRandomSource {
 
 #[pymethods]
 impl StereoisomerRandomSource {
+    /// Create a reproducible random source from an arbitrary-precision integer seed.
     #[staticmethod]
     fn from_integer_seed(value: BigInt) -> Self {
         Self {
@@ -75,6 +77,7 @@ impl StereoisomerRandomSource {
             callback: None,
         }
     }
+    /// Use a callback taking the requested bit count and returning a nonnegative integer.
     #[staticmethod]
     pub(crate) fn from_random_bits(
         py: Python<'_>,
@@ -136,6 +139,7 @@ impl StereoisomerRandomSource {
     }
 }
 
+/// Editable stereoisomer enumeration options, including filtering and random-source policy.
 #[pyclass(module = "cosmolkit")]
 pub struct StereoisomerOptions {
     pub(crate) inner: ck::StereoisomerOptions,
@@ -144,7 +148,7 @@ pub struct StereoisomerOptions {
 }
 
 macro_rules! stereoisomer_configuration {
-    ($($field:ident: $ty:ty),+ $(,)?) => {
+    ($($(#[$doc:meta])* $field:ident: $ty:ty),+ $(,)?) => {
         paste::paste! {
             #[pymethods]
             impl StereoisomerOptions {
@@ -156,12 +160,14 @@ macro_rules! stereoisomer_configuration {
                     inner.set_random_source(random_source.as_ref().map(|source| source.borrow(py).inner.clone()));
                     Self { inner, source_owner: random_source }
                 }
+                /// Create options using the native enumeration defaults.
                 #[staticmethod]
                 fn default() -> Self {
                     Self { inner: ck::StereoisomerOptions::default(), source_owner: None }
                 }
-                $(#[getter] fn $field(&self) -> $ty { self.inner.$field() }
+                $($(#[$doc])* #[getter] fn $field(&self) -> $ty { self.inner.$field() }
                 #[setter] fn [<set_ $field>](&mut self, value: $ty) { self.inner.[<set_ $field>](value); })+
+    /// Random source retained by these options; None selects the native default seed.
     #[getter]
     pub(crate) fn random_source(&self, py: Python<'_>) -> Option<Py<StereoisomerRandomSource>> {
         self.source_owner
@@ -378,11 +384,15 @@ def provider(bits):
             assert!(error.value(py).is(&probe.getattr("marker")?));
             probe.setattr("fail", false)?;
             probe.setattr("negative", true)?;
-            assert!(
-                with_random_bits_errors(run)
-                    .unwrap_err()
-                    .is_instance_of::<pyo3::exceptions::PyOverflowError>(py)
-            );
+            // Preserve the interpreter's exact PyO3 unsigned conversion error.
+            let expected = probe
+                .getattr("provider")?
+                .call1((1,))?
+                .extract::<BigUint>()
+                .unwrap_err();
+            let actual = with_random_bits_errors(run).unwrap_err();
+            assert!(actual.get_type(py).is(&expected.get_type(py)));
+            assert_eq!(actual.value(py).to_string(), expected.value(py).to_string());
             probe.setattr("negative", false)?;
             assert!(with_random_bits_errors(run)?.is_ok());
             assert_eq!(source.borrow(py).inner, same_source);

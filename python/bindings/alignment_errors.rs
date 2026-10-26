@@ -48,10 +48,12 @@ impl ThreadCountError {
 }
 crate::error_framework::error_projection! {methods impl ThreadCountError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "threads"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> ThreadCountErrorKind {
         match self.native() {
             ck::ThreadCountError::UndefinedSignedNegation => {
@@ -68,21 +70,21 @@ crate::error_framework::error_projection! {methods impl ThreadCountError {
         }
     }
     #[getter]
-    fn segment(&self) -> Option<usize> {
+    #[doc = "CPU-list segment containing the invalid value. Present for `ThreadCountError.InvalidCpuList`; None when unavailable."] fn segment(&self) -> Option<usize> {
         match self.native() {
             ck::ThreadCountError::InvalidCpuList { segment, .. } => Some(*segment),
             _ => None,
         }
     }
     #[getter]
-    fn reason(&self) -> Option<&'static str> {
+    #[doc = "Native explanation for rejecting the input. Present for `ThreadCountError.InvalidCpuList`; None when unavailable."] fn reason(&self) -> Option<&'static str> {
         match self.native() {
             ck::ThreadCountError::InvalidCpuList { reason, .. } => Some(reason),
             _ => None,
         }
     }
     #[getter]
-    fn platform(&self) -> Option<&'static str> {
+    #[doc = "Platform associated with native thread selection. Present for `ThreadCountError.AutomaticObservationUnavailable`; None when unavailable."] fn platform(&self) -> Option<&'static str> {
         match self.native() {
             ck::ThreadCountError::AutomaticObservationUnavailable { platform } => Some(platform),
             _ => None,
@@ -90,6 +92,7 @@ crate::error_framework::error_projection! {methods impl ThreadCountError {
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<crate::error_framework::ErrorObject<IoError>>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -128,11 +131,13 @@ impl ThreadSelectionError {
 }
 crate::error_framework::error_projection! {methods impl ThreadSelectionError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "alignment"
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<crate::error_framework::ErrorObject<ThreadCountError>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -169,43 +174,43 @@ error_projection!(AlignmentError, AlignmentErrorKind, ck::AlignmentError, "align
     | ck::AlignmentError::WorkerTerminated => None,
 }), source = Option<AlignmentSource>, methods = {
     #[getter]
-    fn index(&self) -> Option<usize> {
+    #[doc = "Index reported by the failing native check. Applies to AlignmentError.ProbeAtomOutOfRange, AlignmentError.ReferenceAtomOutOfRange, AlignmentError.NonPositiveWeight. None when this payload is absent."] fn index(&self) -> Option<usize> {
         match self.inner { ck::AlignmentError::ProbeAtomOutOfRange { index, .. }
         | ck::AlignmentError::ReferenceAtomOutOfRange { index, .. } | ck::AlignmentError::NonPositiveWeight { index } => Some(index), _ => None }
     }
     #[getter]
-    fn atom_count(&self) -> Option<usize> {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to AlignmentError.ProbeAtomOutOfRange, AlignmentError.ReferenceAtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> {
         match self.inner { ck::AlignmentError::ProbeAtomOutOfRange { atom_count, .. }
         | ck::AlignmentError::ReferenceAtomOutOfRange { atom_count, .. } => Some(atom_count), _ => None }
     }
     #[getter]
-    fn message(&self) -> Option<&'static str> {
+    #[doc = "Detailed native diagnostic message. Applies to AlignmentError.TerminalGroupSymmetrization, AlignmentError.NumericalPrecondition. None when this payload is absent."] fn message(&self) -> Option<&'static str> {
         match self.inner { ck::AlignmentError::TerminalGroupSymmetrization { message }
         | ck::AlignmentError::NumericalPrecondition { message } => Some(message), _ => None }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> {
+    #[doc = "Structured CoordinateValidationError payload of AlignmentError.InvalidCoordinates; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> {
         match &self.inner { ck::AlignmentError::InvalidCoordinates(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn matching(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SubstructMatchError>>> {
+    #[doc = "Structured SubstructMatchError payload of AlignmentError.Matching; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn matching(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SubstructMatchError>>> {
         match &self.inner { ck::AlignmentError::Matching(value) => SubstructMatchError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_graph(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryGraphError>>> {
+    #[doc = "Structured QueryGraphError payload of AlignmentError.QueryGraph; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_graph(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryGraphError>>> {
         match &self.inner { ck::AlignmentError::QueryGraph(value) => QueryGraphError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_parse(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SmartsParseError>>> {
+    #[doc = "Structured SmartsParseError payload of AlignmentError.QueryParse; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_parse(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SmartsParseError>>> {
         match &self.inner { ck::AlignmentError::QueryParse(value) => SmartsParseError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn thread_selection(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ThreadSelectionError>>> {
+    #[doc = "Structured ThreadSelectionError payload of AlignmentError.ThreadSelection; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn thread_selection(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ThreadSelectionError>>> {
         match &self.inner { ck::AlignmentError::ThreadSelection(value) => ThreadSelectionError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
 });

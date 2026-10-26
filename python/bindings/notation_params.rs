@@ -5,12 +5,15 @@ macro_rules! cx_fields {
     ($($flag:ident),+ $(,)?) => {
         #[pyclass(module="cosmolkit", frozen, from_py_object, eq)]
         #[derive(Clone, Copy, PartialEq)]
+        /// Bit mask selecting CXSMILES extension fields; combine constants with the bitwise OR operator.
         pub struct CxSmilesFields { pub(crate) inner: ck::CxSmilesFields }
         #[pymethods]
         impl CxSmilesFields {
             $(#[classattr] #[allow(non_snake_case)] fn $flag() -> Self { Self { inner: ck::CxSmilesFields::$flag } })+
             #[getter]
+            /// Integer representation of this option mask.
             fn bits(&self) -> u32 { self.inner.bits() }
+            /// Whether every bit in the supplied mask is present.
             fn contains(&self, other: &Self) -> bool { self.inner.contains(other.inner) }
             fn __or__(&self, other: &Self) -> Self { Self { inner: self.inner | other.inner } }
             fn __index__(&self) -> u32 { self.inner.bits() }
@@ -39,6 +42,7 @@ COORDINATE_BONDS, HYDROGEN_BONDS, ZERO_BONDS, ALL, ALL_BUT_COORDS }
 
 #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
+/// Coordinate selection for CXSMILES: Auto, TwoD(id), or ThreeD(id).
 pub struct CxCoordinateSelection {
     pub(crate) inner: ck::CxCoordinateSelection,
 }
@@ -53,6 +57,7 @@ impl CxCoordinateSelection {
     }
     #[staticmethod]
     #[pyo3(name = "TwoD")]
+    /// Select a stored two-dimensional layout by its dimension-scoped identifier.
     fn two_d(id: usize) -> Self {
         Self {
             inner: ck::CxCoordinateSelection::TwoD { id },
@@ -60,12 +65,14 @@ impl CxCoordinateSelection {
     }
     #[staticmethod]
     #[pyo3(name = "ThreeD")]
+    /// Select a stored three-dimensional conformer by its dimension-scoped identifier.
     fn three_d(id: usize) -> Self {
         Self {
             inner: ck::CxCoordinateSelection::ThreeD { id },
         }
     }
     #[getter]
+    /// Dimension-scoped coordinate identifier, or None for Auto selection.
     fn id(&self) -> Option<usize> {
         match self.inner {
             ck::CxCoordinateSelection::Auto => None,

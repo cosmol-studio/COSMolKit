@@ -91,7 +91,7 @@ error_projection!(CipLabelerError, CipLabelerErrorKind, ck::CipLabelerError, "ci
     | ck::CipLabelerError::DescriptorNotSupportedForAtropisomerBonds => None,
 }), source = Option<CipSource>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to CipLabelerError.UnsignedPropertyRead, CipLabelerError.InvalidPropertyKind, CipLabelerError.BondNotIncident, CipLabelerError.UnsupportedConfiguration, CipLabelerError.AtomProperty. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::CipLabelerError::UnsignedPropertyRead { atom, .. }
         | ck::CipLabelerError::InvalidPropertyKind { atom, .. }
         | ck::CipLabelerError::BondNotIncident { atom, .. }
@@ -99,66 +99,66 @@ error_projection!(CipLabelerError, CipLabelerErrorKind, ck::CipLabelerError, "ci
         | ck::CipLabelerError::AtomProperty { atom, .. } => Some(atom), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to CipLabelerError.BondNotIncident, CipLabelerError.BondValue. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::CipLabelerError::BondNotIncident { bond, .. }
         | ck::CipLabelerError::BondValue { bond, .. } => Some(bond), _ => None,
     } }
     #[getter]
-    fn index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Index reported by the failing native check. Applies to CipLabelerError.AtomIndexOutOfRange, CipLabelerError.BondIndexOutOfRange, CipLabelerError.SourceIndexWidthExceeded. None when this payload is absent."] fn index(&self) -> Option<usize> { match self.inner {
         ck::CipLabelerError::AtomIndexOutOfRange { index, .. }
         | ck::CipLabelerError::BondIndexOutOfRange { index, .. }
         | ck::CipLabelerError::SourceIndexWidthExceeded { index, .. } => Some(index), _ => None,
     } }
     #[getter]
-    fn property(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Property name involved in the failure. Applies to CipLabelerError.UnsignedPropertyRead, CipLabelerError.InvalidPropertyKind. None when this payload is absent."] fn property(&self) -> Option<&'static str> { match self.inner {
         ck::CipLabelerError::UnsignedPropertyRead { property, .. }
         | ck::CipLabelerError::InvalidPropertyKind { property, .. } => Some(property), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<CipKind> { match self.inner {
+    #[doc = "Native failure-specific category or value kind. Applies to CipLabelerError.InvalidPropertyKind, CipLabelerError.SourceIndexWidthExceeded. None when this payload is absent."] fn kind(&self) -> Option<CipKind> { match self.inner {
         ck::CipLabelerError::InvalidPropertyKind { kind, .. } => Some(CipKind::Property(kind.into())),
         ck::CipLabelerError::SourceIndexWidthExceeded { kind, .. } => Some(CipKind::Index(kind)),
         _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of CipLabelerError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::CipLabelerError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn molecule_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
+    #[doc = "Structured MoleculePropertyError payload of CipLabelerError.MoleculeProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn molecule_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
         ck::CipLabelerError::MoleculeProperty(value) => MoleculePropertyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> { match &self.inner {
+    #[doc = "Structured AtropisomerError payload of CipLabelerError.Atropisomer; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> { match &self.inner {
         ck::CipLabelerError::Atropisomer(value) => AtropisomerError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn double_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<DoubleBondStereoError>>> { match &self.inner {
+    #[doc = "Structured DoubleBondStereoError payload of CipLabelerError.DoubleStereo; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn double_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<DoubleBondStereoError>>> { match &self.inner {
         ck::CipLabelerError::DoubleStereo(value) => DoubleBondStereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
+    #[doc = "Structured RingFindingError payload of CipLabelerError.RingFinding; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
         ck::CipLabelerError::RingFinding(value) => RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of CipLabelerError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::CipLabelerError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kekulize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>> { match &self.inner {
+    #[doc = "Structured KekulizeError payload of CipLabelerError.Kekulize; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn kekulize(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<KekulizeError>>> { match &self.inner {
         ck::CipLabelerError::Kekulize(value) => KekulizeError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn periodic_table(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PeriodicTableError>>> { match &self.inner {
+    #[doc = "Structured PeriodicTableError payload of CipLabelerError.PeriodicTable; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn periodic_table(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PeriodicTableError>>> { match &self.inner {
         ck::CipLabelerError::PeriodicTable(value) => PeriodicTableError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -172,7 +172,7 @@ error_projection!(AtomCodeError, AtomCodeErrorKind, ck::AtomCodeError, "fingerpr
     ck::AtomCodeError::Precondition { .. } | ck::AtomCodeError::Postcondition { .. } => None,
 }, source = Option<Source<crate::error_framework::ErrorObject<ValenceError>, Source<crate::error_framework::ErrorObject<CipLabelerError>, crate::error_framework::ErrorObject<PropertyStringError>>>>, methods = {
     #[getter]
-    fn what(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Native description of the failed requirement. Applies to AtomCodeError.Precondition, AtomCodeError.Postcondition. None when this payload is absent."] fn what(&self) -> Option<&'static str> { match self.inner {
         ck::AtomCodeError::Precondition { what } | ck::AtomCodeError::Postcondition { what, .. } => Some(what),
         _ => None,
     } }

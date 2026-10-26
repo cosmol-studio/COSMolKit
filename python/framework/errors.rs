@@ -199,6 +199,10 @@ macro_rules! error_projection {
         paste::paste! {
             pyo3::create_exception!(cosmolkit, [<$name Exception>], pyo3::exceptions::PyValueError);
             $(#[$attr])*
+            #[doc = concat!("\n\n", stringify!($name), " is a structured native exception. ",
+                "Its readonly fields retain the Rust failure data. Use str(error) for the ",
+                "message and __cause__ for the underlying failure, when present. ",
+                "Instances are raised by operations, not constructed directly.")]
             #[pyclass(module = "cosmolkit")]
             $vis struct $name { $($fields)* }
             impl $crate::error_framework::ExceptionPayload for $name {
@@ -234,14 +238,21 @@ macro_rules! error_projection {
         $crate::error_framework::require_retained_cause!($mode $(, $cause)?);
         $crate::enums::binding_enum!($kind, { $($variant),+ });
 
-        $crate::error_framework::error_projection! {record pub struct $name {
+        $crate::error_framework::error_projection! {record
+        #[doc = concat!("Failure in the ", $domain, " domain.\n\n",
+            "The readonly variant identifies the Rust error case. Payload fields are present only ",
+            "for their documented variant and otherwise return None. str(error) preserves the ",
+            "native message; __cause__ retains the underlying exception when one exists.")]
+        pub struct $name {
             inner: $crate::error_framework::error_storage_type!($mode, $module::$rust),
         }
         }
 
         $crate::error_framework::error_projection! {methods impl $name {
+            /// Domain that reported this failure; this does not replace the typed variant.
             #[getter]
             fn domain(&self) -> &'static str { $domain }
+            /// Exact Rust error variant, independent of the human-readable message.
             #[getter]
             fn variant(&self) -> $kind {
                 // No wildcard variants or omitted struct fields: additions fail compilation.
@@ -249,18 +260,22 @@ macro_rules! error_projection {
                     $($crate::error_framework::variant_pattern!($module::$rust, $variant $({$($field),+})? $(($source))?) => $kind::$variant),+
                 }
             }
+            /// Message of the immediate underlying cause, or None when there is no cause.
             #[getter]
             fn source_message(&self) -> Option<String> {
                 self.inner.source().map(ToString::to_string)
             }
             $(#[staticmethod]
             #[doc = r#"{"role":"error_source"}"#]
+            /// The actual underlying exception, identical to __cause__, or None.
             fn source<'py>(slf: Bound<'py, pyo3::exceptions::PyBaseException>) -> PyResult<$source_type> {
                 // Read the actual CPython cause, not a separately reconstructed
                 // wrapper whose identity/state could differ from __cause__.
                 Ok(slf.getattr("__cause__")?.extract()?)
             })?
-            $($($($(#[getter]
+            $($($($(#[doc = concat!("Readonly `", stringify!($field), "` payload of the `",
+                stringify!($variant), "` error variant; None for other variants.")]
+            #[getter]
             fn $field(&self) -> Option<$ty> {
                 match $crate::error_framework::native_error_ref!($mode, self.inner) {
                     $module::$rust::$variant { $field, .. } => Some($crate::error_framework::payload_value!($field $(, $convert)?)),

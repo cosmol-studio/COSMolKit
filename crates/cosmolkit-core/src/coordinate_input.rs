@@ -39,12 +39,16 @@ impl CoordinateZPolicy {
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Policy for importing two-dimensional coordinate rows.
 pub struct Coordinate2DInputParams {
+    /// How to handle a supplied third coordinate when importing 2D positions.
     pub z_policy: CoordinateZPolicy,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Dimensionality metadata for imported three-component coordinates.
 pub struct Coordinate3DInputParams {
+    /// Mark the imported conformer as three-dimensional.
     pub is_3d: bool,
 }
 impl Default for Coordinate3DInputParams {
@@ -54,6 +58,7 @@ impl Default for Coordinate3DInputParams {
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Explicit stored-conformer selection for replacing 3D coordinates.
 pub struct Replace3DCoordinatesParams {
     /// Actual ThreeD conformer ID; the default selects ID0 and never falls back.
     pub conformer_id: usize,

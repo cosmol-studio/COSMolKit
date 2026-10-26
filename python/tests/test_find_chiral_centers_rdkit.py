@@ -38,10 +38,10 @@ def test_chiral_center_failure_retains_typed_cause_and_input_state():
     with pytest.raises(ck.StereoReadError) as caught:
         _ = source.find_chiral_centers()
     error = caught.value
-    assert error.domain == "stereo" and error.kind == "PotentialStereo"
+    assert error.domain == "stereo" and error.variant.name == "PotentialStereo"
     cause = error.__cause__
     assert isinstance(cause, ck.PotentialStereoError)
-    assert cause.kind == "InvalidPropertyKind"
+    assert cause.variant.name == "InvalidPropertyKind"
     assert cause.atom == 1
     assert cause.property == "_ringStereochemCand"
     assert source.to_binary() == before
@@ -56,5 +56,5 @@ def test_chiral_center_clears_stale_label_without_mutating_source():
     # Candidate clearSelectedCIPProperties runs before configuration discovery.
     assert source.find_chiral_centers(True) == [(1, "?")]
     assert source.find_chiral_centers() == []
-    assert source.atom_property(1, "_CIPCode") == "foo"
+    assert source.atom_property_string(1, "_CIPCode") == "foo"
     assert source.to_binary() == before

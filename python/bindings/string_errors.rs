@@ -12,18 +12,20 @@ pub struct QueryCompileError {
 }
 crate::error_framework::error_projection! {methods impl QueryCompileError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> QueryCompileErrorKind {
         match &self.inner {
             ck::QueryCompileError::InvalidGraph(_) => QueryCompileErrorKind::InvalidGraph,
         }
     }
     #[getter]
-    fn message(&self) -> &str {
+    #[doc = "Explanation of why the query graph could not be compiled."] fn message(&self) -> &str {
         match &self.inner {
             ck::QueryCompileError::InvalidGraph(message) => message,
         }
     }
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "search"
     }
@@ -53,6 +55,7 @@ pub struct AvalonEngineError {
 }
 crate::error_framework::error_projection! {methods impl AvalonEngineError {
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> AvalonEngineErrorKind {
         match &self.inner {
             ck::AvalonEngineError::InvalidArguments { reason: _ } => {
@@ -64,13 +67,14 @@ crate::error_framework::error_projection! {methods impl AvalonEngineError {
         }
     }
     #[getter]
-    fn reason(&self) -> &str {
+    #[doc = "Original explanation of invalid arguments or Avalon conversion failure."] fn reason(&self) -> &str {
         match &self.inner {
             ck::AvalonEngineError::InvalidArguments { reason } => reason,
             ck::AvalonEngineError::AvalonConversion { reason } => reason,
         }
     }
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "fingerprint"
     }

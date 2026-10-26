@@ -27,7 +27,7 @@ error_projection!(QueryGraphError, QueryGraphErrorKind, ck::QueryGraphError, "mo
     | ck::QueryGraphError::CoordinateValidation(_) | ck::QueryGraphError::AdjacencyMismatch => None,
 }, source = Option<Source<crate::error_framework::ErrorObject<StereoGroupError>, crate::error_framework::ErrorObject<TemplateAttachmentOrderError>>>, methods = {
     #[getter]
-    fn position(&self) -> Option<usize> {
+    #[doc = "Position reported by the native failure. Applies to QueryGraphError.AtomIdMismatch, QueryGraphError.BondIdMismatch, QueryGraphError.SubstanceGroupIdMismatch. None when this payload is absent."] fn position(&self) -> Option<usize> {
         match self.inner {
             ck::QueryGraphError::AtomIdMismatch { position, .. }
             | ck::QueryGraphError::BondIdMismatch { position, .. }
@@ -36,7 +36,7 @@ error_projection!(QueryGraphError, QueryGraphErrorKind, ck::QueryGraphError, "mo
         }
     }
     #[getter]
-    fn id(&self) -> Option<usize> {
+    #[doc = "Identifier involved in the native failure. Applies to QueryGraphError.AtomIdMismatch, QueryGraphError.BondIdMismatch, QueryGraphError.SubstanceGroupIdMismatch. None when this payload is absent."] fn id(&self) -> Option<usize> {
         match self.inner {
             ck::QueryGraphError::AtomIdMismatch { id, .. } => Some(id.index()),
             ck::QueryGraphError::BondIdMismatch { id, .. } => Some(id.index()),
@@ -45,7 +45,7 @@ error_projection!(QueryGraphError, QueryGraphErrorKind, ck::QueryGraphError, "mo
         }
     }
     #[getter]
-    fn atom(&self) -> Option<usize> {
+    #[doc = "Atom identifier implicated in the failure. Applies to QueryGraphError.TemplateAttachmentOrder, QueryGraphError.StereoGroupAtomOutOfRange, QueryGraphError.SubstanceGroupAtomOutOfRange. None when this payload is absent."] fn atom(&self) -> Option<usize> {
         match self.inner {
             ck::QueryGraphError::TemplateAttachmentOrder { atom, .. }
             | ck::QueryGraphError::StereoGroupAtomOutOfRange { atom, .. }
@@ -54,7 +54,7 @@ error_projection!(QueryGraphError, QueryGraphErrorKind, ck::QueryGraphError, "mo
         }
     }
     #[getter]
-    fn bond(&self) -> Option<usize> {
+    #[doc = "Bond identifier implicated in the failure. Applies to QueryGraphError.InvalidBondEndpoint, QueryGraphError.StereoAtomOutOfRange, QueryGraphError.StereoGroupBondOutOfRange, QueryGraphError.SubstanceGroupBondOutOfRange. None when this payload is absent."] fn bond(&self) -> Option<usize> {
         match self.inner {
             ck::QueryGraphError::InvalidBondEndpoint(bond) => Some(bond),
             ck::QueryGraphError::StereoAtomOutOfRange { bond, .. }
@@ -64,15 +64,15 @@ error_projection!(QueryGraphError, QueryGraphErrorKind, ck::QueryGraphError, "mo
         }
     }
     #[getter]
-    fn begin(&self) -> Option<usize> {
+    #[doc = "Beginning endpoint reported by the native check. Applies to QueryGraphError.StereoAtomOutOfRange. None when this payload is absent."] fn begin(&self) -> Option<usize> {
         match self.inner { ck::QueryGraphError::StereoAtomOutOfRange { begin, .. } => Some(begin.index()), _ => None }
     }
     #[getter]
-    fn end(&self) -> Option<usize> {
+    #[doc = "Ending endpoint reported by the native check. Applies to QueryGraphError.StereoAtomOutOfRange. None when this payload is absent."] fn end(&self) -> Option<usize> {
         match self.inner { ck::QueryGraphError::StereoAtomOutOfRange { end, .. } => Some(end.index()), _ => None }
     }
     #[getter]
-    fn atom_count(&self) -> Option<usize> {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to QueryGraphError.StereoAtomOutOfRange, QueryGraphError.StereoGroupAtomOutOfRange, QueryGraphError.SubstanceGroupAtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> {
         match self.inner {
             ck::QueryGraphError::StereoAtomOutOfRange { atom_count, .. }
             | ck::QueryGraphError::StereoGroupAtomOutOfRange { atom_count, .. }
@@ -81,7 +81,7 @@ error_projection!(QueryGraphError, QueryGraphErrorKind, ck::QueryGraphError, "mo
         }
     }
     #[getter]
-    fn bond_count(&self) -> Option<usize> {
+    #[doc = "Bond count used when validating the reported bond reference. Applies to QueryGraphError.StereoGroupBondOutOfRange, QueryGraphError.SubstanceGroupBondOutOfRange. None when this payload is absent."] fn bond_count(&self) -> Option<usize> {
         match self.inner {
             ck::QueryGraphError::StereoGroupBondOutOfRange { bond_count, .. }
             | ck::QueryGraphError::SubstanceGroupBondOutOfRange { bond_count, .. } => Some(bond_count),
@@ -89,7 +89,7 @@ error_projection!(QueryGraphError, QueryGraphErrorKind, ck::QueryGraphError, "mo
         }
     }
     #[getter]
-    fn sgroup(&self) -> Option<usize> {
+    #[doc = "Substance-group index involved in the failure. Applies to QueryGraphError.SubstanceGroupAtomOutOfRange, QueryGraphError.SubstanceGroupBondOutOfRange, QueryGraphError.SubstanceGroupParentOutOfRange. None when this payload is absent."] fn sgroup(&self) -> Option<usize> {
         match self.inner {
             ck::QueryGraphError::SubstanceGroupAtomOutOfRange { sgroup, .. }
             | ck::QueryGraphError::SubstanceGroupBondOutOfRange { sgroup, .. }
@@ -98,12 +98,12 @@ error_projection!(QueryGraphError, QueryGraphErrorKind, ck::QueryGraphError, "mo
         }
     }
     #[getter]
-    fn parent(&self) -> Option<usize> {
+    #[doc = "Parent group or row involved in the failed relationship check. Applies to QueryGraphError.SubstanceGroupParentOutOfRange. None when this payload is absent."] fn parent(&self) -> Option<usize> {
         match self.inner { ck::QueryGraphError::SubstanceGroupParentOutOfRange { parent, .. } => Some(parent.index()), _ => None }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinate_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> {
+    #[doc = "Structured CoordinateValidationError payload of QueryGraphError.CoordinateValidation; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinate_validation(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> {
         match &self.inner {
             // This native tuple is a payload, not Error::source. Do not invent a cause.
             ck::QueryGraphError::CoordinateValidation(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract::<crate::error_framework::ErrorObject<CoordinateValidationError>>().map(Some).map_err(Into::into),

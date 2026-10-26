@@ -12,6 +12,7 @@ use std::{error::Error, fmt, sync::OnceLock};
 /// Exact source fixed-width public projection. Other widths remain source-defined rejected options.
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct MaccsFingerprintParams {
+    /// MACCS public fingerprint width; the supported fixed width is 166 bits.
     pub n_bits: usize,
 }
 impl Default for MaccsFingerprintParams {

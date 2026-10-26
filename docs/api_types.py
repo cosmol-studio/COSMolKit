@@ -1,6 +1,7 @@
 """Supply native Python API types from the generated, checked stub."""
 
 import ast
+import json
 from pathlib import Path
 
 from sphinx import addnodes
@@ -117,10 +118,26 @@ def note_stub(app, docname, source):
     app.env.note_dependency(app.config.python_api_stub)
 
 
+def public_description(app, what, name, obj, options, lines):
+    """Omit explicit binding projection metadata, retaining the native prose."""
+    if not name.startswith("cosmolkit."):
+        return
+    text = "\n".join(lines).lstrip()
+    if not text.startswith("{"):
+        return
+    try:
+        metadata, end = json.JSONDecoder().raw_decode(text)
+    except ValueError:
+        return
+    if isinstance(metadata, dict) and "role" in metadata:
+        lines[:] = text[end:].strip().splitlines()
+
+
 def setup(app):
     app.add_config_value("python_api_stub", "", "env")
     app.connect("builder-inited", load_types)
     app.connect("source-read", note_stub)
     app.connect("autodoc-process-signature", return_signature)
+    app.connect("autodoc-process-docstring", public_description)
     app.connect("object-description-transform", property_type)
     return {"parallel_read_safe": True, "parallel_write_safe": True}

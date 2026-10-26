@@ -592,14 +592,23 @@ impl From<TemplateError> for DepictError {
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 pub struct Compute2DCoordinatesParams {
     #[configuration(none_default)]
+    /// Fixed atom positions keyed by zero-based atom index.
     pub coordinate_map: BTreeMap<usize, [f64; 2]>,
+    /// Orient the generated layout canonically.
     pub canonical_orientation: bool,
+    /// Replace existing 2D conformers rather than retaining them.
     pub clear_existing_2d: bool,
+    /// Number of rotatable-bond flips attempted for each sampled layout.
     pub flips_per_sample: u32,
+    /// Number of alternative layouts to sample.
     pub samples: u32,
+    /// Random seed for layout sampling.
     pub sample_seed: i32,
+    /// Permit degree-four atom neighbor permutations during sampling.
     pub permute_degree_four: bool,
+    /// Force the native RDKit-style layout path.
     pub force_rdkit: bool,
+    /// Use the native ring template library during layout.
     pub use_ring_templates: bool,
     /// Resolve remaining nonbonded clashes using source path-angle expansion.
     pub use_path_angle_expansion: bool,

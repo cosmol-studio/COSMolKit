@@ -10,6 +10,8 @@ It governs binding implementation, generated types and package behavior.
   introduce heuristics, retry failures, or substitute empty/default results.
 - Allow only language adaptation: typed extraction, explicit enum-string
   conversion, configuration dispatch, Python indexing and result conversion.
+- Pass filesystem paths literally, without implicit home-directory or environment
+  expansion. Callers may explicitly use `Path.expanduser()` before passing a path.
 - Bindings explicitly choose supported Params/keyword forms. Preserve supplied
   Params state; do not flatten and rebuild it. Omitted options use Rust defaults
   or Rust initialization methods, not a second Python policy.
@@ -93,7 +95,6 @@ source["{A}"] = "C"            # Does not change p.
 rules = dict(p.replacements)    # Explicit editable copy of the readonly mapping.
 rules["{A}"] = "N"
 p.replacements = rules         # Replaces the actual Rust field.
-# p.replacements["{A}"] = "N" raises TypeError.
 ```
 
 ## Type declarations
@@ -146,8 +147,7 @@ Readonly value bindings declare conversion and field association together:
 
 ```rust
 crate::configuration::type_projection! {
-    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
-    #[derive(Clone)]
+    value(eq, hash)
     pub struct Element {
         pub(crate) inner: ck::Element,
     }
@@ -156,6 +156,16 @@ crate::configuration::type_projection! {
 
 The declaration generates the class, native field association and conversion
 from the same native field type. Value-producing macros use this declaration too.
+Readonly native value wrappers declare `value(eq)` for Rust `PartialEq`, or
+`value(eq, hash)` for Rust `Eq + Hash`. These forms generate frozen classes and
+delegate comparison/hash to the native field through Rust derives and PyO3's
+protocols. Equal values need not be the same Python object; equality-only values
+are unhashable. Unsupported traits fail compilation. Do not invent numeric or
+cross-type equality, ordering, or identity-based hashing for these values.
+Payload-free enums retain `enum_value!` and its existing numeric protocol.
+Executors, streams, mutable configurations and owner views do not opt into value
+comparison merely because they wrap a Rust object. No per-type comparison code,
+framework type inventory or generated-stub patch is needed.
 The explicit `impl Configuration` form retains custom accepted input unions.
 Declare macro-generated classes in their binding module and expose them through
 `#[pymodule_export]`; the declarative module cannot discover nested macro output.
@@ -219,6 +229,13 @@ Use PyO3's own integer/equality/repr implementation; this does not implement
 the standard-library Enum metaclass, class iteration or class subscription.
 Element, data-bearing variants, bit flags and non-exhaustive native wrappers
 retain their own representation rather than being coerced into closed enums.
+
+Payload-free enums share pickle reconstruction through `enum_protocol!`.
+Ordinary constructors restore `(public_type, (numeric_value,))`, retaining
+their existing invalid-value rejection. Explicit custom constructors restore
+the canonical class member through `getattr(public_type, member_name)` without
+changing accepted constructor inputs. Roundtrips preserve type and value, not
+object identity. No per-enum pickle mapping or stub patch is maintained.
 
 ## Callbacks
 

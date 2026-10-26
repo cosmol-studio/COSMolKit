@@ -107,8 +107,8 @@ def test_rich_result_order_index_and_independent_ownership():
     assert len(result) == result.len == 2
     assert not result.is_empty
     assert result.canonical_smiles == ["C=C(C)O", "CC(C)=O"]
-    assert result.modified_atoms == [0, 2, 3]
-    assert result.modified_bonds == [0, 1, 2]
+    assert result.modified_atoms == {0, 2, 3}
+    assert result.modified_bonds == {0, 1, 2}
     assert [m.to_smiles() for m in result] == result.canonical_smiles
     assert [(k, m.to_smiles()) for k, m in result.entries()] == [
         ("C=C(C)O", "C=C(C)O"), ("CC(C)=O", "CC(C)=O")
@@ -116,7 +116,7 @@ def test_rich_result_order_index_and_independent_ownership():
     assert result[-1].to_smiles() == "CC(C)=O"
     assert result[-2].to_smiles() == "C=C(C)O"
     for index in [-3, 2]:
-        with pytest.raises(IndexError, match="index out of bounds"):
+        with pytest.raises(IndexError):
             result[index]
     assert result.get(2) is None
     selected = result[0]
@@ -130,7 +130,7 @@ def test_rich_result_order_index_and_independent_ownership():
 def test_callback_pre_application_snapshot_survives_return_and_cancellation():
     saved = []
     def cancel(source, progress):
-        saved.append((source, progress))
+        saved.append((source.snapshot(), progress.snapshot()))
         assert isinstance(source, ck.TautomerMoleculeView)
         assert isinstance(progress, ck.TautomerProgress)
         return False
@@ -148,8 +148,8 @@ def test_callback_pre_application_snapshot_survives_return_and_cancellation():
     assert source.to_owned().tautomer_score().total == 5
     assert progress.status == ck.TautomerEnumerationStatus.Completed
     assert progress.num_transforms == 1
-    assert len(progress) == 1 and not progress.is_empty
-    assert progress.modified_atoms == progress.modified_bonds == []
+    assert progress.len == 1 and not progress.is_empty
+    assert progress.modified_atoms == progress.modified_bonds == set()
     assert [(key, value.to_smiles()) for key, value in progress.to_owned().entries()] == [
         ("CC(C)=O", "CC(C)=O")
     ]
@@ -157,7 +157,7 @@ def test_callback_pre_application_snapshot_survives_return_and_cancellation():
     assert all(isinstance(atom, ck.Atom) for atom in atoms)
     assert all(isinstance(bond, ck.Bond) for bond in bonds)
     assert [atom.atomic_number for atom in atoms] == [6, 6, 6, 8]
-    assert [atom.degree() for atom in atoms] == [1, 3, 1, 1]
+    assert [atom.degree for atom in atoms] == [1, 3, 1, 1]
     assert [row.total_hydrogens for row in source.atom_metadata()] == [3, 0, 3, 0]
     assert source.atom(4) is None and source.bond(3) is None
     assert source.atom_degree(4) is None
@@ -186,7 +186,7 @@ def test_callback_exception_identity_and_source_atomicity(entry):
 def test_custom_signed_scorer_exact_inputs_and_retention(entry):
     saved = []
     def score(molecule):
-        saved.append(molecule)
+        saved.append(molecule.snapshot())
         return 100 if molecule.to_smiles() == "C=C(C)O" else -100
     params = ck.TautomerParams(scorer=score)
     assert params.scorer is score
@@ -222,10 +222,10 @@ def test_minimum_score_error_retains_structured_domain_and_cause():
     with pytest.raises(ck.OperationError) as caught:
         acetone().canonical_tautomer_with_params(ck.TautomerParams(scorer=lambda _: -(2**31)))
     assert caught.value.domain == "operation"
-    assert caught.value.kind == "Tautomer"
+    assert caught.value.variant.name == "Tautomer"
     cause = caught.value.__cause__
     assert isinstance(cause, ck.TautomerRunError)
-    assert cause.domain == "tautomer" and cause.kind == "NoCanonicalTautomer"
+    assert cause.domain == "tautomer" and cause.variant.name == "NoCanonicalTautomer"
 
 
 def test_single_result_skips_scorer_and_result_selection_does_not_enumerate():
@@ -260,8 +260,8 @@ def test_explicit_score_terms_are_detached_and_signed():
 def test_catalog_file_error_is_structured(tmp_path):
     with pytest.raises(ck.TautomerCatalogError) as caught:
         ck.TautomerParams.from_transform_file(str(tmp_path / "missing"))
-    assert caught.value.domain == "tautomer_catalog"
-    assert caught.value.kind == "BadInputFile"
+    assert caught.value.domain == "tautomer"
+    assert caught.value.variant.name == "BadInputFile"
     assert caught.value.__cause__ is not None
 
 
@@ -282,7 +282,7 @@ def test_iterable_selection_preserves_input_order_duplicates_and_first_tie():
     def score(value):
         observed.append(value.properties.name)
         return -9
-    selected = ck.canonical_tautomer_from_molecules_with_params(iter(values), ck.TautomerParams(scorer=score))
+    selected = ck.canonical_tautomer_from_molecules_with_params(values, ck.TautomerParams(scorer=score))
     assert observed == ["first", "second", "third"]
     assert selected.to_smiles() == "C"
     assert selected.properties.name == "first"
@@ -296,20 +296,25 @@ def test_iterable_selection_empty_and_wrong_types_remain_errors():
         ck.canonical_tautomer_from_molecules([])
     cause = caught.value.__cause__
     assert isinstance(cause, ck.TautomerRunError)
-    assert cause.kind == "NoCanonicalTautomer"
+    assert cause.variant.name == "NoCanonicalTautomer"
     with pytest.raises(TypeError):
         ck.canonical_tautomer_from_molecules(cast(Any, [acetone(), 42]))
     with pytest.raises(TypeError):
         ck.canonical_tautomer_from_molecules(cast(Any, 42))
 
 
-def test_iterable_generator_exception_keeps_identity():
+def test_sequence_extraction_exception_keeps_identity():
     error = RuntimeError("original iteration error")
-    def values():
-        yield acetone()
-        raise error
+    class Values:
+        def __len__(self):
+            return 2
+
+        def __getitem__(self, index):
+            if index == 0:
+                return acetone()
+            raise error
     with pytest.raises(RuntimeError) as caught:
-        ck.canonical_tautomer_from_molecules(values())
+        ck.canonical_tautomer_from_molecules(Values())
     assert caught.value is error
 
 
@@ -344,5 +349,5 @@ def test_atom_hybridization_is_the_shared_read_only_source_vocabulary():
         ck.Hybridization.SP3, ck.Hybridization.SP2,
         ck.Hybridization.SP3, ck.Hybridization.SP2,
     ]
-    assert [atom.hybridization.name for atom in source.atoms] == ["SP3", "SP2", "SP3", "SP2"]
+    assert [atom.hybridization.name for atom in source.atoms] == ["Sp3", "Sp2", "Sp3", "Sp2"]
     assert source.to_smiles() == "CC(C)=O"

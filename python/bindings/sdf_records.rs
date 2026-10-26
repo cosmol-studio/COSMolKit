@@ -41,7 +41,7 @@ mod tests {
             let api = PyModule::new(py, "sdf_record_test")?;
             api.add_class::<SdfRecord>()?;
             api.add_class::<SdfReadParams>()?;
-            api.add_class::<SdfError>()?;
+            api.add("SdfError", <SdfError as crate::error_framework::ExceptionPayload>::exception_type(py)?)?;
             api.add_class::<SdfErrorKind>()?;
             api.add_class::<crate::selectors::SdfCoordinateMode>()?;
             api.add_function(wrap_pyfunction!(mol_from_sdf, &api)?)?;
@@ -89,18 +89,18 @@ for reader,text,alias,want_default,want_configured in readers:
     else: raise AssertionError('mixed params accepted')
 record=api.SdfRecord.from_sdf(sdf,params)
 for other in [api.SdfRecord.from_sdf(sdf,**kwargs),api.SdfRecord.from_sdf_with_params(sdf,params)]:
-    assert bytes(other.molecule().to_binary())==bytes(configured)
-assert record.index()==0
-assert record.data_fields()==[('ID','first'),('ID','second')]
+    assert bytes(other.molecule.to_binary())==bytes(configured)
+assert record.index==0
+assert record.data_fields==[('ID','first'),('ID','second')]
 assert record.data_field('ID')=='first' and record.data_field('missing') is None
-assert record.properties().sdf_data_fields()==record.data_fields()
-assert record.source_coordinate_dim() is not None
-assert record.substance_groups()==[]
-view=record.graph().value
+assert record.properties.sdf_data_fields==record.data_fields
+assert record.source_coordinate_dim is not None
+assert record.substance_groups==[]
+view=record.graph.value
 assert bytes(view.to_binary())==bytes(configured)
 view.set_atom_position_(0,[3.0,4.0,5.0])
-assert bytes(record.molecule().to_binary())==bytes(configured)
-try: record.query_graph()
+assert bytes(record.molecule.to_binary())==bytes(configured)
+try: record.query_graph
 except api.SdfError as error:
     assert error.variant==api.SdfErrorKind.WrongGraphKind
     assert error.expected=='query_graph' and error.actual=='molecule'
@@ -110,16 +110,16 @@ except api.SdfError as error:
     else: raise AssertionError('mutable native error payload')
 else: raise AssertionError('concrete record returned query')
 qrecord=api.SdfRecord.from_query_graph(query,properties)
-assert qrecord.title()=='query title' and qrecord.data_fields()==[('ID','first'),('ID','second')]
-assert qrecord.source_coordinate_dim() is None
-assert qrecord.properties().name()=='query title'
-qview=qrecord.query_graph()
-qgraph=qrecord.graph().value
+assert qrecord.title=='query title' and qrecord.data_fields==[('ID','first'),('ID','second')]
+assert qrecord.source_coordinate_dim is None
+assert qrecord.properties.name=='query title'
+qview=qrecord.query_graph
+qgraph=qrecord.graph.value
 del query,qrecord
-assert qview.num_atoms()==2 and qgraph.num_bonds()==1
+assert qview.num_atoms==2 and qgraph.num_bonds==1
 read_query=api.SdfRecord.from_sdf(query_sdf)
-assert read_query.query_graph().num_atoms()==2
-try: read_query.molecule()
+assert read_query.query_graph.num_atoms==2
+try: read_query.molecule
 except api.SdfError as error:
     assert error.expected=='molecule' and error.actual=='query_graph'
 else: raise AssertionError('query record lowered')
@@ -171,7 +171,7 @@ assert str(retained)
             )
             .unwrap();
             let invalid = Py::new(py, SdfRecord::from_rust(invalid))?;
-            let error = invalid.bind(py).call_method0("title").unwrap_err();
+            let error = invalid.bind(py).getattr("title").unwrap_err();
             assert!(error.is_instance_of::<pyo3::exceptions::PyUnicodeDecodeError>(py));
             Ok(())
         })
@@ -267,6 +267,7 @@ pub(crate) fn molecule_mol(
 }
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// SDF record retaining a molecular or query graph, source metadata and ordered data fields.
 pub struct SdfRecord {
     pub(crate) inner: Arc<ck::SdfRecord>,
 }
@@ -280,6 +281,7 @@ impl SdfRecord {
 #[pymethods]
 impl SdfRecord {
     #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
+    /// Write this record as a MolBlock, without SDF data fields. Supply a parameter object or keyword options, not both.
     pub(crate) fn to_mol(
         &self,
         py: Python<'_>,
@@ -359,6 +361,7 @@ impl SdfRecord {
         )?;
         self._io_to_mol_params(py, Some(&params))
     }
+    /// Write the record's graph as a MolBlock using the supplied writer configuration.
     pub(crate) fn to_mol_with_params(
         &self,
         py: Python<'_>,
@@ -367,6 +370,7 @@ impl SdfRecord {
         self._io_to_mol_params(py, Some(params))
     }
     #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
+    /// Write this record as SDF, including its data fields. Supply a parameter object or keyword options, not both.
     pub(crate) fn to_sdf(
         &self,
         py: Python<'_>,
@@ -446,6 +450,7 @@ impl SdfRecord {
         )?;
         self._io_to_sdf_params(py, Some(&params))
     }
+    /// Write the complete SDF record using the supplied writer configuration.
     pub(crate) fn to_sdf_with_params(
         &self,
         py: Python<'_>,
@@ -456,6 +461,7 @@ impl SdfRecord {
 
     #[staticmethod]
     #[pyo3(signature=(input,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+    /// Parse one SDF record, preserving its molecular or query graph and data fields.
     pub(crate) fn from_sdf(
         py: Python<'_>,
         input: &str,
@@ -532,6 +538,7 @@ impl SdfRecord {
         Self::_from_sdf_params(py, input, Some(&params))
     }
     #[staticmethod]
+    /// Parse one SDF record with explicit parsing parameters; propagate native parsing errors.
     pub(crate) fn from_sdf_with_params(
         py: Python<'_>,
         input: &str,
@@ -541,12 +548,14 @@ impl SdfRecord {
     }
 
     #[staticmethod]
+    /// Create an SDF query record from the supplied query graph and molecular properties.
     fn from_query_graph(query: &QueryGraph, properties: &MoleculeProperties) -> PyResult<Self> {
         ck::SdfRecord::from_query_graph(query.inner().clone(), properties.inner.clone())
             .map(Self::from_rust)
             .map_err(SdfError::from_rust)
     }
     #[getter]
+    /// Tagged molecular or query graph stored by this record.
     fn graph(&self) -> SdfGraph {
         match self.inner.graph() {
             ck::SdfGraph::Molecule(value) => SdfGraph::Molecule {
@@ -560,6 +569,7 @@ impl SdfRecord {
         }
     }
     #[getter]
+    /// Molecular value stored by this record; raises SdfError if the record contains a query graph.
     fn molecule(&self) -> PyResult<Molecule> {
         self.inner
             .molecule()
@@ -569,11 +579,13 @@ impl SdfRecord {
             .map_err(SdfError::from_rust)
     }
     #[getter]
+    /// Query graph stored by this record; raises SdfError if the record contains a molecular graph.
     fn query_graph(&self) -> PyResult<QueryGraph> {
         self.inner.query_graph().map_err(SdfError::from_rust)?;
         Ok(QueryGraph::from_sdf_record(Arc::clone(&self.inner)))
     }
     #[getter]
+    /// Ordered SDF name/value pairs, retaining repeated field names.
     fn data_fields(&self, py: Python<'_>) -> PyResult<Vec<(String, String)>> {
         self.inner
             .data_fields()
@@ -582,12 +594,14 @@ impl SdfRecord {
             .collect()
     }
     #[getter]
+    /// Independent copy of the molecular properties stored with this record.
     fn properties(&self) -> MoleculeProperties {
         MoleculeProperties {
             inner: self.inner.properties().clone(),
         }
     }
     #[getter]
+    /// Substance-group values stored in this record.
     fn substance_groups(&self) -> Vec<SubstanceGroup> {
         self.inner
             .substance_groups()
@@ -597,20 +611,24 @@ impl SdfRecord {
             .collect()
     }
     #[getter]
+    /// Coordinate dimensionality recorded in the input, or None when unspecified.
     fn source_coordinate_dim(&self) -> Option<CoordinateDimension> {
         self.inner.source_coordinate_dim().map(Into::into)
     }
     #[getter]
+    /// Zero-based record index in its source.
     fn index(&self) -> usize {
         self.inner.index()
     }
     #[getter]
+    /// Record title, or None when the source supplies no title.
     fn title(&self, py: Python<'_>) -> PyResult<Option<String>> {
         self.inner
             .title()
             .map(|value| decode_source_text(py, value))
             .transpose()
     }
+    /// Look up a named SDF data field; return None when it is absent.
     fn data_field(&self, py: Python<'_>, name: &str) -> PyResult<Option<String>> {
         self.inner
             .data_field(name)
@@ -620,6 +638,7 @@ impl SdfRecord {
 }
 #[pyfunction]
 #[pyo3(signature=(input,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+/// Parse SDF text into a molecular value using SdfReadParams or keyword options, not both.
 pub fn mol_from_sdf(
     py: Python<'_>,
     input: &str,
@@ -690,6 +709,7 @@ pub fn _mol_from_sdf_keywords(
 
 #[pyfunction]
 #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+/// Parse an MDL MolBlock into a molecular value using SdfReadParams or keyword options, not both.
 pub fn mol_from_mol(
     py: Python<'_>,
     text: &str,

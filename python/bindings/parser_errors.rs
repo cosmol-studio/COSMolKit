@@ -14,7 +14,7 @@ error_projection!(ParserCarrierError, ParserCarrierErrorKind, ck::ParserCarrierE
     ck::ParserCarrierError::Model(_) => None,
 }, source = Option<Source<crate::error_framework::ErrorObject<PropertyStringError>, crate::error_framework::ErrorObject<AtomPropertyError>>>, methods = {
     #[getter]
-    fn model(&self) -> Option<&str> { match &self.inner {
+    #[doc = "Native parser model diagnostic, or None for another failure."] fn model(&self) -> Option<&str> { match &self.inner {
         ck::ParserCarrierError::Model(value) => Some(value), _ => None,
     } }
 });

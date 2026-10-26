@@ -52,19 +52,19 @@ error_projection!(KekulizeError, KekulizeErrorKind, ck::KekulizeError, "kekulize
     | ck::KekulizeError::UnsupportedQueryState { .. } | ck::KekulizeError::IntegerOverflow { .. } => None,
 }), source = Option<KekulizeSource>, methods = {
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to KekulizeError.AtomSelectionLength, KekulizeError.BondSelectionLength, KekulizeError.MatchingStateLength. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::KekulizeError::AtomSelectionLength { expected, .. }
         | ck::KekulizeError::BondSelectionLength { expected, .. }
         | ck::KekulizeError::MatchingStateLength { expected, .. } => Some(expected), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to KekulizeError.AtomSelectionLength, KekulizeError.BondSelectionLength, KekulizeError.MatchingStateLength. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::KekulizeError::AtomSelectionLength { actual, .. }
         | ck::KekulizeError::BondSelectionLength { actual, .. }
         | ck::KekulizeError::MatchingStateLength { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to KekulizeError.CandidateAtomOutOfRange, KekulizeError.DuplicateCandidateAtom, KekulizeError.DuplicateDoneAtom, KekulizeError.MissingBacktrackAnchor, KekulizeError.AromaticAtomOutsideRing, KekulizeError.PostconditionValenceMismatch, KekulizeError.IntegerOverflow. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::KekulizeError::CandidateAtomOutOfRange { atom, .. }
         | ck::KekulizeError::DuplicateCandidateAtom { atom }
         | ck::KekulizeError::DuplicateDoneAtom { atom }
@@ -74,33 +74,33 @@ error_projection!(KekulizeError, KekulizeErrorKind, ck::KekulizeError, "kekulize
         | ck::KekulizeError::IntegerOverflow { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Field whose content or type caused the failure. Applies to KekulizeError.MatchingStateLength, KekulizeError.IntegerOverflow. None when this payload is absent."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::KekulizeError::MatchingStateLength { field, .. }
         | ck::KekulizeError::IntegerOverflow { field, .. } => Some(field), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of KekulizeError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::KekulizeError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryStateError>>> { match &self.inner {
+    #[doc = "Structured QueryStateError payload of KekulizeError.InvalidQueryState; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryStateError>>> { match &self.inner {
         ck::KekulizeError::InvalidQueryState(value) => QueryStateError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
+    #[doc = "Structured RingFindingError payload of KekulizeError.RingFinding; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
         ck::KekulizeError::RingFinding(value) => RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of KekulizeError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::KekulizeError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn canonical_rank(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CanonicalRankError>>> { match &self.inner {
+    #[doc = "Structured CanonicalRankError payload of KekulizeError.CanonicalRank; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn canonical_rank(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CanonicalRankError>>> { match &self.inner {
         ck::KekulizeError::CanonicalRank(value) => CanonicalRankError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

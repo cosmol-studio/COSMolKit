@@ -5,9 +5,18 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// SDF graph holding either a concrete Molecule or a QueryGraph.
 pub enum SdfGraph {
-    Molecule { value: Molecule },
-    Query { value: QueryGraph },
+    /// Concrete molecular graph stored in this SDF record.
+    Molecule {
+        /// Concrete molecular value held by this record variant.
+        value: Molecule,
+    },
+    /// Query graph stored in this SDF record.
+    Query {
+        /// Query graph held by this record variant.
+        value: QueryGraph,
+    },
 }
 
 impl SdfGraph {
@@ -63,13 +72,7 @@ mod tests {
             ));
             drop(query);
             drop(graph);
-            assert_eq!(
-                value
-                    .bind(py)
-                    .call_method0("num_atoms")?
-                    .extract::<usize>()?,
-                2
-            );
+            assert_eq!(value.bind(py).getattr("num_atoms")?.extract::<usize>()?, 2);
 
             let native = ck::SdfGraph::Query(ck::parse_smarts("N").unwrap());
             let graph = SdfGraph::from_rust(native).into_pyobject(py)?.into_any();
@@ -77,7 +80,7 @@ mod tests {
             assert_eq!(
                 graph
                     .getattr("value")?
-                    .call_method0("num_atoms")?
+                    .getattr("num_atoms")?
                     .extract::<usize>()?,
                 1
             );

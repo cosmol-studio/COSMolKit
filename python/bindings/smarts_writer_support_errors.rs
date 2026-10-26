@@ -56,75 +56,75 @@ error_projection!(WedgeError, WedgeErrorKind, ck::WedgeError, "stereo", {
     | ck::WedgeError::InvalidStereoRankType { .. } => None,
 }), source = Option<WedgeSource>, methods = {
     #[getter]
-    fn state(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Native wedge-assignment state whose index failed validation; None otherwise."] fn state(&self) -> Option<&'static str> { match self.inner {
         ck::WedgeError::SourceStateIndex { state, .. } | ck::WedgeError::SourceIndexWidth { state, .. } => Some(state), _ => None,
     } }
     #[getter]
-    fn index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Index reported by the failing native check. Applies to WedgeError.SourceStateIndex, WedgeError.SourceIndexWidth. None when this payload is absent."] fn index(&self) -> Option<usize> { match self.inner {
         ck::WedgeError::SourceStateIndex { index, .. } | ck::WedgeError::SourceIndexWidth { index, .. } => Some(index), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to WedgeError.SourceSignedScoreOverflow, WedgeError.UnsignedRankOverflow, WedgeError.InvalidStereoRank, WedgeError.InvalidStereoRankType. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::WedgeError::SourceSignedScoreOverflow { atom, .. } | ck::WedgeError::UnsignedRankOverflow { atom, .. }
         | ck::WedgeError::InvalidStereoRank { atom, .. } | ck::WedgeError::InvalidStereoRankType { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn property(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Property name involved in the failure. Applies to WedgeError.UnsignedRankOverflow, WedgeError.InvalidStereoRank, WedgeError.InvalidStereoRankType. None when this payload is absent."] fn property(&self) -> Option<&'static str> { match self.inner {
         ck::WedgeError::UnsignedRankOverflow { property, .. } | ck::WedgeError::InvalidStereoRank { property, .. }
         | ck::WedgeError::InvalidStereoRankType { property, .. } => Some(property), _ => None,
     } }
     #[getter]
-    fn value(&self, py: Python<'_>) -> PyResult<Option<Source<u32, String>>> { match &self.inner {
+    #[doc = "Value rejected or reported by the native operation. Applies to WedgeError.UnsignedRankOverflow, WedgeError.InvalidStereoRank. None when this payload is absent."] fn value(&self, py: Python<'_>) -> PyResult<Option<Source<u32, String>>> { match &self.inner {
         ck::WedgeError::UnsignedRankOverflow { value, .. } => Ok(Some(Source::First(*value))),
         ck::WedgeError::InvalidStereoRank { value, .. } => decode_source_text(py, value).map(|text| Some(Source::Second(text))), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
+    #[doc = "Native failure-specific category or value kind. Applies to WedgeError.InvalidStereoRankType. None when this payload is absent."] fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
         ck::WedgeError::InvalidStereoRankType { kind, .. } => Some(kind.into()), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to WedgeError.BondOutOfRange, WedgeError.NonSingleBond, WedgeError.CenterNotIncident. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::WedgeError::BondOutOfRange { bond, .. } | ck::WedgeError::NonSingleBond { bond }
         | ck::WedgeError::CenterNotIncident { bond, .. } => Some(bond.index()), _ => None,
     } }
     #[getter]
-    fn center(&self) -> Option<usize> { match self.inner {
+    #[doc = "Stereochemical center reported by the native check. Applies to WedgeError.CenterNotIncident, WedgeError.UnsupportedCenterTag. None when this payload is absent."] fn center(&self) -> Option<usize> { match self.inner {
         ck::WedgeError::CenterNotIncident { center, .. } | ck::WedgeError::UnsupportedCenterTag { center, .. } => Some(center.index()), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of WedgeError.Topology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::WedgeError::Topology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
+    #[doc = "Structured CoordinateValidationError payload of WedgeError.Coordinates; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
         ck::WedgeError::Coordinates(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn geometry(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoError>>> { match &self.inner {
+    #[doc = "Structured StereoError payload of WedgeError.Geometry; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn geometry(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoError>>> { match &self.inner {
         ck::WedgeError::Geometry(value) => StereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
+    #[doc = "Structured StereoOrderError payload of WedgeError.StereoOrder; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
         ck::WedgeError::StereoOrder(value) => StereoOrderError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn potential_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PotentialStereoError>>> { match &self.inner {
+    #[doc = "Structured PotentialStereoError payload of WedgeError.PotentialStereo; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn potential_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PotentialStereoError>>> { match &self.inner {
         ck::WedgeError::PotentialStereo(value) => PotentialStereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
+    #[doc = "Structured RingFindingError payload of WedgeError.RingFinding; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
         ck::WedgeError::RingFinding(value) => RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> { match &self.inner {
+    #[doc = "Structured AtropisomerError payload of WedgeError.Atropisomer; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> { match &self.inner {
         ck::WedgeError::Atropisomer(value) => AtropisomerError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

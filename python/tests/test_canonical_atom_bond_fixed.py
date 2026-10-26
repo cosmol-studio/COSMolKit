@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import enum
 import pytest
 import cosmolkit as ck
 
@@ -8,11 +7,10 @@ import cosmolkit as ck
 @pytest.mark.parametrize("name,count", [("BondOrder",22),("ChiralTag",9),("BondDirection",7),("BondStereo",8)])
 def test_complete_dynamic_vocabulary_transport(name,count):
     cls=getattr(ck,name)
-    assert issubclass(cls,enum.IntEnum)
-    assert [int(v) for v in cls]==list(range(count))
-    for member in cls:
-        assert cls(int(member)) is member
-        assert getattr(cls,member.name) is member
+    assert [int(v) for v in cls.values.values()]==list(range(count))
+    for member in cls.values.values():
+        assert cls(int(member)) == member
+        assert getattr(cls,member.name) == member
     with pytest.raises(ValueError):cls(count)
     with pytest.raises(ValueError):cls(-1)
 
@@ -39,7 +37,7 @@ def test_atom_scalar_and_core_metadata_records_have_one_canonical_context():
     assert len(atoms) == len(metadata)
     for a,m in zip(atoms,metadata):
         for field in ("degree","explicit_valence","implicit_hydrogens","total_hydrogens","total_valence"):
-            assert getattr(a,field)()==getattr(m,field)()
+            assert getattr(a,field)==getattr(m,field)
         assert a.no_implicit is False
         assert a.is_aromatic is False
         assert a.chiral_tag==ck.ChiralTag.CHI_UNSPECIFIED
@@ -47,8 +45,8 @@ def test_atom_scalar_and_core_metadata_records_have_one_canonical_context():
         assert a.chiral_tag_name=="CHI_UNSPECIFIED"
         assert a.cip_neighbor_order is None
         assert a.cip_descriptor is None
-        assert f"id={a.id}" in repr(a)
-    assert repr(molecule)=="Molecule(num_atoms=3, num_bonds=2)"
+        assert isinstance(a, ck.MoleculeAtom)
+    assert molecule.num_atoms == 3 and molecule.num_bonds == 2
     assert ck.Molecule.new().num_atoms==0
     assert ck.Molecule.new().atoms==[]
     assert ck.Molecule.new().bonds==[]
@@ -87,15 +85,15 @@ def test_bond_scalar_stereo_and_dynamic_vocabulary_records():
     assert [b.order for b in bonds]==[ck.BondOrder.SINGLE,ck.BondOrder.DOUBLE,ck.BondOrder.SINGLE]
     for b in bonds:
         assert b.order_code==int(b.order)
-        assert b.order_name==b.order.name
+        assert ck.BondOrder.names[b.order_name]==b.order
         assert b.direction_code==int(b.direction)
-        assert b.direction_name==b.direction.name
+        assert ck.BondDirection.names[b.direction_name]==b.direction
         assert b.stereo_code==int(b.stereo)
-        assert b.stereo_name==b.stereo.name
+        assert ck.BondStereo.names[b.stereo_name]==b.stereo
         assert b.is_aromatic is False
         assert b.cip_neighbor_order is None
         assert b.cip_descriptor is None
-        assert f"id={b.id}" in repr(b)
+        assert isinstance(b, ck.Bond)
     assert bonds[1].stereo in (ck.BondStereo.STEREOE,ck.BondStereo.STEREOTRANS)
     assert bonds[1].stereo_atoms==[0,3]
     assert bonds[0].stereo_atoms is None
@@ -110,13 +108,15 @@ def test_read_values_are_immutable_and_cip_options_are_writable():
     assert options.atoms is None and options.bonds is None
     assert options.max_recursive_iterations==0
     options=ck.CipLabelOptions(atoms=[],bonds=[1,0,1],max_recursive_iterations=3)
-    assert options.atoms==[] and options.bonds==[1,0,1]
+    assert options.atoms==() and options.bonds==(1,0,1)
     assert options.max_recursive_iterations==3
-    live=options.bonds
-    live.append(2)
-    assert options.bonds==[1,0,1,2]
+    values=list(options.bonds)
+    values.append(2)
+    assert options.bonds==(1,0,1)
+    options.bonds=values
+    assert options.bonds==(1,0,1,2)
     options.atoms=[0]
-    assert options.atoms == [0]
+    assert options.atoms == (0,)
     with pytest.raises(OverflowError):ck.CipLabelOptions(atoms=[-1])
     with pytest.raises(OverflowError):ck.CipLabelOptions(max_recursive_iterations=-1)
 

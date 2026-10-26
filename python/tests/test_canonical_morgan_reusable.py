@@ -87,10 +87,10 @@ def test_live_settings_all_fields_alias_snapshot_copy_and_lifetime():
         setattr(settings, name, value)
         assert getattr(alias, name) == value
     fields["count_bounds"].append(99)
-    copied = alias.count_bounds
+    copied = list(alias.count_bounds)
     copied.append(77)
-    assert settings.count_bounds == [1, 3, 5]
-    assert snapshot.radius == 3 and snapshot.fp_size == 2048 and snapshot.count_bounds == [1, 2, 4, 8]
+    assert list(settings.count_bounds) == list((1, 3, 5))
+    assert snapshot.radius == 3 and snapshot.fp_size == 2048 and snapshot.count_bounds == (1, 2, 4, 8)
     assert json.loads(generator.to_json())["bondInvariantsGenerator"]["useChirality"] == "false"
     del generator
     alias.radius = 1
@@ -106,28 +106,29 @@ def test_invalid_binding_settings_transport_preserves_previous_value(name, value
         setattr(settings, name, value)
     assert getattr(settings, name) == old
 
-def test_call_params_copy_constructor_lists_and_expose_live_configuration_lists():
+def test_call_params_copy_constructor_lists_and_whole_field_assignment():
     supplied = [0]
     params = ck.MorganCallParams(from_atoms=supplied, ignore_atoms=supplied,
-                               custom_atom_invariants=[11, 12, 13], custom_bond_invariants=[1, 1], conformer_id=3)
+                               custom_atom_invariants=[11, 12, 13], custom_bond_invariants=[1, 1])
     supplied.append(1)
-    assert params.from_atoms == [0] and params.ignore_atoms == [0]
-    assert params.custom_atom_invariants == [11, 12, 13] and params.custom_bond_invariants == [1, 1]
-    assert params.conformer_id == 3
+    assert params.from_atoms == (0,) and params.ignore_atoms == (0,)
+    assert params.custom_atom_invariants == (11, 12, 13) and params.custom_bond_invariants == (1, 1)
+    with pytest.raises(TypeError):
+        ck.MorganCallParams(conformer_id=3)
     for name in ("from_atoms", "ignore_atoms", "custom_atom_invariants", "custom_bond_invariants"):
-        view = getattr(params, name)
-        before = list(view)
-        view.append(99)
-        assert getattr(params, name) == before + [99]
-        assert getattr(params, name) is view
+        before = getattr(params, name)
+        changed = list(before) + [99]
+        assert getattr(params, name) == before
+        setattr(params, name, changed)
+        assert getattr(params, name) == tuple(changed)
         original = getattr(params, name)
         setattr(params, name, [])
-        assert getattr(params, name) == []
+        assert getattr(params, name) == ()
         setattr(params, name, original)
-    params.conformer_id = 0
-    assert params.conformer_id == 0
+    with pytest.raises(AttributeError):
+        params.conformer_id = 0
     assert ck.MorganCallParams().from_atoms is None
-    assert ck.MorganCallParams(from_atoms=[]).from_atoms == []
+    assert ck.MorganCallParams(from_atoms=[]).from_atoms == ()
 
 @pytest.mark.parametrize("form,single,bulk", FORMS)
 def test_present_empty_roots_reset_all_allocated_output(form, single, bulk):
@@ -173,7 +174,7 @@ def test_source_null_provider_preconditions_json_fallback_and_live_error_recover
     null = ck.MorganFingerprintGenerator.from_json(json.dumps(value))
     with pytest.raises(ck.MorganReadError, match="atom invariants") as caught:
         molecule.fingerprint_morgan_sparse_count_with_generator(null)
-    assert caught.value.kind == "Generator" and caught.value.__cause__ is not None
+    assert caught.value.variant.name == "Generator" and caught.value.__cause__ is not None
     with pytest.raises(ck.MorganReadError, match="bond invariants"):
         molecule.fingerprint_morgan_sparse_count_with_generator(null, params=ck.MorganCallParams(custom_atom_invariants=[11, 12, 13]))
     assert molecule.fingerprint_morgan_sparse_count_with_generator(null, params=ck.MorganCallParams(custom_atom_invariants=[11, 12, 13], custom_bond_invariants=[1, 1])).nonzero_elements
@@ -183,7 +184,7 @@ def test_source_null_provider_preconditions_json_fallback_and_live_error_recover
     settings.count_bounds = []
     with pytest.raises(ck.MorganReadError) as caught:
         generator.fingerprints([None, molecule], num_threads=3)
-    assert caught.value.kind == "Generator" and caught.value.__cause__ is not None
+    assert caught.value.variant.name == "Generator" and caught.value.__cause__ is not None
     assert generator.sparse_counts([molecule], num_threads=3)[0].nonzero_elements
     settings.count_bounds = [1, 2, 4, 8]
     assert generator.fingerprints([molecule], num_threads=3)[0].on_bits
@@ -198,7 +199,7 @@ def test_original_stub_projects_all_five_types_methods_and_settings():
     for name in ("MorganFingerprintGenerator", "MorganSettings", "MorganCallParams", "MorganAtomInvariantsGenerator", "MorganBondInvariantsGenerator"):
         assert name in classes
     methods = {node.name for node in classes["MorganFingerprintGenerator"].body if isinstance(node, ast.FunctionDef)}
-    assert methods == {"__new__", "new", "from_json", "settings", "info_string", "to_json", "__repr__", "fingerprints", "counts", "sparse_fingerprints", "sparse_counts"}
+    assert methods == {"__new__", "new", "from_json", "settings", "info_string", "to_json", "fingerprints", "counts", "sparse_fingerprints", "sparse_counts"}
     names = [node.name for node in classes["MorganSettings"].body if isinstance(node, ast.FunctionDef)]
     for field in ("radius", "only_nonzero_invariants", "include_redundant_environments", "include_chirality", "count_simulation", "fp_size", "bits_per_feature", "count_bounds"):
         assert names.count(field) == 2

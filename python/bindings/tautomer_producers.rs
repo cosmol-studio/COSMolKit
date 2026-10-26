@@ -95,6 +95,7 @@ pub(crate) fn canonical_enumeration(
 
 #[pyfunction]
 #[pyo3(signature=(molecules, params=None))]
+/// Select the canonical tautomer from supplied molecular candidates using the native scoring policy.
 pub fn canonical_tautomer_from_molecules(
     py: Python<'_>,
     molecules: Vec<Py<Molecule>>,
@@ -126,6 +127,7 @@ pub fn canonical_tautomer_from_molecules(
     Ok(Molecule { inner })
 }
 #[pyfunction]
+/// Select the canonical tautomer from supplied candidates using the explicit native scoring parameters.
 pub fn canonical_tautomer_from_molecules_with_params(
     py: Python<'_>,
     molecules: Vec<Py<Molecule>>,
@@ -164,11 +166,11 @@ mod tests {
 import gc
 params = api.TautomerParams(max_tautomers=23)
 default = molecule.enumerate_tautomers()
-assert default.len() == expected_count
+assert default.len == expected_count
 configured = molecule.enumerate_tautomers(params)
-assert configured.canonical_smiles() == default.canonical_smiles()
-assert molecule.enumerate_tautomers(max_tautomers=23).canonical_smiles() == configured.canonical_smiles()
-assert molecule.enumerate_tautomers_with_params(params).canonical_smiles() == configured.canonical_smiles()
+assert configured.canonical_smiles == default.canonical_smiles
+assert molecule.enumerate_tautomers(max_tautomers=23).canonical_smiles == configured.canonical_smiles
+assert molecule.enumerate_tautomers_with_params(params).canonical_smiles == configured.canonical_smiles
 for result in [molecule.canonical_tautomer(), molecule.canonical_tautomer(params),
     molecule.canonical_tautomer(max_tautomers=23), molecule.canonical_tautomer_with_params(params),
     default.canonical_tautomer(), default.canonical_tautomer(params),
@@ -193,7 +195,7 @@ def callback(source, progress):
     return True
 def scorer(source):
     scores.append(source)
-    return source.tautomer_score().total()
+    return source.tautomer_score().total
 params.callback = callback
 params.scorer = scorer
 retained = molecule.enumerate_tautomers(params)
@@ -202,10 +204,10 @@ chosen = retained.canonical_tautomer(params)
 assert scores and chosen.to_smiles() == expected_text
 assert molecule.canonical_tautomer(params).to_smiles() == expected_text
 for source in live + scores:
-    try: source.num_atoms()
+    try: source.num_atoms
     except ReferenceError: pass
     else: raise AssertionError('callback loan escaped')
-assert any(snapshot.len() for snapshot in snapshots)
+assert any(snapshot.len for snapshot in snapshots)
 marker = LookupError('same invocation exception')
 def bad(source, progress): raise marker
 params.callback = bad
@@ -214,7 +216,7 @@ except LookupError as error: assert error is marker
 else: raise AssertionError('Python exception lost')
 params.callback = None
 params.scorer = None
-assert molecule.enumerate_tautomers(params).len() == expected_count
+assert molecule.enumerate_tautomers(params).len == expected_count
 assert bytes(molecule.to_binary()) == bytes(before)
 del molecule, params, configured, default
 gc.collect()

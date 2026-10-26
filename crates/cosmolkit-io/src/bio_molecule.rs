@@ -10,9 +10,13 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct BioMoleculeParams {
+    /// Sanitize the molecular topology after converting the structure.
     pub sanitize: bool,
+    /// Remove removable explicit hydrogens during molecular conversion.
     pub remove_hs: bool,
+    /// PDB atom and connectivity interpretation flags.
     pub flavor: crate::PdbReadFlags,
+    /// Infer bonds from spatial proximity where applicable.
     pub proximity_bonding: bool,
 }
 impl Default for BioMoleculeParams {

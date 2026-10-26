@@ -48,16 +48,16 @@ def test_setting_2d_coordinates_z_policy_and_in_place_update():
     mol = cosmolkit.Molecule.from_smiles("CCO")
     coords3 = [[0.0, 0.0, 0.0], [1.0, 0.1, 0.0], [2.0, 0.2, 0.0]]
 
-    strict = mol.with_2d_coordinate_block_with_params(coords3, cosmolkit.Coordinate2DInputParams(cosmolkit.CoordinateZPolicy.RequireZero))
+    strict = mol.with_2d_coordinate_block_with_params(coords3, cosmolkit.Coordinate2DInputParams(z_policy=cosmolkit.CoordinateZPolicy.RequireZero))
     np.testing.assert_array_equal(strict.coordinates_2d, np.asarray(coords3)[:, :2])
 
     with pytest.raises(ValueError, match="z_policy='error'"):
-        mol.with_2d_coordinate_block_with_params(coords3, cosmolkit.Coordinate2DInputParams(cosmolkit.CoordinateZPolicy.Error))
+        mol.with_2d_coordinate_block_with_params(coords3, cosmolkit.Coordinate2DInputParams(z_policy=cosmolkit.CoordinateZPolicy.Error))
 
     with pytest.raises(ValueError, match="require zero z"):
         mol.with_2d_coordinate_block_with_params(
             [[0.0, 0.0, 0.0], [1.0, 0.1, 0.25], [2.0, 0.2, 0.0]],
-            cosmolkit.Coordinate2DInputParams(cosmolkit.CoordinateZPolicy.RequireZero),
+            cosmolkit.Coordinate2DInputParams(z_policy=cosmolkit.CoordinateZPolicy.RequireZero),
         )
 
     assert mol.set_2d_coordinates_(coords3) is None
@@ -132,7 +132,7 @@ def test_coordinate_ingress_rejects_oversized_broadcast_views_before_copying():
 
     with pytest.raises(
         ValueError,
-        match=r"^2D coordinates row count mismatch: expected 3, got 1000000$",
+        match=r"^coordinate input error: 2D coordinates row count mismatch: expected 3, got 1000000$",
     ):
         mol.with_2d_coordinate_block(oversized_2d)
 

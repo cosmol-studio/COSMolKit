@@ -48,7 +48,7 @@ def test_smiles_factories_writers_and_required_fragment_inputs():
     assert molecule.num_atoms == ck.Molecule.from_smiles("CCO", sanitize=False).num_atoms == 3
     writer = ck.SmilesWriteParams(canonical=False, all_bonds_explicit=True)
     assert molecule.to_smiles(writer) == molecule.to_smiles(canonical=False, all_bonds_explicit=True)
-    fragment = ck.FragmentSmilesWriteParams([0, 1])
+    fragment = ck.FragmentSmilesWriteParams(atoms=[0, 1])
     assert molecule.to_fragment_smiles(fragment) == molecule.to_fragment_smiles(atoms=[0, 1]) == "CC"
     with pytest.raises(TypeError):
         molecule.to_fragment_smiles()

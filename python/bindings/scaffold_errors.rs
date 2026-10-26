@@ -38,62 +38,62 @@ error_projection!(ScaffoldError, ScaffoldErrorKind, ck::ScaffoldError, "scaffold
 }), source = Option<Source<LegacySource, crate::error_framework::ErrorObject<UIntLexicalReadError>>>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of ScaffoldError.Topology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::ScaffoldError::Topology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
+    #[doc = "Structured TopologyEditError payload of ScaffoldError.Edit; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
         ck::ScaffoldError::Edit(value) => TopologyEditError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of ScaffoldError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::ScaffoldError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn rings(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
+    #[doc = "Structured RingFindingError payload of ScaffoldError.Rings; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn rings(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
         ck::ScaffoldError::Rings(value) => RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn radicals(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RadicalError>>> { match &self.inner {
+    #[doc = "Structured RadicalError payload of ScaffoldError.Radicals; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn radicals(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RadicalError>>> { match &self.inner {
         ck::ScaffoldError::Radicals(value) => RadicalError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<LegacyStereoError>>> { match &self.inner {
+    #[doc = "Structured LegacyStereoError payload of ScaffoldError.Stereo; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<LegacyStereoError>>> { match &self.inner {
         ck::ScaffoldError::Stereo(value) => LegacyStereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn property_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
+    #[doc = "Structured MoleculePropertyError payload of ScaffoldError.Property; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn property_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
         ck::ScaffoldError::Property(value) => MoleculePropertyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn atom_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>> { match &self.inner {
+    #[doc = "Structured AtomPropertyError payload of ScaffoldError.AtomProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn atom_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>> { match &self.inner {
         ck::ScaffoldError::AtomProperty(value) => AtomPropertyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn bond_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
+    #[doc = "Structured BondValueError payload of ScaffoldError.BondProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn bond_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
         ck::ScaffoldError::BondProperty(value) => BondValueError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn uint_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyUIntReadError>>> { match &self.inner {
+    #[doc = "Structured PropertyUIntReadError payload of ScaffoldError.UIntProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn uint_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyUIntReadError>>> { match &self.inner {
         ck::ScaffoldError::UIntProperty(value) => PropertyUIntReadError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn text_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
+    #[doc = "Structured PropertyStringError payload of ScaffoldError.TextProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn text_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
         ck::ScaffoldError::TextProperty(value) => PropertyStringError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn matrix(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MatrixError>>> { match &self.inner {
+    #[doc = "Structured MatrixError payload of ScaffoldError.Matrix; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn matrix(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MatrixError>>> { match &self.inner {
         ck::ScaffoldError::Matrix(value) => MatrixError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

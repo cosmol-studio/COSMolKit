@@ -3,8 +3,10 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 
 crate::configuration::type_projection! {
-    #[pyclass(module = "cosmolkit", frozen, from_py_object)]
-    #[derive(Clone)]
+    value(eq, hash)
+    /// Chemical element identified by atomic number, with value equality and hashing.
+    /// DUMMY represents atomic number zero. Use from_symbol or from_atomic_number
+    /// to look up a value; an unrecognized symbol or number returns None.
     pub struct Element {
         pub(crate) inner: ck::Element,
     }
@@ -490,18 +492,22 @@ impl Element {
     };
 
     #[staticmethod]
+    /// Look up an atomic number, including zero for DUMMY; return None if it is unknown.
     fn from_atomic_number(atomic_number: u8) -> Option<Self> {
         ck::Element::from_atomic_number(atomic_number).map(|inner| Self { inner })
     }
     #[staticmethod]
+    /// Look up a case-sensitive element symbol such as "Cl"; return None if it is unknown.
     fn from_symbol(symbol: &str) -> Option<Self> {
         ck::Element::from_symbol(symbol).map(|inner| Self { inner })
     }
     #[getter]
+    /// Atomic number (proton count), or zero for DUMMY.
     fn atomic_number(&self) -> u8 {
         self.inner.atomic_number()
     }
     #[getter]
+    /// Canonical chemical symbol, preserving element-name capitalization.
     fn symbol(&self) -> &'static str {
         self.inner.symbol()
     }
@@ -509,6 +515,7 @@ impl Element {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Readonly periodic-table metadata for an element, including native valence and radius data.
     pub struct ElementInfo {
         inner: ck::ElementInfo,
     }
@@ -517,42 +524,51 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl ElementInfo {
     #[getter]
+    /// Element represented by this periodic-table row.
     fn element(&self) -> Element {
         Element {
             inner: self.inner.element,
         }
     }
     #[getter]
+    /// Conventional chemical element symbol.
     fn symbol(&self) -> &'static str {
         self.inner.symbol
     }
     #[getter]
+    /// Atomic number of the element.
     fn atomic_number(&self) -> u8 {
         self.inner.atomic_number
     }
     #[getter]
+    /// Periodic-table period number.
     fn period(&self) -> u8 {
         self.inner.period
     }
     #[getter]
+    /// Number of outer-shell electrons in the native periodic table.
     fn outer_electrons(&self) -> i32 {
         self.inner.outer_electrons
     }
     #[getter]
+    /// Allowed valence entries from the native table, retaining any native sentinel values.
     fn valences(&self) -> Vec<i32> {
         self.inner.valences.to_vec()
     }
     #[getter]
+    /// RDKit-defined Rb0 bond radius in angstroms.
     fn rb0(&self) -> f64 {
         self.inner.rb0
     }
     #[getter]
+    /// Standard atomic weight from the native periodic table.
     fn atomic_weight(&self) -> f64 {
         self.inner.atomic_weight
     }
 }
 
 #[pyfunction]
+/// Return periodic-table metadata for the supplied Element from the canonical native table.
 pub fn element_info(element: &Element) -> ElementInfo {
     ElementInfo {
         inner: ck::element_info(element.inner),

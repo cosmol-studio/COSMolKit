@@ -12,6 +12,8 @@ pub(crate) fn array<'py, const DIM: usize>(
 }
 
 crate::configuration::type_projection! {
+    /// Owned 2D coordinate rows with a conformer identifier. Reading coordinates
+    /// returns an independent NumPy array, not mutable molecular storage.
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
     pub struct Conformer2D {
@@ -26,11 +28,13 @@ impl Conformer2D {
             inner: ck::Conformer2D::new(id, coordinates),
         }
     }
+    /// Identifier associated with these coordinate rows.
     #[getter]
     fn id(&self) -> usize {
         self.inner.id()
     }
     #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]]"}"#]
+    /// Return an independent float64 array of shape (num_atoms, 2), in atom-index order.
     #[getter]
     fn coordinates<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray2<f64>> {
         array(py, self.inner.coordinates())
@@ -38,6 +42,8 @@ impl Conformer2D {
 }
 
 crate::configuration::type_projection! {
+    /// Owned three-component coordinate rows and their explicit dimensionality flag.
+    /// A false is_3d flag describes planar data stored as three-component rows.
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
     pub struct Conformer3D {
@@ -52,15 +58,18 @@ impl Conformer3D {
             inner: ck::Conformer3D::new(id, coordinates, is_3d),
         }
     }
+    /// Identifier associated with these coordinate rows.
     #[getter]
     fn id(&self) -> usize {
         self.inner.id()
     }
+    /// Whether these rows are marked as three-dimensional rather than planar.
     #[getter]
     fn is_3d(&self) -> bool {
         self.inner.is_3d()
     }
     #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]]"}"#]
+    /// Return an independent float64 array of shape (num_atoms, 3), in atom-index order.
     #[getter]
     fn coordinates<'py>(&self, py: Python<'py>) -> Bound<'py, numpy::PyArray2<f64>> {
         array(py, self.inner.coordinates())

@@ -54,6 +54,7 @@ pub(crate) fn keyword_params(
 
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
+/// Topological fingerprint together with explicitly requested contribution metadata.
 pub struct TopologicalFingerprintResult {
     pub(crate) inner: Arc<ck::TopologicalFingerprintResult>,
 }
@@ -74,12 +75,14 @@ impl TopologicalFingerprintResult {
         })
     }
     #[getter]
+    /// Generated topological bit fingerprint.
     fn fingerprint(&self) -> Fingerprint {
         Fingerprint {
             inner: self.inner.fingerprint().clone(),
         }
     }
     #[getter]
+    /// Bit identifiers attributed to each atom; raises the native error if this output was not collected.
     fn atom_bits(&self) -> PyResult<Vec<Vec<u32>>> {
         self.inner
             .atom_bits()
@@ -87,6 +90,7 @@ impl TopologicalFingerprintResult {
             .map_err(TopologicalFingerprintError::from_rust)
     }
     #[getter]
+    /// Contributing bond paths keyed by fingerprint bit; raises the native error if this output was not collected.
     fn bit_info(&self) -> PyResult<BTreeMap<u32, Vec<Vec<i32>>>> {
         self.inner
             .bit_info()
@@ -99,6 +103,7 @@ impl TopologicalFingerprintResult {
 }
 
 #[pyfunction]
+/// Calculate a path-based topological fingerprint for a QueryGraph using explicit parameters.
 pub fn fingerprint_topological_query_with_params(
     py: Python<'_>,
     query: &QueryGraph,
@@ -109,6 +114,7 @@ pub fn fingerprint_topological_query_with_params(
         .map_err(TopologicalFingerprintError::from_rust)
 }
 #[pyfunction]
+/// Calculate a QueryGraph topological fingerprint together with the requested atom/bit provenance.
 pub fn fingerprint_topological_query_with_output_with_params(
     py: Python<'_>,
     query: &QueryGraph,
@@ -325,19 +331,19 @@ mod tests {
                             assert_eq!(actual.borrow(py).inner.as_ref(), &expected);
                             exact(
                                 py,
-                                actual.bind(py).call_method0("fingerprint")?.extract()?,
+                                actual.bind(py).getattr("fingerprint")?.extract()?,
                                 &expected.fingerprint,
                             );
                             if atom_bits {
                                 assert_eq!(
                                     &actual
                                         .bind(py)
-                                        .call_method0("atom_bits")?
+                                        .getattr("atom_bits")?
                                         .extract::<Vec<Vec<u32>>>()?,
                                     expected.atom_bits().unwrap()
                                 );
                             } else {
-                                let error = actual.bind(py).call_method0("atom_bits").unwrap_err();
+                                let error = actual.bind(py).getattr("atom_bits").unwrap_err();
                                 assert!(error.is_instance(py, <TopologicalFingerprintError as crate::error_framework::ExceptionPayload>::exception_type(py).expect("error backend").as_any()));
                                 assert_eq!(
                                     error.value(py).getattr("field")?.extract::<String>()?,
@@ -348,12 +354,12 @@ mod tests {
                                 assert_eq!(
                                     &actual
                                         .bind(py)
-                                        .call_method0("bit_info")?
+                                        .getattr("bit_info")?
                                         .extract::<BTreeMap<u32, Vec<Vec<i32>>>>()?,
                                     expected.bit_info().unwrap()
                                 );
                             } else {
-                                let error = actual.bind(py).call_method0("bit_info").unwrap_err();
+                                let error = actual.bind(py).getattr("bit_info").unwrap_err();
                                 assert!(error.is_instance(py, <TopologicalFingerprintError as crate::error_framework::ExceptionPayload>::exception_type(py).expect("error backend").as_any()));
                                 assert_eq!(
                                     error.value(py).getattr("field")?.extract::<String>()?,
@@ -394,7 +400,7 @@ mod tests {
                     py,
                     default_result
                         .bind(py)
-                        .call_method0("fingerprint")?
+                        .getattr("fingerprint")?
                         .extract()?,
                     &baseline,
                 );

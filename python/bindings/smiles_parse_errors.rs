@@ -141,7 +141,7 @@ error_projection!(SmilesParseError, SmilesParseErrorKind, ck::SmilesParseError, 
     | ck::SmilesParseError::EmptyReplacementKey | ck::SmilesParseError::ReplacementCycle { .. } => None,
 }, source = Option<SmilesSource>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to SmilesParseError.CxLinkAtomOutOfRange, SmilesParseError.CxAtomPropertyAtomOutOfRange, SmilesParseError.CxCoordinateAtomOutOfRange, SmilesParseError.WriterRequiredProperty, SmilesParseError.WriterPropertyList. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::SmilesParseError::CxLinkAtomOutOfRange { atom, .. } => Some(atom),
         ck::SmilesParseError::CxAtomPropertyAtomOutOfRange { atom, .. }
         | ck::SmilesParseError::CxCoordinateAtomOutOfRange { atom, .. }
@@ -149,61 +149,62 @@ error_projection!(SmilesParseError, SmilesParseErrorKind, ck::SmilesParseError, 
         | ck::SmilesParseError::WriterPropertyList { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to SmilesParseError.CxLinkAtomOutOfRange, SmilesParseError.CxAtomPropertyAtomOutOfRange, SmilesParseError.CxCoordinateAtomOutOfRange, SmilesParseError.WriterRootAtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::SmilesParseError::CxLinkAtomOutOfRange { atom_count, .. }
         | ck::SmilesParseError::CxAtomPropertyAtomOutOfRange { atom_count, .. }
         | ck::SmilesParseError::CxCoordinateAtomOutOfRange { atom_count, .. }
         | ck::SmilesParseError::WriterRootAtomOutOfRange { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to SmilesParseError.CxZeroBondOutOfRange, SmilesParseError.CxTypedBondOutOfRange. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::SmilesParseError::CxZeroBondOutOfRange { bond, .. }
         | ck::SmilesParseError::CxTypedBondOutOfRange { bond, .. } => Some(bond.index()), _ => None,
     } }
     #[getter]
-    fn bond_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond count used when validating the reported bond reference. Applies to SmilesParseError.CxZeroBondOutOfRange, SmilesParseError.CxTypedBondOutOfRange. None when this payload is absent."] fn bond_count(&self) -> Option<usize> { match self.inner {
         ck::SmilesParseError::CxZeroBondOutOfRange { bond_count, .. }
         | ck::SmilesParseError::CxTypedBondOutOfRange { bond_count, .. } => Some(bond_count), _ => None,
     } }
     #[getter]
-    fn index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Index reported by the failing native check. Applies to SmilesParseError.CxLinkOrderOutOfRange, SmilesParseError.TraversalStateIndex, SmilesParseError.UnclosedRing. None when this payload is absent."] fn index(&self) -> Option<usize> { match self.inner {
         ck::SmilesParseError::CxLinkOrderOutOfRange { index, .. }
         | ck::SmilesParseError::TraversalStateIndex { index, .. } => Some(index),
         ck::SmilesParseError::UnclosedRing { index } => Some(index as usize), _ => None,
     } }
     #[getter]
-    fn count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Count reported by the native failure. Applies to SmilesParseError.CxLinkOrderOutOfRange, SmilesParseError.TraversalStateIndex. None when this payload is absent."] fn count(&self) -> Option<usize> { match self.inner {
         ck::SmilesParseError::CxLinkOrderOutOfRange { count, .. }
         | ck::SmilesParseError::TraversalStateIndex { count, .. } => Some(count), _ => None,
     } }
     #[getter]
-    fn offset(&self) -> Option<usize> { match self.inner {
+    #[doc = "Source offset reported by the native parser. Applies to SmilesParseError.Unsupported, SmilesParseError.Syntax, SmilesParseError.Atom. None when this payload is absent."] fn offset(&self) -> Option<usize> { match self.inner {
         ck::SmilesParseError::Unsupported { offset, .. } | ck::SmilesParseError::Syntax { offset, .. }
         | ck::SmilesParseError::Atom { offset, .. } => Some(offset), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn selection(&self) -> Option<CxCoordinateSelection> { match self.inner {
+    #[doc = "Requested CX coordinate set that was missing, or None for another failure."] fn selection(&self) -> Option<CxCoordinateSelection> { match self.inner {
         ck::SmilesParseError::MissingCoordinateSelection { selection } => Some(CxCoordinateSelection { inner: selection }), _ => None,
     } }
     #[getter]
-    fn writer_canonical_invariant(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Canonical writer invariant that failed, or None for another failure."] fn writer_canonical_invariant(&self) -> Option<&'static str> { match self.inner {
         ck::SmilesParseError::WriterCanonicalInvariant(value) => Some(value), _ => None,
     } }
     #[getter]
-    fn cx(&self) -> Option<&str> { match &self.inner { ck::SmilesParseError::Cx(value) => Some(value), _ => None } }
+    #[doc = "Native CXSMILES diagnostic, or None for another failure."] fn cx(&self) -> Option<&str> { match &self.inner { ck::SmilesParseError::Cx(value) => Some(value), _ => None } }
     #[getter]
-    fn unsupported_cx(&self) -> Option<&'static str> { match self.inner { ck::SmilesParseError::UnsupportedCx(value) => Some(value), _ => None } }
+    #[doc = "Unsupported CXSMILES capability, or None for another failure."] fn unsupported_cx(&self) -> Option<&'static str> { match self.inner { ck::SmilesParseError::UnsupportedCx(value) => Some(value), _ => None } }
     #[getter]
-    fn unsupported_writer(&self) -> Option<&'static str> { match self.inner { ck::SmilesParseError::UnsupportedWriter(value) => Some(value), _ => None } }
+    #[doc = "Unsupported SMILES writer capability, or None for another failure."] fn unsupported_writer(&self) -> Option<&'static str> { match self.inner { ck::SmilesParseError::UnsupportedWriter(value) => Some(value), _ => None } }
     #[getter]
-    fn canonical_rank(&self) -> Option<&str> { match &self.inner { ck::SmilesParseError::CanonicalRank(value) => Some(value), _ => None } }
+    #[doc = "Canonical rank implicated in the failed traversal. Applies to SmilesParseError.CanonicalRank. None when this payload is absent."] fn canonical_rank(&self) -> Option<&str> { match &self.inner { ck::SmilesParseError::CanonicalRank(value) => Some(value), _ => None } }
     #[getter]
+    /// Native writer valence diagnostic, or None for another failure.
     fn writer_valence(&self) -> Option<&str> { match &self.inner { ck::SmilesParseError::WriterValence(value) => Some(value), _ => None } }
     #[getter]
-    fn writer_stereo(&self) -> Option<&str> { match &self.inner { ck::SmilesParseError::WriterStereo(value) => Some(value), _ => None } }
+    #[doc = "Native writer stereo diagnostic, or None for another failure."] fn writer_stereo(&self) -> Option<&str> { match &self.inner { ck::SmilesParseError::WriterStereo(value) => Some(value), _ => None } }
     #[getter]
-    fn model(&self) -> Option<&str> { match &self.inner { ck::SmilesParseError::Model(value) => Some(value), _ => None } }
+    #[doc = "Structural model involved in the failure. Applies to SmilesParseError.Model. None when this payload is absent."] fn model(&self) -> Option<&str> { match &self.inner { ck::SmilesParseError::Model(value) => Some(value), _ => None } }
 });
 
 #[cfg(test)]

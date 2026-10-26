@@ -164,60 +164,45 @@ fn canonical_signatures_defaults_and_flag_vocabulary_are_exact() {
 }
 
 #[test]
-fn binding_contract_exposes_original_eleven_and_two_declared_inplace_entries() {
-    let expected = [
-        "types.SanitizeOperations",
-        "types.SanitizeStage",
-        "types.SanitizeParams",
-        "types.SanitizeError",
-        "types.ChemistryProblemError",
-        "types.ChemistryProblem",
-        "types.ChemistryProblemReport",
-        "Molecule.sanitize",
-        "Molecule.sanitize_with_params",
-        "Molecule.detect_chemistry_problems",
-        "Molecule.detect_chemistry_problems_with_params",
-        "Molecule.sanitize_",
-        "Molecule.sanitize_with_params_",
-    ];
-    let rows = BINDING_CONTRACT
-        .iter()
-        .filter(|row| row.feature == "cap-sanitize")
-        .collect::<Vec<_>>();
-    assert_eq!(
-        rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
-        expected
-    );
-    for row in &rows {
-        assert_eq!(row.status, FunctionStatus::Experimental);
-    }
-    for row in &rows[..7] {
-        assert_eq!(row.item, BindingItem::Type);
-        assert_eq!(row.owner, BindingOwner::Type);
-    }
-    for row in &rows[7..] {
+fn binding_contract_preserves_sanitize_query_value_and_inplace_semantics() {
+    let entry = |semantic_id| {
+        BINDING_CONTRACT
+            .iter()
+            .find(|row| row.semantic_id == semantic_id)
+            .unwrap_or_else(|| panic!("missing binding: {semantic_id}"))
+    };
+    for (semantic_id, state) in [
+        ("Molecule.sanitize", StateModel::ValueReturning),
+        ("Molecule.sanitize_with_params", StateModel::ValueReturning),
+        ("Molecule.detect_chemistry_problems", StateModel::ReadOnly),
+        (
+            "Molecule.detect_chemistry_problems_with_params",
+            StateModel::ReadOnly,
+        ),
+    ] {
+        let row = entry(semantic_id);
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
+        assert_eq!(row.feature, "cap-sanitize");
+        let callable = row.callable.unwrap();
+        assert_eq!(callable.state_model, state);
+        if state == StateModel::ReadOnly {
+            assert!(callable.operation_semantic_id.is_none());
+        }
     }
-    assert_eq!(
-        rows[7].callable.unwrap().state_model,
-        StateModel::ValueReturning
-    );
-    assert_eq!(
-        rows[8].callable.unwrap().state_model,
-        StateModel::ValueReturning
-    );
-    assert_eq!(rows[9].callable.unwrap().state_model, StateModel::ReadOnly);
-    assert_eq!(rows[10].callable.unwrap().state_model, StateModel::ReadOnly);
-    assert!(rows[9].callable.unwrap().operation_semantic_id.is_none());
-    assert!(rows[10].callable.unwrap().operation_semantic_id.is_none());
     // The sole molecule_ops! sanitize declaration generates these two canonical
-    // in-place wrappers. Retain all eleven original rows and validate the
-    // existing binding declarations rather than asserting an obsolete surface.
+    // in-place wrappers; unrelated registry additions must not affect their contracts.
     for (row, method, javascript_name, parameter_count) in [
-        (rows[11], "sanitize_", "sanitize_", 0),
-        (rows[12], "sanitize_with_params_", "sanitizeWithParams_", 1),
+        (entry("Molecule.sanitize_"), "sanitize_", "sanitize_", 0),
+        (
+            entry("Molecule.sanitize_with_params_"),
+            "sanitize_with_params_",
+            "sanitizeWithParams_",
+            1,
+        ),
     ] {
+        assert_eq!(row.item, BindingItem::Callable);
+        assert_eq!(row.owner, BindingOwner::Molecule);
         let compact = |text: &str| {
             text.chars()
                 .filter(|character| !character.is_whitespace())

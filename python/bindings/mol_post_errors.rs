@@ -132,26 +132,26 @@ error_projection!(MolPostError, MolPostErrorKind, ck::MolPostError, "io", {
     | ck::MolPostError::Representation(_) | ck::MolPostError::DataFieldNumber { .. } => None,
 }, source = Option<crate::error_framework::ErrorObject<MolProcessingError>>, methods = {
     #[getter]
-    fn capability(&self) -> Option<&'static str> { match self.inner { ck::MolPostError::MissingCapability(value) => Some(value), _ => None } }
+    #[doc = "Capability required by the failing native operation. Applies to MolPostError.MissingCapability. None when this payload is absent."] fn capability(&self) -> Option<&'static str> { match self.inner { ck::MolPostError::MissingCapability(value) => Some(value), _ => None } }
     #[getter]
-    fn representation(&self) -> Option<&'static str> { match self.inner { ck::MolPostError::Representation(value) => Some(value), _ => None } }
+    #[doc = "Representation the native operation could not support. Applies to MolPostError.Representation. None when this payload is absent."] fn representation(&self) -> Option<&'static str> { match self.inner { ck::MolPostError::Representation(value) => Some(value), _ => None } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to MolPostError.UnsignedPropertyOverflow, MolPostError.InvalidPropertyKind, MolPostError.AttachmentValue. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::MolPostError::UnsignedPropertyOverflow { atom, .. } | ck::MolPostError::InvalidPropertyKind { atom, .. }
         | ck::MolPostError::AttachmentValue { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn property(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Property name involved in the failure. Applies to MolPostError.UnsignedPropertyOverflow, MolPostError.InvalidPropertyKind, MolPostError.SGroupPropertyKind. None when this payload is absent."] fn property(&self) -> Option<&'static str> { match self.inner {
         ck::MolPostError::UnsignedPropertyOverflow { property, .. } | ck::MolPostError::InvalidPropertyKind { property, .. }
         | ck::MolPostError::SGroupPropertyKind { property, .. } => Some(property), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
+    #[doc = "Native failure-specific category or value kind. Applies to MolPostError.InvalidPropertyKind, MolPostError.SGroupPropertyKind. None when this payload is absent."] fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
         ck::MolPostError::InvalidPropertyKind { kind, .. } | ck::MolPostError::SGroupPropertyKind { kind, .. } => Some(kind.into()), _ => None,
     } }
     #[getter]
-    fn value(&self, py: Python<'_>) -> PyResult<Option<PostValue>> { match &self.inner {
+    #[doc = "Value rejected or reported by the native operation. Applies to MolPostError.UnsignedPropertyOverflow, MolPostError.AttachmentValue, MolPostError.DataFieldNumber. None when this payload is absent."] fn value(&self, py: Python<'_>) -> PyResult<Option<PostValue>> { match &self.inner {
         ck::MolPostError::UnsignedPropertyOverflow { value, .. } => Ok(Some(PostValue::Unsigned(*value))),
         ck::MolPostError::AttachmentValue { value, .. } | ck::MolPostError::DataFieldNumber { value, .. } =>
             decode_source_text(py, value).map(|value| Some(PostValue::Text(value))),
@@ -159,7 +159,7 @@ error_projection!(MolPostError, MolPostErrorKind, ck::MolPostError, "io", {
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_atom_conversion(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryAtomConversionError>>> { match &self.inner {
+    #[doc = "Structured QueryAtomConversionError payload of MolPostError.QueryAtomConversion; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_atom_conversion(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryAtomConversionError>>> { match &self.inner {
         ck::MolPostError::QueryAtomConversion(value) => QueryAtomConversionError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),
         _ => Ok(None),
     } }

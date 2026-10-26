@@ -158,14 +158,14 @@ error_projection!(retained PdbResidueKeyError,PdbResidueKeyErrorKind,ck::PdbResi
     SequenceIdNotRepresentable,ResidueNameTooWide{width},ResidueNameNotAscii{byte},
     SegmentTooWide{width},SegmentNotAscii{byte},SegmentNotRepresentable{width},
 },cause=|_:&RetainedError<ck::PdbResidueKeyError>|None::<PyErr>,methods={
-    #[getter] fn width(&self)->Option<usize>{match self.inner.as_ref(){ck::PdbResidueKeyError::ResidueNameTooWide{width}|ck::PdbResidueKeyError::SegmentTooWide{width}|ck::PdbResidueKeyError::SegmentNotRepresentable{width}=>Some(*width),_=>None}}
-    #[getter] fn byte(&self)->Option<u8>{match self.inner.as_ref(){ck::PdbResidueKeyError::ResidueNameNotAscii{byte}|ck::PdbResidueKeyError::SegmentNotAscii{byte}=>Some(*byte),_=>None}}
+    #[getter] #[doc = "Width reported by the failing native check. Applies to PdbResidueKeyError.ResidueNameTooWide, PdbResidueKeyError.SegmentTooWide, PdbResidueKeyError.SegmentNotRepresentable. None when this payload is absent."] fn width(&self)->Option<usize>{match self.inner.as_ref(){ck::PdbResidueKeyError::ResidueNameTooWide{width}|ck::PdbResidueKeyError::SegmentTooWide{width}|ck::PdbResidueKeyError::SegmentNotRepresentable{width}=>Some(*width),_=>None}}
+    #[getter] #[doc = "Byte value or byte position reported by the native failure. Applies to PdbResidueKeyError.ResidueNameNotAscii, PdbResidueKeyError.SegmentNotAscii. None when this payload is absent."] fn byte(&self)->Option<u8>{match self.inner.as_ref(){ck::PdbResidueKeyError::ResidueNameNotAscii{byte}|ck::PdbResidueKeyError::SegmentNotAscii{byte}=>Some(*byte),_=>None}}
 });
 // `source` is the actual input-name string here, not an Error::source edge.
 error_projection!(retained CoordinateBlockSelectionError,CoordinateBlockSelectionErrorKind,ck::CoordinateBlockSelectionError,"bio",{
     EmptyDocument{source},LaterCoordinateBlock{block_number:usize,source},
 },cause=|_:&RetainedError<ck::CoordinateBlockSelectionError>|None::<PyErr>,methods={
-    #[getter] fn source(&self)->&str{match self.inner.as_ref(){ck::CoordinateBlockSelectionError::EmptyDocument{source}|ck::CoordinateBlockSelectionError::LaterCoordinateBlock{source,..}=>source}}
+    #[getter] #[doc = "Input source name associated with coordinate-block selection failure."] fn source(&self)->&str{match self.inner.as_ref(){ck::CoordinateBlockSelectionError::EmptyDocument{source}|ck::CoordinateBlockSelectionError::LaterCoordinateBlock{source,..}=>source}}
 });
 error_projection!(retained MmcifCrystalInfoError,MmcifCrystalInfoErrorKind,ck::MmcifCrystalInfoError,"bio",{
     Cif(_),Bio(_),StagingInvariant{stage:&'static str},
@@ -188,7 +188,7 @@ error_projection!(retained MmcifLabelAddressError,MmcifLabelAddressErrorKind,ck:
 error_projection!(retained MmcifModResError,MmcifModResErrorKind,ck::MmcifModResError,"bio",{
     Cif(_),ChainNameNotRepresentable{value},ResidueNameNotRepresentable{value},ResidueAddressNotRepresentable,SequenceId(_),
 },cause=|inner:&RetainedError<ck::MmcifModResError>|inner.node().source().map(project),source=Option<Source<crate::error_framework::ErrorObject<CifReadError>,crate::error_framework::ErrorObject<MmcifSequenceIdError>>>,methods={
-    #[getter] fn value(&self)->Option<&str>{match self.inner.as_ref(){ck::MmcifModResError::ChainNameNotRepresentable{value}|ck::MmcifModResError::ResidueNameNotRepresentable{value}=>Some(value),_=>None}}
+    #[getter] #[doc = "Value rejected or reported by the native operation. Applies to MmcifModResError.ChainNameNotRepresentable, MmcifModResError.ResidueNameNotRepresentable. None when this payload is absent."] fn value(&self)->Option<&str>{match self.inner.as_ref(){ck::MmcifModResError::ChainNameNotRepresentable{value}|ck::MmcifModResError::ResidueNameNotRepresentable{value}=>Some(value),_=>None}}
 });
 error_projection!(retained MmcifOperationExprError,MmcifOperationExprErrorKind,ck::MmcifOperationExprError,"bio",{
     SourceUndefinedIntegerOverflow,SourceUndefinedRangeIncrement,
@@ -199,7 +199,7 @@ error_projection!(retained MmcifAssemblyError,MmcifAssemblyErrorKind,ck::MmcifAs
 error_projection!(retained MmcifAtomSiteScalarError,MmcifAtomSiteScalarErrorKind,ck::MmcifAtomSiteScalarError,"bio",{
     SerialOutsideSourceDefinedRange{value},TlsOutsideSourceDefinedRange{value},CifCharacter(_),CifInteger(_),CifNumber(_),
 },cause=|inner:&RetainedError<ck::MmcifAtomSiteScalarError>|inner.node().source().map(project),source=Option<crate::error_framework::ErrorObject<CifReadError>>,methods={
-    #[getter] fn value(&self)->Option<&str>{match self.inner.as_ref(){ck::MmcifAtomSiteScalarError::SerialOutsideSourceDefinedRange{value}|ck::MmcifAtomSiteScalarError::TlsOutsideSourceDefinedRange{value}=>Some(value),_=>None}}
+    #[getter] #[doc = "Value rejected or reported by the native operation. Applies to MmcifAtomSiteScalarError.SerialOutsideSourceDefinedRange, MmcifAtomSiteScalarError.TlsOutsideSourceDefinedRange. None when this payload is absent."] fn value(&self)->Option<&str>{match self.inner.as_ref(){ck::MmcifAtomSiteScalarError::SerialOutsideSourceDefinedRange{value}|ck::MmcifAtomSiteScalarError::TlsOutsideSourceDefinedRange{value}=>Some(value),_=>None}}
 });
 error_projection!(retained MmcifCcdRestoreError,MmcifCcdRestoreErrorKind,ck::MmcifCcdRestoreError,"bio",{
     Residue(_),SequenceUtf8(_),
@@ -210,13 +210,13 @@ error_projection!(retained MmcifHelixError,MmcifHelixErrorKind,ck::MmcifHelixErr
  ResidueAddressNotRepresentable{endpoint},SequenceId{endpoint,error},HelixClass(_),HelixLength(_),
 },cause=|inner:&RetainedError<ck::MmcifHelixError>|inner.node().source().map(project),
 source=Option<Source<crate::error_framework::ErrorObject<CifReadError>,crate::error_framework::ErrorObject<MmcifSequenceIdError>>>,methods={
- #[getter] fn endpoint(&self)->Option<&'static str>{match self.inner.as_ref(){
+ #[getter] #[doc = "Bond endpoint associated with the stereo failure. Present for `MmcifHelixError.ChainNameNotRepresentable`, `MmcifHelixError.ResidueNameNotRepresentable`, `MmcifHelixError.ResidueAddressNotRepresentable`, `MmcifHelixError.SequenceId`; None when unavailable."] fn endpoint(&self)->Option<&'static str>{match self.inner.as_ref(){
  ck::MmcifHelixError::ChainNameNotRepresentable{endpoint,..}|ck::MmcifHelixError::ResidueNameNotRepresentable{endpoint,..}
  |ck::MmcifHelixError::ResidueAddressNotRepresentable{endpoint}|ck::MmcifHelixError::SequenceId{endpoint,..}=>Some(*endpoint),_=>None}}
- #[getter] fn value(&self)->Option<&str>{match self.inner.as_ref(){
+ #[getter] #[doc = "Value rejected or reported by the native operation. Applies to MmcifHelixError.ChainNameNotRepresentable, MmcifHelixError.ResidueNameNotRepresentable. None when this payload is absent."] fn value(&self)->Option<&str>{match self.inner.as_ref(){
  ck::MmcifHelixError::ChainNameNotRepresentable{value,..}|ck::MmcifHelixError::ResidueNameNotRepresentable{value,..}=>Some(value),_=>None}}
  #[staticmethod] #[doc=r#"{"role":"error_payload"}"#]
- fn error(slf:Bound<'_,pyo3::exceptions::PyBaseException>)->PyResult<Option<crate::error_framework::ErrorObject<MmcifSequenceIdError>>>{
+ #[doc = "Structured native error payload. Present for `MmcifHelixError.SequenceId`; None when unavailable."] fn error(slf:Bound<'_,pyo3::exceptions::PyBaseException>)->PyResult<Option<crate::error_framework::ErrorObject<MmcifSequenceIdError>>>{
  let payload = slf.extract::<crate::error_framework::ErrorObject<Self>>()?;
  if matches!(payload.borrow(slf.py()).inner.as_ref(),ck::MmcifHelixError::SequenceId{..}) {Ok(Some(slf.getattr("__cause__")?.extract()?))}else{Ok(None)}
  }
@@ -227,13 +227,13 @@ error_projection!(retained MmcifSheetError,MmcifSheetErrorKind,ck::MmcifSheetErr
  ResidueAddressNotRepresentable{address},SequenceId{address,error},
 },cause=|inner:&RetainedError<ck::MmcifSheetError>|inner.node().source().map(project),
 source=Option<Source<crate::error_framework::ErrorObject<CifReadError>,crate::error_framework::ErrorObject<MmcifSequenceIdError>>>,methods={
- #[getter] fn address(&self)->Option<&'static str>{match self.inner.as_ref(){
+ #[getter] #[doc = "Structural address implicated in the failed lookup. Applies to MmcifSheetError.ChainNameNotRepresentable, MmcifSheetError.ResidueNameNotRepresentable, MmcifSheetError.ResidueAddressNotRepresentable, MmcifSheetError.SequenceId. None when this payload is absent."] fn address(&self)->Option<&'static str>{match self.inner.as_ref(){
  ck::MmcifSheetError::ChainNameNotRepresentable{address,..}|ck::MmcifSheetError::ResidueNameNotRepresentable{address,..}
  |ck::MmcifSheetError::ResidueAddressNotRepresentable{address}|ck::MmcifSheetError::SequenceId{address,..}=>Some(*address),_=>None}}
- #[getter] fn value(&self)->Option<&str>{match self.inner.as_ref(){
+ #[getter] #[doc = "Value rejected or reported by the native operation. Applies to MmcifSheetError.ChainNameNotRepresentable, MmcifSheetError.ResidueNameNotRepresentable. None when this payload is absent."] fn value(&self)->Option<&str>{match self.inner.as_ref(){
  ck::MmcifSheetError::ChainNameNotRepresentable{value,..}|ck::MmcifSheetError::ResidueNameNotRepresentable{value,..}=>Some(value),_=>None}}
  #[staticmethod] #[doc=r#"{"role":"error_payload"}"#]
- fn error(slf:Bound<'_,pyo3::exceptions::PyBaseException>)->PyResult<Option<crate::error_framework::ErrorObject<MmcifSequenceIdError>>>{
+ #[doc = "Structured native error payload. Present for `MmcifSheetError.SequenceId`; None when unavailable."] fn error(slf:Bound<'_,pyo3::exceptions::PyBaseException>)->PyResult<Option<crate::error_framework::ErrorObject<MmcifSequenceIdError>>>{
  let payload = slf.extract::<crate::error_framework::ErrorObject<Self>>()?;
  if matches!(payload.borrow(slf.py()).inner.as_ref(),ck::MmcifSheetError::SequenceId{..}) {Ok(Some(slf.getattr("__cause__")?.extract()?))}else{Ok(None)}
  }
@@ -244,13 +244,13 @@ error_projection!(retained MmcifCisPepError,MmcifCisPepErrorKind,ck::MmcifCisPep
  ResidueAddressNotRepresentable{partner},SequenceId{partner,error},
 },cause=|inner:&RetainedError<ck::MmcifCisPepError>|inner.node().source().map(project),
 source=Option<Source<crate::error_framework::ErrorObject<CifReadError>,crate::error_framework::ErrorObject<MmcifSequenceIdError>>>,methods={
- #[getter] fn partner(&self)->Option<&'static str>{match self.inner.as_ref(){
+ #[getter] #[doc = "Partner atom or endpoint involved in the native check. Applies to MmcifCisPepError.ChainNameNotRepresentable, MmcifCisPepError.ResidueNameNotRepresentable, MmcifCisPepError.ResidueAddressNotRepresentable, MmcifCisPepError.SequenceId. None when this payload is absent."] fn partner(&self)->Option<&'static str>{match self.inner.as_ref(){
  ck::MmcifCisPepError::ChainNameNotRepresentable{partner,..}|ck::MmcifCisPepError::ResidueNameNotRepresentable{partner,..}
  |ck::MmcifCisPepError::ResidueAddressNotRepresentable{partner}|ck::MmcifCisPepError::SequenceId{partner,..}=>Some(*partner),_=>None}}
- #[getter] fn value(&self)->Option<&str>{match self.inner.as_ref(){
+ #[getter] #[doc = "Value rejected or reported by the native operation. Applies to MmcifCisPepError.ChainNameNotRepresentable, MmcifCisPepError.ResidueNameNotRepresentable. None when this payload is absent."] fn value(&self)->Option<&str>{match self.inner.as_ref(){
  ck::MmcifCisPepError::ChainNameNotRepresentable{value,..}|ck::MmcifCisPepError::ResidueNameNotRepresentable{value,..}=>Some(value),_=>None}}
  #[staticmethod] #[doc=r#"{"role":"error_payload"}"#]
- fn error(slf:Bound<'_,pyo3::exceptions::PyBaseException>)->PyResult<Option<crate::error_framework::ErrorObject<MmcifSequenceIdError>>>{
+ #[doc = "Structured native error payload. Present for `MmcifCisPepError.SequenceId`; None when unavailable."] fn error(slf:Bound<'_,pyo3::exceptions::PyBaseException>)->PyResult<Option<crate::error_framework::ErrorObject<MmcifSequenceIdError>>>{
  let payload = slf.extract::<crate::error_framework::ErrorObject<Self>>()?;
  if matches!(payload.borrow(slf.py()).inner.as_ref(),ck::MmcifCisPepError::SequenceId{..}) {Ok(Some(slf.getattr("__cause__")?.extract()?))}else{Ok(None)}
  }
@@ -263,10 +263,10 @@ error_projection!(retained MmcifConnectionError,MmcifConnectionErrorKind,ck::Mmc
  ChainNameNotRepresentable{partner,value},ResidueNameNotRepresentable{partner,value},ResidueAddressNotRepresentable{partner,value},
  SymmetryOperatorOutsideSourceDefinedRange{value},SymmetryOperatorNotRepresentable{value},
 },cause=|inner:&RetainedError<ck::MmcifConnectionError>|inner.node().source().map(project),source=Option<Source<crate::error_framework::ErrorObject<CifReadError>,Source<crate::error_framework::ErrorObject<MmcifSequenceIdError>,crate::error_framework::ErrorObject<MmcifLabelAddressError>>>>,methods={
- #[getter] fn partner(&self)->Option<usize>{match self.inner.as_ref(){
+ #[getter] #[doc = "Partner atom or endpoint involved in the native check. Applies to MmcifConnectionError.MissingAddressIdentifiers, MmcifConnectionError.ChainNameNotRepresentable, MmcifConnectionError.ResidueNameNotRepresentable, MmcifConnectionError.ResidueAddressNotRepresentable. None when this payload is absent."] fn partner(&self)->Option<usize>{match self.inner.as_ref(){
  ck::MmcifConnectionError::MissingAddressIdentifiers{partner}|ck::MmcifConnectionError::ChainNameNotRepresentable{partner,..}
  |ck::MmcifConnectionError::ResidueNameNotRepresentable{partner,..}|ck::MmcifConnectionError::ResidueAddressNotRepresentable{partner,..}=>Some(*partner),_=>None}}
- #[getter] fn value(&self)->Option<Source<String,i32>>{match self.inner.as_ref(){
+ #[getter] #[doc = "Value rejected or reported by the native operation. Applies to MmcifConnectionError.ChainNameNotRepresentable, MmcifConnectionError.ResidueNameNotRepresentable, MmcifConnectionError.ResidueAddressNotRepresentable, MmcifConnectionError.SymmetryOperatorOutsideSourceDefinedRange, MmcifConnectionError.SymmetryOperatorNotRepresentable. None when this payload is absent."] fn value(&self)->Option<Source<String,i32>>{match self.inner.as_ref(){
  ck::MmcifConnectionError::ChainNameNotRepresentable{value,..}|ck::MmcifConnectionError::ResidueNameNotRepresentable{value,..}
  |ck::MmcifConnectionError::ResidueAddressNotRepresentable{value,..}|ck::MmcifConnectionError::SymmetryOperatorOutsideSourceDefinedRange{value}=>Some(Source::First(value.clone())),
  ck::MmcifConnectionError::SymmetryOperatorNotRepresentable{value}=>Some(Source::Second(*value)),_=>None}}
@@ -286,7 +286,7 @@ error_projection!(retained MmcifAtomSiteGroupingError,MmcifAtomSiteGroupingError
  AuthorChainIdNotRepresentable{value},ResidueNameNotRepresentable{value},ResidueAddressNotRepresentable{value},ResidueSourceIdsNotRepresentable,
  UndefinedGroupPdbIndex{value,index:usize,length:usize},MissingActiveModel{row_index:usize},
 },cause=|inner:&RetainedError<ck::MmcifAtomSiteGroupingError>|inner.node().source().map(project),source=Option<GroupingSource>,methods={
- #[getter] fn value(&self)->Option<&str>{match self.inner.as_ref(){
+ #[getter] #[doc = "Value rejected or reported by the native operation. Applies to MmcifAtomSiteGroupingError.AtomNameNotRepresentable, MmcifAtomSiteGroupingError.AuthorChainIdNotRepresentable, MmcifAtomSiteGroupingError.ResidueNameNotRepresentable, MmcifAtomSiteGroupingError.ResidueAddressNotRepresentable, MmcifAtomSiteGroupingError.UndefinedGroupPdbIndex. None when this payload is absent."] fn value(&self)->Option<&str>{match self.inner.as_ref(){
  ck::MmcifAtomSiteGroupingError::AtomNameNotRepresentable{value}|ck::MmcifAtomSiteGroupingError::AuthorChainIdNotRepresentable{value}
  |ck::MmcifAtomSiteGroupingError::ResidueNameNotRepresentable{value}|ck::MmcifAtomSiteGroupingError::ResidueAddressNotRepresentable{value}
  |ck::MmcifAtomSiteGroupingError::UndefinedGroupPdbIndex{value,..}=>Some(value),_=>None}}
@@ -377,15 +377,17 @@ impl BioMmcifReadError {
 }
 crate::error_framework::error_projection! {methods impl BioMmcifReadError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
-    fn stage(&self) -> BioMmcifReadStage {
+    #[doc = "mmCIF reading stage that failed."] fn stage(&self) -> BioMmcifReadStage {
         self.inner.stage().into()
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<MmcifReadSource>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -396,6 +398,7 @@ crate::error_framework::error_projection! {methods impl BioMmcifReadError {
 }
 
 #[pyfunction]
+/// Parse mmCIF text into a BioStructure using the native structural reader, retaining supported hierarchy, coordinates and metadata.
 pub fn bio_from_mmcif(py: Python<'_>, text: &str) -> PyResult<BioStructure> {
     py.detach(|| ck::BioStructure::from_mmcif(text))
         .map(|inner| BioStructure { inner })
@@ -425,12 +428,13 @@ impl MissingAtomSiteIdentityField {
 }
 crate::error_framework::error_projection! {methods impl MissingAtomSiteIdentityField {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn field(&self) -> AtomSiteIdentityField {
+    #[doc = "Required atom-site identity field absent from the mmCIF table."] fn field(&self) -> AtomSiteIdentityField {
         self.inner.field().into()
     }
     fn __str__(&self) -> String {
@@ -462,15 +466,16 @@ impl MmcifAtomSiteRowOutOfBounds {
 }
 crate::error_framework::error_projection! {methods impl MmcifAtomSiteRowOutOfBounds {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
-    fn row_index(&self) -> usize {
+    #[doc = "Requested atom-site row index."] fn row_index(&self) -> usize {
         self.inner.row_index()
     }
     #[getter]
-    fn parsed_count(&self) -> usize {
+    #[doc = "Number of atom-site rows successfully parsed."] fn parsed_count(&self) -> usize {
         self.inner.parsed_count()
     }
     fn __str__(&self) -> String {

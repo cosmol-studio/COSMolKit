@@ -67,16 +67,25 @@ impl From<MatrixError> for AtomPairError {
     }
 }
 
+/// Atom-pair fingerprint settings for distance selection, chirality and count encoding.
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct AtomPairGeneratorParams {
+    /// Minimum included atom-pair distance, inclusive.
     pub min_distance: u32,
+    /// Maximum included atom-pair distance, inclusive.
     pub max_distance: u32,
+    /// Include atom chirality in pair identifiers.
     pub include_chirality: bool,
+    /// Use graph distances when true, otherwise distances from the selected 3D conformer.
     pub use_2d: bool,
+    /// Encode occurrence-count thresholds as bits in bit fingerprints.
     pub count_simulation: bool,
+    /// Number of positions in folded fingerprints.
     pub fp_size: u32,
+    /// Occurrence thresholds used by count simulation.
     #[configuration(none_default)]
     pub count_bounds: Vec<u32>,
+    /// Number of hash-derived positions generated for each pair feature.
     pub bits_per_feature: u32,
 }
 impl Default for AtomPairGeneratorParams {
@@ -278,8 +287,11 @@ impl Default for AtomPairCall<'_> {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Atom-pair invariant provider with optional chirality and torsion correction.
 pub struct AtomPairAtomInvariantsGenerator {
+    /// Include chirality in generated atom-pair invariants.
     pub include_chirality: bool,
+    /// Apply the atom-degree correction used for topological torsion invariants.
     pub topological_torsion_correction: bool,
 }
 impl AtomPairAtomInvariantsGenerator {

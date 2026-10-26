@@ -16,11 +16,17 @@ pub use cosmolkit_io::SdfCoordinateMode;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct SdfReadParams {
+    /// Sanitize concrete molecules after parsing.
     pub sanitize: bool,
+    /// Remove removable explicit hydrogens during native post-processing.
     pub remove_hs: bool,
+    /// Use strict MolBlock parsing rather than the native permissive path.
     pub strict_parsing: bool,
+    /// Expand encoded attachment points into explicit graph entries.
     pub expand_attachment_points: bool,
+    /// Interpret supported SDF atom/bond property lists.
     pub process_property_lists: bool,
+    /// Preserve source coordinate dimensionality or require a specific dimension.
     pub coordinate_mode: SdfCoordinateMode,
 }
 

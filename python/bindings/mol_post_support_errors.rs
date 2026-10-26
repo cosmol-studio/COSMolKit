@@ -52,12 +52,12 @@ error_projection!(BondDirectionStereoError, BondDirectionStereoErrorKind, ck::Bo
     ck::BondDirectionStereoError::InvalidState(_) => None,
 }), source = Option<AtropSource>, methods = {
     #[getter]
-    fn message(&self) -> Option<&str> { match &self.inner {
+    #[doc = "Detailed native diagnostic message. Applies to BondDirectionStereoError.InvalidState. None when this payload is absent."] fn message(&self) -> Option<&str> { match &self.inner {
         ck::BondDirectionStereoError::InvalidState(value) => Some(value), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> {
+    #[doc = "Structured ValenceError payload of BondDirectionStereoError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> {
         match &self.inner {
             ck::BondDirectionStereoError::Valence(value) => ValenceError::from_rust(value.clone())
                 .value(py).extract().map(Some).map_err(Into::into),
@@ -66,7 +66,7 @@ error_projection!(BondDirectionStereoError, BondDirectionStereoErrorKind, ck::Bo
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> {
+    #[doc = "Structured AtropisomerError payload of BondDirectionStereoError.Atropisomer; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> {
         match &self.inner {
             ck::BondDirectionStereoError::Atropisomer(value) => AtropisomerError::from_rust(value.clone())
                 .value(py).extract().map(Some).map_err(Into::into),

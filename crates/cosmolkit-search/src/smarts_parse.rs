@@ -492,13 +492,20 @@ pub fn compile_query_fixture(smarts: &str) -> Result<QueryGraph, String> {
 /// RDKit✔️✔️: };
 #[derive(Debug, Clone, cosmolkit_macros::Configuration)]
 pub struct SmartsParseParams {
+    /// Recognize CX extensions after the SMARTS graph.
     pub allow_cxsmiles: bool,
+    /// Raise an error when CX extension parsing fails.
     pub strict_cxsmiles: bool,
+    /// Parse trailing name text after the query.
     pub parse_name: bool,
+    /// Merge explicit hydrogen query atoms into their neighbors' hydrogen-count queries.
     pub merge_hs: bool,
+    /// Skip the parser's native cleanup stage.
     pub skip_cleanup: bool,
+    /// Enable native parser diagnostic output.
     pub debug_parse: bool,
     #[configuration(none_default)]
+    /// Text substitutions expanded before parsing the query.
     pub replacements: BTreeMap<PropertyText, PropertyText>,
 }
 

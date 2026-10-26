@@ -20,6 +20,11 @@ impl<'py, T: Projection> IntoPyObject<'py> for Output<T> {
 
 macro_rules! project_sequence {
     ($wrapper:ident, $native:ty, $item:ty, { $($methods:tt)* }) => {
+        #[doc = concat!("Ordered, immutable collection of optional ", stringify!($item),
+            " values.\n\nNone retains a missing result at its original position. ",
+            "len() counts all records. Integer indexing returns a record; slices, ",
+            "index sequences and boolean masks return a new collection. ",
+            "Selections preserve order and duplicate indices.")]
         #[pyo3::pyclass(module = "cosmolkit", frozen)]
         pub struct $wrapper {
             pub(crate) inner: $native,
@@ -65,11 +70,15 @@ macro_rules! project_sequence {
                 let inner = <$native>::new(rows);
                 Ok(Self { inner, objects: std::sync::Mutex::new(values) })
             }
+            /// Number of records, including missing (None) records.
             #[getter]
             fn len(&self) -> usize { self.inner.len() }
             fn __len__(&self) -> usize { self.len() }
             fn __repr__(&self) -> String { format!("{}(rows={})", stringify!($wrapper), self.inner.len()) }
             #[doc = r#"{"role":"indexing","protocol":"integer_selection","selection":"Self"}"#]
+            /// Read a record or select records without changing this collection.
+            /// Negative indices and Python slices are supported. Integer selections
+            /// preserve duplicates; boolean masks must match the collection length.
             fn __getitem__(&self, py: pyo3::Python<'_>, index: $crate::indexing::Index<'_>)
                 -> pyo3::PyResult<$crate::indexing::Indexed<Option<pyo3::Py<$item>>, pyo3::Py<Self>>> {
                 $crate::indexing::get(self, py, index)

@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Readonly dense square matrix with native row/column indexing.
     pub struct DenseMatrix {
         pub(crate) inner: ck::DenseMatrix,
     }
@@ -12,13 +13,16 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl DenseMatrix {
     #[getter]
+    /// Number of rows and columns in the square matrix.
     fn dimension(&self) -> usize {
         self.inner.dimension()
     }
     #[getter]
+    /// Independent flat list of matrix entries in native storage order.
     fn values(&self) -> Vec<f64> {
         self.inner.values().to_vec()
     }
+    /// Return the matrix entry, or None when either index is out of range.
     fn get(&self, row: usize, column: usize) -> Option<f64> {
         self.inner.get(row, column)
     }
@@ -26,6 +30,7 @@ impl DenseMatrix {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Energy and per-atom Cartesian gradient evaluated by a persistent native force field.
     pub struct ForceFieldEnergyGradient {
         pub(crate) inner: ck::ForceFieldEnergyGradient,
     }
@@ -34,10 +39,12 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl ForceFieldEnergyGradient {
     #[getter]
+    /// Evaluated force-field energy.
     fn energy(&self) -> f64 {
         self.inner.energy()
     }
     #[getter]
+    /// Independent list of Cartesian gradient triples in atom order.
     fn gradient(&self) -> Vec<[f64; 3]> {
         self.inner.gradient().to_vec()
     }
@@ -45,6 +52,7 @@ impl ForceFieldEnergyGradient {
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen)]
+    /// Persistent force-field minimization outcome with convergence, iteration count and final energy.
     pub struct ForceFieldMinimizeOutcome {
         pub(crate) inner: ck::ForceFieldMinimizeOutcome,
     }
@@ -53,14 +61,17 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl ForceFieldMinimizeOutcome {
     #[getter]
+    /// Whether minimization reached the requested convergence criteria.
     fn converged(&self) -> bool {
         self.inner.converged()
     }
     #[getter]
+    /// Number of minimization iterations performed.
     fn iterations(&self) -> u32 {
         self.inner.iterations()
     }
     #[getter]
+    /// Evaluated force-field energy.
     fn energy(&self) -> f64 {
         self.inner.energy()
     }
@@ -85,7 +96,7 @@ mod tests {
             let projected = Py::new(py, DenseMatrix { inner: matrix })?;
             let values = projected
                 .bind(py)
-                .call_method0("values")?
+                .getattr("values")?
                 .extract::<Vec<f64>>()?;
             assert_eq!(
                 values.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
@@ -94,7 +105,7 @@ mod tests {
             assert_eq!(
                 projected
                     .bind(py)
-                    .call_method0("dimension")?
+                    .getattr("dimension")?
                     .extract::<usize>()?,
                 dimension
             );

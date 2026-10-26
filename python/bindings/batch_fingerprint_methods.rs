@@ -27,6 +27,10 @@ macro_rules! batch_fingerprint_methods {
         $($queries:tt)*) => {
         batch_fingerprint_methods!(@queries [$owner] [$($rest)*] [
             $($methods)*
+            #[doc = concat!("Batch form of Molecule.", stringify!($name), ".\n\n",
+                "Results retain input order, with missing entries for invalid records. ",
+                "Supply a parameter object or chemical keyword options, not both. ",
+                "n_jobs and progress_bar are forwarded to native batch execution.")]
             #[pyo3(signature=(params=Argument::Missing, *, execution=None, n_jobs=None, progress_bar=None,
                 $($extra=$extra_default,)* $($field=Argument::Missing),*))]
             fn $name(&self, $py: Python<'_>,
@@ -66,6 +70,8 @@ macro_rules! batch_fingerprint_methods {
                     self.inner.$native(&selected, $($extra,)* runtime)
                 }).map($convert)
             }
+            #[doc = concat!("Batch form of Molecule.", stringify!($name),
+                " with explicit chemical and execution parameters. Results preserve record order and missing entries.")]
             fn $native(&self, $py: Python<'_>, options: &$params,
                 $($extra: $extra_ty,)* execution: &crate::batch_query_params::BatchQueryParams
             ) -> PyResult<$result> {

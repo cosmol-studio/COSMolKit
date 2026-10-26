@@ -43,6 +43,7 @@ input!(BatchErrorModeInput, BatchErrorMode);
 
 #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
 #[derive(Clone, Copy, PartialEq)]
+/// Select a stored coordinate set: Auto uses the unique available set; TwoD and ThreeD select by ID.
 pub struct MolCoordinateSelection {
     pub(crate) inner: ck::MolCoordinateSelection,
 }
@@ -60,15 +61,18 @@ impl MolCoordinateSelection {
     }
     #[staticmethod]
     #[pyo3(name = "TwoD")]
+    /// Select a stored two-dimensional layout by its dimension-scoped identifier.
     fn two_d(id: usize) -> Self {
         ck::MolCoordinateSelection::TwoD { id }.into()
     }
     #[staticmethod]
     #[pyo3(name = "ThreeD")]
+    /// Select a stored three-dimensional conformer by its dimension-scoped identifier.
     fn three_d(id: usize) -> Self {
         ck::MolCoordinateSelection::ThreeD { id }.into()
     }
     #[getter]
+    /// Dimension-scoped coordinate identifier, or None for Auto selection.
     fn id(&self) -> Option<usize> {
         match self.inner {
             ck::MolCoordinateSelection::Auto => None,

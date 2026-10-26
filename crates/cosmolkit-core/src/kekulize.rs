@@ -141,9 +141,13 @@ pub enum KekulizeError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Kekule bond assignment and aromatic-flag handling options.
 pub struct KekulizeParams {
+    /// Clear aromatic flags on atoms and bonds after Kekule assignment.
     pub mark_atoms_bonds: bool,
+    /// Use canonical atom ordering when choosing the Kekule assignment.
     pub canonical: bool,
+    /// Maximum number of backtracking attempts in Kekule assignment.
     pub max_backtracks: u32,
 }
 

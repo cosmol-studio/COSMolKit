@@ -78,88 +78,88 @@ error_projection!(ReactionProductError, ReactionProductErrorKind, ck::ReactionPr
     | ck::ReactionProductError::RowOverflow { .. } | ck::ReactionProductError::QueryReactantBond { .. } => None,
 }), source = Option<ProductSource>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to ReactionProductError.StereoGetter, ReactionProductError.PropertyInt, ReactionProductError.PropertyUInt, ReactionProductError.MissingProperty. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::ReactionProductError::StereoGetter { atom, .. } | ck::ReactionProductError::PropertyInt { atom, .. }
         | ck::ReactionProductError::PropertyUInt { atom, .. } | ck::ReactionProductError::MissingProperty { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn key(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Property key involved in the failure. Applies to ReactionProductError.PropertyInt, ReactionProductError.PropertyUInt, ReactionProductError.MissingProperty. None when this payload is absent."] fn key(&self) -> Option<&'static str> { match self.inner {
         ck::ReactionProductError::PropertyInt { key, .. } | ck::ReactionProductError::PropertyUInt { key, .. }
         | ck::ReactionProductError::MissingProperty { key, .. } => Some(key), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to ReactionProductError.Invariant, ReactionProductError.QueryReactantBond. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::ReactionProductError::Invariant { bond, .. } => bond.map(ck::BondId::index),
         ck::ReactionProductError::QueryReactantBond { bond } => Some(bond.index()), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinate(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
+    #[doc = "Structured CoordinateValidationError payload of ReactionProductError.Coordinate; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinate(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
         ck::ReactionProductError::Coordinate(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology_edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
+    #[doc = "Structured TopologyEditError payload of ReactionProductError.TopologyEdit; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology_edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
         ck::ReactionProductError::TopologyEdit(value) => TopologyEditError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn adjacency(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AdjacencyError>>> { match &self.inner {
+    #[doc = "Structured AdjacencyError payload of ReactionProductError.Adjacency; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn adjacency(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AdjacencyError>>> { match &self.inner {
         ck::ReactionProductError::Adjacency(value) => AdjacencyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
+    #[doc = "Structured RingFindingError payload of ReactionProductError.RingFinding; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
         ck::ReactionProductError::RingFinding(value) => RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn source_uint(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyUIntReadError>>> { match &self.inner {
+    #[doc = "Structured PropertyUIntReadError payload of ReactionProductError.SourceUInt; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn source_uint(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyUIntReadError>>> { match &self.inner {
         ck::ReactionProductError::SourceUInt(value) => PropertyUIntReadError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of ReactionProductError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::ReactionProductError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
+    #[doc = "Structured StereoOrderError payload of ReactionProductError.StereoOrder; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
         ck::ReactionProductError::StereoOrder(value) => StereoOrderError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn double_bond_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<DoubleBondStereoError>>> { match &self.inner {
+    #[doc = "Structured DoubleBondStereoError payload of ReactionProductError.DoubleBondStereo; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn double_bond_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<DoubleBondStereoError>>> { match &self.inner {
         ck::ReactionProductError::DoubleBondStereo(value) => DoubleBondStereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinate_selection(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SmilesParseError>>> { match &self.inner {
+    #[doc = "Structured SmilesParseError payload of ReactionProductError.CoordinateSelection; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinate_selection(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SmilesParseError>>> { match &self.inner {
         ck::ReactionProductError::CoordinateSelection(value) => SmilesParseError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn carrier_identity(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryAtomConversionError>>> { match &self.inner {
+    #[doc = "Structured QueryAtomConversionError payload of ReactionProductError.CarrierIdentity; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn carrier_identity(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryAtomConversionError>>> { match &self.inner {
         ck::ReactionProductError::CarrierIdentity(value) => QueryAtomConversionError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn molecule_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
+    #[doc = "Structured MoleculePropertyError payload of ReactionProductError.MoleculeProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn molecule_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
         ck::ReactionProductError::MoleculeProperty(value) => MoleculePropertyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn atom_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>> { match &self.inner {
+    #[doc = "Structured AtomPropertyError payload of ReactionProductError.AtomProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn atom_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>> { match &self.inner {
         ck::ReactionProductError::AtomProperty(value) => AtomPropertyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn bond_value(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
+    #[doc = "Structured BondValueError payload of ReactionProductError.BondValue; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn bond_value(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
         ck::ReactionProductError::BondValue(value) => BondValueError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn template_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionValidationError>>> { match &self.inner {
+    #[doc = "Structured ReactionValidationError payload of ReactionProductError.TemplateProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn template_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionValidationError>>> { match &self.inner {
         ck::ReactionProductError::TemplateProperty(value) => ReactionValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -188,32 +188,32 @@ error_projection!(ReactionRunError, ReactionRunErrorKind, ck::ReactionRunError, 
     | ck::ReactionRunError::CombinationSize { .. } | ck::ReactionRunError::EmptyCombinationLevels => None,
 }), source = Option<RunSource>, methods = {
     #[getter]
-    fn template(&self) -> Option<usize> { match self.inner {
+    #[doc = "Reaction template index involved in the failure. Applies to ReactionRunError.Product, ReactionRunError.Matching, ReactionRunError.MatchAtomIndex. None when this payload is absent."] fn template(&self) -> Option<usize> { match self.inner {
         ck::ReactionRunError::Product { template, .. } | ck::ReactionRunError::Matching { template, .. }
         | ck::ReactionRunError::MatchAtomIndex { template, .. } => Some(template), _ => None,
     } }
     #[getter]
-    fn reactant(&self) -> Option<usize> { match self.inner {
+    #[doc = "Reactant index involved in the failed reaction match. Applies to ReactionRunError.Matching, ReactionRunError.MatchAtomIndex. None when this payload is absent."] fn reactant(&self) -> Option<usize> { match self.inner {
         ck::ReactionRunError::Matching { reactant, .. } | ck::ReactionRunError::MatchAtomIndex { reactant, .. } => Some(reactant), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to ReactionRunError.CoordinateSelectionArity, ReactionRunError.ReactantArity, ReactionRunError.CombinationSize. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::ReactionRunError::CoordinateSelectionArity { expected, .. } | ck::ReactionRunError::ReactantArity { expected, .. } => Some(expected),
         ck::ReactionRunError::CombinationSize { expected, .. } => Some(expected as usize), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to ReactionRunError.CoordinateSelectionArity, ReactionRunError.ReactantArity, ReactionRunError.CombinationSize. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::ReactionRunError::CoordinateSelectionArity { actual, .. } | ck::ReactionRunError::ReactantArity { actual, .. }
         | ck::ReactionRunError::CombinationSize { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Count reported by the native failure. Applies to ReactionRunError.ReactantTemplateIndex, ReactionRunError.CombinationLevel. None when this payload is absent."] fn count(&self) -> Option<usize> { match self.inner {
         ck::ReactionRunError::ReactantTemplateIndex { count, .. } => Some(count),
         ck::ReactionRunError::CombinationLevel { count, .. } => Some(count as usize), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn initialization(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionInitializationError>>> { match &self.inner {
+    #[doc = "Structured ReactionInitializationError payload of ReactionRunError.Initialization; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn initialization(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionInitializationError>>> { match &self.inner {
         ck::ReactionRunError::Initialization(value) => ReactionInitializationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -386,27 +386,27 @@ error_projection!(ReactionApplyError, ReactionApplyErrorKind, ck::ReactionApplyE
 }), source = Option<ApplySource>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn source_text(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
+    #[doc = "Structured PropertyStringError payload of ReactionApplyError.SourceText; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn source_text(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> { match &self.inner {
         ck::ReactionApplyError::SourceText(value) => PropertyStringError::from_rust(*value).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn initialization(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionInitializationError>>> { match &self.inner {
+    #[doc = "Structured ReactionInitializationError payload of ReactionApplyError.Initialization; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn initialization(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionInitializationError>>> { match &self.inner {
         ck::ReactionApplyError::Initialization(value) => ReactionInitializationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn matching(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionRunError>>> { match &self.inner {
+    #[doc = "Structured ReactionRunError payload of ReactionApplyError.Matching; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn matching(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionRunError>>> { match &self.inner {
         ck::ReactionApplyError::Matching(value) => ReactionRunError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn product(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionProductError>>> { match &self.inner {
+    #[doc = "Structured ReactionProductError payload of ReactionApplyError.Product; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn product(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ReactionProductError>>> { match &self.inner {
         ck::ReactionApplyError::Product(value) => ReactionProductError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
+    #[doc = "Structured TopologyEditError payload of ReactionApplyError.Edit; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn edit(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyEditError>>> { match &self.inner {
         ck::ReactionApplyError::Edit(value) => TopologyEditError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

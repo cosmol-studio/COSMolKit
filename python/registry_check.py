@@ -79,7 +79,7 @@ def has_decorator(node, name):
 
 def metadata(document):
     document = (document or "").strip()
-    return json.loads(document) if document.startswith("{") else {}
+    return json.JSONDecoder().raw_decode(document)[0] if document.startswith("{") else {}
 
 
 def native_error_getter(descriptor):
@@ -87,7 +87,9 @@ def native_error_getter(descriptor):
         return True
     if not isinstance(descriptor, property) or descriptor.fset is not None:
         return False
-    native = getattr(descriptor.fget, "__wrapped__", None)
+    native = getattr(descriptor.fget, "_ck_native_descriptor", None)
+    if native is None:
+        native = getattr(descriptor.fget, "__wrapped__", None)
     return (inspect.isgetsetdescriptor(native)
             or (inspect.isbuiltin(native)
                 and metadata(native.__doc__).get("role") in {"error_source", "error_payload"}))
@@ -189,7 +191,7 @@ def enum_payload(node, runtime):
         if (name is None or ast.unparse(name.returns) != "str"
                 or len(name.decorator_list) != 1 or not has_decorator(name, "property")):
             return False
-        return set(methods) <= {"name", "__new__", "__repr__", "__int__", "__eq__", "__ne__", "__hash__"}
+        return set(methods) <= {"name", "__new__", "__repr__", "__int__", "__eq__", "__ne__", "__hash__", "__reduce__"}
     return all(not isinstance(member, ast.FunctionDef)
                or (member.name.startswith("__") and member.name.endswith("__")
                    and member.name not in {"__new__", "__init__"})

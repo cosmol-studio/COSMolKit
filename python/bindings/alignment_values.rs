@@ -9,6 +9,7 @@ ck::project_configuration!(ck::AllConformerRmsdParameters);
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone, Copy)]
+    /// Readonly homogeneous 4-by-4 transform mapping aligned probe coordinates into the reference frame.
     pub struct AlignmentTransform {
         pub(crate) inner: ck::AlignmentTransform,
     }
@@ -22,6 +23,7 @@ impl AlignmentTransform {
         }
     }
     #[getter]
+    /// Homogeneous 4-by-4 transformation matrix.
     fn matrix(&self) -> [[f64; 4]; 4] {
         *self.inner.matrix()
     }
@@ -29,6 +31,7 @@ impl AlignmentTransform {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Alignment result retaining RMSD, transformation and probe/reference atom correspondence.
     pub struct AlignmentResult {
         pub(crate) inner: ck::AlignmentResult,
     }
@@ -46,16 +49,19 @@ impl AlignmentResult {
         }
     }
     #[getter]
+    /// Root-mean-square deviation for the associated alignment or conformer pair.
     fn rmsd(&self) -> f64 {
         self.inner.rmsd()
     }
     #[getter]
+    /// Transform determined by the alignment.
     fn transform(&self) -> AlignmentTransform {
         AlignmentTransform {
             inner: *self.inner.transform(),
         }
     }
     #[getter]
+    /// Independent list of probe-to-reference atom correspondences used for alignment.
     fn atom_map(&self) -> Vec<AlignmentAtomMap> {
         self.inner
             .atom_map()
@@ -68,6 +74,7 @@ impl AlignmentResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone, Copy)]
+    /// RMSD value associated with explicit probe and reference conformer identifiers.
     pub struct ConformerRmsd {
         pub(crate) inner: ck::ConformerRmsd,
     }
@@ -85,14 +92,17 @@ impl ConformerRmsd {
         }
     }
     #[getter]
+    /// Identifier of the probe conformer.
     fn probe_conformer_id(&self) -> usize {
         self.inner.probe_conformer_id()
     }
     #[getter]
+    /// Identifier of the reference conformer.
     fn reference_conformer_id(&self) -> usize {
         self.inner.reference_conformer_id()
     }
     #[getter]
+    /// Root-mean-square deviation for the associated alignment or conformer pair.
     fn rmsd(&self) -> f64 {
         self.inner.rmsd()
     }
@@ -100,6 +110,7 @@ impl ConformerRmsd {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Ordered RMSD results returned by native conformer alignment.
     pub struct ConformerAlignmentReport {
         pub(crate) inner: ck::ConformerAlignmentReport,
     }
@@ -113,6 +124,7 @@ impl ConformerAlignmentReport {
         }
     }
     #[getter]
+    /// RMSD values in the native alignment result order.
     fn rmsds(&self) -> &[f64] {
         self.inner.rmsds()
     }

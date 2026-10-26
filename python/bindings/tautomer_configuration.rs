@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use std::sync::Arc;
 
 #[pyclass(module = "cosmolkit")]
+/// Reusable tautomer enumeration limits, stereochemistry policy, transform catalogue and scoring callbacks.
 pub struct TautomerParams {
     // The native owner retains policy, catalogue and score inputs.
     inner: ck::TautomerParams,
@@ -33,7 +34,7 @@ impl NativeOwner for TautomerParams {
 // These methods only forward native policy access. Callback ownership and
 // invocation errors use the same mechanism as SubstructMatchParams.
 macro_rules! policy_fields {
-    ($($field:ident: $ty:ty),+ $(,)?) => {
+    ($($(#[$doc:meta])* $field:ident: $ty:ty),+ $(,)?) => {
         paste::paste! {
             #[pymethods]
             impl TautomerParams {
@@ -49,11 +50,14 @@ macro_rules! policy_fields {
                     Ok(result)
                 }
                 $(
+                    $(#[$doc])*
                     #[getter]
                     fn $field(&self) -> $ty { self.inner.$field() }
                     #[setter($field)]
                     fn [<assign_ $field>](&mut self, value: $ty) { self.inner.[<set_ $field>](value); }
+                    #[doc = concat!("Set `", stringify!($field), "` on this configuration. See the corresponding property for its meaning.")]
                     fn [<set_ $field>](&mut self, value: $ty) { self.inner.[<set_ $field>](value); }
+                    #[doc = concat!("Return an independent configuration with `", stringify!($field), "` replaced, preserving the catalogue and callback owners.")]
                     fn [<with_ $field>](&self, py: Python<'_>, value: $ty) -> PyResult<Self> {
                         let mut result = Self::from_native(py, self.to_rust(py)?)?;
                         result.callback = self.callback.as_ref().map(|value| value.clone_ref(py));
@@ -63,18 +67,23 @@ macro_rules! policy_fields {
                     }
                 )+
                 #[getter]
+                /// Number of transform rules in the retained enumeration catalogue.
                 fn transform_count(&self) -> usize { self.inner.transform_count() }
                 #[staticmethod]
+                /// Construct configuration using the version-one tautomer transform catalogue.
                 fn v1(py: Python<'_>) -> PyResult<Self> { crate::tautomer_catalog::v1(py) }
                 #[staticmethod]
+                /// Compile transform rows containing name, SMARTS, bond changes and charge changes.
                 fn from_transform_data(py: Python<'_>, data: Vec<(String, String, String, String)>) -> PyResult<Self> {
                     crate::tautomer_catalog::from_transform_data(py, data)
                 }
                 #[staticmethod]
+                /// Load the native tautomer transform catalogue from a file; parsing errors propagate.
                 fn from_transform_file(py: Python<'_>, path: std::path::PathBuf) -> PyResult<Self> {
                     crate::tautomer_catalog::from_transform_file(py, path)
                 }
                 #[getter]
+                /// Scoring configuration owned by these parameters; field assignment updates this configuration.
                 fn score_params(slf: PyRef<'_, Self>) -> FieldOutput<LiveConfigurationField<TautomerScoreParams>, Self> {
                     FieldOutput::new(slf.into(), |native: &ck::TautomerParams| &native.score_params, |native: &mut ck::TautomerParams| &mut native.score_params)
                 }
@@ -85,18 +94,22 @@ macro_rules! policy_fields {
                     Ok(())
                 }
                 #[getter]
+                /// Optional enumeration callback receiving source and scoped progress. Return False to cancel; exceptions propagate.
                 fn callback(&self, py: Python<'_>) -> Option<EnumerationCallback> {
                     self.callback.as_ref().map(|callback| callback.clone_ref(py))
                 }
                 #[setter(callback)]
                 fn assign_callback(&mut self, value: Option<EnumerationCallback>) { self.set_callback(value); }
+                /// Replace the enumeration callback, or disable it with None.
                 fn set_callback(&mut self, callback: Option<EnumerationCallback>) { self.callback = callback; }
                 #[getter]
+                /// Optional custom scorer receiving a tautomer view and returning a signed integer score.
                 fn scorer(&self, py: Python<'_>) -> Option<Scorer> {
                     self.scorer.as_ref().map(|scorer| scorer.clone_ref(py))
                 }
                 #[setter(scorer)]
                 fn assign_scorer(&mut self, value: Option<Scorer>) { self.set_scorer(value); }
+                /// Replace the custom scorer, or restore native scoring with None.
                 fn set_scorer(&mut self, scorer: Option<Scorer>) { self.scorer = scorer; }
                 fn __traverse__(&self, visit: pyo3::gc::PyVisit<'_>) -> Result<(), pyo3::PyTraverseError> {
                     if let Some(callback) = &self.callback { callback.traverse(&visit)?; }
@@ -215,7 +228,7 @@ else:
 assert params.max_tautomers == 23
 events = []
 def callback(source, progress):
-    events.append((source.num_atoms(), progress.len()))
+    events.append((source.num_atoms, progress.len))
     return True
 params.callback = callback
 assert params.callback is callback
@@ -224,7 +237,7 @@ params.set_callback(None)
 assert params.callback is None
 params.set_callback(callback)
 def scorer(source):
-    return source.num_atoms()
+    return source.num_atoms
 params.scorer = scorer
 assert params.scorer is scorer
 assert params.with_reassign_stereo(True).scorer is scorer

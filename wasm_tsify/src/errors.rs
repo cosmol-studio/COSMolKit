@@ -133,7 +133,9 @@ macro_rules! enum_error {
         #[wasm_bindgen]
         #[derive(Clone, Copy)]
         pub enum $kind {
-            $($(#[$attribute])* $variant),+
+            // Keep diagnostic codes stable across feature selections. Only
+            // the native match arms depend on whether a source variant exists.
+            $($variant),+
         }
         crate::errors::error_projection!(
             $name, $native, { $($method)* }

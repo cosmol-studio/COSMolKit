@@ -83,35 +83,43 @@ macro_rules! field_error {
         }
         crate::error_framework::error_projection! {methods impl $name {
             #[getter]
+            /// Native subsystem reporting this failure, preserved independently of the human-readable message.
             fn domain(&self) -> &'static str {
                 "forcefield"
             }
             #[getter]
+            /// Typed native persistent-force-field failure category.
             fn kind(&self) -> MolecularForceFieldErrorKind {
                 self.inner.kind().into()
             }
             #[getter]
+            /// Requested conformer identifier when relevant, otherwise None.
             fn requested(&self) -> Option<usize> {
                 self.inner.requested()
             }
             #[getter]
+            /// Atom index implicated in the failure, or None for failures without an atom.
             fn atom_index(&self) -> Option<usize> {
                 self.inner.atom_index()
             }
             #[getter]
+            /// Coordinate component implicated in the failure, or None when inapplicable.
             fn component(&self) -> Option<usize> {
                 self.inner.component()
             }
             #[getter]
+            /// Observed size or index reported by the native failure, or None when inapplicable.
             fn actual(&self) -> Option<usize> {
                 self.inner.actual()
             }
             #[getter]
+            /// Required size reported by the native failure, or None when inapplicable.
             fn expected(&self) -> Option<usize> {
                 self.inner.expected()
             }
             #[staticmethod]
             #[doc = r#"{"role":"error_source"}"#]
+            /// Actual underlying exception, identical to __cause__.
             fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<$source> {
                 Ok(slf.getattr("__cause__")?.extract()?)
             }
@@ -169,19 +177,23 @@ impl UffForceFieldError {
 }
 crate::error_framework::error_projection! {methods impl UffForceFieldError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "forcefield"
     }
     #[getter]
+    /// Typed native persistent-force-field failure category.
     fn kind(&self) -> MolecularForceFieldErrorKind {
         self.inner.kind().into()
     }
     #[getter]
+    /// Requested conformer identifier when relevant, otherwise None.
     fn requested(&self) -> Option<usize> {
         self.inner.requested()
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Actual underlying exception, identical to __cause__.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<UffFieldSource>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -192,6 +204,8 @@ crate::error_framework::error_projection! {methods impl UffForceFieldError {
 }
 
 #[pyclass(module = "cosmolkit")]
+/// Persistent native force-field evaluator owning positions, constraints and minimization state.
+/// Position edits and minimization affect this evaluator, not the molecule used to construct it.
 pub struct MolecularForceField {
     pub(crate) inner: ck::MolecularForceField,
 }
@@ -206,6 +220,10 @@ macro_rules! evaluator_methods {
         impl MolecularForceField {
             $($ordinary)*
             $(
+            #[doc = concat!("Add the constraint specified by ", stringify!($params),
+                " to this force-field evaluator in place. Atom arguments are zero-based indices. ",
+                "Supply the parameter object or the required keyword fields, not both; ",
+                "the source molecule is unchanged.")]
             #[pyo3(signature=($($atom,)+ params=None, *, $($field=None),+))]
             fn $method(&mut self, $($atom: usize,)+ params: Option<&$params>, $($field: Option<$ty>),+) -> PyResult<()> {
                 let configured = false $(|| $field.is_some())+;
@@ -244,26 +262,31 @@ evaluator_methods! {
          ForceFieldPositionConstraintParams, [atom], {max_displacement: f64, force_constant: f64})
     ]
     methods {
+    /// Return the force field's current Cartesian position for the specified atom.
     fn position(&self, atom_id: usize) -> PyResult<[f64; 3]> {
         self.inner
             .position(ck::AtomId::new(atom_id))
             .map_err(ForceFieldError::from_rust)
     }
+    /// Update one atom's position in this force-field evaluator, not in the source molecule.
     fn set_position_(&mut self, atom_id: usize, position: [f64; 3]) -> PyResult<()> {
         self.inner
             .set_position_(ck::AtomId::new(atom_id), position)
             .map_err(ForceFieldError::from_rust)
     }
     #[getter]
+    /// Independent list of the evaluator's current Cartesian position triples.
     fn positions(&self) -> Vec<[f64; 3]> {
         self.inner.positions()
     }
+    /// Replace the evaluator's positions from one triple per atom; native shape and value errors propagate.
     fn set_positions_(&mut self, positions: Vec<[f64; 3]>) -> PyResult<()> {
         self.inner
             .set_positions_(&positions)
             .map_err(ForceFieldError::from_rust)
     }
     #[getter]
+    /// Atom indices currently held fixed during minimization.
     fn fixed_atoms(&self) -> Vec<usize> {
         self.inner
             .fixed_atoms()
@@ -271,6 +294,7 @@ evaluator_methods! {
             .map(ck::AtomId::index)
             .collect()
     }
+    /// Replace the set of atoms held fixed during minimization.
     fn set_fixed_atoms_(&mut self, atom_ids: Vec<usize>) -> PyResult<()> {
         self.inner
             .set_fixed_atoms_(
@@ -281,24 +305,29 @@ evaluator_methods! {
             )
             .map_err(ForceFieldError::from_rust)
     }
+    /// Evaluate the native force-field energy at the evaluator's current positions.
     fn energy(&self, py: Python<'_>) -> PyResult<f64> {
         py.detach(|| self.inner.energy())
             .map_err(ForceFieldError::from_rust)
     }
+    /// Evaluate the Cartesian gradient with the native fixed-atom treatment.
     fn gradient(&self, py: Python<'_>) -> PyResult<Vec<[f64; 3]>> {
         py.detach(|| self.inner.gradient())
             .map_err(ForceFieldError::from_rust)
     }
+    /// Evaluate the Cartesian gradient without fixing gradient components for fixed atoms.
     fn gradient_unconstrained(&self, py: Python<'_>) -> PyResult<Vec<[f64; 3]>> {
         py.detach(|| self.inner.gradient_unconstrained())
             .map_err(ForceFieldError::from_rust)
     }
+    /// Evaluate energy and per-atom Cartesian gradients together.
     fn energy_gradient(&self, py: Python<'_>) -> PyResult<ForceFieldEnergyGradient> {
         py.detach(|| self.inner.energy_gradient())
             .map(|inner| ForceFieldEnergyGradient { inner })
             .map_err(ForceFieldError::from_rust)
     }
 #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, max_iterations=crate::arguments::Argument::Missing, force_tolerance=crate::arguments::Argument::Missing, energy_tolerance=crate::arguments::Argument::Missing))]
+    /// Minimize the evaluator's positions in place and return convergence, iteration and energy information.
     fn minimize_(
         &mut self,
         py: Python<'_>,
@@ -553,11 +582,7 @@ mod tests {
         native: &ck::MolecularForceField,
     ) -> PyResult<()> {
         assert_eq!(
-            bits(
-                &projected
-                    .call_method0("positions")?
-                    .extract::<Vec<[f64; 3]>>()?
-            ),
+            bits(&projected.getattr("positions")?.extract::<Vec<[f64; 3]>>()?),
             bits(&native.positions())
         );
         assert_eq!(
@@ -656,7 +681,7 @@ mod tests {
             );
 
             let snapshot = field
-                .call_method0("positions")?
+                .getattr("positions")?
                 .extract::<Vec<[f64; 3]>>()?;
             field.call_method1("set_position_", (0, [0.1, 0.2, 0.3]))?;
             native
@@ -682,7 +707,7 @@ mod tests {
                 .set_fixed_atoms_(&[ck::AtomId::new(2), ck::AtomId::new(0), ck::AtomId::new(2)])
                 .unwrap();
             assert_eq!(
-                field.call_method0("fixed_atoms")?.extract::<Vec<usize>>()?,
+                field.getattr("fixed_atoms")?.extract::<Vec<usize>>()?,
                 vec![0, 2]
             );
             same_field(py, &field, &native)?;
@@ -849,7 +874,7 @@ mod tests {
             assert!(error.value(py).setattr("kind", "changed").is_err());
             assert!(error.cause(py).is_none());
             let saved = field
-                .call_method0("positions")?
+                .getattr("positions")?
                 .extract::<Vec<[f64; 3]>>()?;
             let failure = field
                 .call_method1("set_position_", (1, [f64::NAN, 0., 0.]))
@@ -861,7 +886,7 @@ mod tests {
             assert_eq!(
                 bits(
                     &field
-                        .call_method0("positions")?
+                        .getattr("positions")?
                         .extract::<Vec<[f64; 3]>>()?
                 ),
                 bits(&saved)

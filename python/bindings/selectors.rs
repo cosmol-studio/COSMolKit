@@ -53,6 +53,7 @@ selector!(ValenceModel, ValenceModelInput, { RdkitLike });
 selector!(AromaticityModel, AromaticityModelInput, { Rdkit, Simple, Mdl, Mmff94, Custom });
 selector!(CoordinateZPolicy, CoordinateZPolicyInput, { Ignore, RequireZero, Error }, methods = {
     #[staticmethod]
+    /// Parse the canonical coordinate-Z policy name; reject unknown names.
     pub(crate) fn from_name(value: &str) -> PyResult<Self> {
         ck::CoordinateZPolicy::from_name(value)
             .map(Into::into)

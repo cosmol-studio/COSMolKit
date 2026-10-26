@@ -58,6 +58,7 @@ mod tests {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
     #[derive(Clone, Copy, PartialEq)]
+    /// Tetrahedral ligand represented by an explicit atom or an implicit hydrogen.
     pub struct LigandRef {
         inner: ck::LigandRef,
     }
@@ -79,12 +80,14 @@ impl LigandRef {
     };
     #[staticmethod]
     #[pyo3(name = "Atom")]
+    /// Represent a tetrahedral ligand using a zero-based atom identifier.
     fn atom(value: usize) -> Self {
         Self {
             inner: ck::LigandRef::Atom(ck::AtomId::new(value)),
         }
     }
     #[getter]
+    /// Ligand atom identifier, or None for an implicit hydrogen.
     fn atom_id(&self) -> Option<usize> {
         match self.inner {
             ck::LigandRef::Atom(value) => Some(value.index()),
@@ -96,6 +99,7 @@ impl LigandRef {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Tetrahedral center and its four ordered ligand references.
     pub struct TetrahedralStereo {
         pub(crate) inner: ck::TetrahedralStereo,
     }
@@ -112,10 +116,12 @@ impl TetrahedralStereo {
         }
     }
     #[getter]
+    /// Zero-based atom identifier of the tetrahedral center.
     fn center(&self) -> usize {
         self.inner.center.index()
     }
     #[getter]
+    /// Four ordered ligand references defining the tetrahedral configuration.
     fn ligands(&self) -> [LigandRef; 4] {
         self.inner.ligands.map(|inner| LigandRef { inner })
     }
@@ -124,12 +130,14 @@ impl TetrahedralStereo {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Atom and bond correspondences returned by native substructure matching.
     pub struct MatchResult {
         pub(crate) inner: ck::MatchResult,
     }
 }
 #[pymethods]
 impl MatchResult {
+    /// Query-to-target atom pairs represented by this match.
     fn atom_pairs(&self) -> Vec<(usize, usize)> {
         self.inner.atom_pairs()
     }
@@ -140,10 +148,12 @@ impl MatchResult {
         }
     }
     #[getter]
+    /// Target atom indices in query-atom order.
     fn atom_mapping(&self) -> Vec<usize> {
         self.inner.atom_mapping.clone()
     }
     #[getter]
+    /// Target bond indices in query-bond order.
     fn bond_mapping(&self) -> Vec<usize> {
         self.inner.bond_mapping.clone()
     }
@@ -152,6 +162,7 @@ impl MatchResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Layered fingerprint and optional atom contribution counts.
     pub struct LayeredFingerprintResult {
         pub(crate) inner: ck::LayeredFingerprintResult,
     }
@@ -169,12 +180,14 @@ impl LayeredFingerprintResult {
         }
     }
     #[getter]
+    /// Generated bit fingerprint.
     fn fingerprint(&self) -> Fingerprint {
         Fingerprint {
             inner: self.inner.fingerprint().clone(),
         }
     }
     #[getter]
+    /// Optional per-atom contribution counts requested during fingerprint generation.
     fn atom_counts(&self) -> Option<Vec<u32>> {
         self.inner.atom_counts().map(<[u32]>::to_vec)
     }
@@ -183,7 +196,8 @@ impl LayeredFingerprintResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
-    pub struct AtomPairAtomCodeResult {
+/// Atom-pair atom code together with the prepared molecule used to compute it.
+pub struct AtomPairAtomCodeResult {
         pub(crate) inner: ck::AtomPairAtomCodeResult,
     }
 }
@@ -199,10 +213,12 @@ impl AtomPairAtomCodeResult {
         }
     }
     #[getter]
+    /// Encoded atom-pair atom invariant.
     fn code(&self) -> u32 {
         self.inner.code
     }
     #[getter]
+    /// Prepared molecule associated with this code; returned with copy-on-write value semantics.
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule.clone(),

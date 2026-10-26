@@ -55,6 +55,7 @@ fn coordinate(object: &Bound<'_, PyAny>, axis: &str) -> PyResult<f64> {
 
 #[pyfunction]
 #[pyo3(signature=(rdmol, sanitize=None))]
+/// Import an RDKit molecule through the native adapter, preserving the selected sanitization policy.
 pub fn mol_from_rdkit(
     py: Python<'_>,
     rdmol: RdkitMol,

@@ -23,8 +23,8 @@ def test_original_mol_hash_different_molecules():
 def test_original_mol_hash_empty_error():
     with pytest.raises(cosmolkit.MoleculeHashError) as caught:
         cosmolkit.Molecule.from_smiles("").molecular_hash()
-    assert caught.value.domain == "molecular_hash"
-    assert caught.value.kind == "EmptyMolecule"
+    assert caught.value.domain == "hashing"
+    assert caught.value.variant.name == "EmptyMolecule"
 
 
 def test_original_mol_hash_with_ranks():
@@ -55,7 +55,7 @@ def test_rank_row_and_absent_valence_errors_keep_carriers_and_source():
     for ranks in ([], [0, 0], [0, 0, 0, 0]):
         with pytest.raises(cosmolkit.MoleculeHashError) as caught:
             molecule.molecular_hash_with_ranks(ranks)
-        assert caught.value.kind == "RankCount"
+        assert caught.value.variant.name == "RankCount"
         assert caught.value.actual == len(ranks)
         assert caught.value.atom_count == 3
         assert molecule.to_binary() == before
@@ -65,7 +65,7 @@ def test_rank_row_and_absent_valence_errors_keep_carriers_and_source():
     before = raw.to_binary()
     with pytest.raises(cosmolkit.MoleculeHashError) as caught:
         raw.molecular_hash()
-    assert caught.value.kind == "MissingPreparedValence"
+    assert caught.value.variant.name == "MissingPreparedValence"
     assert raw.molecular_hash_with_ranks([0]) != 0
     assert raw.to_binary() == before
 
@@ -77,11 +77,11 @@ def test_original_cip_rank_map_limit_is_typed_and_failure_atomic():
     before = molecule.to_binary()
     with pytest.raises(cosmolkit.MoleculeHashError) as caught:
         molecule.molecular_hash()
-    assert caught.value.kind == "CipRanks"
+    assert caught.value.variant.name == "CipRanks"
     cause = caught.value.__cause__
     assert isinstance(cause, cosmolkit.CipRankError)
-    assert cause.domain == "cip_ranking"
-    assert cause.kind == "AtomMapOutOfRange"
+    assert cause.domain == "stereo"
+    assert cause.variant.name == "AtomMapOutOfRange"
     assert cause.atom == 0
     assert cause.map_number == 4294967295
     assert molecule.to_binary() == before

@@ -37,15 +37,15 @@ def test_pdb_unique_explicit_all_and_atomic_writable_options():
         molecule.to_pdb()
     cause = caught.value.__cause__
     assert isinstance(cause, ck.PdbWriteError)
-    assert (cause.kind, cause.two_d, cause.three_d) == ("AmbiguousCoordinates", 1, 1)
-    assert positions(molecule.to_pdb(coordinate_selection=ck.MolCoordinateSelection.two_d(0))) == [(1.25, -2.5, 0.0)]
-    params = ck.PdbWriteParams(coordinate_selection=ck.MolCoordinateSelection.three_d(0))
+    assert (cause.variant.name, cause.two_d, cause.three_d) == ("AmbiguousCoordinates", 1, 1)
+    assert positions(molecule.to_pdb(coordinate_selection=ck.MolCoordinateSelection.TwoD(0))) == [(1.25, -2.5, 0.0)]
+    params = ck.PdbWriteParams(coordinate_selection=ck.MolCoordinateSelection.ThreeD(0))
     assert positions(molecule.to_pdb(params)) == [(4.0, 5.0, 6.0)]
     params.coordinate_selection = None
     params.all_conformers = True
     assert positions(molecule.to_pdb_with_params(params)) == [(1.25, -2.5, 0.0), (4.0, 5.0, 6.0)]
     assert molecule.to_pdb(all_conformers=True).count("ENDMDL\n") == 2
-    params.flavor = 16
+    params.flavor = ck.PdbWriteFlags.MASTER
     assert "MASTER" in molecule.to_pdb(params)
     with pytest.raises(TypeError):
         setattr(params, "all_conformers", "yes")
@@ -55,15 +55,15 @@ def test_pdb_unique_explicit_all_and_atomic_writable_options():
     assert coordinates is not None
     assert coordinates.tolist() == [[1.25, -2.5]]
     with pytest.raises(ck.MolecularIoError) as caught:
-        molecule.to_pdb(coordinate_selection=ck.MolCoordinateSelection.three_d(91))
+        molecule.to_pdb(coordinate_selection=ck.MolCoordinateSelection.ThreeD(91))
     cause = caught.value.__cause__
     assert isinstance(cause, ck.PdbWriteError)
-    assert (cause.kind, cause.coordinate_id) == ("MissingCoordinate", 91)
+    assert (cause.variant.name, cause.id) == ("MissingCoordinate", 91)
     with pytest.raises(ck.MolecularIoError) as caught:
-        molecule.to_pdb(all_conformers=True, coordinate_selection=ck.MolCoordinateSelection.two_d(0))
+        molecule.to_pdb(all_conformers=True, coordinate_selection=ck.MolCoordinateSelection.TwoD(0))
     cause = caught.value.__cause__
     assert isinstance(cause, ck.PdbWriteError)
-    assert cause.kind == "ConflictingCoordinateSelection"
+    assert cause.variant.name == "ConflictingCoordinateSelection"
 
 
 def test_pdb_aromatic_copy_and_typed_reader_failure():
@@ -74,6 +74,6 @@ def test_pdb_aromatic_copy_and_typed_reader_failure():
     with pytest.raises(ck.MolecularIoError) as caught:
         ck.mol_from_mmcif("not a CIF block")
     assert isinstance(caught.value.__cause__, ck.BioMmcifReadError)
-    assert caught.value.kind == "MmcifRead"
+    assert caught.value.variant.name == "MmcifRead"
     for name in ("from_pdb_block", "from_mmcif_block", "to_pdb_block"):
         assert not hasattr(ck.Molecule, name)

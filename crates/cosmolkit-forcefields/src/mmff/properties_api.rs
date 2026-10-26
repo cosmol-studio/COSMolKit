@@ -8,6 +8,7 @@ use super::mol_properties::{
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct MmffPropertiesParams {
+    /// MMFF parameterization to use for atom typing and charges.
     pub mmff_variant: MmffVariant,
 }
 

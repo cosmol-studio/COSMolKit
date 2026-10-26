@@ -1,4 +1,3 @@
-import enum
 import pytest
 import cosmolkit
 
@@ -15,19 +14,13 @@ def test_potential_stereo_analysis_returns_typed_isolated_state():
 
     record = analysis.stereo[0]
     assert isinstance(record, cosmolkit.PotentialStereoInfo)
-    assert record.stereo_type == "atom_tetrahedral"
-    assert record.specified == "unspecified"
+    assert record.stereo_type == cosmolkit.PotentialStereoType.AtomTetrahedral
+    assert record.specified == cosmolkit.PotentialStereoSpecified.Unspecified
     assert record.centered_on.kind == "atom"
     assert record.centered_on.index == 1
-    assert record.descriptor == "none"
+    assert record.descriptor == cosmolkit.PotentialStereoDescriptor.None_
     assert record.permutation == 0
     assert record.controlling_atoms == [0, 2, 3]
-    assert repr(record) == (
-        "PotentialStereoInfo(stereo_type='atom_tetrahedral', "
-        "specified='unspecified', centered_on=PotentialStereoCenter(kind='atom', index=1), "
-        "descriptor='none', permutation=0)"
-    )
-    assert repr(analysis) == "PotentialStereoResult(records=1)"
 
 
 
@@ -44,7 +37,9 @@ def test_potential_stereo_default_canonical_cleanup_option_and_ordered_values():
     assert len(result.stereo)==len(explicit.stereo)==1
     assert len(result.atom_ranks)==4
     assert result.ring_relations==[]
-    assert repr(result.stereo[0])==repr(explicit.stereo[0])
+    for field in ("stereo_type", "specified", "descriptor", "permutation", "controlling_atoms"):
+        assert getattr(result.stereo[0], field) == getattr(explicit.stereo[0], field)
+    assert (result.stereo[0].centered_on.kind, result.stereo[0].centered_on.index) == (explicit.stereo[0].centered_on.kind, explicit.stereo[0].centered_on.index)
     record=result.stereo[0]
     assert isinstance(record.stereo_type,cosmolkit.PotentialStereoType)
     assert isinstance(record.specified,cosmolkit.PotentialStereoSpecified)
@@ -68,17 +63,12 @@ def test_complete_potential_stereo_vocabulary_projection():
         (cosmolkit.PotentialStereoSpecified,["unspecified","specified","unknown"]),
         (cosmolkit.PotentialStereoDescriptor,["none","tetrahedral_clockwise","tetrahedral_counterclockwise","bond_cis","bond_trans","bond_atrop_cw","bond_atrop_ccw"]),
     ]:
-        assert issubclass(cls, str)
-        assert issubclass(cls, enum.Enum)
-        assert [v.value for v in cls]==values
-        for member in cls:
-            assert cls(member.value) is member
-            assert member == member.value
-            assert str(member) == member.value
-            assert format(member) == member.value
-            assert hash(member) == hash(member.value)
-            assert getattr(cls,member.value.upper()) is member
-        with pytest.raises(ValueError):cls("undefined")
+        assert len(cls.values) == len(values)
+        for member, name in zip(cls.values.values(), values, strict=True):
+            assert cls.names[name.upper()] == member
+            assert cls(int(member)) == member
+            assert hash(member) == hash(int(member))
+        with pytest.raises(ValueError):cls(len(values))
 
 
 @pytest.mark.parametrize("ring", ["C[C@H]1CCCC[C@H]1C", "C[C@H]1CCC[C@H]1C"])
@@ -97,13 +87,13 @@ def test_potential_stereo_public_error_retains_property_kind_and_source_atomicit
         with pytest.raises(cosmolkit.OperationError) as caught:
             molecule.potential_stereo_with_params(cosmolkit.PotentialStereoParams(clean=clean))
         error = caught.value
-        assert error.domain == "operation" and error.kind == "PotentialStereo"
+        assert error.domain == "operation" and error.variant.name == "PotentialStereo"
         cause = error.__cause__
         assert isinstance(cause, cosmolkit.PotentialStereoError)
-        assert cause.domain == "stereo" and cause.kind == "InvalidPropertyKind"
+        assert cause.domain == "stereo" and cause.variant.name == "InvalidPropertyKind"
         assert cause.atom == 1
         assert cause.property == "_ringStereochemCand"
-        assert cause.property_kind == "String"
+        assert cause.kind == cosmolkit.PropertyValueKind.String
         assert str(cause) == "atom 1 property _ringStereochemCand has invalid kind String"
         assert cause.__cause__ is None
         assert molecule.to_smiles_with_params(params) == before

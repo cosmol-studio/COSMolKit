@@ -143,6 +143,7 @@ pub enum SanitizeStage {
 #[configuration(scalar)]
 pub struct SanitizeParams {
     #[configuration(none_default)]
+    /// Sanitization stages to execute.
     pub operations: SanitizeOperations,
 }
 

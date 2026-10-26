@@ -63,7 +63,7 @@ def _stub_function_aliases(module: ast.Module) -> set[str]:
         assert any(isinstance(member, ast.FunctionDef) and member.name == method_name for member in owner.body)
         original = getattr(getattr(cosmolkit, owner_name), method_name)
         assert inspect.isroutine(original)
-        assert getattr(cosmolkit, name) == original
+        assert inspect.signature(getattr(cosmolkit, name)) == inspect.signature(original)
         aliases.add(name)
     return aliases
 
@@ -87,15 +87,14 @@ def test_generated_stub_covers_every_public_runtime_function_once() -> None:
     declarations = [
         node.name
         for node in module.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_")
     ]
     for name, count in Counter(declarations).items():
         if count == 1:
             continue
         overloads = [node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == name]
-        assert count == 3  # default, parameter instance, keyword fields
+        assert count == 2  # optional parameter instance or keyword fields
         assert all("typing.overload" in [ast.unparse(value) for value in node.decorator_list] for node in overloads)
-        assert hasattr(getattr(cosmolkit, name), "_configuration_contract")
 
     runtime_functions = {
         name
@@ -113,28 +112,61 @@ def test_generated_stub_covers_every_public_runtime_function_once() -> None:
 
 
 def _assert_registered_method_surface(
-    module: ast.Module, class_name: str, name: str, arguments: list[str], result: str
+    module: ast.Module, class_name: str, name: str, arguments: list[str], result: str,
+    configuration: type | None = None,
 ) -> None:
     declarations = [
         node for node in _stub_class(module, class_name).body
         if isinstance(node, ast.FunctionDef) and node.name == name
     ]
+    owner = getattr(cosmolkit, class_name)
+    runtime = getattr(owner, name)
     if len(declarations) > 1:
-        assert len(declarations) == 3
+        assert len(declarations) == 2
         assert all("typing.overload" in [ast.unparse(value) for value in node.decorator_list] for node in declarations)
-    defaults = [node for node in declarations
-                if [arg.arg for arg in node.args.posonlyargs + node.args.args] == arguments
-                and not node.args.kwonlyargs]
-    assert len(defaults) == 1
-    method = defaults[0]
-    assert [arg.arg for arg in method.args.posonlyargs + method.args.args] == arguments
-    assert not method.args.defaults and not method.args.kwonlyargs
-    assert method.returns is not None and ast.unparse(method.returns) == result
-    owner = cast(type[object], getattr(cosmolkit, class_name))
-    runtime = cast(Callable[..., object], getattr(owner, name))
-    signature = inspect.signature(runtime)
-    assert list(signature.parameters) == arguments
-    assert all(cast(object, parameter.default) is inspect.Parameter.empty for parameter in signature.parameters.values())
+        assert configuration is not None
+        fields = list(inspect.signature(configuration).parameters)
+        shared = ["execution", "n_jobs", "progress_bar"] if class_name == "MoleculeBatch" else []
+        forms = {}
+        for method in declarations:
+            assert method.args.vararg is None and method.args.kwarg is None
+            assert [arg.arg for arg in method.args.posonlyargs] == ["self"]
+            positional = tuple(arg.arg for arg in method.args.args)
+            assert positional not in forms
+            forms[positional] = method
+        assert set(forms) == {(), ("params",)}
+        keywords, params = forms[()], forms[("params",)]
+        assert not keywords.args.defaults
+        assert len(params.args.defaults) == 1
+        assert ast.literal_eval(params.args.defaults[0]) is None
+        assert ast.unparse(params.args.args[0].annotation) == configuration.__name__ + " | None"
+        assert [arg.arg for arg in keywords.args.kwonlyargs] == shared + fields
+        assert [arg.arg for arg in params.args.kwonlyargs] == shared
+        for method in declarations:
+            assert all(default is not None and ast.literal_eval(default) in (None, Ellipsis)
+                       for default in method.args.kw_defaults)
+        signature = inspect.signature(runtime)
+        assert list(signature.parameters) == ["self", "params", *shared, *fields]
+        assert signature.parameters["self"].kind == inspect.Parameter.POSITIONAL_ONLY
+        assert signature.parameters["params"].kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+        assert signature.parameters["params"].default is Ellipsis
+        for field in shared + fields:
+            assert signature.parameters[field].kind == inspect.Parameter.KEYWORD_ONLY
+            assert signature.parameters[field].default in (None, Ellipsis)
+    else:
+        assert len(declarations) == 1
+        method = declarations[0]
+        assert [arg.arg for arg in method.args.posonlyargs + method.args.args] == arguments
+        assert not method.args.defaults and not method.args.kwonlyargs
+        assert method.args.vararg is None and method.args.kwarg is None
+        if inspect.isdatadescriptor(runtime):
+            assert [ast.unparse(d) for d in method.decorator_list] == ["builtins.property"]
+        else:
+            signature = inspect.signature(runtime)
+            assert list(signature.parameters) == arguments
+            assert all(p.default is inspect.Parameter.empty for p in signature.parameters.values())
+    for method in declarations:
+        assert method.returns is not None and ast.unparse(method.returns) == result
 
 
 def test_assign_chiral_tags_methods_match_generated_stub_and_runtime_surface() -> None:
@@ -146,7 +178,7 @@ def test_assign_chiral_tags_methods_match_generated_stub_and_runtime_surface() -
         ("with_chiral_tags_from_structure_with_params", ["self", "params"], "Molecule"),
         ("assign_chiral_tags_from_structure_with_params_", ["self", "params"], "None"),
     ]:
-        _assert_registered_method_surface(module, "Molecule", name, arguments, result)
+        _assert_registered_method_surface(module, "Molecule", name, arguments, result, cosmolkit.StructureTagParams)
 
 
 def test_layered_fingerprint_methods_match_generated_stub_and_runtime_surface() -> None:
@@ -157,14 +189,14 @@ def test_layered_fingerprint_methods_match_generated_stub_and_runtime_surface() 
         ("Molecule", "fingerprint_layered_with_output", ["self"], "LayeredFingerprintResult"),
         ("Molecule", "fingerprint_layered_with_output_with_params", ["self", "params"], "LayeredFingerprintResult"),
         ("MoleculeBatch", "fingerprint_layered", ["self"], "FingerprintBatch"),
-        ("MoleculeBatch", "fingerprint_layered_with_params", ["self", "options", "params"], "FingerprintBatch"),
-        ("MoleculeBatch", "fingerprint_layered_with_output", ["self"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
-        ("MoleculeBatch", "fingerprint_layered_with_output_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
+        ("MoleculeBatch", "fingerprint_layered_with_params", ["self", "options", "execution"], "FingerprintBatch"),
+        ("MoleculeBatch", "fingerprint_layered_with_output", ["self"], "list[LayeredFingerprintResult | None]"),
+        ("MoleculeBatch", "fingerprint_layered_with_output_with_params", ["self", "options", "execution"], "list[LayeredFingerprintResult | None]"),
     ]:
-        _assert_registered_method_surface(module, class_name, name, arguments, result)
+        _assert_registered_method_surface(module, class_name, name, arguments, result, cosmolkit.LayeredFingerprintParams)
 
     _assert_registered_method_surface(module, "LayeredFingerprintResult", "fingerprint", ["self"], "Fingerprint")
-    _assert_registered_method_surface(module, "LayeredFingerprintResult", "atom_counts", ["self"], "typing.Optional[builtins.list[builtins.int]]")
+    _assert_registered_method_surface(module, "LayeredFingerprintResult", "atom_counts", ["self"], "list[int] | None")
 
 
 def test_pattern_fingerprint_methods_match_generated_stub_and_runtime_surface() -> None:
@@ -173,9 +205,9 @@ def test_pattern_fingerprint_methods_match_generated_stub_and_runtime_surface() 
         ("Molecule", "fingerprint_pattern", ["self"], "Fingerprint"),
         ("Molecule", "fingerprint_pattern_with_params", ["self", "params"], "Fingerprint"),
         ("MoleculeBatch", "fingerprint_pattern", ["self"], "FingerprintBatch"),
-        ("MoleculeBatch", "fingerprint_pattern_with_params", ["self", "options", "params"], "FingerprintBatch"),
+        ("MoleculeBatch", "fingerprint_pattern_with_params", ["self", "options", "execution"], "FingerprintBatch"),
     ]:
-        _assert_registered_method_surface(module, class_name, name, arguments, result)
+        _assert_registered_method_surface(module, class_name, name, arguments, result, cosmolkit.PatternFingerprintParams)
 
 
 def test_typed_parameters_preserve_source_defaults_in_runtime_and_stub() -> None:
@@ -197,7 +229,7 @@ def test_typed_parameters_preserve_source_defaults_in_runtime_and_stub() -> None
         assert dict(zip(
             [arg.arg for arg in constructor.args.kwonlyargs],
             defaults, strict=True,
-        )) == expected
+        )) == dict.fromkeys(expected, Ellipsis)
         constructor_fn = cast(Callable[[], object], getattr(cosmolkit, class_name))
         params = constructor_fn()
         assert {name: cast(object, getattr(params, name)) for name in expected} == expected

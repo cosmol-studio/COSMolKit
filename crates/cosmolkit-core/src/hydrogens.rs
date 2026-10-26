@@ -22,10 +22,15 @@ use cosmolkit_model::{
 /// Parameters corresponding to RDKit's `MolOps::AddHsParameters`.
 #[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 pub struct AddHsParams {
+    /// Add only hydrogens already recorded as explicit hydrogen counts; do not expand implicit counts.
     pub explicit_only: bool,
+    /// Generate coordinates for added hydrogens when the molecule has coordinate rows.
     pub add_coords: bool,
+    /// Assign residue information to added hydrogens from their neighboring heavy atoms.
     pub add_residue_info: bool,
+    /// Skip atoms carrying queries or attached to query bonds.
     pub skip_queries: bool,
+    /// Restrict hydrogen addition to these atom indices; None selects all eligible atoms.
     pub only_on_atoms: Option<Vec<AtomId>>,
 }
 
@@ -33,21 +38,37 @@ pub struct AddHsParams {
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct RemoveHsParams {
+    /// Allow removal of isolated hydrogen atoms.
     pub remove_degree_zero: bool,
+    /// Allow removal of hydrogens with more than one neighbor.
     pub remove_higher_degrees: bool,
+    /// Allow removal of hydrogens whose neighbors are all hydrogen atoms.
     pub remove_only_h_neighbors: bool,
+    /// Allow removal of isotopically labeled hydrogen atoms.
     pub remove_isotopes: bool,
+    /// Remove isotopic hydrogens while retaining isotope tracking for subsequent hydrogen addition.
     pub remove_and_track_isotopes: bool,
+    /// Allow removal of hydrogens attached to dummy atoms.
     pub remove_dummy_neighbors: bool,
+    /// Allow removal of hydrogens used to define bond stereochemistry.
     pub remove_defining_bond_stereo: bool,
+    /// Allow removal of hydrogens attached by wedged bonds.
     pub remove_with_wedged_bond: bool,
+    /// Allow removal of hydrogen atoms carrying queries.
     pub remove_with_query: bool,
+    /// Allow removal of hydrogen atoms carrying atom-map numbers.
     pub remove_mapped: bool,
+    /// Allow source-eligible hydrogen removal within substance groups.
     pub remove_in_sgroups: bool,
+    /// Emit warnings for hydrogen-removal conditions reported by the native algorithm.
     pub show_warnings: bool,
+    /// Remove eligible explicit hydrogen atoms, not just hydrogens treated as implicit.
     pub remove_nonimplicit: bool,
+    /// Update explicit hydrogen counts on the remaining neighboring atoms.
     pub update_explicit_count: bool,
+    /// Allow removal of negatively charged hydrogen atoms.
     pub remove_hydrides: bool,
+    /// Allow removal of hydrogens neighboring atoms with non-tetrahedral stereo.
     pub remove_nontetrahedral_neighbors: bool,
     /// Run the complete default sanitize pipeline after source-eligible
     /// non-implicit removal. RDKit exposes this as the overload's separate

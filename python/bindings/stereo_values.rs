@@ -47,6 +47,7 @@ enum_input!(StereoDescriptorInput, PotentialStereoDescriptor);
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone, Copy)]
+    /// Atom-or-bond location of a potential stereochemical element.
     pub struct PotentialStereoCenter {
         inner: ck::PotentialStereoCenter,
     }
@@ -64,6 +65,7 @@ impl From<PotentialStereoCenter> for ck::PotentialStereoCenter {
 #[pymethods]
 impl PotentialStereoCenter {
     #[getter]
+    /// Whether the stereochemical center is an atom or a bond, returned as 'atom' or 'bond'.
     fn kind(&self) -> &'static str {
         match self.inner {
             ck::PotentialStereoCenter::Atom(_) => "atom",
@@ -71,6 +73,7 @@ impl PotentialStereoCenter {
         }
     }
     #[getter]
+    /// Zero-based atom or bond index, interpreted according to kind.
     fn index(&self) -> usize {
         match self.inner {
             ck::PotentialStereoCenter::Atom(id) => id.index(),
@@ -89,6 +92,7 @@ impl PotentialStereoCenter {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Geometric type, specification state and controlling atoms for a potential stereochemical element.
     pub struct PotentialStereoInfo {
         pub(crate) inner: ck::PotentialStereoInfo,
     }
@@ -119,26 +123,32 @@ impl PotentialStereoInfo {
         })
     }
     #[getter]
+    /// Geometric type of the potential stereochemical element.
     fn stereo_type(&self) -> PotentialStereoType {
         self.inner.stereo_type.into()
     }
     #[getter]
+    /// Whether stereochemistry is specified, unspecified or explicitly unknown.
     fn specified(&self) -> PotentialStereoSpecified {
         self.inner.specified.into()
     }
     #[getter]
+    /// Atom or bond identifying the stereochemical center.
     fn centered_on(&self) -> PotentialStereoCenter {
         self.inner.centered_on.into()
     }
     #[getter]
+    /// Native stereochemical descriptor for this element.
     fn descriptor(&self) -> PotentialStereoDescriptor {
         self.inner.descriptor.into()
     }
     #[getter]
+    /// Permutation index used for non-tetrahedral stereochemistry.
     fn permutation(&self) -> u32 {
         self.inner.permutation
     }
     #[getter]
+    /// Ordered controlling atom indices, with None for source sentinel positions.
     fn controlling_atoms(&self) -> Vec<Option<usize>> {
         self.inner
             .controlling_atoms
@@ -151,6 +161,7 @@ impl PotentialStereoInfo {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Relative stereochemical orientation of a pair of ring atoms.
     pub struct RingStereoRelation {
         pub(crate) inner: ck::RingStereoRelation,
     }
@@ -168,14 +179,17 @@ impl RingStereoRelation {
         }
     }
     #[getter]
+    /// First atom participating in the ring stereochemistry relationship.
     fn atom(&self) -> usize {
         self.inner.atom.index()
     }
     #[getter]
+    /// Second atom participating in the ring stereochemistry relationship.
     fn other(&self) -> usize {
         self.inner.other.index()
     }
     #[getter]
+    /// Whether the two related ring atoms have the same orientation.
     fn same_orientation(&self) -> bool {
         self.inner.same_orientation
     }
@@ -184,6 +198,7 @@ impl RingStereoRelation {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Potential stereochemical elements, atom ranks, ring relationships and optional cleaned molecule.
     pub struct PotentialStereoResult {
         pub(crate) inner: ck::PotentialStereoResult,
     }
@@ -210,6 +225,7 @@ impl PotentialStereoResult {
         }
     }
     #[getter]
+    /// Independent list of identified potential stereochemical elements.
     fn stereo(&self) -> Vec<PotentialStereoInfo> {
         self.inner
             .stereo
@@ -219,10 +235,12 @@ impl PotentialStereoResult {
             .collect()
     }
     #[getter]
+    /// Native atom ranks used during potential stereochemistry detection.
     fn atom_ranks(&self) -> Vec<u32> {
         self.inner.atom_ranks.clone()
     }
     #[getter]
+    /// Independent list of ring stereochemistry relationships.
     fn ring_relations(&self) -> Vec<RingStereoRelation> {
         self.inner
             .ring_relations
@@ -232,6 +250,7 @@ impl PotentialStereoResult {
             .collect()
     }
     #[getter]
+    /// COW molecular value with cleaned stereochemistry, or None when no cleaned value was produced.
     fn cleaned_molecule(&self) -> Option<Molecule> {
         self.inner
             .cleaned_molecule

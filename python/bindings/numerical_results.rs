@@ -6,45 +6,54 @@ use pyo3::prelude::*;
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone, Copy)]
+    /// Force-field optimization status with an energy only when parameters and an evaluated outcome are available.
     pub struct OptimizationOutcome { pub(crate) inner: ck::OptimizationOutcome }
 }
 #[pymethods]
 impl OptimizationOutcome {
     #[staticmethod]
+    /// Construct a converged outcome with its evaluated energy.
     fn converged_with_energy(energy: f64) -> Self {
         Self {
             inner: ck::OptimizationOutcome::converged_with_energy(energy),
         }
     }
     #[staticmethod]
+    /// Construct a nonconverged outcome retaining its last evaluated energy.
     fn not_converged_with_energy(energy: f64) -> Self {
         Self {
             inner: ck::OptimizationOutcome::not_converged_with_energy(energy),
         }
     }
     #[staticmethod]
+    /// Construct an outcome indicating that required force-field parameters were unavailable.
     fn missing_parameters() -> Self {
         Self {
             inner: ck::OptimizationOutcome::missing_parameters(),
         }
     }
     #[getter]
+    /// Typed optimization status: converged, not converged or missing parameters.
     fn status(&self) -> crate::leaf_values::OptimizationStatus {
         self.inner.status().into()
     }
     #[getter]
+    /// Evaluated force-field energy; optimization outcomes without parameters return None.
     fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
     #[getter]
+    /// Whether the optimizer reached its convergence criteria.
     fn converged(&self) -> bool {
         self.inner.converged()
     }
     #[getter]
+    /// Whether the native outcome reports nonconvergence requiring further optimization.
     fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
     #[getter]
+    /// Native optimization status code corresponding to the typed outcome.
     fn status_code(&self) -> i32 {
         self.inner.status_code()
     }
@@ -55,6 +64,7 @@ macro_rules! gradient_result {
         crate::configuration::type_projection! {
             #[pyclass(module = "cosmolkit", frozen, from_py_object)]
             #[derive(Clone)]
+            /// Force-field energy and Cartesian gradient at the evaluated coordinates.
             pub struct $name {
                 pub(crate) inner: ck::$name,
             }
@@ -68,10 +78,12 @@ macro_rules! gradient_result {
                 }
             }
             #[getter]
+            /// Evaluated force-field energy; optimization outcomes without parameters return None.
             fn energy(&self) -> f64 {
                 self.inner.energy()
             }
             #[getter]
+            /// Flat Cartesian energy-gradient components in atom order (x, y, z per atom).
             fn gradient(&self) -> Vec<f64> {
                 self.inner.gradient().to_vec()
             }
@@ -84,6 +96,7 @@ gradient_result!(MmffEnergyGradient);
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// UFF optimization result containing the output molecule and optimization outcome.
     pub struct UffOptimizationResult {
         pub(crate) inner: ck::UffOptimizationResult,
     }
@@ -91,6 +104,7 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl UffOptimizationResult {
     #[getter]
+    /// Typed optimization outcome retaining both convergence status and optional energy.
     fn outcome(&self) -> OptimizationOutcome {
         OptimizationOutcome {
             inner: self.inner.outcome(),
@@ -106,20 +120,24 @@ impl UffOptimizationResult {
         }
     }
     #[getter]
+    /// Output molecule as a copy-on-write value; editing this value does not alter the result.
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
     #[getter]
+    /// Native optimization status code corresponding to the typed outcome.
     fn status_code(&self) -> i32 {
         self.inner.status_code()
     }
     #[getter]
+    /// Whether the native outcome reports nonconvergence requiring further optimization.
     fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
     #[getter]
+    /// Evaluated force-field energy; optimization outcomes without parameters return None.
     fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
@@ -128,6 +146,7 @@ impl UffOptimizationResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// UFF optimization outcome associated with one conformer identifier.
     pub struct UffConformerResult {
         pub(crate) inner: ck::UffConformerResult,
     }
@@ -135,6 +154,7 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl UffConformerResult {
     #[getter]
+    /// Typed optimization outcome retaining both convergence status and optional energy.
     fn outcome(&self) -> OptimizationOutcome {
         OptimizationOutcome {
             inner: self.inner.outcome(),
@@ -150,18 +170,22 @@ impl UffConformerResult {
         }
     }
     #[getter]
+    /// Identifier of the conformer associated with this outcome.
     fn conformer_id(&self) -> usize {
         self.inner.conformer_id()
     }
     #[getter]
+    /// Native optimization status code corresponding to the typed outcome.
     fn status_code(&self) -> i32 {
         self.inner.status_code()
     }
     #[getter]
+    /// Whether the native outcome reports nonconvergence requiring further optimization.
     fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
     #[getter]
+    /// Evaluated force-field energy; optimization outcomes without parameters return None.
     fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
@@ -170,6 +194,7 @@ impl UffConformerResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// UFF multi-conformer optimization result with the output molecule and ordered per-conformer outcomes.
     pub struct UffConformerOptimizationResult {
         pub(crate) inner: ck::UffConformerOptimizationResult,
     }
@@ -186,12 +211,14 @@ impl UffConformerOptimizationResult {
         }
     }
     #[getter]
+    /// Output molecule as a copy-on-write value; editing this value does not alter the result.
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
     #[getter]
+    /// Independent list of per-conformer outcomes in native result order.
     fn conformer_results(&self) -> Vec<UffConformerResult> {
         self.inner
             .conformer_results()
@@ -205,6 +232,7 @@ impl UffConformerOptimizationResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// MMFF optimization result containing the output molecule and optimization outcome.
     pub struct MmffOptimizeMoleculeResult {
         pub(crate) inner: ck::MmffOptimizeMoleculeResult,
     }
@@ -212,10 +240,12 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl MmffOptimizeMoleculeResult {
     #[getter]
+    /// Evaluated force-field energy; optimization outcomes without parameters return None.
     fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
     #[getter]
+    /// Typed optimization outcome retaining both convergence status and optional energy.
     fn outcome(&self) -> OptimizationOutcome {
         OptimizationOutcome {
             inner: self.inner.outcome(),
@@ -231,16 +261,19 @@ impl MmffOptimizeMoleculeResult {
         }
     }
     #[getter]
+    /// Output molecule as a copy-on-write value; editing this value does not alter the result.
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
     #[getter]
+    /// Native optimization status code corresponding to the typed outcome.
     fn status_code(&self) -> i32 {
         self.inner.status_code()
     }
     #[getter]
+    /// Whether the native outcome reports nonconvergence requiring further optimization.
     fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
@@ -249,6 +282,7 @@ impl MmffOptimizeMoleculeResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// MMFF outcome for one conformer optimization.
     pub struct MmffOptimizeMoleculeConfResult {
         pub(crate) inner: ck::MmffOptimizeMoleculeConfResult,
     }
@@ -256,6 +290,7 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl MmffOptimizeMoleculeConfResult {
     #[getter]
+    /// Typed optimization outcome retaining both convergence status and optional energy.
     fn outcome(&self) -> OptimizationOutcome {
         OptimizationOutcome {
             inner: self.inner.outcome(),
@@ -270,14 +305,17 @@ impl MmffOptimizeMoleculeConfResult {
         }
     }
     #[getter]
+    /// Native optimization status code corresponding to the typed outcome.
     fn status_code(&self) -> i32 {
         self.inner.status_code()
     }
     #[getter]
+    /// Whether the native outcome reports nonconvergence requiring further optimization.
     fn needs_more(&self) -> bool {
         self.inner.needs_more()
     }
     #[getter]
+    /// Evaluated force-field energy; optimization outcomes without parameters return None.
     fn energy(&self) -> Option<f64> {
         self.inner.energy()
     }
@@ -286,6 +324,7 @@ impl MmffOptimizeMoleculeConfResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// MMFF multi-conformer optimization result with the output molecule and ordered per-conformer outcomes.
     pub struct MmffOptimizeMoleculeConfsResult {
         pub(crate) inner: ck::MmffOptimizeMoleculeConfsResult,
     }
@@ -305,12 +344,14 @@ impl MmffOptimizeMoleculeConfsResult {
         }
     }
     #[getter]
+    /// Output molecule as a copy-on-write value; editing this value does not alter the result.
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
     #[getter]
+    /// Independent list of per-conformer outcomes in native result order.
     fn conformer_results(&self) -> Vec<MmffOptimizeMoleculeConfResult> {
         self.inner
             .conformer_results()
@@ -324,6 +365,7 @@ impl MmffOptimizeMoleculeConfsResult {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Molecular Crippen logP and molar refractivity totals.
     pub struct CrippenTotals {
         pub(crate) inner: ck::CrippenTotals,
     }
@@ -340,10 +382,12 @@ impl CrippenTotals {
         }
     }
     #[getter]
+    /// Crippen estimate of the octanol/water partition coefficient logarithm.
     fn logp(&self) -> f64 {
         self.inner.logp
     }
     #[getter]
+    /// Crippen molecular refractivity estimate.
     fn molar_refractivity(&self) -> f64 {
         self.inner.molar_refractivity
     }
@@ -352,6 +396,7 @@ impl CrippenTotals {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Labute approximate surface area with per-atom and aggregate hydrogen contributions.
     pub struct LabuteAsaContributions {
         pub(crate) inner: ck::LabuteAsaContributions,
     }
@@ -369,14 +414,17 @@ impl LabuteAsaContributions {
         }
     }
     #[getter]
+    /// Total Labute approximate molecular surface area.
     fn asa(&self) -> f64 {
         self.inner.asa
     }
     #[getter]
+    /// Independent list of Labute surface-area contributions in atom order.
     fn atom_contributions(&self) -> Vec<f64> {
         self.inner.atom_contributions.clone()
     }
     #[getter]
+    /// Aggregate hydrogen contribution to the Labute surface-area result.
     fn hydrogen_contribution(&self) -> f64 {
         self.inner.hydrogen_contribution
     }

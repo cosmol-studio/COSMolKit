@@ -9,6 +9,20 @@ pub(crate) trait FieldProjection: Sized + Clone {
 /// A binding declares its conversion and native field association together.
 /// No business types or runtime lookup table belong in this macro.
 macro_rules! type_projection {
+    (value(eq) $($declaration:tt)*) => {
+        $crate::configuration::type_projection! {
+            #[pyo3::pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
+            #[derive(Clone, PartialEq)]
+            $($declaration)*
+        }
+    };
+    (value(eq, hash) $($declaration:tt)*) => {
+        $crate::configuration::type_projection! {
+            #[pyo3::pyclass(module = "cosmolkit", frozen, from_py_object, eq, hash)]
+            #[derive(Clone, PartialEq, Eq, Hash)]
+            $($declaration)*
+        }
+    };
     (@association $(#[$($attribute:tt)*])* $visibility:vis struct $wrapper:ident {
         $field_visibility:vis inner: $native:ty $(,)?
     }) => {
@@ -142,6 +156,78 @@ mod tests {
     use pyo3::prelude::*;
     cosmolkit::project_configuration!(native::ProjectionChild);
     cosmolkit::project_configuration!(native::ProjectionExample);
+
+    #[derive(Clone, PartialEq)]
+    struct PartialValue(f64);
+
+    super::type_projection! {
+        value(eq)
+        struct PartialValueWrapper { inner: PartialValue }
+    }
+
+    #[test]
+    fn value_projection_preserves_native_equality_and_hash_contracts() {
+        Python::initialize();
+        Python::attach(|py| -> PyResult<()> {
+            let module = PyModule::new(py, "value_projection_sample")?;
+            module.add_class::<crate::elements::Element>()?;
+            module.add(
+                "a",
+                Py::new(
+                    py,
+                    PartialValueWrapper {
+                        inner: PartialValue(2.0),
+                    },
+                )?,
+            )?;
+            module.add(
+                "b",
+                Py::new(
+                    py,
+                    PartialValueWrapper {
+                        inner: PartialValue(2.0),
+                    },
+                )?,
+            )?;
+            module.add(
+                "nan",
+                Py::new(
+                    py,
+                    PartialValueWrapper {
+                        inner: PartialValue(f64::NAN),
+                    },
+                )?,
+            )?;
+            py.run(
+                pyo3::ffi::c_str!(
+                    r#"
+chlorine = Element.from_symbol("Cl")
+assert chlorine is not Element.CL
+assert chlorine == Element.CL and not (chlorine != Element.CL)
+assert chlorine != Element.C
+assert chlorine != 17 and chlorine != "Cl"
+assert chlorine.__eq__(17) is NotImplemented
+assert hash(chlorine) == hash(Element.CL)
+assert len({chlorine, Element.CL, Element.C}) == 2
+assert {chlorine: "chlorine"}[Element.CL] == "chlorine"
+assert a is not b and a == b and not (a != b)
+assert nan != nan
+assert type(a).__hash__ is None
+try:
+    hash(a)
+except TypeError:
+    pass
+else:
+    raise AssertionError("equality-only values must be unhashable")
+"#
+                ),
+                Some(&module.dict()),
+                None,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    }
 
     #[test]
     fn native_declared_fields_use_atomic_assignment_and_immutable_reads() {

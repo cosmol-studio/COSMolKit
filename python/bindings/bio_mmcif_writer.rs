@@ -18,28 +18,29 @@ pub struct CifReadError {
 }
 crate::error_framework::error_projection! {methods impl CifReadError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "cif"
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> CifReadErrorKind {
+    #[doc = "Native CIF parsing error category."] fn kind(&self) -> CifReadErrorKind {
         self.inner.kind().into()
     }
     #[getter]
-    fn source(&self) -> &str {
+    #[doc = "Source name associated with the CIF input, not an exception cause."] fn source(&self) -> &str {
         self.inner.source()
     }
     #[getter]
-    fn line(&self) -> usize {
+    #[doc = "Line reported by the CIF parser."] fn line(&self) -> usize {
         self.inner.line()
     }
     #[getter]
-    fn column(&self) -> usize {
+    #[doc = "Column reported by the CIF parser."] fn column(&self) -> usize {
         self.inner.column()
     }
     #[getter]
-    fn message(&self) -> &str {
+    #[doc = "Original CIF parser explanation."] fn message(&self) -> &str {
         self.inner.message()
     }
     fn __str__(&self) -> String {
@@ -70,10 +71,12 @@ pub struct BioMmcifWriteError {
 }
 crate::error_framework::error_projection! {methods impl BioMmcifWriteError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> BioMmcifWriteErrorKind {
         match self.inner.as_ref() {
             ck::BioMmcifWriteError::Structure(_) => BioMmcifWriteErrorKind::Structure,
@@ -86,14 +89,14 @@ crate::error_framework::error_projection! {methods impl BioMmcifWriteError {
         }
     }
     #[getter]
-    fn field(&self) -> Option<&'static str> {
+    #[doc = "Field whose content or type caused the failure. Applies to BioMmcifWriteError.InvalidText. None when this payload is absent."] fn field(&self) -> Option<&'static str> {
         match self.inner.as_ref() {
             ck::BioMmcifWriteError::InvalidText { field } => Some(field),
             _ => None,
         }
     }
     #[getter]
-    fn path(&self) -> Option<PathBuf> {
+    #[doc = "Filesystem path involved in the operation. Applies to BioMmcifWriteError.FileWrite. None when this payload is absent."] fn path(&self) -> Option<PathBuf> {
         match self.inner.as_ref() {
             ck::BioMmcifWriteError::FileWrite { path, .. } => Some(path.clone()),
             _ => None,
@@ -101,7 +104,8 @@ crate::error_framework::error_projection! {methods impl BioMmcifWriteError {
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
-    fn source(
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
+    #[doc = "Source name associated with the CIF input, not an exception cause."] fn source(
         slf: Bound<'_, pyo3::exceptions::PyBaseException>,
     ) -> PyResult<Option<Source<crate::error_framework::ErrorObject<BioStructureError>, Source<crate::error_framework::ErrorObject<CifReadError>, crate::error_framework::ErrorObject<IoError>>>>>
     {

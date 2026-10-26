@@ -88,7 +88,7 @@ def test_mcs_nested_configuration_mutation_is_effective_and_independent():
     assert params.atom_compare_parameters.match_formal_charge is True
     assert original.match_formal_charge is False
     assert ck.maximum_common_substructure(inputs, params).atom_count == 0
-    assert ck.maximum_common_substructure(inputs, match_formal_charge=True).atom_count == 0
+    assert ck.maximum_common_substructure(inputs, atom_compare_parameters=ck.McsAtomCompareParameters(match_formal_charge=True)).atom_count == 0
     params.bond_compare_parameters.match_stereo = True
     params.threshold = 0.5
     assert params.atom_compare_parameters.match_formal_charge is True
@@ -107,7 +107,7 @@ def test_mcs_result_lifetime_degenerate_results_and_typed_errors():
     for inputs, options in [([], {}), (molecules("CC"), {}), (molecules("CC", "CO"), {"threshold": 1.1})]:
         with pytest.raises(ck.McsError) as failure:
             ck.maximum_common_substructure(inputs, **options)
-        assert failure.value.domain == "mcs"
-        assert failure.value.kind == "State"
+        assert failure.value.domain == "search"
+        assert failure.value.variant.name == "State"
     with pytest.raises(OverflowError):
         ck.McsParameters(timeout=-1)

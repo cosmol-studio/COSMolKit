@@ -17,7 +17,7 @@ Changes to the public __init__.pyi:
 3. Apply explicit {"role": "return_type", "imports": [...], "type": "..."}
    binding declarations: import the named modules, parse the Python type
    expression and replace only that callable's return annotation. Remove its
-   metadata docstring from the public stub, not from native runtime __doc__.
+   metadata prefix from the public stub, retaining the human-readable description.
    This is a handwritten annotation, not Rust type inference; there are no
    NumPy-specific type names or conversion rules in this generator.
 4. Expand explicit integer_selection indexing declarations with a named selection
@@ -80,7 +80,22 @@ def overload(function):
 
 def projection(function):
     doc = (ast.get_docstring(function) or "").strip()
-    return json.loads(doc) if doc.startswith("{") else {}
+    return json.JSONDecoder().raw_decode(doc)[0] if doc.startswith("{") else {}
+
+
+def description(function):
+    """Projection metadata is a JSON prefix; the remaining text is user help."""
+    doc = (ast.get_docstring(function) or "").strip()
+    if doc.startswith("{"):
+        _, end = json.JSONDecoder().raw_decode(doc)
+        return doc[end:].strip()
+    return doc
+
+
+def documented_body(text):
+    return ([ast.Expr(value=ast.Constant(value=text))] if text else []) + [
+        ast.Expr(value=ast.Constant(value=Ellipsis))
+    ]
 
 
 def declared_return_types(tree):
@@ -94,7 +109,7 @@ def declared_return_types(tree):
             continue
         function.returns = ast.parse(metadata["type"], mode="eval").body
         imports.update(metadata.get("imports", []))
-        function.body = function.body[1:] or [ast.Expr(value=ast.Constant(value=Ellipsis))]
+        function.body = documented_body(description(function))
     tree.body[:0] = [ast.Import(names=[ast.alias(name=module)]) for module in sorted(imports)]
 
 
@@ -194,7 +209,7 @@ def indexing_forms(owner, method):
         form = overload(method)
         positional(form)[-1].annotation = copy.deepcopy(input_type)
         form.returns = copy.deepcopy(output_type)
-        form.body = [ast.Expr(value=ast.Constant(value=Ellipsis))]
+        form.body = documented_body(description(method))
         forms.append(form)
     return forms
 
@@ -228,7 +243,7 @@ def declared_overloads(tree):
             target = metadata["target"]
             form = overload(function)
             form.name = target.rsplit(".", 1)[-1]
-            form.body = [ast.Expr(value=ast.Constant(value=Ellipsis))]
+            form.body = documented_body(description(function))
             groups.setdefault(target, []).append(form)
             body.remove(function)
     for target, forms in groups.items():
@@ -236,6 +251,9 @@ def declared_overloads(tree):
         body = bodies[owner]
         at = next(index for index, node in enumerate(body)
                   if isinstance(node, ast.FunctionDef) and node.name == name)
+        for form in forms:
+            if not description(form):
+                form.body = documented_body(description(body[at]))
         body[at:at + 1] = forms
 
 

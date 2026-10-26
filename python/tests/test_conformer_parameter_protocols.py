@@ -32,14 +32,11 @@ def test_all_parameter_fields_construct_distinct_values_and_preserve_source_snap
         assert getattr(params, field) == value, field
     params = configured(params, coord_map={0: [1.0, 2.0, 3.0]})
     params = configured(params, cpci={(0, 1): 0.125})
-    mapping = params.coord_map
-    mapping[0] = [9.0, 9.0, 9.0]
-    assert params.coord_map == {0: [9.0, 9.0, 9.0]}
-    cpci = params.cpci
-    cpci[(0, 1)] = -8.0
+    params.coord_map = {0: (9.0, 9.0, 9.0)}
+    assert params.coord_map == {0: (9.0, 9.0, 9.0)}
+    params.cpci = {(0, 1): -8.0}
     assert params.cpci == {(0, 1): -8.0}
     assert ck.EmbedParams().to_json() == snapshot
-    assert repr(params) == "EmbedParams(random_seed=123, num_threads=4, prune_rms_thresh=0.25, clear_conformers=false)"
     assert params.failures == []
     with pytest.raises(AttributeError):
         params.failures = [1]
@@ -53,8 +50,8 @@ def test_result_types_reprs_and_returned_molecule_params_are_detached_snapshots(
     multiple = source.with_3d_conformers_result(2, params)
     assert isinstance(single, ck.EmbedMoleculeResult)
     assert isinstance(multiple, ck.EmbedMultipleConfsResult)
-    assert repr(single) == "EmbedMoleculeResult(conf_id=0, ok=true)"
-    assert repr(multiple) == "EmbedMultipleConfsResult(requested_num_confs=2, generated_count=2)"
+    assert single.conf_id == 0 and single.ok
+    assert multiple.requested_num_confs == 2 and multiple.generated_count == 2
     assert source.num_3d_conformers == 0
     for result, count in [(single, 1), (multiple, 2)]:
         returned = result.molecule

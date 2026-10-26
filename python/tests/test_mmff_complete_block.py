@@ -1,4 +1,5 @@
 import json
+import struct
 from pathlib import Path
 import pytest
 import cosmolkit as ck
@@ -17,9 +18,9 @@ def coordinates(molecule):
 
 def test_mmff_source_default_parameters():
     single = ck.MmffOptimizationParams()
-    assert (single.mmff_variant, single.max_iterations, single.non_bonded_threshold, single.conformer_id, single.ignore_interfragment_interactions) == ("MMFF94", 200, 100.0, None, True)
+    assert (single.mmff_variant, single.max_iterations, single.non_bonded_threshold, single.conformer_id, single.ignore_interfragment_interactions) == (ck.MmffVariant.Mmff94, 200, 100.0, None, True)
     multi = ck.MmffConformerOptimizationParams()
-    assert (multi.num_threads, multi.max_iterations, multi.mmff_variant, multi.non_bonded_threshold, multi.ignore_interfragment_interactions) == (1, 1000, "MMFF94", 10.0, True)
+    assert (multi.num_threads, multi.max_iterations, multi.mmff_variant, multi.non_bonded_threshold, multi.ignore_interfragment_interactions) == (1, 1000, ck.MmffVariant.Mmff94, 10.0, True)
 
 
 def test_mmff_value_results_and_original_protocols():
@@ -68,31 +69,35 @@ def test_mmff_source_invalid_typing_sentinels():
     assert single.status_code == -1 and single.needs_more is False
     multi = molecule.with_mmff_optimized_conformers()
     row = multi.conformer_results[0]
-    assert row.status_code == -1 and row.energy == -1.0
+    assert row.status_code == -1 and row.energy is None
     assert coordinates(single.molecule) == coordinates(multi.molecule) == coordinates(molecule)
     assert molecule.mmff_energy_gradient() is None
 
 
 @pytest.mark.parametrize("selector", [-1, -2, -3, -(2**31)])
-def test_mmff_source_negative_selectors_choose_first(selector):
+def test_mmff_negative_selectors_rejected_and_none_selects_first(selector):
     molecule = make_molecule()
     before = coordinates(molecule)
-    params = ck.MmffOptimizationParams(max_iterations=0, conformer_id=selector)
-    assert params.conformer_id is None
+    with pytest.raises(OverflowError):
+        ck.MmffOptimizationParams(max_iterations=0, conformer_id=selector)
+    with pytest.raises(OverflowError):
+        ck.MmffEvaluationParams(conformer_id=selector)
+    first_id = molecule.conformers_3d[0].id
+    params = ck.MmffOptimizationParams(max_iterations=0, conformer_id=first_id)
     selected = molecule.with_mmff_optimized_with_params(params)
     default = molecule.with_mmff_optimized_with_params(ck.MmffOptimizationParams(max_iterations=0))
     assert selected.status_code == default.status_code == 1
     assert coordinates(selected.molecule) == coordinates(default.molecule) == before
-    evaluated = molecule.mmff_energy_gradient_with_params(ck.MmffEvaluationParams(conformer_id=selector))
+    evaluated = molecule.mmff_energy_gradient_with_params(ck.MmffEvaluationParams(conformer_id=first_id))
     original = molecule.mmff_energy_gradient()
     assert evaluated is not None and original is not None
     assert evaluated.energy == original.energy
     assert evaluated.gradient == original.gradient
 
 
-@pytest.mark.parametrize("selector", [-2**31 - 1, 2**31])
+@pytest.mark.parametrize("selector", [-1, 2 ** (8 * struct.calcsize("P"))])
 @pytest.mark.parametrize("params_type", [ck.MmffOptimizationParams, ck.MmffEvaluationParams])
-def test_mmff_selector_source_signed_int32_boundary(selector, params_type):
+def test_mmff_selector_usize_boundary(selector, params_type):
     with pytest.raises(OverflowError):
         params_type(conformer_id=selector)
 
@@ -102,7 +107,7 @@ def test_mmff_original_empty_conformer_negative_fixture():
     builder.add_3d_conformer([])
     molecule = builder.build()
     failures = []
-    for selector in [-2, None]:
+    for selector in [0, None]:
         with pytest.raises(ck.OperationError) as error:
             molecule.with_mmff_optimized_with_params(ck.MmffOptimizationParams(max_iterations=25,conformer_id=selector))
         failures.append(error.value)
@@ -117,17 +122,23 @@ def test_mmff_absent_selector_is_typed_and_input_is_preserved():
     before = coordinates(molecule)
     with pytest.raises(ck.OperationError) as error:
         molecule.with_mmff_optimized_with_params(ck.MmffOptimizationParams(conformer_id=999))
-    assert error.value.kind == "MmffOptimization"
+    assert error.value.variant.name == "MmffOptimization"
     assert isinstance(error.value.__cause__, ck.MmffOptimizationError)
-    assert error.value.__cause__.domain == "mmff_optimization"
+    assert error.value.__cause__.domain == "forcefield"
     assert error.value.__cause__.__cause__ is not None
     assert coordinates(molecule) == before
 
 
-@pytest.mark.parametrize("variant, expected", [("MMFF94s", ck.MmffVariant.Mmff94s), ("MMFF94S", ck.MmffVariant.Mmff94), ("invalid", ck.MmffVariant.Mmff94)])
-def test_mmff_variant_parser_matches_original_source(variant, expected):
+@pytest.mark.parametrize("variant, expected", [("MMFF94s", ck.MmffVariant.Mmff94s), ("MMFF94", ck.MmffVariant.Mmff94), ("MMFF94S", None), ("invalid", None)])
+def test_mmff_variant_accepts_only_canonical_registered_names(variant, expected):
+    if expected is None:
+        with pytest.raises(ValueError):
+            ck.MmffPropertiesParams(mmff_variant=variant)
+        with pytest.raises(ValueError):
+            ck.MmffOptimizationParams(mmff_variant=variant)
+        return
     molecule = make_molecule()
-    props = molecule.mmff_properties_with_params(ck.MmffPropertiesParams(variant))
+    props = molecule.mmff_properties_with_params(ck.MmffPropertiesParams(mmff_variant=variant))
     assert props.variant == expected
     result = molecule.with_mmff_optimized_with_params(ck.MmffOptimizationParams(mmff_variant=variant,max_iterations=0))
     assert result.status_code == 1
@@ -143,7 +154,7 @@ def test_mmff_property_lookup_bounds_and_canonical_types():
     assert [atom.atom_type for atom in atoms] == [1, 1, 6]
     with pytest.raises(ck.MmffMolPropertiesError) as error:
         props.atom_type(3)
-    assert error.value.kind == "AtomIndexOutOfRange"
+    assert error.value.variant.name == "AtomIndexOutOfRange"
     assert molecule.mmff_has_all_molecule_params() is True
     assert ck.Molecule.new().mmff_has_all_molecule_params() is True
 

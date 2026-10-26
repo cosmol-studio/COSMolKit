@@ -24,17 +24,17 @@ error_projection!(TopologicalTorsionPathScoreError, TopologicalTorsionPathScoreE
     | ck::TopologicalTorsionPathScoreError::AtomCodeUnderflow { .. } => None,
 }, source = Option<Source<crate::error_framework::ErrorObject<TopologyValidationError>, Source<crate::error_framework::ErrorObject<AtomCodeError>, crate::error_framework::ErrorObject<FingerprintError>>>>, methods = {
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed count or value. Present for `TopologicalTorsionPathScoreError.ShortPath`, `TopologicalTorsionPathScoreError.ShortAtomCodes`; None when unavailable."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::TopologicalTorsionPathScoreError::ShortPath { actual, .. }
         | ck::TopologicalTorsionPathScoreError::ShortAtomCodes { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn required(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required size for the operation. Present for `TopologicalTorsionPathScoreError.ShortPath`, `TopologicalTorsionPathScoreError.ShortAtomCodes`; None when unavailable."] fn required(&self) -> Option<usize> { match self.inner {
         ck::TopologicalTorsionPathScoreError::ShortPath { required, .. }
         | ck::TopologicalTorsionPathScoreError::ShortAtomCodes { required, .. } => Some(required), _ => None,
     } }
     #[getter]
-    fn index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Index associated with the failure. Present for `TopologicalTorsionPathScoreError.AtomIndexOutOfRange`, `TopologicalTorsionPathScoreError.AtomCodeUnderflow`; None when unavailable."] fn index(&self) -> Option<usize> { match self.inner {
         ck::TopologicalTorsionPathScoreError::AtomIndexOutOfRange { index, .. }
         | ck::TopologicalTorsionPathScoreError::AtomCodeUnderflow { index, .. } => Some(index), _ => None,
     } }

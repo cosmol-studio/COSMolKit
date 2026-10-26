@@ -94,7 +94,7 @@ error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "de
     | ck::DescriptorError::Unsupported { .. } => None,
 }, source = Option<DescriptorSource>, methods = {
     #[getter]
-    fn function(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Descriptor function reporting the failure. Present for `DescriptorError.TopologyEdit`, `DescriptorError.InvalidConnectivityPath`, `DescriptorError.InvalidTopology`, `DescriptorError.Path`, `DescriptorError.MissingComputedScalar`, `DescriptorError.MissingLabuteHydrogens`, `DescriptorError.MissingLabuteAsa`, `DescriptorError.MissingCrippenMrContributions`, `DescriptorError.MissingCrippenMr`, `DescriptorError.Hydrogens`, `DescriptorError.CountOverflow`, `DescriptorError.Valence`, `DescriptorError.InvalidValenceRows`, `DescriptorError.Unsupported`, `DescriptorError.Ring`, `DescriptorError.Search`, `DescriptorError.Stereo`; None when unavailable."] fn function(&self) -> Option<&'static str> { match self.inner {
         ck::DescriptorError::TopologyEdit { function, .. }
         | ck::DescriptorError::InvalidConnectivityPath { function, .. }
         | ck::DescriptorError::InvalidTopology { function, .. }
@@ -114,7 +114,7 @@ error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "de
         | ck::DescriptorError::Stereo { function, .. } => Some(function), _ => None,
     } }
     #[getter]
-    fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Input field associated with the failure. Present for `DescriptorError.MissingFinalHydrogenState`, `DescriptorError.CrippenParamNumeric`, `DescriptorError.InvalidCrippenOptionalRows`, `DescriptorError.CountOverflow`, `DescriptorError.InvalidValenceRows`; None when unavailable."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::DescriptorError::MissingFinalHydrogenState { field, .. }
         | ck::DescriptorError::CrippenParamNumeric { field, .. }
         | ck::DescriptorError::InvalidCrippenOptionalRows { field, .. }
@@ -122,13 +122,13 @@ error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "de
         | ck::DescriptorError::InvalidValenceRows { field, .. } => Some(field), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed count or value. Present for `DescriptorError.InvalidHallKierContributionRows`, `DescriptorError.InvalidCrippenOptionalRows`, `DescriptorError.InvalidValenceRows`; None when unavailable."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::DescriptorError::InvalidHallKierContributionRows { actual, .. }
         | ck::DescriptorError::InvalidCrippenOptionalRows { actual, .. }
         | ck::DescriptorError::InvalidValenceRows { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Expected count or value. Present for `DescriptorError.InvalidCrippenOptionalRows`, `DescriptorError.InvalidValenceRows`; None when unavailable."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::DescriptorError::InvalidCrippenOptionalRows { expected, .. }
         | ck::DescriptorError::InvalidValenceRows { expected, .. } => Some(expected), _ => None,
     } }

@@ -1,4 +1,5 @@
 from pathlib import Path
+import struct
 
 import cosmolkit
 import numpy as np
@@ -145,9 +146,9 @@ def test_3d_coordinate_in_place_api_returns_conformer_ids_and_validates_input():
 
     with pytest.raises(cosmolkit.OperationError) as caught:
         mol.set_3d_coordinates_(replacement, conformer_id=7)
-    assert caught.value.kind == "CoordinateInput"
+    assert caught.value.variant.name == "CoordinateInput"
     assert isinstance(caught.value.__cause__, cosmolkit.CoordinateInputError)
-    assert caught.value.__cause__.kind == "ConformerNotFound"
+    assert caught.value.__cause__.variant.name == "ConformerNotFound"
     assert caught.value.__cause__.conformer_id == 7
     assert caught.value.__cause__.count == 1
 
@@ -175,7 +176,7 @@ def test_coordinate_ingress_rejects_oversized_broadcast_views_before_copying():
 
     with pytest.raises(
         ValueError,
-        match=r"^2D coordinates row count mismatch: expected 3, got 1000000$",
+        match=r"^coordinate input error: 2D coordinates row count mismatch: expected 3, got 1000000$",
     ):
         mol.with_2d_coordinate_block(oversized_2d)
 
@@ -365,10 +366,12 @@ def test_sdf_string_export_is_explicit_about_2d_or_3d_coordinates():
 
     with pytest.raises(cosmolkit.MolecularIoError) as caught:
         mol.to_sdf_3d(format=cosmolkit.SdfFormat.V2000)
-    assert caught.value.kind == "MolWrite"
-    assert caught.value.coordinate_kind == "MissingCoordinate"
-    assert caught.value.dimension == "3d"
-    assert caught.value.coordinate_id == 0
+    assert caught.value.variant.name == "MolWrite"
+    cause = caught.value.__cause__
+    assert isinstance(cause, cosmolkit.MolWriteError)
+    assert cause.variant.name == "MissingCoordinate"
+    assert cause.dimension == cosmolkit.CoordinateDimension.ThreeD
+    assert cause.id == 0
 
     methane_3d = """methane_3d
   COSMolKit      3D
@@ -507,10 +510,10 @@ $$$$
     dataset = cosmolkit.SdfDataset.open(str(path), coordinate_mode="require_3d")
     from_dataset_index = dataset[0].molecule
     from_dataset_iter = next(iter(dataset)).molecule
-    from_dataset_batch = next(dataset.batches(size=1, errors="raise"))[0]
+    from_dataset_batch = next(dataset.batches(size=1, mode="raise"))[0]
     from_reader_batch = next(
         cosmolkit.SdfReader.open(str(path), coordinate_mode="require_3d").batches(
-            size=1, errors="raise"
+            size=1, mode="raise"
         )
     )[0]
 
@@ -634,15 +637,15 @@ $$$$
     assert [mol.to_smiles() for mol in require_valid_molecules(masked)] == ["C", "N"]
     selected = ds[[2, 0]]
     assert [mol.to_smiles() for mol in require_valid_molecules(selected)] == ["N", "C"]
-    with pytest.raises(TypeError, match="scalar boolean"):
+    with pytest.raises(TypeError, match="boolean is not an integer index"):
         ds[True]
-    with pytest.raises(TypeError, match="must not mix bool and int"):
+    with pytest.raises(TypeError, match="boolean is not an integer index"):
         ds[[True, 1]]
-    with pytest.raises(IndexError, match="boolean mask length"):
+    with pytest.raises(ValueError, match="boolean mask length"):
         ds[[True, False]]
     assert [record.title for record in ds] == ["carbon", "oxygen", "nitrogen"]
 
-    batches = list(ds.batches(size=2, errors="raise"))
+    batches = list(ds.batches(size=2, mode="raise"))
     assert [len(batch) for batch in batches] == [2, 1]
     assert batches[0].valid_mask == [True, True]
     assert batches[1].valid_mask == [True]
@@ -665,13 +668,13 @@ HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
     assert protein.num_residues == 1
     assert protein.num_atoms == 3
     chain = protein[0]
-    assert chain.kind == "Protein"
+    assert chain.kind == cosmolkit.ChainKind.Protein
     assert [residue.name for residue in chain.residues] == ["ALA"]
-    assert [residue.kind for residue in chain.residues] == ["AminoAcid"]
+    assert [residue.kind for residue in chain.residues] == [cosmolkit.ResidueKind.AminoAcid]
     residue = chain.residues[0]
     assert residue.code == cosmolkit.ResidueCode.ALA
     assert residue.info.kind == cosmolkit.ResidueInfoKind.AA
-    assert residue.info.is_amino_acid()
+    assert residue.info.is_amino_acid
     assert residue.one_letter_code == "A"
     assert residue.fasta_code == "A"
     assert [atom.element for atom in residue.atoms] == [
@@ -679,8 +682,8 @@ HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
         cosmolkit.Element.C,
         cosmolkit.Element.C,
     ]
-    assert [atom.element_symbol() for atom in residue.atoms] == ["N", "C", "C"]
-    assert [atom.atomic_number for atom in residue.atoms] == [7, 6, 6]
+    assert [atom.element.symbol for atom in residue.atoms] == ["N", "C", "C"]
+    assert [atom.element.atomic_number for atom in residue.atoms] == [7, 6, 6]
     assert cosmolkit.residue_code("TRY") == cosmolkit.ResidueCode.TRP
     assert cosmolkit.find_residue_info_index("h2o") == 154
     assert cosmolkit.residue_info(154).code == cosmolkit.ResidueCode.HOH
@@ -715,11 +718,8 @@ HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
 """
     structure = cosmolkit.BioStructure.from_pdb(pdb)
 
-    assert repr(structure) == (
-        "BioStructure(models=1, chains=2, residues=3, atoms=5, entities=0)"
-    )
     assert len(structure) == 1
-    assert structure.input_format == "Pdb"
+    assert structure.input_format == cosmolkit.BioCoordinateFormat.Pdb
     assert structure.num_models == 1
     assert structure.num_chains == 2
     assert structure.num_residues == 3
@@ -731,9 +731,9 @@ HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
         "HOH",
         "LIG",
     ]
-    assert [atom.name for atom in structure.atoms] == ["N", "CA", "C", "O", "C1"]
-    assert structure.residues[0].code == cosmolkit.ResidueCode.ALA
-    assert structure.residues[1].code == cosmolkit.ResidueCode.HOH
+    assert [atom.name.as_str().strip() for atom in structure.atoms] == ["N", "CA", "C", "O", "C1"]
+    assert cosmolkit.residue_code(structure.residues[0].name) == cosmolkit.ResidueCode.ALA
+    assert cosmolkit.residue_code(structure.residues[1].name) == cosmolkit.ResidueCode.HOH
     assert structure.atoms[0].element == cosmolkit.Element.N
     assert structure.atoms[0].residue_id == 0
     assert structure.chains[0].source.auth_chain_id == "A"
@@ -976,7 +976,7 @@ def test_molecule_batch_getitem_supports_slices_masks_and_index_lists():
     assert selected.to_smiles() == ["N", "CCO", "CC"]
 
     assert len(batch[[]]) == 0
-    with pytest.raises(IndexError, match="boolean mask length"):
+    with pytest.raises(ValueError, match="boolean mask length"):
         _ = batch[[True, False]]
     with pytest.raises(IndexError):
         _ = batch[[99]]
@@ -984,16 +984,22 @@ def test_molecule_batch_getitem_supports_slices_masks_and_index_lists():
         _ = batch[True]
 
 
-def test_molecule_batch_dg_bounds_matrix_returns_numpy_arrays_or_none():
+def test_molecule_batch_dg_bounds_matrix_returns_matrices_or_none():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "C1CC", "CC"], errors="keep")
 
     matrices = batch.dg_bounds_matrix(n_jobs=2)
 
-    assert isinstance(matrices[0], np.ndarray)
-    assert matrices[0].shape == (3, 3)
+    assert type(matrices) is list and len(matrices) == 3
     assert matrices[1] is None
-    assert isinstance(matrices[2], np.ndarray)
-    assert matrices[2].shape == (2, 2)
+    for index, smiles, size in [(0, "CCO", 3), (2, "CC", 2)]:
+        matrix = matrices[index]
+        assert type(matrix) is list and len(matrix) == size
+        assert all(type(row) is list and len(row) == size for row in matrix)
+        assert all(type(value) is float for row in matrix for value in row)
+        expected = cosmolkit.Molecule.from_smiles(smiles).dg_bounds_matrix()
+        assert isinstance(expected, np.ndarray)
+        assert expected.shape == (size, size) and expected.dtype == np.float64
+        assert b"".join(struct.pack("=d", value) for row in matrix for value in row) == expected.tobytes()
 
 
 def test_molecule_batch_keeps_errors_and_filters_valid_records(tmp_path: Path):
@@ -1085,12 +1091,12 @@ def test_molecule_batch_raise_aggregates_errors():
         cosmolkit.MoleculeBatch.from_smiles_list(["C1CC", "N1"], errors="raise", n_jobs=2)
 
     assert "batch validation failed" in str(excinfo.value)
-    errors = excinfo.value.errors
-    assert [error.operation() for error in errors] == [
+    errors = excinfo.value.record_errors
+    assert [error.operation for error in errors] == [
         "batch.from_smiles_list",
         "batch.from_smiles_list",
     ]
-    assert all(error.message() for error in errors)
+    assert all(error.message for error in errors)
 
 
 def test_batch_errors_expose_intenum_types_and_mode_enum_is_accepted():
@@ -1104,12 +1110,12 @@ def test_batch_errors_expose_intenum_types_and_mode_enum_is_accepted():
     assert len(errors) == 1
     assert errors[0].operation == "batch.from_smiles_list"
     assert errors[0].message == "SMILES parsing failed: unclosed ring index 1"
-    assert errors[0].as_dict() == {
+    assert {"index": errors[0].index, "operation": errors[0].operation, "message": errors[0].message} == {
         "index": 1,
         "operation": "batch.from_smiles_list",
         "message": errors[0].message,
     }
-    assert cosmolkit.BATCH_ERROR_MODE_MAP["keep"] == cosmolkit.BatchErrorMode.KEEP
+    assert cosmolkit.BatchErrorMode.names["KEEP"] == cosmolkit.BatchErrorMode.KEEP
 
     filtered = batch.with_valid_records().with_2d_coordinates(errors=cosmolkit.BatchErrorMode.KEEP)
     assert len(filtered) == 1

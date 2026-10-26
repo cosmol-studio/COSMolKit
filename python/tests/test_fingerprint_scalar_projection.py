@@ -17,8 +17,8 @@ def test_explicit_constructor_fixed_width_sort_dedup_and_owned_results(width,bit
 def test_first_out_of_range_code_keeps_source_value_error_and_context(width,bits,index):
     with pytest.raises(ck.FingerprintError) as raised:ck.Fingerprint.from_on_bits(width,bits)
     assert isinstance(raised.value,ValueError)
-    assert raised.value.domain=="fingerprints"
-    assert raised.value.kind=="SparseIndexOutOfRange"
+    assert raised.value.domain=="fingerprint"
+    assert raised.value.variant.name=="SparseIndexOutOfRange"
     assert raised.value.index==index and raised.value.size==width
 
 def test_exact_dense_tanimoto_and_original_empty_zero():
@@ -28,7 +28,7 @@ def test_exact_dense_tanimoto_and_original_empty_zero():
     empty=ck.Fingerprint.from_on_bits(65,[])
     assert empty.tanimoto(empty)==empty.tanimoto(a)==0.0
     with pytest.raises(ck.FingerprintError) as raised:empty.tanimoto(ck.Fingerprint.from_on_bits(64,[]))
-    assert raised.value.kind=="BitLengthMismatch"
+    assert raised.value.variant.name=="BitLengthMismatch"
     assert (raised.value.left,raised.value.right)==(65,64)
 
 @pytest.mark.parametrize("length",[0,16,(1<<32)-1,sys.maxsize])

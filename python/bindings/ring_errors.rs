@@ -13,7 +13,7 @@ error_projection!(RingDecomposerError, RingDecomposerErrorKind, ck::RingDecompos
     RelevantCycleCountOverflow, InvalidShortestPathDag { root: usize, target: usize },
 }, cause = |_: &ck::RingDecomposerError| None::<PyErr>, methods = {
     #[getter]
-    fn node(&self) -> Option<usize> { match self.inner {
+    #[doc = "Graph node involved in the decomposition failure. Present for `RingDecomposerError.NodeOutOfRange`, `RingDecomposerError.SelfLoop`; None when unavailable."] fn node(&self) -> Option<usize> { match self.inner {
         ck::RingDecomposerError::NodeOutOfRange { node, .. }
         | ck::RingDecomposerError::SelfLoop { node } => Some(node), _ => None,
     } }
@@ -24,7 +24,7 @@ error_projection!(RingDecomposerError, RingDecomposerErrorKind, ck::RingDecompos
         | ck::RingDecomposerError::EdgeNotFound { from, .. } => Some(from), _ => None,
     } }
     #[getter]
-    fn to(&self) -> Option<usize> { match self.inner {
+    #[doc = "Destination graph node involved in the failure. Present for `RingDecomposerError.DuplicateEdge`, `RingDecomposerError.EdgeNotFound`; None when unavailable."] fn to(&self) -> Option<usize> { match self.inner {
         ck::RingDecomposerError::DuplicateEdge { to, .. }
         | ck::RingDecomposerError::EdgeNotFound { to, .. } => Some(to), _ => None,
     } }
@@ -56,19 +56,19 @@ error_projection!(RingFindingError, RingFindingErrorKind, ck::RingFindingError, 
 }), source = Option<RingSource>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn adjacency(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AdjacencyError>>> {
+    #[doc = "Structured AdjacencyError payload of RingFindingError.Adjacency; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn adjacency(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AdjacencyError>>> {
         match &self.inner { ck::RingFindingError::Adjacency(value) =>
             AdjacencyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> {
+    #[doc = "Structured TopologyValidationError payload of RingFindingError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> {
         match &self.inner { ck::RingFindingError::InvalidTopology(value) =>
             TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn ring_decomposer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingDecomposerError>>> {
+    #[doc = "Structured RingDecomposerError payload of RingFindingError.RingDecomposer; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn ring_decomposer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingDecomposerError>>> {
         match &self.inner { ck::RingFindingError::RingDecomposer(value) =>
             RingDecomposerError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }

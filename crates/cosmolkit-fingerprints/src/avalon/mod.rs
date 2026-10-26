@@ -117,8 +117,11 @@ impl BitOrAssign for AvalonFingerprintFlags {
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct AvalonFingerprintParams {
+    /// Number of bits in the Avalon fingerprint.
     pub n_bits: u32,
+    /// Generate query rather than target fingerprint features.
     pub is_query: bool,
+    /// Avalon feature families included in the fingerprint.
     pub bit_flags: AvalonFingerprintFlags,
 }
 

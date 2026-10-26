@@ -12,4 +12,4 @@ def test_fragment_bindings_order_tie_and_nonmutation():
     assert ck.Molecule.from_smiles("").fragments() == []
     with pytest.raises(ck.OperationError) as caught:
         ck.Molecule.from_smiles("").largest_fragment()
-    assert caught.value.kind == "EmptyFragments"
+    assert caught.value.variant.name == "EmptyFragments"

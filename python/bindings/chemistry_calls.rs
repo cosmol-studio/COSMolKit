@@ -99,7 +99,7 @@ scaffolds.append(("largest_fragment",native.largest_fragment().unwrap().to_binar
  let sources=PyList::empty(py);
  for _ in 0..100{sources.append(Py::new(py,Molecule{inner:native.clone()})?)?;}
  let module=PyModule::new(py,"chemistry_state_test")?;
- module.add_class::<OperationError>()?;
+ module.add("OperationError", <OperationError as crate::error_framework::ExceptionPayload>::exception_type(py)?)?;
  module.add_class::<crate::params::KekulizeParams>()?;
  module.add_class::<crate::params::PotentialStereoParams>()?;
  module.add_class::<crate::tautomer_values::TautomerScoreParams>()?;
@@ -155,7 +155,7 @@ assert bytes(source.to_binary()) == bytes(before)
 assert source.potential_stereo(api.PotentialStereoParams()).atom_ranks == potential.atom_ranks
 assert source.potential_stereo(clean=True).atom_ranks == potential.atom_ranks
 assert source.potential_stereo_with_params(api.PotentialStereoParams()).atom_ranks == potential.atom_ranks
-def parts(score): return (score.ring(), score.substructure(), score.hetero_hydrogen(), score.total())
+def parts(score): return (score.ring, score.substructure, score.hetero_hydrogen, score.total)
 assert parts(source.tautomer_score()) == expected_score
 assert parts(source.tautomer_score(api.TautomerScoreParams(terms=[]))) == empty_score
 assert parts(source.tautomer_score(terms=[])) == empty_score

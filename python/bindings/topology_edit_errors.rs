@@ -51,53 +51,53 @@ error_projection!(TopologyEditError, TopologyEditErrorKind, ck::TopologyEditErro
     | ck::TopologyEditError::InvalidMapping(_) | ck::TopologyEditError::InvalidResult(_) => None,
 }, source = Option<EditSource>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to TopologyEditError.AtomOutOfRange, TopologyEditError.PermutationAtomOutOfRange, TopologyEditError.PermutationDuplicateAtom. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::TopologyEditError::AtomOutOfRange { atom, .. }
         | ck::TopologyEditError::PermutationAtomOutOfRange { atom, .. }
         | ck::TopologyEditError::PermutationDuplicateAtom { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to TopologyEditError.AtomOutOfRange, TopologyEditError.PermutationAtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::TopologyEditError::AtomOutOfRange { atom_count, .. }
         | ck::TopologyEditError::PermutationAtomOutOfRange { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to TopologyEditError.BondOutOfRange, TopologyEditError.BondEndPointsParse. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::TopologyEditError::BondOutOfRange { bond, .. }
         | ck::TopologyEditError::BondEndPointsParse { bond, .. } => Some(bond.index()), _ => None,
     } }
     #[getter]
-    fn position(&self) -> Option<usize> { match self.inner {
+    #[doc = "Position reported by the native failure. Applies to TopologyEditError.PermutationAtomOutOfRange, TopologyEditError.PermutationDuplicateAtom. None when this payload is absent."] fn position(&self) -> Option<usize> { match self.inner {
         ck::TopologyEditError::PermutationAtomOutOfRange { position, .. }
         | ck::TopologyEditError::PermutationDuplicateAtom { position, .. } => Some(position), _ => None,
     } }
     #[getter]
-    fn token(&self, py: Python<'_>) -> PyResult<Option<String>> { match &self.inner {
+    #[doc = "Input token rejected by the parser. Applies to TopologyEditError.BondEndPointsParse. None when this payload is absent."] fn token(&self, py: Python<'_>) -> PyResult<Option<String>> { match &self.inner {
         ck::TopologyEditError::BondEndPointsParse { token, .. } => decode_source_text(py, token).map(Some), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<BondEndPointsParseErrorKind> { match self.inner {
+    #[doc = "Native failure-specific category or value kind. Applies to TopologyEditError.BondEndPointsParse. None when this payload is absent."] fn kind(&self) -> Option<BondEndPointsParseErrorKind> { match self.inner {
         ck::TopologyEditError::BondEndPointsParse { kind, .. } => Some(kind.into()), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn invalid_source(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of TopologyEditError.InvalidSource; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn invalid_source(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::TopologyEditError::InvalidSource(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn invalid_result(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of TopologyEditError.InvalidResult; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn invalid_result(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::TopologyEditError::InvalidResult(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn invalid_bond(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
+    #[doc = "Structured BondValueError payload of TopologyEditError.InvalidBond; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn invalid_bond(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
         ck::TopologyEditError::InvalidBond(value) => BondValueError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn invalid_mapping(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
+    #[doc = "Structured MappingValidationError payload of TopologyEditError.InvalidMapping; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn invalid_mapping(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MappingValidationError>>> { match &self.inner {
         ck::TopologyEditError::InvalidMapping(value) => MappingValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

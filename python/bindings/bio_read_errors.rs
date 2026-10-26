@@ -92,28 +92,29 @@ impl JsonError {
 }
 crate::error_framework::error_projection! {methods impl JsonError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> JsonErrorKind {
+    #[doc = "Native JSON parser error category."] fn kind(&self) -> JsonErrorKind {
         self.inner.kind().into()
     }
     #[getter]
-    fn byte_offset(&self) -> usize {
+    #[doc = "Byte offset of the JSON parsing failure."] fn byte_offset(&self) -> usize {
         self.inner.byte_offset()
     }
     #[getter]
-    fn line(&self) -> usize {
+    #[doc = "Line reported by the JSON parser."] fn line(&self) -> usize {
         self.inner.line()
     }
     #[getter]
-    fn column(&self) -> usize {
+    #[doc = "Column reported by the JSON parser."] fn column(&self) -> usize {
         self.inner.column()
     }
     #[getter]
-    fn argument(&self) -> Option<i32> {
+    #[doc = "Optional numeric argument carried by this parser diagnostic."] fn argument(&self) -> Option<i32> {
         self.inner.argument()
     }
     fn __str__(&self) -> String {
@@ -127,7 +128,7 @@ error_projection!(retained MmjsonValueError, MmjsonValueErrorKind, ck::MmjsonVal
     InvalidSpan { start: usize, end: usize }, InvalidUtf8 { valid_up_to: usize },
 }, cause=|_:&RetainedError<ck::MmjsonValueError>| None::<PyErr>, methods={
     #[getter] #[doc = r#"{"role":"error_payload"}"#]
-    fn value(&self) -> Option<MmjsonUnexpectedType> {
+    #[doc = "Value rejected or reported by the native operation. Applies to MmjsonValueError.UnexpectedType, MmjsonValueError.InvalidArrayElement. None when this payload is absent."] fn value(&self) -> Option<MmjsonUnexpectedType> {
         match self.inner.as_ref() {
             ck::MmjsonValueError::UnexpectedType(value) | ck::MmjsonValueError::InvalidArrayElement(value) => Some((*value).into()),
             _ => None,
@@ -140,20 +141,20 @@ error_projection!(retained MmjsonStructureError, MmjsonStructureErrorKind, ck::M
     RowCountOverflow, MissingArenaValue, Text(_),
 }, cause=|inner:&RetainedError<ck::MmjsonStructureError>|inner.node().source().map(project),
 source=Option<crate::error_framework::ErrorObject<MmjsonValueError>>, methods={
-    #[getter] fn block(&self)->Option<usize> {match self.inner.as_ref(){
+    #[getter] #[doc = "Input or structural block involved in the failure. Applies to MmjsonStructureError.BlockKeyPrefix, MmjsonStructureError.BlockNotObject, MmjsonStructureError.InvalidCategory. None when this payload is absent."] fn block(&self)->Option<usize> {match self.inner.as_ref(){
         ck::MmjsonStructureError::BlockKeyPrefix{block}|ck::MmjsonStructureError::BlockNotObject{block}
         |ck::MmjsonStructureError::InvalidCategory{block,..}=>Some(*block),_=>None}}
-    #[getter] fn column(&self)->Option<usize> {match self.inner.as_ref(){
+    #[getter] #[doc = "Input column involved in the failure. Applies to MmjsonStructureError.ExpectedArray, MmjsonStructureError.ArrayLength. None when this payload is absent."] fn column(&self)->Option<usize> {match self.inner.as_ref(){
         ck::MmjsonStructureError::ExpectedArray{column,..}|ck::MmjsonStructureError::ArrayLength{column,..}=>Some(*column),_=>None}}
 });
 error_projection!(retained MmjsonReadError, MmjsonReadErrorKind, ck::MmjsonReadError, "bio", {
     Parse{source_name,error}, Structure{source_name,error},
 }, cause=|inner:&RetainedError<ck::MmjsonReadError>|inner.node().source().map(project),
 source=Option<Source<crate::error_framework::ErrorObject<JsonError>,crate::error_framework::ErrorObject<MmjsonStructureError>>>, methods={
-    #[getter] fn source_name(&self)->&str {match self.inner.as_ref(){
+    #[getter] #[doc = "Source label attached to the parsing failure. Applies to MmjsonReadError.Parse, MmjsonReadError.Structure."] fn source_name(&self)->&str {match self.inner.as_ref(){
         ck::MmjsonReadError::Parse{source_name,..}|ck::MmjsonReadError::Structure{source_name,..}=>source_name}}
     #[staticmethod] #[doc = r#"{"role":"error_payload"}"#]
-    fn error(slf:Bound<'_,pyo3::exceptions::PyBaseException>)->PyResult<Source<crate::error_framework::ErrorObject<JsonError>,crate::error_framework::ErrorObject<MmjsonStructureError>>>{
+    #[doc = "Concrete JSON or structure error, identical to this exception's __cause__."] fn error(slf:Bound<'_,pyo3::exceptions::PyBaseException>)->PyResult<Source<crate::error_framework::ErrorObject<JsonError>,crate::error_framework::ErrorObject<MmjsonStructureError>>>{
         Ok(slf.getattr("__cause__")?.extract()?)
     }
 });
@@ -162,17 +163,17 @@ error_projection!(retained ChemCompAtomError, ChemCompAtomErrorKind, ck::ChemCom
     ChargeOutsideSourceDefinedRange{row,value},Number(_),
 },cause=|inner:&RetainedError<ck::ChemCompAtomError>|inner.node().source().map(project),
 source=Option<crate::error_framework::ErrorObject<CifReadError>>,methods={
-    #[getter] fn row(&self)->Option<usize>{match self.inner.as_ref(){
+    #[getter] #[doc = "Row reported by the native failure. Applies to ChemCompAtomError.MissingValue, ChemCompAtomError.NameOutsideCanonicalBoundary, ChemCompAtomError.ChargeOutsideSourceDefinedRange. None when this payload is absent."] fn row(&self)->Option<usize>{match self.inner.as_ref(){
         ck::ChemCompAtomError::MissingValue{row,..}|ck::ChemCompAtomError::NameOutsideCanonicalBoundary{row,..}
         |ck::ChemCompAtomError::ChargeOutsideSourceDefinedRange{row,..}=>Some(*row),_=>None}}
-    #[getter] fn value(&self)->Option<&str>{match self.inner.as_ref(){
+    #[getter] #[doc = "Value rejected or reported by the native operation. Applies to ChemCompAtomError.NameOutsideCanonicalBoundary, ChemCompAtomError.ChargeOutsideSourceDefinedRange. None when this payload is absent."] fn value(&self)->Option<&str>{match self.inner.as_ref(){
         ck::ChemCompAtomError::NameOutsideCanonicalBoundary{value,..}|ck::ChemCompAtomError::ChargeOutsideSourceDefinedRange{value,..}=>Some(value),_=>None}}
 });
 error_projection!(retained ChemCompModelError,ChemCompModelErrorKind,ck::ChemCompModelError,"bio",{
     NotChemComp,Table(_),Atom(_),Hierarchy(_),ResidueName(_),
 },cause=|inner:&RetainedError<ck::ChemCompModelError>|inner.node().source().map(project),
 source=Option<Source<crate::error_framework::ErrorObject<CifReadError>,Source<crate::error_framework::ErrorObject<ChemCompAtomError>,crate::error_framework::ErrorObject<BioStructureError>>>>,methods={
-    #[getter] fn value(&self)->Option<&str>{match self.inner.as_ref(){ck::ChemCompModelError::ResidueName(value)=>Some(value),_=>None}}
+    #[getter] #[doc = "Value rejected or reported by the native operation. Applies to ChemCompModelError.ResidueName. None when this payload is absent."] fn value(&self)->Option<&str>{match self.inner.as_ref(){ck::ChemCompModelError::ResidueName(value)=>Some(value),_=>None}}
 });
 
 type BioReadSource = Source<
@@ -199,10 +200,10 @@ error_projection!(retained BioReadError,BioReadErrorKind,ck::BioReadError,"bio",
     WrongFormat{source_name:String,format},UnknownFileFormat(_),
 },cause=|inner:&RetainedError<ck::BioReadError>|inner.node().source().map(project),
 source=Option<BioReadSource>,methods={
-    #[getter] fn path(&self)->Option<PathBuf>{match self.inner.as_ref(){
+    #[getter] #[doc = "Filesystem path involved in the operation. Applies to BioReadError.Io, BioReadError.Utf8, BioReadError.UnknownFileFormat. None when this payload is absent."] fn path(&self)->Option<PathBuf>{match self.inner.as_ref(){
         ck::BioReadError::Io{path,..}|ck::BioReadError::Utf8{path,..}|ck::BioReadError::UnknownFileFormat(path)=>Some(path.clone()),_=>None}}
     #[getter] #[doc = r#"{"role":"error_payload"}"#]
-    fn format(&self)->Option<BioCoordinateFormat>{match self.inner.as_ref(){ck::BioReadError::WrongFormat{format,..}=>Some((*format).into()),_=>None}}
+    #[doc = "Format involved in the failed conversion. Applies to BioReadError.WrongFormat. None when this payload is absent."] fn format(&self)->Option<BioCoordinateFormat>{match self.inner.as_ref(){ck::BioReadError::WrongFormat{format,..}=>Some((*format).into()),_=>None}}
 });
 error_projection!(retained ProteinReadError,ProteinReadErrorKind,ck::ProteinReadError,"bio",{
     Structure(_),Pdb(_),Mmcif(_),Projection(_),

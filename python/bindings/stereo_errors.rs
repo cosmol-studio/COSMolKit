@@ -74,23 +74,23 @@ error_projection!(StereoError, StereoErrorKind, ck::StereoError, "stereo", {
     | ck::StereoError::ZeroLengthVector { .. } => None,
 }), source = Option<StereoSource>, methods = {
     #[getter]
-    fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Field whose content or type caused the failure. Applies to StereoError.InvalidValence, StereoError.InvalidValenceValue. None when this payload is absent."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::StereoError::InvalidValence { field, .. }
         | ck::StereoError::InvalidValenceValue { field, .. } => Some(field), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to StereoError.ConformerAtomCountMismatch, StereoError.InvalidValence. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::StereoError::ConformerAtomCountMismatch { atom_count, .. }
         | ck::StereoError::InvalidValence { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> { match &self.inner {
+    #[doc = "Structured AtropisomerError payload of StereoError.Atropisomer; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> { match &self.inner {
         ck::StereoError::Atropisomer(value) => AtropisomerError::from_rust(value.as_ref().clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn hydrogen_count(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of StereoError.HydrogenCount; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn hydrogen_count(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::StereoError::HydrogenCount(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });
@@ -129,7 +129,7 @@ error_projection!(AtropisomerError, AtropisomerErrorKind, ck::AtropisomerError, 
     | ck::AtropisomerError::InvalidAtropisomerStereo { .. } => None,
 }, source = Option<AtropSource>, methods = {
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond index involved in the failure. Present for `AtropisomerError.CandidateTraversalOutOfRange`, `AtropisomerError.CandidateTraversalDuplicate`, `AtropisomerError.CandidateTraversalUnexpected`, `AtropisomerError.CandidateTraversalMissing`, `AtropisomerError.RingBondOutOfRange`, `AtropisomerError.BondUpdate`, `AtropisomerError.StereoGroupBondOutOfRange`, `AtropisomerError.AssignmentBondOutOfRange`, `AtropisomerError.AxialBondOutOfRange`, `AtropisomerError.InvalidAtropisomerStereo`; None when unavailable."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::AtropisomerError::CandidateTraversalOutOfRange { bond, .. }
         | ck::AtropisomerError::CandidateTraversalDuplicate { bond }
         | ck::AtropisomerError::CandidateTraversalUnexpected { bond }
@@ -142,12 +142,12 @@ error_projection!(AtropisomerError, AtropisomerErrorKind, ck::AtropisomerError, 
         | ck::AtropisomerError::InvalidAtropisomerStereo { bond, .. } => Some(bond.index()), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to AtropisomerError.CarrierCount, AtropisomerError.RingAtomOutOfRange, AtropisomerError.StereoGroupAtomOutOfRange. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::AtropisomerError::CarrierCount { atom, .. } | ck::AtropisomerError::RingAtomOutOfRange { atom, .. }
         | ck::AtropisomerError::StereoGroupAtomOutOfRange { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn bond_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond count used when validating the reported bond reference. Applies to AtropisomerError.CandidateTraversalOutOfRange, AtropisomerError.RingBondOutOfRange, AtropisomerError.StereoGroupBondOutOfRange, AtropisomerError.AssignmentBondOutOfRange, AtropisomerError.AxialBondOutOfRange. None when this payload is absent."] fn bond_count(&self) -> Option<usize> { match self.inner {
         ck::AtropisomerError::CandidateTraversalOutOfRange { bond_count, .. }
         | ck::AtropisomerError::RingBondOutOfRange { bond_count, .. }
         | ck::AtropisomerError::StereoGroupBondOutOfRange { bond_count, .. }
@@ -155,25 +155,25 @@ error_projection!(AtropisomerError, AtropisomerErrorKind, ck::AtropisomerError, 
         | ck::AtropisomerError::AxialBondOutOfRange { bond_count, .. } => Some(bond_count), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to AtropisomerError.RingAtomOutOfRange, AtropisomerError.StereoGroupAtomOutOfRange. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::AtropisomerError::RingAtomOutOfRange { atom_count, .. }
         | ck::AtropisomerError::StereoGroupAtomOutOfRange { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to AtropisomerError.RingAtomRowCount, AtropisomerError.RingBondRowCount, AtropisomerError.HybridizationAssignmentLength. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::AtropisomerError::RingAtomRowCount { actual, .. }
         | ck::AtropisomerError::RingBondRowCount { actual, .. }
         | ck::AtropisomerError::HybridizationAssignmentLength { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to AtropisomerError.RingAtomRowCount, AtropisomerError.RingBondRowCount, AtropisomerError.HybridizationAssignmentLength. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::AtropisomerError::RingAtomRowCount { expected, .. }
         | ck::AtropisomerError::RingBondRowCount { expected, .. }
         | ck::AtropisomerError::HybridizationAssignmentLength { expected, .. } => Some(expected), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn normalization(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoError>>> { match &self.inner {
+    #[doc = "Structured StereoError payload of AtropisomerError.Normalization; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn normalization(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoError>>> { match &self.inner {
         // The native tuple has no #[source]/#[from]; preserve it as payload.
         ck::AtropisomerError::Normalization(value) => StereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
@@ -217,52 +217,52 @@ error_projection!(LegacyStereoError, LegacyStereoErrorKind, ck::LegacyStereoErro
 }), source = Option<LegacySource>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
+    #[doc = "Structured TopologyValidationError payload of LegacyStereoError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> { match &self.inner {
         ck::LegacyStereoError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn cip_rank(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CipRankError>>> { match &self.inner {
+    #[doc = "Structured CipRankError payload of LegacyStereoError.CipRank; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn cip_rank(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CipRankError>>> { match &self.inner {
         ck::LegacyStereoError::CipRank(value) => CipRankError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn double_bond(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<DoubleBondStereoError>>> { match &self.inner {
+    #[doc = "Structured DoubleBondStereoError payload of LegacyStereoError.DoubleBond; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn double_bond(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<DoubleBondStereoError>>> { match &self.inner {
         ck::LegacyStereoError::DoubleBond(value) => DoubleBondStereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
+    #[doc = "Structured StereoOrderError payload of LegacyStereoError.StereoOrder; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
         ck::LegacyStereoError::StereoOrder(value) => StereoOrderError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of LegacyStereoError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::LegacyStereoError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn atom_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>> { match &self.inner {
+    #[doc = "Structured AtomPropertyError payload of LegacyStereoError.AtomProperty; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn atom_property(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtomPropertyError>>> { match &self.inner {
         ck::LegacyStereoError::AtomProperty(value) => AtomPropertyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn bond_value(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
+    #[doc = "Structured BondValueError payload of LegacyStereoError.BondValue; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn bond_value(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<BondValueError>>> { match &self.inner {
         ck::LegacyStereoError::BondValue(value) => BondValueError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn potential_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PotentialStereoError>>> { match &self.inner {
+    #[doc = "Structured PotentialStereoError payload of LegacyStereoError.PotentialStereo; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn potential_stereo(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PotentialStereoError>>> { match &self.inner {
         ck::LegacyStereoError::PotentialStereo(value) => PotentialStereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
+    #[doc = "Structured RingFindingError payload of LegacyStereoError.RingFinding; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn ring_finding(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
         ck::LegacyStereoError::RingFinding(value) => RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> { match &self.inner {
+    #[doc = "Structured AtropisomerError payload of LegacyStereoError.Atropisomer; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn atropisomer(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<AtropisomerError>>> { match &self.inner {
         ck::LegacyStereoError::Atropisomer(value) => AtropisomerError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

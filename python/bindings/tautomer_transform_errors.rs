@@ -15,7 +15,7 @@ error_projection!(TautomerTransformError, TautomerTransformErrorKind, ck::Tautom
 }, source = Option<crate::error_framework::ErrorObject<SmartsParseError>>, methods = {
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_compile_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryCompileError>>> {
+    #[doc = "Structured QueryCompileError payload of TautomerTransformError.QueryCompile; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_compile_error(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryCompileError>>> {
         match &self.inner {
             ck::TautomerTransformError::QueryCompile(value) => QueryCompileError::from_rust(value.clone())
                 .value(py).extract().map(Some).map_err(Into::into),

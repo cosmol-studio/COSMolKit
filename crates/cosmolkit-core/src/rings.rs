@@ -31,8 +31,11 @@ pub enum RingFindType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Bond-type inclusion policy for molecular ring search.
 pub struct RingSearchParams {
+    /// Include dative bonds when finding rings.
     pub include_dative_bonds: bool,
+    /// Include hydrogen bonds when finding rings.
     pub include_hydrogen_bonds: bool,
 }
 

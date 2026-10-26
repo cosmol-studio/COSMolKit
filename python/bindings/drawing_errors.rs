@@ -122,6 +122,7 @@ use std::error::Error;
 crate::configuration::type_projection! {
     #[doc = r#"{"role":"error_value"}"#]
     #[pyclass(module = "cosmolkit", frozen)]
+    #[doc = "One-based row and column in XML text."]
     pub struct XmlTextPos {
         inner: ck::XmlTextPos,
     }
@@ -129,10 +130,12 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl XmlTextPos {
     #[getter]
+    #[doc = "One-based XML row number."]
     fn row(&self) -> u32 {
         self.inner.row
     }
     #[getter]
+    #[doc = "One-based XML column number."]
     fn col(&self) -> u32 {
         self.inner.col
     }
@@ -191,10 +194,12 @@ impl XmlParseError {
 }
 crate::error_framework::error_projection! {methods impl XmlParseError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "depict"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> XmlParseErrorKind {
         match self.inner.as_ref() {
             ck::XmlParseError::InvalidXmlPrefixUri(_) => XmlParseErrorKind::InvalidXmlPrefixUri,
@@ -240,55 +245,55 @@ crate::error_framework::error_projection! {methods impl XmlParseError {
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn position(&self) -> XmlTextPos {
+    #[doc = "Text position reported by the XML parser."] fn position(&self) -> XmlTextPos {
         XmlTextPos {
             inner: self.inner.pos(),
         }
     }
     #[getter]
-    fn namespace(&self) -> Option<&str> {
+    #[doc = "XML namespace involved in the parsing failure. Applies to XmlParseError.DuplicatedNamespace. None when this payload is absent."] fn namespace(&self) -> Option<&str> {
         match self.inner.as_ref() {
             ck::XmlParseError::DuplicatedNamespace(value, _) => Some(value),
             _ => None,
         }
     }
     #[getter]
-    fn prefix(&self) -> Option<&str> {
+    #[doc = "XML prefix involved in the parsing failure. Applies to XmlParseError.UnknownNamespace. None when this payload is absent."] fn prefix(&self) -> Option<&str> {
         match self.inner.as_ref() {
             ck::XmlParseError::UnknownNamespace(value, _) => Some(value),
             _ => None,
         }
     }
     #[getter]
-    fn entity(&self) -> Option<&str> {
+    #[doc = "Structural entity involved in the failure. Applies to XmlParseError.UnknownEntityReference. None when this payload is absent."] fn entity(&self) -> Option<&str> {
         match self.inner.as_ref() {
             ck::XmlParseError::UnknownEntityReference(value, _) => Some(value),
             _ => None,
         }
     }
     #[getter]
-    fn attribute(&self) -> Option<&str> {
+    #[doc = "XML attribute involved in the parsing failure. Applies to XmlParseError.DuplicatedAttribute. None when this payload is absent."] fn attribute(&self) -> Option<&str> {
         match self.inner.as_ref() {
             ck::XmlParseError::DuplicatedAttribute(value, _) => Some(value),
             _ => None,
         }
     }
     #[getter]
-    fn message(&self) -> Option<&str> {
+    #[doc = "Detailed native diagnostic message. Applies to XmlParseError.EntityResolver. None when this payload is absent."] fn message(&self) -> Option<&str> {
         match self.inner.as_ref() {
             ck::XmlParseError::EntityResolver(_, value) => Some(value),
             _ => None,
         }
     }
     #[getter]
-    fn character(&self) -> Option<char> {
+    #[doc = "Character rejected by the parser. Applies to XmlParseError.NonXmlChar. None when this payload is absent."] fn character(&self) -> Option<char> {
         match self.inner.as_ref() {
             ck::XmlParseError::NonXmlChar(value, _) => Some(*value),
             _ => None,
         }
     }
     #[getter]
-    fn expected(&self) -> Option<Source<u8, String>> {
+    #[doc = "Required value reported by the native check. Applies to XmlParseError.UnexpectedCloseTag, XmlParseError.InvalidChar, XmlParseError.InvalidChar2, XmlParseError.InvalidString. None when this payload is absent."] fn expected(&self) -> Option<Source<u8, String>> {
         match self.inner.as_ref() {
             ck::XmlParseError::UnexpectedCloseTag(value, _, _) => {
                 Some(Source::Second(value.to_string()))
@@ -300,7 +305,7 @@ crate::error_framework::error_projection! {methods impl XmlParseError {
         }
     }
     #[getter]
-    fn actual(&self) -> Option<Source<u8, String>> {
+    #[doc = "Observed value reported by the native check. Applies to XmlParseError.UnexpectedCloseTag, XmlParseError.InvalidChar, XmlParseError.InvalidChar2. None when this payload is absent."] fn actual(&self) -> Option<Source<u8, String>> {
         match self.inner.as_ref() {
             ck::XmlParseError::UnexpectedCloseTag(_, value, _) => {
                 Some(Source::Second(value.to_string()))
@@ -321,7 +326,7 @@ error_projection!(retained SvgParseError,SvgParseErrorKind,ck::SvgParseError,"de
 NotAnUtf8Str,SvgzFeatureNotEnabled,MalformedGZip,ElementsLimitReached,InvalidSize,ParsingFailed(_),
 },cause=|_:&RetainedError<ck::SvgParseError>|None::<PyErr>,methods={
 #[getter]#[doc=r#"{"role":"error_payload"}"#]
-fn parsing_failed(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<XmlParseError>>>{match self.inner.as_ref(){
+#[doc = "Structured XmlParseError payload of SvgParseError.ParsingFailed; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn parsing_failed(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<XmlParseError>>>{match self.inner.as_ref(){
 ck::SvgParseError::ParsingFailed(_)=>Ok(Some(XmlParseError::from_ref(self.inner.node().project(|e|match e.downcast_ref::<ck::SvgParseError>().unwrap(){ck::SvgParseError::ParsingFailed(v)=>v,_=>unreachable!()})).value(py).extract()?)),
 _=>Ok(None)}}
 });
@@ -329,6 +334,7 @@ enum_value!(DoubleLexicalReadErrorKind,{Syntax,TrailingByte,Overflow,FloatingEnv
 crate::configuration::type_projection! {
     #[doc = r#"{"role":"error_value"}"#]
     #[pyclass(module = "cosmolkit", frozen)]
+    #[doc = "Numeric input stream flags captured by a failed lexical conversion."]
     pub struct SourceNumericStreamState {
         inner: ck::SourceNumericStreamState,
     }
@@ -336,14 +342,17 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl SourceNumericStreamState {
     #[getter]
+    #[doc = "Whether the numeric stream reached end-of-input."]
     fn eof(&self) -> bool {
         self.inner.eof
     }
     #[getter]
+    #[doc = "Whether numeric extraction failed."]
     fn fail(&self) -> bool {
         self.inner.fail
     }
     #[getter]
+    #[doc = "Whether the numeric stream recorded an underlying stream error."]
     fn bad(&self) -> bool {
         self.inner.bad
     }
@@ -368,25 +377,26 @@ impl DoubleLexicalReadError {
 }
 crate::error_framework::error_projection! {methods impl DoubleLexicalReadError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "property"
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> DoubleLexicalReadErrorKind {
+    #[doc = "Native floating-point lexical conversion failure category."] fn kind(&self) -> DoubleLexicalReadErrorKind {
         self.inner.kind.into()
     }
     #[getter]
-    fn consumed(&self) -> usize {
+    #[doc = "Number of input bytes consumed before conversion failed."] fn consumed(&self) -> usize {
         self.inner.consumed
     }
     #[getter]
-    fn value_bits(&self) -> Option<u64> {
+    #[doc = "Optional IEEE-754 bits of the value retained by the failed conversion."] fn value_bits(&self) -> Option<u64> {
         self.inner.value_bits
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn state(&self) -> SourceNumericStreamState {
+    #[doc = "Native numeric stream flags at the point of failure."] fn state(&self) -> SourceNumericStreamState {
         SourceNumericStreamState {
             inner: self.inner.state,
         }
@@ -469,12 +479,12 @@ ck::DrawingError::VariationArray(_)=>UnsignedStreamArrayError::from_ref(node),
 ck::DrawingError::DataFieldDouble{source,..}=>DoubleLexicalReadError::from_rust(source.clone()),
 ck::DrawingError::StateRows{..}|ck::DrawingError::HydrogenAppend{..}|ck::DrawingError::InvalidDimensions{..}|ck::DrawingError::PixmapAllocation{..}|ck::DrawingError::VariationIndex{..}=>unreachable!("source-free drawing error"),
 })},source=Option<DrawingSource>,methods={
-#[getter]fn field(&self)->Option<&'static str>{match self.inner.as_ref(){ck::DrawingError::StateRows{field,..}|ck::DrawingError::DataFieldDouble{field,..}=>Some(*field),_=>None}}
-#[getter]fn width(&self)->Option<u32>{match self.inner.as_ref(){ck::DrawingError::InvalidDimensions{width,..}|ck::DrawingError::PixmapAllocation{width,..}=>Some(*width),_=>None}}
-#[getter]fn height(&self)->Option<u32>{match self.inner.as_ref(){ck::DrawingError::InvalidDimensions{height,..}|ck::DrawingError::PixmapAllocation{height,..}=>Some(*height),_=>None}}
+#[getter]#[doc = "Field whose content or type caused the failure. Applies to DrawingError.StateRows, DrawingError.DataFieldDouble. None when this payload is absent."] fn field(&self)->Option<&'static str>{match self.inner.as_ref(){ck::DrawingError::StateRows{field,..}|ck::DrawingError::DataFieldDouble{field,..}=>Some(*field),_=>None}}
+#[getter]#[doc = "Width reported by the failing native check. Applies to DrawingError.InvalidDimensions, DrawingError.PixmapAllocation. None when this payload is absent."] fn width(&self)->Option<u32>{match self.inner.as_ref(){ck::DrawingError::InvalidDimensions{width,..}|ck::DrawingError::PixmapAllocation{width,..}=>Some(*width),_=>None}}
+#[getter]#[doc = "Height reported by the failed native dimension check. Applies to DrawingError.InvalidDimensions, DrawingError.PixmapAllocation. None when this payload is absent."] fn height(&self)->Option<u32>{match self.inner.as_ref(){ck::DrawingError::InvalidDimensions{height,..}|ck::DrawingError::PixmapAllocation{height,..}=>Some(*height),_=>None}}
 });
 error_projection!(retained DrawingWriteError,DrawingWriteErrorKind,ck::DrawingWriteError,"depict",{
 Drawing(_),Io{path,source},
 },cause=|inner:&RetainedError<ck::DrawingWriteError>|{let node=inner.node().source()?;Some(match inner.as_ref(){ck::DrawingWriteError::Drawing(_)=>DrawingError::from_ref(node),ck::DrawingWriteError::Io{..}=>IoError::from_ref(node)})},source=Option<Source<crate::error_framework::ErrorObject<DrawingError>,crate::error_framework::ErrorObject<IoError>>>,methods={
-#[getter]fn path(&self)->Option<std::path::PathBuf>{match self.inner.as_ref(){ck::DrawingWriteError::Io{path,..}=>Some(path.clone()),_=>None}}
+#[getter]#[doc = "Filesystem path involved in the operation. Applies to DrawingWriteError.Io. None when this payload is absent."] fn path(&self)->Option<std::path::PathBuf>{match self.inner.as_ref(){ck::DrawingWriteError::Io{path,..}=>Some(path.clone()),_=>None}}
 });

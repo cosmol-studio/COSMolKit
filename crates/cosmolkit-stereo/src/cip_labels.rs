@@ -15,9 +15,13 @@ use crate::cip_graph::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
+/// Atom/bond selections and recursion limit for CIP assignment.
 pub struct CipLabelOptions {
+    /// Atom identifiers to label, or None for all eligible atoms.
     pub atoms: Option<Vec<AtomId>>,
+    /// Bond identifiers to label, or None for all eligible bonds.
     pub bonds: Option<Vec<BondId>>,
+    /// Maximum recursive CIP iterations; zero leaves the native limit unrestricted.
     pub max_recursive_iterations: u32,
 }
 

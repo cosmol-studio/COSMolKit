@@ -34,6 +34,6 @@ def test_scaffold_raw_input_error_is_atomic() -> None:
     for transform in (mol.murcko_scaffold, mol.net_scaffold, mol.murcko_decompose):
         with pytest.raises(ck.OperationError) as caught:
             _ = transform()
-        assert caught.value.kind == "Scaffold"
+        assert caught.value.variant.name == "Scaffold"
         assert caught.value.__cause__ is not None
         assert mol.to_binary() == before

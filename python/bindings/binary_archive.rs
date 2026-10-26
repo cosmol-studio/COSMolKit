@@ -25,7 +25,7 @@ error_projection!(PickleError, PickleErrorKind, ck::PickleError, "serialization"
     | ck::PickleError::TooManyBonds(_) | ck::PickleError::StringTooLong(_) => None,
 }, source = Option<crate::error_framework::ErrorObject<StereoGroupError>>, methods = {
     #[getter]
-    fn version(&self) -> Option<u16> {
+    #[doc = "Input format version associated with the failure. Present for `PickleError.UnsupportedVersion`, `PickleError.UnsupportedSectionVersion`; None when unavailable."] fn version(&self) -> Option<u16> {
         match self.inner {
             ck::PickleError::UnsupportedVersion(value) => Some(u16::from(value)),
             ck::PickleError::UnsupportedSectionVersion { version, .. } => Some(version),
@@ -33,7 +33,7 @@ error_projection!(PickleError, PickleErrorKind, ck::PickleError, "serialization"
         }
     }
     #[getter]
-    fn section(&self) -> Option<u16> {
+    #[doc = "Binary or textual input section containing the failure. Present for `PickleError.UnsupportedSectionVersion`, `PickleError.MissingRequiredSection`, `PickleError.DuplicateSection`, `PickleError.UnknownRequiredSection`; None when unavailable."] fn section(&self) -> Option<u16> {
         match self.inner {
             ck::PickleError::UnsupportedSectionVersion { section, .. }
             | ck::PickleError::MissingRequiredSection(section)
@@ -43,7 +43,7 @@ error_projection!(PickleError, PickleErrorKind, ck::PickleError, "serialization"
         }
     }
     #[getter]
-    fn message(&self) -> Option<&str> {
+    #[doc = "Native diagnostic message. Present for `PickleError.InvalidArchive`, `PickleError.InvalidMolecule`; None when unavailable."] fn message(&self) -> Option<&str> {
         match &self.inner {
             ck::PickleError::InvalidArchive(message)
             | ck::PickleError::InvalidMolecule(message) => Some(message),
@@ -51,7 +51,7 @@ error_projection!(PickleError, PickleErrorKind, ck::PickleError, "serialization"
         }
     }
     #[getter]
-    fn length(&self) -> Option<usize> {
+    #[doc = "Length relevant to the failed bounds check. Present for `PickleError.TooManyAtoms`, `PickleError.TooManyBonds`, `PickleError.StringTooLong`; None when unavailable."] fn length(&self) -> Option<usize> {
         match self.inner {
             ck::PickleError::TooManyAtoms(length) | ck::PickleError::TooManyBonds(length)
             | ck::PickleError::StringTooLong(length) => Some(length),
@@ -61,6 +61,7 @@ error_projection!(PickleError, PickleErrorKind, ck::PickleError, "serialization"
 });
 
 #[pyfunction]
+/// Decode COSMolKit molecular archive bytes through the canonical binary reader.
 pub fn mol_from_binary(data: &[u8]) -> PyResult<Molecule> {
     Molecule::from_binary(data)
 }

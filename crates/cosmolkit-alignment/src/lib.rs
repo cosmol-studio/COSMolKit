@@ -41,19 +41,29 @@ const DEFAULT_MAX_ITERATIONS: u32 = 50;
 const DEFAULT_MAX_MATCHES: i32 = 1_000_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One correspondence between probe and reference atom indices.
 pub struct AlignmentAtomMap {
+    /// Zero-based atom index in the probe molecule.
     pub probe_atom: usize,
+    /// Zero-based atom index in the reference molecule.
     pub reference_atom: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(factory)]
+/// Conformer alignment options for a fixed or native-selected atom correspondence.
 pub struct AlignmentParameters {
+    /// Probe conformer identifier; -1 selects the native default conformer.
     pub probe_conformer_id: i32,
+    /// Reference conformer identifier; -1 selects the native default conformer.
     pub reference_conformer_id: i32,
+    /// Optional explicit probe-to-reference atom pairs; None requests native match selection.
     pub atom_map: Option<Vec<AlignmentAtomMap>>,
+    /// Optional alignment weights in atom-map order.
     pub weights: Option<Vec<f64>>,
+    /// Allow reflection while determining the alignment transform.
     pub reflect: bool,
+    /// Maximum iterations for native alignment optimization.
     pub max_iterations: u32,
 }
 
@@ -72,17 +82,28 @@ impl Default for AlignmentParameters {
 
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(factory)]
+/// Symmetry-aware best alignment options over candidate atom correspondences.
 pub struct BestAlignmentParameters {
+    /// Probe conformer identifier; -1 selects the native default conformer.
     pub probe_conformer_id: i32,
+    /// Reference conformer identifier; -1 selects the native default conformer.
     pub reference_conformer_id: i32,
     #[configuration(none_default)]
+    /// Candidate probe-to-reference atom mappings; an empty collection requests native match enumeration.
     pub atom_maps: Vec<Vec<AlignmentAtomMap>>,
+    /// Optional alignment weights in atom-map order.
     pub weights: Option<Vec<f64>>,
+    /// Allow reflection while determining the alignment transform.
     pub reflect: bool,
+    /// Maximum iterations for native alignment optimization.
     pub max_iterations: u32,
+    /// Maximum number of candidate atom mappings considered.
     pub max_matches: i32,
+    /// Treat conjugated terminal groups symmetrically when selecting matches.
     pub symmetrize_conjugated_terminal_groups: bool,
+    /// Ignore hydrogen atoms during native match enumeration.
     pub ignore_hydrogens: bool,
+    /// Number of native alignment worker threads.
     pub num_threads: i32,
 }
 
@@ -105,13 +126,20 @@ impl Default for BestAlignmentParameters {
 
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(factory)]
+/// All-conformer RMSD options controlling correspondence selection and parallel execution.
 pub struct AllConformerRmsdParameters {
     #[configuration(none_default)]
+    /// Candidate probe-to-reference atom mappings; an empty collection requests native match enumeration.
     pub atom_maps: Vec<Vec<AlignmentAtomMap>>,
+    /// Optional alignment weights in atom-map order.
     pub weights: Option<Vec<f64>>,
+    /// Maximum number of candidate atom mappings considered.
     pub max_matches: i32,
+    /// Treat conjugated terminal groups symmetrically when selecting matches.
     pub symmetrize_conjugated_terminal_groups: bool,
+    /// Ignore hydrogen atoms during native match enumeration.
     pub ignore_hydrogens: bool,
+    /// Number of native alignment worker threads.
     pub num_threads: i32,
 }
 
@@ -130,13 +158,20 @@ impl Default for AllConformerRmsdParameters {
 
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(factory)]
+/// Atom mappings, weights and conformer selection for RMSD without moving coordinates.
 pub struct CoordinateRmsdParameters {
+    /// Probe conformer identifier; -1 selects the native default conformer.
     pub probe_conformer_id: i32,
+    /// Reference conformer identifier; -1 selects the native default conformer.
     pub reference_conformer_id: i32,
     #[configuration(none_default)]
+    /// Candidate probe-to-reference atom mappings; an empty collection requests native match enumeration.
     pub atom_maps: Vec<Vec<AlignmentAtomMap>>,
+    /// Optional alignment weights in atom-map order.
     pub weights: Option<Vec<f64>>,
+    /// Maximum number of candidate atom mappings considered.
     pub max_matches: i32,
+    /// Treat conjugated terminal groups symmetrically when selecting matches.
     pub symmetrize_conjugated_terminal_groups: bool,
 }
 
@@ -215,11 +250,17 @@ pub enum AlignmentError {
 
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(factory)]
+/// Atom selection, conformer selection and numerical settings for aligning stored conformers.
 pub struct ConformerAlignmentParameters {
+    /// Optional zero-based atom indices used by alignment.
     pub atom_indices: Option<Vec<usize>>,
+    /// Optional stored conformer identifiers to align.
     pub conformer_ids: Option<Vec<usize>>,
+    /// Optional alignment weights in selected-atom order.
     pub weights: Option<Vec<f64>>,
+    /// Allow reflection as part of the alignment transform.
     pub reflect: bool,
+    /// Maximum number of iterations in the alignment solver.
     pub max_iterations: u32,
 }
 

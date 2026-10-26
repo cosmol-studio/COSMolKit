@@ -109,7 +109,8 @@ mod tests {
             module.add_class::<crate::params::AtomPositionParams>()?;
             module.add_class::<Coordinate2DParams>()?;
             module.add_class::<crate::selectors::CoordinateZPolicy>()?;
-            module.add_class::<crate::operation_errors::OperationError>()?;
+            module.add("CoordinateInputError", <crate::coordinate_input_errors::CoordinateInputError as crate::error_framework::ExceptionPayload>::exception_type(py)?)?;
+            module.add_class::<crate::coordinate_input_errors::CoordinateInputErrorKind>()?;
             let locals=PyDict::new(py);
             locals.set_item("api",module)?;locals.set_item("before",before.clone())?;
             locals.set_item("expected",expected)?;locals.set_item("rows2",rows2)?;locals.set_item("rows3",rows3)?;
@@ -164,7 +165,7 @@ for name in ['with_2d_coordinates','add_2d_coordinates_']:
         if inplace: assert output is None
         else: assert bytes(source.to_binary()) == bytes(before)
     source=fresh(); output=getattr(source,name)()
-    assert (source if inplace else output).has_2d_coordinates()
+    assert (source if inplace else output).has_2d_coordinates
 for name in ['with_atom_position','set_atom_position_']:
     inplace=name.endswith('_')
     alias=name[:-1]+'_with_params_' if inplace else name+'_with_params'
@@ -179,12 +180,14 @@ for name in ['with_atom_position','set_atom_position_']:
 for inplace in [False,True]:
     source=fresh()
     result=source.clear_3d_conformers_() if inplace else source.with_cleared_3d_conformers()
-    assert (source if inplace else result).num_3d_conformers()==0
+    assert (source if inplace else result).num_3d_conformers==0
     if not inplace: assert bytes(source.to_binary())==bytes(before)
 source=fresh()
 try: source.set_3d_coordinates_([[0.0,0.0]])
-except api.OperationError as error:
-    assert error.coordinate_input is not None and error.cause is error.__cause__
+except api.CoordinateInputError as error:
+    assert error.variant == api.CoordinateInputErrorKind.RowCount
+    assert error.dimension == '3D' and error.expected == 3 and error.actual == 1
+    assert error.__cause__ is None
 else: raise AssertionError('invalid native coordinates accepted')
 assert bytes(source.to_binary()) == bytes(before)
 shared.set_atom_position_(1,[2.0,3.0,4.0])

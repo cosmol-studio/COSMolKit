@@ -5,12 +5,15 @@ use pyo3::prelude::*;
 macro_rules! generator_parameters {
     ($name:ident) => {
         ck::project_configuration!(ck::$name, methods {
+            /// Return the native human-readable fingerprint generator settings summary.
             fn info_string(&self, py: Python<'_>) -> PyResult<String> {
                 Ok(self.to_rust(py)?.info_string())
             }
+            /// Serialize generator parameters with the native JSON format.
             fn to_json(&self, py: Python<'_>) -> PyResult<String> {
                 Ok(self.to_rust(py)?.to_json())
             }
+            /// Return an independent configuration updated by the native JSON parser.
             fn with_json(&self, py: Python<'_>, json: &str) -> PyResult<Self> {
                 let value = self.to_rust(py)?.with_json(json)
                     .map_err(crate::fingerprint_json::FingerprintJsonError::from_rust)?;

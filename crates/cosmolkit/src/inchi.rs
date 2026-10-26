@@ -76,7 +76,9 @@ impl InchiResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct InchiReadParams {
+    /// Sanitize the molecule returned by InChI decoding.
     pub sanitize: bool,
+    /// Remove removable explicit hydrogens from the decoded molecule.
     pub remove_hs: bool,
 }
 
@@ -114,6 +116,7 @@ impl InchiReadParams {
 #[derive(Debug, Clone, Default, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct InchiWriteParams {
+    /// Official InChI option string; empty text uses engine defaults.
     pub options: String,
 }
 

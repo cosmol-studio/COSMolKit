@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Named attachment to a target atom.
     pub struct TemplateAttachment {
         pub(crate) inner: ck::TemplateAttachment,
     }
@@ -17,10 +18,12 @@ impl TemplateAttachment {
         }
     }
     #[getter]
+    /// Zero-based target atom identifier for this attachment.
     fn target(&self) -> usize {
         self.inner.target().index()
     }
     #[getter]
+    /// Unique attachment label.
     fn label(&self) -> &str {
         self.inner.label()
     }
@@ -28,6 +31,7 @@ impl TemplateAttachment {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Ordered, validated set of template attachment targets and labels.
     pub struct TemplateAttachmentOrder {
         pub(crate) inner: ck::TemplateAttachmentOrder,
     }
@@ -41,6 +45,7 @@ impl TemplateAttachmentOrder {
             .map_err(TemplateAttachmentOrderError::from_rust)
     }
     #[getter]
+    /// Ordered independent attachment entries.
     fn entries(&self) -> Vec<TemplateAttachment> {
         self.inner
             .entries()
@@ -49,6 +54,7 @@ impl TemplateAttachmentOrder {
             .map(|inner| TemplateAttachment { inner })
             .collect()
     }
+    /// Check that all attachment targets belong to the specified atom count; raise TemplateAttachmentOrderError on violation.
     fn validate_for_atom_count(&self, atom_count: usize) -> PyResult<()> {
         self.inner
             .validate_for_atom_count(atom_count)
@@ -71,10 +77,12 @@ pub struct TemplateAttachmentOrderError {
 }
 crate::error_framework::error_projection! {methods impl TemplateAttachmentOrderError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "model"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> TemplateAttachmentOrderErrorKind {
         use TemplateAttachmentOrderErrorKind as K;
         use ck::TemplateAttachmentOrderError as E;
@@ -107,7 +115,7 @@ crate::error_framework::error_projection! {methods impl TemplateAttachmentOrderE
         }
     }
     #[getter]
-    fn first_position(&self) -> Option<usize> {
+    #[doc = "Position of the first occurrence. Present for `TemplateAttachmentOrderError.DuplicateTarget`, `TemplateAttachmentOrderError.DuplicateLabel`; None when unavailable."] fn first_position(&self) -> Option<usize> {
         match self.inner {
             ck::TemplateAttachmentOrderError::DuplicateTarget { first_position, .. }
             | ck::TemplateAttachmentOrderError::DuplicateLabel { first_position, .. } => {
@@ -117,7 +125,7 @@ crate::error_framework::error_projection! {methods impl TemplateAttachmentOrderE
         }
     }
     #[getter]
-    fn duplicate_position(&self) -> Option<usize> {
+    #[doc = "Position of the duplicate occurrence. Present for `TemplateAttachmentOrderError.DuplicateTarget`, `TemplateAttachmentOrderError.DuplicateLabel`; None when unavailable."] fn duplicate_position(&self) -> Option<usize> {
         match self.inner {
             ck::TemplateAttachmentOrderError::DuplicateTarget {
                 duplicate_position, ..
@@ -129,7 +137,7 @@ crate::error_framework::error_projection! {methods impl TemplateAttachmentOrderE
         }
     }
     #[getter]
-    fn target(&self) -> Option<usize> {
+    #[doc = "Target atom identifier associated with the failure. Present for `TemplateAttachmentOrderError.DuplicateTarget`, `TemplateAttachmentOrderError.TargetOutOfRange`, `TemplateAttachmentOrderError.MappingTargetOutOfRange`, `TemplateAttachmentOrderError.TargetRemoved`; None when unavailable."] fn target(&self) -> Option<usize> {
         match self.inner {
             ck::TemplateAttachmentOrderError::DuplicateTarget { target, .. }
             | ck::TemplateAttachmentOrderError::TargetOutOfRange { target, .. }
@@ -141,7 +149,7 @@ crate::error_framework::error_projection! {methods impl TemplateAttachmentOrderE
         }
     }
     #[getter]
-    fn position(&self) -> Option<usize> {
+    #[doc = "Position of the offending entry. Present for `TemplateAttachmentOrderError.TargetOutOfRange`, `TemplateAttachmentOrderError.MappingTargetOutOfRange`, `TemplateAttachmentOrderError.TargetRemoved`; None when unavailable."] fn position(&self) -> Option<usize> {
         match self.inner {
             ck::TemplateAttachmentOrderError::TargetOutOfRange { position, .. }
             | ck::TemplateAttachmentOrderError::MappingTargetOutOfRange { position, .. }
@@ -150,14 +158,14 @@ crate::error_framework::error_projection! {methods impl TemplateAttachmentOrderE
         }
     }
     #[getter]
-    fn label(&self) -> Option<&str> {
+    #[doc = "Attachment-point label associated with the failure. Present for `TemplateAttachmentOrderError.DuplicateLabel`; None when unavailable."] fn label(&self) -> Option<&str> {
         match &self.inner {
             ck::TemplateAttachmentOrderError::DuplicateLabel { label, .. } => Some(label),
             _ => None,
         }
     }
     #[getter]
-    fn atom_count(&self) -> Option<usize> {
+    #[doc = "Number of atoms available to the operation. Present for `TemplateAttachmentOrderError.TargetOutOfRange`; None when unavailable."] fn atom_count(&self) -> Option<usize> {
         match self.inner {
             ck::TemplateAttachmentOrderError::TargetOutOfRange { atom_count, .. } => {
                 Some(atom_count)
@@ -166,7 +174,7 @@ crate::error_framework::error_projection! {methods impl TemplateAttachmentOrderE
         }
     }
     #[getter]
-    fn mapping_len(&self) -> Option<usize> {
+    #[doc = "Length of the supplied mapping. Present for `TemplateAttachmentOrderError.MappingTargetOutOfRange`; None when unavailable."] fn mapping_len(&self) -> Option<usize> {
         match self.inner {
             ck::TemplateAttachmentOrderError::MappingTargetOutOfRange { mapping_len, .. } => {
                 Some(mapping_len)
@@ -191,6 +199,7 @@ impl TemplateAttachmentOrderError {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone, Copy)]
+    /// Read-only atom degree, valence and hydrogen counts calculated by the native chemistry implementation.
     pub struct AtomMetadata {
         pub(crate) inner: ck::AtomMetadata,
     }
@@ -216,22 +225,27 @@ impl AtomMetadata {
         }
     }
     #[getter]
+    /// Number of bonded atom neighbors.
     fn degree(&self) -> usize {
         self.inner.degree
     }
     #[getter]
+    /// Assigned explicit valence.
     fn explicit_valence(&self) -> i32 {
         self.inner.explicit_valence
     }
     #[getter]
+    /// Assigned implicit hydrogen count.
     fn implicit_hydrogens(&self) -> i32 {
         self.inner.implicit_hydrogens
     }
     #[getter]
+    /// Combined explicit and implicit hydrogen count reported by the native metadata calculation.
     fn total_hydrogens(&self) -> i32 {
         self.inner.total_hydrogens
     }
     #[getter]
+    /// Assigned total valence.
     fn total_valence(&self) -> i32 {
         self.inner.total_valence
     }

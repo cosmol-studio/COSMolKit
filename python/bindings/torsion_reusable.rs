@@ -34,6 +34,7 @@ pub(crate) fn call_keywords(
 
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
+/// Reusable native TopologicalTorsion fingerprint generator retaining its invariant providers and editable settings.
 pub struct TopologicalTorsionFingerprintGenerator {
     pub(crate) inner: ck::TopologicalTorsionFingerprintGenerator,
 }
@@ -56,6 +57,7 @@ impl TopologicalTorsionFingerprintGenerator {
     }
     #[staticmethod]
     #[pyo3(signature=(params=None,atom_invariants=None))]
+    /// Create a reusable TopologicalTorsion fingerprint generator with native parameter defaults and optional invariant providers.
     fn new(
         py: Python<'_>,
         params: Option<&TopologicalTorsionGeneratorParams>,
@@ -64,22 +66,26 @@ impl TopologicalTorsionFingerprintGenerator {
         Self::construct(py, params, atom_invariants)
     }
     #[staticmethod]
+    /// Restore generator configuration using the native JSON reader.
     fn from_json(json: &str) -> PyResult<Self> {
         ck::TopologicalTorsionFingerprintGenerator::from_json(json)
             .map(|inner| Self { inner })
             .map_err(TopologicalTorsionReadError::from_rust)
     }
     #[getter]
+    /// Live generator settings; edits affect subsequent calculations, not previously returned fingerprints.
     fn settings(&self) -> TopologicalTorsionSettings {
         TopologicalTorsionSettings {
             inner: self.inner.settings(),
         }
     }
+    /// Return the native summary of the generator and invariant-provider settings.
     fn info_string(&self) -> PyResult<String> {
         self.inner
             .info_string()
             .map_err(TopologicalTorsionReadError::from_rust)
     }
+    /// Serialize the generator configuration in its native JSON format.
     fn to_json(&self) -> PyResult<String> {
         self.inner
             .to_json()
@@ -87,6 +93,7 @@ impl TopologicalTorsionFingerprintGenerator {
     }
 
     #[pyo3(signature=(molecules,num_threads=1))]
+    /// Compute fixed-size bit fingerprints in input order; retain None entries and use the requested native worker count.
     fn fingerprints(
         &self,
         py: Python<'_>,
@@ -107,6 +114,7 @@ impl TopologicalTorsionFingerprintGenerator {
     }
 
     #[pyo3(signature=(molecules,num_threads=1))]
+    /// Compute folded sparse count fingerprints in input order, retaining None entries.
     fn counts(
         &self,
         py: Python<'_>,
@@ -132,6 +140,7 @@ impl TopologicalTorsionFingerprintGenerator {
     }
 
     #[pyo3(signature=(molecules,num_threads=1))]
+    /// Compute sparse bit fingerprints in input order, retaining None entries.
     fn sparse_fingerprints(
         &self,
         py: Python<'_>,
@@ -157,6 +166,7 @@ impl TopologicalTorsionFingerprintGenerator {
     }
 
     #[pyo3(signature=(molecules,num_threads=1))]
+    /// Compute unfolded sparse count fingerprints in input order, retaining None entries.
     fn sparse_counts(
         &self,
         py: Python<'_>,
@@ -182,22 +192,26 @@ impl TopologicalTorsionFingerprintGenerator {
     }
 }
 #[pyclass(module = "cosmolkit")]
+/// Live view of generator configuration. Property assignments update the owning generator.
 pub struct TopologicalTorsionSettings {
     inner: ck::TopologicalTorsionSettings,
 }
 macro_rules! live_settings {
-    ($($field:ident:$ty:ty),+ $(,)?)=>{
+    ($($(#[$doc:meta])* $field:ident:$ty:ty),+ $(,)?)=>{
         paste::paste!{
             #[pymethods]
             impl TopologicalTorsionSettings {
                 $(#[getter]
+                $(#[$doc])*
                 fn $field(&self)->PyResult<$ty>{self.inner.$field().map_err(TopologicalTorsionReadError::from_rust)}
                 #[setter($field)]
                 fn [<assign_ $field>](&mut self,value:$ty)->PyResult<()>{self.[<set_ $field>](value)}
+                #[doc = concat!("Update the generator's ", stringify!($field), " setting; see the corresponding property for its meaning.")]
                 fn [<set_ $field>](&mut self,value:$ty)->PyResult<()>{
                     self.inner.[<set_ $field>](value).map_err(TopologicalTorsionReadError::from_rust)
                 })+
                 #[getter]
+                /// Independent snapshot of the generator parameters; editing it does not change this generator.
                 fn params(&self, py: Python<'_>)->PyResult<TopologicalTorsionGeneratorParams>{
                     let value = self.inner.params().map_err(TopologicalTorsionReadError::from_rust)?;
                     TopologicalTorsionGeneratorParams::from_rust(py, value)
@@ -207,8 +221,20 @@ macro_rules! live_settings {
     };
 }
 live_settings! {
-    torsion_atom_count:u32,only_shortest_paths:bool,include_chirality:bool,
-    count_simulation:bool,fp_size:u32,bits_per_feature:u32,count_bounds:Vec<u32>,
+    /// Number of atoms in each torsion path.
+    torsion_atom_count:u32,
+    /// Include only paths whose length is the shortest distance between their endpoints.
+    only_shortest_paths:bool,
+    /// Include stereochemistry in atom invariants.
+    include_chirality:bool,
+    /// Encode occurrence thresholds as count-simulation bits.
+    count_simulation:bool,
+    /// Number of bits in folded bit fingerprints.
+    fp_size:u32,
+    /// Number of bits generated per feature.
+    bits_per_feature:u32,
+    /// Occurrence thresholds used for count simulation.
+    count_bounds:Vec<u32>,
 }
 
 #[cfg(test)]
@@ -233,7 +259,7 @@ mod tests {
             let generator=py.get_type::<TopologicalTorsionFingerprintGenerator>()
                 .call1((&params,&provider))?.extract::<Py<TopologicalTorsionFingerprintGenerator>>()?;
             let native=ck::TopologicalTorsionFingerprintGenerator::new(Some(&native_params),Some(native_provider)).unwrap();
-            let settings=generator.bind(py).call_method0("settings")?;
+            let settings=generator.bind(py).getattr("settings")?;
             macro_rules! setting {
                 ($field:ident,$value:expr)=>{paste::paste!{
                     settings.setattr(stringify!($field),$value)?;
@@ -249,7 +275,7 @@ mod tests {
             setting!(fp_size,256_u32);
             setting!(bits_per_feature,2_u32);
             setting!(count_bounds,vec![1_u32,3,5]);
-            let snapshot=settings.call_method0("params")?.extract::<Py<TopologicalTorsionGeneratorParams>>()?;
+            let snapshot=settings.getattr("params")?.extract::<Py<TopologicalTorsionGeneratorParams>>()?;
             assert_eq!(snapshot.borrow(py).to_rust(py)?,native.settings().params().unwrap());
             assert_eq!(params.borrow(py).to_rust(py)?,native_params);
             assert!(settings.setattr("fp_size","bad").unwrap_err().is_instance_of::<PyTypeError>(py));

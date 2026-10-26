@@ -40,11 +40,13 @@ pub struct BioSelectionMatchError {
 
 crate::error_framework::error_projection! {methods impl BioSelectionMatchError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<crate::error_framework::ErrorObject<BioRowTraverseError>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -87,11 +89,13 @@ pub struct BioSelectionCopyError {
 
 crate::error_framework::error_projection! {methods impl BioSelectionCopyError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(
         slf: Bound<'_, pyo3::exceptions::PyBaseException>,
     ) -> PyResult<Source<crate::error_framework::ErrorObject<BioStructureError>, crate::error_framework::ErrorObject<BioRowTraverseError>>> {
@@ -118,15 +122,18 @@ pub struct BioOperationError {
 
 crate::error_framework::error_projection! {methods impl BioOperationError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "bio"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> BioOperationErrorKind {
         self.kind
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(
         slf: Bound<'_, pyo3::exceptions::PyBaseException>,
     ) -> PyResult<

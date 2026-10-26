@@ -54,14 +54,14 @@ error_projection!(DoubleBondStereoError, DoubleBondStereoErrorKind, ck::DoubleBo
     | ck::DoubleBondStereoError::ControllingAtomMismatch { .. } | ck::DoubleBondStereoError::ControllingSlotOverflow { .. } => None,
 }, source = Option<DoubleStereoSource>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to DoubleBondStereoError.UnsignedPropertyOverflow, DoubleBondStereoError.InvalidPropertyKind, DoubleBondStereoError.NumericPropertyRead, DoubleBondStereoError.AtomOutOfRange. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::DoubleBondStereoError::UnsignedPropertyOverflow { atom, .. }
         | ck::DoubleBondStereoError::InvalidPropertyKind { atom, .. }
         | ck::DoubleBondStereoError::NumericPropertyRead { atom, .. } => atom.map(ck::AtomId::index),
         ck::DoubleBondStereoError::AtomOutOfRange { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond index involved in the failure. Present for `DoubleBondStereoError.UnsignedPropertyOverflow`, `DoubleBondStereoError.InvalidPropertyKind`, `DoubleBondStereoError.NumericPropertyRead`, `DoubleBondStereoError.BondOutOfRange`, `DoubleBondStereoError.NotDoubleBond`, `DoubleBondStereoError.UndefinedStereo`, `DoubleBondStereoError.UnsupportedStereo`, `DoubleBondStereoError.InvalidEndpointDegree`, `DoubleBondStereoError.StereoReferenceRequired`, `DoubleBondStereoError.StereoReferenceNotNeighbor`, `DoubleBondStereoError.StereoReferenceIsOppositeEndpoint`, `DoubleBondStereoError.ControllingAtomMismatch`, `DoubleBondStereoError.ControllingSlotOverflow`; None when unavailable."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::DoubleBondStereoError::UnsignedPropertyOverflow { bond, .. }
         | ck::DoubleBondStereoError::InvalidPropertyKind { bond, .. }
         | ck::DoubleBondStereoError::NumericPropertyRead { bond, .. } => bond.map(ck::BondId::index),
@@ -75,38 +75,38 @@ error_projection!(DoubleBondStereoError, DoubleBondStereoErrorKind, ck::DoubleBo
         | ck::DoubleBondStereoError::ControllingSlotOverflow { bond, .. } => Some(bond.index()), _ => None,
     } }
     #[getter]
-    fn property(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Property name involved in the failure. Applies to DoubleBondStereoError.UnsignedPropertyOverflow, DoubleBondStereoError.InvalidPropertyKind, DoubleBondStereoError.NumericPropertyRead. None when this payload is absent."] fn property(&self) -> Option<&'static str> { match self.inner {
         ck::DoubleBondStereoError::UnsignedPropertyOverflow { property, .. }
         | ck::DoubleBondStereoError::InvalidPropertyKind { property, .. }
         | ck::DoubleBondStereoError::NumericPropertyRead { property, .. } => Some(property), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
+    #[doc = "Native failure-specific category or value kind. Applies to DoubleBondStereoError.InvalidPropertyKind. None when this payload is absent."] fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
         ck::DoubleBondStereoError::InvalidPropertyKind { kind, .. } => Some(kind.into()), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to DoubleBondStereoError.AtomOutOfRange, DoubleBondStereoError.RankCount. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::DoubleBondStereoError::AtomOutOfRange { atom_count, .. }
         | ck::DoubleBondStereoError::RankCount { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to DoubleBondStereoError.RankCount, DoubleBondStereoError.RingRowCount. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::DoubleBondStereoError::RankCount { actual, .. }
         | ck::DoubleBondStereoError::RingRowCount { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn order(&self) -> Option<BondOrder> { match self.inner {
+    #[doc = "Bond order associated with the failure. Present for `DoubleBondStereoError.NotDoubleBond`; None when unavailable."] fn order(&self) -> Option<BondOrder> { match self.inner {
         ck::DoubleBondStereoError::NotDoubleBond { order, .. } => Some(order.into()), _ => None,
     } }
     #[getter]
-    fn stereo(&self) -> Option<BondStereo> { match self.inner {
+    #[doc = "Bond stereo value rejected by this failure; None for other variants."] fn stereo(&self) -> Option<BondStereo> { match self.inner {
         ck::DoubleBondStereoError::UndefinedStereo { stereo, .. }
         | ck::DoubleBondStereoError::UnsupportedStereo { stereo, .. }
         | ck::DoubleBondStereoError::StereoReferenceRequired { stereo, .. } => Some(stereo.into()), _ => None,
     } }
     #[getter]
-    fn endpoint(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Bond endpoint associated with the stereo failure. Present for `DoubleBondStereoError.InvalidEndpointDegree`, `DoubleBondStereoError.StereoReferenceNotNeighbor`, `DoubleBondStereoError.StereoReferenceIsOppositeEndpoint`, `DoubleBondStereoError.ControllingAtomMismatch`, `DoubleBondStereoError.ControllingSlotOverflow`; None when unavailable."] fn endpoint(&self) -> Option<&'static str> { match self.inner {
         ck::DoubleBondStereoError::InvalidEndpointDegree { endpoint, .. }
         | ck::DoubleBondStereoError::StereoReferenceNotNeighbor { endpoint, .. }
         | ck::DoubleBondStereoError::StereoReferenceIsOppositeEndpoint { endpoint, .. }
@@ -114,12 +114,12 @@ error_projection!(DoubleBondStereoError, DoubleBondStereoErrorKind, ck::DoubleBo
         | ck::DoubleBondStereoError::ControllingSlotOverflow { endpoint, .. } => Some(endpoint), _ => None,
     } }
     #[getter]
-    fn degree(&self) -> Option<usize> { match self.inner {
+    #[doc = "Neighbor count reported by the native check. Applies to DoubleBondStereoError.InvalidEndpointDegree, DoubleBondStereoError.ControllingSlotOverflow. None when this payload is absent."] fn degree(&self) -> Option<usize> { match self.inner {
         ck::DoubleBondStereoError::InvalidEndpointDegree { degree, .. }
         | ck::DoubleBondStereoError::ControllingSlotOverflow { degree, .. } => Some(degree), _ => None,
     } }
     #[getter]
-    fn reference(&self) -> Option<usize> { match self.inner {
+    #[doc = "Stereo or structural reference implicated in the failure. Applies to DoubleBondStereoError.StereoReferenceNotNeighbor, DoubleBondStereoError.StereoReferenceIsOppositeEndpoint, DoubleBondStereoError.ControllingAtomMismatch. None when this payload is absent."] fn reference(&self) -> Option<usize> { match self.inner {
         ck::DoubleBondStereoError::StereoReferenceNotNeighbor { reference, .. }
         | ck::DoubleBondStereoError::StereoReferenceIsOppositeEndpoint { reference, .. }
         | ck::DoubleBondStereoError::ControllingAtomMismatch { reference, .. } => Some(reference.index()), _ => None,

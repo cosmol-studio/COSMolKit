@@ -12,12 +12,13 @@ typed_callback!(
 );
 
 #[pyclass(module = "cosmolkit")]
+/// Native batch query execution overrides and optional per-record progress notification.
 pub struct BatchQueryParams {
     inner: ck::BatchQueryParams,
     progress_callback: Option<ProgressCallback>,
 }
 macro_rules! batch_query_configuration {
-    ($($field:ident: $ty:ty),+ $(,)?) => {
+    ($($(#[$doc:meta])* $field:ident: $ty:ty),+ $(,)?) => {
     paste::paste! {
     #[pymethods]
     impl BatchQueryParams {
@@ -44,9 +45,10 @@ macro_rules! batch_query_configuration {
             progress_callback,
         }
     }
-    $(#[getter] fn $field(&self) -> $ty { self.inner.$field }
+    $($(#[$doc])* #[getter] fn $field(&self) -> $ty { self.inner.$field }
     #[setter] fn [<set_ $field>](&mut self, value: $ty) { self.inner.$field = value; })+
     #[getter]
+    /// Optional zero-argument notification after each completed input row, including invalid rows; callback exceptions propagate.
     fn progress_callback(&self, py: Python<'_>) -> Option<ProgressCallback> {
         self.progress_callback
             .as_ref()

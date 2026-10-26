@@ -19,6 +19,7 @@ pub fn default_tautomer_score_terms() -> &'static [TautomerScoreTerm] {
 /// Terms used by the score query or restricted callback score. None selects the source defaults.
 #[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 pub struct TautomerScoreParams {
+    /// Explicit score terms in evaluation order; None selects the native defaults.
     pub terms: Option<Vec<TautomerScoreTerm>>,
 }
 

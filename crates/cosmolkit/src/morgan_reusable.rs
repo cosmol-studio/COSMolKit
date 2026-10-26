@@ -38,7 +38,9 @@ impl MorganAtomInvariantsGenerator {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar, factory)]
 pub struct MorganBondInvariantsGenerator {
+    /// Include bond-order information in bond invariants.
     pub use_bond_types: bool,
+    /// Include bond stereochemistry in bond invariants.
     pub include_chirality: bool,
 }
 impl MorganBondInvariantsGenerator {
@@ -77,9 +79,13 @@ pub struct MorganSettings {
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(factory)]
 pub struct MorganCallParams {
+    /// Optional atom indices used as fingerprint centers; None uses all atoms.
     pub from_atoms: Option<Vec<u32>>,
+    /// Optional atom indices to exclude from fingerprint generation.
     pub ignore_atoms: Option<Vec<u32>>,
+    /// Optional per-atom invariant values overriding the atom provider.
     pub custom_atom_invariants: Option<Vec<u32>>,
+    /// Optional per-bond invariant values overriding the bond provider.
     pub custom_bond_invariants: Option<Vec<u32>>,
 }
 impl MorganCallParams {

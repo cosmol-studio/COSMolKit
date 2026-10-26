@@ -95,15 +95,23 @@ impl From<MorganError> for TopologicalTorsionError {
         Self::Preparation(e)
     }
 }
+/// Topological-torsion fingerprint settings for atom paths and count encoding.
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct TopologicalTorsionGeneratorParams {
+    /// Number of atoms in each torsion path, normally four.
     pub torsion_atom_count: u32,
+    /// Keep only paths that are shortest paths between their endpoints.
     pub only_shortest_paths: bool,
+    /// Include atom chirality in torsion identifiers.
     pub include_chirality: bool,
+    /// Encode occurrence-count thresholds as bits in bit fingerprints.
     pub count_simulation: bool,
+    /// Occurrence thresholds used by count simulation.
     #[configuration(none_default)]
     pub count_bounds: Vec<u32>,
+    /// Number of positions in folded fingerprints.
     pub fp_size: u32,
+    /// Number of hash-derived positions generated for each torsion feature.
     pub bits_per_feature: u32,
 }
 impl Default for TopologicalTorsionGeneratorParams {

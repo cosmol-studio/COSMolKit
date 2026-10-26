@@ -23,10 +23,12 @@ pub struct PropertyStringError {
 }
 crate::error_framework::error_projection! {methods impl PropertyStringError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "property"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PyResult<PropertyStringErrorKind> {
         match self.inner {
             ck::PropertyStringError::UnsupportedKind { kind: _ } => {
@@ -57,6 +59,7 @@ impl PropertyStringError {
 }
 
 #[pyfunction]
+/// Convert a typed PropertyValue to text using the canonical native conversion; conversion errors propagate.
 pub fn property_value_to_text(py: Python<'_>, value: &PropertyValue) -> PyResult<String> {
     let native =
         ck::property_value_to_text(&value.inner).map_err(PropertyStringError::from_rust)?;
@@ -74,10 +77,12 @@ pub struct RequiredPropertyStringError {
 }
 crate::error_framework::error_projection! {methods impl RequiredPropertyStringError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "property"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> PyResult<RequiredPropertyStringErrorKind> {
         match self.inner {
             ck::RequiredPropertyStringError::Missing(_) => {
@@ -93,7 +98,7 @@ crate::error_framework::error_projection! {methods impl RequiredPropertyStringEr
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn missing(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MissingPropertyError>>> {
+    #[doc = "Structured MissingPropertyError payload of RequiredPropertyStringError.Missing; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn missing(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MissingPropertyError>>> {
         match &self.inner {
             ck::RequiredPropertyStringError::Missing(value) => {
                 MissingPropertyError::from_rust(value.clone())
@@ -107,7 +112,7 @@ crate::error_framework::error_projection! {methods impl RequiredPropertyStringEr
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn conversion(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> {
+    #[doc = "Structured PropertyStringError payload of RequiredPropertyStringError.Conversion; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn conversion(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<PropertyStringError>>> {
         match &self.inner {
             ck::RequiredPropertyStringError::Conversion(value) => {
                 PropertyStringError::from_rust(*value)
@@ -182,7 +187,7 @@ error_projection!(CanonicalRankError, CanonicalRankErrorKind, ck::CanonicalRankE
     | ck::CanonicalRankError::ProtocolDebt { .. } => None,
 }), source = Option<CanonicalSource>, methods = {
     #[getter]
-    fn atom_index(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom index involved in the native failure. Applies to CanonicalRankError.UnsignedRankOverflow, CanonicalRankError.InvalidPropertyKind, CanonicalRankError.ComponentAtomOutOfRange, CanonicalRankError.DuplicateComponentAtom, CanonicalRankError.PreparedValenceInvalid. None when this payload is absent."] fn atom_index(&self) -> Option<usize> { match self.inner {
         ck::CanonicalRankError::UnsignedRankOverflow { atom_index, .. }
         | ck::CanonicalRankError::InvalidPropertyKind { atom_index, .. }
         | ck::CanonicalRankError::ComponentAtomOutOfRange { atom_index, .. }
@@ -190,39 +195,39 @@ error_projection!(CanonicalRankError, CanonicalRankErrorKind, ck::CanonicalRankE
         | ck::CanonicalRankError::PreparedValenceInvalid { atom_index } => Some(atom_index), _ => None,
     } }
     #[getter]
-    fn property(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Property name involved in the failure. Applies to CanonicalRankError.UnsignedRankOverflow, CanonicalRankError.InvalidPropertyKind. None when this payload is absent."] fn property(&self) -> Option<&'static str> { match self.inner {
         ck::CanonicalRankError::UnsignedRankOverflow { property, .. }
         | ck::CanonicalRankError::InvalidPropertyKind { property, .. } => Some(property), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
+    #[doc = "Native failure-specific category or value kind. Applies to CanonicalRankError.InvalidPropertyKind. None when this payload is absent."] fn kind(&self) -> Option<PropertyValueKind> { match self.inner {
         ck::CanonicalRankError::InvalidPropertyKind { kind, .. } => Some(kind.into()), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to CanonicalRankError.ComponentAtomOutOfRange, CanonicalRankError.PreparedValenceLength. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::CanonicalRankError::ComponentAtomOutOfRange { atom_count, .. }
         | ck::CanonicalRankError::PreparedValenceLength { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to CanonicalRankError.AtomMaskLength, CanonicalRankError.BondMaskLength, CanonicalRankError.AtomSymbolLength, CanonicalRankError.BondSymbolLength. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::CanonicalRankError::AtomMaskLength { expected, .. } | ck::CanonicalRankError::BondMaskLength { expected, .. }
         | ck::CanonicalRankError::AtomSymbolLength { expected, .. } | ck::CanonicalRankError::BondSymbolLength { expected, .. } => Some(expected), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to CanonicalRankError.AtomMaskLength, CanonicalRankError.BondMaskLength, CanonicalRankError.AtomSymbolLength, CanonicalRankError.BondSymbolLength. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::CanonicalRankError::AtomMaskLength { actual, .. } | ck::CanonicalRankError::BondMaskLength { actual, .. }
         | ck::CanonicalRankError::AtomSymbolLength { actual, .. } | ck::CanonicalRankError::BondSymbolLength { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn rings(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> {
+    #[doc = "Structured RingFindingError payload of CanonicalRankError.RingFinding; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn rings(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> {
         match &self.inner { ck::CanonicalRankError::RingFinding(value) =>
             RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> {
+    #[doc = "Structured ValenceError payload of CanonicalRankError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> {
         match &self.inner { ck::CanonicalRankError::Valence(value) =>
             ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None) }
     }

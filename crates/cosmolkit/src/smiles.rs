@@ -7,23 +7,32 @@ use crate::{Molecule, OperationError};
 /// Original-index fragment selection; symbol arrays are indexed by the full molecule.
 #[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 pub struct FragmentSmilesWriteParams {
+    /// SMILES formatting and stereochemistry options.
     pub smiles: crate::SmilesWriteParams,
     #[configuration(required)]
+    /// Original molecule atom indices included in the fragment.
     pub atoms: Vec<crate::AtomId>,
     /// None selects all bonds between selected atoms; Some(empty) selects no bonds.
     pub bonds: Option<Vec<crate::BondId>>,
+    /// Optional replacement symbols indexed by original molecule atom index.
     pub atom_symbols: Option<Vec<String>>,
+    /// Optional replacement symbols indexed by original molecule bond index.
     pub bond_symbols: Option<Vec<String>>,
 }
 
 /// Fragment selection with explicit CX fields and dimension-scoped coordinates.
 #[derive(Debug, Clone, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 pub struct FragmentCxSmilesWriteParams {
+    /// CXSMILES formatting, extension fields and coordinate selection.
     pub cx: crate::CxSmilesWriteParams,
     #[configuration(required)]
+    /// Original molecule atom indices included in the fragment.
     pub atoms: Vec<crate::AtomId>,
+    /// Optional original bond indices; None includes bonds between selected atoms.
     pub bonds: Option<Vec<crate::BondId>>,
+    /// Optional replacement symbols indexed by original molecule atom index.
     pub atom_symbols: Option<Vec<String>>,
+    /// Optional replacement symbols indexed by original molecule bond index.
     pub bond_symbols: Option<Vec<String>>,
 }
 

@@ -22,7 +22,9 @@ impl Default for ReactionRunParams {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Coordinate selection for executing one reaction template against one input.
 pub struct ReactionSingleRunParams {
     #[configuration(none_default)]
+    /// Automatic or explicit input-conformer selection.
     pub coordinate_selection: ReactionCoordinateSelection,
 }

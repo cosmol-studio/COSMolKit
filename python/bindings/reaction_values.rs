@@ -44,6 +44,7 @@ input!(IssueKindInput, ReactionValidationIssueKind);
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// One structured reaction-template validation diagnostic.
     pub struct ReactionValidationIssue {
         pub(crate) inner: ck::ReactionValidationIssue,
     }
@@ -76,34 +77,42 @@ impl ReactionValidationIssue {
         })
     }
     #[getter]
+    /// Native category of the reaction validation issue.
     fn kind(&self) -> ReactionValidationIssueKind {
         self.inner.kind.into()
     }
     #[getter]
+    /// Whether the issue is a warning or an error.
     fn severity(&self) -> ReactionValidationSeverity {
         self.inner.severity.into()
     }
     #[getter]
+    /// Affected reactant, product or agent role, or None when not template-specific.
     fn role(&self) -> Option<ReactionRole> {
         self.inner.role.map(Into::into)
     }
     #[getter]
+    /// Zero-based template index within the affected role, or None.
     fn template(&self) -> Option<usize> {
         self.inner.template
     }
     #[getter]
+    /// Zero-based atom index within the template, or None.
     fn atom(&self) -> Option<usize> {
         self.inner.atom.map(ck::AtomId::index)
     }
     #[getter]
+    /// Atom-map number associated with the issue, or None.
     fn map(&self) -> Option<i32> {
         self.inner.map
     }
     #[getter]
+    /// Atom-map numbers associated with the issue.
     fn maps(&self) -> Vec<i32> {
         self.inner.maps.clone()
     }
     #[getter]
+    /// Native human-readable explanation of the issue.
     fn detail(&self) -> &str {
         &self.inner.detail
     }
@@ -112,6 +121,7 @@ impl ReactionValidationIssue {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Validation warnings and errors for a reaction definition.
     pub struct ReactionValidationReport {
         pub(crate) inner: ck::ReactionValidationReport,
     }
@@ -128,6 +138,7 @@ impl ReactionValidationReport {
         }
     }
     #[getter]
+    /// Independent list of validation warnings.
     fn warnings(&self) -> Vec<ReactionValidationIssue> {
         self.inner
             .warnings
@@ -137,6 +148,7 @@ impl ReactionValidationReport {
             .collect()
     }
     #[getter]
+    /// Independent list of validation errors.
     fn errors(&self) -> Vec<ReactionValidationIssue> {
         self.inner
             .errors
@@ -146,14 +158,17 @@ impl ReactionValidationReport {
             .collect()
     }
     #[getter]
+    /// Number of validation warnings.
     fn num_warnings(&self) -> usize {
         self.inner.num_warnings()
     }
     #[getter]
+    /// Number of validation errors.
     fn num_errors(&self) -> usize {
         self.inner.num_errors()
     }
     #[getter]
+    /// Whether the report contains no validation errors.
     fn is_valid(&self) -> bool {
         self.inner.is_valid()
     }
@@ -162,6 +177,7 @@ impl ReactionValidationReport {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Resulting molecular value and change indicator for single-molecule reaction application.
     pub struct ReactionApplyResult {
         pub(crate) inner: ck::ReactionApplyResult,
     }
@@ -175,12 +191,14 @@ impl ReactionApplyResult {
         }
     }
     #[getter]
+    /// COW molecular value resulting from reaction application.
     fn molecule(&self) -> Molecule {
         Molecule {
             inner: self.inner.molecule().clone(),
         }
     }
     #[getter]
+    /// Whether reaction application changed the molecular value.
     fn changed(&self) -> bool {
         self.inner.changed()
     }

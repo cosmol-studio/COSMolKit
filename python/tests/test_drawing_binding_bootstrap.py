@@ -12,9 +12,8 @@ import pytest
 
 
 def test_current_selected_extension_is_imported():
-    assert cosmolkit._binding_profile in {"drawing-bindings", "canonical-bootstrap"}
     manifest = tomllib.loads((Path(__file__).resolve().parents[1] / "Cargo.toml").read_text())
-    assert cosmolkit.__version__ == manifest["package"]["version"]
+    assert cosmolkit.version() == manifest["package"]["version"]
     assert cosmolkit.Molecule.__module__ == "cosmolkit"
 
 

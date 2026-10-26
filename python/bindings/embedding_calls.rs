@@ -157,7 +157,7 @@ mod tests {
             let two=native.with_3d_conformers_result_with_params(2,&params).unwrap();
             let module=PyModule::new(py,"embedding_call_test")?;
             module.add_class::<Molecule>()?;
-            module.add_class::<OperationError>()?;
+            module.add("OperationError", <OperationError as crate::error_framework::ExceptionPayload>::exception_type(py)?)?;
             let locals=PyDict::new(py);
             locals.set_item("api",module)?;
             locals.set_item("params",Py::new(py,EmbedParams::from_rust(py, params)?)?)?;
@@ -190,25 +190,25 @@ for name in ['with_3d_conformer', 'embed_3d_conformer_',
             if not report: assert output is None
         else:
             assert bytes(source.to_binary()) == bytes(before)
-            produced = output.molecule() if report else output
+            produced = output.molecule if report else output
         assert bytes(produced.to_binary()) == bytes(expected), (name, form)
         if report:
-            assert bytes(output.molecule().to_binary()) == bytes(expected)
-            assert output.params().random_seed == 17 and output.params().track_failures
-            assert output.params().failures == (two_failures if multiple else one_failures)
+            assert bytes(output.molecule.to_binary()) == bytes(expected)
+            assert output.params.random_seed == 17 and output.params.track_failures
+            assert output.params.failures == (two_failures if multiple else one_failures)
             if multiple:
-                assert output.conf_ids() == two_ids
-                assert output.requested_num_confs() == 2
-                assert output.generated_count() == len(two_ids)
-            else: assert output.conf_id() == one_id and output.ok() == (one_id >= 0)
+                assert output.conf_ids == two_ids
+                assert output.requested_num_confs == 2
+                assert output.generated_count == len(two_ids)
+            else: assert output.conf_id == one_id and output.ok == (one_id >= 0)
     source = fresh()
     output = getattr(source, name)(*args)  # real native default branch
-    produced = source if inplace else (output.molecule() if report else output)
-    assert produced.num_3d_conformers() == (2 if multiple else 1)
+    produced = source if inplace else (output.molecule if report else output)
+    assert produced.num_3d_conformers == (2 if multiple else 1)
     if report:
-        assert output.params().use_exp_torsion_angle_prefs
-        assert output.params().use_basic_knowledge
-        assert output.params().use_macrocycle_torsions
+        assert output.params.use_exp_torsion_angle_prefs
+        assert output.params.use_basic_knowledge
+        assert output.params.use_macrocycle_torsions
     try: getattr(source, name)(*args, params, random_seed=17)
     except TypeError: pass
     else: raise AssertionError('mixed embedding configuration accepted')

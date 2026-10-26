@@ -1357,16 +1357,26 @@ pub fn validate_morgan_batch_params(params: &MorganGeneratorParams) -> Result<()
 /// root, runtime, or binding API.
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 pub struct MorganGeneratorParams {
+    /// Maximum number of bonds through which each atom environment is expanded.
     pub radius: u32,
+    /// Include stereochemical information in environment identifiers.
     pub include_chirality: bool,
+    /// Distinguish bond types when constructing environment identifiers.
     pub use_bond_types: bool,
+    /// Include ring membership in default connectivity atom invariants.
     pub include_ring_membership: bool,
+    /// Generate environments only from atoms with nonzero initial invariants.
     pub only_nonzero_invariants: bool,
+    /// Retain environments otherwise removed as redundant during expansion.
     pub include_redundant_environments: bool,
+    /// Number of positions in folded fingerprints; does not limit sparse identifiers.
     pub fp_size: u32,
+    /// Encode occurrence-count thresholds as separate bits in bit fingerprints.
     pub count_simulation: bool,
+    /// Occurrence thresholds used when count simulation is enabled.
     #[configuration(none_default)]
     pub count_bounds: Vec<u32>,
+    /// Number of hash-derived positions generated for each environment.
     pub bits_per_feature: u32,
 }
 

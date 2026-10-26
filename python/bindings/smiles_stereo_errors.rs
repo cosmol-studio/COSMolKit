@@ -26,43 +26,43 @@ error_projection!(SmilesStereoError, SmilesStereoErrorKind, ck::SmilesStereoErro
     | ck::SmilesStereoError::RingRows { .. } => None,
 }), source = Option<LegacySource>, methods = {
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to SmilesStereoError.ValenceRows, SmilesStereoError.RingRows. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::SmilesStereoError::ValenceRows { actual, .. }
         | ck::SmilesStereoError::RingRows { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to SmilesStereoError.ValenceRows, SmilesStereoError.RingRows. None when this payload is absent."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::SmilesStereoError::ValenceRows { expected, .. }
         | ck::SmilesStereoError::RingRows { expected, .. } => Some(expected), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn properties(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
+    #[doc = "Structured MoleculePropertyError payload of SmilesStereoError.Properties; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn properties(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<MoleculePropertyError>>> { match &self.inner {
         ck::SmilesStereoError::Properties(value) => MoleculePropertyError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
+    #[doc = "Structured CoordinateValidationError payload of SmilesStereoError.Coordinates; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> { match &self.inner {
         ck::SmilesStereoError::Coordinates(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn directions(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<DoubleBondStereoError>>> { match &self.inner {
+    #[doc = "Structured DoubleBondStereoError payload of SmilesStereoError.Directions; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn directions(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<DoubleBondStereoError>>> { match &self.inner {
         ck::SmilesStereoError::Directions(value) => DoubleBondStereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn assignment(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<LegacyStereoError>>> { match &self.inner {
+    #[doc = "Structured LegacyStereoError payload of SmilesStereoError.Assignment; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn assignment(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<LegacyStereoError>>> { match &self.inner {
         ck::SmilesStereoError::Assignment(value) => LegacyStereoError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn rings(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
+    #[doc = "Structured RingFindingError payload of SmilesStereoError.Rings; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn rings(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<RingFindingError>>> { match &self.inner {
         ck::SmilesStereoError::Rings(value) => RingFindingError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
+    #[doc = "Structured ValenceError payload of SmilesStereoError.Valence; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn valence(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<ValenceError>>> { match &self.inner {
         ck::SmilesStereoError::Valence(value) => ValenceError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

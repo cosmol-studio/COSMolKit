@@ -34,49 +34,49 @@ error_projection!(TransformError, TransformErrorKind, ck::TransformError, "coord
     | ck::TransformError::UndefinedRotationAxis | ck::TransformError::InvalidTargetValue { .. } => None,
 }, source = Option<Source<crate::error_framework::ErrorObject<TopologyValidationError>, crate::error_framework::ErrorObject<CoordinateValidationError>>>, methods = {
     #[getter]
-    fn role(&self) -> Option<&'static str> {
+    #[doc = "Role of the affected reaction template or transformation participant. Present for `TransformError.AtomOutOfRange`, `TransformError.NonFinitePoint`; None when unavailable."] fn role(&self) -> Option<&'static str> {
         match self.inner {
             ck::TransformError::AtomOutOfRange { role, .. } | ck::TransformError::NonFinitePoint { role, .. } => Some(role),
             _ => None,
         }
     }
     #[getter]
-    fn atom(&self) -> Option<usize> {
+    #[doc = "Atom index involved in the failure. Present for `TransformError.AtomOutOfRange`, `TransformError.NonFiniteWeight`; None when unavailable."] fn atom(&self) -> Option<usize> {
         match self.inner {
             ck::TransformError::AtomOutOfRange { atom, .. } | ck::TransformError::NonFiniteWeight { atom, .. } => Some(atom.index()),
             _ => None,
         }
     }
     #[getter]
-    fn value(&self) -> Option<f64> {
+    #[doc = "Original value rejected by the operation. Present for `TransformError.NonFiniteWeight`, `TransformError.InvalidTargetValue`; None when unavailable."] fn value(&self) -> Option<f64> {
         match self.inner {
             ck::TransformError::NonFiniteWeight { value, .. } | ck::TransformError::InvalidTargetValue { value, .. } => Some(value),
             _ => None,
         }
     }
     #[getter]
-    fn first_role(&self) -> Option<&'static str> {
+    #[doc = "Role of the first atom in a disconnected or coincident pair; None otherwise."] fn first_role(&self) -> Option<&'static str> {
         match self.inner {
             ck::TransformError::AtomsNotBonded { first_role, .. } | ck::TransformError::CoincidentCoordinates { first_role, .. } => Some(first_role),
             _ => None,
         }
     }
     #[getter]
-    fn first(&self) -> Option<usize> {
+    #[doc = "Index of the first atom in a disconnected or coincident pair; None otherwise."] fn first(&self) -> Option<usize> {
         match self.inner {
             ck::TransformError::AtomsNotBonded { first, .. } | ck::TransformError::CoincidentCoordinates { first, .. } => Some(first.index()),
             _ => None,
         }
     }
     #[getter]
-    fn second_role(&self) -> Option<&'static str> {
+    #[doc = "Role of the second atom in a disconnected or coincident pair; None otherwise."] fn second_role(&self) -> Option<&'static str> {
         match self.inner {
             ck::TransformError::AtomsNotBonded { second_role, .. } | ck::TransformError::CoincidentCoordinates { second_role, .. } => Some(second_role),
             _ => None,
         }
     }
     #[getter]
-    fn second(&self) -> Option<usize> {
+    #[doc = "Index of the second atom in a disconnected or coincident pair; None otherwise."] fn second(&self) -> Option<usize> {
         match self.inner {
             ck::TransformError::AtomsNotBonded { second, .. } | ck::TransformError::CoincidentCoordinates { second, .. } => Some(second.index()),
             _ => None,

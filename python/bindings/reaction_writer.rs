@@ -14,8 +14,8 @@ ck::ReactionWriteError::Cx(_)|ck::ReactionWriteError::Template{..}=>Some(SmartsW
 ck::ReactionWriteError::Connectivity{source,..}=>Some(PathError::from_rust(source.clone())),
 ck::ReactionWriteError::CoordinateSelectionArity{..}=>None,
 },source=Option<Source<crate::error_framework::ErrorObject<SmartsWriteError>,crate::error_framework::ErrorObject<PathError>>>,methods={
-#[getter]fn role(&self)->Option<ReactionRole>{match self.inner.as_ref(){ck::ReactionWriteError::Template{role,..}|ck::ReactionWriteError::Connectivity{role,..}=>Some((*role).into()),_=>None}}
-#[getter]fn template(&self)->Option<usize>{match self.inner.as_ref(){ck::ReactionWriteError::Template{template,..}|ck::ReactionWriteError::Connectivity{template,..}=>Some(*template),_=>None}}
+#[getter]#[doc = "Role of the affected reaction template or transformation participant. Present for `ReactionWriteError.Template`, `ReactionWriteError.Connectivity`; None when unavailable."] fn role(&self)->Option<ReactionRole>{match self.inner.as_ref(){ck::ReactionWriteError::Template{role,..}|ck::ReactionWriteError::Connectivity{role,..}=>Some((*role).into()),_=>None}}
+#[getter]#[doc = "Index of the affected reaction template. Present for `ReactionWriteError.Template`, `ReactionWriteError.Connectivity`; None when unavailable."] fn template(&self)->Option<usize>{match self.inner.as_ref(){ck::ReactionWriteError::Template{template,..}|ck::ReactionWriteError::Connectivity{template,..}=>Some(*template),_=>None}}
 });
 pub(crate) fn keywords(
     canonical: Option<bool>,

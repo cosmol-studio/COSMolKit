@@ -11,14 +11,17 @@ pub struct Utf8Error {
 
 crate::error_framework::error_projection! {methods impl Utf8Error {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "std"
     }
     #[getter]
+    /// Number of valid UTF-8 bytes before the first invalid sequence.
     fn valid_up_to(&self) -> usize {
         self.inner.valid_up_to()
     }
     #[getter]
+    /// Length of the invalid byte sequence; None indicates an incomplete final sequence.
     fn error_len(&self) -> Option<usize> {
         self.inner.error_len()
     }
@@ -46,14 +49,17 @@ pub struct FromUtf8Error {
 
 crate::error_framework::error_projection! {methods impl FromUtf8Error {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "std"
     }
+    /// Return an independent bytes object containing the original undecodable input.
     fn as_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
         PyBytes::new(py, self.inner.as_bytes())
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
+    /// UTF-8 validation details retained with the original byte input.
     fn utf8_error(&self, py: Python<'_>) -> PyResult<crate::error_framework::ErrorObject<Utf8Error>> {
         Utf8Error::from_rust(self.inner.utf8_error())
             .value(py)

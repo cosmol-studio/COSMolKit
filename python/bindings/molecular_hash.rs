@@ -26,30 +26,30 @@ error_projection!(CipRankError, CipRankErrorKind, ck::CipRankError, "stereo", {
     | ck::CipRankError::TooManyNeighbors { .. } | ck::CipRankError::UnsupportedBondOrder { .. } => None,
 }), source = Option<crate::error_framework::ErrorObject<MappingValidationError>>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to CipRankError.NegativeImplicitHydrogen, CipRankError.AtomMapOutOfRange, CipRankError.InvariantOutOfRange, CipRankError.TooManyNeighbors. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::CipRankError::NegativeImplicitHydrogen { atom, .. }
         | ck::CipRankError::AtomMapOutOfRange { atom, .. }
         | ck::CipRankError::InvariantOutOfRange { atom, .. }
         | ck::CipRankError::TooManyNeighbors { atom, .. } => Some(atom.index()), _ => None,
     } }
     #[getter]
-    fn value(&self) -> Option<i64> { match self.inner {
+    #[doc = "Value rejected or reported by the native operation. Applies to CipRankError.NegativeImplicitHydrogen, CipRankError.InvariantOutOfRange. None when this payload is absent."] fn value(&self) -> Option<i64> { match self.inner {
         ck::CipRankError::NegativeImplicitHydrogen { value, .. } => Some(i64::from(value)),
         ck::CipRankError::InvariantOutOfRange { value, .. } => Some(value), _ => None,
     } }
     #[getter]
-    fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed value reported by the native check. Applies to CipRankError.ValenceRowCount, CipRankError.InvariantCount. None when this payload is absent."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::CipRankError::ValenceRowCount { actual, .. }
         | ck::CipRankError::InvariantCount { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    fn atom_count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom count used when validating the reported atom reference. Applies to CipRankError.ValenceRowCount, CipRankError.InvariantCount. None when this payload is absent."] fn atom_count(&self) -> Option<usize> { match self.inner {
         ck::CipRankError::ValenceRowCount { atom_count, .. }
         | ck::CipRankError::InvariantCount { atom_count, .. } => Some(atom_count), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> {
+    #[doc = "Structured TopologyValidationError payload of CipRankError.InvalidTopology; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn topology(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<TopologyValidationError>>> {
         match &self.inner {
             ck::CipRankError::InvalidTopology(value) => TopologyValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),
             _ => Ok(None),
@@ -57,7 +57,7 @@ error_projection!(CipRankError, CipRankErrorKind, ck::CipRankError, "stereo", {
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn query_state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryStateError>>> {
+    #[doc = "Structured QueryStateError payload of CipRankError.InvalidQueryState; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn query_state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<QueryStateError>>> {
         match &self.inner {
             ck::CipRankError::InvalidQueryState(value) => QueryStateError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),
             _ => Ok(None),

@@ -7,7 +7,8 @@ use pyo3::prelude::*;
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
     #[derive(Clone, PartialEq)]
-    pub struct MorganInvariants {
+/// Morgan atom-invariant selection: connectivity, standard features, or supplied feature query patterns.
+pub struct MorganInvariants {
         pub(crate) inner: ck::MorganInvariants,
     }
 }
@@ -26,6 +27,7 @@ impl MorganInvariants {
     };
     #[staticmethod]
     #[pyo3(name = "FeaturePatterns")]
+    /// Use the supplied query patterns to define atom-feature invariants.
     fn feature_patterns(py: Python<'_>, patterns: Vec<Py<QueryGraph>>) -> Self {
         Self {
             inner: ck::MorganInvariants::FeaturePatterns(
@@ -39,6 +41,7 @@ impl MorganInvariants {
 }
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// Reusable atom-invariant provider for Morgan fingerprints.
 pub struct MorganAtomInvariantsGenerator {
     pub(crate) inner: ck::MorganAtomInvariantsGenerator,
 }
@@ -47,6 +50,7 @@ pub struct MorganAtomInvariantsGenerator {
 impl MorganAtomInvariantsGenerator {
     #[staticmethod]
     #[pyo3(signature=(include_ring_membership=true))]
+    /// Create a connectivity-invariant provider, optionally including ring membership.
     fn connectivity(include_ring_membership: bool) -> Self {
         Self {
             inner: ck::MorganAtomInvariantsGenerator::connectivity(include_ring_membership),
@@ -54,6 +58,7 @@ impl MorganAtomInvariantsGenerator {
     }
     #[staticmethod]
     #[pyo3(signature=(patterns=None))]
+    /// Create a feature-invariant provider; None selects the native feature patterns.
     fn features(py: Python<'_>, patterns: Option<Vec<Py<QueryGraph>>>) -> Self {
         Self {
             inner: ck::MorganAtomInvariantsGenerator::features(patterns.map(|values| {
@@ -65,6 +70,7 @@ impl MorganAtomInvariantsGenerator {
         }
     }
     #[staticmethod]
+    /// Create a Morgan atom provider from an independent copy of the atom-pair invariant configuration.
     fn atom_pair(py: Python<'_>, generator: &AtomPairAtomInvariantsGenerator) -> PyResult<Self> {
         Ok(Self {
             inner: ck::MorganAtomInvariantsGenerator::atom_pair(generator.to_rust(py)?),

@@ -25,7 +25,7 @@ error_projection!(PropertyIntReadError, PropertyIntReadErrorKind, ck::PropertyIn
     | ck::PropertyIntReadError::SignedTextOverflow { .. } => None,
 }, source = Option<crate::error_framework::ErrorObject<UIntLexicalReadError>>, methods = {
     #[getter]
-    fn value(&self, py: Python<'_>) -> PyResult<Option<PropertyNumberText>> {
+    #[doc = "Value rejected or reported by the native operation. Applies to PropertyIntReadError.UnsignedOverflow, PropertyIntReadError.SignedTextOverflow, PropertyIntReadError.Lexical, PropertyIntReadError.InvalidKind. None when this payload is absent."] fn value(&self, py: Python<'_>) -> PyResult<Option<PropertyNumberText>> {
         match &self.inner {
             ck::PropertyIntReadError::UnsignedOverflow { value } => Ok(Some(PropertyNumberText::Number(i64::from(*value)))),
             ck::PropertyIntReadError::SignedTextOverflow { value, .. }
@@ -35,7 +35,7 @@ error_projection!(PropertyIntReadError, PropertyIntReadErrorKind, ck::PropertyIn
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<PropertyValueKind> {
+    #[doc = "Native failure-specific category or value kind. Applies to PropertyIntReadError.InvalidKind. None when this payload is absent."] fn kind(&self) -> Option<PropertyValueKind> {
         match self.inner { ck::PropertyIntReadError::InvalidKind { kind } => Some(kind.into()), _ => None }
     }
 });
@@ -47,7 +47,7 @@ error_projection!(PropertyUIntReadError, PropertyUIntReadErrorKind, ck::Property
     ck::PropertyUIntReadError::Negative { .. } | ck::PropertyUIntReadError::InvalidKind { .. } => None,
 }, source = Option<crate::error_framework::ErrorObject<UIntLexicalReadError>>, methods = {
     #[getter]
-    fn value(&self, py: Python<'_>) -> PyResult<Option<PropertyNumberText>> {
+    #[doc = "Value rejected or reported by the native operation. Applies to PropertyUIntReadError.Negative, PropertyUIntReadError.Lexical, PropertyUIntReadError.InvalidKind. None when this payload is absent."] fn value(&self, py: Python<'_>) -> PyResult<Option<PropertyNumberText>> {
         match &self.inner {
             ck::PropertyUIntReadError::Negative { value } => Ok(Some(PropertyNumberText::Number(i64::from(*value)))),
             ck::PropertyUIntReadError::Lexical { value, .. } => decode_source_text(py, value).map(|value| Some(PropertyNumberText::Text(value))),
@@ -56,7 +56,7 @@ error_projection!(PropertyUIntReadError, PropertyUIntReadErrorKind, ck::Property
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<PropertyValueKind> {
+    #[doc = "Native failure-specific category or value kind. Applies to PropertyUIntReadError.InvalidKind. None when this payload is absent."] fn kind(&self) -> Option<PropertyValueKind> {
         match self.inner { ck::PropertyUIntReadError::InvalidKind { kind } => Some(kind.into()), _ => None }
     }
 });
@@ -69,7 +69,7 @@ error_projection!(PropertyULongReadError, PropertyULongReadErrorKind, ck::Proper
     | ck::PropertyULongReadError::LexicalOverflow { .. } => None,
 }, source = Option<crate::error_framework::ErrorObject<UIntLexicalReadError>>, methods = {
     #[getter]
-    fn value(&self, py: Python<'_>) -> PyResult<Option<PropertyNumberText>> {
+    #[doc = "Value rejected or reported by the native operation. Applies to PropertyULongReadError.Negative, PropertyULongReadError.Lexical, PropertyULongReadError.LexicalOverflow, PropertyULongReadError.InvalidKind. None when this payload is absent."] fn value(&self, py: Python<'_>) -> PyResult<Option<PropertyNumberText>> {
         match &self.inner {
             ck::PropertyULongReadError::Negative { value } => Ok(Some(PropertyNumberText::Number(i64::from(*value)))),
             ck::PropertyULongReadError::Lexical { value, .. }
@@ -79,7 +79,7 @@ error_projection!(PropertyULongReadError, PropertyULongReadErrorKind, ck::Proper
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn kind(&self) -> Option<PropertyValueKind> {
+    #[doc = "Native failure-specific category or value kind. Applies to PropertyULongReadError.InvalidKind. None when this payload is absent."] fn kind(&self) -> Option<PropertyValueKind> {
         match self.inner { ck::PropertyULongReadError::InvalidKind { kind } => Some(kind.into()), _ => None }
     }
 });

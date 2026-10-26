@@ -46,12 +46,19 @@ pub enum RingComparator {
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct McsAtomCompareParameters {
+    /// Require matching atom valences.
     pub match_valences: bool,
+    /// Require compatible atom chirality.
     pub match_chiral_tag: bool,
+    /// Require equal formal charges.
     pub match_formal_charge: bool,
+    /// Match ring atoms only to ring atoms.
     pub ring_matches_ring_only: bool,
+    /// Permit only complete rings in the common substructure.
     pub complete_rings_only: bool,
+    /// Require matching isotope labels.
     pub match_isotope: bool,
+    /// Maximum distance between matching atoms in angstroms; a negative value disables this check.
     pub max_distance: f64,
 }
 
@@ -84,10 +91,15 @@ impl Default for McsAtomCompareParameters {
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
 pub struct McsBondCompareParameters {
+    /// Match ring bonds only to ring bonds.
     pub ring_matches_ring_only: bool,
+    /// Permit only complete rings in the common substructure.
     pub complete_rings_only: bool,
+    /// Require compatible fused-ring membership.
     pub match_fused_rings: bool,
+    /// Require strict matching of fused-ring topology.
     pub match_fused_rings_strict: bool,
+    /// Require compatible bond stereochemistry.
     pub match_stereo: bool,
 }
 
@@ -115,19 +127,29 @@ impl Default for McsBondCompareParameters {
 /// Detached FMCS parameter value.
 #[derive(Debug, Clone, PartialEq, cosmolkit_macros::Configuration)]
 pub struct McsParameters {
+    /// Retain all degenerate maximum-common-substructure solutions.
     pub store_all: bool,
+    /// Maximize the number of matched bonds rather than matched atoms.
     pub maximize_bonds: bool,
+    /// Minimum fraction of input molecules that must contain the common substructure.
     pub threshold: f64,
+    /// Search timeout in seconds.
     pub timeout: u32,
+    /// Enable native search diagnostics.
     pub verbose: bool,
+    /// Atom matching constraints applied in addition to the selected atom comparator.
     #[configuration(none_default)]
     pub atom_compare_parameters: McsAtomCompareParameters,
+    /// Bond matching constraints applied in addition to the selected bond comparator.
     #[configuration(none_default)]
     pub bond_compare_parameters: McsBondCompareParameters,
+    /// Policy used to compare candidate atoms.
     #[configuration(none_default)]
     pub atom_comparator: AtomComparator,
+    /// Policy used to compare candidate bonds.
     #[configuration(none_default)]
     pub bond_comparator: BondComparator,
+    /// Initial query seed as SMARTS; an empty string supplies no explicit seed.
     pub initial_seed: String,
 }
 

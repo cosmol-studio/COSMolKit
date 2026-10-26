@@ -149,6 +149,6 @@ def test_missing_specific_conformer_is_a_structured_value_error() -> None:
         _ = molecule.with_chiral_tags_from_structure(conformer_id=17)
 
     assert raised.value.domain == "operation"
-    assert raised.value.kind == "Stereo"
+    assert raised.value.variant.name == "Stereo"
     assert isinstance(raised.value.__cause__, cosmolkit.StereoError)
     assert molecule.to_binary() == before

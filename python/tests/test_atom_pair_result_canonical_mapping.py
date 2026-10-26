@@ -58,12 +58,10 @@ def test_original_additional_output_getter_collected_and_absent_mapping():
 
 def test_original_repr_width_and_collected_flag_information_mapping():
     result, output = collect()
-    assert repr(result) == 'Fingerprint(n_bits=2048)'
-    assert repr(output) == ('FingerprintAdditionalOutput(atom_to_bits=true, '
-        'bit_info_map=true, bit_paths=false, atom_counts=true, atoms_per_bit=true)')
+    assert result.n_bits == 2048
+    assert tuple(value is not None for value in fields(output)) == (True, True, True, True, False)
     empty = ck.FingerprintAdditionalOutput()
-    assert repr(empty) == ('FingerprintAdditionalOutput(atom_to_bits=false, '
-        'bit_info_map=false, bit_paths=false, atom_counts=false, atoms_per_bit=false)')
+    assert fields(empty) == (None, None, None, None, None)
     # The old single wrapper repr string does not exist. Its width and
     # collection information are observable through two canonical values.
 

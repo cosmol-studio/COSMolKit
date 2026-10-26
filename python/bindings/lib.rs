@@ -942,12 +942,17 @@ pub mod native {
     };
 
     #[pyfunction]
+    /// Return the COSMolKit package version compiled into this extension.
     fn version() -> &'static str {
         ck::version()
     }
 
     #[pyclass(module = "cosmolkit", from_py_object)]
     #[derive(Clone)]
+    /// Molecular graph, properties and independently selected 2D/3D coordinates.
+    /// Value-returning operations leave their source unchanged; methods ending
+    /// in an underscore modify this value in place. copy() initially shares
+    /// molecular storage, with changes isolated by copy-on-write.
     pub struct Molecule {
         pub(crate) inner: ck::Molecule,
     }
@@ -1480,6 +1485,7 @@ pub mod native {
             self.copy()
         }
         #[pyo3(signature=(reaction,reactant_template,params=crate::arguments::Argument::Missing,*,coordinate_selection=crate::arguments::Argument::Missing))]
+        /// Apply this molecule to the selected reactant template and return product sets. Matching callbacks and coordinate selection follow the supplied reaction policy.
         fn reaction_products(
             slf: Bound<'_, Self>,
             reaction: &mut super::reaction::Reaction,
@@ -1548,6 +1554,7 @@ pub mod native {
             };
             Self::_reaction_products_params(slf, reaction, reactant_template, Some(&params))
         }
+        /// Apply this molecule to the selected reactant template and return product sets. Matching callbacks and coordinate selection follow the supplied reaction policy. Uses the explicit configuration argument.
         fn reaction_products_with_params(
             slf: Bound<'_, Self>,
             reaction: &mut super::reaction::Reaction,
@@ -1558,6 +1565,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(reaction,reactants,params=crate::arguments::Argument::Missing,*,max_products=crate::arguments::Argument::Missing,coordinate_selections=crate::arguments::Argument::Missing,copy_atom_properties=crate::arguments::Argument::Missing))]
+        /// Run the reaction with this molecule and the supplied additional reactant inputs, returning product sets in native order.
         fn reaction_products_from_inputs(
             &self,
             py: Python<'_>,
@@ -1634,6 +1642,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(reaction,params=crate::arguments::Argument::Missing,*,remove_unmatched_atoms=crate::arguments::Argument::Missing))]
+        /// Return the native single-reactant application result as a new molecular value, leaving this molecule unchanged.
         fn apply_reaction(
             slf: Bound<'_, Self>,
             reaction: &mut super::reaction::Reaction,
@@ -1687,6 +1696,7 @@ pub mod native {
             };
             Self::_apply_reaction_params(slf, reaction, Some(&params))
         }
+        /// Return the native single-reactant application result as a new molecular value, leaving this molecule unchanged. Uses the explicit configuration argument.
         fn apply_reaction_with_params(
             slf: Bound<'_, Self>,
             reaction: &mut super::reaction::Reaction,
@@ -1696,6 +1706,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(reaction,params=crate::arguments::Argument::Missing,*,remove_unmatched_atoms=crate::arguments::Argument::Missing))]
+        /// Apply a single-reactant reaction in place and return whether it changed the molecule. COW isolates other molecular values.
         fn apply_reaction_(
             slf: Bound<'_, Self>,
             reaction: &mut super::reaction::Reaction,
@@ -1755,6 +1766,7 @@ pub mod native {
             };
             Self::_apply_reaction_inplace_params(slf, reaction, Some(&params))
         }
+        /// Apply a single-reactant reaction in place and return whether it changed the molecule. COW isolates other molecular values. Uses the explicit configuration argument.
         fn apply_reaction_with_params_(
             slf: Bound<'_, Self>,
             reaction: &mut super::reaction::Reaction,
@@ -1765,6 +1777,7 @@ pub mod native {
 
         #[staticmethod]
         #[pyo3(signature=(rdmol, sanitize=None))]
+        /// Import an RDKit molecule through the canonical adapter; sanitize selects whether to sanitize the imported molecular value.
         fn from_rdkit(
             py: Python<'_>,
             rdmol: super::rdkit_adapter::RdkitMol,
@@ -1772,11 +1785,15 @@ pub mod native {
         ) -> PyResult<Self> {
             super::rdkit_adapter::import(py, &rdmol, sanitize)
         }
+        /// Read the atom's signed 32-bit integer property. A missing key returns None;
+        /// an incompatible stored type or invalid atom index raises a structured error.
         fn atom_property_int(&self, atom: usize, key: &str) -> PyResult<Option<i32>> {
             self.inner
                 .atom_property_int(ck::AtomId::new(atom), key)
                 .map_err(super::property_values::AtomPropertyReadError::from_rust)
         }
+        /// Return a new molecule with the atom's signed 32-bit integer property set to value.
+        /// The source molecule is unchanged; atom is a zero-based index.
         fn with_atom_property_int(
             &self,
             py: Python<'_>,
@@ -1791,6 +1808,8 @@ pub mod native {
             .map(|inner| Self { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Set the atom's signed 32-bit integer property in place. atom is a zero-based
+        /// index; COW isolates other molecular values sharing the original storage.
         fn set_atom_property_int_(
             &mut self,
             py: Python<'_>,
@@ -1804,11 +1823,15 @@ pub mod native {
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Read the atom's unsigned 32-bit integer property. A missing key returns None;
+        /// an incompatible stored type or invalid atom index raises a structured error.
         fn atom_property_uint(&self, atom: usize, key: &str) -> PyResult<Option<u32>> {
             self.inner
                 .atom_property_uint(ck::AtomId::new(atom), key)
                 .map_err(super::property_values::AtomPropertyReadError::from_rust)
         }
+        /// Return a new molecule with the atom's unsigned 32-bit integer property set to value.
+        /// The source molecule is unchanged; atom is a zero-based index.
         fn with_atom_property_uint(
             &self,
             py: Python<'_>,
@@ -1823,6 +1846,8 @@ pub mod native {
             .map(|inner| Self { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Set the atom's unsigned 32-bit integer property in place. atom is a zero-based
+        /// index; COW isolates other molecular values sharing the original storage.
         fn set_atom_property_uint_(
             &mut self,
             py: Python<'_>,
@@ -1836,11 +1861,15 @@ pub mod native {
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Read the atom's 64-bit floating-point property. A missing key returns None;
+        /// an incompatible stored type or invalid atom index raises a structured error.
         fn atom_property_double(&self, atom: usize, key: &str) -> PyResult<Option<f64>> {
             self.inner
                 .atom_property_double(ck::AtomId::new(atom), key)
                 .map_err(super::property_values::AtomPropertyReadError::from_rust)
         }
+        /// Return a new molecule with the atom's 64-bit floating-point property set to value.
+        /// The source molecule is unchanged; atom is a zero-based index.
         fn with_atom_property_double(
             &self,
             py: Python<'_>,
@@ -1855,6 +1884,8 @@ pub mod native {
             .map(|inner| Self { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Set the atom's 64-bit floating-point property in place. atom is a zero-based
+        /// index; COW isolates other molecular values sharing the original storage.
         fn set_atom_property_double_(
             &mut self,
             py: Python<'_>,
@@ -1868,11 +1899,15 @@ pub mod native {
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Read the atom's boolean property. A missing key returns None;
+        /// an incompatible stored type or invalid atom index raises a structured error.
         fn atom_property_bool(&self, atom: usize, key: &str) -> PyResult<Option<bool>> {
             self.inner
                 .atom_property_bool(ck::AtomId::new(atom), key)
                 .map_err(super::property_values::AtomPropertyReadError::from_rust)
         }
+        /// Return a new molecule with the atom's boolean property set to value.
+        /// The source molecule is unchanged; atom is a zero-based index.
         fn with_atom_property_bool(
             &self,
             py: Python<'_>,
@@ -1887,6 +1922,8 @@ pub mod native {
             .map(|inner| Self { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Set the atom's boolean property in place. atom is a zero-based
+        /// index; COW isolates other molecular values sharing the original storage.
         fn set_atom_property_bool_(
             &mut self,
             py: Python<'_>,
@@ -1900,11 +1937,15 @@ pub mod native {
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Read the atom's text property. A missing key returns None;
+        /// an incompatible stored type or invalid atom index raises a structured error.
         fn atom_property_string(&self, atom: usize, key: &str) -> PyResult<Option<String>> {
             self.inner
                 .atom_property_string(ck::AtomId::new(atom), key)
                 .map_err(super::property_values::AtomPropertyReadError::from_rust)
         }
+        /// Return a new molecule with the atom's text property set to value.
+        /// The source molecule is unchanged; atom is a zero-based index.
         fn with_atom_property_string(
             &self,
             py: Python<'_>,
@@ -1919,6 +1960,8 @@ pub mod native {
             .map(|inner| Self { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Set the atom's text property in place. atom is a zero-based
+        /// index; COW isolates other molecular values sharing the original storage.
         fn set_atom_property_string_(
             &mut self,
             py: Python<'_>,
@@ -1932,11 +1975,15 @@ pub mod native {
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Read the atom's signed-integer vector property. A missing key returns None;
+        /// an incompatible stored type or invalid atom index raises a structured error.
         fn atom_property_int_vector(&self, atom: usize, key: &str) -> PyResult<Option<Vec<i32>>> {
             self.inner
                 .atom_property_int_vector(ck::AtomId::new(atom), key)
                 .map_err(super::property_values::AtomPropertyReadError::from_rust)
         }
+        /// Return a new molecule with the atom's signed-integer vector property set to value.
+        /// The source molecule is unchanged; atom is a zero-based index.
         fn with_atom_property_int_vector(
             &self,
             py: Python<'_>,
@@ -1951,6 +1998,8 @@ pub mod native {
             .map(|inner| Self { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Set the atom's signed-integer vector property in place. atom is a zero-based
+        /// index; COW isolates other molecular values sharing the original storage.
         fn set_atom_property_int_vector_(
             &mut self,
             py: Python<'_>,
@@ -1964,6 +2013,8 @@ pub mod native {
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Read the atom's text-vector property. A missing key returns None;
+        /// an incompatible stored type or invalid atom index raises a structured error.
         fn atom_property_string_vector(
             &self,
             atom: usize,
@@ -1973,6 +2024,8 @@ pub mod native {
                 .atom_property_string_vector(ck::AtomId::new(atom), key)
                 .map_err(super::property_values::AtomPropertyReadError::from_rust)
         }
+        /// Return a new molecule with the atom's text-vector property set to value.
+        /// The source molecule is unchanged; atom is a zero-based index.
         fn with_atom_property_string_vector(
             &self,
             py: Python<'_>,
@@ -1987,6 +2040,8 @@ pub mod native {
             .map(|inner| Self { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Set the atom's text-vector property in place. atom is a zero-based
+        /// index; COW isolates other molecular values sharing the original storage.
         fn set_atom_property_string_vector_(
             &mut self,
             py: Python<'_>,
@@ -2001,6 +2056,7 @@ pub mod native {
             .map_err(super::operation_errors::OperationError::from_rust)
         }
         #[pyo3(signature=(atom_id,branch_subtract=0,include_chirality=false,use_legacy_stereo_perception=true))]
+        /// Return the native atom-pair code result for the selected atom and encoding options.
         fn with_atom_pair_atom_code(
             &self,
             py: Python<'_>,
@@ -2022,6 +2078,7 @@ pub mod native {
         }
         #[staticmethod]
         #[pyo3(signature=(input,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+        /// Parse SDF text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path.
         pub(crate) fn from_sdf(
             py: Python<'_>,
             input: &str,
@@ -2092,6 +2149,7 @@ pub mod native {
             Self::_from_sdf_params(py, input, Some(&params))
         }
         #[staticmethod]
+        /// Parse SDF text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path. Uses the explicit reader parameters.
         pub(crate) fn from_sdf_with_params(
             py: Python<'_>,
             input: &str,
@@ -2102,6 +2160,7 @@ pub mod native {
 
         #[staticmethod]
         #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+        /// Parse MDL MolBlock text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path.
         pub(crate) fn from_mol(
             py: Python<'_>,
             text: &str,
@@ -2172,6 +2231,7 @@ pub mod native {
             Self::_from_mol_params(py, text, Some(&params))
         }
         #[staticmethod]
+        /// Parse MDL MolBlock text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path. Uses the explicit reader parameters.
         pub(crate) fn from_mol_with_params(
             py: Python<'_>,
             text: &str,
@@ -2181,6 +2241,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(atom, position, params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with one atom position replaced under the selected coordinate and Z policy. The source is unchanged.
         fn with_atom_position(
             &self,
             py: Python<'_>,
@@ -2239,6 +2300,7 @@ pub mod native {
             };
             self._with_atom_position_params(py, atom, position, Some(&params))
         }
+        /// Return a new molecule with one atom position replaced under the selected coordinate and Z policy. The source is unchanged. Uses the explicit configuration argument.
         fn with_atom_position_with_params(
             &self,
             py: Python<'_>,
@@ -2257,6 +2319,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(atom, position, params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing))]
+        /// Replace one atom position in place under the selected coordinate and Z policy.
         fn set_atom_position_(
             &mut self,
             py: Python<'_>,
@@ -2314,6 +2377,7 @@ pub mod native {
             };
             self._set_atom_position_params(py, atom, position, Some(&params))
         }
+        /// Replace one atom position in place under the selected coordinate and Z policy. Uses the explicit configuration argument.
         fn set_atom_position_with_params_(
             &mut self,
             py: Python<'_>,
@@ -2331,6 +2395,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, coordinate_map=crate::arguments::Argument::Missing,canonical_orientation=crate::arguments::Argument::Missing,clear_existing_2d=crate::arguments::Argument::Missing,flips_per_sample=crate::arguments::Argument::Missing,samples=crate::arguments::Argument::Missing,sample_seed=crate::arguments::Argument::Missing,permute_degree_four=crate::arguments::Argument::Missing,force_rdkit=crate::arguments::Argument::Missing,use_ring_templates=crate::arguments::Argument::Missing,use_path_angle_expansion=crate::arguments::Argument::Missing))]
+        /// Generate a 2D depiction layout in a new molecule. Supply Coordinate2DParams or keyword layout options, not both; the source is unchanged.
         fn with_2d_coordinates(
             &self,
             py: Python<'_>,
@@ -2418,6 +2483,7 @@ pub mod native {
             );
             super::coordinate_calls::with_layout(self, py, Some(&params))
         }
+        /// Generate a 2D depiction layout in a new molecule using Coordinate2DParams; the source is unchanged.
         fn with_2d_coordinates_with_params(
             &self,
             py: Python<'_>,
@@ -2427,6 +2493,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, coordinate_map=crate::arguments::Argument::Missing,canonical_orientation=crate::arguments::Argument::Missing,clear_existing_2d=crate::arguments::Argument::Missing,flips_per_sample=crate::arguments::Argument::Missing,samples=crate::arguments::Argument::Missing,sample_seed=crate::arguments::Argument::Missing,permute_degree_four=crate::arguments::Argument::Missing,force_rdkit=crate::arguments::Argument::Missing,use_ring_templates=crate::arguments::Argument::Missing,use_path_angle_expansion=crate::arguments::Argument::Missing))]
+        /// Generate and install a 2D depiction layout in place. Supply Coordinate2DParams or keyword layout options, not both.
         fn add_2d_coordinates_(
             &mut self,
             py: Python<'_>,
@@ -2514,6 +2581,7 @@ pub mod native {
             );
             super::coordinate_calls::add_layout(self, py, Some(&params))
         }
+        /// Generate and install a 2D depiction layout in place using Coordinate2DParams.
         fn add_2d_coordinates_with_params_(
             &mut self,
             py: Python<'_>,
@@ -2523,6 +2591,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, z_policy=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with the supplied 2D coordinate block installed. This installs coordinates rather than generating a layout.
         fn with_2d_coordinate_block(
             &self,
             py: Python<'_>,
@@ -2570,6 +2639,7 @@ pub mod native {
             let params = super::coordinate_calls::input_2d(z_policy)?;
             self._with_2d_coordinate_block_input_params(py, coordinates, Some(&params))
         }
+        /// Return a new molecule with the supplied 2D coordinate block installed. This installs coordinates rather than generating a layout. Uses the explicit configuration argument.
         fn with_2d_coordinate_block_with_params(
             &self,
             py: Python<'_>,
@@ -2587,6 +2657,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, z_policy=crate::arguments::Argument::Missing))]
+        /// Install the supplied 2D coordinates in place. Coordinate rows must match the atom count and the declared coordinate-input policy.
         fn set_2d_coordinates_(
             &mut self,
             py: Python<'_>,
@@ -2633,6 +2704,7 @@ pub mod native {
             let params = super::coordinate_calls::input_2d(z_policy)?;
             self._set_2d_coordinates_input_params(py, coordinates, Some(&params))
         }
+        /// Install the supplied 2D coordinates in place. Coordinate rows must match the atom count and the declared coordinate-input policy. Uses the explicit configuration argument.
         fn set_2d_coordinates_with_params_(
             &mut self,
             py: Python<'_>,
@@ -2649,6 +2721,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with supplied 3D coordinate rows installed under the selected input policy. Does not run conformer embedding.
         fn with_3d_coordinates(
             &self,
             py: Python<'_>,
@@ -2703,6 +2776,7 @@ pub mod native {
             };
             self._with_3d_coordinates_input_params(py, coordinates, Some(&params))
         }
+        /// Return a new molecule with supplied 3D coordinate rows installed under the selected input policy. Does not run conformer embedding. Uses the explicit configuration argument.
         fn with_3d_coordinates_with_params(
             &self,
             py: Python<'_>,
@@ -2722,6 +2796,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing))]
+        /// Install supplied 3D coordinate rows in place under the selected input policy. Does not run conformer embedding.
         fn set_3d_coordinates_(
             &mut self,
             py: Python<'_>,
@@ -2775,6 +2850,7 @@ pub mod native {
             };
             self._set_3d_coordinates_input_params(py, coordinates, Some(&params))
         }
+        /// Install supplied 3D coordinate rows in place under the selected input policy. Does not run conformer embedding. Uses the explicit configuration argument.
         fn set_3d_coordinates_with_params_(
             &mut self,
             py: Python<'_>,
@@ -2793,6 +2869,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, is_3d=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with an additional 3D conformer containing the supplied coordinates.
         fn with_added_3d_conformer(
             &self,
             py: Python<'_>,
@@ -2846,6 +2923,7 @@ pub mod native {
             };
             self._with_added_3d_conformer_input_params(py, coordinates, Some(&params))
         }
+        /// Return a new molecule with an additional 3D conformer containing the supplied coordinates. Uses the explicit configuration argument.
         fn with_added_3d_conformer_with_params(
             &self,
             py: Python<'_>,
@@ -2865,6 +2943,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, is_3d=crate::arguments::Argument::Missing))]
+        /// Add a 3D conformer from supplied coordinates in place; existing conformers are retained.
         fn add_3d_conformer_(
             &mut self,
             py: Python<'_>,
@@ -2917,6 +2996,7 @@ pub mod native {
             };
             self._add_3d_conformer_input_params(py, coordinates, Some(&params))
         }
+        /// Add a 3D conformer from supplied coordinates in place; existing conformers are retained. Uses the explicit configuration argument.
         fn add_3d_conformer_with_params_(
             &mut self,
             py: Python<'_>,
@@ -2935,6 +3015,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, is_3d=crate::arguments::Argument::Missing))]
+        /// Return a new molecule whose only 3D conformer contains the supplied coordinates. Rows contain exactly three numeric components.
         fn with_only_3d_conformer(
             &self,
             py: Python<'_>,
@@ -2988,6 +3069,7 @@ pub mod native {
             };
             self._with_only_3d_conformer_input_params(py, coordinates, Some(&params))
         }
+        /// Return a new molecule whose only 3D conformer contains the supplied coordinates. Rows contain exactly three numeric components. Uses the explicit configuration argument.
         fn with_only_3d_conformer_with_params(
             &self,
             py: Python<'_>,
@@ -3007,6 +3089,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(coordinates, params=crate::arguments::Argument::Missing, *, is_3d=crate::arguments::Argument::Missing))]
+        /// Replace all 3D conformers with one containing the supplied coordinates. Each row contains exactly three numeric components.
         fn set_only_3d_conformer_(
             &mut self,
             py: Python<'_>,
@@ -3059,6 +3142,7 @@ pub mod native {
             };
             self._set_only_3d_conformer_input_params(py, coordinates, Some(&params))
         }
+        /// Replace all 3D conformers with one containing the supplied coordinates. Each row contains exactly three numeric components. Uses the explicit configuration argument.
         fn set_only_3d_conformer_with_params_(
             &mut self,
             py: Python<'_>,
@@ -3075,17 +3159,20 @@ pub mod native {
             })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Return a new molecule with all 3D conformers removed. The source molecule and its 2D coordinate block are unchanged.
         fn with_cleared_3d_conformers(&self, py: Python<'_>) -> PyResult<Molecule> {
             py.detach(|| self.inner.with_cleared_3d_conformers())
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Remove all 3D conformers in place. The 2D coordinate block is unchanged; returns None.
         fn clear_3d_conformers_(&mut self, py: Python<'_>) -> PyResult<()> {
             py.detach(|| self.inner.clear_3d_conformers_())
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing, vdw_threshold=crate::arguments::Argument::Missing, ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
+        /// Construct a persistent UFF force field for the selected conformer, for evaluation, constraints and minimization without rebuilding the field.
         fn uff_force_field(
             &self,
             py: Python<'_>,
@@ -3136,6 +3223,7 @@ pub mod native {
             )
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing, mmff_variant=crate::arguments::Argument::Missing, non_bonded_threshold=crate::arguments::Argument::Missing, ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
+        /// Construct a persistent MMFF force field for the selected conformer and MMFF variant, for evaluation, constraints and minimization without rebuilding the field.
         fn mmff_force_field(
             &self,
             py: Python<'_>,
@@ -3191,6 +3279,7 @@ pub mod native {
             )
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,torsion_atom_count=crate::arguments::Argument::Missing,include_chirality=crate::arguments::Argument::Missing,fp_size=crate::arguments::Argument::Missing,bits_per_entry=crate::arguments::Argument::Missing,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing))]
+        /// Calculate the legacy topological-torsion bit fingerprint with the selected torsion length and chirality policy.
         fn fingerprint_topological_torsion_legacy(
             &self,
             py: Python<'_>,
@@ -3261,6 +3350,7 @@ pub mod native {
             );
             self._fingerprint_topological_torsion_legacy_params_native(py, Some(&params))
         }
+        /// Calculate the legacy topological-torsion bit fingerprint with the selected torsion length and chirality policy. Uses the explicit configuration argument.
         fn fingerprint_topological_torsion_legacy_with_params(
             &self,
             py: Python<'_>,
@@ -3270,6 +3360,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,torsion_atom_count=crate::arguments::Argument::Missing,include_chirality=crate::arguments::Argument::Missing,fp_size=crate::arguments::Argument::Missing,bits_per_entry=crate::arguments::Argument::Missing,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing))]
+        /// Calculate the legacy topological-torsion count fingerprint with the selected encoding policy.
         fn fingerprint_topological_torsion_count_legacy(
             &self,
             py: Python<'_>,
@@ -3340,6 +3431,7 @@ pub mod native {
             );
             self._fingerprint_topological_torsion_count_legacy_params_native(py, Some(&params))
         }
+        /// Calculate the legacy topological-torsion count fingerprint with the selected encoding policy. Uses the explicit configuration argument.
         fn fingerprint_topological_torsion_count_legacy_with_params(
             &self,
             py: Python<'_>,
@@ -3349,6 +3441,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,torsion_atom_count=crate::arguments::Argument::Missing,include_chirality=crate::arguments::Argument::Missing,fp_size=crate::arguments::Argument::Missing,bits_per_entry=crate::arguments::Argument::Missing,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing))]
+        /// Calculate sparse legacy topological-torsion counts keyed by torsion identifiers.
         fn fingerprint_topological_torsion_sparse_count_legacy(
             &self,
             py: Python<'_>,
@@ -3425,6 +3518,7 @@ pub mod native {
                 Some(&params),
             )
         }
+        /// Calculate sparse legacy topological-torsion counts keyed by torsion identifiers. Uses the explicit configuration argument.
         fn fingerprint_topological_torsion_sparse_count_legacy_with_params(
             &self,
             py: Python<'_>,
@@ -3434,6 +3528,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(torsion_atom_count=None))]
+        /// Return legacy topological torsion identifiers with the requested torsion and chirality settings.
         fn topological_torsion_ids(
             &self,
             py: Python<'_>,
@@ -3445,6 +3540,7 @@ pub mod native {
             })
             .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
         }
+        /// Return legacy topological torsion identifiers with the requested torsion and chirality settings. This entry accepts the explicit native parameter form.
         fn topological_torsion_ids_with_params(
             &self,
             py: Python<'_>,
@@ -3457,6 +3553,9 @@ pub mod native {
             .map_err(crate::morgan_errors::TopologicalTorsionReadError::from_rust)
         }
         #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,additional_output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
+        /// Calculate a fixed-width bit fingerprint from topological torsion paths with a reusable generator.
+        /// The generator supplies algorithm settings; per-call parameters select atoms and
+        /// custom invariants. Supply per-call Params or keywords, not both.
         fn fingerprint_topological_torsion_with_generator(
             &self,
             py: Python<'_>,
@@ -3543,6 +3642,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,additional_output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
+        /// Calculate a fixed-width count fingerprint from topological torsion paths with a reusable generator.
+        /// The generator supplies algorithm settings; per-call parameters select atoms and
+        /// custom invariants. Supply per-call Params or keywords, not both.
         fn fingerprint_topological_torsion_count_with_generator(
             &self,
             py: Python<'_>,
@@ -3629,6 +3731,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,additional_output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
+        /// Calculate a sparse bit fingerprint from topological torsion paths with a reusable generator.
+        /// The generator supplies algorithm settings; per-call parameters select atoms and
+        /// custom invariants. Supply per-call Params or keywords, not both.
         fn fingerprint_topological_torsion_sparse_with_generator(
             &self,
             py: Python<'_>,
@@ -3715,6 +3820,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(generator,params=crate::arguments::Argument::Missing,additional_output=None,*,from_atoms=crate::arguments::Argument::Missing,ignore_atoms=crate::arguments::Argument::Missing,custom_atom_invariants=crate::arguments::Argument::Missing,custom_bond_invariants=crate::arguments::Argument::Missing,use_legacy_stereo_perception=crate::arguments::Argument::Missing))]
+        /// Calculate a sparse count fingerprint from topological torsion paths with a reusable generator.
+        /// The generator supplies algorithm settings; per-call parameters select atoms and
+        /// custom invariants. Supply per-call Params or keywords, not both.
         fn fingerprint_topological_torsion_sparse_count_with_generator(
             &self,
             py: Python<'_>,
@@ -3800,6 +3908,9 @@ pub mod native {
             )
         }
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, invariants=Argument::Missing))]
+        /// Calculate a fixed-width bit fingerprint from Morgan circular atom environments.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_morgan(
             &self,
             py: Python<'_>,
@@ -3902,6 +4013,8 @@ pub mod native {
             crate::fingerprint_calls::run_morgan(self, py, &params, additional_output)
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a fixed-width bit fingerprint from Morgan circular atom environments using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_morgan_with_params(
             &self,
             py: Python<'_>,
@@ -3912,6 +4025,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, invariants=Argument::Missing))]
+        /// Calculate a fixed-width count fingerprint from Morgan circular atom environments.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_morgan_count(
             &self,
             py: Python<'_>,
@@ -4014,6 +4130,8 @@ pub mod native {
             crate::fingerprint_calls::run_morgan_count(self, py, &params, additional_output)
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a fixed-width count fingerprint from Morgan circular atom environments using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_morgan_count_with_params(
             &self,
             py: Python<'_>,
@@ -4024,6 +4142,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, invariants=Argument::Missing))]
+        /// Calculate a sparse bit fingerprint from Morgan circular atom environments.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_morgan_sparse(
             &self,
             py: Python<'_>,
@@ -4126,6 +4247,8 @@ pub mod native {
             crate::fingerprint_calls::run_morgan_sparse(self, py, &params, additional_output)
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a sparse bit fingerprint from Morgan circular atom environments using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_morgan_sparse_with_params(
             &self,
             py: Python<'_>,
@@ -4136,6 +4259,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, radius=Argument::Missing, include_chirality=Argument::Missing, use_bond_types=Argument::Missing, include_ring_membership=Argument::Missing, only_nonzero_invariants=Argument::Missing, include_redundant_environments=Argument::Missing, fp_size=Argument::Missing, count_simulation=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, invariants=Argument::Missing))]
+        /// Calculate a sparse count fingerprint from Morgan circular atom environments.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_morgan_sparse_count(
             &self,
             py: Python<'_>,
@@ -4243,6 +4369,8 @@ pub mod native {
             crate::fingerprint_calls::run_morgan_sparse_count(self, py, &params, additional_output)
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a sparse count fingerprint from Morgan circular atom environments using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_morgan_sparse_count_with_params(
             &self,
             py: Python<'_>,
@@ -4253,6 +4381,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        /// Calculate a fixed-width bit fingerprint from atom-pair atom types and distances.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_atom_pair(
             &self,
             py: Python<'_>,
@@ -4359,6 +4490,8 @@ pub mod native {
             crate::fingerprint_calls::run_atom_pair(self, py, &params, additional_output)
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a fixed-width bit fingerprint from atom-pair atom types and distances using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_atom_pair_with_params(
             &self,
             py: Python<'_>,
@@ -4369,6 +4502,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        /// Calculate a fixed-width count fingerprint from atom-pair atom types and distances.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_atom_pair_count(
             &self,
             py: Python<'_>,
@@ -4475,6 +4611,8 @@ pub mod native {
             crate::fingerprint_calls::run_atom_pair_count(self, py, &params, additional_output)
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a fixed-width count fingerprint from atom-pair atom types and distances using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_atom_pair_count_with_params(
             &self,
             py: Python<'_>,
@@ -4485,6 +4623,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        /// Calculate a sparse bit fingerprint from atom-pair atom types and distances.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_atom_pair_sparse(
             &self,
             py: Python<'_>,
@@ -4591,6 +4732,8 @@ pub mod native {
             crate::fingerprint_calls::run_atom_pair_sparse(self, py, &params, additional_output)
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a sparse bit fingerprint from atom-pair atom types and distances using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_atom_pair_sparse_with_params(
             &self,
             py: Python<'_>,
@@ -4601,6 +4744,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, min_distance=Argument::Missing, max_distance=Argument::Missing, include_chirality=Argument::Missing, use_2d=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, conformer_id=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        /// Calculate a sparse count fingerprint from atom-pair atom types and distances.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_atom_pair_sparse_count(
             &self,
             py: Python<'_>,
@@ -4717,6 +4863,8 @@ pub mod native {
             )
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a sparse count fingerprint from atom-pair atom types and distances using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_atom_pair_sparse_count_with_params(
             &self,
             py: Python<'_>,
@@ -4727,6 +4875,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        /// Calculate a fixed-width bit fingerprint from topological torsion paths.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_topological_torsion(
             &self,
             py: Python<'_>,
@@ -4830,6 +4981,8 @@ pub mod native {
             crate::fingerprint_calls::run_topological_torsion(self, py, &params, additional_output)
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a fixed-width bit fingerprint from topological torsion paths using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_topological_torsion_with_params(
             &self,
             py: Python<'_>,
@@ -4840,6 +4993,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        /// Calculate a fixed-width count fingerprint from topological torsion paths.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_topological_torsion_count(
             &self,
             py: Python<'_>,
@@ -4952,6 +5108,8 @@ pub mod native {
             )
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a fixed-width count fingerprint from topological torsion paths using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_topological_torsion_count_with_params(
             &self,
             py: Python<'_>,
@@ -4962,6 +5120,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        /// Calculate a sparse bit fingerprint from topological torsion paths.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_topological_torsion_sparse(
             &self,
             py: Python<'_>,
@@ -5074,6 +5235,8 @@ pub mod native {
             )
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a sparse bit fingerprint from topological torsion paths using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_topological_torsion_sparse_with_params(
             &self,
             py: Python<'_>,
@@ -5084,6 +5247,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, additional_output=None, *, torsion_atom_count=Argument::Missing, only_shortest_paths=Argument::Missing, include_chirality=Argument::Missing, count_simulation=Argument::Missing, fp_size=Argument::Missing, bits_per_feature=Argument::Missing, count_bounds=Argument::Missing, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing, atom_invariants_generator=Argument::Missing, use_legacy_stereo_perception=Argument::Missing))]
+        /// Calculate a sparse count fingerprint from topological torsion paths.
+        /// Supply a parameter object or keyword options, not both. additional_output,
+        /// when supplied, collects the requested provenance in that output object.
         fn fingerprint_topological_torsion_sparse_count(
             &self,
             py: Python<'_>,
@@ -5196,6 +5362,8 @@ pub mod native {
             )
         }
         #[pyo3(signature=(params, additional_output=None))]
+        /// Calculate a sparse count fingerprint from topological torsion paths using the supplied parameter object.
+        /// The input molecule is unchanged; additional_output collects requested provenance.
         fn fingerprint_topological_torsion_sparse_count_with_params(
             &self,
             py: Python<'_>,
@@ -5209,6 +5377,9 @@ pub mod native {
             )
         }
         #[pyo3(signature=(generator, params=Argument::Missing, additional_output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing))]
+        /// Calculate a fixed-width bit fingerprint from Morgan circular atom environments with a reusable generator.
+        /// The generator supplies algorithm settings; per-call parameters select atoms and
+        /// custom invariants. Supply per-call Params or keywords, not both.
         fn fingerprint_morgan_with_generator(
             &self,
             py: Python<'_>,
@@ -5290,6 +5461,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(generator, params=Argument::Missing, additional_output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing))]
+        /// Calculate a fixed-width count fingerprint from Morgan circular atom environments with a reusable generator.
+        /// The generator supplies algorithm settings; per-call parameters select atoms and
+        /// custom invariants. Supply per-call Params or keywords, not both.
         fn fingerprint_morgan_count_with_generator(
             &self,
             py: Python<'_>,
@@ -5371,6 +5545,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(generator, params=Argument::Missing, additional_output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing))]
+        /// Calculate a sparse bit fingerprint from Morgan circular atom environments with a reusable generator.
+        /// The generator supplies algorithm settings; per-call parameters select atoms and
+        /// custom invariants. Supply per-call Params or keywords, not both.
         fn fingerprint_morgan_sparse_with_generator(
             &self,
             py: Python<'_>,
@@ -5452,6 +5629,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(generator, params=Argument::Missing, additional_output=None, *, from_atoms=Argument::Missing, ignore_atoms=Argument::Missing, custom_atom_invariants=Argument::Missing, custom_bond_invariants=Argument::Missing))]
+        /// Calculate a sparse count fingerprint from Morgan circular atom environments with a reusable generator.
+        /// The generator supplies algorithm settings; per-call parameters select atoms and
+        /// custom invariants. Supply per-call Params or keywords, not both.
         fn fingerprint_morgan_sparse_count_with_generator(
             &self,
             py: Python<'_>,
@@ -5533,6 +5713,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, include_atom_maps=crate::arguments::Argument::Missing, isomeric_smiles=crate::arguments::Argument::Missing, include_dative_bonds=crate::arguments::Argument::Missing, rooted_at_atom=crate::arguments::Argument::Missing))]
+        /// Serialize the molecule as SMARTS without changing it. Supply SmartsWriteParams or keyword options, not both.
         fn to_smarts(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, SmartsWriteParams>>>,
@@ -5585,11 +5766,13 @@ pub mod native {
                 rooted_at_atom,
             )))
         }
+        /// Serialize the molecule as SMARTS without changing it. Supply SmartsWriteParams or keyword options, not both. This entry accepts the explicit native parameter form.
         fn to_smarts_with_params(&self, params: &SmartsWriteParams) -> PyResult<String> {
             self._to_smarts_params(Some(params))
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, include_atom_maps=crate::arguments::Argument::Missing, isomeric_smiles=crate::arguments::Argument::Missing, include_dative_bonds=crate::arguments::Argument::Missing, rooted_at_atom=crate::arguments::Argument::Missing))]
+        /// Serialize SMARTS with CX extensions without changing the molecule. Supply SmartsWriteParams or keyword options, not both.
         fn to_cx_smarts(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, SmartsWriteParams>>>,
@@ -5642,11 +5825,13 @@ pub mod native {
                 rooted_at_atom,
             )))
         }
+        /// Serialize SMARTS with CX extensions without changing the molecule. Supply SmartsWriteParams or keyword options, not both. This entry accepts the explicit native parameter form.
         fn to_cx_smarts_with_params(&self, params: &SmartsWriteParams) -> PyResult<String> {
             self._to_cx_smarts_params(Some(params))
         }
 
         #[pyo3(signature=(reference, params=crate::arguments::Argument::Missing, *, probe_conformer_id=crate::arguments::Argument::Missing, reference_conformer_id=crate::arguments::Argument::Missing, atom_map=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, reflect=crate::arguments::Argument::Missing, max_iterations=crate::arguments::Argument::Missing))]
+        /// Calculate a coordinate alignment transform to a reference without applying it. Parameters select conformers, atom correspondences, weights and reflection.
         fn alignment_transform_to(
             &self,
             py: Python<'_>,
@@ -5716,6 +5901,7 @@ pub mod native {
             );
             self._alignment_transform_to_params_native(py, reference, Some(&params))
         }
+        /// Calculate a coordinate alignment transform to a reference without applying it. Parameters select conformers, atom correspondences, weights and reflection. This entry accepts the explicit native parameter form.
         fn alignment_transform_to_with_params(
             &self,
             py: Python<'_>,
@@ -5726,6 +5912,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(reference, params=crate::arguments::Argument::Missing, *, probe_conformer_id=crate::arguments::Argument::Missing, reference_conformer_id=crate::arguments::Argument::Missing, atom_maps=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, reflect=crate::arguments::Argument::Missing, max_iterations=crate::arguments::Argument::Missing, max_matches=crate::arguments::Argument::Missing, symmetrize_conjugated_terminal_groups=crate::arguments::Argument::Missing, ignore_hydrogens=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing))]
+        /// Find the best alignment to a reference across allowed atom mappings, returning its transform and RMSD without changing either molecule.
         fn best_alignment_to(
             &self,
             py: Python<'_>,
@@ -5815,6 +6002,7 @@ pub mod native {
             );
             self._best_alignment_to_params_native(py, reference, Some(&params))
         }
+        /// Find the best alignment to a reference across allowed atom mappings, returning its transform and RMSD without changing either molecule. This entry accepts the explicit native parameter form.
         fn best_alignment_to_with_params(
             &self,
             py: Python<'_>,
@@ -5825,6 +6013,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(reference, params=crate::arguments::Argument::Missing, *, probe_conformer_id=crate::arguments::Argument::Missing, reference_conformer_id=crate::arguments::Argument::Missing, atom_maps=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, reflect=crate::arguments::Argument::Missing, max_iterations=crate::arguments::Argument::Missing, max_matches=crate::arguments::Argument::Missing, symmetrize_conjugated_terminal_groups=crate::arguments::Argument::Missing, ignore_hydrogens=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing))]
+        /// Calculate the best alignment RMSD to a reference across allowed atom mappings without changing either molecule.
         fn best_rmsd_to(
             &self,
             py: Python<'_>,
@@ -5914,6 +6103,7 @@ pub mod native {
             );
             self._best_rmsd_to_params_native(py, reference, Some(&params))
         }
+        /// Calculate the best alignment RMSD to a reference across allowed atom mappings without changing either molecule. This entry accepts the explicit native parameter form.
         fn best_rmsd_to_with_params(
             &self,
             py: Python<'_>,
@@ -5924,6 +6114,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(reference, params=crate::arguments::Argument::Missing, *, probe_conformer_id=crate::arguments::Argument::Missing, reference_conformer_id=crate::arguments::Argument::Missing, atom_maps=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, max_matches=crate::arguments::Argument::Missing, symmetrize_conjugated_terminal_groups=crate::arguments::Argument::Missing))]
+        /// Calculate coordinate RMSD to the reference without first aligning the coordinates.
         fn coordinate_rmsd_to(
             &self,
             py: Python<'_>,
@@ -5993,6 +6184,7 @@ pub mod native {
             );
             self._coordinate_rmsd_to_params_native(py, reference, Some(&params))
         }
+        /// Calculate coordinate RMSD to the reference without first aligning the coordinates. This entry accepts the explicit native parameter form.
         fn coordinate_rmsd_to_with_params(
             &self,
             py: Python<'_>,
@@ -6003,6 +6195,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, atom_maps=crate::arguments::Argument::Missing, weights=crate::arguments::Argument::Missing, max_matches=crate::arguments::Argument::Missing, symmetrize_conjugated_terminal_groups=crate::arguments::Argument::Missing, ignore_hydrogens=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing))]
+        /// Calculate symmetry-aware best RMSDs between this molecule's conformers using the selected matching and alignment parameters.
         fn all_conformer_best_rmsds(
             &self,
             py: Python<'_>,
@@ -6068,6 +6261,7 @@ pub mod native {
             );
             self._all_conformer_best_rmsds_params_native(py, Some(&params))
         }
+        /// Calculate symmetry-aware best RMSDs between this molecule's conformers using the selected matching and alignment parameters. This entry accepts the explicit native parameter form.
         fn all_conformer_best_rmsds_with_params(
             &self,
             py: Python<'_>,
@@ -6076,6 +6270,7 @@ pub mod native {
             self._all_conformer_best_rmsds_params(py, Some(params))
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, num_bits_per_feature=crate::arguments::Argument::Missing, use_hs=crate::arguments::Argument::Missing, target_density=crate::arguments::Argument::Missing, min_size=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, use_bond_order=crate::arguments::Argument::Missing, atom_invariants=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing, ignore_atoms=crate::arguments::Argument::Missing))]
+        /// Calculate the RDKit-style path-based topological bit fingerprint with the supplied path and folding settings.
         fn fingerprint_topological(
             &self,
             py: Python<'_>,
@@ -6171,6 +6366,7 @@ pub mod native {
             );
             self._fingerprint_topological_params_native(py, Some(&params))
         }
+        /// Calculate the RDKit-style path-based topological bit fingerprint with the supplied path and folding settings. Uses the explicit configuration argument.
         fn fingerprint_topological_with_params(
             &self,
             py: Python<'_>,
@@ -6183,6 +6379,7 @@ pub mod native {
                 .map_err(TopologicalFingerprintError::from_rust)
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, request=crate::arguments::Argument::Missing, *, atom_bits=crate::arguments::Argument::Missing, bit_info=crate::arguments::Argument::Missing, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, num_bits_per_feature=crate::arguments::Argument::Missing, use_hs=crate::arguments::Argument::Missing, target_density=crate::arguments::Argument::Missing, min_size=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, use_bond_order=crate::arguments::Argument::Missing, atom_invariants=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing, ignore_atoms=crate::arguments::Argument::Missing))]
+        /// Calculate the path-based topological fingerprint and requested atom/bit provenance.
         fn fingerprint_topological_with_output(
             &self,
             py: Python<'_>,
@@ -6374,6 +6571,7 @@ pub mod native {
                 Some(request),
             )
         }
+        /// Calculate the path-based topological fingerprint and requested atom/bit provenance. Uses the explicit configuration argument.
         fn fingerprint_topological_with_output_with_params(
             &self,
             py: Python<'_>,
@@ -6389,6 +6587,7 @@ pub mod native {
                 .map_err(TopologicalFingerprintError::from_rust)
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, layers=crate::arguments::Argument::Missing, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, atom_counts=crate::arguments::Argument::Missing, set_only_bits=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing))]
+        /// Calculate a layered path fingerprint using the selected layer flags, path bounds and bit width.
         fn fingerprint_layered(
             &self,
             py: Python<'_>,
@@ -6465,6 +6664,7 @@ pub mod native {
             );
             self._fingerprint_layered_params_native(py, Some(&params))
         }
+        /// Calculate a layered path fingerprint using the selected layer flags, path bounds and bit width. Uses the explicit configuration argument.
         fn fingerprint_layered_with_params(
             &self,
             py: Python<'_>,
@@ -6477,6 +6677,7 @@ pub mod native {
                 .map_err(LayeredFingerprintError::from_rust)
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing, *, layers=crate::arguments::Argument::Missing, min_path=crate::arguments::Argument::Missing, max_path=crate::arguments::Argument::Missing, fp_size=crate::arguments::Argument::Missing, atom_counts=crate::arguments::Argument::Missing, set_only_bits=crate::arguments::Argument::Missing, branched_paths=crate::arguments::Argument::Missing, from_atoms=crate::arguments::Argument::Missing))]
+        /// Calculate a layered path fingerprint together with its native additional output.
         fn fingerprint_layered_with_output(
             &self,
             py: Python<'_>,
@@ -6553,6 +6754,7 @@ pub mod native {
             );
             self._fingerprint_layered_with_output_params_native(py, Some(&params))
         }
+        /// Calculate a layered path fingerprint together with its native additional output. Uses the explicit configuration argument.
         fn fingerprint_layered_with_output_with_params(
             &self,
             py: Python<'_>,
@@ -6565,6 +6767,7 @@ pub mod native {
                 .map_err(LayeredFingerprintError::from_rust)
         }
         #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, n_bits=crate::arguments::Argument::Missing, tautomeric=crate::arguments::Argument::Missing))]
+        /// Calculate the canonical pattern fingerprint using the requested bit width and pattern options.
         fn fingerprint_pattern(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, PatternFingerprintParams>>>,
@@ -6606,6 +6809,7 @@ pub mod native {
             let params = super::pattern_producers::keyword_params(n_bits, tautomeric);
             self._fingerprint_pattern_params(Some(&params))
         }
+        /// Calculate the canonical pattern fingerprint using the requested bit width and pattern options. Uses the explicit configuration argument.
         fn fingerprint_pattern_with_params(
             &self,
             params: &PatternFingerprintParams,
@@ -6618,6 +6822,7 @@ pub mod native {
                 .map_err(PatternFingerprintError::from_rust)
         }
         #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, operations=crate::arguments::Argument::Missing))]
+        /// Inspect the molecule under the selected sanitization checks and return structured chemical-problem diagnostics.
         fn detect_chemistry_problems(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, SanitizeParams>>>,
@@ -6666,6 +6871,7 @@ pub mod native {
             };
             self._detect_chemistry_problems_params(Some(&params))
         }
+        /// Inspect the molecule under the selected sanitization checks and return structured chemical-problem diagnostics. This entry accepts the explicit native parameter form.
         fn detect_chemistry_problems_with_params(
             &self,
             params: &SanitizeParams,
@@ -6678,6 +6884,7 @@ pub mod native {
                 .map_err(SanitizeError::from_rust)
         }
         #[pyo3(signature = (path, size, atom_codes=None))]
+        /// Calculate the canonical topological torsion score for the supplied atom path.
         fn topological_torsion_path_score(
             &self,
             path: Vec<usize>,
@@ -6688,181 +6895,218 @@ pub mod native {
                 .topological_torsion_path_score(&path, size, atom_codes.as_deref())
                 .map_err(TopologicalTorsionPathScoreError::from_rust)
         }
+        /// Count atoms other than hydrogen.
         fn num_heavy_atoms(&self) -> PyResult<u32> {
             self.inner
                 .num_heavy_atoms()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count atoms including explicit and implicit hydrogens, rather than only stored atom rows.
         fn total_atom_count(&self) -> PyResult<u32> {
             self.inner
                 .total_atom_count()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return the Lipinski nitrogen/oxygen acceptor count, not the SMARTS-based num_hba definition.
         fn lipinski_hba(&self) -> PyResult<u32> {
             self.inner
                 .lipinski_hba()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return the Lipinski donor-hydrogen count, not the SMARTS-based donor-atom count num_hbd.
         fn lipinski_hbd(&self) -> PyResult<u32> {
             self.inner
                 .lipinski_hbd()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count atoms other than carbon and hydrogen using the canonical heteroatom query.
         fn num_heteroatoms(&self) -> PyResult<u32> {
             self.inner
                 .num_heteroatoms()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count hydrogen-bond acceptor atoms using the canonical SMARTS definitions. Requires prepared valence and ring information.
         fn num_hba(&self) -> PyResult<u32> {
             self.inner.num_hba().map_err(DescriptorReadError::from_rust)
         }
+        /// Count hydrogen-bond donor atoms using the canonical SMARTS definitions. Requires prepared valence information.
         fn num_hbd(&self) -> PyResult<u32> {
             self.inner.num_hbd().map_err(DescriptorReadError::from_rust)
         }
+        /// Count amide bonds using the canonical amide pattern.
         fn num_amide_bonds(&self) -> PyResult<u32> {
             self.inner
                 .num_amide_bonds()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count assigned and unassigned atom stereocenters recognized by the canonical stereo analysis.
         fn num_atom_stereo_centers(&self) -> PyResult<u32> {
             self.inner
                 .num_atom_stereo_centers()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count recognized atom stereocenters without a specified stereochemical assignment.
         fn num_unspecified_atom_stereo_centers(&self) -> PyResult<u32> {
             self.inner
                 .num_unspecified_atom_stereo_centers()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count spiro atoms from the molecule's ring information.
         fn num_spiro_atoms(&self) -> PyResult<u32> {
             self.inner
                 .num_spiro_atoms()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count bridgehead atoms from the molecule's ring information.
         fn num_bridgehead_atoms(&self) -> PyResult<u32> {
             self.inner
                 .num_bridgehead_atoms()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return the fraction of carbon atoms with sp3 hybridization.
         fn fraction_csp3(&self) -> PyResult<f64> {
             self.inner
                 .fraction_csp3()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the quantitative estimate of drug-likeness with the canonical default weights.
         fn qed(&self) -> PyResult<f64> {
             self.inner.qed().map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 1 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_1(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_1()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 2 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_2(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_2()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 3 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_3(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_3()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 4 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_4(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_4()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 5 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_5(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_5()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 6 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_6(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_6()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 7 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_7(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_7()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 8 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_8(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_8()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 9 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_9(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_9()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 10 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_10(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_10()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 11 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_11(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_11()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 12 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_12(&self) -> PyResult<f64> {
             self.inner
                 .slogp_vsa_12()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 1 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_1(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_1()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 2 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_2(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_2()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 3 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_3(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_3()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 4 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_4(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_4()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 5 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_5(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_5()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 6 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_6(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_6()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 7 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_7(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_7()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 8 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_8(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_8()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 9 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_9(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_9()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return bin 10 of the default surface-area descriptor classified by atomic Crippen molar refractivity.
         fn smr_vsa_10(&self) -> PyResult<f64> {
             self.inner
                 .smr_vsa_10()
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (params=None))]
+        /// Count rotatable bonds under the selected strictness definition; None uses the native default.
         fn num_rotatable_bonds(&self, params: Option<RotatableBondsOptions>) -> PyResult<u32> {
             match params {
                 Some(params) => self.inner.num_rotatable_bonds_with_params(&params.into()),
@@ -6870,12 +7114,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Count rotatable bonds under the explicitly selected strictness definition.
         fn num_rotatable_bonds_with_params(&self, params: RotatableBondsOptions) -> PyResult<u32> {
             self.inner
                 .num_rotatable_bonds_with_params(&params.into())
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, only_heavy=None))]
+        /// Calculate molecular weight using average atomic masses. only_heavy excludes hydrogens.
         fn molecular_weight(&self, only_heavy: Option<bool>) -> PyResult<f64> {
             match only_heavy {
                 Some(only_heavy) => self.inner.molecular_weight_with_params(only_heavy),
@@ -6883,12 +7129,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate molecular weight using average atomic masses. only_heavy excludes hydrogens. This entry accepts the explicit native parameter form.
         fn molecular_weight_with_params(&self, only_heavy: bool) -> PyResult<f64> {
             self.inner
                 .molecular_weight_with_params(only_heavy)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, only_heavy=None))]
+        /// Calculate exact molecular weight using isotopic masses. only_heavy excludes hydrogens.
         fn exact_molecular_weight(&self, only_heavy: Option<bool>) -> PyResult<f64> {
             match only_heavy {
                 Some(only_heavy) => self.inner.exact_molecular_weight_with_params(only_heavy),
@@ -6896,12 +7144,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate exact molecular weight using isotopic masses. only_heavy excludes hydrogens. This entry accepts the explicit native parameter form.
         fn exact_molecular_weight_with_params(&self, only_heavy: bool) -> PyResult<f64> {
             self.inner
                 .exact_molecular_weight_with_params(only_heavy)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, separate_isotopes=None, abbreviate_h_isotopes=None))]
+        /// Return the molecular formula, with optional isotope separation and hydrogen-isotope abbreviations.
         fn molecular_formula(
             &self,
             separate_isotopes: Option<bool>,
@@ -6916,6 +7166,7 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Return the molecular formula, with optional isotope separation and hydrogen-isotope abbreviations. This entry accepts the explicit native parameter form.
         fn molecular_formula_with_params(
             &self,
             separate_isotopes: bool,
@@ -6926,6 +7177,7 @@ pub mod native {
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, include_hydrogens=None, force=None))]
+        /// Calculate the Wildman-Crippen logP and molar-refractivity descriptors. include_hydrogens controls hydrogen contributions; force requests recalculation.
         fn crippen_descriptors(
             &self,
             include_hydrogens: Option<bool>,
@@ -6941,6 +7193,7 @@ pub mod native {
             .map(|inner| CrippenTotals { inner })
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the Wildman-Crippen logP and molar-refractivity descriptors. include_hydrogens controls hydrogen contributions; force requests recalculation. This entry accepts the explicit native parameter form.
         fn crippen_descriptors_with_params(
             &self,
             include_hydrogens: bool,
@@ -6952,6 +7205,7 @@ pub mod native {
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, include_hydrogens=None, force=None))]
+        /// Calculate Labute's approximate molecular surface area. include_hydrogens controls hydrogen contributions; force requests recalculation.
         fn labute_asa(
             &self,
             include_hydrogens: Option<bool>,
@@ -6965,12 +7219,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate Labute's approximate molecular surface area. include_hydrogens controls hydrogen contributions; force requests recalculation. This entry accepts the explicit native parameter form.
         fn labute_asa_with_params(&self, include_hydrogens: bool, force: bool) -> PyResult<f64> {
             self.inner
                 .labute_asa_with_params(include_hydrogens, force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, include_hydrogens=None, force=None))]
+        /// Return per-atom Labute surface contributions and the hydrogen contribution, preserving atom-index order.
         fn labute_asa_contributions(
             &self,
             include_hydrogens: Option<bool>,
@@ -6986,6 +7242,7 @@ pub mod native {
             .map(|inner| LabuteAsaContributions { inner })
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Return per-atom Labute surface contributions and the hydrogen contribution, preserving atom-index order. This entry accepts the explicit native parameter form.
         fn labute_asa_contributions_with_params(
             &self,
             include_hydrogens: bool,
@@ -6997,6 +7254,7 @@ pub mod native {
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, include_sulfur_phosphorus=None, force=None))]
+        /// Calculate topological polar surface area. include_sulfur_phosphorus includes sulfur and phosphorus fragments; force requests recalculation.
         fn tpsa(
             &self,
             include_sulfur_phosphorus: Option<bool>,
@@ -7010,12 +7268,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate topological polar surface area. include_sulfur_phosphorus includes sulfur and phosphorus fragments; force requests recalculation. This entry accepts the explicit native parameter form.
         fn tpsa_with_params(&self, include_sulfur_phosphorus: bool, force: bool) -> PyResult<f64> {
             self.inner
                 .tpsa_with_params(include_sulfur_phosphorus, force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, bins=None, force=None))]
+        /// Return surface-area bins classified by atomic Crippen logP contributions. bins supplies ordered cut points; None uses native default bins.
         fn slogp_vsa(&self, bins: Option<Vec<f64>>, force: Option<bool>) -> PyResult<Vec<f64>> {
             match (bins, force) {
                 (None, None) => self.inner.slogp_vsa(),
@@ -7025,12 +7285,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Return surface-area bins classified by atomic Crippen logP contributions. bins supplies ordered cut points; None uses native default bins. This entry accepts the explicit native parameter form.
         fn slogp_vsa_with_params(&self, bins: Option<Vec<f64>>, force: bool) -> PyResult<Vec<f64>> {
             self.inner
                 .slogp_vsa_with_params(bins.as_deref(), force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, bins=None, force=None))]
+        /// Return surface-area bins classified by atomic Crippen molar-refractivity contributions. bins supplies ordered cut points; None uses native defaults.
         fn smr_vsa(&self, bins: Option<Vec<f64>>, force: Option<bool>) -> PyResult<Vec<f64>> {
             match (bins, force) {
                 (None, None) => self.inner.smr_vsa(),
@@ -7040,46 +7302,57 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Return surface-area bins classified by atomic Crippen molar-refractivity contributions. bins supplies ordered cut points; None uses native defaults. This entry accepts the explicit native parameter form.
         fn smr_vsa_with_params(&self, bins: Option<Vec<f64>>, force: bool) -> PyResult<Vec<f64>> {
             self.inner
                 .smr_vsa_with_params(bins.as_deref(), force)
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the Hall-Kier alpha correction used by molecular shape descriptors.
         fn hall_kier_alpha(&self) -> PyResult<f64> {
             self.inner
                 .hall_kier_alpha()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return Hall-Kier alpha and its per-atom contributions in atom-index order.
         fn hall_kier_alpha_with_contributions(&self) -> PyResult<(f64, Vec<f64>)> {
             self.inner
                 .hall_kier_alpha_with_contributions()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the first-order Kier kappa molecular shape index.
         fn kappa_1(&self) -> PyResult<f64> {
             self.inner.kappa_1().map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the second-order Kier kappa molecular shape index.
         fn kappa_2(&self) -> PyResult<f64> {
             self.inner.kappa_2().map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the third-order Kier kappa molecular shape index.
         fn kappa_3(&self) -> PyResult<f64> {
             self.inner.kappa_3().map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the molecular flexibility index from the canonical kappa descriptors.
         fn phi(&self) -> PyResult<f64> {
             self.inner.phi().map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (force=false))]
+        /// Return the 42 molecular quantum numbers in their canonical feature order. force requests recalculation.
         fn mqns(&self, force: bool) -> PyResult<Vec<u32>> {
             self.inner
                 .mqns(force)
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the zeroth-order connectivity index from atomic degrees.
         fn chi_0(&self) -> PyResult<f64> {
             self.inner.chi_0().map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the first-order connectivity index from bonded atomic degrees.
         fn chi_1(&self) -> PyResult<f64> {
             self.inner.chi_1().map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-0 valence connectivity index. force requests recalculation.
         fn chi_0_v(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_0_v_with_params(force),
@@ -7087,12 +7360,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-0 valence connectivity index. force requests recalculation.
         fn chi_0_v_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_0_v_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-1 valence connectivity index. force requests recalculation.
         fn chi_1_v(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_1_v_with_params(force),
@@ -7100,12 +7375,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-1 valence connectivity index. force requests recalculation.
         fn chi_1_v_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_1_v_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-2 valence connectivity index. force requests recalculation.
         fn chi_2_v(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_2_v_with_params(force),
@@ -7113,12 +7390,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-2 valence connectivity index. force requests recalculation.
         fn chi_2_v_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_2_v_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-3 valence connectivity index. force requests recalculation.
         fn chi_3_v(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_3_v_with_params(force),
@@ -7126,12 +7405,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-3 valence connectivity index. force requests recalculation.
         fn chi_3_v_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_3_v_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-4 valence connectivity index. force requests recalculation.
         fn chi_4_v(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_4_v_with_params(force),
@@ -7139,12 +7420,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-4 valence connectivity index. force requests recalculation.
         fn chi_4_v_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_4_v_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-0 normalized connectivity index. force requests recalculation.
         fn chi_0_n(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_0_n_with_params(force),
@@ -7152,12 +7435,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-0 normalized connectivity index. force requests recalculation.
         fn chi_0_n_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_0_n_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-1 normalized connectivity index. force requests recalculation.
         fn chi_1_n(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_1_n_with_params(force),
@@ -7165,12 +7450,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-1 normalized connectivity index. force requests recalculation.
         fn chi_1_n_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_1_n_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-2 normalized connectivity index. force requests recalculation.
         fn chi_2_n(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_2_n_with_params(force),
@@ -7178,12 +7465,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-2 normalized connectivity index. force requests recalculation.
         fn chi_2_n_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_2_n_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-3 normalized connectivity index. force requests recalculation.
         fn chi_3_n(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_3_n_with_params(force),
@@ -7191,12 +7480,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-3 normalized connectivity index. force requests recalculation.
         fn chi_3_n_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_3_n_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, force=None))]
+        /// Calculate the order-4 normalized connectivity index. force requests recalculation.
         fn chi_4_n(&self, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_4_n_with_params(force),
@@ -7204,12 +7495,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the order-4 normalized connectivity index. force requests recalculation.
         fn chi_4_n_with_params(&self, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_4_n_with_params(force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (order, *, force=None))]
+        /// Calculate the valence connectivity index at the requested path order. force requests recalculation.
         fn chi_n_v(&self, order: u32, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_n_v_with_params(order, force),
@@ -7217,12 +7510,14 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the valence connectivity index at the requested path order. force requests recalculation. Uses the explicitly supplied parameter form.
         fn chi_n_v_with_params(&self, order: u32, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_n_v_with_params(order, force)
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (order, *, force=None))]
+        /// Calculate the normalized connectivity index at the requested path order. force requests recalculation.
         fn chi_n_n(&self, order: u32, force: Option<bool>) -> PyResult<f64> {
             match force {
                 Some(force) => self.inner.chi_n_n_with_params(order, force),
@@ -7230,67 +7525,90 @@ pub mod native {
             }
             .map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate the normalized connectivity index at the requested path order. force requests recalculation. Uses the explicitly supplied parameter form.
         fn chi_n_n_with_params(&self, order: u32, force: bool) -> PyResult<f64> {
             self.inner
                 .chi_n_n_with_params(order, force)
                 .map_err(DescriptorReadError::from_rust)
         }
 
+        /// Read the initialized ring count. Does not calculate rings; missing initialized ring information raises DescriptorReadError.
         fn num_rings(&self) -> PyResult<u32> {
             self.inner
                 .num_rings()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count rings containing a non-carbon atom in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_heterocycles(&self) -> PyResult<u32> {
             self.inner
                 .num_heterocycles()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count aromatic rings in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_aromatic_rings(&self) -> PyResult<u32> {
             self.inner
                 .num_aromatic_rings()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count saturated rings in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_saturated_rings(&self) -> PyResult<u32> {
             self.inner
                 .num_saturated_rings()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count non-aromatic rings in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_aliphatic_rings(&self) -> PyResult<u32> {
             self.inner
                 .num_aliphatic_rings()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count aromatic rings containing a non-carbon atom in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_aromatic_heterocycles(&self) -> PyResult<u32> {
             self.inner
                 .num_aromatic_heterocycles()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count aromatic all-carbon rings in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_aromatic_carbocycles(&self) -> PyResult<u32> {
             self.inner
                 .num_aromatic_carbocycles()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count non-aromatic rings containing a non-carbon atom in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_aliphatic_heterocycles(&self) -> PyResult<u32> {
             self.inner
                 .num_aliphatic_heterocycles()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count non-aromatic all-carbon rings in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_aliphatic_carbocycles(&self) -> PyResult<u32> {
             self.inner
                 .num_aliphatic_carbocycles()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count saturated rings containing a non-carbon atom in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_saturated_heterocycles(&self) -> PyResult<u32> {
             self.inner
                 .num_saturated_heterocycles()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Count saturated all-carbon rings in the stored ring information.
+        /// Does not calculate rings; an empty or absent ring assignment yields zero.
         fn num_saturated_carbocycles(&self) -> PyResult<u32> {
             self.inner
                 .num_saturated_carbocycles()
                 .map_err(DescriptorReadError::from_rust)
         }
+        /// Return tetrahedral stereo records from the native molecular stereo query.
         fn tetrahedral_stereo(&self) -> PyResult<Vec<TetrahedralStereo>> {
             self.inner
                 .tetrahedral_stereo()
@@ -7302,18 +7620,21 @@ pub mod native {
                 })
                 .map_err(StereoReadError::from_rust)
         }
+        /// Run the native stereochemistry perception query and propagate any error.
         fn perceive_stereochemistry(&self) -> PyResult<()> {
             self.inner
                 .perceive_stereochemistry()
                 .map_err(StereoReadError::from_rust)
         }
         #[pyo3(signature = (include_unassigned=false))]
+        /// Return pairs of atom indices and chiral labels; include_unassigned controls inclusion of unassigned centers.
         fn find_chiral_centers(&self, include_unassigned: bool) -> PyResult<Vec<(usize, String)>> {
             self.inner
                 .find_chiral_centers(include_unassigned)
                 .map_err(StereoReadError::from_rust)
         }
         #[pyo3(signature = (query, params=crate::arguments::Argument::Missing, *, max_matches=crate::arguments::Argument::Missing, uniquify=crate::arguments::Argument::Missing, use_chirality=crate::arguments::Argument::Missing, use_enhanced_stereo=crate::arguments::Argument::Missing, specified_stereo_query_matches_unspecified=crate::arguments::Argument::Missing, use_query_query_matches=crate::arguments::Argument::Missing, recursion_possible=crate::arguments::Argument::Missing, max_recursive_matches=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing, aromatic_matches_conjugated=crate::arguments::Argument::Missing, aromatic_matches_single_or_double=crate::arguments::Argument::Missing, extra_atom_check_overrides_default_check=crate::arguments::Argument::Missing, extra_bond_check_overrides_default_check=crate::arguments::Argument::Missing, use_generic_matchers=crate::arguments::Argument::Missing, atom_properties=crate::arguments::Argument::Missing, bond_properties=crate::arguments::Argument::Missing, final_match=crate::arguments::Argument::Missing, atom_match=crate::arguments::Argument::Missing, bond_match=crate::arguments::Argument::Missing, extra_final_check=crate::arguments::Argument::Missing, extra_atom_check=crate::arguments::Argument::Missing, extra_bond_check=crate::arguments::Argument::Missing))]
+        /// Find the first query match, returning its atom mapping or None. Supply SubstructMatchParams or keyword options, not both.
         fn substruct_match(
             slf: Bound<'_, Self>,
             query: &QueryGraph,
@@ -7464,6 +7785,7 @@ pub mod native {
             Self::_substruct_match_params_native(slf, query, Some(params))
         }
 
+        /// Find the first query match, returning its atom mapping or None. Supply SubstructMatchParams or keyword options, not both. Uses the explicitly supplied parameter form.
         fn substruct_match_with_params(
             slf: Bound<'_, Self>,
             query: &QueryGraph,
@@ -7473,6 +7795,7 @@ pub mod native {
         }
 
         #[pyo3(signature = (query, params=crate::arguments::Argument::Missing, *, max_matches=crate::arguments::Argument::Missing, uniquify=crate::arguments::Argument::Missing, use_chirality=crate::arguments::Argument::Missing, use_enhanced_stereo=crate::arguments::Argument::Missing, specified_stereo_query_matches_unspecified=crate::arguments::Argument::Missing, use_query_query_matches=crate::arguments::Argument::Missing, recursion_possible=crate::arguments::Argument::Missing, max_recursive_matches=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing, aromatic_matches_conjugated=crate::arguments::Argument::Missing, aromatic_matches_single_or_double=crate::arguments::Argument::Missing, extra_atom_check_overrides_default_check=crate::arguments::Argument::Missing, extra_bond_check_overrides_default_check=crate::arguments::Argument::Missing, use_generic_matchers=crate::arguments::Argument::Missing, atom_properties=crate::arguments::Argument::Missing, bond_properties=crate::arguments::Argument::Missing, final_match=crate::arguments::Argument::Missing, atom_match=crate::arguments::Argument::Missing, bond_match=crate::arguments::Argument::Missing, extra_final_check=crate::arguments::Argument::Missing, extra_atom_check=crate::arguments::Argument::Missing, extra_bond_check=crate::arguments::Argument::Missing))]
+        /// Return query matches in native order under the selected uniqueness, chirality and match-limit settings. Supply Params or keywords, not both.
         fn substruct_matches(
             slf: Bound<'_, Self>,
             query: &QueryGraph,
@@ -7623,6 +7946,7 @@ pub mod native {
             Self::_substruct_matches_params_native(slf, query, Some(params))
         }
 
+        /// Return query matches in native order under the selected uniqueness, chirality and match-limit settings. Supply Params or keywords, not both. Uses the explicitly supplied parameter form.
         fn substruct_matches_with_params(
             slf: Bound<'_, Self>,
             query: &QueryGraph,
@@ -7632,6 +7956,7 @@ pub mod native {
         }
 
         #[pyo3(signature = (query, params=crate::arguments::Argument::Missing, *, max_matches=crate::arguments::Argument::Missing, uniquify=crate::arguments::Argument::Missing, use_chirality=crate::arguments::Argument::Missing, use_enhanced_stereo=crate::arguments::Argument::Missing, specified_stereo_query_matches_unspecified=crate::arguments::Argument::Missing, use_query_query_matches=crate::arguments::Argument::Missing, recursion_possible=crate::arguments::Argument::Missing, max_recursive_matches=crate::arguments::Argument::Missing, num_threads=crate::arguments::Argument::Missing, aromatic_matches_conjugated=crate::arguments::Argument::Missing, aromatic_matches_single_or_double=crate::arguments::Argument::Missing, extra_atom_check_overrides_default_check=crate::arguments::Argument::Missing, extra_bond_check_overrides_default_check=crate::arguments::Argument::Missing, use_generic_matchers=crate::arguments::Argument::Missing, atom_properties=crate::arguments::Argument::Missing, bond_properties=crate::arguments::Argument::Missing, final_match=crate::arguments::Argument::Missing, atom_match=crate::arguments::Argument::Missing, bond_match=crate::arguments::Argument::Missing, extra_final_check=crate::arguments::Argument::Missing, extra_atom_check=crate::arguments::Argument::Missing, extra_bond_check=crate::arguments::Argument::Missing))]
+        /// Return whether the query has an accepted match. Supply SubstructMatchParams or keyword options, not both.
         fn has_substruct_match(
             slf: Bound<'_, Self>,
             query: &QueryGraph,
@@ -7782,6 +8107,7 @@ pub mod native {
             Self::_has_substruct_match_params_native(slf, query, Some(params))
         }
 
+        /// Return whether the query has an accepted match. Supply SubstructMatchParams or keyword options, not both. Uses the explicitly supplied parameter form.
         fn has_substruct_match_with_params(
             slf: Bound<'_, Self>,
             query: &QueryGraph,
@@ -7790,6 +8116,7 @@ pub mod native {
             Self::_has_substruct_match_params(slf, query, Some(params))
         }
 
+        /// Match an already compiled query without recompiling its query representation.
         fn substruct_matches_compiled(
             &self,
             py: Python<'_>,
@@ -7808,12 +8135,14 @@ pub mod native {
         }
 
         #[staticmethod]
+        /// Decode a COSMolKit molecular archive, preserving the serialized molecular state. Malformed or unsupported data raises its native archive error.
         pub(crate) fn from_binary(data: &[u8]) -> PyResult<Self> {
             ck::Molecule::from_binary(data)
                 .map(|inner| Self { inner })
                 .map_err(PickleError::from_rust)
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
+        /// Serialize the molecule as MDL MolBlock text with the selected writer and coordinate options; does not write a file.
         pub(crate) fn to_mol(
             &self,
             py: Python<'_>,
@@ -7894,6 +8223,7 @@ pub mod native {
             )?;
             self._io_to_mol_params(py, Some(&params))
         }
+        /// Serialize the molecule as MDL MolBlock text with the selected writer and coordinate options; does not write a file. Uses explicit writer parameters.
         pub(crate) fn to_mol_with_params(
             &self,
             py: Python<'_>,
@@ -7902,6 +8232,7 @@ pub mod native {
             self._io_to_mol_params(py, Some(params))
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
+        /// Serialize the molecule as SDF text with the selected writer and coordinate options; does not write a file.
         pub(crate) fn to_sdf(
             &self,
             py: Python<'_>,
@@ -7982,6 +8313,7 @@ pub mod native {
             )?;
             self._io_to_sdf_params(py, Some(&params))
         }
+        /// Serialize the molecule as SDF text with the selected writer and coordinate options; does not write a file. Uses explicit writer parameters.
         pub(crate) fn to_sdf_with_params(
             &self,
             py: Python<'_>,
@@ -7990,6 +8322,7 @@ pub mod native {
             self._io_to_sdf_params(py, Some(params))
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
+        /// Serialize SDF using the molecule's 2D coordinate selection and the supplied writer options. Returns text without writing a file.
         pub(crate) fn to_sdf_2d(
             &self,
             py: Python<'_>,
@@ -8070,6 +8403,7 @@ pub mod native {
             )?;
             self._io_to_sdf_2d_params(py, Some(&params))
         }
+        /// Serialize SDF using the molecule's 2D coordinate selection and the supplied writer options. Returns text without writing a file.
         pub(crate) fn to_sdf_2d_with_params(
             &self,
             py: Python<'_>,
@@ -8078,6 +8412,7 @@ pub mod native {
             self._io_to_sdf_2d_params(py, Some(params))
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
+        /// Serialize SDF using the molecule's 3D coordinate selection and the supplied writer options. Returns text without writing a file.
         pub(crate) fn to_sdf_3d(
             &self,
             py: Python<'_>,
@@ -8158,6 +8493,7 @@ pub mod native {
             )?;
             self._io_to_sdf_3d_params(py, Some(&params))
         }
+        /// Serialize SDF using the molecule's 3D coordinate selection and the supplied writer options. Returns text without writing a file.
         pub(crate) fn to_sdf_3d_with_params(
             &self,
             py: Python<'_>,
@@ -8166,6 +8502,7 @@ pub mod native {
             self._io_to_sdf_3d_params(py, Some(params))
         }
         #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
+        /// Write the molecule as MDL MolBlock to the supplied filesystem path with the selected writer options. IO errors propagate.
         pub(crate) fn write_mol(
             &self,
             py: Python<'_>,
@@ -8251,6 +8588,7 @@ pub mod native {
             )?;
             self._io_write_mol_params(py, path, Some(&params))
         }
+        /// Write the molecule as MDL MolBlock to the supplied filesystem path with the selected writer options. IO errors propagate. Uses explicit writer parameters.
         pub(crate) fn write_mol_with_params(
             &self,
             py: Python<'_>,
@@ -8260,6 +8598,7 @@ pub mod native {
             self._io_write_mol_params(py, path, Some(params))
         }
         #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
+        /// Write the molecule as SDF to the supplied filesystem path with the selected writer options. IO errors propagate.
         pub(crate) fn write_sdf(
             &self,
             py: Python<'_>,
@@ -8345,6 +8684,7 @@ pub mod native {
             )?;
             self._io_write_sdf_params(py, path, Some(&params))
         }
+        /// Write the molecule as SDF to the supplied filesystem path with the selected writer options. IO errors propagate. Uses explicit writer parameters.
         pub(crate) fn write_sdf_with_params(
             &self,
             py: Python<'_>,
@@ -8354,6 +8694,7 @@ pub mod native {
             self._io_write_sdf_params(py, path, Some(params))
         }
         #[pyo3(signature=(directory,file_name=None,params=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,force_2d=crate::arguments::Argument::Missing,include_stereo=crate::arguments::Argument::Missing,kekulize=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing,coordinate_selection=crate::arguments::Argument::Missing,include_coordinates=crate::arguments::Argument::Missing))]
+        /// Write native SDF file outputs under the requested coordinate and writer policy, preserving the canonical file naming and error behavior.
         pub(crate) fn write_sdf_files(
             &self,
             py: Python<'_>,
@@ -8445,6 +8786,7 @@ pub mod native {
             )?;
             self._io_write_sdf_files_params(py, directory, file_name, Some(&params))
         }
+        /// Write native SDF file outputs under the requested coordinate and writer policy, preserving the canonical file naming and error behavior.
         pub(crate) fn write_sdf_files_with_params(
             &self,
             py: Python<'_>,
@@ -8455,6 +8797,7 @@ pub mod native {
             self._io_write_sdf_files_params(py, directory, file_name, Some(params))
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,coordinate_selection=crate::arguments::Argument::Missing,all_conformers=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing))]
+        /// Serialize the molecule as PDB text with the selected writer and coordinate options; does not write a file.
         pub(crate) fn to_pdb(
             &self,
             py: Python<'_>,
@@ -8510,6 +8853,7 @@ pub mod native {
             )?;
             self._io_to_pdb_params(py, Some(&params))
         }
+        /// Serialize the molecule as PDB text with the selected writer and coordinate options; does not write a file. Uses explicit writer parameters.
         pub(crate) fn to_pdb_with_params(
             &self,
             py: Python<'_>,
@@ -8518,6 +8862,7 @@ pub mod native {
             self._io_to_pdb_params(py, Some(params))
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,conformer_id=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing))]
+        /// Serialize the molecule as XYZ text with the selected writer and coordinate options; does not write a file.
         pub(crate) fn to_xyz(
             &self,
             py: Python<'_>,
@@ -8561,6 +8906,7 @@ pub mod native {
             let params = crate::molecular_io_calls::xyz_write_keywords(conformer_id, precision)?;
             self._io_to_xyz_params(py, Some(&params))
         }
+        /// Serialize the molecule as XYZ text with the selected writer and coordinate options; does not write a file. Uses explicit writer parameters.
         pub(crate) fn to_xyz_with_params(
             &self,
             py: Python<'_>,
@@ -8569,6 +8915,7 @@ pub mod native {
             self._io_to_xyz_params(py, Some(params))
         }
         #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,conformer_id=crate::arguments::Argument::Missing,precision=crate::arguments::Argument::Missing))]
+        /// Write the molecule as XYZ to the supplied filesystem path with the selected writer options. IO errors propagate.
         pub(crate) fn write_xyz(
             &self,
             py: Python<'_>,
@@ -8616,6 +8963,7 @@ pub mod native {
             let params = crate::molecular_io_calls::xyz_write_keywords(conformer_id, precision)?;
             self._io_write_xyz_params(py, path, Some(&params))
         }
+        /// Write the molecule as XYZ to the supplied filesystem path with the selected writer options. IO errors propagate. Uses explicit writer parameters.
         pub(crate) fn write_xyz_with_params(
             &self,
             py: Python<'_>,
@@ -8626,6 +8974,7 @@ pub mod native {
         }
         #[staticmethod]
         #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing,proximity_bonding=crate::arguments::Argument::Missing))]
+        /// Parse PDB text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path.
         pub(crate) fn from_pdb(
             py: Python<'_>,
             text: &str,
@@ -8692,6 +9041,7 @@ pub mod native {
             Self::_io_from_pdb_params(py, text, Some(&params))
         }
         #[staticmethod]
+        /// Parse PDB text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path. Uses the explicit reader parameters.
         pub(crate) fn from_pdb_with_params(
             py: Python<'_>,
             text: &str,
@@ -8701,6 +9051,7 @@ pub mod native {
         }
         #[staticmethod]
         #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,flavor=crate::arguments::Argument::Missing,proximity_bonding=crate::arguments::Argument::Missing))]
+        /// Parse mmCIF text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path.
         pub(crate) fn from_mmcif(
             py: Python<'_>,
             text: &str,
@@ -8767,6 +9118,7 @@ pub mod native {
             Self::_io_from_mmcif_params(py, text, Some(&params))
         }
         #[staticmethod]
+        /// Parse mmCIF text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path. Uses the explicit reader parameters.
         pub(crate) fn from_mmcif_with_params(
             py: Python<'_>,
             text: &str,
@@ -8776,6 +9128,7 @@ pub mod native {
         }
         #[staticmethod]
         #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,variant=crate::arguments::Argument::Missing,cleanup_substructures=crate::arguments::Argument::Missing))]
+        /// Parse Tripos MOL2 text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path.
         pub(crate) fn from_mol2(
             py: Python<'_>,
             text: &str,
@@ -8844,6 +9197,7 @@ pub mod native {
             Self::_io_from_mol2_params(py, text, Some(&params))
         }
         #[staticmethod]
+        /// Parse Tripos MOL2 text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path. Uses the explicit reader parameters.
         pub(crate) fn from_mol2_with_params(
             py: Python<'_>,
             text: &str,
@@ -8853,6 +9207,7 @@ pub mod native {
         }
         #[staticmethod]
         #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,variant=crate::arguments::Argument::Missing,cleanup_substructures=crate::arguments::Argument::Missing))]
+        /// Read a molecule from a Tripos MOL2 file at the supplied path using the canonical reader. IO and parsing errors propagate.
         pub(crate) fn read_mol2(
             py: Python<'_>,
             path: std::path::PathBuf,
@@ -8922,6 +9277,7 @@ pub mod native {
             Self::_io_read_mol2_params(py, path, Some(&params))
         }
         #[staticmethod]
+        /// Read a molecule from a Tripos MOL2 file at the supplied path using the canonical reader. IO and parsing errors propagate. Uses explicit reader parameters.
         pub(crate) fn read_mol2_with_params(
             py: Python<'_>,
             path: std::path::PathBuf,
@@ -8931,6 +9287,7 @@ pub mod native {
         }
         #[staticmethod]
         #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+        /// Read a molecule from a MDL MolBlock file at the supplied path using the canonical reader. IO and parsing errors propagate.
         pub(crate) fn read_mol(
             py: Python<'_>,
             path: std::path::PathBuf,
@@ -9010,6 +9367,7 @@ pub mod native {
             Self::_io_read_mol_params(py, path, Some(&params))
         }
         #[staticmethod]
+        /// Read a molecule from a MDL MolBlock file at the supplied path using the canonical reader. IO and parsing errors propagate. Uses explicit reader parameters.
         pub(crate) fn read_mol_with_params(
             py: Python<'_>,
             path: std::path::PathBuf,
@@ -9019,6 +9377,7 @@ pub mod native {
         }
         #[staticmethod]
         #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
+        /// Read a molecule from a SDF file at the supplied path using the canonical reader. IO and parsing errors propagate.
         pub(crate) fn read_sdf(
             py: Python<'_>,
             path: std::path::PathBuf,
@@ -9098,6 +9457,7 @@ pub mod native {
             Self::_io_read_sdf_params(py, path, Some(&params))
         }
         #[staticmethod]
+        /// Read a molecule from a SDF file at the supplied path using the canonical reader. IO and parsing errors propagate. Uses explicit reader parameters.
         pub(crate) fn read_sdf_with_params(
             py: Python<'_>,
             path: std::path::PathBuf,
@@ -9106,6 +9466,7 @@ pub mod native {
             Self::_io_read_sdf_params(py, path, Some(params))
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,n_bits=crate::arguments::Argument::Missing,is_query=crate::arguments::Argument::Missing,bit_flags=crate::arguments::Argument::Missing))]
+        /// Calculate the Avalon fingerprint using the selected native Avalon options.
         pub(crate) fn fingerprint_avalon(
             &self,
             py: Python<'_>,
@@ -9155,6 +9516,7 @@ pub mod native {
             let params = crate::molecular_io_calls::avalon_keywords(n_bits, is_query, bit_flags)?;
             self._io_fingerprint_avalon_params(py, Some(&params))
         }
+        /// Calculate the Avalon fingerprint using the selected native Avalon options. Uses the explicit configuration argument.
         pub(crate) fn fingerprint_avalon_with_params(
             &self,
             py: Python<'_>,
@@ -9163,12 +9525,14 @@ pub mod native {
             self._io_fingerprint_avalon_params(py, Some(params))
         }
         #[staticmethod]
+        /// Parse XYZ text into a new molecule using the canonical reader and selected input policy. This accepts content, not a filesystem path.
         pub(crate) fn from_xyz_block(py: Python<'_>, text: &str) -> PyResult<Self> {
             py.detach(|| ck::Molecule::from_xyz_block(text))
                 .map(|inner| Self { inner })
                 .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
         }
         #[staticmethod]
+        /// Read a molecule from a XYZ file at the supplied path using the canonical reader. IO and parsing errors propagate.
         pub(crate) fn read_xyz(py: Python<'_>, path: std::path::PathBuf) -> PyResult<Self> {
             let value = crate::molecular_io_calls::path_text(&path)?;
             py.detach(|| ck::Molecule::read_xyz(value))
@@ -9176,10 +9540,12 @@ pub mod native {
                 .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
         }
 
+        /// Render a molecular SVG image at the supplied width and height, returning its XML text.
         fn to_svg(&self, py: Python<'_>, width: u32, height: u32) -> PyResult<String> {
             py.detach(|| self.inner.to_svg(width, height))
                 .map_err(crate::drawing_errors::DrawingError::from_rust)
         }
+        /// Render a molecular PNG image at the supplied width and height, returning PNG bytes.
         fn to_png<'py>(
             &self,
             py: Python<'py>,
@@ -9191,6 +9557,7 @@ pub mod native {
                 .map_err(crate::drawing_errors::DrawingError::from_rust)?;
             Ok(pyo3::types::PyBytes::new(py, &bytes))
         }
+        /// Render a molecular SVG image and write it to the supplied filesystem path.
         fn write_svg(
             &self,
             py: Python<'_>,
@@ -9201,6 +9568,7 @@ pub mod native {
             py.detach(|| self.inner.write_svg(&path, width, height))
                 .map_err(crate::drawing_errors::DrawingWriteError::from_rust)
         }
+        /// Render a molecular PNG image and write it to the supplied filesystem path.
         fn write_png(
             &self,
             py: Python<'_>,
@@ -9212,6 +9580,7 @@ pub mod native {
                 .map_err(crate::drawing_errors::DrawingWriteError::from_rust)
         }
 
+        /// Serialize the molecular value to COSMolKit archive bytes for later from_binary or pickle reconstruction.
         fn to_binary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyBytes>> {
             self.inner
                 .to_binary()
@@ -9245,6 +9614,7 @@ pub mod native {
             self.__reduce__(py)
         }
         #[getter]
+        /// Atoms in index order, each retaining this molecular version for contextual reads.
         fn atoms(&self) -> Vec<MoleculeAtom> {
             self.inner
                 .atoms()
@@ -9253,6 +9623,7 @@ pub mod native {
                 .collect()
         }
         #[getter]
+        /// Detached bond values in bond-index order.
         fn bonds(&self) -> Vec<Bond> {
             self.inner
                 .bonds()
@@ -9261,11 +9632,15 @@ pub mod native {
                 .map(|inner| Bond { inner })
                 .collect()
         }
+        /// Return the atom at a zero-based index, or None when the index is absent.
+        /// The returned atom retains this molecular version; later edits to the
+        /// source molecule do not change its topology or contextual properties.
         fn atom(&self, atom_id: usize) -> Option<MoleculeAtom> {
             self.inner
                 .atom(ck::AtomId::new(atom_id))
                 .map(|inner| MoleculeAtom { inner })
         }
+        /// Return a detached bond value at a zero-based index, or None when the index is absent.
         fn bond(&self, bond_id: usize) -> Option<Bond> {
             self.inner
                 .bond(ck::BondId::new(bond_id))
@@ -9273,32 +9648,38 @@ pub mod native {
                 .map(|inner| Bond { inner })
         }
         #[getter]
+        /// Whether a complete molecular CIP assignment is recorded. A partial assignment does not imply this flag.
         fn cip_computed(&self) -> PyResult<bool> {
             self.inner
                 .cip_computed()
                 .map_err(super::property_values::PropertyValueError::from_rust)
         }
         #[getter]
+        /// Return the molecule-level property value collection.
         fn properties(&self) -> MoleculeProperties {
             MoleculeProperties {
                 inner: self.inner.properties().clone(),
             }
         }
         #[getter]
+        /// Return the detached topology value; modifying another molecule cannot invalidate this read.
         fn topology(&self) -> TopologyBlock {
             TopologyBlock::from_molecule(&self.inner)
         }
+        /// Create a molecule builder initialized from this molecular value.
         fn to_builder(&self) -> MoleculeBuilder {
             MoleculeBuilder {
                 inner: self.inner.to_builder(),
             }
         }
+        /// Return whether MMFF parameters are available for every required atom in the molecule.
         fn mmff_has_all_molecule_params(&self) -> PyResult<bool> {
             self.inner
                 .mmff_has_all_molecule_params()
                 .map_err(super::mmff_properties::MmffMolPropertiesError::from_rust)
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mmff_variant=crate::arguments::Argument::Missing))]
+        /// Prepare MMFF atom typing and molecular properties with the selected MMFF variant.
         fn mmff_properties(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, MmffPropertiesParams>>>,
@@ -9346,6 +9727,7 @@ pub mod native {
                 self._mmff_properties_params(None)
             }
         }
+        /// Prepare MMFF atom typing and molecular properties with the selected MMFF variant. Uses the explicitly supplied parameter form.
         fn mmff_properties_with_params(
             &self,
             params: &MmffPropertiesParams,
@@ -9353,6 +9735,7 @@ pub mod native {
             self._mmff_properties_params(Some(params))
         }
         #[pyo3(signature = (recalculate=true))]
+        /// Return per-atom degree, valence and hydrogen information in atom-index order. recalculate explicitly requests rebuilding the required information.
         fn atom_metadata(&self, recalculate: bool) -> PyResult<Vec<AtomMetadata>> {
             self.inner
                 .atom_metadata(recalculate)
@@ -9363,6 +9746,7 @@ pub mod native {
                 })
                 .map_err(ValenceError::from_rust)
         }
+        /// Check whether the selected atom violates the canonical valence rules.
         fn has_valence_violation(&self, atom_id: usize) -> PyResult<bool> {
             self.inner
                 .has_valence_violation(ck::AtomId::new(atom_id))
@@ -9370,6 +9754,7 @@ pub mod native {
         }
 
         #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, use_bond_order=crate::arguments::Argument::Missing, use_atom_weights=crate::arguments::Argument::Missing))]
+        /// Return the topological atom-distance matrix, with rows and columns in atom-index order.
         fn distance_matrix(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, DistanceMatrixParams>>>,
@@ -9422,6 +9807,7 @@ pub mod native {
             };
             self._distance_matrix_params(Some(&params))
         }
+        /// Return the topological atom-distance matrix, with rows and columns in atom-index order. Uses the explicitly supplied parameter form.
         fn distance_matrix_with_params(
             &self,
             params: &DistanceMatrixParams,
@@ -9430,6 +9816,7 @@ pub mod native {
         }
 
         #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, conformer_id=crate::arguments::Argument::Missing, use_atom_weights=crate::arguments::Argument::Missing))]
+        /// Return the coordinate-distance matrix for the selected 3D conformer, in atom-index order.
         fn distance_matrix_3d(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, DistanceMatrix3dParams>>>,
@@ -9482,12 +9869,14 @@ pub mod native {
             };
             self._distance_matrix_3d_params(Some(&params))
         }
+        /// Return the coordinate-distance matrix for the selected 3D conformer, in atom-index order. Uses the explicitly supplied parameter form.
         fn distance_matrix_3d_with_params(
             &self,
             params: &DistanceMatrix3dParams,
         ) -> PyResult<DenseMatrix> {
             self._distance_matrix_3d_params(Some(params))
         }
+        /// Read a molecule-level property as a typed PropertyValue, or None when the key is absent.
         fn property(&self, key: &str) -> Option<super::property_values::PropertyValue> {
             self.inner
                 .property(key)
@@ -9496,6 +9885,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_tautomers=crate::arguments::Argument::Missing,max_transforms=crate::arguments::Argument::Missing,remove_sp3_stereo=crate::arguments::Argument::Missing,remove_bond_stereo=crate::arguments::Argument::Missing,remove_isotopic_hydrogens=crate::arguments::Argument::Missing,reassign_stereo=crate::arguments::Argument::Missing,callback=crate::arguments::Argument::Missing,scorer=crate::arguments::Argument::Missing,score_params=crate::arguments::Argument::Missing))]
+        /// Enumerate tautomers using the supplied transformation, limit and callback policy; return the native result and enumeration status.
         fn enumerate_tautomers(
             &self,
             py: Python<'_>,
@@ -9597,6 +9987,7 @@ pub mod native {
             )?;
             crate::tautomer_producers::enumerate(py, self, Some(params))
         }
+        /// Enumerate tautomers using the supplied transformation, limit and callback policy; return the native result and enumeration status. Uses the explicitly supplied parameter form.
         fn enumerate_tautomers_with_params(
             &self,
             py: Python<'_>,
@@ -9606,6 +9997,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_tautomers=crate::arguments::Argument::Missing,max_transforms=crate::arguments::Argument::Missing,remove_sp3_stereo=crate::arguments::Argument::Missing,remove_bond_stereo=crate::arguments::Argument::Missing,remove_isotopic_hydrogens=crate::arguments::Argument::Missing,reassign_stereo=crate::arguments::Argument::Missing,callback=crate::arguments::Argument::Missing,scorer=crate::arguments::Argument::Missing,score_params=crate::arguments::Argument::Missing))]
+        /// Select the canonical tautomer using the supplied enumeration and scoring policy.
         fn canonical_tautomer(
             &self,
             py: Python<'_>,
@@ -9707,6 +10099,7 @@ pub mod native {
             )?;
             crate::tautomer_producers::canonical(py, self, Some(params))
         }
+        /// Select the canonical tautomer using the supplied enumeration and scoring policy. Uses the explicitly supplied parameter form.
         fn canonical_tautomer_with_params(
             &self,
             py: Python<'_>,
@@ -9716,6 +10109,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        /// Embed a 3D conformer in a new molecular value using the selected distance-geometry parameters.
         fn with_3d_conformer(
             &self,
             py: Python<'_>,
@@ -9946,6 +10340,7 @@ pub mod native {
             );
             self._with_3d_conformer_params_native(py, Some(&params))
         }
+        /// Embed a 3D conformer in a new molecular value using the selected distance-geometry parameters. Uses the explicit configuration argument.
         fn with_3d_conformer_with_params(
             &self,
             py: Python<'_>,
@@ -9955,6 +10350,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        /// Embed a 3D conformer in place using the selected distance-geometry parameters.
         fn embed_3d_conformer_(
             &mut self,
             py: Python<'_>,
@@ -10185,6 +10581,7 @@ pub mod native {
             );
             self._embed_3d_conformer_params_native(py, Some(&params))
         }
+        /// Embed a 3D conformer in place using the selected distance-geometry parameters. Uses the explicit configuration argument.
         fn embed_3d_conformer_with_params_(
             &mut self,
             py: Python<'_>,
@@ -10194,6 +10591,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        /// Embed a 3D conformer and return a new molecule with its generation outcome and diagnostics. A failed attempt is not a valid conformer identifier.
         fn with_3d_conformer_result(
             &self,
             py: Python<'_>,
@@ -10424,6 +10822,7 @@ pub mod native {
             );
             self._with_3d_conformer_result_params_native(py, Some(&params))
         }
+        /// Embed a 3D conformer and return a new molecule with its generation outcome and diagnostics. A failed attempt is not a valid conformer identifier. Uses the explicit configuration argument.
         fn with_3d_conformer_result_with_params(
             &self,
             py: Python<'_>,
@@ -10433,6 +10832,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        /// Embed a 3D conformer in place and return the native generation outcome and diagnostics.
         fn embed_3d_conformer_result_(
             &mut self,
             py: Python<'_>,
@@ -10663,6 +11063,7 @@ pub mod native {
             );
             self._embed_3d_conformer_result_params_native(py, Some(&params))
         }
+        /// Embed a 3D conformer in place and return the native generation outcome and diagnostics. Uses the explicit configuration argument.
         fn embed_3d_conformer_result_with_params_(
             &mut self,
             py: Python<'_>,
@@ -10672,6 +11073,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        /// Embed the requested number of 3D conformers in a new molecular value under the selected sampling and pruning policy.
         fn with_3d_conformers(
             &self,
             py: Python<'_>,
@@ -10906,6 +11308,7 @@ pub mod native {
             );
             self._with_3d_conformers_params_native(py, num_confs, Some(&params))
         }
+        /// Embed the requested number of 3D conformers in a new molecular value under the selected sampling and pruning policy. Uses the explicit configuration argument.
         fn with_3d_conformers_with_params(
             &self,
             py: Python<'_>,
@@ -10916,6 +11319,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        /// Embed the requested number of 3D conformers in place under the selected sampling and pruning policy.
         fn embed_3d_conformers_(
             &mut self,
             py: Python<'_>,
@@ -11150,6 +11554,7 @@ pub mod native {
             );
             self._embed_3d_conformers_params_native(py, num_confs, Some(&params))
         }
+        /// Embed the requested number of 3D conformers in place under the selected sampling and pruning policy. Uses the explicit configuration argument.
         fn embed_3d_conformers_with_params_(
             &mut self,
             py: Python<'_>,
@@ -11160,6 +11565,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with multiple-conformer generation results and diagnostics. Requested attempts and successful conformers are distinct counts.
         fn with_3d_conformers_result(
             &self,
             py: Python<'_>,
@@ -11394,6 +11800,7 @@ pub mod native {
             );
             self._with_3d_conformers_result_params_native(py, num_confs, Some(&params))
         }
+        /// Return a new molecule with multiple-conformer generation results and diagnostics. Requested attempts and successful conformers are distinct counts. Uses the explicit configuration argument.
         fn with_3d_conformers_result_with_params(
             &self,
             py: Python<'_>,
@@ -11404,6 +11811,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        /// Embed multiple conformers in place and return native generation results and diagnostics.
         fn embed_3d_conformers_result_(
             &mut self,
             py: Python<'_>,
@@ -11638,6 +12046,7 @@ pub mod native {
             );
             self._embed_3d_conformers_result_params_native(py, num_confs, Some(&params))
         }
+        /// Embed multiple conformers in place and return native generation results and diagnostics. Uses the explicit configuration argument.
         fn embed_3d_conformers_result_with_params_(
             &mut self,
             py: Python<'_>,
@@ -11648,6 +12057,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(options=crate::arguments::Argument::Missing,*,try_embedding=crate::arguments::Argument::Missing,only_unassigned=crate::arguments::Argument::Missing,max_isomers=crate::arguments::Argument::Missing,random_source=crate::arguments::Argument::Missing,unique=crate::arguments::Argument::Missing,only_stereo_groups=crate::arguments::Argument::Missing))]
+        /// Enumerate stereoisomer molecules under the configured assignment, uniqueness and sampling policy.
         fn enumerate_stereoisomers(
             &self,
             py: Python<'_>,
@@ -11726,6 +12136,7 @@ pub mod native {
             );
             self._enumerate_stereoisomers_options(py, Some(Py::new(py, options)?))
         }
+        /// Enumerate stereoisomer molecules under the configured assignment, uniqueness and sampling policy. Uses the explicitly supplied options.
         fn enumerate_stereoisomers_with_options(
             &self,
             py: Python<'_>,
@@ -11733,6 +12144,7 @@ pub mod native {
         ) -> PyResult<super::stereoisomer_iterator::StereoisomerIterator> {
             self._enumerate_stereoisomers_options(py, Some(options))
         }
+        /// Enumerate stereoisomers with the explicitly supplied random-bit source, preserving its native state and sampling behavior.
         fn enumerate_stereoisomers_with_random_bits(
             &self,
             py: Python<'_>,
@@ -11743,6 +12155,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,operations=crate::arguments::Argument::Missing))]
+        /// Return a sanitized molecular value using the requested sanitization stages. The source is unchanged; errors retain their native type and cause.
         fn sanitize(
             &self,
             py: Python<'_>,
@@ -11792,6 +12205,7 @@ pub mod native {
             let params = super::chemistry_calls::sanitize(operations)?;
             self._chem_sanitize_params(py, Some(&params))
         }
+        /// Return a sanitized molecular value using the requested sanitization stages. The source is unchanged; errors retain their native type and cause. Uses the explicit configuration argument.
         fn sanitize_with_params(
             &self,
             py: Python<'_>,
@@ -11801,6 +12215,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,operations=crate::arguments::Argument::Missing))]
+        /// Run the requested sanitization stages in place. Errors retain their native type and cause.
         fn sanitize_(
             &mut self,
             py: Python<'_>,
@@ -11849,6 +12264,7 @@ pub mod native {
             let params = super::chemistry_calls::sanitize(operations)?;
             self._chem_sanitize_inplace_params(py, Some(&params))
         }
+        /// Run the requested sanitization stages in place. Errors retain their native type and cause. Uses the explicit configuration argument.
         fn sanitize_with_params_(
             &mut self,
             py: Python<'_>,
@@ -11858,6 +12274,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mark_atoms_bonds=crate::arguments::Argument::Missing,canonical=crate::arguments::Argument::Missing,max_backtracks=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with Kekule bond orders assigned under the selected aromatic-flag policy.
         fn with_kekulized_bonds(
             &self,
             py: Python<'_>,
@@ -11915,6 +12332,7 @@ pub mod native {
                 super::chemistry_calls::kekulize(mark_atoms_bonds, canonical, max_backtracks)?;
             self._chem_with_kekulized_bonds_params(py, Some(&params))
         }
+        /// Return a new molecule with Kekule bond orders assigned under the selected aromatic-flag policy. Uses the explicit configuration argument.
         fn with_kekulized_bonds_with_params(
             &self,
             py: Python<'_>,
@@ -11924,6 +12342,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mark_atoms_bonds=crate::arguments::Argument::Missing,canonical=crate::arguments::Argument::Missing,max_backtracks=crate::arguments::Argument::Missing))]
+        /// Assign Kekule bond orders in place under the selected aromatic-flag policy.
         fn kekulize_bonds_(
             &mut self,
             py: Python<'_>,
@@ -11975,6 +12394,7 @@ pub mod native {
                 super::chemistry_calls::kekulize(mark_atoms_bonds, canonical, max_backtracks)?;
             self._chem_kekulize_bonds_params(py, Some(&params))
         }
+        /// Assign Kekule bond orders in place under the selected aromatic-flag policy. Uses the explicit configuration argument.
         fn kekulize_bonds_with_params_(
             &mut self,
             py: Python<'_>,
@@ -11984,6 +12404,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,model=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with aromaticity assigned by the selected aromaticity model.
         fn with_assigned_aromaticity(
             &self,
             py: Python<'_>,
@@ -12033,6 +12454,7 @@ pub mod native {
             let params = super::chemistry_calls::aromaticity(model)?;
             self._chem_with_assigned_aromaticity_params(py, Some(&params))
         }
+        /// Return a new molecule with aromaticity assigned by the selected aromaticity model. Uses the explicit configuration argument.
         fn with_assigned_aromaticity_with_params(
             &self,
             py: Python<'_>,
@@ -12042,6 +12464,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,model=crate::arguments::Argument::Missing))]
+        /// Assign aromaticity in place using the selected aromaticity model.
         fn assign_aromaticity_(
             &mut self,
             py: Python<'_>,
@@ -12088,6 +12511,7 @@ pub mod native {
             let params = super::chemistry_calls::aromaticity(model)?;
             self._chem_assign_aromaticity_params(py, Some(&params))
         }
+        /// Assign aromaticity in place using the selected aromaticity model. Uses the explicit configuration argument.
         fn assign_aromaticity_with_params_(
             &mut self,
             py: Python<'_>,
@@ -12097,6 +12521,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,model=crate::arguments::Argument::Missing,strict=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with valence information assigned under the selected valence model and strictness.
         fn with_assigned_valence(
             &self,
             py: Python<'_>,
@@ -12144,6 +12569,7 @@ pub mod native {
             let params = super::chemistry_calls::valence(model, strict)?;
             self._chem_with_assigned_valence_params(py, Some(&params))
         }
+        /// Return a new molecule with valence information assigned under the selected valence model and strictness. Uses the explicit configuration argument.
         fn with_assigned_valence_with_params(
             &self,
             py: Python<'_>,
@@ -12153,6 +12579,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,model=crate::arguments::Argument::Missing,strict=crate::arguments::Argument::Missing))]
+        /// Assign valence information in place under the selected valence model and strictness.
         fn assign_valence_(
             &mut self,
             py: Python<'_>,
@@ -12199,6 +12626,7 @@ pub mod native {
             let params = super::chemistry_calls::valence(model, strict)?;
             self._chem_assign_valence_params(py, Some(&params))
         }
+        /// Assign valence information in place under the selected valence model and strictness. Uses the explicit configuration argument.
         fn assign_valence_with_params_(
             &mut self,
             py: Python<'_>,
@@ -12208,6 +12636,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,include_dative_bonds=crate::arguments::Argument::Missing,include_hydrogen_bonds=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with ring families calculated using the selected ring-search policy.
         fn with_assigned_ring_families(
             &self,
             py: Python<'_>,
@@ -12263,6 +12692,7 @@ pub mod native {
                 super::chemistry_calls::rings(include_dative_bonds, include_hydrogen_bonds)?;
             self._chem_with_assigned_ring_families_params(py, Some(&params))
         }
+        /// Return a new molecule with ring families calculated using the selected ring-search policy. Uses the explicit configuration argument.
         fn with_assigned_ring_families_with_params(
             &self,
             py: Python<'_>,
@@ -12272,6 +12702,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,include_dative_bonds=crate::arguments::Argument::Missing,include_hydrogen_bonds=crate::arguments::Argument::Missing))]
+        /// Calculate and install ring families in place using the selected ring-search policy.
         fn assign_ring_families_(
             &mut self,
             py: Python<'_>,
@@ -12324,6 +12755,7 @@ pub mod native {
                 super::chemistry_calls::rings(include_dative_bonds, include_hydrogen_bonds)?;
             self._chem_assign_ring_families_params(py, Some(&params))
         }
+        /// Calculate and install ring families in place using the selected ring-search policy. Uses the explicit configuration argument.
         fn assign_ring_families_with_params_(
             &mut self,
             py: Python<'_>,
@@ -12333,6 +12765,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,conformer_id=crate::arguments::Argument::Missing,replace_existing_tags=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with chiral tags assigned from the selected coordinate structure.
         fn with_chiral_tags_from_structure(
             &self,
             py: Python<'_>,
@@ -12389,6 +12822,7 @@ pub mod native {
             let params = super::chemistry_calls::structure(conformer_id, replace_existing_tags)?;
             self._chem_with_chiral_tags_from_structure_params(py, Some(&params))
         }
+        /// Return a new molecule with chiral tags assigned from the selected coordinate structure. Uses the explicit configuration argument.
         fn with_chiral_tags_from_structure_with_params(
             &self,
             py: Python<'_>,
@@ -12398,6 +12832,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,conformer_id=crate::arguments::Argument::Missing,replace_existing_tags=crate::arguments::Argument::Missing))]
+        /// Assign chiral tags in place from the selected coordinate structure.
         fn assign_chiral_tags_from_structure_(
             &mut self,
             py: Python<'_>,
@@ -12453,6 +12888,7 @@ pub mod native {
             let params = super::chemistry_calls::structure(conformer_id, replace_existing_tags)?;
             self._chem_assign_chiral_tags_from_structure_params(py, Some(&params))
         }
+        /// Assign chiral tags in place from the selected coordinate structure. Uses the explicit configuration argument.
         fn assign_chiral_tags_from_structure_with_params_(
             &mut self,
             py: Python<'_>,
@@ -12462,6 +12898,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,clean=crate::arguments::Argument::Missing,flag_possible=crate::arguments::Argument::Missing,allow_nontetrahedral=crate::arguments::Argument::Missing))]
+        /// Return the native potential-stereo information for atoms and bonds under the selected options.
         fn potential_stereo(
             &self,
             py: Python<'_>,
@@ -12516,6 +12953,7 @@ pub mod native {
                 super::chemistry_calls::potential(clean, flag_possible, allow_nontetrahedral)?;
             self._chem_potential_stereo_params(py, Some(&params))
         }
+        /// Return the native potential-stereo information for atoms and bonds under the selected options. Uses the explicitly supplied parameter form.
         fn potential_stereo_with_params(
             &self,
             py: Python<'_>,
@@ -12525,6 +12963,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(options=crate::arguments::Argument::Missing,*,atoms=crate::arguments::Argument::Missing,bonds=crate::arguments::Argument::Missing,max_recursive_iterations=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with CIP labels assigned under the selected complete or partial assignment options.
         fn with_cip_labels(
             &self,
             py: Python<'_>,
@@ -12571,6 +13010,7 @@ pub mod native {
             let params = super::chemistry_calls::cip(atoms, bonds, max_recursive_iterations)?;
             self._chem_with_cip_labels_params_native(py, Some(&params))
         }
+        /// Return a new molecule with CIP labels assigned under the selected complete or partial assignment options. Uses the explicit configuration argument.
         fn with_cip_labels_with_options(
             &self,
             py: Python<'_>,
@@ -12580,6 +13020,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(options=crate::arguments::Argument::Missing,*,atoms=crate::arguments::Argument::Missing,bonds=crate::arguments::Argument::Missing,max_recursive_iterations=crate::arguments::Argument::Missing))]
+        /// Assign CIP labels in place under the selected complete or partial assignment options.
         fn assign_cip_labels_(
             &mut self,
             py: Python<'_>,
@@ -12626,6 +13067,7 @@ pub mod native {
             let params = super::chemistry_calls::cip(atoms, bonds, max_recursive_iterations)?;
             self._chem_assign_cip_labels_params_native(py, Some(&params))
         }
+        /// Assign CIP labels in place under the selected complete or partial assignment options. Uses the explicit configuration argument.
         fn assign_cip_labels_with_options_(
             &mut self,
             py: Python<'_>,
@@ -12635,6 +13077,10 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,explicit_only=crate::arguments::Argument::Missing,add_coords=crate::arguments::Argument::Missing,add_residue_info=crate::arguments::Argument::Missing,skip_queries=crate::arguments::Argument::Missing,only_on_atoms=crate::arguments::Argument::Missing))]
+        /// Return a molecule with explicit hydrogen atoms added; the source molecule is unchanged.
+        /// Supply either AddHsParams or keyword options, never both. With no
+        /// options, use the Rust defaults. only_on_atoms limits addition to the
+        /// selected zero-based atom indices; add_coords requests hydrogen coordinates.
         fn with_hydrogens(
             &self,
             py: Python<'_>,
@@ -12705,6 +13151,7 @@ pub mod native {
             )?;
             self._chem_with_hydrogens_params_native(py, Some(&params))
         }
+        /// Return a new molecule with explicit hydrogen atoms added using AddHsParams; the source molecule is unchanged.
         fn with_hydrogens_with_params(
             &self,
             py: Python<'_>,
@@ -12714,6 +13161,9 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,explicit_only=crate::arguments::Argument::Missing,add_coords=crate::arguments::Argument::Missing,add_residue_info=crate::arguments::Argument::Missing,skip_queries=crate::arguments::Argument::Missing,only_on_atoms=crate::arguments::Argument::Missing))]
+        /// In place, add explicit hydrogen atoms using AddHsParams or keyword options.
+        /// Copy-on-write isolates molecular values sharing the original storage.
+        /// Returns None; use with_hydrogens to obtain a new molecule instead.
         fn add_hydrogens_(
             &mut self,
             py: Python<'_>,
@@ -12784,6 +13234,7 @@ pub mod native {
             )?;
             self._chem_add_hydrogens_params_native(py, Some(&params))
         }
+        /// Add hydrogen atoms in place using AddHsParams and copy-on-write isolation from other molecule values.
         fn add_hydrogens_with_params_(
             &mut self,
             py: Python<'_>,
@@ -12793,6 +13244,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,remove_degree_zero=crate::arguments::Argument::Missing,remove_higher_degrees=crate::arguments::Argument::Missing,remove_only_h_neighbors=crate::arguments::Argument::Missing,remove_isotopes=crate::arguments::Argument::Missing,remove_and_track_isotopes=crate::arguments::Argument::Missing,remove_dummy_neighbors=crate::arguments::Argument::Missing,remove_defining_bond_stereo=crate::arguments::Argument::Missing,remove_with_wedged_bond=crate::arguments::Argument::Missing,remove_with_query=crate::arguments::Argument::Missing,remove_mapped=crate::arguments::Argument::Missing,remove_in_sgroups=crate::arguments::Argument::Missing,show_warnings=crate::arguments::Argument::Missing,remove_nonimplicit=crate::arguments::Argument::Missing,update_explicit_count=crate::arguments::Argument::Missing,remove_hydrides=crate::arguments::Argument::Missing,remove_nontetrahedral_neighbors=crate::arguments::Argument::Missing,sanitize=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with eligible hydrogen atoms removed under RemoveHsParams. The removal policy determines which isotopic, mapped and stereochemistry-defining hydrogens remain.
         fn without_hydrogens(
             &self,
             py: Python<'_>,
@@ -12940,6 +13392,7 @@ pub mod native {
             )?;
             self._chem_without_hydrogens_params(py, Some(&params))
         }
+        /// Return a new molecule with eligible hydrogen atoms removed under RemoveHsParams. The removal policy determines which isotopic, mapped and stereochemistry-defining hydrogens remain. Uses the explicit configuration argument.
         fn without_hydrogens_with_params(
             &self,
             py: Python<'_>,
@@ -12949,6 +13402,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,remove_degree_zero=crate::arguments::Argument::Missing,remove_higher_degrees=crate::arguments::Argument::Missing,remove_only_h_neighbors=crate::arguments::Argument::Missing,remove_isotopes=crate::arguments::Argument::Missing,remove_and_track_isotopes=crate::arguments::Argument::Missing,remove_dummy_neighbors=crate::arguments::Argument::Missing,remove_defining_bond_stereo=crate::arguments::Argument::Missing,remove_with_wedged_bond=crate::arguments::Argument::Missing,remove_with_query=crate::arguments::Argument::Missing,remove_mapped=crate::arguments::Argument::Missing,remove_in_sgroups=crate::arguments::Argument::Missing,show_warnings=crate::arguments::Argument::Missing,remove_nonimplicit=crate::arguments::Argument::Missing,update_explicit_count=crate::arguments::Argument::Missing,remove_hydrides=crate::arguments::Argument::Missing,remove_nontetrahedral_neighbors=crate::arguments::Argument::Missing,sanitize=crate::arguments::Argument::Missing))]
+        /// Remove eligible hydrogen atoms in place under RemoveHsParams. The removal policy determines which isotopic, mapped and stereochemistry-defining hydrogens remain.
         fn remove_hydrogens_(
             &mut self,
             py: Python<'_>,
@@ -13095,6 +13549,7 @@ pub mod native {
             )?;
             self._chem_remove_hydrogens_params(py, Some(&params))
         }
+        /// Remove eligible hydrogen atoms in place under RemoveHsParams. The removal policy determines which isotopic, mapped and stereochemistry-defining hydrogens remain. Uses the explicit configuration argument.
         fn remove_hydrogens_with_params_(
             &mut self,
             py: Python<'_>,
@@ -13104,6 +13559,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,terms=crate::arguments::Argument::Missing))]
+        /// Calculate the tautomer score using the supplied scoring terms and options.
         fn tautomer_score(
             &self,
             py: Python<'_>,
@@ -13146,6 +13602,7 @@ pub mod native {
             let params = super::chemistry_calls::tautomer_score(py, terms)?;
             self._chem_tautomer_score_params_native(py, Some(&params))
         }
+        /// Calculate the tautomer score using the supplied scoring terms and options. Uses the explicitly supplied parameter form.
         fn tautomer_score_with_params(
             &self,
             py: Python<'_>,
@@ -13153,16 +13610,19 @@ pub mod native {
         ) -> PyResult<super::tautomer_values::TautomerScore> {
             self._chem_tautomer_score_params(py, Some(params))
         }
+        /// Return a new molecule with radical-electron counts assigned by the native radical assignment.
         fn with_assigned_radicals(&self, py: Python<'_>) -> PyResult<Molecule> {
             py.detach(|| self.inner.with_assigned_radicals())
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Assign radical-electron counts in place using the native radical assignment.
         fn assign_radicals_(&mut self, py: Python<'_>) -> PyResult<()> {
             py.detach(|| self.inner.assign_radicals_())
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,include_dative_bonds=crate::arguments::Argument::Missing,include_hydrogen_bonds=crate::arguments::Argument::Missing))]
+        /// Calculate the complete symmetrized SSSR ring collection without modifying the source molecule.
         fn symmetrized_sssr(
             &self,
             py: Python<'_>,
@@ -13216,6 +13676,7 @@ pub mod native {
                 super::chemistry_calls::rings(include_dative_bonds, include_hydrogen_bonds)?;
             self._chem_symmetrized_sssr_params(py, Some(&params))
         }
+        /// Calculate the complete symmetrized SSSR ring collection without modifying the source molecule. Uses the explicitly supplied parameter form.
         fn symmetrized_sssr_with_params(
             &self,
             py: Python<'_>,
@@ -13223,35 +13684,42 @@ pub mod native {
         ) -> PyResult<RingSearchResult> {
             self._chem_symmetrized_sssr_params(py, Some(params))
         }
+        /// Return a new molecule with ordinary ring information assigned.
         fn with_assigned_rings(&self, py: Python<'_>) -> PyResult<Molecule> {
             py.detach(|| self.inner.with_assigned_rings())
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Calculate and install ordinary ring information in place.
         fn assign_rings_(&mut self, py: Python<'_>) -> PyResult<()> {
             py.detach(|| self.inner.assign_rings_())
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Return the Bemis-Murcko ring-and-linker scaffold as a new molecule.
         fn murcko_scaffold(&self, py: Python<'_>) -> PyResult<Molecule> {
             py.detach(|| self.inner.murcko_scaffold())
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Return the native net scaffold as a new molecule, leaving the source unchanged.
         fn net_scaffold(&self, py: Python<'_>) -> PyResult<Molecule> {
             py.detach(|| self.inner.net_scaffold())
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Return the native Murcko decomposition as a new molecular value.
         fn murcko_decompose(&self, py: Python<'_>) -> PyResult<Molecule> {
             py.detach(|| self.inner.murcko_decompose())
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Return the fragment selected by the native largest-fragment policy; the source is unchanged.
         fn largest_fragment(&self, py: Python<'_>) -> PyResult<Molecule> {
             py.detach(|| self.inner.largest_fragment())
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Split disconnected components into new molecular values in native component order.
         fn fragments(&self, py: Python<'_>) -> PyResult<Vec<Molecule>> {
             py.detach(|| self.inner.fragments())
                 .map(|values| values.into_iter().map(|inner| Molecule { inner }).collect())
@@ -13259,6 +13727,7 @@ pub mod native {
         }
 
         #[staticmethod]
+        /// Construct a molecule from explicit topology, coordinates and molecular properties using the canonical validation boundary.
         fn from_parts(
             topology: &super::topology_values::TopologyBlock,
             coordinates: &super::detached_values::CoordinateBlock,
@@ -13272,12 +13741,14 @@ pub mod native {
             .map(|inner| Self { inner })
             .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Return whether UFF parameters are available for every required atom in the molecule.
         fn uff_has_all_molecule_params(&self, py: Python<'_>) -> PyResult<bool> {
             py.detach(|| self.inner.uff_has_all_molecule_params())
                 .map_err(super::forcefield_calls::UffParameterQueryError::from_rust)
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,vdw_threshold=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
+        /// Evaluate UFF energy and coordinate gradients for the selected conformer without minimizing it.
         fn uff_energy_gradient(
             &self,
             py: Python<'_>,
@@ -13304,6 +13775,7 @@ pub mod native {
                 self._ff_uff_energy_gradient_params(py, params)
             }
         }
+        /// Evaluate UFF energy and coordinate gradients for the selected conformer without minimizing it. Uses the explicitly supplied parameter form.
         fn uff_energy_gradient_with_params(
             &self,
             py: Python<'_>,
@@ -13350,6 +13822,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mmff_variant=crate::arguments::Argument::Missing,non_bonded_threshold=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
+        /// Evaluate MMFF energy and coordinate gradients for the selected conformer and MMFF variant without minimizing it.
         fn mmff_energy_gradient(
             &self,
             py: Python<'_>,
@@ -13379,6 +13852,7 @@ pub mod native {
                 self._ff_mmff_energy_gradient_params(py, params)
             }
         }
+        /// Evaluate MMFF energy and coordinate gradients for the selected conformer and MMFF variant without minimizing it. Uses the explicitly supplied parameter form.
         fn mmff_energy_gradient_with_params(
             &self,
             py: Python<'_>,
@@ -13429,6 +13903,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,vdw_threshold=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
+        /// Return a new molecule and UFF minimization outcome for the selected conformer, leaving the source unchanged.
         fn with_uff_optimized(
             &self,
             py: Python<'_>,
@@ -13458,6 +13933,7 @@ pub mod native {
                 self._ff_with_uff_optimized_params(py, params)
             }
         }
+        /// Return a new molecule and UFF minimization outcome for the selected conformer, leaving the source unchanged. Uses the explicitly supplied parameter form.
         fn with_uff_optimized_with_params(
             &self,
             py: Python<'_>,
@@ -13506,6 +13982,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,num_threads=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing,vdw_threshold=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
+        /// Optimize the molecule's conformers with UFF and return the new molecule with per-conformer outcomes.
         fn with_uff_optimized_conformers(
             &self,
             py: Python<'_>,
@@ -13535,6 +14012,7 @@ pub mod native {
                 self._ff_with_uff_optimized_conformers_params(py, params)
             }
         }
+        /// Optimize the molecule's conformers with UFF and return the new molecule with per-conformer outcomes. Uses the explicitly supplied parameter form.
         fn with_uff_optimized_conformers_with_params(
             &self,
             py: Python<'_>,
@@ -13588,6 +14066,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,mmff_variant=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing,non_bonded_threshold=crate::arguments::Argument::Missing,conformer_id=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
+        /// Return a new molecule and MMFF minimization outcome for the selected conformer, leaving the source unchanged.
         fn with_mmff_optimized(
             &self,
             py: Python<'_>,
@@ -13620,6 +14099,7 @@ pub mod native {
                 self._ff_with_mmff_optimized_params(py, params)
             }
         }
+        /// Return a new molecule and MMFF minimization outcome for the selected conformer, leaving the source unchanged. Uses the explicitly supplied parameter form.
         fn with_mmff_optimized_with_params(
             &self,
             py: Python<'_>,
@@ -13670,6 +14150,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,num_threads=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing,mmff_variant=crate::arguments::Argument::Missing,non_bonded_threshold=crate::arguments::Argument::Missing,ignore_interfragment_interactions=crate::arguments::Argument::Missing))]
+        /// Optimize the molecule's conformers with MMFF and return the new molecule with per-conformer outcomes.
         fn with_mmff_optimized_conformers(
             &self,
             py: Python<'_>,
@@ -13702,6 +14183,7 @@ pub mod native {
                 self._ff_with_mmff_optimized_conformers_params(py, params)
             }
         }
+        /// Optimize the molecule's conformers with MMFF and return the new molecule with per-conformer outcomes. Uses the explicitly supplied parameter form.
         fn with_mmff_optimized_conformers_with_params(
             &self,
             py: Python<'_>,
@@ -13757,6 +14239,7 @@ pub mod native {
             self._ff_with_mmff_optimized_conformers_params(py, Some(&params))
         }
         #[pyo3(signature=(reference,params=crate::arguments::Argument::Missing,*,probe_conformer_id=crate::arguments::Argument::Missing,reference_conformer_id=crate::arguments::Argument::Missing,atom_map=crate::arguments::Argument::Missing,weights=crate::arguments::Argument::Missing,reflect=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing))]
+        /// Return a new molecule aligned to the reference coordinates, preserving the source molecule.
         fn with_alignment_to(
             &self,
             py: Python<'_>,
@@ -13796,6 +14279,7 @@ pub mod native {
                 self._alignment_with_alignment_to_params(py, reference, params)
             }
         }
+        /// Return a new molecule aligned to the reference coordinates, preserving the source molecule. Uses the explicitly supplied parameter form.
         fn with_alignment_to_with_params(
             &self,
             py: Python<'_>,
@@ -13851,6 +14335,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(reference,params=crate::arguments::Argument::Missing,*,probe_conformer_id=crate::arguments::Argument::Missing,reference_conformer_id=crate::arguments::Argument::Missing,atom_map=crate::arguments::Argument::Missing,weights=crate::arguments::Argument::Missing,reflect=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing))]
+        /// Align this molecule to the reference coordinates in place; COW isolates other molecular values.
         fn align_to_(
             &mut self,
             py: Python<'_>,
@@ -13890,6 +14375,7 @@ pub mod native {
                 self._alignment_with_alignment_to_inplace_params(py, reference, params)
             }
         }
+        /// Align this molecule's selected conformer to a reference in place using explicit alignment parameters.
         fn align_to_with_params_(
             &mut self,
             py: Python<'_>,
@@ -13937,6 +14423,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,atom_indices=crate::arguments::Argument::Missing,conformer_ids=crate::arguments::Argument::Missing,weights=crate::arguments::Argument::Missing,reflect=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing))]
+        /// Return a new molecule with its conformers aligned according to the supplied parameters.
         fn with_aligned_conformers(
             &self,
             py: Python<'_>,
@@ -13969,6 +14456,7 @@ pub mod native {
                 self._alignment_with_aligned_conformers_params(py, params)
             }
         }
+        /// Return a new molecule with its conformers aligned according to the supplied parameters. Uses the explicitly supplied parameter form.
         fn with_aligned_conformers_with_params(
             &self,
             py: Python<'_>,
@@ -14016,6 +14504,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,atom_indices=crate::arguments::Argument::Missing,conformer_ids=crate::arguments::Argument::Missing,weights=crate::arguments::Argument::Missing,reflect=crate::arguments::Argument::Missing,max_iterations=crate::arguments::Argument::Missing))]
+        /// Align the stored conformers in place according to the supplied parameters.
         fn align_conformers_(
             &mut self,
             py: Python<'_>,
@@ -14048,6 +14537,7 @@ pub mod native {
                 self._alignment_with_aligned_conformers_inplace_params(py, params)
             }
         }
+        /// Align this molecule's conformers in place using explicit alignment parameters.
         fn align_conformers_with_params_(
             &mut self,
             py: Python<'_>,
@@ -14089,10 +14579,12 @@ pub mod native {
             self._alignment_with_aligned_conformers_inplace_params_native(py, Some(&params))
         }
         #[getter]
+        /// Number of stored 3D conformers, not the count of attempted embeddings.
         fn num_3d_conformers(&self) -> usize {
             self.inner.num_3d_conformers()
         }
         #[doc = r#"{"role":"return_type","imports":["numpy"],"type":"numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]]"}"#]
+        /// Return an independent NumPy distance-geometry bounds matrix in atom-index order.
         fn dg_bounds_matrix<'py>(
             &self,
             py: Python<'py>,
@@ -14100,6 +14592,7 @@ pub mod native {
             super::conformer_queries::bounds(self, py)
         }
         #[pyo3(signature=(options=crate::arguments::Argument::Missing,*,try_embedding=crate::arguments::Argument::Missing,only_unassigned=crate::arguments::Argument::Missing,max_isomers=crate::arguments::Argument::Missing,random_source=crate::arguments::Argument::Missing,unique=crate::arguments::Argument::Missing,only_stereo_groups=crate::arguments::Argument::Missing))]
+        /// Return the arbitrary-precision count from the native stereoisomer enumeration policy.
         fn stereoisomer_count(
             &self,
             py: Python<'_>,
@@ -14168,6 +14661,7 @@ pub mod native {
                 only_stereo_groups,
             )
         }
+        /// Return the arbitrary-precision count from the native stereoisomer enumeration policy. Uses the explicitly supplied options.
         fn stereoisomer_count_with_options(
             &self,
             py: Python<'_>,
@@ -14176,10 +14670,12 @@ pub mod native {
             self._stereoisomer_count_options(py, Some(options))
         }
         #[new]
+        /// Construct an empty molecular value.
         fn py_new() -> Self {
             Self::new()
         }
         #[staticmethod]
+        /// Construct an empty molecular value.
         fn new() -> Self {
             Self {
                 inner: ck::Molecule::new(),
@@ -14187,6 +14683,7 @@ pub mod native {
         }
         #[staticmethod]
         #[pyo3(signature = (text, params=Argument::Missing, *, sanitize=Argument::Missing, allow_cxsmiles=Argument::Missing, strict_cxsmiles=Argument::Missing, parse_name=Argument::Missing, remove_hs=Argument::Missing, skip_cleanup=Argument::Missing, debug_parse=Argument::Missing, replacements=Argument::Missing))]
+        /// Parse SMILES into a new molecule. Supply SmilesParseParams or keyword options, not both; sanitization follows the selected parsing policy.
         fn from_smiles(
             text: &str,
             params: Argument<Option<PyRef<'_, super::extension::SmilesParseParams>>>,
@@ -14253,6 +14750,7 @@ pub mod native {
             )
         }
         #[staticmethod]
+        /// Parse SMILES into a new molecule. Supply SmilesParseParams or keyword options, not both; sanitization follows the selected parsing policy. Uses the explicitly supplied parameter form.
         fn from_smiles_with_params(
             text: &str,
             params: &super::extension::SmilesParseParams,
@@ -14261,6 +14759,7 @@ pub mod native {
         }
         #[staticmethod]
         #[pyo3(signature = (text, params=crate::arguments::Argument::Missing, *, sanitize=crate::arguments::Argument::Missing, remove_hs=crate::arguments::Argument::Missing))]
+        /// Parse InChI into a new molecular value using the selected sanitization and hydrogen-removal policy.
         fn from_inchi(
             text: &str,
             params: crate::arguments::Argument<Option<PyRef<'_, super::params::InchiReadParams>>>,
@@ -14309,6 +14808,7 @@ pub mod native {
             Self::_from_inchi_params(text, Some(&params))
         }
         #[staticmethod]
+        /// Parse InChI into a new molecular value using the selected sanitization and hydrogen-removal policy. Uses the explicitly supplied parameter form.
         fn from_inchi_with_params(
             text: &str,
             params: &super::params::InchiReadParams,
@@ -14320,6 +14820,7 @@ pub mod native {
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
         #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, options=crate::arguments::Argument::Missing))]
+        /// Generate an InChI string using the selected native InChI options.
         fn to_inchi(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, super::params::InchiWriteParams>>>,
@@ -14359,6 +14860,7 @@ pub mod native {
             self._to_inchi_params(Some(&params))
         }
         #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, options=crate::arguments::Argument::Missing))]
+        /// Generate InChI with the native result metadata and diagnostic information.
         fn to_inchi_result(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, super::params::InchiWriteParams>>>,
@@ -14401,6 +14903,7 @@ pub mod native {
             };
             self._to_inchi_result_params(Some(&params))
         }
+        /// Generate InChI with the native result metadata and diagnostic information. Uses the explicitly supplied parameter form.
         fn to_inchi_result_with_params(
             &self,
             params: &super::params::InchiWriteParams,
@@ -14412,6 +14915,7 @@ pub mod native {
                 .map(|inner| super::inchi_values::InchiResult { inner })
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
+        /// Generate an InChI string using the selected native InChI options. Uses the explicitly supplied parameter form.
         fn to_inchi_with_params(
             &self,
             params: &super::params::InchiWriteParams,
@@ -14423,6 +14927,7 @@ pub mod native {
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
         #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, options=crate::arguments::Argument::Missing))]
+        /// Generate the InChIKey for this molecule with the selected InChI options.
         fn to_inchi_key(
             &self,
             params: crate::arguments::Argument<Option<PyRef<'_, super::params::InchiWriteParams>>>,
@@ -14461,6 +14966,7 @@ pub mod native {
             };
             self._to_inchi_key_params(Some(&params))
         }
+        /// Generate the InChIKey for this molecule with the selected InChI options. Uses the explicitly supplied parameter form.
         fn to_inchi_key_with_params(
             &self,
             params: &super::params::InchiWriteParams,
@@ -14472,28 +14978,35 @@ pub mod native {
                 .map_err(super::inchi_values::InchiError::from_rust)
         }
         #[getter]
+        /// Number of stored atom rows. Implicit hydrogens are not separate rows.
         fn num_atoms(&self) -> usize {
             self.inner.num_atoms()
         }
         #[getter]
+        /// Number of stored bond rows.
         fn num_bonds(&self) -> usize {
             self.inner.num_bonds()
         }
+        /// Calculate the canonical molecular graph hash.
         fn molecular_hash(&self) -> PyResult<u64> {
             self.inner
                 .molecular_hash()
                 .map_err(MoleculeHashError::from_rust)
         }
+        /// Calculate the molecular graph hash using the supplied per-atom ranks.
         fn molecular_hash_with_ranks(&self, ranks: Vec<u32>) -> PyResult<u64> {
             self.inner
                 .molecular_hash_with_ranks(&ranks)
                 .map_err(MoleculeHashError::from_rust)
         }
         #[getter]
+        /// Whether a 2D coordinate block is stored; does not generate coordinates.
         fn has_2d_coordinates(&self) -> bool {
             self.inner.has_2d_coordinates()
         }
         #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]] | None"}"#]
+        /// Independent float64 array of shape (num_atoms, 2), in atom-index order,
+        /// or None when no 2D coordinate block is stored. Does not generate a layout.
         #[getter]
         fn coordinates_2d<'py>(&self, py: Python<'py>) -> Option<Bound<'py, numpy::PyArray2<f64>>> {
             self.inner
@@ -14502,6 +15015,7 @@ pub mod native {
         }
         #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int, int], numpy.dtype[numpy.float64]]"}"#]
         #[pyo3(signature = (conformer_id=0))]
+        /// Return an independent float64 array of shape (num_atoms, 3) for conformer_id. An absent conformer raises Coordinate3DReadError.
         fn coordinates_3d<'py>(
             &self,
             py: Python<'py>,
@@ -14513,6 +15027,7 @@ pub mod native {
                 .map_err(errors::Coordinate3DReadError::from_rust)
         }
         #[getter]
+        /// Return stored 3D conformer values in native storage order.
         fn conformers_3d(&self) -> Vec<Conformer3D> {
             self.inner
                 .conformers_3d()
@@ -14522,6 +15037,7 @@ pub mod native {
                 .collect()
         }
         #[pyo3(signature = (params=Argument::Missing, *, n_bits=Argument::Missing))]
+        /// Calculate MACCS keys using MaccsFingerprintParams or the n_bits keyword, not both.
         fn fingerprint_maccs(
             &self,
             py: Python<'_>,
@@ -14565,6 +15081,7 @@ pub mod native {
                 .map(|inner| Fingerprint { inner })
                 .map_err(errors::MaccsFingerprintError::from_rust)
         }
+        /// Calculate MACCS keys using MaccsFingerprintParams or the n_bits keyword, not both. Uses the explicitly supplied parameter form.
         fn fingerprint_maccs_with_params(
             &self,
             py: Python<'_>,
@@ -14575,6 +15092,8 @@ pub mod native {
                 .map(|inner| Fingerprint { inner })
                 .map_err(errors::MaccsFingerprintError::from_rust)
         }
+        /// Return the raw 167-bit MACCS fingerprint with bit zero unused.
+        /// The ordinary fingerprint_maccs entry projects keys 1..166 to 166 bits.
         fn fingerprint_maccs_raw(&self) -> PyResult<Fingerprint> {
             self.inner
                 .fingerprint_maccs_raw()
@@ -14582,6 +15101,7 @@ pub mod native {
                 .map_err(errors::MaccsFingerprintError::from_rust)
         }
         #[pyo3(signature=(params=Argument::Missing, *, isomeric_smiles=Argument::Missing, kekule=Argument::Missing, canonical=Argument::Missing, clean_stereo=Argument::Missing, rooted_at_atom=Argument::Missing, all_bonds_explicit=Argument::Missing, all_hydrogens_explicit=Argument::Missing, include_dative_bonds=Argument::Missing, ignore_atom_map_numbers=Argument::Missing))]
+        /// Serialize SMILES with the selected canonicalization, stereochemistry and atom-order options. Supply SmilesWriteParams or keywords, not both.
         fn to_smiles(
             &self,
             py: Python<'_>,
@@ -14668,6 +15188,7 @@ pub mod native {
             );
             self._to_smiles_params(py, Some(&params))
         }
+        /// Serialize SMILES with the selected canonicalization, stereochemistry and atom-order options. Supply SmilesWriteParams or keywords, not both. Uses the explicitly supplied parameter form.
         fn to_smiles_with_params(
             &self,
             py: Python<'_>,
@@ -14677,6 +15198,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(params=Argument::Missing, *, smiles=Argument::Missing, fields=Argument::Missing, coordinate_selection=Argument::Missing))]
+        /// Serialize SMILES with the selected CX extensions. Supply CxSmilesWriteParams or keyword options, not both.
         fn to_cx_smiles(
             &self,
             py: Python<'_>,
@@ -14740,6 +15262,7 @@ pub mod native {
                 py.detach(|| self.inner.to_cx_smiles_with_params(&params)),
             )
         }
+        /// Serialize SMILES with the selected CX extensions. Supply CxSmilesWriteParams or keyword options, not both. Uses the explicitly supplied parameter form.
         fn to_cx_smiles_with_params(
             &self,
             py: Python<'_>,
@@ -14749,6 +15272,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(atoms=Argument::Missing, *, params=Argument::Missing, smiles=Argument::Missing, bonds=Argument::Missing, atom_symbols=Argument::Missing, bond_symbols=Argument::Missing))]
+        /// Serialize only the selected atoms and bonds as fragment SMILES, without changing the molecule.
         fn to_fragment_smiles(
             &self,
             py: Python<'_>,
@@ -14851,6 +15375,7 @@ pub mod native {
                 py.detach(|| self.inner.to_fragment_smiles_with_params(&params)),
             )
         }
+        /// Serialize only the selected atoms and bonds as fragment SMILES, without changing the molecule. Uses the explicitly supplied parameter form.
         fn to_fragment_smiles_with_params(
             &self,
             py: Python<'_>,
@@ -14860,6 +15385,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(atoms=Argument::Missing, *, params=Argument::Missing, cx=Argument::Missing, bonds=Argument::Missing, atom_symbols=Argument::Missing, bond_symbols=Argument::Missing))]
+        /// Serialize selected atoms and bonds as fragment CXSMILES with the requested extensions.
         fn to_fragment_cx_smiles(
             &self,
             py: Python<'_>,
@@ -14958,6 +15484,7 @@ pub mod native {
                 py.detach(|| self.inner.to_fragment_cx_smiles_with_params(&params)),
             )
         }
+        /// Serialize selected atoms and bonds as fragment CXSMILES with the requested extensions. Uses the explicitly supplied parameter form.
         fn to_fragment_cx_smiles_with_params(
             &self,
             py: Python<'_>,
@@ -14967,6 +15494,7 @@ pub mod native {
         }
 
         #[pyo3(signature=(count, seed, params=Argument::Missing, *, isomeric_smiles=Argument::Missing, kekule=Argument::Missing, all_bonds_explicit=Argument::Missing, all_hydrogens_explicit=Argument::Missing))]
+        /// Generate randomized SMILES using the requested count and random seed; molecular chemistry is unchanged.
         fn to_random_smiles(
             &self,
             py: Python<'_>,
@@ -15042,6 +15570,7 @@ pub mod native {
             };
             self._to_random_smiles_params(py, count, seed, Some(&params))
         }
+        /// Generate randomized SMILES using the requested count and random seed; molecular chemistry is unchanged. Uses the explicitly supplied parameter form.
         fn to_random_smiles_with_params(
             &self,
             py: Python<'_>,
@@ -15052,6 +15581,7 @@ pub mod native {
             self._to_random_smiles_params(py, count, seed, Some(params))
         }
 
+        /// Read the selected bond's text property, returning None for an absent key and a structured error for an incompatible value.
         fn bond_property_string(
             &self,
             py: Python<'_>,
@@ -15072,30 +15602,37 @@ pub mod native {
     #[pymethods]
     impl Fingerprint {
         #[staticmethod]
+        /// Construct a bit fingerprint of n_bits positions from the supplied set-bit indices; invalid indices raise FingerprintError.
         fn from_on_bits(n_bits: u32, on_bits: Vec<u32>) -> PyResult<Self> {
             ck::Fingerprint::from_on_bits(n_bits, on_bits)
                 .map(|inner| Self { inner })
                 .map_err(errors::FingerprintError::from_rust)
         }
         #[getter]
+        /// Size of the fingerprint's bit index space, not the number of set bits.
         fn n_bits(&self) -> u32 {
             self.inner.n_bits()
         }
+        /// Calculate Tanimoto similarity to another fingerprint using the native size and empty-fingerprint rules.
         fn tanimoto(&self, other: &Self) -> PyResult<f64> {
             self.inner
                 .tanimoto(&other.inner)
                 .map_err(errors::FingerprintError::from_rust)
         }
         #[getter]
+        /// Return set-bit indices in increasing order.
         fn on_bits(&self) -> Vec<u32> {
             self.inner.on_bits()
         }
+        /// Read the bit at a zero-based index; out-of-range indices raise FingerprintError.
         fn get_bit(&self, bit: u32) -> PyResult<bool> {
             self.inner
                 .get_bit(bit)
                 .map_err(errors::FingerprintError::from_rust)
         }
         #[doc = r#"{"role": "return_type", "imports": ["numpy"], "type": "numpy.ndarray[tuple[int], numpy.dtype[numpy.uint8]]"}"#]
+        /// Return an independent uint8 array with one entry per fingerprint bit.
+        /// Shape is (n_bits,); entries are 0 or 1 in increasing bit-index order.
         fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, numpy::PyArray1<u8>>> {
             let values = (0..self.inner.n_bits())
                 .map(|bit| self.inner.get_bit(bit).map(u8::from))

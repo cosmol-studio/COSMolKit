@@ -19,8 +19,11 @@ const ZERO_VOLUME_TOLERANCE: f64 = 0.1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Conformer selection and overwrite policy for stereochemical tags from coordinates.
 pub struct StructureTagParams {
+    /// Native conformer selector; -1 requests the default conformer.
     pub conformer_id: i32,
+    /// Replace existing stereochemical tags using the selected geometry.
     pub replace_existing_tags: bool,
 }
 

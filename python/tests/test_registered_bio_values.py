@@ -20,15 +20,15 @@ def test_row_span_checks_native_overflow_and_preserves_bounds():
 def test_crystal_cell_retains_exact_detached_scalars():
     default = ck.BioCrystalCell()
     assert (default.a, default.b, default.c, default.alpha, default.beta, default.gamma) == (1, 1, 1, 90, 90, 90)
-    cell = ck.BioCrystalCell(-0.0, 2.5, 3.25, 90, 100, 120)
+    cell = ck.BioCrystalCell(a=-0.0, b=2.5, c=3.25, alpha=90, beta=100, gamma=120)
     assert struct.pack("d", cell.a) == struct.pack("d", -0.0)
     assert (cell.b, cell.c, cell.alpha, cell.beta, cell.gamma) == (2.5, 3.25, 90, 100, 120)
-    with pytest.raises(AttributeError):
-        cell.a = 5
+    cell.a = 5
+    assert cell.a == 5
 
 
 def test_sifts_and_entity_database_reference_retain_every_field():
-    sifts = ck.BioSiftsUnpResidue(255, 254, 65535)
+    sifts = ck.BioSiftsUnpResidue(residue=255, accession_index=254, number=65535)
     assert (sifts.residue, sifts.accession_index, sifts.number) == (255, 254, 65535)
     assert ck.BioSiftsUnpResidue().residue is None
     ref = ck.BioEntityDbRef(
@@ -42,20 +42,19 @@ def test_sifts_and_entity_database_reference_retain_every_field():
     assert (ref.label_seq_begin, ref.label_seq_end) == (2, 8)
 
 
-def test_bio_kinds_are_real_typed_values_without_breaking_string_comparisons():
+def test_bio_kinds_are_real_typed_values():
     structure = ck.BioStructure.from_pdb(PDB)
     # The protein view performs classification; detached input rows retain
     # the reader's original kind, rather than inventing classification here.
     assert isinstance(structure.chains[0].kind, ck.ChainKind)
-    assert structure.protein.chains[0].kind is ck.ChainKind.Protein
-    assert structure.protein.chains[0].kind == "Protein"
-    assert str(structure.protein.chains[0].kind) == "Protein"
+    assert structure.protein().chains[0].kind == ck.ChainKind.Protein
+    assert structure.protein().chains[0].kind.name == "Protein"
     residue = structure.residues[0]
-    assert residue.kind is ck.ResidueKind.AminoAcid
+    assert residue.kind == ck.ResidueKind.AminoAcid
     assert isinstance(residue.entity_kind, ck.EntityKind)
-    assert isinstance(structure.atoms[0].calc_flag, ck.BioCalcFlag)
+    assert isinstance(structure.atoms[0].calculation_flag, ck.BioCalcFlag)
     assert isinstance(residue.sifts_unp, ck.BioSiftsUnpResidue)
-    assert ck.PolymerKind.PeptideL == "PeptideL"
+    assert ck.PolymerKind.PeptideL.name == "PeptideL"
     for entity in structure.entities:
         assert isinstance(entity.kind, ck.EntityKind)
         assert isinstance(entity.polymer_kind, ck.PolymerKind)

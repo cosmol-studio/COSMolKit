@@ -284,15 +284,23 @@ pub enum SdfFormat {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// MolBlock format, stereochemistry and coordinate-output options.
 pub struct MolBlockWriteParams {
     #[configuration(none_default)]
+    /// V2000 or V3000 MolBlock encoding.
     pub format: SdfFormat,
+    /// Request two-dimensional coordinate output.
     pub force_2d: bool,
+    /// Include stereochemical information in the output.
     pub include_stereo: bool,
+    /// Kekulize aromatic bonds for MolBlock output.
     pub kekulize: bool,
+    /// Decimal precision used by coordinate output formats that support it.
     pub precision: usize,
     #[configuration(none_default)]
+    /// Select automatic, explicit 2D or explicit 3D coordinates.
     pub coordinate_selection: MolCoordinateSelection,
+    /// Include coordinates; when false no stored conformer is selected.
     pub include_coordinates: bool,
 }
 

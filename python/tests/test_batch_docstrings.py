@@ -45,8 +45,8 @@ def test_batch_help_examples_match_return_and_error_behavior():
     with_hs = batch.with_hydrogens(errors="keep", n_jobs=1)
     assert len(with_hs) == len(batch)
     assert with_hs[1] is None
-    assert [error.as_dict() for error in with_hs.errors] == [
-        error.as_dict() for error in batch.errors
+    assert [{"index": error.index, "operation": error.operation, "message": error.message} for error in with_hs.errors] == [
+        {"index": error.index, "operation": error.operation, "message": error.message} for error in batch.errors
     ]
     original, hydrogenated = batch[0], with_hs[0]
     assert original is not None and hydrogenated is not None

@@ -1,6 +1,7 @@
 """Help text is part of the actual compiled Python API, not a separate inventory."""
 
 import inspect
+import json
 from collections.abc import Mapping
 from typing import cast
 
@@ -8,28 +9,48 @@ import cosmolkit as ck
 import pytest
 
 
+def has_description(documentation: str | None) -> bool:
+    text = (documentation or "").strip()
+    if text.startswith("{"):
+        try:
+            metadata, end = json.JSONDecoder().raw_decode(text)
+        except ValueError:
+            pass
+        else:
+            if isinstance(metadata, dict) and "role" in metadata:
+                text = text[end:].strip()
+    return bool(text)
+
+
 def test_public_api_has_native_descriptions() -> None:
     missing: list[str] = []
     checked = 0
-    for name, value in cast(Mapping[str, object], vars(ck)).items():
-        if name.startswith("_"):
-            continue
-        if inspect.isclass(value) and value.__module__ in ("cosmolkit", "builtins"):
+    visited: set[type[object]] = set()
+
+    def check(name: str, value: object) -> None:
+        nonlocal checked
+        if inspect.isclass(value) and (value.__module__ == "builtins" or value.__module__.split(".")[0] == "cosmolkit"):
+            if value in visited:
+                return
+            visited.add(value)
             checked += 1
             # Inherited str/ValueError help is not a description of a CK type.
-            if not value.__doc__:
+            if not has_description(value.__doc__):
                 missing.append(name)
             for member_name, member in cast(Mapping[str, object], vars(value)).items():
                 if member_name.startswith("_"):
                     continue
-                if callable(member) or inspect.isdatadescriptor(member):
-                    checked += 1
-                    if not inspect.getdoc(member):
-                        missing.append(f"{name}.{member_name}")
-        elif callable(value):
+                if isinstance(member, (staticmethod, classmethod)):
+                    member = member.__func__
+                check(f"{name}.{member_name}", member)
+        elif callable(value) or inspect.isdatadescriptor(value):
             checked += 1
-            if not inspect.getdoc(value):
+            if not has_description(inspect.getdoc(value)):
                 missing.append(name)
+
+    for name, value in cast(Mapping[str, object], vars(ck)).items():
+        if not name.startswith("_"):
+            check(name, value)
     assert checked > 0
     assert not missing, "Missing public API descriptions: " + ", ".join(missing)
 
@@ -47,7 +68,7 @@ def test_public_api_has_native_descriptions() -> None:
         (ck.SubstructMatchParams, "final_match", ("target, atom_indices", "exceptions propagate")),
         (ck.SubstructMatchParams, "atom_match", ("query_atom, target_atom", "QueryAtom and Atom")),
         (ck.SubstructMatchParams, "bond_match", ("query_bond, target_bond", "Bond values")),
-        (ck.BatchValidationError, "errors", ("BatchError", "copy")),
+        (ck.BatchValidationError, "record_errors", ("BatchError", "copy")),
         (ck.BioNcsOperator, "id", ("Identifier", "symmetry operator")),
     ],
 )

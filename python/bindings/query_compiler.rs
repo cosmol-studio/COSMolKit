@@ -19,6 +19,7 @@ enum QueryOwner {
 
 #[pyclass(module = "cosmolkit", frozen, from_py_object)]
 #[derive(Clone)]
+/// Parsed chemical query graph used for substructure matching; distinct from a concrete molecular graph.
 pub struct QueryGraph {
     owner: QueryOwner,
 }
@@ -99,6 +100,7 @@ impl QueryGraph {
 impl QueryGraph {
     #[staticmethod]
     #[pyo3(signature = (text, params=crate::arguments::Argument::Missing, *, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing, parse_name=crate::arguments::Argument::Missing, merge_hs=crate::arguments::Argument::Missing, skip_cleanup=crate::arguments::Argument::Missing, debug_parse=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing))]
+    /// Parse SMARTS into a query graph; accept a parameter object or keyword options, not both.
     fn from_smarts(
         text: &str,
         params: crate::arguments::Argument<Option<PyRef<'_, SmartsParseParams>>>,
@@ -167,14 +169,17 @@ impl QueryGraph {
         )
     }
     #[staticmethod]
+    /// Parse SMARTS into a query graph using the supplied parsing parameters.
     fn from_smarts_with_params(text: &str, params: &SmartsParseParams) -> PyResult<Self> {
         Self::_from_smarts_params(text, Some(params))
     }
     #[getter]
+    /// Number of query atoms.
     fn num_atoms(&self) -> usize {
         self.inner().num_atoms()
     }
     #[getter]
+    /// Query name retained from the input, or None if absent.
     fn name(&self, py: Python<'_>) -> PyResult<Option<String>> {
         self.inner()
             .name()
@@ -183,12 +188,14 @@ impl QueryGraph {
             .transpose()
     }
     #[getter]
+    /// Number of query bonds.
     fn num_bonds(&self) -> usize {
         self.inner().num_bonds()
     }
 }
 
 #[pyclass(module = "cosmolkit", frozen)]
+/// Compiled native substructure query with its graph and planned atom order.
 pub struct CompiledQuery {
     inner: Arc<ck::CompiledQuery>,
 }
@@ -202,18 +209,22 @@ impl CompiledQuery {
 #[pymethods]
 impl CompiledQuery {
     #[getter]
+    /// Number of query atoms.
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
     #[getter]
+    /// Number of query bonds.
     fn num_bonds(&self) -> usize {
         self.inner.num_bonds()
     }
     #[getter]
+    /// Query atom visitation order selected by the native query compiler.
     fn atom_order(&self) -> Vec<usize> {
         self.inner.atom_order().to_vec()
     }
     #[getter]
+    /// Query graph retained by the compiled matcher.
     fn query(&self) -> QueryGraph {
         QueryGraph {
             owner: QueryOwner::Compiled(Arc::clone(&self.inner)),
@@ -222,6 +233,7 @@ impl CompiledQuery {
 }
 
 #[pyfunction]
+/// Compile a QueryGraph into a reusable native query; invalid query state produces a structured error.
 pub fn compile_query(query: &QueryGraph) -> PyResult<CompiledQuery> {
     ck::compile_query(query.inner())
         .map(|inner| CompiledQuery {
@@ -255,24 +267,18 @@ mod tests {
             drop(compiled);
             let view = Py::new(py, view)?;
             assert_eq!(
-                view.bind(py)
-                    .call_method0("num_atoms")?
-                    .extract::<usize>()?,
+                view.bind(py).getattr("num_atoms")?.extract::<usize>()?,
                 expected.num_atoms()
             );
             assert_eq!(
-                view.bind(py)
-                    .call_method0("num_bonds")?
-                    .extract::<usize>()?,
+                view.bind(py).getattr("num_bonds")?.extract::<usize>()?,
                 expected.num_bonds()
             );
             let module = PyModule::new(py, "compiler_probe")?;
             module.add_function(wrap_pyfunction!(compile_query, &module)?)?;
             let compiled = module.getattr("compile_query")?.call1((view,))?;
             assert_eq!(
-                compiled
-                    .call_method0("atom_order")?
-                    .extract::<Vec<usize>>()?,
+                compiled.getattr("atom_order")?.extract::<Vec<usize>>()?,
                 expected.atom_order()
             );
             Ok(())

@@ -13,10 +13,12 @@ pub struct MissingPropertyError {
 }
 crate::error_framework::error_projection! {methods impl MissingPropertyError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "property"
     }
     #[getter]
+    /// Name of the required property that was not present.
     fn key(&self, py: Python<'_>) -> PyResult<String> {
         decode_source_text(py, self.inner.key())
     }
@@ -42,14 +44,17 @@ pub struct PropertyValueError {
 }
 crate::error_framework::error_projection! {methods impl PropertyValueError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "property"
     }
     #[getter]
+    /// Property value kind required by the attempted typed read.
     fn expected(&self) -> PropertyValueKind {
         self.inner.expected().into()
     }
     #[getter]
+    /// Property value kind actually stored.
     fn actual(&self) -> PropertyValueKind {
         self.inner.actual().into()
     }
@@ -70,6 +75,7 @@ impl PropertyValueError {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
+    /// Explicitly tagged molecular property value. Typed reads require the matching stored variant and do not coerce other kinds.
     pub struct PropertyValue {
         pub(crate) inner: ck::PropertyValue,
     }
@@ -80,6 +86,7 @@ impl PropertyValue {
     // entry constructs exactly the named canonical Rust discriminant.
     #[staticmethod]
     #[pyo3(name = "String")]
+    /// Create a String property value from Python text.
     fn string(value: String) -> Self {
         Self {
             inner: ck::PropertyValue::String(value.into()),
@@ -87,6 +94,7 @@ impl PropertyValue {
     }
     #[staticmethod]
     #[pyo3(name = "Int")]
+    /// Create a signed 32-bit integer property value.
     fn int(value: i32) -> Self {
         Self {
             inner: ck::PropertyValue::Int(value),
@@ -94,6 +102,7 @@ impl PropertyValue {
     }
     #[staticmethod]
     #[pyo3(name = "UInt")]
+    /// Create an unsigned 32-bit integer property value.
     fn uint(value: u32) -> Self {
         Self {
             inner: ck::PropertyValue::UInt(value),
@@ -101,6 +110,7 @@ impl PropertyValue {
     }
     #[staticmethod]
     #[pyo3(name = "IntVector")]
+    /// Create a vector of signed 32-bit integer property values.
     fn int_vector(value: Vec<i32>) -> Self {
         Self {
             inner: ck::PropertyValue::IntVector(value),
@@ -108,6 +118,7 @@ impl PropertyValue {
     }
     #[staticmethod]
     #[pyo3(name = "StringVector")]
+    /// Create a vector of string property values.
     fn string_vector(value: Vec<String>) -> Self {
         Self {
             inner: ck::PropertyValue::StringVector(value.into_iter().map(Into::into).collect()),
@@ -115,6 +126,7 @@ impl PropertyValue {
     }
     #[staticmethod]
     #[pyo3(name = "Double")]
+    /// Create a double-precision floating-point property value.
     fn double(value: f64) -> Self {
         Self {
             inner: ck::PropertyValue::Double(value),
@@ -122,15 +134,18 @@ impl PropertyValue {
     }
     #[staticmethod]
     #[pyo3(name = "Bool")]
+    /// Create a Boolean property value.
     fn bool(value: bool) -> Self {
         Self {
             inner: ck::PropertyValue::Bool(value),
         }
     }
     #[getter]
+    /// Stored property variant, without numeric or textual coercion.
     fn kind(&self) -> PropertyValueKind {
         self.inner.kind().into()
     }
+    /// Read a String property as text; reject a different stored kind.
     fn as_string(&self, py: Python<'_>) -> PyResult<String> {
         let text = self
             .inner
@@ -138,23 +153,28 @@ impl PropertyValue {
             .map_err(PropertyValueError::from_rust)?;
         decode_source_text(py, text)
     }
+    /// Read a signed integer property without coercing another stored kind.
     fn as_int(&self) -> PyResult<i32> {
         self.inner.as_int().map_err(PropertyValueError::from_rust)
     }
+    /// Read an unsigned integer property without coercing another stored kind.
     fn as_uint(&self) -> PyResult<u32> {
         self.inner.as_uint().map_err(PropertyValueError::from_rust)
     }
+    /// Read an integer-vector property as an independent list; reject a different kind.
     fn as_int_vector(&self) -> PyResult<Vec<i32>> {
         self.inner
             .as_int_vector()
             .map(<[i32]>::to_vec)
             .map_err(PropertyValueError::from_rust)
     }
+    /// Read a Double value; raise PropertyValueError for a different stored variant.
     fn as_double(&self) -> PyResult<f64> {
         self.inner
             .as_double()
             .map_err(PropertyValueError::from_rust)
     }
+    /// Read a Bool value; raise PropertyValueError for a different stored variant.
     fn as_bool(&self) -> PyResult<bool> {
         self.inner.as_bool().map_err(PropertyValueError::from_rust)
     }
@@ -230,10 +250,12 @@ crate::error_framework::error_projection!(AtomPropertyReadError, AtomPropertyRea
     ck::AtomPropertyReadError::Utf8(source) => pyo3::exceptions::PyUnicodeError::new_err(source.to_string()),
 }), methods = {
     #[getter]
+    /// Number of valid UTF-8 bytes before the decoding failure, or None for non-decoding errors.
     fn valid_up_to(&self) -> Option<usize> {
         match &self.inner { ck::AtomPropertyReadError::Utf8(e) => Some(e.valid_up_to()), _ => None }
     }
     #[getter]
+    /// Length of the invalid UTF-8 sequence, or None for incomplete input or a different error kind.
     fn error_len(&self) -> Option<usize> {
         match &self.inner { ck::AtomPropertyReadError::Utf8(e) => e.error_len(), _ => None }
     }

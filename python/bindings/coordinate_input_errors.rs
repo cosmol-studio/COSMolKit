@@ -27,30 +27,30 @@ error_projection!(CoordinateInputError, CoordinateInputErrorKind, ck::Coordinate
     ConformerIdOverflow { max_id: usize }, InvalidCoordinates(_),
 }, cause = |_: &ck::CoordinateInputError| None::<PyErr>, methods = {
     #[getter]
-    fn dimension(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Coordinate or matrix dimension involved in the failure. Applies to CoordinateInputError.RowCount, CoordinateInputError.Shape, CoordinateInputError.NonFinite. None when this payload is absent."] fn dimension(&self) -> Option<&'static str> { match self.inner {
         ck::CoordinateInputError::RowCount { dimension, .. }
         | ck::CoordinateInputError::Shape { dimension, .. }
         | ck::CoordinateInputError::NonFinite { dimension, .. } => Some(dimension), _ => None,
     } }
     #[getter]
-    fn row(&self) -> Option<usize> { match self.inner {
+    #[doc = "Row reported by the native failure. Applies to CoordinateInputError.Shape, CoordinateInputError.NonFinite, CoordinateInputError.NonZeroZ. None when this payload is absent."] fn row(&self) -> Option<usize> { match self.inner {
         ck::CoordinateInputError::Shape { row, .. }
         | ck::CoordinateInputError::NonFinite { row, .. }
         | ck::CoordinateInputError::NonZeroZ { row, .. } => Some(row), _ => None,
     } }
     #[getter]
-    fn value(&self) -> Option<InputValue> { match &self.inner {
+    #[doc = "Value rejected or reported by the native operation. Applies to CoordinateInputError.UnknownZPolicy, CoordinateInputError.NonFinite. None when this payload is absent."] fn value(&self) -> Option<InputValue> { match &self.inner {
         ck::CoordinateInputError::UnknownZPolicy { value } => Some(InputValue::Name(value.clone())),
         ck::CoordinateInputError::NonFinite { value, .. } => Some(InputValue::Coordinate(*value)), _ => None,
     } }
     #[getter]
-    fn expected(&self) -> Option<Expected> { match self.inner {
+    #[doc = "Required value reported by the native check. Applies to CoordinateInputError.RowCount, CoordinateInputError.Shape. None when this payload is absent."] fn expected(&self) -> Option<Expected> { match self.inner {
         ck::CoordinateInputError::RowCount { expected, .. } => Some(Expected::Count(expected)),
         ck::CoordinateInputError::Shape { expected, .. } => Some(Expected::Shape(expected)), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> {
+    #[doc = "Structured CoordinateValidationError payload of CoordinateInputError.InvalidCoordinates; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn coordinates(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<CoordinateValidationError>>> {
         match &self.inner {
             ck::CoordinateInputError::InvalidCoordinates(value) => CoordinateValidationError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into),
             _ => Ok(None),

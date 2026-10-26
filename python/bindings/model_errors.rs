@@ -22,7 +22,7 @@ error_projection!(CoordinateValidationError, CoordinateValidationErrorKind, ck::
     NonFiniteCoordinate { dimension, conformer, atom, axis: &'static str },
 }, cause = |_: &ck::CoordinateValidationError| None::<PyErr>, methods = {
     #[getter]
-    fn atom(&self) -> Option<usize> {
+    #[doc = "Atom index involved in the failure. Present for `CoordinateValidationError.AtomIndexOverflow`, `CoordinateValidationError.NonFiniteCoordinate`; None when unavailable."] fn atom(&self) -> Option<usize> {
         match self.inner {
             ck::CoordinateValidationError::AtomIndexOverflow { atom }
             | ck::CoordinateValidationError::NonFiniteCoordinate { atom, .. } => Some(atom),
@@ -30,7 +30,7 @@ error_projection!(CoordinateValidationError, CoordinateValidationErrorKind, ck::
         }
     }
     #[getter]
-    fn id(&self) -> Option<usize> {
+    #[doc = "Identifier associated with the failed validation. Present for `CoordinateValidationError.Missing3DConformer`, `CoordinateValidationError.DuplicateConformerId`; None when unavailable."] fn id(&self) -> Option<usize> {
         match self.inner {
             ck::CoordinateValidationError::Missing3DConformer { id }
             | ck::CoordinateValidationError::DuplicateConformerId { id, .. } => Some(id),
@@ -38,7 +38,7 @@ error_projection!(CoordinateValidationError, CoordinateValidationErrorKind, ck::
         }
     }
     #[getter]
-    fn dimension(&self) -> Option<&'static str> {
+    #[doc = "Coordinate dimension associated with the failure. Present for `CoordinateValidationError.RowCount`, `CoordinateValidationError.DuplicateConformerId`, `CoordinateValidationError.NonFiniteCoordinate`; None when unavailable."] fn dimension(&self) -> Option<&'static str> {
         match self.inner {
             ck::CoordinateValidationError::RowCount { dimension, .. }
             | ck::CoordinateValidationError::DuplicateConformerId { dimension, .. }
@@ -47,7 +47,7 @@ error_projection!(CoordinateValidationError, CoordinateValidationErrorKind, ck::
         }
     }
     #[getter]
-    fn conformer(&self) -> Option<usize> {
+    #[doc = "Conformer identifier associated with the failure. Present for `CoordinateValidationError.RowCount`, `CoordinateValidationError.NonFiniteCoordinate`; None when unavailable."] fn conformer(&self) -> Option<usize> {
         match self.inner {
             ck::CoordinateValidationError::RowCount { conformer, .. }
             | ck::CoordinateValidationError::NonFiniteCoordinate { conformer, .. } => Some(conformer),
@@ -92,7 +92,7 @@ error_projection!(TopologyValidationError, TopologyValidationErrorKind, ck::Topo
     | ck::TopologyValidationError::AdjacencyMismatch => None,
 }, source = Option<Source<crate::error_framework::ErrorObject<StereoGroupError>, crate::error_framework::ErrorObject<TemplateAttachmentOrderError>>>, methods = {
     #[getter]
-    fn position(&self) -> Option<usize> {
+    #[doc = "Position of the offending entry. Present for `TopologyValidationError.AtomIdMismatch`, `TopologyValidationError.BondIdMismatch`, `TopologyValidationError.SubstanceGroupIdMismatch`; None when unavailable."] fn position(&self) -> Option<usize> {
         match self.inner {
             ck::TopologyValidationError::AtomIdMismatch { position, .. }
             | ck::TopologyValidationError::BondIdMismatch { position, .. }
@@ -101,7 +101,7 @@ error_projection!(TopologyValidationError, TopologyValidationErrorKind, ck::Topo
         }
     }
     #[getter]
-    fn id(&self) -> Option<usize> {
+    #[doc = "Identifier associated with the failed validation. Present for `TopologyValidationError.AtomIdMismatch`, `TopologyValidationError.BondIdMismatch`, `TopologyValidationError.SubstanceGroupIdMismatch`; None when unavailable."] fn id(&self) -> Option<usize> {
         match self.inner {
             ck::TopologyValidationError::AtomIdMismatch { id, .. } => Some(id.index()),
             ck::TopologyValidationError::BondIdMismatch { id, .. } => Some(id.index()),
@@ -110,7 +110,7 @@ error_projection!(TopologyValidationError, TopologyValidationErrorKind, ck::Topo
         }
     }
     #[getter]
-    fn atom(&self) -> Option<usize> {
+    #[doc = "Atom index involved in the failure. Present for `TopologyValidationError.TemplateAttachmentOrder`, `TopologyValidationError.BondEndpointOutOfRange`, `TopologyValidationError.SelfLoopBond`, `TopologyValidationError.StereoReferenceOutOfRange`, `TopologyValidationError.SubstanceGroupAtomOutOfRange`, `TopologyValidationError.StereoGroupAtomOutOfRange`; None when unavailable."] fn atom(&self) -> Option<usize> {
         match self.inner {
             ck::TopologyValidationError::TemplateAttachmentOrder { atom, .. }
             | ck::TopologyValidationError::BondEndpointOutOfRange { atom, .. }
@@ -122,7 +122,7 @@ error_projection!(TopologyValidationError, TopologyValidationErrorKind, ck::Topo
         }
     }
     #[getter]
-    fn bond(&self) -> Option<usize> {
+    #[doc = "Bond index involved in the failure. Present for `TopologyValidationError.BondEndpointOutOfRange`, `TopologyValidationError.SelfLoopBond`, `TopologyValidationError.StereoAtomOutOfRange`, `TopologyValidationError.StereoReferenceOutOfRange`, `TopologyValidationError.StereoAtomsRequired`, `TopologyValidationError.SubstanceGroupBondOutOfRange`, `TopologyValidationError.StereoGroupBondOutOfRange`; None when unavailable."] fn bond(&self) -> Option<usize> {
         match self.inner {
             ck::TopologyValidationError::BondEndpointOutOfRange { bond, .. }
             | ck::TopologyValidationError::SelfLoopBond { bond, .. }
@@ -135,7 +135,7 @@ error_projection!(TopologyValidationError, TopologyValidationErrorKind, ck::Topo
         }
     }
     #[getter]
-    fn atom_count(&self) -> Option<usize> {
+    #[doc = "Number of atoms available to the operation. Present for `TopologyValidationError.BondEndpointOutOfRange`, `TopologyValidationError.StereoAtomOutOfRange`, `TopologyValidationError.StereoReferenceOutOfRange`, `TopologyValidationError.SubstanceGroupAtomOutOfRange`, `TopologyValidationError.StereoGroupAtomOutOfRange`; None when unavailable."] fn atom_count(&self) -> Option<usize> {
         match self.inner {
             ck::TopologyValidationError::BondEndpointOutOfRange { atom_count, .. }
             | ck::TopologyValidationError::StereoAtomOutOfRange { atom_count, .. }
@@ -146,7 +146,7 @@ error_projection!(TopologyValidationError, TopologyValidationErrorKind, ck::Topo
         }
     }
     #[getter]
-    fn bond_count(&self) -> Option<usize> {
+    #[doc = "Number of bonds available to the operation. Present for `TopologyValidationError.SubstanceGroupBondOutOfRange`, `TopologyValidationError.StereoGroupBondOutOfRange`; None when unavailable."] fn bond_count(&self) -> Option<usize> {
         match self.inner {
             ck::TopologyValidationError::SubstanceGroupBondOutOfRange { bond_count, .. }
             | ck::TopologyValidationError::StereoGroupBondOutOfRange { bond_count, .. } => Some(bond_count),
@@ -154,7 +154,7 @@ error_projection!(TopologyValidationError, TopologyValidationErrorKind, ck::Topo
         }
     }
     #[getter]
-    fn sgroup(&self) -> Option<usize> {
+    #[doc = "Substance-group identifier associated with the failure. Present for `TopologyValidationError.SubstanceGroupAtomOutOfRange`, `TopologyValidationError.SubstanceGroupBondOutOfRange`, `TopologyValidationError.SubstanceGroupParentOutOfRange`; None when unavailable."] fn sgroup(&self) -> Option<usize> {
         match self.inner {
             ck::TopologyValidationError::SubstanceGroupAtomOutOfRange { sgroup, .. }
             | ck::TopologyValidationError::SubstanceGroupBondOutOfRange { sgroup, .. }

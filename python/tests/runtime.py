@@ -6,6 +6,7 @@ enumerate registry entries, or move chemistry tests here.
 """
 from pathlib import Path
 from operator import setitem
+import pickle
 import sys
 from tempfile import TemporaryDirectory
 
@@ -35,6 +36,11 @@ def native_enum_protocol():
     assert len(ck.BondOrder.values) < len(ck.BondOrder.names)
     raises(TypeError, lambda: setitem(ck.BondOrder.names, "bad", member))
     raises(ValueError, lambda: ck.BondOrder(999))
+    # Shared protocols: numeric construction, custom construction, error kind.
+    for value in (member, ck.CipDescriptor("R"), ck.DrawingWriteErrorKind.Io):
+        for protocol in (0, pickle.HIGHEST_PROTOCOL):
+            restored = pickle.loads(pickle.dumps(value, protocol=protocol))
+            assert type(restored) is type(value) and restored == value
 
 
 def forwarding_and_configuration():

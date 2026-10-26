@@ -1,4 +1,4 @@
-"""Local constructor/setter checks for Python batch worker configuration."""
+"""Typed configuration extraction and native batch execution validation."""
 
 import pytest
 import cosmolkit as ck
@@ -17,15 +17,26 @@ def test_worker_defaults_and_valid_assignments_match_construction(
 
 
 @pytest.mark.parametrize("params_type", [ck.BatchParams, ck.BatchQueryParams, ck.BatchExportParams])
-def test_zero_workers_are_rejected_by_constructor_and_setter(
+def test_zero_workers_are_rejected_at_native_execution(
     params_type: type[ck.BatchParams] | type[ck.BatchQueryParams] | type[ck.BatchExportParams],
+    tmp_path,
 ):
-    with pytest.raises(ValueError, match="n_jobs must be >= 1"):
-        _ = params_type(n_jobs=0)
+    constructed = params_type(n_jobs=0)
     params = params_type(n_jobs=2, progress_bar=True)
-    with pytest.raises(ValueError, match="n_jobs must be >= 1"):
-        params.n_jobs = 0
-    assert params.n_jobs == 2
+    params.n_jobs = 0
+    batch = ck.mols_from_smiles_list(["CCO"])
+    before = batch.to_smiles()
+    for configuration in (constructed, params):
+        with pytest.raises(ck.BatchValidationError, match="n_jobs must be >= 1"):
+            if params_type is ck.BatchParams:
+                batch.with_hydrogens(params=configuration)
+            elif params_type is ck.BatchQueryParams:
+                batch.to_smiles(params=configuration)
+            else:
+                batch.write_sdf(tmp_path / "not-written.sdf", params=configuration)
+        assert configuration.n_jobs == 0
+    assert batch.to_smiles() == before
+    assert not (tmp_path / "not-written.sdf").exists()
     assert params.progress_bar is True
 
 
@@ -49,8 +60,8 @@ def test_failed_query_worker_assignment_preserves_callback_identity():
         pass
 
     params = ck.BatchQueryParams(n_jobs=2, progress_bar=True, progress_callback=callback)
-    with pytest.raises(ValueError, match="n_jobs must be >= 1"):
-        params.n_jobs = 0
+    with pytest.raises(OverflowError):
+        params.n_jobs = -1
     assert params.n_jobs == 2
     assert params.progress_bar is True
     assert params.progress_callback is callback

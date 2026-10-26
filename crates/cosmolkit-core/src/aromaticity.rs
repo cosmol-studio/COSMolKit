@@ -34,7 +34,9 @@ pub enum AromaticityModel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// Aromaticity perception model selection.
 pub struct AromaticityParams {
+    /// Aromaticity model used to assign aromatic atoms and bonds.
     pub model: AromaticityModel,
 }
 

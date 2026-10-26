@@ -28,45 +28,47 @@ pub struct SerdeJsonError {
 }
 crate::error_framework::error_projection! {methods impl SerdeJsonError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "serde_json"
     }
     #[getter]
-    fn line(&self) -> usize {
+    #[doc = "Line reported by the native JSON parser."] fn line(&self) -> usize {
         self.native().line()
     }
     #[getter]
-    fn column(&self) -> usize {
+    #[doc = "Column reported by the native JSON parser."] fn column(&self) -> usize {
         self.native().column()
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn classify(&self) -> SerdeJsonCategory {
+    #[doc = "Classify the failure as IO, syntax, data, or end-of-input."] fn classify(&self) -> SerdeJsonCategory {
         self.native().classify().into()
     }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn io_error_kind(&self) -> Option<IoErrorKind> {
+    #[doc = "Underlying IO error category, or None for a non-IO failure."] fn io_error_kind(&self) -> Option<IoErrorKind> {
         self.native().io_error_kind().map(IoErrorKind::from_native)
     }
     #[getter]
-    fn is_io(&self) -> bool {
+    #[doc = "Whether input reading failed."] fn is_io(&self) -> bool {
         self.native().is_io()
     }
     #[getter]
-    fn is_syntax(&self) -> bool {
+    #[doc = "Whether this is a JSON syntax error."] fn is_syntax(&self) -> bool {
         self.native().is_syntax()
     }
     #[getter]
-    fn is_data(&self) -> bool {
+    #[doc = "Whether JSON data was incompatible with the requested type."] fn is_data(&self) -> bool {
         self.native().is_data()
     }
     #[getter]
-    fn is_eof(&self) -> bool {
+    #[doc = "Whether input ended before parsing could complete."] fn is_eof(&self) -> bool {
         self.native().is_eof()
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Immediate native cause, also available as __cause__; None when the native error has no cause.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<StandardSource>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }
@@ -109,10 +111,12 @@ pub struct FingerprintJsonError {
 }
 crate::error_framework::error_projection! {methods impl FingerprintJsonError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "fingerprint"
     }
     #[getter]
+    /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> FingerprintJsonErrorKind {
         match self.inner.as_ref() {
             ck::FingerprintJsonError::Parse(_) => FingerprintJsonErrorKind::Parse,
@@ -124,21 +128,21 @@ crate::error_framework::error_projection! {methods impl FingerprintJsonError {
         }
     }
     #[getter]
-    fn invalid(&self) -> Option<&str> {
+    #[doc = "Explanation of invalid fingerprint configuration; None for other variants."] fn invalid(&self) -> Option<&str> {
         match self.inner.as_ref() {
             ck::FingerprintJsonError::Invalid(value) => Some(value),
             _ => None,
         }
     }
     #[getter]
-    fn component(&self) -> Option<&'static str> {
+    #[doc = "Coordinate component involved in the failure. Applies to FingerprintJsonError.UnsupportedComponent. None when this payload is absent."] fn component(&self) -> Option<&'static str> {
         match self.inner.as_ref() {
             ck::FingerprintJsonError::UnsupportedComponent { component, .. } => Some(component),
             _ => None,
         }
     }
     #[getter]
-    fn source_type(&self) -> Option<&str> {
+    #[doc = "Native source type reported by the failed conversion. Applies to FingerprintJsonError.UnsupportedComponent. None when this payload is absent."] fn source_type(&self) -> Option<&str> {
         match self.inner.as_ref() {
             ck::FingerprintJsonError::UnsupportedComponent { source_type, .. } => Some(source_type),
             _ => None,
@@ -146,6 +150,7 @@ crate::error_framework::error_projection! {methods impl FingerprintJsonError {
     }
     #[staticmethod]
     #[doc = r#"{"role":"error_source"}"#]
+    /// Actual underlying JSON parse error, identical to __cause__, or None.
     fn source(slf: Bound<'_, pyo3::exceptions::PyBaseException>) -> PyResult<Option<crate::error_framework::ErrorObject<SerdeJsonError>>> {
         Ok(slf.getattr("__cause__")?.extract()?)
     }

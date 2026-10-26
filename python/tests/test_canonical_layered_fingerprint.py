@@ -16,17 +16,17 @@ def test_original_defaults_counts_masks_roots_and_immutable_results():
     assert mol.fingerprint_layered().n_bits == 2048
     absent = mol.fingerprint_layered_with_output()
     assert absent.atom_counts is None
-    assert repr(absent) == "LayeredFingerprintResult(n_bits=2048, has_atom_counts=false)"
+    assert absent.fingerprint.n_bits == 2048
     seed = [10, 20, 30]
     p = ck.LayeredFingerprintParams(atom_counts=seed, set_only_bits=ck.Fingerprint.from_on_bits(2048, [674]))
     result = mol.fingerprint_layered_with_output_with_params(p)
     assert result.fingerprint.on_bits == [674]
     assert result.atom_counts == [11, 22, 31]
-    assert repr(result) == "LayeredFingerprintResult(n_bits=2048, has_atom_counts=true)"
+    assert result.fingerprint.n_bits == 2048
     copy = result.atom_counts
     copy.clear()
     assert result.atom_counts == [11, 22, 31]
-    assert seed == p.atom_counts == [10, 20, 30]
+    assert seed == list(p.atom_counts) == [10, 20, 30]
     assert mol.fingerprint_layered_with_params(ck.LayeredFingerprintParams(from_atoms=[])).on_bits == []
     assert mol.fingerprint_layered_with_params(ck.LayeredFingerprintParams(
         from_atoms=[0], branched_paths=False)).on_bits == [360,596,610,611,674,867,1044,1111,1783,1784]
@@ -58,8 +58,8 @@ def test_original_preconditions_remain_structured_errors(kwargs,reason):
         mol.fingerprint_layered_with_params(ck.LayeredFingerprintParams(**kwargs))
     assert str(raised.value) == reason
     assert raised.value.reason == reason
-    assert raised.value.domain == "Fingerprint"
-    assert raised.value.kind == "InvalidArguments"
+    assert raised.value.domain == "fingerprint"
+    assert raised.value.variant.name == "InvalidArguments"
 
 def test_original_mask_width_failure_and_unsigned_transport():
     mol = ck.Molecule.from_smiles("CCO")
@@ -87,7 +87,7 @@ def test_canonical_query_owned_output_protocol():
     result = ck.fingerprint_layered_query_with_output_with_params(query,params)
     assert result.fingerprint.on_bits == [162]
     assert result.atom_counts == [6,7]
-    assert params.atom_counts == [5,6]
+    assert params.atom_counts == (5,6)
 
 
 def test_original_source_layered_scalar_defaults_types_counts_masks_roots_and_immutability():

@@ -16,6 +16,7 @@ pub struct TryReserveError {
 
 crate::error_framework::error_projection! {methods impl TryReserveError {
     #[getter]
+    /// Native subsystem reporting this failure, preserved independently of the human-readable message.
     fn domain(&self) -> &'static str {
         "std"
     }

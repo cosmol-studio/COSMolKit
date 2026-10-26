@@ -8,12 +8,19 @@ use cosmolkit_fingerprints::{
 #[derive(Debug, Clone, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(factory)]
 pub struct LegacyTopologicalTorsionParams {
+    /// Number of atoms in each torsion path.
     pub torsion_atom_count: u32,
+    /// Include atom chirality in torsion codes.
     pub include_chirality: bool,
+    /// Number of bins in hashed fingerprints.
     pub fp_size: u32,
+    /// Number of bits used for count simulation per torsion.
     pub bits_per_entry: u32,
+    /// Optional atom indices restricting torsion endpoints.
     pub from_atoms: Option<Vec<u32>>,
+    /// Optional atom indices excluded from torsion paths.
     pub ignore_atoms: Option<Vec<u32>>,
+    /// Optional per-atom invariant values replacing generated invariants.
     pub custom_atom_invariants: Option<Vec<u32>>,
 }
 impl Default for LegacyTopologicalTorsionParams {

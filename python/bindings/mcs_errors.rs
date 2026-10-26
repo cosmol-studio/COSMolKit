@@ -20,31 +20,31 @@ error_projection!(SearchMcsError, SearchMcsErrorKind, ck::SearchMcsError, "searc
     SeedRemainingAtomUnderflow { remaining, added: usize },
 }, cause = |_: &ck::SearchMcsError| None::<PyErr>, methods = {
     #[getter]
-    fn count(&self) -> Option<usize> { match self.inner {
+    #[doc = "Count reported by the native failure. Applies to SearchMcsError.TooFewInputs, SearchMcsError.SeedExcludedBondOutOfRange. None when this payload is absent."] fn count(&self) -> Option<usize> { match self.inner {
         ck::SearchMcsError::TooFewInputs { count }
         | ck::SearchMcsError::SeedExcludedBondOutOfRange { count, .. } => Some(count), _ => None,
     } }
     #[getter]
-    fn side(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Probe/reference or source/target side identified by the native check. Applies to SearchMcsError.AtomOutOfRange, SearchMcsError.MissingConformer, SearchMcsError.CoordinateOutOfRange, SearchMcsError.MissingRingInfo, SearchMcsError.MissingValence, SearchMcsError.ValenceOutOfRange, SearchMcsError.BondOutOfRange. None when this payload is absent."] fn side(&self) -> Option<&'static str> { match self.inner {
         ck::SearchMcsError::AtomOutOfRange { side, .. } | ck::SearchMcsError::MissingConformer { side }
         | ck::SearchMcsError::CoordinateOutOfRange { side, .. } | ck::SearchMcsError::MissingRingInfo { side }
         | ck::SearchMcsError::MissingValence { side } | ck::SearchMcsError::ValenceOutOfRange { side, .. }
         | ck::SearchMcsError::BondOutOfRange { side, .. } => Some(side), _ => None,
     } }
     #[getter]
-    fn atom(&self) -> Option<usize> { match self.inner {
+    #[doc = "Atom identifier implicated in the failure. Applies to SearchMcsError.AtomOutOfRange, SearchMcsError.CoordinateOutOfRange, SearchMcsError.ValenceOutOfRange, SearchMcsError.SeedAtomMappingMissing, SearchMcsError.TargetAtomMappingMissing, SearchMcsError.SeedAtomNotBondEndpoint, SearchMcsError.SeedNewAtomMissing. None when this payload is absent."] fn atom(&self) -> Option<usize> { match self.inner {
         ck::SearchMcsError::AtomOutOfRange { atom, .. } | ck::SearchMcsError::CoordinateOutOfRange { atom, .. }
         | ck::SearchMcsError::ValenceOutOfRange { atom, .. } | ck::SearchMcsError::SeedAtomMappingMissing { atom }
         | ck::SearchMcsError::TargetAtomMappingMissing { atom } | ck::SearchMcsError::SeedAtomNotBondEndpoint { atom, .. }
         | ck::SearchMcsError::SeedNewAtomMissing { atom } => Some(atom), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to SearchMcsError.BondOutOfRange, SearchMcsError.SeedExcludedBondOutOfRange, SearchMcsError.SeedBondAlreadyExcluded, SearchMcsError.SeedAtomNotBondEndpoint. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::SearchMcsError::BondOutOfRange { bond, .. } | ck::SearchMcsError::SeedExcludedBondOutOfRange { bond, .. }
         | ck::SearchMcsError::SeedBondAlreadyExcluded { bond } | ck::SearchMcsError::SeedAtomNotBondEndpoint { bond, .. } => Some(bond), _ => None,
     } }
     #[getter]
-    fn remaining(&self) -> Option<usize> { match self.inner {
+    #[doc = "Remaining input or entries reported by the native failure. Applies to SearchMcsError.SeedRemainingBondUnderflow, SearchMcsError.SeedRemainingAtomUnderflow. None when this payload is absent."] fn remaining(&self) -> Option<usize> { match self.inner {
         ck::SearchMcsError::SeedRemainingBondUnderflow { remaining, .. }
         | ck::SearchMcsError::SeedRemainingAtomUnderflow { remaining, .. } => Some(remaining), _ => None,
     } }
@@ -78,48 +78,48 @@ error_projection!(McsError, McsErrorKind, ck::McsError, "search", {
     | ck::McsError::ResultContextMissing => None,
 }), source = Option<Source<crate::error_framework::ErrorObject<PropertyUIntReadError>, crate::error_framework::ErrorObject<AtomPropertyError>>>, methods = {
     #[getter]
-    fn targets(&self) -> Option<usize> { match self.inner {
+    #[doc = "Number of targets associated with the failed count check, or None when not applicable."] fn targets(&self) -> Option<usize> { match self.inner {
         ck::McsError::TargetTableCount { targets, .. }
         | ck::McsError::ThresholdCountOutOfRange { targets, .. } => Some(targets), _ => None,
     } }
     #[getter]
-    fn kind(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Native failure-specific category or value kind. Applies to McsError.MatchTableOutOfRange, McsError.ResultValueOutOfRange. None when this payload is absent."] fn kind(&self) -> Option<&'static str> { match self.inner {
         ck::McsError::MatchTableOutOfRange { kind, .. }
         | ck::McsError::ResultValueOutOfRange { kind, .. } => Some(kind), _ => None,
     } }
     #[getter]
-    fn bond(&self) -> Option<usize> { match self.inner {
+    #[doc = "Bond identifier implicated in the failure. Applies to McsError.RingMembershipMissing, McsError.InitialSeedBondMissing. None when this payload is absent."] fn bond(&self) -> Option<usize> { match self.inner {
         ck::McsError::RingMembershipMissing { bond }
         | ck::McsError::InitialSeedBondMissing { bond } => Some(bond), _ => None,
     } }
     #[getter]
-    fn begin(&self) -> Option<usize> { match self.inner {
+    #[doc = "Beginning endpoint reported by the native check. Applies to McsError.MappedBondMissing, McsError.SeedReconstructionBondMissing. None when this payload is absent."] fn begin(&self) -> Option<usize> { match self.inner {
         ck::McsError::MappedBondMissing { begin, .. }
         | ck::McsError::SeedReconstructionBondMissing { begin, .. } => Some(begin), _ => None,
     } }
     #[getter]
-    fn end(&self) -> Option<usize> { match self.inner {
+    #[doc = "Ending endpoint reported by the native check. Applies to McsError.MappedBondMissing, McsError.SeedReconstructionBondMissing. None when this payload is absent."] fn end(&self) -> Option<usize> { match self.inner {
         ck::McsError::MappedBondMissing { end, .. }
         | ck::McsError::SeedReconstructionBondMissing { end, .. } => Some(end), _ => None,
     } }
     #[getter]
-    fn message(&self) -> Option<&str> { match &self.inner {
+    #[doc = "Detailed native diagnostic message. Applies to McsError.InitialSeedParse, McsError.InitialSeedMatch, McsError.ResultQueryGraph, McsError.ResultSmarts. None when this payload is absent."] fn message(&self) -> Option<&str> { match &self.inner {
         ck::McsError::InitialSeedParse { message } | ck::McsError::InitialSeedMatch { message }
         | ck::McsError::ResultQueryGraph { message } | ck::McsError::ResultSmarts { message } => Some(message), _ => None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
+    #[doc = "Structured StereoOrderError payload of McsError.StereoOrder; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn stereo_order(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<StereoOrderError>>> { match &self.inner {
         ck::McsError::StereoOrder(value) => StereoOrderError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn progress(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<McsProgressError>>> { match &self.inner {
+    #[doc = "Structured McsProgressError payload of McsError.Progress; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn progress(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<McsProgressError>>> { match &self.inner {
         ck::McsError::Progress(value) => McsProgressError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]
-    fn state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SearchMcsError>>> { match &self.inner {
+    #[doc = "Structured SearchMcsError payload of McsError.State; None for other variants. Inspect __cause__ separately for the actual exception chain."] fn state(&self, py: Python<'_>) -> PyResult<Option<crate::error_framework::ErrorObject<SearchMcsError>>> { match &self.inner {
         ck::McsError::State(value) => SearchMcsError::from_rust(value.clone()).value(py).extract().map(Some).map_err(Into::into), _ => Ok(None),
     } }
 });

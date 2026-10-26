@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use std::sync::{Mutex, MutexGuard};
 
 #[pyclass(module = "cosmolkit")]
+/// Lazy iterator producing stereoisomer molecules while retaining its random source.
 pub struct StereoisomerIterator {
     inner: Mutex<cosmolkit::StereoisomerIterator>,
     source_owner: Option<Py<StereoisomerRandomSource>>,
@@ -26,6 +27,7 @@ impl StereoisomerIterator {
 }
 #[pymethods]
 impl StereoisomerIterator {
+    /// Return the next stereoisomer, or None when enumeration is exhausted.
     fn next(&self, py: Python<'_>) -> PyResult<Option<Molecule>> {
         let mut inner = self.borrow()?;
         let native = &mut *inner;
@@ -41,6 +43,7 @@ impl StereoisomerIterator {
         slf
     }
     #[getter]
+    /// Number of stereoisomers yielded so far.
     fn yielded_count(&self) -> PyResult<usize> {
         Ok(self.borrow()?.yielded_count())
     }

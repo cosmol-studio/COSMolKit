@@ -1,11 +1,9 @@
-//! Independent p1/ROOT acceptance pending.
+//! Literal filesystem paths and post-image report handling through the Rust API.
 #[cfg(all(feature = "cap-batch", feature = "cap-depict"))]
 use cosmolkit::BatchImageParams;
 #[cfg(feature = "cap-batch")]
 use cosmolkit::{BatchExportReport, BatchParams, MoleculeBatch};
-use std::{cell::Cell, path::PathBuf};
-#[path = "../../../python/src/user_path.rs"]
-mod user_path;
+use std::path::PathBuf;
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {
@@ -33,7 +31,7 @@ fn batch() -> MoleculeBatch {
 fn options(jobs: usize) -> BatchImageParams {
     BatchImageParams {
         format: "svg".into(),
-        report_path: Some(PathBuf::from("~/report.json")),
+        report_path: None,
         execution: BatchParams {
             n_jobs: Some(jobs),
             progress_bar: Some(false),
@@ -78,37 +76,18 @@ fn canonical_report_receiver_preserves_two_count_json_csv_and_literal_rust_paths
 }
 #[test]
 #[cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
-fn actual_image_output_precedes_report_home_lookup_and_uses_the_canonical_writer() {
+fn literal_image_paths_use_the_canonical_writer_and_preserve_options() {
     let root = Directory::new();
     let batch = batch();
     for jobs in [1, 4] {
-        let params = options(jobs);
-        let out = format!("~/images-{jobs}");
-        let image = root.0.join(format!("images-{jobs}/mol_0.svg"));
-        let reads = Cell::new(0);
-        let result = user_path::with_image_user_paths(
-            &out,
-            Some("~/report.json"),
-            || {
-                reads.set(reads.get() + 1);
-                if reads.get() == 2 {
-                    assert!(image.is_file());
-                }
-                Some(root.0.clone().into_os_string())
-            },
-            |directory| {
-                batch.write_images_with_params(
-                    directory,
-                    &BatchImageParams {
-                        report_path: None,
-                        ..params.clone()
-                    },
-                )
-            },
-            |path, report| report.write_report(path),
-        )
-        .unwrap();
-        assert_eq!(reads.get(), 2);
+        let out = root.0.join("~").join(format!("images-{jobs}"));
+        let report_path = root.0.join("~").join("report.json");
+        let params = BatchImageParams {
+            report_path: Some(report_path.clone()),
+            ..options(jobs)
+        };
+        let image = out.join("mol_0.svg");
+        let result = batch.write_images_with_params(&out, &params).unwrap();
         assert_eq!((result.written, result.failed), (1, 0));
         assert_eq!(
             std::fs::read(&image).unwrap(),
@@ -120,98 +99,63 @@ fn actual_image_output_precedes_report_home_lookup_and_uses_the_canonical_writer
                 .as_bytes()
         );
         assert_eq!(
-            std::fs::read(root.0.join("report.json")).unwrap(),
+            std::fs::read(&report_path).unwrap(),
             b"{\n  \"written\": 1,\n  \"failed\": 0\n}\n"
         );
-        assert_eq!(params.report_path, Some(PathBuf::from("~/report.json")));
+        assert_eq!(params.report_path, Some(report_path));
         assert_eq!(params.execution.n_jobs, Some(jobs));
     }
 }
 #[test]
 #[cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
-fn missing_report_home_retains_actual_images_and_export_failure_never_reads_report_home() {
+fn missing_report_parent_retains_images_and_invalid_jobs_precede_report_write() {
     let root = Directory::new();
     let batch = batch();
-    let params = options(1);
     let image_dir = root.0.join("images");
-    let result = user_path::with_image_user_paths(
-        image_dir.to_str().unwrap(),
-        Some("~/report.json"),
-        || {
-            assert!(image_dir.join("mol_0.svg").is_file());
-            None
-        },
-        |directory| {
-            batch.write_images_with_params(
-                directory,
-                &BatchImageParams {
-                    report_path: None,
-                    ..params.clone()
-                },
-            )
-        },
-        |_, _| panic!("missing report HOME must not open report"),
-    );
-    assert!(matches!(
-        result,
-        Err(user_path::ImagePathError::Report(user_path::MissingHome))
-    ));
+    let report_path = root.0.join("missing-parent/report.json");
+    let params = BatchImageParams {
+        report_path: Some(report_path.clone()),
+        ..options(1)
+    };
+    let error = batch
+        .write_images_with_params(&image_dir, &params)
+        .unwrap_err();
+    assert_eq!(error.record_errors[0].operation, "write error report");
+    let cause = std::error::Error::source(&error.record_errors[0])
+        .unwrap()
+        .downcast_ref::<std::io::Error>()
+        .unwrap();
+    assert_eq!(cause.kind(), std::io::ErrorKind::NotFound);
     assert!(image_dir.join("mol_0.svg").is_file());
-    assert!(!root.0.join("report.json").exists());
-    let invalid = options(0);
+    assert!(!report_path.exists());
+    let valid_report_path = root.0.join("report.json");
+    let invalid = BatchImageParams {
+        report_path: Some(valid_report_path.clone()),
+        ..options(0)
+    };
     let invalid_dir = root.0.join("invalid-jobs");
-    let result = user_path::with_image_user_paths(
-        invalid_dir.to_str().unwrap(),
-        Some("~/report.json"),
-        || panic!("export failure must precede report HOME access"),
-        |directory| {
-            batch.write_images_with_params(
-                directory,
-                &BatchImageParams {
-                    report_path: None,
-                    ..invalid.clone()
-                },
-            )
-        },
-        |_, _| panic!("export failure must not open report"),
-    );
-    match result {
-        Err(user_path::ImagePathError::Export(error)) => {
-            assert_eq!(error.record_errors[0].operation, "n_jobs")
-        }
-        _ => panic!("expected original export configuration error"),
-    }
+    let error = batch
+        .write_images_with_params(&invalid_dir, &invalid)
+        .unwrap_err();
+    assert_eq!(error.record_errors[0].operation, "n_jobs");
     assert!(!invalid_dir.exists());
+    assert!(!valid_report_path.exists());
 }
 #[test]
 #[cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
 fn report_io_failure_retains_real_cause_and_completed_images() {
     let root = Directory::new();
     let batch = batch();
-    let params = options(1);
     let image_dir = root.0.join("images");
     let report_dir = root.0.join("report.json");
     std::fs::create_dir(&report_dir).unwrap();
-    let result = user_path::with_image_user_paths(
-        image_dir.to_str().unwrap(),
-        Some("~/report.json"),
-        || {
-            assert!(image_dir.join("mol_0.svg").is_file());
-            Some(root.0.clone().into_os_string())
-        },
-        |directory| {
-            batch.write_images_with_params(
-                directory,
-                &BatchImageParams {
-                    report_path: None,
-                    ..params.clone()
-                },
-            )
-        },
-        |path, report| report.write_report(path),
-    );
+    let params = BatchImageParams {
+        report_path: Some(report_dir.clone()),
+        ..options(1)
+    };
+    let result = batch.write_images_with_params(&image_dir, &params);
     match result {
-        Err(user_path::ImagePathError::ReportWrite(error)) => {
+        Err(error) => {
             assert_eq!(error.errors, 1);
             assert_eq!(error.record_errors.len(), 1);
             let record = &error.record_errors[0];

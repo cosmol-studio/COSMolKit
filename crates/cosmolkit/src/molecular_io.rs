@@ -240,11 +240,16 @@ impl Molecule {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, cosmolkit_macros::Configuration)]
 #[configuration(scalar)]
+/// MOL2 parser variant and native post-processing options.
 pub struct Mol2ReadParams {
+    /// Sanitize the parsed molecule.
     pub sanitize: bool,
+    /// Remove removable explicit hydrogens during native post-processing.
     pub remove_hs: bool,
     #[configuration(none_default)]
+    /// MOL2 atom-typing convention used by the parser.
     pub variant: Mol2Type,
+    /// Apply the native MOL2 substructure cleanup rules.
     pub cleanup_substructures: bool,
 }
 impl Default for Mol2ReadParams {

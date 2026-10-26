@@ -22,12 +22,13 @@ def test_stereoisomer_constructor_properties_and_readonly_iterator() -> None:
     options.try_embedding = True
     options.only_unassigned = False
     options.max_isomers = 2
-    options.random_source = 123
+    source = ck.StereoisomerRandomSource.from_integer_seed(123)
+    options.random_source = source
     options.unique = False
     options.only_stereo_groups = True
     assert (options.try_embedding, options.only_unassigned, options.max_isomers,
             options.random_source, options.unique, options.only_stereo_groups) == (
-                True, False, 2, 123, False, True)
+                True, False, 2, source, False, True)
     molecule = ck.Molecule.from_smiles("FC(Cl)Br")
     iterator = molecule.enumerate_stereoisomers()
     assert iterator.yielded_count == 0
@@ -57,7 +58,8 @@ def test_property_text_and_exception_type_are_real_python_values() -> None:
     molecule = ck.Molecule.from_smiles("F[C@](Cl)(Br)I")
     assert molecule.atom_property_string(1, "_CIPCode") == "S"
     assert molecule.atom_property_string(1, "absent") is None
-    assert molecule.atom_property_string(999, "_CIPCode") is None
+    with pytest.raises(ck.AtomPropertyReadError):
+        molecule.atom_property_string(999, "_CIPCode")
     assert molecule.bond_property_string(0, "absent") is None
     assert molecule.bond_property_string(999, "absent") is None
     value = molecule.property("__computedProps")
@@ -68,7 +70,7 @@ def test_property_text_and_exception_type_are_real_python_values() -> None:
     assert ck.property_value_to_text(value) == "[numArom,_StereochemDone]"
     assert value.kind == ck.PropertyValueKind.StringVector
     assert issubclass(ck.PropertyStringError, ValueError)
-    assert callable(ck.PropertyStringError.kind)
+    assert isinstance(ck.PropertyStringError.variant, property)
 
 
 def test_batch_record_projection_keeps_error_records_and_input_values() -> None:
@@ -119,7 +121,7 @@ def test_typed_sdf_factories_exports_and_report(tmp_path: Path) -> None:
     assert retained.num_atoms == 6
     assert removed.num_atoms == 2
     options = ck.BatchExportParams(format="v3000", errors="raise", n_jobs=2, progress_bar=False)
-    assert (options.format, cast(object, options.errors), options.n_jobs, options.progress_bar) == ("v3000", ck.BatchErrorMode.RAISE, 2, False)
+    assert (options.format, cast(object, options.errors), options.n_jobs, options.progress_bar) == (ck.SdfFormat.V3000, ck.BatchErrorMode.RAISE, 2, False)
     output = tmp_path / "output.sdf"
     report_file = tmp_path / "report.json"
     report = batch.write_sdf_with_params(str(output), options, str(report_file))
@@ -133,8 +135,8 @@ def test_typed_sdf_factories_exports_and_report(tmp_path: Path) -> None:
     files = batch.write_sdf_files_with_params(str(directory), options, ["one.sdf", "two.sdf"], None)
     assert files.success == 2
     assert sorted(p.name for p in directory.iterdir()) == ["one.sdf", "two.sdf"]
-    with pytest.raises(ValueError):
-        _ = ck.BatchExportParams(n_jobs=0)
+    with pytest.raises(ck.BatchValidationError):
+        batch.write_sdf_with_params(str(output), ck.BatchExportParams(n_jobs=0), None)
     with pytest.raises(ck.BatchValidationError):
         _ = batch.write_sdf_with_params(str(tmp_path), options, None)
     with pytest.raises(ck.BatchValidationError):
@@ -166,9 +168,11 @@ def test_batch_iterators_and_stream_transfer_continue_at_current_record(tmp_path
     remaining = batches.next_batch()
     assert remaining is not None and remaining.to_smiles() == ["CC", "CCC"]
     assert batches.next_batch() is None
-    for call in [stream.next_record, stream.is_end, stream.records_consumed, stream.bytes_consumed, stream.lines_consumed]:
+    with pytest.raises(RuntimeError, match="transferred"):
+        stream.next_record()
+    for name in ["is_end", "records_consumed", "bytes_consumed", "lines_consumed"]:
         with pytest.raises(RuntimeError, match="transferred"):
-            _ = call()
+            getattr(stream, name)
     with pytest.raises(RuntimeError, match="transferred"):
         _ = stream.batches(1, ck.BatchErrorMode.RAISE, None)
     invalid = ck.SdfRecordStream.open(str(path))
@@ -202,11 +206,11 @@ def test_generated_big_integer_annotations_are_python_int() -> None:
     for name in ["stereoisomer_count", "stereoisomer_count_with_options"]:
         method = next(node for node in classes["Molecule"].body if isinstance(node, ast.FunctionDef) and node.name == name)
         assert method.returns is not None
-        assert ast.unparse(method.returns) == "builtins.int"
+        assert ast.unparse(method.returns) == "int"
     factory = next(node for node in classes["StereoisomerRandomSource"].body if isinstance(node, ast.FunctionDef) and node.name == "from_integer_seed")
     annotation = factory.args.args[0].annotation
     assert annotation is not None
-    assert ast.unparse(annotation) == "builtins.int"
+    assert ast.unparse(annotation) == "SupportsIndex"
     for owner, result in [("StereoisomerIterator", "Molecule"), ("SdfRecordStream", "SdfRecord")]:
         method = next(node for node in classes[owner].body if isinstance(node, ast.FunctionDef) and node.name == "__next__")
         assert method.returns is not None and ast.unparse(method.returns) == result
@@ -216,13 +220,15 @@ def test_dynamic_batch_types_have_stubs_and_preserve_error_fields() -> None:
     tree = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     for name in ["BatchErrorMode", "BatchValidationError", "PropertyStringError"]:
         assert len([node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name]) == 1
-    assert int(ck.BatchErrorMode.RAISE) == 1 and int(ck.BatchErrorMode.KEEP) == 2
+    assert ck.BatchErrorMode.RAISE == ck.BatchErrorMode.Strict
+    assert ck.BatchErrorMode.KEEP == ck.BatchErrorMode.KeepErrors
     failed = ck.MoleculeBatch.from_smiles_list_with_params(["invalid"], ck.SmilesParseParams(), ck.BatchParams(errors="keep"))
     record = failed.errors[0]
-    error = ck.BatchValidationError("message", 1, "reason", [record])
-    assert str(error) == "message"
-    assert error.error_count == 1 and error.reason == "reason"
-    assert error.errors[0].message() == record.message
+    with pytest.raises(ck.BatchValidationError) as caught:
+        ck.MoleculeBatch.from_records([record], ck.BatchErrorMode.RAISE)
+    error = caught.value
+    assert error.errors == 1
+    assert error.record_errors[0].message == record.message
 
 
 @pytest.mark.parametrize("factory,changes", [
