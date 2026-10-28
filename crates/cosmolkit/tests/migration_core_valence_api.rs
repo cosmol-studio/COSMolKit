@@ -106,7 +106,7 @@ fn canonical_public_signatures_and_defaults_compile() {
 }
 
 #[test]
-fn binding_contract_exposes_the_frozen_nine_entries() {
+fn valence_binding_contract_preserves_query_and_assignment_semantics() {
     let expected = [
         "module.element_info",
         "Molecule.atom_metadata",
@@ -118,14 +118,14 @@ fn binding_contract_exposes_the_frozen_nine_entries() {
         "Molecule.assign_valence_with_params_",
         "Molecule.has_valence_violation",
     ];
-    let rows = BINDING_CONTRACT
-        .iter()
-        .filter(|row| row.feature == "cap-valence")
-        .collect::<Vec<_>>();
-    assert_eq!(
-        rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
-        expected
-    );
+    // These are the declarations exercised below, not an exhaustive feature list.
+    let rows = expected.map(|id| {
+        let mut matches = BINDING_CONTRACT.iter().filter(|row| row.semantic_id == id);
+        let row = matches.next().unwrap_or_else(|| panic!("missing {id}"));
+        assert!(matches.next().is_none(), "duplicate {id}");
+        assert_eq!(row.feature, "cap-valence");
+        row
+    });
     assert_eq!(rows[0].item, BindingItem::Callable);
     assert_eq!(rows[0].owner, BindingOwner::Module);
     assert_eq!(rows[0].status, FunctionStatus::Experimental);

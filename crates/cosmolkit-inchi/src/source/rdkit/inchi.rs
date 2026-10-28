@@ -1,5 +1,6 @@
+use crate::rdkit::{CleanupGraph, Graph, PreparedGraph};
 use crate::source::api::inchi_dll::{
-    SourceInchiInputView, SourceStructTextInput, get_inchi_with_input, get_struct_from_inchi_input,
+    SourceInchiInputView, SourceStructTextInput, get_struct_from_inchi_input,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet, VecDeque};
@@ -313,14 +314,7 @@ pub(crate) struct AdapterInchiGenerationInput {
     pub(crate) options_with_nul: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AdapterInchiGenerationOutput {
-    pub(crate) return_code: i32,
-    pub(crate) inchi: Option<Vec<u8>>,
-    pub(crate) message: Option<Vec<u8>>,
-    pub(crate) log: Option<Vec<u8>>,
-    pub(crate) aux_info: Option<Vec<u8>>,
-}
+pub(crate) use crate::engine::Output as AdapterInchiGenerationOutput;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MolToInchiResult {
@@ -610,14 +604,9 @@ fn source_c_text(
     heap: &SourceHeap,
     pointer: SourceMutPointer<i8>,
 ) -> Result<Vec<u8>, SourceHeapError> {
-    let bytes = heap.slice(pointer.as_const())?;
-    let end = bytes
-        .iter()
-        .position(|byte| *byte == 0)
-        .ok_or(SourceHeapError::MissingNulTerminator)?;
     // RDKit✔️❗: First NUL scan and one fallible raw-byte prefix copy;
     // arbitrary high bytes and ignored suffix are unchanged, no UTF8 gate.
-    try_copy_adapter_payload(bytemuck::cast_slice(&bytes[..end]))
+    crate::engine::source_c_text(heap, pointer)
 }
 
 impl<C: crate::source_types::SourceClock> InchiStructureEngine
@@ -793,52 +782,15 @@ impl<C: crate::source_types::SourceClock> InchiGenerationEngine
             &input.stereo0d,
             input.options_with_nul.as_deref(),
         );
-        let mut output = inchi_Output::default();
-        let return_code = get_inchi_with_input(
+        let (copied, output) = crate::engine::generate_output(
             self.heap,
-            Some(&source_input),
-            Some(&mut output),
-            0,
+            &source_input,
             self.stdout,
             self.build,
             self.clock_result,
-        );
-        let return_code = match return_code {
-            Ok(return_code) => return_code,
-            Err(error) => {
-                let output_cleanup = FreeINCHI(self.heap, Some(&mut output));
-                output_cleanup?;
-                return Err(error);
-            }
-        };
-        let copied = (|| {
-            Ok(AdapterInchiGenerationOutput {
-                return_code,
-                inchi: (!output.szInChI.is_null())
-                    .then(|| source_c_text(self.heap, output.szInChI))
-                    .transpose()?,
-                message: (!output.szMessage.is_null())
-                    .then(|| source_c_text(self.heap, output.szMessage))
-                    .transpose()?,
-                log: (!output.szLog.is_null())
-                    .then(|| source_c_text(self.heap, output.szLog))
-                    .transpose()?,
-                aux_info: (!output.szAuxInfo.is_null())
-                    .then(|| source_c_text(self.heap, output.szAuxInfo))
-                    .transpose()?,
-            })
-        })();
-        match copied {
-            Ok(copied) => {
-                self.pending_output = Some(PendingInchiGenerationOutput { output });
-                Ok(copied)
-            }
-            Err(error) => {
-                let cleanup_output = FreeINCHI(self.heap, Some(&mut output));
-                cleanup_output?;
-                Err(error)
-            }
-        }
+        )?;
+        self.pending_output = Some(PendingInchiGenerationOutput { output });
+        Ok(copied)
     }
 
     fn free_inchi(&mut self) -> Result<(), SourceHeapError> {
@@ -912,6 +864,103 @@ pub struct AdapterGraphError {
     pub bond_index: usize,
     pub atom_index: u32,
     pub atom_count: usize,
+}
+
+impl crate::rdkit::Graph for AdapterMol {
+    fn atom_count(&self) -> usize {
+        self.atoms.len()
+    }
+    fn bond_count(&self) -> usize {
+        self.bonds.len()
+    }
+    fn atom(&self, index: usize) -> AdapterAtom {
+        self.atoms[index].clone()
+    }
+    fn bond(&self, index: usize) -> crate::rdkit::BondInput {
+        let bond = &self.bonds[index];
+        crate::rdkit::BondInput {
+            begin_atom_index: bond.begin_atom_index,
+            end_atom_index: bond.end_atom_index,
+            bond_type: bond.bond_type,
+            direction: bond.direction,
+            stereo: bond.stereo,
+            stereo_atoms: bond.stereo_atoms.get(..2).map(|s| [s[0], s[1]]),
+        }
+    }
+    fn degree(&self, index: usize) -> usize {
+        self.adjacency[index].len()
+    }
+    fn neighbor(&self, index: usize, offset: usize) -> (u32, u32) {
+        self.adjacency[index][offset]
+    }
+}
+
+impl crate::rdkit::CleanupGraph for AdapterMol {
+    fn set_charge(&mut self, index: usize, charge: i8) {
+        self.atoms[index].formal_charge = i32::from(charge);
+    }
+    fn set_bond_type(&mut self, index: usize, order: BondType) {
+        self.bonds[index].bond_type = order;
+    }
+}
+
+struct LegacyPrepared<'a, T> {
+    molecule: &'a mut AdapterMol,
+    toolkit: &'a mut T,
+}
+
+impl<T> crate::rdkit::Graph for LegacyPrepared<'_, T> {
+    fn atom_count(&self) -> usize {
+        self.molecule.atom_count()
+    }
+    fn bond_count(&self) -> usize {
+        self.molecule.bond_count()
+    }
+    fn atom(&self, index: usize) -> AdapterAtom {
+        self.molecule.atom(index)
+    }
+    fn bond(&self, index: usize) -> crate::rdkit::BondInput {
+        self.molecule.bond(index)
+    }
+    fn degree(&self, index: usize) -> usize {
+        self.molecule.degree(index)
+    }
+    fn neighbor(&self, index: usize, offset: usize) -> (u32, u32) {
+        self.molecule.neighbor(index, offset)
+    }
+}
+
+impl<T> crate::rdkit::CleanupGraph for LegacyPrepared<'_, T> {
+    fn set_charge(&mut self, index: usize, charge: i8) {
+        self.molecule.set_charge(index, charge);
+    }
+    fn set_bond_type(&mut self, index: usize, order: BondType) {
+        self.molecule.set_bond_type(index, order);
+    }
+}
+
+impl<T: MolToInchiToolkit> crate::rdkit::PreparedGraph for LegacyPrepared<'_, T> {
+    fn conformer_len(&self) -> Option<usize> {
+        self.molecule.conformers.first().map(Vec::len)
+    }
+    fn position(&self, index: usize) -> [f64; 3] {
+        self.molecule.conformers[0][index]
+    }
+    fn element_symbol(&mut self, number: i32) -> Result<Vec<u8>, AdapterToolkitError> {
+        self.toolkit.element_symbol(number)
+    }
+    fn atomic_weight(&mut self, number: i32) -> Result<f64, AdapterToolkitError> {
+        self.toolkit.atomic_weight(number)
+    }
+    fn total_num_hydrogens(&mut self, index: u32) -> Result<u32, AdapterToolkitError> {
+        self.toolkit.total_num_hydrogens(self.molecule, index)
+    }
+    fn calc_implicit_valence(&mut self, index: u32) -> Result<i32, AdapterToolkitError> {
+        self.toolkit.calc_implicit_valence(self.molecule, index)
+    }
+    fn total_degree(&mut self, index: u32) -> Result<u32, AdapterToolkitError> {
+        self.toolkit.total_degree(self.molecule, index)
+    }
 }
 
 impl AdapterMol {
@@ -1932,10 +1981,9 @@ fn cleanup_explicit_valence(
     Ok(valence)
 }
 
-fn bond_index_between(mol: &AdapterMol, first: u32, second: u32) -> Option<u32> {
-    mol.adjacency[first as usize]
-        .iter()
-        .find_map(|&(neighbor, bond_index)| (neighbor == second).then_some(bond_index))
+fn bond_index_between(mol: &impl Graph, first: u32, second: u32) -> Option<u32> {
+    mol.neighbors(first as usize)
+        .find_map(|(neighbor, bond_index)| (neighbor == second).then_some(bond_index))
 }
 
 fn valence4n_cleanup1_matches(mol: &AdapterMol) -> Result<Vec<[u32; 5]>, SourceHeapError> {
@@ -5430,8 +5478,8 @@ struct CleanupVf2Pair {
     neighbors: Option<(usize, usize)>,
 }
 
-struct CleanupVf2State<'a, const N: usize> {
-    molecule: &'a AdapterMol,
+struct CleanupVf2State<'a, G, const N: usize> {
+    molecule: &'a G,
     query: CleanupQuery<N>,
     core_1: [u32; N],
     core_2: Vec<u32>,
@@ -5444,8 +5492,8 @@ struct CleanupVf2State<'a, const N: usize> {
     matches: Vec<[u32; N]>,
 }
 
-impl<'a, const N: usize> CleanupVf2State<'a, N> {
-    fn new(molecule: &'a AdapterMol, query: CleanupQuery<N>) -> Result<Self, SourceHeapError> {
+impl<'a, G: Graph, const N: usize> CleanupVf2State<'a, G, N> {
+    fn new(molecule: &'a G, query: CleanupQuery<N>) -> Result<Self, SourceHeapError> {
         // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/Code/GraphMol/Substruct/vf2.hpp:175 VF2SubState
         // RDKit✔️❗:   VF2SubState(Graph *ag1, Graph *ag2, VertexCompatible &avc,
         // RDKit✔️❗:               EdgeCompatible &aec, MatchChecking &amc, bool sortNodes = false)
@@ -5508,14 +5556,14 @@ impl<'a, const N: usize> CleanupVf2State<'a, N> {
         // Same O(N) state; fixed-key/result costs remain OPEN (C507).
         let mut core_2 = Vec::new();
         core_2
-            .try_reserve_exact(molecule.atoms.len())
+            .try_reserve_exact(molecule.atom_count())
             .map_err(|_| SourceHeapError::AllocationFailed)?;
-        core_2.resize(molecule.atoms.len(), CLEANUP_VF2_NONE);
+        core_2.resize(molecule.atom_count(), CLEANUP_VF2_NONE);
         let mut term_2 = Vec::new();
         term_2
-            .try_reserve_exact(molecule.atoms.len())
+            .try_reserve_exact(molecule.atom_count())
             .map_err(|_| SourceHeapError::AllocationFailed)?;
-        term_2.resize(molecule.atoms.len(), 0);
+        term_2.resize(molecule.atom_count(), 0);
         Ok(Self {
             molecule,
             query,
@@ -5661,14 +5709,15 @@ impl<'a, const N: usize> CleanupVf2State<'a, N> {
             }
         }
         if let Some((parent, next)) = &mut pair.neighbors {
-            let neighbors = &self.molecule.adjacency[*parent];
-            while *next < neighbors.len()
-                && self.core_2[neighbors[*next].0 as usize] != CLEANUP_VF2_NONE
+            let neighbor_count = self.molecule.degree(*parent);
+            while *next < neighbor_count
+                && self.core_2[self.molecule.neighbor(*parent, *next).0 as usize]
+                    != CLEANUP_VF2_NONE
             {
                 *next += 1;
             }
-            if *next < neighbors.len() {
-                pair.node2 = neighbors[*next].0 as usize;
+            if *next < neighbor_count {
+                pair.node2 = self.molecule.neighbor(*parent, *next).0 as usize;
                 *next += 1;
             } else {
                 pair.node2 = self.core_2.len();
@@ -5917,10 +5966,10 @@ impl<'a, const N: usize> CleanupVf2State<'a, N> {
         // nonzero query charges match exactly; zero query charge is a wildcard.
         // Target UNSPECIFIED is a SOURCE Bond::Match wildcard, not a fallback.
         let query_neighbors = self.query.neighbors[query];
-        if query_neighbors.len() > self.molecule.adjacency[target].len() {
+        if query_neighbors.len() > self.molecule.degree(target) {
             return false;
         }
-        let atom = &self.molecule.atoms[target];
+        let atom = self.molecule.atom(target);
         if atom.atomic_number != self.query.numbers[query]
             || (self.query.charges[query] != 0 && atom.formal_charge != self.query.charges[query])
         {
@@ -5933,7 +5982,7 @@ impl<'a, const N: usize> CleanupVf2State<'a, N> {
                 else {
                     return false;
                 };
-                let target_bond = self.molecule.bonds[bond as usize].bond_type;
+                let target_bond = self.molecule.bond(bond as usize).bond_type;
                 if query_bond != BondType::Unspecified
                     && target_bond != BondType::Unspecified
                     && query_bond != target_bond
@@ -6010,7 +6059,7 @@ impl<'a, const N: usize> CleanupVf2State<'a, N> {
                 self.t1_len += 1;
             }
         }
-        for &(other, _) in &self.molecule.adjacency[target] {
+        for (other, _) in self.molecule.neighbors(target) {
             if self.term_2[other as usize] == 0 {
                 self.term_2[other as usize] = self.core_len;
                 self.t2_len += 1;
@@ -6071,7 +6120,7 @@ impl<'a, const N: usize> CleanupVf2State<'a, N> {
             self.term_2[target] = 0;
             self.t2_len -= 1;
         }
-        for &(other, _) in &self.molecule.adjacency[target] {
+        for (other, _) in self.molecule.neighbors(target) {
             if self.term_2[other as usize] == self.core_len {
                 self.term_2[other as usize] = 0;
                 self.t2_len -= 1;
@@ -6364,7 +6413,7 @@ impl<'a, const N: usize> CleanupVf2State<'a, N> {
     }
 }
 
-fn try_r_cleanup_matches(molecule: &AdapterMol) -> Result<Vec<[u32; 5]>, SourceHeapError> {
+fn try_r_cleanup_matches(molecule: &impl Graph) -> Result<Vec<[u32; 5]>, SourceHeapError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/Code/GraphMol/Substruct/SubstructMatch.cpp:481 SubstructMatch
     // RDKit✔️❗: std::vector<MatchVectType> SubstructMatch(
     // RDKit✔️❗:     const ROMol &mol, const ROMol &query,
@@ -6437,7 +6486,7 @@ fn try_r_cleanup_matches(molecule: &AdapterMol) -> Result<Vec<[u32; 5]>, SourceH
 }
 
 fn try_cleanup_query_matches<const N: usize>(
-    molecule: &AdapterMol,
+    molecule: &impl Graph,
     query: CleanupQuery<N>,
 ) -> Result<Vec<[u32; N]>, SourceHeapError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/Code/GraphMol/Substruct/SubstructMatch.cpp:481 SubstructMatch
@@ -6508,10 +6557,10 @@ fn try_cleanup_query_matches<const N: usize>(
     // MatchAll preserves the pinned state/control/order/1000 unique limit;
     // no sorted candidate buffers or alternate heuristic implementation.
     // Same O(N) state/search branching, fixed keys smaller; whole cost OPEN.
-    if molecule.atoms.len() < N {
+    if molecule.atom_count() < N {
         return Ok(Vec::new());
     }
-    u32::try_from(molecule.atoms.len()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    u32::try_from(molecule.atom_count()).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
     let mut state = CleanupVf2State::new(molecule, query)?;
     state.match_all()?;
     Ok(state.matches)
@@ -6630,7 +6679,7 @@ pub(crate) fn r_clean_up(molecule: &mut AdapterMol) -> Result<(), SourceHeapErro
     try_r_clean_up(molecule)
 }
 
-fn try_r_clean_up(molecule: &mut AdapterMol) -> Result<(), SourceHeapError> {
+fn try_r_clean_up(molecule: &mut impl CleanupGraph) -> Result<(), SourceHeapError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1694 rCleanUp
     // RDKit✔️❌: void rCleanUp(RWMol &mol) {
     // RDKit✔️❌:   RWMol *q = SmilesToMol("[O-][Cl+3]([O-])([O-])O");
@@ -6699,12 +6748,12 @@ fn try_r_clean_up(molecule: &mut AdapterMol) -> Result<(), SourceHeapError> {
 
     let matches = try_r_cleanup_matches(molecule)?;
     for mapping in matches {
-        if molecule.atoms[mapping[1] as usize].formal_charge != 3 {
+        if molecule.atom(mapping[1] as usize).formal_charge != 3 {
             return Ok(());
         }
         let mut uncharged_found = None;
         for index in [0_usize, 2, 3, 4] {
-            if molecule.atoms[mapping[index] as usize].formal_charge == 0 {
+            if molecule.atom(mapping[index] as usize).formal_charge == 0 {
                 if uncharged_found.is_some() {
                     return Ok(());
                 }
@@ -6719,14 +6768,14 @@ fn try_r_clean_up(molecule: &mut AdapterMol) -> Result<(), SourceHeapError> {
             let bond_index = bond_index_between(molecule, mapping[1], mapping[index])
                 .expect("rCleanUp match contains every query bond");
             if uncharged_found.is_none() && index == 0 {
-                molecule.bonds[bond_index as usize].bond_type = BondType::Single;
-                molecule.atoms[mapping[index] as usize].formal_charge = -1;
+                molecule.set_bond_type(bond_index as usize, BondType::Single);
+                molecule.set_charge(mapping[index] as usize, -1);
                 continue;
             }
-            molecule.bonds[bond_index as usize].bond_type = BondType::Double;
-            molecule.atoms[mapping[index] as usize].formal_charge = 0;
+            molecule.set_bond_type(bond_index as usize, BondType::Double);
+            molecule.set_charge(mapping[index] as usize, 0);
         }
-        molecule.atoms[mapping[1] as usize].formal_charge = 0;
+        molecule.set_charge(mapping[1] as usize, 0);
     }
     Ok(())
 }
@@ -7162,6 +7211,26 @@ pub(crate) fn mol_to_inchi_with_options(
     return_values: &mut ExtraInchiReturnValues,
     options: Option<GenerationOptions<'_>>,
 ) -> Result<MolToInchiResult, MolToInchiError> {
+    // RDKit✔️✔️: std::unique_ptr<RWMol> m{new RWMol(mol)};
+    // RDKit✔️✔️: if (mol.needsUpdatePropertyCache()) {
+    // RDKit✔️✔️:   m->updatePropertyCache(false);
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: MolOps::Kekulize(*m, false, false);
+    let mut working = molecule.clone();
+    if toolkit.needs_update_property_cache(molecule)? {
+        toolkit.update_property_cache(&mut working, false)?;
+    }
+    toolkit.kekulize(&mut working, false, false)?;
+    generate_prepared(engine, &mut LegacyPrepared { molecule: &mut working, toolkit }, return_values, options)
+}
+
+#[rustfmt::skip]
+pub(crate) fn generate_prepared(
+    engine: &mut impl InchiGenerationEngine,
+    working: &mut impl PreparedGraph,
+    return_values: &mut ExtraInchiReturnValues,
+    options: Option<GenerationOptions<'_>>,
+) -> Result<MolToInchiResult, MolToInchiError> {
     // BEGIN RDKIT C++ FUNCTION: third_party/rdkit/External/INCHI-API/inchi.cpp:1747 MolToInchi
     // RDKit✔️❌: complete source frame follows verbatim.
     /*
@@ -7533,17 +7602,11 @@ pub(crate) fn mol_to_inchi_with_options(
     // END RDKIT ACTIVE CONFIGURATION: MolToInchi
 
     let mut diagnostics = Vec::new();
-    let mut working = molecule.clone();
-    if toolkit.needs_update_property_cache(molecule)? {
-        toolkit.update_property_cache(&mut working, false)?;
-    }
-    // RDKit✔️✔️:   MolOps::Kekulize(*m, false, false);
-    toolkit.kekulize(&mut working, false, false)?;
-    try_r_clean_up(&mut working)?;
+    try_r_clean_up(working)?;
 
-    let atom_count = working.atoms.len();
-    if let Some(conformer) = working.conformers.first()
-        && conformer.len() != atom_count
+    let atom_count = working.atom_count();
+    if let Some(count) = working.conformer_len()
+        && count != atom_count
     {
         return Err(MolToInchiError::InvalidConformer);
     }
@@ -7557,18 +7620,19 @@ pub(crate) fn mol_to_inchi_with_options(
     let mut stereo0d_entries = Vec::new();
 
     for index in 0..atom_count {
-        let atomic_number = working.atoms[index].atomic_number;
-        let isotope = working.atoms[index].isotope as i32;
-        let formal_charge = working.atoms[index].formal_charge;
-        let num_radical_electrons = working.atoms[index].num_radical_electrons;
-        let chiral_tag = working.atoms[index].chiral_tag;
+        let atom = working.atom(index);
+        let atomic_number = atom.atomic_number;
+        let isotope = atom.isotope as i32;
+        let formal_charge = atom.formal_charge;
+        let num_radical_electrons = atom.num_radical_electrons;
+        let chiral_tag = atom.chiral_tag;
         let output = &mut inchi_atoms[index];
         output.num_bonds = 0;
-        if let Some(conformer) = working.conformers.first() {
-            [output.x, output.y, output.z] = conformer[index];
+        if working.conformer_len().is_some() {
+            [output.x, output.y, output.z] = working.position(index);
         }
 
-        let element = toolkit.element_symbol(atomic_number)?;
+        let element = working.element_symbol(atomic_number)?;
         if element.len() >= output.elname.len() || element.contains(&0) {
             return Err(MolToInchiError::ElementSymbolTooLong);
         }
@@ -7578,7 +7642,7 @@ pub(crate) fn mol_to_inchi_with_options(
         output.elname[element.len()] = 0;
 
         output.isotopic_mass = if isotope != 0 {
-            let reference_weight = (toolkit.atomic_weight(atomic_number)? + 0.5) as i32;
+            let reference_weight = (working.atomic_weight(atomic_number)? + 0.5) as i32;
             (ISOTOPIC_SHIFT_FLAG as i32 + isotope - reference_weight) as i16
         } else {
             0
@@ -7587,21 +7651,21 @@ pub(crate) fn mol_to_inchi_with_options(
 
         let hydrogen_count = match atomic_number {
             6 | 7 | 8 | 9 | 17 | 35 | 53 => -1,
-            _ => toolkit.total_num_hydrogens(&working, index as u32)? as i32,
+            _ => working.total_num_hydrogens(index as u32)? as i32,
         };
         output.num_iso_H = [hydrogen_count as i8, 0, 0, 0];
         output.radical = 0;
         if num_radical_electrons != 0 {
             output.num_iso_H[0] =
-                toolkit.total_num_hydrogens(&working, index as u32)? as i8;
+                working.total_num_hydrogens(index as u32)? as i8;
         }
 
         if matches!(
             chiral_tag,
             ChiralTag::TetrahedralCcw | ChiralTag::TetrahedralCw
         ) {
-            toolkit.calc_implicit_valence(&mut working, index as u32)?;
-            let total_degree = toolkit.total_degree(&working, index as u32)?;
+            working.calc_implicit_valence(index as u32)?;
+            let total_degree = working.total_degree(index as u32)?;
             if !(3..=4).contains(&total_degree) {
                 push_static_adapter_diagnostic(
                     &mut diagnostics, AdapterDiagnosticLevel::Warning,
@@ -7615,7 +7679,7 @@ pub(crate) fn mol_to_inchi_with_options(
                 ..inchi_Stereo0D::default()
             };
             let mut neighbor_count = 0_usize;
-            for &(neighbor, _) in &working.adjacency[index] {
+            for (neighbor, _) in working.neighbors(index) {
                 stereo.neighbor[neighbor_count] = neighbor as i16;
                 neighbor_count += 1;
             }
@@ -7625,7 +7689,7 @@ pub(crate) fn mol_to_inchi_with_options(
                 }
                 stereo.neighbor[0] = index as i16;
             }
-            let degree = working.adjacency[index].len();
+            let degree = working.degree(index);
             stereo.parity = if degree == 4 {
                 match chiral_tag {
                     ChiralTag::TetrahedralCw => {
@@ -7660,7 +7724,8 @@ pub(crate) fn mol_to_inchi_with_options(
         }
     }
 
-    for bond in &working.bonds {
+    for bond_index in 0..working.bond_count() {
+        let bond = working.bond(bond_index);
         let mut atom_index_1 = bond.begin_atom_index;
         let mut atom_index_2 = bond.end_atom_index;
         let mut direction_modifier = 1_i32;
@@ -7715,7 +7780,7 @@ pub(crate) fn mol_to_inchi_with_options(
             _ => tagINCHIBondStereo2D_INCHI_BOND_STEREO_NONE as i8,
         };
 
-        if bond.stereo as u8 > BondStereo::Any as u8 && bond.stereo_atoms.len() >= 2 {
+        if bond.stereo as u8 > BondStereo::Any as u8 && let Some(stereo_atoms) = bond.stereo_atoms {
             let mut stereo = inchi_Stereo0D {
                 parity: if matches!(bond.stereo, BondStereo::Z | BondStereo::Cis) {
                     tagINCHIStereoParity0D_INCHI_PARITY_ODD as i8
@@ -7723,16 +7788,16 @@ pub(crate) fn mol_to_inchi_with_options(
                     tagINCHIStereoParity0D_INCHI_PARITY_EVEN as i8
                 },
                 neighbor: [
-                    bond.stereo_atoms[0] as i16,
+                    stereo_atoms[0] as i16,
                     atom_index_1 as i16,
                     atom_index_2 as i16,
-                    bond.stereo_atoms[1] as i16,
+                    stereo_atoms[1] as i16,
                 ],
                 central_atom: NO_ATOM as i16,
                 type_: tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
             };
             if bond_index_between(
-                &working,
+                working,
                 stereo.neighbor[0] as u32,
                 stereo.neighbor[1] as u32,
             )
@@ -7794,10 +7859,10 @@ pub(crate) fn mol_to_inchi_with_options(
             // RDKit✔️✔️:     // number of bonds
             // The adjacency vectors retain source bond iteration order. Each first-neighbor
             // scan and the final bond lookup are O(degree), with one optional stereo append.
-            let left_neighbor = working.adjacency[atom_index_1 as usize]
-                .iter().find(|&&(other, _)| other != atom_index_2).map(|&(other, _)| other);
-            let right_neighbor = working.adjacency[atom_index_2 as usize]
-                .iter().find(|&&(other, _)| other != atom_index_1).map(|&(other, _)| other);
+            let left_neighbor = working.neighbors(atom_index_1 as usize)
+                .find(|&(other, _)| other != atom_index_2).map(|(other, _)| other);
+            let right_neighbor = working.neighbors(atom_index_2 as usize)
+                .find(|&(other, _)| other != atom_index_1).map(|(other, _)| other);
             if let (Some(left), Some(right)) = (left_neighbor, right_neighbor) {
                 let mut stereo = inchi_Stereo0D {
                     parity: tagINCHIStereoParity0D_INCHI_PARITY_UNKNOWN as i8,
@@ -7805,7 +7870,7 @@ pub(crate) fn mol_to_inchi_with_options(
                     central_atom: NO_ATOM as i16,
                     type_: tagINCHIStereoType0D_INCHI_StereoType_DoubleBond as i8,
                 };
-                if bond_index_between(&working, stereo.neighbor[0] as u32, stereo.neighbor[1] as u32).is_none() {
+                if bond_index_between(working, stereo.neighbor[0] as u32, stereo.neighbor[1] as u32).is_none() {
                     stereo.neighbor.swap(0,3);
                 }
                 stereo0d_entries.push(stereo);

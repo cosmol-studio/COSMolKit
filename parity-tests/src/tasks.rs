@@ -213,6 +213,15 @@ fn failure(error: impl std::fmt::Display) -> Vec<u8> {
     outcome(5, Value::Text(error.to_string()))
 }
 pub(crate) fn failed_error(error: &(dyn std::error::Error + 'static)) -> Vec<u8> {
+    if let Some(error) = error.downcast_ref::<crate::inchi::GenerationRejected>() {
+        return outcome(
+            1,
+            Value::List(vec![
+                Value::Text("InchiGenerationRejected".into()),
+                Value::Int(i64::from(error.0)),
+            ]),
+        );
+    }
     let mut cause = Some(error);
     let mut optimizer_domain = false;
     while let Some(inner) = cause {

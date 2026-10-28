@@ -9,6 +9,19 @@ import prepare
 
 
 class FrameTests(unittest.TestCase):
+    def test_inchi_rejection_requires_confirmed_engine_status(self):
+        for code in (-1, 0, 1, 2, 3, 4, 5):
+            with self.subTest(code=code), patch.object(prepare.inchi, "MolToInchi", return_value=""), patch.object(prepare.rdinchi, "MolToInchi", return_value=("", code, "diagnostic", "", "")):
+                rows = prepare.evaluate_rows("inchi_write", [{"options": ""}], ["C"])
+                expected = b"\1" + prepare.encode(["InchiGenerationRejected", code])
+                if code in (2, 3):
+                    self.assertEqual(rows, [[expected]])
+                else:
+                    self.assertEqual(rows[0][0][0], 5)
+        with patch.object(prepare.inchi, "MolToInchi", return_value="InChI=1S/CH4/h1H4"), patch.object(prepare.rdinchi, "MolToInchi") as raw:
+            self.assertEqual(prepare.inchi_identifier(None), "InChI=1S/CH4/h1H4")
+            raw.assert_not_called()
+
     def test_record_above_old_ceiling_roundtrips_without_truncation(self):
         value = b"x" * (64 * 1024 * 1024)
         with tempfile.TemporaryDirectory() as folder:

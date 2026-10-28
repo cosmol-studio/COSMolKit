@@ -75,6 +75,10 @@ pub fn main() -> Result<()> {
             options.seed,
         )?);
         let identity = Identity {
+            reference_contract: crate::inchi::TASKS
+                .iter()
+                .any(|(name, _)| *name == task)
+                .then(|| "inchi-generation-status-v1".into()),
             rdkit: tasks::RDKIT.into(),
             task: task.into(),
             profiles: json!(profiles),

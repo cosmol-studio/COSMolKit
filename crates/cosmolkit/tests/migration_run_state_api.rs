@@ -62,10 +62,10 @@ fn lifecycle_type_has_no_callable_defaults_or_operation_contract() {
 
 #[test]
 fn public_projection_keeps_state_cache_and_install_authority_private() {
-    let root = include_str!("../src/lib.rs");
     let state = include_str!("../src/molecule.rs");
 
-    assert_eq!(root.matches("pub use molecule::Molecule;").count(), 1);
+    // Public availability is compiled by canonical_molecule_type_is_the_real_public_entry;
+    // the spelling/grouping of lib.rs re-exports is not a privacy boundary.
     assert_eq!(state.matches("pub struct Molecule {").count(), 1);
     assert!(state.contains("struct MoleculeState {"));
     assert!(state.contains("state: Arc<MoleculeState>"));

@@ -1,16 +1,126 @@
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
-    AT_RANK, MAX_ATOMS, QUEUE, S_CHAR, SourceHeap, SourceHeapError, SourceMutPointer, inp_ATOM,
-    qInt,
+    AT_RANK, MAX_ATOMS, NativeSourceArray, QUEUE, S_CHAR, SourceHeap, SourceHeapError,
+    SourceMutPointer, inp_ATOM, qInt,
 };
+
+// The ring phase performs no allocation/free/reallocation, callback, or owner
+// extraction. All access below returns scalars, never borrowed references.
+// This is the lifetime/alias boundary for the raw arrays: queue values may
+// share rank storage, and writes must be visible to the next scalar read.
+struct RingMemory<'a> {
+    heap: &'a mut SourceHeap,
+    atom: NativeSourceArray<inp_ATOM>,
+    queue: NativeSourceArray<QUEUE>,
+    levels: NativeSourceArray<AT_RANK>,
+    sources: NativeSourceArray<S_CHAR>,
+    values: Option<(SourceMutPointer<qInt>, NativeSourceArray<qInt>)>,
+    null_queue: bool,
+}
+
+impl<'a> RingMemory<'a> {
+    fn new(
+        heap: &'a mut SourceHeap,
+        atom: SourceMutPointer<inp_ATOM>,
+        q: SourceMutPointer<QUEUE>,
+        levels: SourceMutPointer<AT_RANK>,
+        sources: SourceMutPointer<S_CHAR>,
+    ) -> Self {
+        Self {
+            heap,
+            atom: NativeSourceArray::new(atom),
+            queue: NativeSourceArray::new(q),
+            levels: NativeSourceArray::new(levels),
+            sources: NativeSourceArray::new(sources),
+            values: None,
+            null_queue: q.is_null(),
+        }
+    }
+
+    fn queue_read<R>(&mut self, f: impl FnOnce(&QUEUE) -> R) -> Result<R, SourceHeapError> {
+        // SAFETY: RingMemory owns the exclusive heap loan; its complete method
+        // set never changes allocation lifetimes and no reference escapes.
+        unsafe { self.queue.read(self.heap, 0, f) }
+    }
+
+    fn queue_update<R>(&mut self, f: impl FnOnce(&mut QUEUE) -> R) -> Result<R, SourceHeapError> {
+        // SAFETY: same phase proof; queue accesses end before any array access.
+        unsafe { self.queue.update(self.heap, 0, f) }
+    }
+
+    fn value(
+        &mut self,
+        pointer: SourceMutPointer<qInt>,
+        index: i32,
+        write: Option<qInt>,
+    ) -> Result<qInt, SourceHeapError> {
+        if self.values.as_ref().is_none_or(|(old, _)| *old != pointer) {
+            self.values = Some((pointer, NativeSourceArray::new(pointer)));
+        }
+        let array = &mut self.values.as_mut().unwrap().1;
+        // SAFETY: no allocation changes in this phase. This access ends before
+        // levels are read/written, including when both refer to the same array.
+        unsafe {
+            match write {
+                Some(value) => array.update(self.heap, i64::from(index), |row| {
+                    *row = value;
+                    value
+                }),
+                None => array.read(self.heap, i64::from(index), |row| *row),
+            }
+        }
+    }
+
+    fn level(&mut self, index: i64, write: Option<AT_RANK>) -> Result<AT_RANK, SourceHeapError> {
+        // SAFETY: exclusive phase loan, scalar sequential access only.
+        unsafe {
+            match write {
+                Some(value) => self.levels.update(self.heap, index, |row| {
+                    *row = value;
+                    value
+                }),
+                None => self.levels.read(self.heap, index, |row| *row),
+            }
+        }
+    }
+
+    fn source(&mut self, index: i64, write: Option<S_CHAR>) -> Result<S_CHAR, SourceHeapError> {
+        // SAFETY: exclusive phase loan, scalar sequential access only.
+        unsafe {
+            match write {
+                Some(value) => self.sources.update(self.heap, index, |row| {
+                    *row = value;
+                    value
+                }),
+                None => self.sources.read(self.heap, index, |row| *row),
+            }
+        }
+    }
+
+    fn valence(&mut self, index: i64) -> Result<i32, SourceHeapError> {
+        // SAFETY: no atom reference escapes this read, no allocation changes.
+        unsafe {
+            self.atom
+                .read(self.heap, index, |atom| i32::from(atom.valence))
+        }
+    }
+
+    fn neighbor(&mut self, index: i64, ordinal: i32) -> Result<qInt, SourceHeapError> {
+        // SAFETY: same phase proof; fixed neighbor indexing remains checked.
+        unsafe {
+            self.atom.read(self.heap, index, |atom| {
+                atom.neighbor
+                    .get(ordinal as usize)
+                    .copied()
+                    .ok_or(SourceHeapError::PointerOutOfBounds)
+            })?
+        }
+    }
+}
 
 // Scalar stack arguments match the native BFS callers without allocating
 // SourceHeap slots for QueueAdd/QueueGet's local qInt variables.
-fn ring_queue_add(
-    heap: &mut SourceHeap,
-    q: SourceMutPointer<QUEUE>,
-    value: qInt,
-) -> Result<i32, SourceHeapError> {
+fn ring_queue_add(memory: &mut RingMemory<'_>, value: qInt) -> Result<i32, SourceHeapError> {
     // VERBATIM SOURCE: ichiring.c QueueAdd QUEUE_QINT=1
     // INCHI✔️❗: int QueueAdd( QUEUE *q, QINT_TYPE *Val )
     // INCHI✔️❗: {
@@ -23,40 +133,28 @@ fn ring_queue_add(
     // INCHI✔️❗:
     // INCHI✔️❗:     return -1;
     // INCHI✔️❗: }
-    // INCHI✔️❌: C326; fixed scalar accesses, no clone/allocation/preflight.
-    // Safe arena admission constants remain OPEN in performance notes.
-    if q.is_null() {
+    // INCHI✔️❗: Direct phase-local scalar accesses, no allocation/preflight.
+    // Queue and buffer resolution happens only on their first reached use.
+    if memory.null_queue {
         return Ok(-1);
     }
-    let queue = heap
-        .slice(q.as_const())?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if queue.nLength >= queue.nTotLength {
+    let (length, total, first, values) =
+        memory.queue_read(|q| (q.nLength, q.nTotLength, q.nFirst, q.Val))?;
+    if length >= total {
         return Ok(-1);
     }
-    let destination = queue
-        .nFirst
-        .wrapping_add(queue.nLength)
-        .checked_rem(queue.nTotLength)
+    let destination = first
+        .wrapping_add(length)
+        .checked_rem(total)
         .ok_or(SourceHeapError::SourceIntegerOverflow)?;
-    let values = queue.Val;
-    *heap
-        .slice_mut(values.offset(i64::from(destination))?)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = value;
-    let queue = heap
-        .slice_mut(q)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    queue.nLength = queue.nLength.wrapping_add(1);
-    Ok(queue.nLength)
+    memory.value(values, destination, Some(value))?;
+    memory.queue_update(|queue| {
+        queue.nLength = queue.nLength.wrapping_add(1);
+        queue.nLength
+    })
 }
 
-fn ring_queue_get(
-    heap: &mut SourceHeap,
-    q: SourceMutPointer<QUEUE>,
-) -> Result<Option<qInt>, SourceHeapError> {
+fn ring_queue_get(memory: &mut RingMemory<'_>) -> Result<Option<qInt>, SourceHeapError> {
     // VERBATIM SOURCE: ichiring.c QueueGet QUEUE_QINT=1
     // INCHI✔️❗: int QueueGet( QUEUE *q, QINT_TYPE *Val )
     // INCHI✔️❗: {
@@ -76,32 +174,24 @@ fn ring_queue_get(
     // INCHI✔️❗:
     // INCHI✔️❗:     return -1;
     // INCHI✔️❗: }
-    // INCHI✔️❌: C326; local qInt receives the value before queue stores.
-    // No whole-record clone/buffer; checked admission cost remains OPEN.
-    if q.is_null() {
+    // INCHI✔️❗: Local qInt receives the value before queue stores.
+    // No whole-record clone/buffer or repeated heap lookup after resolution.
+    if memory.null_queue {
         return Ok(None);
     }
-    let queue = heap
-        .slice(q.as_const())?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    if queue.nLength <= 0 {
+    let (length, first, values) = memory.queue_read(|q| (q.nLength, q.nFirst, q.Val))?;
+    if length <= 0 {
         return Ok(None);
     }
-    let value = *heap
-        .slice(queue.Val.offset(i64::from(queue.nFirst))?.as_const())?
-        .first()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    let queue = heap
-        .slice_mut(q)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-    queue.nFirst = if queue.nFirst == queue.nTotLength.wrapping_sub(1) {
-        0
-    } else {
-        queue.nFirst.wrapping_add(1)
-    };
-    queue.nLength = queue.nLength.wrapping_sub(1);
+    let value = memory.value(values, first, None)?;
+    memory.queue_update(|queue| {
+        queue.nFirst = if queue.nFirst == queue.nTotLength.wrapping_sub(1) {
+            0
+        } else {
+            queue.nFirst.wrapping_add(1)
+        };
+        queue.nLength = queue.nLength.wrapping_sub(1);
+    })?;
     Ok(Some(value))
 }
 
@@ -452,6 +542,14 @@ pub(crate) fn GetMinRingSize(
     cSource: SourceMutPointer<S_CHAR>,
     nMaxRingSize: AT_RANK,
 ) -> Result<i32, SourceHeapError> {
+    let mut memory = RingMemory::new(heap, atom, q, nAtomLevel, cSource);
+    min_ring_size(&mut memory, nMaxRingSize)
+}
+
+fn min_ring_size(
+    memory: &mut RingMemory<'_>,
+    nMaxRingSize: AT_RANK,
+) -> Result<i32, SourceHeapError> {
     // BEGIN INCHI C FUNCTION: third_party/InChI/INCHI-1-SRC/INCHI_BASE/src/ichiring.c:262 GetMinRingSize
     // INCHI✔️✔️: int GetMinRingSize( inp_ATOM* atom,
     // INCHI✔️✔️:                     QUEUE *q,
@@ -537,26 +635,26 @@ pub(crate) fn GetMinRingSize(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: GetMinRingSize
 
-    // INCHI✔️❌: C326; source-reached scalar accesses replace whole-array
-    // workspace admission. Reads observe preceding writes on shared rank
-    // storage; empty queues and cutoffs do not admit unused atom/source data.
-    // O(source BFS work), O(1) scratch, no allocations/clones/raw views.
-    // Checked arena/bounds constants remain OPEN in performance notes.
+    // INCHI✔️❗: Resolve each reached array once for this nonallocating phase;
+    // subsequent scalar reads/stores use its native contiguous storage.
+    // Shared queue/rank writes remain visible in source order. Empty queues
+    // and cutoffs do not admit unused arrays. O(source BFS work), O(1) scratch;
+    // checked offsets remain, but per-element arena/type lookup is removed.
     let mut minimum = (MAX_ATOMS + 1) as AT_RANK;
     loop {
-        let length = QueueLength(heap, q)?;
+        let length = if memory.null_queue {
+            0
+        } else {
+            memory.queue_read(|q| q.nLength)?
+        };
         if length == 0 {
             break;
         }
         for _ in 0..length {
-            let Some(current) = ring_queue_get(heap, q)? else {
+            let Some(current) = ring_queue_get(memory)? else {
                 return Ok(-1);
             };
-            let current_level = heap
-                .slice(nAtomLevel.offset(i64::from(current))?.as_const())?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?
-                .wrapping_add(1);
+            let current_level = memory.level(i64::from(current), None)?.wrapping_add(1);
             if 2 * i32::from(current_level) > i32::from(nMaxRingSize) + 4 {
                 return Ok(
                     if u32::from(minimum) < MAX_ATOMS + 1 && minimum < nMaxRingSize {
@@ -566,51 +664,20 @@ pub(crate) fn GetMinRingSize(
                     },
                 );
             }
-            let current_atom = atom.offset(i64::from(current))?;
-            let valence = i32::from(
-                heap.slice(current_atom.as_const())?
-                    .first()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .valence,
-            );
+            let valence = memory.valence(i64::from(current))?;
             for ordinal in 0..valence {
-                let next = *heap
-                    .slice(current_atom.as_const())?
-                    .first()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?
-                    .neighbor
-                    .get(ordinal as usize)
-                    .ok_or(SourceHeapError::PointerOutOfBounds)? as qInt;
-                let next_level_pointer = nAtomLevel.offset(i64::from(next))?;
-                let next_level = *heap
-                    .slice(next_level_pointer.as_const())?
-                    .first()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                let next = memory.neighbor(i64::from(current), ordinal)?;
+                let next_level = memory.level(i64::from(next), None)?;
                 if next_level == 0 {
-                    if ring_queue_add(heap, q, next)? < 0 {
+                    if ring_queue_add(memory, next)? < 0 {
                         return Ok(-1);
                     }
-                    *heap
-                        .slice_mut(next_level_pointer)?
-                        .first_mut()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)? = current_level;
-                    let current_source = *heap
-                        .slice(cSource.offset(i64::from(current))?.as_const())?
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    *heap
-                        .slice_mut(cSource.offset(i64::from(next))?)?
-                        .first_mut()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)? = current_source;
+                    memory.level(i64::from(next), Some(current_level))?;
+                    let current_source = memory.source(i64::from(current), None)?;
+                    memory.source(i64::from(next), Some(current_source))?;
                 } else if i32::from(next_level) + 1 >= i32::from(current_level) {
-                    let next_source = *heap
-                        .slice(cSource.offset(i64::from(next))?.as_const())?
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    let current_source = *heap
-                        .slice(cSource.offset(i64::from(current))?.as_const())?
-                        .first()
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?;
+                    let next_source = memory.source(i64::from(next), None)?;
+                    let current_source = memory.source(i64::from(current), None)?;
                     if next_source != current_source {
                         if next_source == -1 {
                             return Ok(-1);
@@ -702,80 +769,45 @@ pub(crate) fn is_bond_in_Nmax_memb_ring(
     // INCHI✔️✔️: }
     // END INCHI C FUNCTION: is_bond_in_Nmax_memb_ring
 
-    // INCHI✔️❌: C326; preserve source NULL-queue, signed start offset,
-    // seed/write/QueueAdd order and live queue-buffer/level aliasing.
-    // O(source BFS+cleanup), O(1) scratch, no whole-array preflight/allocation.
-    // Safe arena/bounds costs remain independently OPEN.
+    // INCHI✔️❗: Preserve NULL-queue, signed start offsets and live aliasing.
+    // One nonallocating phase spans seeding, BFS and cleanup, so arrays are
+    // resolved once, with no per-element arena lookup or type dispatch.
     if nMaxRingSize < 3 {
         return Ok(0);
     }
-    let _ = QueueReinit(heap, q)?;
-    let start_level = nAtomLevel.offset(i64::from(at_no))?;
-    *heap
-        .slice_mut(start_level)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = 1;
-    let start_source = cSource.offset(i64::from(at_no))?;
-    *heap
-        .slice_mut(start_source)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = -1;
-    let start_atom = atom.offset(i64::from(at_no))?;
-    let valence = i32::from(
-        heap.slice(start_atom.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .valence,
-    );
-    for ordinal in 0..valence {
-        let next = *heap
-            .slice(start_atom.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?
-            .neighbor
-            .get(ordinal as usize)
-            .ok_or(SourceHeapError::PointerOutOfBounds)? as qInt;
-        *heap
-            .slice_mut(nAtomLevel.offset(i64::from(next))?)?
-            .first_mut()
-            .ok_or(SourceHeapError::PointerOutOfBounds)? = 2;
-        *heap
-            .slice_mut(cSource.offset(i64::from(next))?)?
-            .first_mut()
-            .ok_or(SourceHeapError::PointerOutOfBounds)? = 1 + i8::from(ordinal == neigh_ord);
-        // Native intentionally ignores full/NULL queue failure while seeding.
-        let _ = ring_queue_add(heap, q, next)?;
+    let mut memory = RingMemory::new(heap, atom, q, nAtomLevel, cSource);
+    if !memory.null_queue {
+        memory.queue_update(|q| {
+            q.nFirst = 0;
+            q.nLength = 0;
+        })?;
     }
-    let minimum = GetMinRingSize(heap, atom, q, nAtomLevel, cSource, nMaxRingSize)?;
-    let written = QueueWrittenLength(heap, q)?;
+    memory.level(i64::from(at_no), Some(1))?;
+    memory.source(i64::from(at_no), Some(-1))?;
+    let valence = memory.valence(i64::from(at_no))?;
+    for ordinal in 0..valence {
+        let next = memory.neighbor(i64::from(at_no), ordinal)?;
+        memory.level(i64::from(next), Some(2))?;
+        memory.source(i64::from(next), Some(1 + i8::from(ordinal == neigh_ord)))?;
+        // Native intentionally ignores full/NULL queue failure while seeding.
+        let _ = ring_queue_add(&mut memory, next)?;
+    }
+    let minimum = min_ring_size(&mut memory, nMaxRingSize)?;
+    let written = if memory.null_queue {
+        0
+    } else {
+        memory.queue_read(|q| q.nFirst.wrapping_add(q.nLength).min(q.nTotLength))?
+    };
     for ordinal in 0..written {
-        let queue = heap
-            .slice(q.as_const())?
-            .first()
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if ordinal < queue.nTotLength {
-            let next = *heap
-                .slice(queue.Val.offset(i64::from(ordinal))?.as_const())?
-                .first()
-                .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            *heap
-                .slice_mut(nAtomLevel.offset(i64::from(next))?)?
-                .first_mut()
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-            *heap
-                .slice_mut(cSource.offset(i64::from(next))?)?
-                .first_mut()
-                .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+        let (total, values) = memory.queue_read(|q| (q.nTotLength, q.Val))?;
+        if ordinal < total {
+            let next = memory.value(values, ordinal, None)?;
+            memory.level(i64::from(next), Some(0))?;
+            memory.source(i64::from(next), Some(0))?;
         }
     }
-    *heap
-        .slice_mut(start_level)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
-    *heap
-        .slice_mut(start_source)?
-        .first_mut()
-        .ok_or(SourceHeapError::PointerOutOfBounds)? = 0;
+    memory.level(i64::from(at_no), Some(0))?;
+    memory.source(i64::from(at_no), Some(0))?;
     Ok(minimum)
 }
 
@@ -824,11 +856,12 @@ pub(crate) fn is_atom_in_3memb_ring(
     // END INCHI C FUNCTION: is_atom_in_3memb_ring
 
     let start_index = usize::try_from(at_no).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
-    // SAFETY: this function is read-only and does not free or resize atom[].
-    let atoms = unsafe { heap.stable_slice(atom.as_const())? };
+    // INCHI✔️❗: This complete function only reads atom[]. A normal borrowed
+    // slice expresses its lifetime directly; no raw/stable wrapper is needed.
+    let atoms = heap.slice(atom.as_const())?;
     let start = atoms
         .get(start_index)
-        .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        .ok_or(SourceHeapError::PointerOutOfBounds)?;
     if start.nNumAtInRingSystem < 3 {
         return Ok(0);
     }
@@ -837,7 +870,7 @@ pub(crate) fn is_atom_in_3memb_ring(
         let neighbor_index = usize::from(start.neighbor[i as usize]);
         let neighbor = atoms
             .get(neighbor_index)
-            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            .ok_or(SourceHeapError::PointerOutOfBounds)?;
         if start.nRingSystem != neighbor.nRingSystem {
             continue;
         }

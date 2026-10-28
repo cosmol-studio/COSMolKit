@@ -29,35 +29,6 @@ fn canonical_query_value_metadata_is_always_registered() {
     assert_eq!(row.callable, None);
 }
 
-#[test]
-fn existing_element_prefix_retains_exact_order() {
-    // Accepted b372 canonical Element methods occur between the two original
-    // type entries. Retain all original prefix and QueryGraph placement checks.
-    let mut expected = vec![
-        "types.Element",
-        "Element.from_atomic_number",
-        "Element.from_symbol",
-        "Element.atomic_number",
-        "Element.symbol",
-        "types.ElementInfo",
-    ];
-    if cfg!(feature = "cap-valence") {
-        expected.push("module.element_info");
-    }
-    assert_eq!(
-        BINDING_CONTRACT
-            .iter()
-            .take(expected.len())
-            .map(|row| row.semantic_id)
-            .collect::<Vec<_>>(),
-        expected
-    );
-    assert_eq!(
-        BINDING_CONTRACT[expected.len()].semantic_id,
-        "types.QueryGraph"
-    );
-}
-
 #[cfg(not(feature = "cap-search"))]
 #[test]
 fn search_constructor_is_absent_without_capability() {

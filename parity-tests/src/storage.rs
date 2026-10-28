@@ -16,6 +16,8 @@ pub const MAX_RECORD_BYTES: usize = MAX_FRAME_BYTES - 4;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Identity {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_contract: Option<String>,
     pub rdkit: String,
     pub task: String,
     pub profiles: serde_json::Value,
@@ -175,6 +177,7 @@ mod tests {
     use super::*;
     fn identity() -> Identity {
         Identity {
+            reference_contract: None,
             rdkit: "2026.03.6".into(),
             task: "example".into(),
             profiles: serde_json::json!([{}]),
@@ -216,6 +219,14 @@ mod tests {
     #[test]
     fn cache_identity_changes_only_with_reference_options_or_inputs() {
         let original = identity();
+        let mut revised = original.clone();
+        revised.reference_contract = Some("inchi-generation-status-v1".into());
+        assert_ne!(original.key().unwrap(), revised.key().unwrap());
+        assert!(
+            !serde_json::to_string(&original)
+                .unwrap()
+                .contains("reference_contract")
+        );
         let mut changed = original.clone();
         changed.rdkit.push('x');
         assert_ne!(original.key().unwrap(), changed.key().unwrap());

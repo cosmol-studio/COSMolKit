@@ -2,8 +2,8 @@ use crate::source::base::ichimap2::DifferentiateRanks2;
 use crate::source::base::util::{inchi_calloc, inchi_free};
 use crate::source_types::{
     AT_NUMB, AT_RANK, ATOM_INVARIANT2, BOND_DOUBLE, CANON_GLOBALS, CANON_STAT, CT_OUT_OF_RAM,
-    NEIGH_LIST, S_CHAR, SourceConstPointer, SourceHeap, SourceHeapError, SourceMutPointer,
-    T_GROUP_INFO, sp_ATOM, tagAtInvariantIndexes_AT_INV_BREAK1,
+    NEIGH_LIST, NativeSourceArray, S_CHAR, SourceConstPointer, SourceHeap, SourceHeapError,
+    SourceMutPointer, T_GROUP_INFO, sp_ATOM, tagAtInvariantIndexes_AT_INV_BREAK1,
     tagAtInvariantIndexes_AT_INV_LENGTH,
 };
 
@@ -390,22 +390,30 @@ where
 
     // Keep the allocation visible to comparator aliases; release each borrow
     // before invoking the comparator. No base read occurs for a skipped loop.
-    // Cost: O(n^2) comparisons/moves, O(1) extra space, no allocation/clone;
-    // checked arena lookups per access remain independently unresolved.
+    // Cost: O(n^2) comparisons/moves, O(1) extra space, no allocation/clone.
+    // Resolve the array once. The comparator only receives a shared heap;
+    // it cannot free/resize/move storage or retain a borrow across the call.
+    // Keep scalar references out of comparator calls so aliases see each shift.
+    let mut values = NativeSourceArray::new(base);
+    if num > 1 {
+        heap.slice(base.as_const())?;
+    }
     let mut num_trans = 0_i32;
     for k in 1..num {
-        let tmp = source_at_number_get(heap, base, k)?;
+        // SAFETY: source-frame lifetime above; all indices are nonnegative and
+        // every scalar borrow ends before comparison or another scalar access.
+        let tmp = unsafe { values.read(heap, i64::from(k), |value| *value)? };
         let mut j = k;
         while j > 0 {
-            let previous = source_at_number_get(heap, base, j - 1)?;
+            let previous = unsafe { values.read(heap, i64::from(j - 1), |value| *value)? };
             if compare(heap, previous, tmp)? <= 0 {
                 break;
             }
-            source_at_number_set(heap, base, j, previous)?;
+            unsafe { values.update(heap, i64::from(j), |value| *value = previous)? };
             num_trans = num_trans.wrapping_add(1);
             j -= 1;
         }
-        source_at_number_set(heap, base, j, tmp)?;
+        unsafe { values.update(heap, i64::from(j), |value| *value = tmp)? };
     }
     Ok(num_trans)
 }
@@ -429,6 +437,7 @@ pub(crate) fn CompChemElemLex(a1: &[u8], a2: &[u8]) -> Result<i32, SourceHeapErr
     Ok(0)
 }
 
+#[inline]
 fn source_at_number_get(
     heap: &SourceHeap,
     pointer: SourceMutPointer<AT_NUMB>,
@@ -440,6 +449,7 @@ fn source_at_number_get(
         .ok_or(SourceHeapError::PointerOutOfBounds)
 }
 
+#[inline]
 fn source_at_number_set(
     heap: &mut SourceHeap,
     pointer: SourceMutPointer<AT_NUMB>,
@@ -925,24 +935,49 @@ pub(crate) fn insertions_sort_NeighListBySymmAndCanonRank(
     // END INCHI C FUNCTION: insertions_sort_NeighListBySymmAndCanonRank
 
     let num = i32::from(source_at_number_get(heap, base, 0)?);
+    // INCHI✔️✔️: Keep the source comparison/swap order, but resolve each
+    // array only on its first reached access. The frame cannot allocate,
+    // resize, free or invoke external code. Scalar reads finish before writes,
+    // including when a rank array aliases the neighbor array. Do not preflight
+    // an unused rank array or cache its values across source writes.
+    let mut neighbors = NativeSourceArray::new(base);
+    let mut symm = NativeSourceArray::new(nSymmRank);
+    let mut canon = NativeSourceArray::new(nCanonRank);
+    let mut symm_admitted = false;
+    let mut canon_admitted = false;
+    macro_rules! rank {
+        ($view:ident, $admitted:ident, $source:ident, $atom:expr) => {{
+            if !$admitted {
+                // Preserve the original base-slice admission before indexing.
+                heap.slice($source.as_const())?;
+                $admitted = true;
+            }
+            // SAFETY: phase lifetime and sequential scalar access as above.
+            unsafe { $view.read(heap, i64::from($atom), |value| *value)? }
+        }};
+    }
     let mut k = 1_i32;
     while k < num {
         let mut i = k;
         let mut j = k.wrapping_add(1);
         while j > 1 {
-            let left = source_at_number_get(heap, base, i)?;
-            let right = source_at_number_get(heap, base, j)?;
-            let diff = i32::from(source_at_number_get(heap, nSymmRank, i32::from(left))?)
-                - i32::from(source_at_number_get(heap, nSymmRank, i32::from(right))?);
+            // SAFETY: base was admitted above; i and j are positive source
+            // indices, with no live references crossing these scalar accesses.
+            let left = unsafe { neighbors.read(heap, i64::from(i), |value| *value)? };
+            let right = unsafe { neighbors.read(heap, i64::from(j), |value| *value)? };
+            let diff = i32::from(rank!(symm, symm_admitted, nSymmRank, left))
+                - i32::from(rank!(symm, symm_admitted, nSymmRank, right));
             let should_swap = diff < 0
                 || (diff == 0
-                    && source_at_number_get(heap, nCanonRank, i32::from(left))?
-                        < source_at_number_get(heap, nCanonRank, i32::from(right))?);
+                    && rank!(canon, canon_admitted, nCanonRank, left)
+                        < rank!(canon, canon_admitted, nCanonRank, right));
             if !should_swap {
                 break;
             }
-            source_at_number_set(heap, base, i, right)?;
-            source_at_number_set(heap, base, j, left)?;
+            // SAFETY: the two reads above checked these same positions; no
+            // overlapping reference survives either update, even under aliasing.
+            unsafe { neighbors.update(heap, i64::from(i), |value| *value = right)? };
+            unsafe { neighbors.update(heap, i64::from(j), |value| *value = left)? };
             j = i;
             i = i.wrapping_sub(1);
         }
@@ -1747,8 +1782,12 @@ where
     // aliases observe every preceding source swap. No slice is extracted
     // from the arena and no prefix/rank snapshot or writeback is needed.
     // O(n log n) average/O(n²) worst qsort; O(n²) insertion, constant
-    // auxiliary storage. Checked arena access constants remain cost OPEN.
+    // auxiliary storage. Cache only the address, not values; the shared-heap
+    // comparator cannot invalidate allocation lifetime. No scalar reference
+    // survives the comparator, so overlapping rank reads see every swap.
     let width = std::mem::size_of::<AT_NUMB>();
+    let mut values = NativeSourceArray::new(base);
+    let mut admitted = false;
     let mut step = |operation, first, second| {
         let first =
             i32::try_from(first / width).map_err(|_| SourceHeapError::PointerOffsetOverflow)?;
@@ -1757,13 +1796,20 @@ where
         if matches!(operation, SortStep::Swap) && first == second {
             return Ok(0);
         }
-        let left = source_at_number_get(heap, base, first)?;
-        let right = source_at_number_get(heap, base, second)?;
+        if !admitted {
+            heap.slice(base.as_const())?;
+            admitted = true;
+        }
+        // SAFETY: allocation-free source sort and shared-only comparator as
+        // above. The offset kernels produce nonnegative positions; address
+        // and extent checks are retained, with sequential scalar access.
+        let left = unsafe { values.read(heap, i64::from(first), |value| *value)? };
+        let right = unsafe { values.read(heap, i64::from(second), |value| *value)? };
         match operation {
             SortStep::Compare => compare(heap, left, right),
             SortStep::Swap => {
-                source_at_number_set(heap, base, first, right)?;
-                source_at_number_set(heap, base, second, left)?;
+                unsafe { values.update(heap, i64::from(first), |value| *value = right)? };
+                unsafe { values.update(heap, i64::from(second), |value| *value = left)? };
                 Ok(0)
             }
         }

@@ -1753,10 +1753,12 @@ translate_RetVal:
 
     *outStruct = inchi_OutputStructEx::default();
 
-    // INCHI❗❌: Fixed clock metadata allocation/copy/free remains KNOWN
-    // extra. INCHI-PERF-FIXED-CLOCK-METADATA C562 defers cost only;
-    // operations/errors/identity and temporal0099 stay independent.
-    let clock = allocate_model_payload(heap, std::iter::once(INCHI_CLOCK::default()))?;
+    // INCHI✔️❗: inchi_dll.c:2488
+    //     INCHI_CLOCK ic;
+    let mut clock_value = INCHI_CLOCK::default();
+    // SAFETY: synchronous source frame; no heap moves, escaping raw addresses,
+    // or overlapping clock references. The binding expires on every exit.
+    unsafe { heap.with_borrowed_storage(std::slice::from_mut(&mut clock_value), |heap, clock| {
     // Native API owns the actual CG throughout conversion and SetBitFree.
     // INCHI✔️❗: One object through restore/proton/reverse calls, no model
     // registration/capture/copyback/free; C557 whole checked costs stay OPEN.
@@ -2106,8 +2108,8 @@ translate_RetVal:
         }
     };
 
-    heap.free(clock)?;
     Ok(raw_return)
+    }) }
 }
 
 #[rustfmt::skip]
@@ -3281,10 +3283,16 @@ fn get_inchi1_input(
     // INCHI✔️❗: C508 temporary read-only input projection; no new
     // allocation/scan/clone. Original pointer admission/order remains.
     // Whole-call checked-view cost is OPEN in performance_pending.md.
-    // INCHI❗❌: Fixed clock metadata allocation/copy/free remains KNOWN
-    // extra. INCHI-PERF-FIXED-CLOCK-METADATA C562 defers cost only;
-    // operations/errors/identity and temporal0099 stay independent.
-    let clock = allocate_model_payload(heap, std::iter::once(INCHI_CLOCK::default()))?;
+    // INCHI✔️❗: inchi_dll.c:373
+    //     INCHI_CLOCK ic;
+    // Keep the actual source-local value, with no clock payload allocation.
+    // The scoped pointer-directory binding still has its metadata cost.
+    let mut clock_value = INCHI_CLOCK::default();
+    // SAFETY: this synchronous frame never moves/replaces the heap or retains
+    // raw addresses. Clock accesses are sequential, and scoped cleanup removes
+    // the directory binding before clock_value goes away, including on error.
+    unsafe {
+        heap.with_borrowed_storage(std::slice::from_mut(&mut clock_value), |heap, clock| {
     // Native inchi_dll.c372/463/651..657/705 owns and forwards actual CG.
     // INCHI✔️❗: The same object stays live through all nested polymer/root
     // calls and SetBitFree; no model registration/snapshot/copyback/free.
@@ -3598,7 +3606,6 @@ fn get_inchi1_input(
     inchi_ios_close(heap, Some(&mut streams[1]))?;
     inchi_ios_close(heap, Some(&mut streams[0]))?;
     inchi_ios_close(heap, Some(&mut problem_stream))?;
-    heap.free(clock)?;
 
     Ok(match raw_return {
         value if value == _IS_SKIP as i32 => tagRetValGetINCHI_inchi_Ret_SKIP,
@@ -3610,6 +3617,8 @@ fn get_inchi1_input(
         value if value == _IS_UNKNOWN as i32 => tagRetValGetINCHI_inchi_Ret_UNKNOWN,
         _ => tagRetValGetINCHI_inchi_Ret_UNKNOWN,
     })
+    })
+    }
 }
 
 #[allow(non_snake_case)]
@@ -5031,10 +5040,12 @@ translate_RetVal:
 
     *out = inchi_Output::default();
 
-    // INCHI❗❌: Fixed clock metadata allocation/copy/free remains KNOWN
-    // extra. INCHI-PERF-FIXED-CLOCK-METADATA C562 defers cost only;
-    // operations/errors/identity and temporal0099 stay independent.
-    let clock = allocate_model_payload(heap, std::iter::once(INCHI_CLOCK::default()))?;
+    // INCHI✔️❗: inchi_dll.c:2122
+    //     INCHI_CLOCK ic;
+    let mut clock_value = INCHI_CLOCK::default();
+    // SAFETY: synchronous source frame; no heap moves, escaping raw addresses,
+    // or overlapping clock references. The binding expires on every exit.
+    unsafe { heap.with_borrowed_storage(std::slice::from_mut(&mut clock_value), |heap, clock| {
     // Native API owns the actual CG throughout conversion and SetBitFree.
     // INCHI✔️❗: One object through restore/proton/reverse calls, no model
     // registration/capture/copyback/free; C557 whole checked costs stay OPEN.
@@ -5332,8 +5343,8 @@ translate_RetVal:
         value => value,
     };
 
-    heap.free(clock)?;
     Ok(raw_return)
+    }) }
 }
 
 pub(crate) fn parse_options_string(

@@ -8,6 +8,82 @@ use crate::source_types::{
 
 const SOURCE_EOF: i32 = -1;
 
+// A private staging buffer for printf's bytes, not another formatter. Small
+// conversions need no allocation; larger output grows without a size limit.
+// Staging preserves the existing alias snapshots and error publication order,
+// including %n effects. The source's direct-output copy cost remains separate.
+struct PrintBytes {
+    inline: [u8; 128],
+    length: usize,
+    overflow: Vec<u8>,
+}
+
+impl PrintBytes {
+    fn new() -> Self {
+        Self {
+            inline: [0; 128],
+            length: 0,
+            overflow: Vec::new(),
+        }
+    }
+
+    fn extend_from_slice(&mut self, bytes: &[u8]) {
+        let end = self
+            .length
+            .checked_add(bytes.len())
+            .expect("printf capacity overflow");
+        if end <= self.inline.len() {
+            self.inline[self.length..end].copy_from_slice(bytes);
+        } else {
+            self.spill(end);
+            self.overflow.extend_from_slice(bytes);
+        }
+        self.length = end;
+    }
+
+    fn resize(&mut self, length: usize, value: u8) {
+        debug_assert!(length >= self.length);
+        if length <= self.inline.len() {
+            self.inline[self.length..length].fill(value);
+        } else {
+            self.spill(length);
+            self.overflow.resize(length, value);
+        }
+        self.length = length;
+    }
+
+    fn push(&mut self, value: u8) {
+        self.extend_from_slice(&[value]);
+    }
+
+    fn spill(&mut self, length: usize) {
+        if self.length <= self.inline.len() {
+            self.overflow.reserve(length);
+            self.overflow.extend_from_slice(&self.inline[..self.length]);
+        }
+    }
+
+    fn into_vec(self) -> Vec<u8> {
+        if self.length <= self.inline.len() {
+            self.inline[..self.length].to_vec()
+        } else {
+            self.overflow
+        }
+    }
+}
+
+impl std::ops::Deref for PrintBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        if self.length <= self.inline.len() {
+            &self.inline[..self.length]
+        } else {
+            &self.overflow
+        }
+    }
+}
+
 pub(crate) fn source_decimal_i64(value: i64, prefix: Option<u8>, buffer: &mut [u8; 21]) -> &[u8] {
     // INCHI✔️❗: native unpadded signed-decimal source anchors:
     // readinch.c:166 / 306
@@ -917,6 +993,35 @@ fn source_stream_literal(
     Ok(length)
 }
 
+fn source_stream_single_string(
+    heap: &mut SourceHeap,
+    stream: &mut INCHI_IOS_STRING,
+    format: SourceFormat<'_>,
+    arguments: &mut FormatCursor<'_>,
+) -> Result<Option<i32>, SourceHeapError> {
+    // INCHI source ichi_io.c:1528:
+    //     ret = vsprintf(buf->pStr + buf->nUsedLength, lpszFormat, argList);
+    // INCHI✔️✔️: An unpadded single %s emits exactly its first-NUL prefix.
+    // Reuse the existing alias-aware publication, without a whole-string
+    // temporary. Select and validate the live argument after source growth,
+    // retaining stale-pointer errors if growth freed the argument's owner.
+    // Other conversions keep the single renderer and its ordered effects.
+    if !matches!(format, SourceFormat::Text("%s" | "%-s")) {
+        return Ok(None);
+    }
+    let value = next_format_string(arguments)?;
+    let (bytes, implicit_nul) = argument_string_bytes(heap, value)?;
+    let length = memchr::memchr(0, bytemuck::cast_slice(bytes))
+        .or_else(|| implicit_nul.then_some(bytes.len()))
+        .ok_or(SourceHeapError::MissingNulTerminator)?;
+    let length = i32::try_from(length).map_err(|_| SourceHeapError::SourceIntegerOverflow)?;
+    let value = match value {
+        BorrowedFormatString::Format(value) => value,
+        BorrowedFormatString::Content(bytes) => SourceFormat::Bytes(bytemuck::cast_slice(bytes)),
+    };
+    source_stream_literal(heap, stream, value, length).map(Some)
+}
+
 pub(crate) fn inchi_ios_print_format_arguments(
     heap: &mut SourceHeap,
     ios: Option<&mut INCHI_IOSTREAM>,
@@ -1230,6 +1335,11 @@ fn source_print_arguments<'a>(
             arguments: arguments.arguments,
             position: &mut output_arguments_position,
         };
+        if let Some(result) =
+            source_stream_single_string(heap, &mut ios.s, format, &mut output_arguments)?
+        {
+            return Ok(result);
+        }
         let output = source_vformat_format_cursor(heap, format, &mut output_arguments)?;
         let used =
             usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -1240,7 +1350,7 @@ fn source_print_arguments<'a>(
         if end >= destination.len() {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        for (destination, source) in destination[used..end].iter_mut().zip(&output) {
+        for (destination, source) in destination[used..end].iter_mut().zip(output.iter()) {
             *destination = *source as i8;
         }
         destination[end] = 0;
@@ -1641,6 +1751,11 @@ fn source_nodisplay_arguments<'a>(
             arguments: arguments.arguments,
             position: &mut output_arguments_position,
         };
+        if let Some(result) =
+            source_stream_single_string(heap, &mut ios.s, format, &mut output_arguments)?
+        {
+            return Ok(result);
+        }
         let output = source_vformat_format_cursor(heap, format, &mut output_arguments)?;
         let used =
             usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -1651,7 +1766,7 @@ fn source_nodisplay_arguments<'a>(
         if end >= destination.len() {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        for (destination, source) in destination[used..end].iter_mut().zip(&output) {
+        for (destination, source) in destination[used..end].iter_mut().zip(output.iter()) {
             *destination = *source as i8;
         }
         destination[end] = 0;
@@ -1974,6 +2089,11 @@ fn source_eprint_arguments<'a>(
             arguments: arguments.arguments,
             position: &mut output_arguments_position,
         };
+        if let Some(result) =
+            source_stream_single_string(heap, &mut ios.s, format, &mut output_arguments)?
+        {
+            return Ok(result);
+        }
         let output = source_vformat_format_cursor(heap, format, &mut output_arguments)?;
         let used =
             usize::try_from(ios.s.nUsedLength).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
@@ -2027,7 +2147,7 @@ pub(crate) fn source_vformat_format_arguments(
         arguments: arguments.arguments,
         position: &mut position,
     };
-    source_vformat_format_cursor(heap, format, &mut cursor)
+    source_vformat_format_cursor(heap, format, &mut cursor).map(PrintBytes::into_vec)
 }
 
 pub(crate) fn source_vformat_format_strings<'a>(
@@ -2051,21 +2171,21 @@ pub(crate) fn source_vformat_format_strings<'a>(
         arguments: arguments.arguments,
         position: &mut position,
     };
-    source_vformat_format_cursor(heap, format, &mut cursor)
+    source_vformat_format_cursor(heap, format, &mut cursor).map(PrintBytes::into_vec)
 }
 
 fn source_vformat_bytes(
     heap: &mut SourceHeap,
     format: &[i8],
     arguments: &mut FormatCursor<'_>,
-) -> Result<Vec<u8>, SourceHeapError> {
+) -> Result<PrintBytes, SourceHeapError> {
     // INCHI source ichi_io.c:1527..1528:
     //     my_va_start(argList, lpszFormat);
     //     ret = vsprintf(buf->pStr + buf->nUsedLength, lpszFormat, argList);
-    // INCHI❗❌: One existing renderer for admitted bytes; full-output Vec adds
-    // O(result bytes) scratch and a publication copy versus direct vsprintf.
-    // HUMAN defers this cost in INCHI-PERF-PRINTF-FULL-OUTPUT; removing0136
-    // is not cost repair/equivalence. Independent float/backend guards remain.
+    // INCHI❗❌: One renderer and unchanged byte/effect ordering. Small output
+    // stays in stack storage; long output grows dynamically. This removes
+    // short-lived heap allocations, not the remaining staging/publication
+    // copy versus vsprintf. Float conversion behavior is unchanged.
     // BEGIN SUPPLEMENTAL LIBC BYTE CONVERSIONS: third_party/musl/src/stdio/vfprintf.c591..604
     // INCHI✔️❗: 		narrow_c:
     // INCHI✔️❗: 		case 'c':
@@ -2082,12 +2202,19 @@ fn source_vformat_bytes(
     // INCHI✔️❗: 			fl &= ~ZERO_PAD;
     // INCHI✔️❗: 			break;
     // END SUPPLEMENTAL LIBC BYTE CONVERSIONS
-    let mut output = Vec::with_capacity(format.len());
+    let mut output = PrintBytes::new();
     let mut position = 0_usize;
     while position < format.len() {
         if format[position] as u8 != b'%' {
-            output.push(format[position] as u8);
-            position += 1;
+            // musl vfprintf.c:457 / 461
+            // INCHI✔️✔️: for (a=s; *s && *s!='%'; s++);
+            // INCHI✔️✔️: if (f) out(f, a, l);
+            // Format admission already bounded the first-NUL prefix. Emit
+            // each literal span once instead of resizing staging per byte.
+            let remaining = bytemuck::cast_slice(&format[position..]);
+            let count = memchr::memchr(b'%', remaining).unwrap_or(remaining.len());
+            output.extend_from_slice(&remaining[..count]);
+            position += count;
             continue;
         }
         position += 1;
@@ -2440,7 +2567,7 @@ fn source_printf_unsigned(value: u64, specifier: u8, scratch: &mut [u8; 22]) -> 
 
 #[allow(clippy::too_many_arguments)]
 fn append_printf_numeric(
-    output: &mut Vec<u8>,
+    output: &mut PrintBytes,
     prefix: &[u8],
     digits: &[u8],
     minimum_digits: usize,
@@ -2497,7 +2624,7 @@ fn append_printf_numeric(
 }
 
 fn append_printf_bytes(
-    output: &mut Vec<u8>,
+    output: &mut PrintBytes,
     bytes: &[u8],
     width: i32,
     left: bool,
@@ -2533,7 +2660,7 @@ fn source_vformat_format_cursor(
     heap: &mut SourceHeap,
     format: SourceFormat<'_>,
     arguments: &mut FormatCursor<'_>,
-) -> Result<Vec<u8>, SourceHeapError> {
+) -> Result<PrintBytes, SourceHeapError> {
     match format {
         SourceFormat::Pointer(pointer) => source_vformat_cursor(heap, pointer, arguments),
         SourceFormat::Bytes(bytes) => {
@@ -3269,6 +3396,7 @@ fn argument_string_bytes<'a>(
     }
 }
 
+#[inline]
 fn format_string_bytes<'a>(
     heap: &'a SourceHeap,
     value: SourceFormat<'a>,
@@ -3535,7 +3663,7 @@ pub(crate) fn source_vformat(
         arguments: &arguments.arguments,
         position: &mut arguments.position,
     };
-    source_vformat_cursor(heap, format, &mut cursor)
+    source_vformat_cursor(heap, format, &mut cursor).map(PrintBytes::into_vec)
 }
 
 pub(crate) fn source_vformat_arguments(
@@ -3554,7 +3682,7 @@ fn source_vformat_cursor(
     heap: &mut SourceHeap,
     format: SourceConstPointer<i8>,
     arguments: &mut FormatCursor<'_>,
-) -> Result<Vec<u8>, SourceHeapError> {
+) -> Result<PrintBytes, SourceHeapError> {
     let format_values = heap.slice(format)?;
     let format_length = memchr::memchr(0, bytemuck::cast_slice(format_values))
         .ok_or(SourceHeapError::MissingNulTerminator)?;
@@ -6454,6 +6582,62 @@ mod tests {
             failing_heap.slice(old.as_const()).unwrap(),
             &[b'A' as i8, 0]
         );
+    }
+
+    #[test]
+    fn single_string_stream_preserves_alias_and_growth_errors() {
+        // Compare the direct emission with the same formatter's general
+        // pointer-format path, including a long overlapping input and the
+        // source's growth-before-read order which frees that input owner.
+        for allocated in [512, 2] {
+            let run = |direct| {
+                let mut heap = SourceHeap::default();
+                let mut bytes = vec![0_i8; 512];
+                bytes[..200].fill(b'x' as i8);
+                let storage = heap.allocate(bytes).unwrap();
+                let general_format = source_format(&mut heap, "%s");
+                let mut stream = INCHI_IOSTREAM {
+                    type_: INCHI_IOS_TYPE_STRING as i32,
+                    s: INCHI_IOS_STRING {
+                        pStr: storage,
+                        nAllocatedLength: allocated,
+                        nUsedLength: 1,
+                        nPtr: 0,
+                    },
+                    ..INCHI_IOSTREAM::default()
+                };
+                let result = inchi_ios_print_format_arguments(
+                    &mut heap,
+                    Some(&mut stream),
+                    SourceMutPointer::null(),
+                    if direct {
+                        SourceFormat::Text("%s")
+                    } else {
+                        SourceFormat::Pointer(general_format.as_const())
+                    },
+                    &SourcePrintArguments {
+                        arguments: &[SourceFormatArgument::Bytes(storage.as_const())],
+                        position: 0,
+                    },
+                );
+                (
+                    result,
+                    stream.s.nUsedLength,
+                    heap.slice(stream.s.pStr.as_const()).unwrap().to_vec(),
+                )
+            };
+            let direct = run(true);
+            assert_eq!(direct, run(false));
+            if allocated == 512 {
+                assert_eq!(direct.0, Ok(200));
+                assert_eq!(direct.1, 201);
+                assert!(direct.2[..201].iter().all(|&byte| byte == b'x' as i8));
+                assert_eq!(direct.2[201], 0);
+            } else {
+                assert_eq!(direct.0, Err(SourceHeapError::MissingAllocation));
+                assert_eq!(direct.1, 1);
+            }
+        }
     }
 
     #[test]

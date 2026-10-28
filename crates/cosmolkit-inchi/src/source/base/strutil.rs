@@ -10974,44 +10974,58 @@ pub(crate) fn MarkDisconnectedComponents(
         }
         let atom_count =
             usize::try_from(num_atoms).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️✔️: nNewCompNumber = (AT_NUMB*)inchi_calloc(num_at, sizeof(nNewCompNumber[0]));
+        // INCHI✔️✔️: nPrevAtom = (AT_NUMB*)inchi_calloc(num_at, sizeof(nPrevAtom[0]));
+        // INCHI✔️✔️: iNeigh = (S_CHAR*)inchi_calloc(num_at, sizeof(iNeigh[0]));
+        // SAFETY: these are three fresh, distinct arrays of atom_count elements.
+        // No allocation is freed/resized during traversal. Their views end
+        // before the source frees the two DFS work arrays. Atom access remains
+        // lazy, preserving reached invalid-input errors without copying atoms.
+        let mut number_view = unsafe { heap.stable_slice_mut(new_component_numbers)? };
+        let mut previous_view = unsafe { heap.stable_slice_mut(previous_atoms)? };
+        let mut neighbor_view = unsafe { heap.stable_slice_mut(neighbor_indices)? };
+        let numbers = number_view.prefix_mut(atom_count)?;
+        let previous = previous_view.prefix_mut(atom_count)?;
+        let neighbors = neighbor_view.prefix_mut(atom_count)?;
+        let mut atoms = crate::source_types::NativeSourceArray::new(original.at);
         for start in 0..atom_count {
-            if heap.slice(new_component_numbers.as_const())?[start] != 0 {
+            if numbers[start] != 0 {
                 continue;
             }
             num_components = num_components.wrapping_add(1);
             let first_atom = start;
             let mut current_atom = start;
-            heap.slice_mut(new_component_numbers)?[first_atom] = num_components as u16;
+            numbers[first_atom] = num_components as u16;
             loop {
-                let atom = heap
-                    .slice(original.at.as_const())?
-                    .get(current_atom)
-                    .cloned()
-                    .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                let neighbor_index = heap.slice(neighbor_indices.as_const())?[current_atom];
-                if neighbor_index < atom.valence {
+                // INCHI✔️✔️: if (iNeigh[cur_at] < at[cur_at].valence)
+                // SAFETY: at remains live and unresized; scalar references do
+                // not escape these closures or overlap a write.
+                let valence =
+                    unsafe { atoms.read(heap, current_atom as i64, |atom| atom.valence)? };
+                let neighbor_index = neighbors[current_atom];
+                if neighbor_index < valence {
                     let neighbor_index = usize::try_from(i32::from(neighbor_index))
                         .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+                    // INCHI✔️✔️: nxt_at = at[cur_at].neighbor[ineigh_incr];
+                    // SAFETY: same stable atom allocation and nonescaping read.
                     let next_atom = usize::from(
-                        *atom
-                            .neighbor
-                            .get(neighbor_index)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                        unsafe {
+                            atoms.read(heap, current_atom as i64, |atom| {
+                                atom.neighbor.get(neighbor_index).copied()
+                            })?
+                        }
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
                     );
-                    heap.slice_mut(neighbor_indices)?[current_atom] =
-                        heap.slice(neighbor_indices.as_const())?[current_atom].wrapping_add(1);
-                    if *heap
-                        .slice(new_component_numbers.as_const())?
+                    neighbors[current_atom] = neighbors[current_atom].wrapping_add(1);
+                    if *numbers
                         .get(next_atom)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?
                         == 0
                     {
-                        *heap
-                            .slice_mut(new_component_numbers)?
+                        *numbers
                             .get_mut(next_atom)
                             .ok_or(SourceHeapError::PointerOutOfBounds)? = num_components as u16;
-                        *heap
-                            .slice_mut(previous_atoms)?
+                        *previous
                             .get_mut(next_atom)
                             .ok_or(SourceHeapError::PointerOutOfBounds)? = current_atom as u16;
                         current_atom = next_atom;
@@ -11019,8 +11033,7 @@ pub(crate) fn MarkDisconnectedComponents(
                 } else if current_atom == first_atom {
                     break;
                 } else {
-                    current_atom =
-                        usize::from(heap.slice(previous_atoms.as_const())?[current_atom]);
+                    current_atom = usize::from(previous[current_atom]);
                 }
             }
         }
@@ -11047,79 +11060,89 @@ pub(crate) fn MarkDisconnectedComponents(
 
         let component_count =
             usize::try_from(num_components).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        // INCHI✔️✔️: nCurAtLen = (AT_NUMB*)inchi_calloc((long long)num_components + 1, sizeof(nCurAtLen[0]));
+        // INCHI✔️✔️: component_nbr = (AT_TRIPLE*)inchi_calloc((long long)num_components + 1, sizeof(component_nbr[0]));
+        // SAFETY: these fresh arrays are distinct from each other, the atom
+        // array and both old input arrays. No free/resize occurs in this phase.
+        // The earlier new-component array also remains live through cleanup.
+        let mut row_view = unsafe { heap.stable_slice_mut(component_rows)? };
+        let mut length_view = unsafe { heap.stable_slice_mut(current_lengths)? };
+        let mut old_view = unsafe { heap.stable_slice_mut(old_component_numbers)? };
+        let rows = row_view.prefix_mut(component_count + 1)?;
+        let lengths = length_view.prefix_mut(component_count + 1)?;
+        let old_numbers = old_view.prefix_mut(old_capacity as usize + 1)?;
+        let mut old_input = crate::source_types::NativeSourceArray::new(original.nOldCompNumber);
         for index in 0..component_count {
-            let row = &mut heap.slice_mut(component_rows)?[index];
+            let row = &mut rows[index];
             row[0] = 0;
             row[1] = index as u16;
         }
         for atom_index in 0..atom_count {
-            let component = usize::from(heap.slice(new_component_numbers.as_const())?[atom_index])
+            let component = usize::from(numbers[atom_index])
                 .checked_sub(1)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            heap.slice_mut(component_rows)?[component][0] =
-                heap.slice(component_rows.as_const())?[component][0].wrapping_add(1);
+            rows[component][0] = rows[component][0].wrapping_add(1);
         }
-        heap.slice_mut(component_rows)?[..component_count]
-            .sort_by(|first, second| cmp_components(first, second).cmp(&0));
+        rows[..component_count].sort_by(|first, second| cmp_components(first, second).cmp(&0));
         for index in 0..component_count {
-            let row = heap.slice(component_rows.as_const())?[index];
-            heap.slice_mut(current_lengths)?[index] = row[0];
-            heap.slice_mut(component_rows)?[usize::from(row[1])][2] = index.wrapping_add(1) as u16;
+            let row = rows[index];
+            lengths[index] = row[0];
+            rows[usize::from(row[1])][2] = index.wrapping_add(1) as u16;
         }
 
         let no_component = num_atoms.wrapping_add(1) as u16;
         for atom_index in 0..atom_count {
-            let old_index = usize::from(heap.slice(new_component_numbers.as_const())?[atom_index])
+            let old_index = usize::from(numbers[atom_index])
                 .checked_sub(1)
                 .ok_or(SourceHeapError::PointerOutOfBounds)?;
-            let new_component =
-                heap.slice(component_rows.as_const())?[old_index][2].wrapping_sub(1);
+            let new_component = rows[old_index][2].wrapping_sub(1);
             if process_old_component_numbers != 0 {
-                let old_component = heap.slice(original.at.as_const())?[atom_index].component;
+                // SAFETY: the atom allocation remains live; read returns a scalar.
+                let old_component =
+                    unsafe { atoms.read(heap, atom_index as i64, |atom| atom.component)? };
                 let new_index = usize::from(new_component);
-                let mapped = heap.slice(old_component_numbers.as_const())?[new_index];
+                let mapped = old_numbers[new_index];
                 if old_component == 0 {
-                    heap.slice_mut(old_component_numbers)?[new_index] = no_component;
+                    old_numbers[new_index] = no_component;
                 } else if mapped != old_component {
                     if mapped == 0 {
-                        heap.slice_mut(old_component_numbers)?[new_index] = old_component;
+                        old_numbers[new_index] = old_component;
                     } else {
                         for component_index in 0..component_count {
-                            let value =
-                                heap.slice(old_component_numbers.as_const())?[component_index];
+                            let value = old_numbers[component_index];
                             if value == old_component || value == mapped {
-                                heap.slice_mut(old_component_numbers)?[component_index] =
-                                    no_component;
+                                old_numbers[component_index] = no_component;
                             }
                         }
                     }
                 }
             }
-            heap.slice_mut(original.at)?[atom_index].component = new_component.wrapping_add(1);
+            // SAFETY: scalar-only mutation; no overlapping reference survives.
+            unsafe {
+                atoms.update(heap, atom_index as i64, |atom| {
+                    atom.component = new_component.wrapping_add(1);
+                })?;
+            }
         }
         if process_old_component_numbers != 0 {
             for component_index in 0..component_count {
-                let value = heap.slice(old_component_numbers.as_const())?[component_index];
+                let value = old_numbers[component_index];
                 if value == no_component {
-                    heap.slice_mut(old_component_numbers)?[component_index] = 0;
+                    old_numbers[component_index] = 0;
                 } else if value != 0 {
                     let old_index = usize::from(value)
                         .checked_sub(1)
                         .ok_or(SourceHeapError::PointerOutOfBounds)?;
-                    if *heap
-                        .slice(original.nOldCompNumber.as_const())?
-                        .get(old_index)
-                        .ok_or(SourceHeapError::PointerOutOfBounds)?
-                        == 0
-                    {
-                        heap.slice_mut(old_component_numbers)?[component_index] = 0;
+                    // SAFETY: old input is not freed until after this phase. Its
+                    // view is lazy and scalar, including possible field aliases.
+                    if unsafe { old_input.read(heap, old_index as i64, |value| *value)? } == 0 {
+                        old_numbers[component_index] = 0;
                     }
                 }
             }
         } else {
             for component_index in 0..component_count {
-                heap.slice_mut(old_component_numbers)?[component_index] =
-                    component_index.wrapping_add(1) as u16;
+                old_numbers[component_index] = component_index.wrapping_add(1) as u16;
             }
         }
         ret = num_components;

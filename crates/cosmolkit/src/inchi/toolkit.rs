@@ -292,21 +292,7 @@ impl ic::MolToInchiToolkit for Toolkit {
             .atoms()
             .get(index as usize)
             .ok_or_else(|| error("atom index out of range"))?;
-        // RDKit✔️✔️: int res = getNumExplicitHs() + getNumImplicitHs();
-        // RDKit✔️✔️: if (df_noImplicit) {
-        // RDKit✔️✔️:   return 0;
-        // RDKit✔️✔️: }
-        // Atom.cpp:286-307; direct scalar access preserves O(1) cost.
-        let implicit = if a.no_implicit {
-            0
-        } else {
-            u32::try_from(
-                a.cached_implicit_valence
-                    .ok_or_else(|| error("implicit valence is not initialized"))?,
-            )
-            .map_err(error)?
-        };
-        Ok(a.num_explicit_hydrogens + implicit)
+        total_hydrogens(a)
     }
     fn calc_implicit_valence(
         &mut self,
@@ -335,6 +321,24 @@ impl ic::MolToInchiToolkit for Toolkit {
             .ok_or_else(|| error("atom index out of range"))?;
         Ok(u32::try_from(degree).map_err(error)? + self.total_num_hydrogens(graph, index)?)
     }
+}
+
+pub(super) fn total_hydrogens(a: &ic::InchiAtom) -> Result<u32, Error> {
+    // RDKit✔️✔️: int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit✔️✔️: if (df_noImplicit) {
+    // RDKit✔️✔️:   return 0;
+    // RDKit✔️✔️: }
+    // Atom.cpp:286-307; direct scalar access preserves O(1) cost.
+    let implicit = if a.no_implicit {
+        0
+    } else {
+        u32::try_from(
+            a.cached_implicit_valence
+                .ok_or_else(|| error("implicit valence is not initialized"))?,
+        )
+        .map_err(error)?
+    };
+    Ok(a.num_explicit_hydrogens + implicit)
 }
 
 impl ic::InchiToMolToolkit for Toolkit {
@@ -462,7 +466,7 @@ impl ic::InchiToMolToolkit for Toolkit {
     }
 }
 
-fn bond_type(value: crate::BondOrder) -> ic::InchiBondType {
+pub(super) fn bond_type(value: crate::BondOrder) -> ic::InchiBondType {
     match value {
         crate::BondOrder::Unspecified => ic::InchiBondType::Unspecified,
         crate::BondOrder::Single => ic::InchiBondType::Single,
@@ -489,7 +493,7 @@ fn bond_type(value: crate::BondOrder) -> ic::InchiBondType {
     }
 }
 
-fn direction(value: crate::BondDirection) -> ic::InchiBondDirection {
+pub(super) fn direction(value: crate::BondDirection) -> ic::InchiBondDirection {
     match value {
         crate::BondDirection::None => ic::InchiBondDirection::None,
         crate::BondDirection::BeginWedge => ic::InchiBondDirection::BeginWedge,
@@ -501,7 +505,7 @@ fn direction(value: crate::BondDirection) -> ic::InchiBondDirection {
     }
 }
 
-fn stereo(value: crate::BondStereo) -> ic::InchiBondStereo {
+pub(super) fn stereo(value: crate::BondStereo) -> ic::InchiBondStereo {
     match value {
         crate::BondStereo::None => ic::InchiBondStereo::None,
         crate::BondStereo::Any => ic::InchiBondStereo::Any,
@@ -514,7 +518,7 @@ fn stereo(value: crate::BondStereo) -> ic::InchiBondStereo {
     }
 }
 
-fn chirality(value: crate::ChiralTag) -> ic::InchiChiralTag {
+pub(super) fn chirality(value: crate::ChiralTag) -> ic::InchiChiralTag {
     match value {
         crate::ChiralTag::Unspecified => ic::InchiChiralTag::Unspecified,
         crate::ChiralTag::TetrahedralCw => ic::InchiChiralTag::TetrahedralCw,

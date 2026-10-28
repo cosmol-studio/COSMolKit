@@ -11,6 +11,7 @@ use crate::source::base::ichisort::{
     sort_rank_order,
 };
 use crate::source::base::util::inchi_free;
+use crate::source_types::NativeSourceArray;
 use crate::source_types::local_ichimap2::{
     CHECKING_STEREOBOND, CHECKING_STEREOCENTER, COMP_STEREO_SUCCESS, MAP_MODE_C2, MAP_MODE_C2v,
     MAP_MODE_S4, MAP_MODE_STD, NEIGH_MODE_CHAIN, NEIGH_MODE_RING, NOT_WELL_DEF_UNDF,
@@ -671,15 +672,23 @@ pub(crate) fn SortedEquInfoToRanks(
     let mut nNumChanges = 0_i32;
     let i_init = num_atoms.wrapping_sub(1);
     if i_init >= 0 {
-        let mut j = i32::from(source_get(heap, nAtomNumber, i_init)?);
-        let mut rOld = source_get(heap, nSymmRank, j)?;
+        let mut order = NativeSourceArray::new(nAtomNumber);
+        let mut symmetry = NativeSourceArray::new(nSymmRank);
+        let mut ranks = NativeSourceArray::new(nRank);
+        // INCHI✔️❗: The source loop above performs scalar accesses to three
+        // fixed arrays. This phase has no allocation/free/resize or callbacks.
+        // SAFETY: cache addresses, not values; every closure ends before the
+        // next access, including when input and output arrays overlap. Lazy
+        // admission retains reached-error ordering and partial writes.
+        let mut j = unsafe { order.read(heap, i64::from(i_init), |v| i32::from(*v))? };
+        let mut rOld = unsafe { symmetry.read(heap, i64::from(j), |v| *v)? };
         let mut rNew = num_atoms as AT_RANK;
-        source_set(heap, nRank, j, num_atoms as AT_RANK)?;
+        unsafe { ranks.update(heap, i64::from(j), |v| *v = rNew)? };
         nNumDiffRanks = 1;
         let mut i = i_init;
         while i > 0 {
-            j = i32::from(source_get(heap, nAtomNumber, i.wrapping_sub(1))?);
-            let current_symmetry_rank = source_get(heap, nSymmRank, j)?;
+            j = unsafe { order.read(heap, i64::from(i.wrapping_sub(1)), |v| i32::from(*v))? };
+            let current_symmetry_rank = unsafe { symmetry.read(heap, i64::from(j), |v| *v)? };
             if current_symmetry_rank != rOld {
                 nNumDiffRanks = nNumDiffRanks.wrapping_add(1);
                 rNew = i as AT_RANK;
@@ -688,7 +697,7 @@ pub(crate) fn SortedEquInfoToRanks(
                 ));
                 rOld = current_symmetry_rank;
             }
-            source_set(heap, nRank, j, rNew)?;
+            unsafe { ranks.update(heap, i64::from(j), |v| *v = rNew)? };
             i = i.wrapping_sub(1);
         }
     }
@@ -772,6 +781,7 @@ pub(crate) fn switch_ptrs(p1: &mut SourceMutPointer<AT_RANK>, p2: &mut SourceMut
     *p2 = tmp;
 }
 
+#[inline]
 fn source_get<T: Copy + 'static>(
     heap: &SourceHeap,
     pointer: SourceMutPointer<T>,
@@ -800,6 +810,7 @@ fn source_get<T: Copy + 'static>(
         .ok_or(SourceHeapError::PointerOutOfBounds)
 }
 
+#[inline]
 fn source_set<T: Copy + 'static>(
     heap: &mut SourceHeap,
     pointer: SourceMutPointer<T>,
@@ -3862,173 +3873,158 @@ pub(crate) fn parity_of_mapped_atom2(
         neigh_rank_from_canon[i] = rank_at(nCanonRankFrom, i32::from(from_neighbour))?;
     }
 
-    // INCHI✔️❌: The source frame above uses fixed rank arrays and exposes
-    // their addresses through m_pn_RankForSort. Retain genuine model roots
-    // for that existing pointer representation; compare their stored data,
-    // not independent mirrors. Input errors still precede model admissions.
-    // INCHI-PERF-MAPPED-ATOM-RANK-STORAGE records the extra allocations and
-    // arena costs; this is not native performance equivalence.
-    let from_stack = heap.allocate_model_storage(neigh_rank_from.to_vec())?;
-    let to_stack = match heap.allocate_model_storage(neigh_rank_to.to_vec()) {
-        Ok(pointer) => pointer,
-        Err(error) => {
-            heap.free(from_stack)?;
-            return Err(error);
-        }
-    };
-    let canon_stack = match heap.allocate_model_storage(vec![0_u16; 4]) {
-        Ok(pointer) => pointer,
-        Err(error) => {
-            let free_from = heap.free(from_stack);
-            let free_to = heap.free(to_stack);
-            free_from.and(free_to)?;
-            return Err(error);
-        }
-    };
-    let result = (|| -> Result<i32, SourceHeapError> {
-        let neigh_rank_from = heap.slice(from_stack.as_const())?;
-        let neigh_rank_to = heap.slice(to_stack.as_const())?;
-        pCG.m_pn_RankForSort = from_stack.as_const();
-        pCG.m_nNumCompNeighborsRanksCountEql = 0;
-        let _num_trans_from = insertions_sort(
-            bytemuck::cast_slice_mut(&mut neigh_number_from),
-            count,
-            std::mem::size_of::<AT_RANK>(),
-            &mut |left, right| {
-                let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                CompNeighborsRanksCountEql(left, right, neigh_rank_from, pCG)
-            },
-        )?;
-
-        if pCG.m_nNumCompNeighborsRanksCountEql != 0 {
-            let mut r_canon_from_min = MAX_ATOMS as i32 + 1;
-            let mut neigh_canon_from_min = 0_usize;
-            let mut r = 0_i32;
-            let mut neigh1 = usize::from(neigh_number_from[0]);
-            let mut r1 = i32::from(neigh_rank_from[neigh1]);
-            let mut i = 1_usize;
-            while i < count {
-                let neigh2 = usize::from(neigh_number_from[i]);
-                let r2 = i32::from(neigh_rank_from[neigh2]);
-                if r2 == r1 {
-                    if r != r2 {
-                        r = r2;
-                        let r_canon_from = i32::from(neigh_rank_from_canon[neigh1]);
-                        if r_canon_from < r_canon_from_min {
-                            r_canon_from_min = r_canon_from;
-                            neigh_canon_from_min = neigh1;
-                        }
-                    }
-                    let r_canon_from = i32::from(neigh_rank_from_canon[neigh2]);
-                    if r_canon_from < r_canon_from_min {
-                        r_canon_from_min = r_canon_from;
-                        neigh_canon_from_min = neigh2;
-                    }
-                }
-                r1 = r2;
-                neigh1 = neigh2;
-                i += 1;
-            }
-            if r != 0 {
-                r1 = i32::from(neigh_rank_from[neigh_canon_from_min]);
-                let mut j = 0_usize;
-                if let Some(en) = pEN.as_deref_mut() {
-                    for i in 0..count {
-                        if r1 == i32::from(neigh_rank_to[i]) {
-                            en.to_at[j] = to_atom.neighbor[i];
-                            j += 1;
-                        }
-                    }
-                    let _ = insertions_sort(
-                        bytemuck::cast_slice_mut(&mut en.to_at),
-                        j,
+    // INCHI✔️❗: The source frame above uses actual fixed rank arrays.
+    // Expose those same arrays through scoped bindings, not allocated copies.
+    // RankForSort retains its source identity during the frame and becomes a
+    // stale checked handle on exit. Directory costs remain, payload copies do not.
+    let mut neigh_rank_to_canon = [0_u16; 4];
+    // SAFETY: these synchronous insertion-sort consumers never move the heap
+    // or retain raw addresses. Each view ends before an overlapping mutation;
+    // all three directory bindings expire before the stack arrays go away.
+    unsafe {
+        heap.with_borrowed_storage(&mut neigh_rank_from, |heap, from_stack| {
+            heap.with_borrowed_storage(&mut neigh_rank_to, |heap, to_stack| {
+                heap.with_borrowed_storage(&mut neigh_rank_to_canon, |heap, canon_stack| {
+                    let neigh_rank_from = heap.slice(from_stack.as_const())?;
+                    let neigh_rank_to = heap.slice(to_stack.as_const())?;
+                    pCG.m_pn_RankForSort = from_stack.as_const();
+                    pCG.m_nNumCompNeighborsRanksCountEql = 0;
+                    let _num_trans_from = insertions_sort(
+                        bytemuck::cast_slice_mut(&mut neigh_number_from),
+                        count,
                         std::mem::size_of::<AT_RANK>(),
                         &mut |left, right| {
                             let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
                             let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                            Ok(CompRanksInvOrd(left, right))
+                            CompNeighborsRanksCountEql(left, right, neigh_rank_from, pCG)
                         },
                     )?;
-                    en.num_to = j as i32;
-                    en.from_at =
-                        heap.element_signed(at.as_const(), from_at)?.neighbor[neigh_canon_from_min];
-                    en.rank = r1 as AT_RANK;
-                    en.canon_rank = r_canon_from_min as AT_RANK;
-                } else {
-                    for &rank in neigh_rank_to.iter().take(count) {
-                        if r1 == i32::from(rank) {
-                            j += 1;
+
+                    if pCG.m_nNumCompNeighborsRanksCountEql != 0 {
+                        let mut r_canon_from_min = MAX_ATOMS as i32 + 1;
+                        let mut neigh_canon_from_min = 0_usize;
+                        let mut r = 0_i32;
+                        let mut neigh1 = usize::from(neigh_number_from[0]);
+                        let mut r1 = i32::from(neigh_rank_from[neigh1]);
+                        let mut i = 1_usize;
+                        while i < count {
+                            let neigh2 = usize::from(neigh_number_from[i]);
+                            let r2 = i32::from(neigh_rank_from[neigh2]);
+                            if r2 == r1 {
+                                if r != r2 {
+                                    r = r2;
+                                    let r_canon_from = i32::from(neigh_rank_from_canon[neigh1]);
+                                    if r_canon_from < r_canon_from_min {
+                                        r_canon_from_min = r_canon_from;
+                                        neigh_canon_from_min = neigh1;
+                                    }
+                                }
+                                let r_canon_from = i32::from(neigh_rank_from_canon[neigh2]);
+                                if r_canon_from < r_canon_from_min {
+                                    r_canon_from_min = r_canon_from;
+                                    neigh_canon_from_min = neigh2;
+                                }
+                            }
+                            r1 = r2;
+                            neigh1 = neigh2;
+                            i += 1;
                         }
+                        if r != 0 {
+                            r1 = i32::from(neigh_rank_from[neigh_canon_from_min]);
+                            let mut j = 0_usize;
+                            if let Some(en) = pEN.as_deref_mut() {
+                                for i in 0..count {
+                                    if r1 == i32::from(neigh_rank_to[i]) {
+                                        en.to_at[j] = to_atom.neighbor[i];
+                                        j += 1;
+                                    }
+                                }
+                                let _ = insertions_sort(
+                                    bytemuck::cast_slice_mut(&mut en.to_at),
+                                    j,
+                                    std::mem::size_of::<AT_RANK>(),
+                                    &mut |left, right| {
+                                        let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                                        let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                                        Ok(CompRanksInvOrd(left, right))
+                                    },
+                                )?;
+                                en.num_to = j as i32;
+                                en.from_at = heap.element_signed(at.as_const(), from_at)?.neighbor
+                                    [neigh_canon_from_min];
+                                en.rank = r1 as AT_RANK;
+                                en.canon_rank = r_canon_from_min as AT_RANK;
+                            } else {
+                                for &rank in neigh_rank_to.iter().take(count) {
+                                    if r1 == i32::from(rank) {
+                                        j += 1;
+                                    }
+                                }
+                            }
+                            if j <= 1 || r1 == 0 || r_canon_from_min > MAX_ATOMS as i32 {
+                                return Ok(0);
+                            }
+                            return Ok(r.wrapping_neg());
+                        }
+                        return Ok(0);
                     }
-                }
-                if j <= 1 || r1 == 0 || r_canon_from_min > MAX_ATOMS as i32 {
-                    return Ok(0);
-                }
-                return Ok(r.wrapping_neg());
-            }
-            return Ok(0);
-        }
 
-        if !(AB_MIN_WELL_DEFINED_PARITY as i8..=AB_MAX_WELL_DEFINED_PARITY as i8)
-            .contains(&to_atom.parity)
-        {
-            return Ok(i32::from(to_atom.parity));
-        }
+                    if !(AB_MIN_WELL_DEFINED_PARITY as i8..=AB_MAX_WELL_DEFINED_PARITY as i8)
+                        .contains(&to_atom.parity)
+                    {
+                        return Ok(i32::from(to_atom.parity));
+                    }
 
-        pCG.m_pn_RankForSort = to_stack.as_const();
-        let mut num_trans_to = insertions_sort(
-            bytemuck::cast_slice_mut(&mut neigh_number_to),
-            count,
-            std::mem::size_of::<AT_RANK>(),
-            &mut |left, right| {
-                let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                CompNeighborsRanksCountEql(left, right, neigh_rank_to, pCG)
-            },
-        )?;
-        // Only this fresh, not-yet-published canonical buffer is detached.
-        // No callback runs in the projection; from/to roots remain readable.
-        // Sorted neighbor numbers permute 0..count (count <= 4), so every
-        // reached store addresses this buffer, including partial mismatch.
-        let mapped = heap.with_slice_mut_and_heap(canon_stack, |canon, heap| {
-            let from = heap.slice(from_stack.as_const())?;
-            let to = heap.slice(to_stack.as_const())?;
-            for i in 0..count {
-                let j = usize::from(neigh_number_to[i]);
-                let k = usize::from(neigh_number_from[i]);
-                if to[j] != from[k] {
-                    return Ok(false);
-                }
-                canon[j] = neigh_rank_from_canon[k];
-            }
-            Ok(true)
-        })?;
-        if !mapped {
-            return Ok(0);
-        }
-        let neigh_rank_to_canon = heap.slice(canon_stack.as_const())?;
-        pCG.m_pn_RankForSort = canon_stack.as_const();
-        num_trans_to = num_trans_to.wrapping_add(insertions_sort(
-            bytemuck::cast_slice_mut(&mut neigh_number_to),
-            count,
-            std::mem::size_of::<AT_RANK>(),
-            &mut |left, right| {
-                let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
-                let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
-                CompNeighborsRanksCountEql(left, right, neigh_rank_to_canon, pCG)
-            },
-        )?);
-        Ok(2_i32.wrapping_sub(num_trans_to.wrapping_add(i32::from(to_atom.parity)) % 2))
-    })();
-
-    let free_from = heap.free(from_stack);
-    let free_to = heap.free(to_stack);
-    let free_canon = heap.free(canon_stack);
-    let cleanup = free_from.and(free_to).and(free_canon);
-    match (result, cleanup) {
-        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
-        (Ok(value), Ok(())) => Ok(value),
+                    pCG.m_pn_RankForSort = to_stack.as_const();
+                    let mut num_trans_to = insertions_sort(
+                        bytemuck::cast_slice_mut(&mut neigh_number_to),
+                        count,
+                        std::mem::size_of::<AT_RANK>(),
+                        &mut |left, right| {
+                            let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                            let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                            CompNeighborsRanksCountEql(left, right, neigh_rank_to, pCG)
+                        },
+                    )?;
+                    // Only this fresh, not-yet-published canonical buffer is detached.
+                    // No callback runs in the projection; from/to roots remain readable.
+                    // Sorted neighbor numbers permute 0..count (count <= 4), so every
+                    // reached store addresses this buffer, including partial mismatch.
+                    let mapped = heap.with_slice_mut_and_heap(canon_stack, |canon, heap| {
+                        let from = heap.slice(from_stack.as_const())?;
+                        let to = heap.slice(to_stack.as_const())?;
+                        for i in 0..count {
+                            let j = usize::from(neigh_number_to[i]);
+                            let k = usize::from(neigh_number_from[i]);
+                            if to[j] != from[k] {
+                                return Ok(false);
+                            }
+                            canon[j] = neigh_rank_from_canon[k];
+                        }
+                        Ok(true)
+                    })?;
+                    if !mapped {
+                        return Ok(0);
+                    }
+                    let neigh_rank_to_canon = heap.slice(canon_stack.as_const())?;
+                    pCG.m_pn_RankForSort = canon_stack.as_const();
+                    num_trans_to = num_trans_to.wrapping_add(insertions_sort(
+                        bytemuck::cast_slice_mut(&mut neigh_number_to),
+                        count,
+                        std::mem::size_of::<AT_RANK>(),
+                        &mut |left, right| {
+                            let left = AT_RANK::from_ne_bytes([left[0], left[1]]);
+                            let right = AT_RANK::from_ne_bytes([right[0], right[1]]);
+                            CompNeighborsRanksCountEql(left, right, neigh_rank_to_canon, pCG)
+                        },
+                    )?);
+                    Ok(
+                        2_i32
+                            .wrapping_sub(num_trans_to.wrapping_add(i32::from(to_atom.parity)) % 2),
+                    )
+                })
+            })
+        })
     }
 }
 
@@ -5915,6 +5911,8 @@ pub(crate) fn CheckNextSymmNeighborsAndBonds(
     // INCHI✔️✔️: #define PROPAGATE_ILL_DEF_STEREO    1
     // END INCHI ACTIVE MACRO CONFIGURATION
 
+    let mut arrays =
+        SymmetryPathArrays::new(nVisited1, nVisited2, nVisitOrd1, nVisitOrd2, nRank1, nRank2);
     check_next_symm_neighbors_and_bonds_input(
         heap,
         at,
@@ -5923,13 +5921,40 @@ pub(crate) fn CheckNextSymmNeighborsAndBonds(
         n1,
         n2,
         StereoRankInput::Stored(nAvoidCheckAtom),
-        nVisited1,
-        nVisited2,
-        nVisitOrd1,
-        nVisitOrd2,
-        nRank1,
-        nRank2,
+        &mut arrays,
     )
+}
+
+// The recursive source traversal neither allocates nor frees/resizes these
+// six arrays. Retain only addresses, never snapshots or long-lived references.
+// A single frame shares the lazy admissions through the whole traversal.
+struct SymmetryPathArrays {
+    visited1: NativeSourceArray<AT_RANK>,
+    visited2: NativeSourceArray<AT_RANK>,
+    order1: NativeSourceArray<AT_RANK>,
+    order2: NativeSourceArray<AT_RANK>,
+    rank1: NativeSourceArray<AT_RANK>,
+    rank2: NativeSourceArray<AT_RANK>,
+}
+
+impl SymmetryPathArrays {
+    fn new(
+        visited1: SourceMutPointer<AT_RANK>,
+        visited2: SourceMutPointer<AT_RANK>,
+        order1: SourceMutPointer<AT_RANK>,
+        order2: SourceMutPointer<AT_RANK>,
+        rank1: SourceMutPointer<AT_RANK>,
+        rank2: SourceMutPointer<AT_RANK>,
+    ) -> Self {
+        Self {
+            visited1: NativeSourceArray::new(visited1),
+            visited2: NativeSourceArray::new(visited2),
+            order1: NativeSourceArray::new(order1),
+            order2: NativeSourceArray::new(order2),
+            rank1: NativeSourceArray::new(rank1),
+            rank2: NativeSourceArray::new(rank2),
+        }
+    }
 }
 
 #[allow(non_snake_case, clippy::too_many_arguments)]
@@ -5941,12 +5966,7 @@ fn check_next_symm_neighbors_and_bonds_input(
     n1: AT_RANK,
     n2: AT_RANK,
     nAvoidCheckAtom: StereoRankInput<'_>,
-    nVisited1: SourceMutPointer<AT_RANK>,
-    nVisited2: SourceMutPointer<AT_RANK>,
-    nVisitOrd1: SourceMutPointer<AT_RANK>,
-    nVisitOrd2: SourceMutPointer<AT_RANK>,
-    nRank1: SourceMutPointer<AT_RANK>,
-    nRank2: SourceMutPointer<AT_RANK>,
+    arrays: &mut SymmetryPathArrays,
 ) -> Result<i32, SourceHeapError> {
     // VERBATIM SOURCE FRAGMENT: ichimap2.c:2060..2186 C420 sole CheckNextSymmNeighborsAndBonds rank-input kernel
     // int CheckNextSymmNeighborsAndBonds( sp_ATOM *at,
@@ -6080,11 +6100,16 @@ fn check_next_symm_neighbors_and_bonds_input(
     // INCHI✔️❌: One original source algorithm over reached stored or local
     // rank reads. No upfront admission/copy/allocation; checked view costs OPEN.
 
-    if source_get(heap, nRank1, i32::from(n1))? != source_get(heap, nRank2, i32::from(n2))? {
+    // SAFETY: the enclosing traversal retains all six allocations without
+    // resizing/freeing them. Scalar borrows end before the next access;
+    // aliasing arrays therefore see the same writes as the C pointers.
+    if unsafe { arrays.rank1.read(heap, i64::from(n1), |v| *v)? }
+        != unsafe { arrays.rank2.read(heap, i64::from(n2), |v| *v)? }
+    {
         return Ok(-1);
     }
-    let visited1 = source_get(heap, nVisited1, i32::from(n1))?;
-    let visited2 = source_get(heap, nVisited2, i32::from(n2))?;
+    let visited1 = unsafe { arrays.visited1.read(heap, i64::from(n1), |v| *v)? };
+    let visited2 = unsafe { arrays.visited2.read(heap, i64::from(n2), |v| *v)? };
     match i32::from(visited1 == 0).wrapping_add(i32::from(visited2 == 0)) {
         0 => {
             if visited1 != n2.wrapping_add(1) || visited2 != n1.wrapping_add(1) {
@@ -6094,7 +6119,8 @@ fn check_next_symm_neighbors_and_bonds_input(
         1 => return Ok(-1),
         _ => {}
     }
-    if source_get(heap, nVisitOrd1, i32::from(n1))? != source_get(heap, nVisitOrd2, i32::from(n2))?
+    if unsafe { arrays.order1.read(heap, i64::from(n1), |v| *v)? }
+        != unsafe { arrays.order2.read(heap, i64::from(n2), |v| *v)? }
     {
         return Ok(-1);
     }
@@ -6373,6 +6399,43 @@ fn create_check_symm_paths_input(
     bParitiesInverted: &mut i32,
     mode: i32,
 ) -> Result<i32, SourceHeapError> {
+    let mut arrays =
+        SymmetryPathArrays::new(nVisited1, nVisited2, nVisitOrd1, nVisitOrd2, nRank1, nRank2);
+    create_check_symm_paths_cached(
+        heap,
+        at,
+        prev1,
+        cur1,
+        prev2,
+        cur2,
+        nAvoidCheckAtom,
+        &mut arrays,
+        nl1,
+        nl2,
+        nCanonRank,
+        nLength,
+        bParitiesInverted,
+        mode,
+    )
+}
+
+#[allow(non_snake_case, clippy::too_many_arguments)]
+fn create_check_symm_paths_cached(
+    heap: &mut SourceHeap,
+    at: SourceMutPointer<sp_ATOM>,
+    prev1: AT_RANK,
+    cur1: AT_RANK,
+    prev2: AT_RANK,
+    cur2: AT_RANK,
+    nAvoidCheckAtom: StereoRankInput<'_>,
+    arrays: &mut SymmetryPathArrays,
+    nl1: SourceMutPointer<NEIGH_LIST>,
+    nl2: SourceMutPointer<NEIGH_LIST>,
+    nCanonRank: SourceMutPointer<AT_RANK>,
+    nLength: &mut AT_RANK,
+    bParitiesInverted: &mut i32,
+    mode: i32,
+) -> Result<i32, SourceHeapError> {
     // VERBATIM SOURCE FRAGMENT: ichimap2.c:2191..2310 C420 sole CreateCheckSymmPaths rank-input kernel
     // int CreateCheckSymmPaths( sp_ATOM *at,
     //                           AT_RANK prev1,
@@ -6498,11 +6561,30 @@ fn create_check_symm_paths_input(
     // INCHI✔️❌: One original source algorithm over reached stored or local
     // rank reads. No upfront admission/copy/allocation; checked view costs OPEN.
 
-    source_set(heap, nVisited1, i32::from(cur1), cur2.wrapping_add(1))?;
-    source_set(heap, nVisited2, i32::from(cur2), cur1.wrapping_add(1))?;
+    // SAFETY: this entire recursive phase has no allocation, free, resize or
+    // external callback. Each scalar borrow ends before subsequent accesses,
+    // including recursive calls and reads through overlapping source arrays.
+    unsafe {
+        arrays
+            .visited1
+            .update(heap, i64::from(cur1), |v| *v = cur2.wrapping_add(1))?
+    };
+    unsafe {
+        arrays
+            .visited2
+            .update(heap, i64::from(cur2), |v| *v = cur1.wrapping_add(1))?
+    };
     *nLength = nLength.wrapping_add(1);
-    source_set(heap, nVisitOrd1, i32::from(cur1), *nLength)?;
-    source_set(heap, nVisitOrd2, i32::from(cur2), *nLength)?;
+    unsafe {
+        arrays
+            .order1
+            .update(heap, i64::from(cur1), |v| *v = *nLength)?
+    };
+    unsafe {
+        arrays
+            .order2
+            .update(heap, i64::from(cur2), |v| *v = *nLength)?
+    };
 
     let (
         parity1,
@@ -6599,18 +6681,13 @@ fn create_check_symm_paths_input(
             n1,
             n2,
             nAvoidCheckAtom,
-            nVisited1,
-            nVisited2,
-            nVisitOrd1,
-            nVisitOrd2,
-            nRank1,
-            nRank2,
+            arrays,
         )?;
         if ret <= 0 {
             return Ok(ret);
         }
 
-        if source_get(heap, nVisited1, i32::from(n1))? == 0 {
+        if unsafe { arrays.visited1.read(heap, i64::from(n1), |v| *v)? } == 0 {
             let same_ring = {
                 let atoms = heap.slice(at.as_const())?;
                 atoms
@@ -6627,7 +6704,7 @@ fn create_check_symm_paths_input(
             } else {
                 &mut bParitiesInvertedZero
             };
-            let ret = create_check_symm_paths_input(
+            let ret = create_check_symm_paths_cached(
                 heap,
                 at,
                 cur1,
@@ -6635,14 +6712,9 @@ fn create_check_symm_paths_input(
                 cur2,
                 n2,
                 nAvoidCheckAtom,
-                nVisited1,
-                nVisited2,
-                nVisitOrd1,
-                nVisitOrd2,
+                arrays,
                 nl1,
                 nl2,
-                nRank1,
-                nRank2,
                 nCanonRank,
                 nLength,
                 parities,

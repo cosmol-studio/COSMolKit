@@ -7,12 +7,11 @@
 )]
 
 use std::any::{Any, TypeId};
-use std::collections::HashMap;
 #[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::marker::PhantomData;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::ptr::NonNull;
 
 mod clock;
@@ -20,6 +19,7 @@ mod generated;
 
 pub(crate) use clock::{LiveSourceClock, SourceClock};
 pub(crate) use generated::*;
+pub use generated::{inchi_Atom, inchi_Stereo0D};
 
 /// Source-level replacement for C `void` in typed allocation handles.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -439,9 +439,16 @@ pub(crate) enum SourceHeapError {
 /// pointers, and one-past pointers without exposing native addresses.
 #[derive(Default)]
 struct AllocationArena {
-    slots: HashMap<usize, Option<AllocationSlot>>,
-    issued_ids: u64,
+    slots: Vec<AllocationEntry>,
+    free_head: Option<NonZeroU32>,
     live_count: usize,
+}
+
+struct AllocationEntry {
+    generation: u32,
+    reserved: bool,
+    next_free: Option<NonZeroU32>,
+    allocation: Option<AllocationSlot>,
 }
 
 struct AllocationSlot {
@@ -458,7 +465,9 @@ enum AllocationProvenance {
     #[default]
     None,
     ContiguousNeighborPointerTable {
-        storage: AllocationId,
+        // Registration rejects subobjects, so the field word is always zero.
+        // Retain the full generation-bearing owner, not a truncated index.
+        storage: NonZeroU64,
         row_count: usize,
         neighbor_index_bound: usize,
     },
@@ -518,10 +527,10 @@ impl AllocationSlot {
         if self.type_id != TypeId::of::<Vec<T>>() && !self.corresponding_integer_storage::<T>() {
             return None;
         }
-        // SAFETY: metadata/raw parts retain the original owned Vec. The view
+        // SAFETY: metadata/raw parts retain the original typed storage. The view
         // is either that exact element type or its recognized corresponding
         // primitive integer: identical size/alignment, every bit pattern valid.
-        // Length/stride stay unchanged; the stored ORIGINAL drop type stays.
+        // Length/stride stay unchanged; the original owning/borrowed drop policy stays.
         Some(unsafe { std::slice::from_raw_parts(self.pointer.cast::<T>().as_ptr(), self.len) })
     }
 
@@ -661,7 +670,19 @@ impl AllocationSlot {
         }
     }
 
+    #[inline(always)]
     fn view_ref<T: 'static>(&self, field: u64) -> Result<&[T], SourceHeapError> {
+        if field == 0 {
+            return self
+                .downcast_ref::<T>()
+                .ok_or(SourceHeapError::AllocationTypeMismatch);
+        }
+        self.field_ref::<T>(field)
+    }
+
+    // Keep subobject decoding out of the ordinary array access instruction
+    // path. The same type/identity/bounds checks still run; no unchecked mode.
+    fn field_ref<T: 'static>(&self, field: u64) -> Result<&[T], SourceHeapError> {
         // VERBATIM SOURCE: ichicans.c564/2370, ichiprt1.c2635
         //             pCG->m_pNeighborsForSort = at[i].neighbor;
         //         pCG->m_pNeighborsForSort = at[i].neighbor;
@@ -669,11 +690,6 @@ impl AllocationSlot {
         // INCHI✔️❗: Borrow the real field on each reached read, preserving
         // later owner writes and parent lifetime. No snapshot/registration.
         // O(1), no allocation; field/type dispatch costs remain C572 OPEN.
-        if field == 0 {
-            return self
-                .downcast_ref::<T>()
-                .ok_or(SourceHeapError::AllocationTypeMismatch);
-        }
         let row = usize::try_from(field & ((1_u64 << 62) - 1))
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if field >> 62 == 3 {
@@ -730,15 +746,20 @@ impl AllocationSlot {
             .ok_or(SourceHeapError::AllocationTypeMismatch)
     }
 
+    #[inline(always)]
     fn view_mut<T: 'static>(&mut self, field: u64) -> Result<&mut [T], SourceHeapError> {
-        // Same actual subobject as view_ref, with exclusive parent access.
-        // Existing typed mutation invalidates parent provenance. No unsafe
-        // conversion or independently owned field storage; C572 costs OPEN.
         if field == 0 {
             return self
                 .downcast_mut::<T>()
                 .ok_or(SourceHeapError::AllocationTypeMismatch);
         }
+        self.field_mut::<T>(field)
+    }
+
+    fn field_mut<T: 'static>(&mut self, field: u64) -> Result<&mut [T], SourceHeapError> {
+        // Same actual subobject as view_ref, with exclusive parent access.
+        // Existing typed mutation invalidates parent provenance. No unsafe
+        // conversion or independently owned field storage; C572 costs OPEN.
         let row = usize::try_from(field & ((1_u64 << 62) - 1))
             .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
         if field >> 62 == 3 {
@@ -952,57 +973,100 @@ impl<T> StableSourceSlice<T> {
 }
 
 impl AllocationArena {
-    fn index(id: AllocationId) -> Result<usize, SourceHeapError> {
-        usize::try_from(id.logical()).map_err(|_| SourceHeapError::MissingAllocation)
+    fn index(id: AllocationId) -> usize {
+        (id.logical() as u32) as usize
     }
 
-    fn insert<T: 'static>(
-        &mut self,
-        id: AllocationId,
-        allocation: Vec<T>,
-    ) -> Result<(), SourceHeapError> {
-        let index =
-            usize::try_from(id.logical()).map_err(|_| SourceHeapError::AllocationIdExhausted)?;
-        if id.logical() != self.issued_ids || id.field != 0 {
-            return Err(SourceHeapError::AllocationIdExhausted);
-        }
-        let issued_ids = self
-            .issued_ids
-            .checked_add(1)
-            .ok_or(SourceHeapError::AllocationIdExhausted)?;
+    fn insert<T: 'static>(&mut self, allocation: Vec<T>) -> Result<AllocationId, SourceHeapError> {
+        self.insert_slot(AllocationSlot::new(allocation))
+    }
+
+    #[inline]
+    fn insert_slot(&mut self, allocation: AllocationSlot) -> Result<AllocationId, SourceHeapError> {
         // INCHI✔️❗: #define inchi_malloc   malloc
         // INCHI✔️❗: #define inchi_calloc   calloc
-        // Native allocation macros: mode.h:1171..1175. Keep allocation IDs
-        // monotonic, but retain descriptors only for live or detached buffers.
-        // Expected/amortized O(1) registration; hashing/rehash costs remain
-        // INCHI-PERF-ARENA OPEN, not native allocator performance equivalence.
-        self.slots
-            .try_reserve(1)
-            .map_err(|_| SourceHeapError::AllocationFailed)?;
-        self.slots
-            .insert(index, Some(AllocationSlot::new(allocation)));
-        self.issued_ids = issued_ids;
+        // Native payload allocation/lifetime is unchanged. The private
+        // directory uses direct indices, not a hash for every pointer access.
+        // Free entries are reused; detached entries remain reserved. Metadata
+        // is bounded by peak simultaneous live+detached owners for this heap,
+        // not allocation history. Generation checks reject stale handles.
+        // Slot identities already have a 32-bit index with MAX reserved.
+        // Store free links as index+1: zero denotes no link, without the
+        // separate usize-sized Option discriminant in every slot. This does
+        // not change the supported index range or generation/lifetime checks.
+        let (index, generation) = if let Some(link) = self.free_head {
+            let index = (link.get() - 1) as usize;
+            let entry = &mut self.slots[index];
+            let generation = entry
+                .generation
+                .checked_add(1)
+                .ok_or(SourceHeapError::AllocationIdExhausted)?;
+            self.free_head = entry.next_free;
+            entry.generation = generation;
+            entry.next_free = None;
+            entry.reserved = true;
+            entry.allocation = Some(allocation);
+            (index, generation)
+        } else {
+            let index = u32::try_from(self.slots.len())
+                .map_err(|_| SourceHeapError::AllocationIdExhausted)?;
+            // Reserve the all-ones index so every packed identity plus one
+            // remains nonzero without wrapping, including generation MAX.
+            if index == u32::MAX {
+                return Err(SourceHeapError::AllocationIdExhausted);
+            }
+            self.slots
+                .try_reserve(1)
+                .map_err(|_| SourceHeapError::AllocationFailed)?;
+            self.slots.push(AllocationEntry {
+                generation: 0,
+                reserved: true,
+                next_free: None,
+                allocation: Some(allocation),
+            });
+            (index as usize, 0)
+        };
         self.live_count += 1;
-        Ok(())
+        let logical = (u64::from(generation) << 32) | index as u64;
+        Ok(AllocationId {
+            owner: NonZeroU64::new(logical + 1).expect("reserved all-ones index"),
+            field: 0,
+        })
     }
 
+    #[inline]
+    fn entry(&self, id: AllocationId) -> Option<&AllocationEntry> {
+        let entry = self.slots.get(Self::index(id))?;
+        (entry.reserved && entry.generation == (id.logical() >> 32) as u32).then_some(entry)
+    }
+
+    #[inline]
+    fn entry_mut(&mut self, id: AllocationId) -> Option<&mut AllocationEntry> {
+        let entry = self.slots.get_mut(Self::index(id))?;
+        (entry.reserved && entry.generation == (id.logical() >> 32) as u32).then_some(entry)
+    }
+
+    #[inline]
     fn get(&self, id: AllocationId) -> Option<&AllocationSlot> {
-        self.slots.get(&Self::index(id).ok()?)?.as_ref()
+        self.entry(id)?.allocation.as_ref()
     }
 
+    #[inline]
     fn get_mut(&mut self, id: AllocationId) -> Option<&mut AllocationSlot> {
-        self.slots.get_mut(&Self::index(id).ok()?)?.as_mut()
+        self.entry_mut(id)?.allocation.as_mut()
     }
 
     fn take(&mut self, id: AllocationId) -> Option<AllocationSlot> {
-        let allocation = self.slots.get_mut(&Self::index(id).ok()?)?.take()?;
+        let allocation = self.entry_mut(id)?.allocation.take()?;
         self.live_count -= 1;
         Some(allocation)
     }
 
     fn restore(&mut self, id: AllocationId, allocation: AllocationSlot) {
-        let index = Self::index(id).expect("an allocated ID fits usize");
-        let slot = self.slots.get_mut(&index).expect("allocated slot exists");
+        let slot = &mut self
+            .entry_mut(id)
+            .expect("detached slot remains reserved")
+            .allocation;
         debug_assert!(slot.is_none());
         *slot = Some(allocation);
         self.live_count += 1;
@@ -1014,28 +1078,16 @@ impl AllocationArena {
 
     fn erase(&mut self, id: AllocationId) -> Option<AllocationSlot> {
         // INCHI✔️❗: #define inchi_free(X)  do{ if(X) free(X); }while(0)
-        // mode.h:1180..1182: final release must not retain a historical slot.
-        // Temporary remove/restore keeps its key, so restoration never allocates
-        // and compaction cannot invalidate a detached allocation's reservation.
-        let index = Self::index(id).ok()?;
-        self.slots.get(&index)?.as_ref()?;
-        let allocation = self.slots.remove(&index)?.take()?;
+        // mode.h:1180..1182. Recycle the descriptor in O(1), with no hashing,
+        // rehash/shrink pass or allocation during free. The payload is dropped
+        // by its original typed destructor. A temporary loan is not a free.
+        let free_head = self.free_head;
+        let entry = self.entry_mut(id)?;
+        let allocation = entry.allocation.take()?;
+        entry.reserved = false;
+        entry.next_free = free_head;
+        self.free_head = NonZeroU32::new(Self::index(id) as u32 + 1);
         self.live_count -= 1;
-        let retained = self.slots.len();
-        if retained == 0 {
-            self.slots = HashMap::new();
-        } else if self.slots.capacity() > 32 && retained < self.slots.capacity() / 4 {
-            // Geometric compaction is amortized O(1) per release, O(retained)
-            // on a compaction call. Native free cannot fail: reserve failure
-            // leaves the existing capacity intact, not a chemistry error.
-            // This failure-retained peak and hashing/temporary-table costs
-            // remain explicit limitations in INCHI-PERF-ARENA.
-            let mut compacted = HashMap::new();
-            if compacted.try_reserve(retained).is_ok() {
-                compacted.extend(std::mem::take(&mut self.slots));
-                self.slots = compacted;
-            }
-        }
         Some(allocation)
     }
 
@@ -1045,13 +1097,14 @@ impl AllocationArena {
 
     #[cfg(test)]
     fn values(&self) -> impl Iterator<Item = &AllocationSlot> {
-        self.slots.values().filter_map(Option::as_ref)
+        self.slots
+            .iter()
+            .filter_map(|entry| entry.allocation.as_ref())
     }
 }
 
 #[derive(Default)]
 pub(crate) struct SourceHeap {
-    next_id: u64,
     allocations: AllocationArena,
     source_errno: i32,
     #[cfg(test)]
@@ -1064,13 +1117,134 @@ pub(crate) struct SourceHeap {
     live_source_allocation_types: BTreeMap<AllocationId, &'static str>,
 }
 
-// A temporary loan retains its reserved arena key until the actual owner is
-// returned. The reservation survives nested allocations/free compaction.
+/// A lazily resolved array for a phase which cannot allocate, free or resize.
+/// It stores no references: separately resolved overlapping arrays observe
+/// each other's writes, just as source pointers do.
+pub(crate) struct NativeSourceArray<T> {
+    source: SourceMutPointer<T>,
+    resolved: Option<(*mut T, usize)>,
+    invalidated: bool,
+}
+
+impl<T: 'static> NativeSourceArray<T> {
+    pub(crate) fn new(source: SourceMutPointer<T>) -> Self {
+        Self {
+            source,
+            resolved: None,
+            invalidated: false,
+        }
+    }
+
+    #[inline]
+    fn address(&mut self, heap: &SourceHeap, index: i64) -> Result<*mut T, SourceHeapError> {
+        // Preserve source-reached offset/error ordering and negative indices
+        // relative to an interior pointer. Resolve only on first actual use.
+        let position = self.source.offset(index)?;
+        let (base, len) = match self.resolved {
+            Some(parts) => parts,
+            None => self.resolve(heap, position)?,
+        };
+        let offset = usize::try_from(position.element_offset)
+            .map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+        if offset >= len {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        // SAFETY: view_ref validated the element type, alignment and complete
+        // extent. The checked offset denotes an initialized element, not one-past.
+        Ok(unsafe { base.add(offset) })
+    }
+
+    // Separate first-use owner admission from the repeated indexed access.
+    // This preserves lazy error ordering and provenance while allowing the
+    // hot address calculation to inline without the type/field dispatcher.
+    #[inline(never)]
+    fn resolve(
+        &mut self,
+        heap: &SourceHeap,
+        position: SourceMutPointer<T>,
+    ) -> Result<(*mut T, usize), SourceHeapError> {
+        let id = position.allocation.ok_or(SourceHeapError::NullPointer)?;
+        let slot = heap
+            .allocations
+            .get(id)
+            .ok_or(SourceHeapError::MissingAllocation)?;
+        let view = slot.view_ref::<T>(id.field)?;
+        let len = view.len();
+        let address = view.as_ptr().addr();
+        // Preserve the owning Vec's provenance, not a shared-slice reborrow.
+        let base = slot.pointer.as_ptr().with_addr(address).cast::<T>();
+        self.resolved = Some((base, len));
+        Ok((base, len))
+    }
+
+    /// # Safety
+    /// The original heap/allocation must remain live, unmoved and unresized
+    /// from first use through last use. All overlapping access is sequential;
+    /// no reference to overlapping storage may survive this call.
+    #[inline]
+    pub(crate) unsafe fn read<R>(
+        &mut self,
+        heap: &SourceHeap,
+        index: i64,
+        f: impl FnOnce(&T) -> R,
+    ) -> Result<R, SourceHeapError> {
+        // INCHI✔️❗: ichiring.c:281
+        //                 nCurLevel = nAtomLevel[iat_no] + 1;
+        let pointer = self.address(heap, index)?;
+        // SAFETY: caller supplies phase lifetime and sequential-access proof;
+        // address checked type/extent. The reference cannot escape the closure.
+        Ok(f(unsafe { &*pointer }))
+    }
+
+    /// # Safety
+    /// Same phase/liveness requirements as read, with no overlapping live
+    /// references during this exclusive access. Updates must leave a valid T.
+    #[inline]
+    pub(crate) unsafe fn update<R>(
+        &mut self,
+        heap: &mut SourceHeap,
+        index: i64,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> Result<R, SourceHeapError> {
+        // INCHI✔️❗: ichiring.c:300
+        //                             nAtomLevel[inext] = nCurLevel;
+        let pointer = self.address(heap, index)?;
+        if !self.invalidated {
+            let id = self.source.allocation.ok_or(SourceHeapError::NullPointer)?;
+            heap.allocations
+                .get_mut(id)
+                .ok_or(SourceHeapError::MissingAllocation)?
+                .provenance = AllocationProvenance::None;
+            self.invalidated = true;
+        }
+        // SAFETY: the caller proves no overlapping live reference. Independent
+        // array handles may alias, but their accesses must not overlap in time.
+        Ok(f(unsafe { &mut *pointer }))
+    }
+}
+
+// A temporary loan retains its reserved slot until the actual owner returns.
+// Nested allocations cannot reuse that slot; Vec growth only moves metadata.
 struct SourceAllocationLoan<'a> {
     heap: &'a mut SourceHeap,
     id: AllocationId,
     allocation: Option<AllocationSlot>,
 }
+
+// Remove a scoped stack binding on normal return, error, or unwind. It never
+// owns/drops the borrowed elements; their caller remains the only owner.
+struct BorrowedSourceStorage<'a> {
+    heap: &'a mut SourceHeap,
+    id: AllocationId,
+}
+
+impl Drop for BorrowedSourceStorage<'_> {
+    fn drop(&mut self) {
+        self.heap.allocations.erase(self.id);
+    }
+}
+
+fn retain_borrowed_storage(_: NonNull<()>, _: usize, _: usize) {}
 
 impl Drop for SourceAllocationLoan<'_> {
     fn drop(&mut self) {
@@ -1231,6 +1405,43 @@ pub(crate) fn copy_inp_atom_gcc_lp64_byte_prefix(
 }
 
 impl SourceHeap {
+    /// Registers an actual source-local array for synchronous pointer consumers.
+    /// No payload allocation or copy; the handle becomes stale on return.
+    ///
+    /// # Safety
+    /// `operation` must not move/replace this heap or retain any borrowed
+    /// allocation descriptor outside this call (temporary loans must return).
+    /// It must not retain resolved raw addresses beyond the
+    /// call. All aliased access must follow the same sequential-reference rules
+    /// as NativeSourceArray. Ordinary returned handles are safe: cleanup removes
+    /// their generation-bearing directory entry before the borrow ends.
+    pub(crate) unsafe fn with_borrowed_storage<T: 'static, R>(
+        &mut self,
+        values: &mut [T],
+        operation: impl FnOnce(&mut Self, SourceMutPointer<T>) -> Result<R, SourceHeapError>,
+    ) -> Result<R, SourceHeapError> {
+        let slot = AllocationSlot {
+            pointer: NonNull::new(values.as_mut_ptr())
+                .expect("slice pointer is non-null")
+                .cast(),
+            len: values.len(),
+            capacity: values.len(),
+            type_id: TypeId::of::<Vec<T>>(),
+            drop_vec: retain_borrowed_storage,
+            provenance: AllocationProvenance::None,
+        };
+        let id = self.allocations.insert_slot(slot)?;
+        let guard = BorrowedSourceStorage { heap: self, id };
+        operation(
+            guard.heap,
+            SourceMutPointer {
+                allocation: Some(id),
+                element_offset: 0,
+                marker: PhantomData,
+            },
+        )
+    }
+
     pub(crate) const fn source_errno(&self) -> i32 {
         self.source_errno
     }
@@ -1323,20 +1534,42 @@ impl SourceHeap {
         Ok(pointer)
     }
 
+    /// Initialize an empty, already reserved source allocation exactly once.
+    /// Copy elements require no destructor if the producer unwinds partway.
+    pub(crate) fn initialize_reserved_copy<T: Copy + 'static>(
+        &mut self,
+        pointer: SourceMutPointer<T>,
+        count: usize,
+        mut element: impl FnMut(usize) -> T,
+    ) -> Result<(), SourceHeapError> {
+        let id = pointer.allocation.ok_or(SourceHeapError::NullPointer)?;
+        let slot = self
+            .allocations
+            .get_mut(id)
+            .ok_or(SourceHeapError::MissingAllocation)?;
+        if !slot.is::<T>() {
+            return Err(SourceHeapError::AllocationTypeMismatch);
+        }
+        if id.field != 0 || pointer.element_offset != 0 || slot.len != 0 || count > slot.capacity {
+            return Err(SourceHeapError::PointerOutOfBounds);
+        }
+        slot.provenance = AllocationProvenance::None;
+        let values = slot.pointer.cast::<T>().as_ptr();
+        for index in 0..count {
+            // SAFETY: reserved Vec<T> capacity is checked above. Each slot is
+            // written once before the initialized length is published; no
+            // uninitialized element is ever exposed through a typed slice.
+            unsafe { values.add(index).write(element(index)) };
+        }
+        slot.len = count;
+        Ok(())
+    }
+
     pub(crate) fn allocate_model_storage<T: 'static>(
         &mut self,
         values: Vec<T>,
     ) -> Result<SourceMutPointer<T>, SourceHeapError> {
-        let next_id = self
-            .next_id
-            .checked_add(1)
-            .ok_or(SourceHeapError::AllocationIdExhausted)?;
-        let id = AllocationId {
-            owner: NonZeroU64::new(next_id).ok_or(SourceHeapError::AllocationIdExhausted)?,
-            field: 0,
-        };
-        self.allocations.insert(id, values)?;
-        self.next_id = next_id;
+        let id = self.allocations.insert(values)?;
         Ok(SourceMutPointer {
             allocation: Some(id),
             element_offset: 0,
@@ -1384,7 +1617,7 @@ impl SourceHeap {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
         table_slot.provenance = AllocationProvenance::ContiguousNeighborPointerTable {
-            storage: storage_id,
+            storage: storage_id.owner,
             row_count,
             neighbor_index_bound,
         };
@@ -1422,6 +1655,10 @@ impl SourceHeap {
         if row_count < requested_rows || neighbor_index_bound > available_neighbor_values {
             return None;
         }
+        let storage = AllocationId {
+            owner: storage,
+            field: 0,
+        };
         let storage_slot = self.allocations.get(storage)?;
         if !storage_slot.is::<S>() {
             return None;
@@ -1490,8 +1727,13 @@ impl SourceHeap {
         )
     }
 
+    // Forced expansion of fallible accessors at every source subscript makes
+    // unoptimized recursive stereo-mapping frames accumulate their temporary
+    // slots. Keep ordinary call boundaries in debug builds; release retains
+    // the same forced inlining and the exact same validation/error ordering.
     #[track_caller]
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    #[cfg_attr(debug_assertions, inline)]
     pub(crate) fn slice<T: 'static>(
         &self,
         pointer: SourceConstPointer<T>,
@@ -1501,7 +1743,8 @@ impl SourceHeap {
     }
 
     #[track_caller]
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    #[cfg_attr(debug_assertions, inline)]
     pub(crate) fn slice_with_origin<T: 'static>(
         &self,
         pointer: SourceConstPointer<T>,
@@ -1523,7 +1766,8 @@ impl SourceHeap {
     }
 
     #[track_caller]
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    #[cfg_attr(debug_assertions, inline)]
     pub(crate) fn slice_mut<T: 'static>(
         &mut self,
         pointer: SourceMutPointer<T>,
@@ -1533,7 +1777,8 @@ impl SourceHeap {
     }
 
     #[track_caller]
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    #[cfg_attr(debug_assertions, inline)]
     pub(crate) fn slice_mut_with_origin<T: 'static>(
         &mut self,
         pointer: SourceMutPointer<T>,
@@ -1557,7 +1802,8 @@ impl SourceHeap {
     /// Resolves a source signed subscript, including a negative offset from
     /// an interior pointer. Invalid negative accesses retain the prior error.
     #[track_caller]
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    #[cfg_attr(debug_assertions, inline)]
     pub(crate) fn element_signed<T: 'static>(
         &self,
         pointer: SourceConstPointer<T>,
@@ -1584,7 +1830,8 @@ impl SourceHeap {
     }
 
     #[track_caller]
-    #[inline(always)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    #[cfg_attr(debug_assertions, inline)]
     pub(crate) fn element_signed_mut<T: 'static>(
         &mut self,
         pointer: SourceMutPointer<T>,
@@ -2128,6 +2375,98 @@ pub(crate) type CHECK_DFS_CENTERPOINT = generated::local_ichiqueu::CHECK_DFS_CEN
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn borrowed_storage_expires_on_return_error_and_unwind() {
+        use super::{SourceHeap, SourceHeapError};
+        let mut heap = SourceHeap::default();
+        let mut values = [7_u16, 8];
+        // SAFETY: these closures neither move the heap nor retain raw views.
+        let stale = unsafe {
+            heap.with_borrowed_storage(&mut values, |heap, pointer| {
+                heap.slice_mut(pointer)?[0] = 9;
+                Ok(pointer)
+            })
+        }
+        .unwrap();
+        assert_eq!(values, [9, 8]);
+        assert_eq!(
+            heap.slice(stale.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+        assert_eq!(heap.allocations.len(), 0);
+        let error: Result<(), _> = unsafe {
+            heap.with_borrowed_storage(&mut values, |_, _| Err(SourceHeapError::PointerOutOfBounds))
+        };
+        assert_eq!(error, Err(SourceHeapError::PointerOutOfBounds));
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+            heap.with_borrowed_storage(&mut values, |_, _| -> Result<(), SourceHeapError> {
+                panic!("source frame unwind")
+            })
+        }));
+        assert!(unwound.is_err());
+        assert_eq!(heap.allocations.len(), 0);
+        let replacement = heap.allocate(vec![42_u16]).unwrap();
+        assert_ne!(replacement.allocation, stale.allocation);
+        assert_eq!(
+            heap.slice(stale.as_const()),
+            Err(SourceHeapError::MissingAllocation)
+        );
+    }
+
+    #[test]
+    fn indexed_slots_reuse_storage_without_reviving_handles_or_loans() {
+        let mut heap = super::SourceHeap::default();
+        let first = heap.allocate_model_storage(vec![7_u16]).unwrap();
+        let id = first.allocation.unwrap();
+        let owner = heap.allocations.take(id).unwrap();
+        let mut others = Vec::new();
+        for _ in 0..128 {
+            others.push(heap.allocate_model_storage(vec![9_u16]).unwrap());
+        }
+        assert!(heap.allocations.get(id).is_none());
+        heap.allocations.restore(id, owner);
+        assert_eq!(heap.slice(first.as_const()).unwrap(), &[7]);
+        for pointer in others {
+            heap.free(pointer).unwrap();
+        }
+        let peak = heap.allocations.slots.len();
+        heap.free(first).unwrap();
+        for _ in 0..1000 {
+            let current = heap.allocate_model_storage(vec![11_u16]).unwrap();
+            assert_ne!(first.allocation_identity(), current.allocation_identity());
+            assert_eq!(
+                heap.slice(first.as_const()),
+                Err(super::SourceHeapError::MissingAllocation)
+            );
+            assert_eq!(heap.slice(current.as_const()).unwrap(), &[11]);
+            heap.free(current).unwrap();
+        }
+        assert_eq!(heap.allocations.slots.len(), peak);
+        assert_eq!(heap.live_allocation_count(), 0);
+    }
+
+    #[test]
+    fn native_array_keeps_aliases_and_signed_origins_live() {
+        let mut heap = super::SourceHeap::default();
+        let owner = heap.allocate_model_storage(vec![1_u16, 2, 3]).unwrap();
+        let mut first = super::NativeSourceArray::new(owner);
+        let mut interior = super::NativeSourceArray::new(owner.offset(1).unwrap());
+        // SAFETY: both arrays belong to this heap, which remains live; no
+        // allocation is freed/resized and all accesses are sequential scalars.
+        unsafe {
+            assert_eq!(first.read(&mut heap, 1, |v| *v), Ok(2));
+            interior.update(&mut heap, 0, |v| *v = 9).unwrap();
+            assert_eq!(first.read(&mut heap, 1, |v| *v), Ok(9));
+            first.update(&mut heap, 0, |v| *v = 7).unwrap();
+            assert_eq!(interior.read(&mut heap, -1, |v| *v), Ok(7));
+            assert_eq!(
+                interior.read(&mut heap, 2, |v| *v),
+                Err(super::SourceHeapError::PointerOutOfBounds)
+            );
+        }
+        assert_eq!(heap.slice(owner.as_const()).unwrap(), &[7, 9, 3]);
+    }
+
     use super::*;
 
     fn user_action() -> i32 {

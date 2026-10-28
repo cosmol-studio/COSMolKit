@@ -554,6 +554,20 @@ pub(crate) fn source_strtod_terminated_bytes_with_end(
             index = exponent;
         }
     }
+    // SUPPLEMENTAL SOURCE: musl/src/internal/floatscan.c139..140
+    // INCHI✔️✔️: /* Handle zero specially to avoid nasty special cases later */
+    // INCHI✔️✔️: if (!x[0]) return sign * 0.0;
+    // The lexer has consumed the same mantissa/exponent and found at least
+    // one digit. A zero significand is exact for every exponent: preserve its
+    // sign and prior errno without sending the token through a second parser.
+    if !has_nonzero_digit {
+        let zero = if bytes[token_start] as u8 == b'-' {
+            -0.0
+        } else {
+            0.0
+        };
+        return Ok((zero, index));
+    }
     // INCHI❗❗: Native strtod borrows its input; borrow the already-recognized
     // ASCII decimal token without Vec allocation/copy. Preserve every parser,
     // first-NUL, endpoint, conversion-error and errno rule/independent guard.
@@ -4974,6 +4988,29 @@ pub(crate) fn HelpCommandLineParms(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decimal_zero_preserves_sign_endpoint_and_errno() {
+        for (text, negative, end) in [
+            ("0", false, 1),
+            ("-0.000", true, 6),
+            (" +.0e99999999999999999999!", false, 25),
+            ("-0e-99999999999999999999!", true, 24),
+            ("-00.0e+tail", true, 5),
+            ("0.0.1", false, 3),
+        ] {
+            let bytes: Vec<i8> = text.bytes().chain([0]).map(|b| b as i8).collect();
+            let mut errno = 7;
+            let (value, consumed) = source_strtod_bytes_with_end(&bytes, &mut errno).unwrap();
+            assert_eq!(
+                value.to_bits(),
+                if negative { (-0.0_f64).to_bits() } else { 0 },
+                "{text}"
+            );
+            assert_eq!(consumed, end, "{text}");
+            assert_eq!(errno, 7, "{text}");
+        }
+    }
 
     fn run_common_option(
         heap: &mut SourceHeap,

@@ -18,7 +18,7 @@ for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[name] = "1"
 from rdkit import Chem, RDLogger, rdBase
 from rdkit.Chem import rdCIPLabeler
-from rdkit.Chem import inchi
+from rdkit.Chem import inchi, rdinchi
 from fingerprints import UInt, morgan, pair_fingerprint, path_fingerprint
 from isolate import isolated
 from descriptors import descriptor
@@ -54,16 +54,38 @@ def encode(value):
     raise TypeError(f"unregistered reference output type {type(value)}")
 
 
+class InchiGenerationRejected(Exception):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(f"InChI generation rejected with engine status {code}")
+
+
+def inchi_identifier(mol, options=""):
+    identifier = inchi.MolToInchi(mol, options=options)
+    if not identifier:
+        # inchi.py::MolToInchi appends /AuxNone before MolToInchiAndAuxInfo.
+        # Its default treatWarningAsError=False logs errors but returns empty text.
+        native_options = options
+        if "AuxNone" not in native_options:
+            native_options += " /AuxNone" if native_options else "/AuxNone"
+        raw, code, _message, _log, _aux = rdinchi.MolToInchi(mol, native_options)
+        # inchi_api.h: inchi_Ret_ERROR=2, inchi_Ret_FATAL=3.
+        if not raw and code in (2, 3):
+            raise InchiGenerationRejected(code)
+        raise ValueError("empty InChI without a confirmed engine rejection")
+    return identifier
+
+
 def native(mol, task, profile):
     if task == "inchi_write":
-        return inchi.MolToInchi(mol, options=profile["options"])
+        return inchi_identifier(mol, profile["options"])
     if task == "inchi_key":
-        identifier = inchi.MolToInchi(mol, options=profile["options"])
+        identifier = inchi_identifier(mol, profile["options"])
         return [inchi.MolToInchiKey(mol, options=profile["options"]),
                 inchi.InchiToInchiKey(identifier)]
     if task == "inchi_roundtrip":
         from chemistry import state
-        identifier = inchi.MolToInchi(mol)
+        identifier = inchi_identifier(mol)
         parsed = inchi.MolFromInchi(identifier, sanitize=profile["read_sanitize"],
                                     removeHs=profile["read_remove_hs"])
         if parsed is None:
@@ -144,6 +166,8 @@ def iter_outcomes(task, profiles, smiles):
             else:
                 try:
                     output = b"\0" + encode(native(selected, task, profile))
+                except InchiGenerationRejected as error:
+                    output = b"\1" + encode(["InchiGenerationRejected", error.code])
                 except Exception as error:
                     # Never classify arbitrary exceptions as matching chemistry errors.
                     output = b"\5" + encode(f"{type(error).__name__}: {error}")

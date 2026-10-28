@@ -1,4 +1,5 @@
 //! InChI facade: checked model transport and calls to the single InChI owner.
+mod prepared;
 mod toolkit;
 
 use crate::{InchiError, InchiErrorKind, Molecule};
@@ -223,17 +224,12 @@ impl Molecule {
         &self,
         params: &InchiWriteParams,
     ) -> Result<cosmolkit_inchi::MolToInchiOutput, InchiError> {
-        let graph = toolkit::graph(
+        let mut graph = prepared::Prepared::new(
             self.topology(),
             self.coordinate_block_runtime(),
             self.derived_cache_runtime().valence_assignment(),
-        )
-        .map_err(toolkit::public_error)?;
-        cosmolkit_inchi::mol_to_inchi(
-            &mut toolkit::Toolkit::default(),
-            &graph,
-            Some(params.options.as_bytes()),
-        )
+        )?;
+        cosmolkit_inchi::rdkit::generate(&mut graph, Some(params.options.as_bytes()))
     }
 
     /// Generates an InChIKey without changing the receiver.
@@ -245,17 +241,17 @@ impl Molecule {
         &self,
         params: &InchiWriteParams,
     ) -> Result<String, InchiError> {
-        let graph = toolkit::graph(
-            self.topology(),
-            self.coordinate_block_runtime(),
-            self.derived_cache_runtime().valence_assignment(),
-        )
-        .map_err(toolkit::public_error)?;
-        let output = cosmolkit_inchi::mol_to_inchi_key(
-            &mut toolkit::Toolkit::default(),
-            &graph,
-            Some(params.options.as_bytes()),
-        )?;
+        let generated = self.inchi_generation_output(params).map_err(|mut error| {
+            if error.operation == "mol_to_inchi" {
+                error.operation = "mol_to_inchi_key";
+            }
+            error
+        })?;
+        let output =
+            cosmolkit_inchi::inchi_to_inchi_key(&generated.inchi).map_err(|mut error| {
+                error.operation = "mol_to_inchi_key";
+                error
+            })?;
         text(output.key, "to_inchi_key")
     }
 }
@@ -263,6 +259,62 @@ impl Molecule {
 #[cfg(test)]
 mod tests {
     use crate::{AtomSpec, BondOrder, BondSpec, BondStereo, Element, MoleculeBuilder};
+    #[cfg(feature = "cap-smiles")]
+    #[test]
+    fn native_inchi_generation_preserves_legacy_outputs_and_receiver() {
+        use super::*;
+        for smiles in [
+            "CCO",
+            "c1ccccc1",
+            "N[C@@H](C)C(=O)O",
+            "F/C=C/F",
+            "[13CH3][C@H](O)Cl",
+            "[O-][Cl+3]([O-])([O-])O",
+            "[CH3]",
+        ] {
+            for sanitize in [false, true] {
+                let molecule = Molecule::from_smiles_with_params(
+                    smiles,
+                    &crate::SmilesParseParams {
+                        sanitize,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                let before = molecule.clone();
+                let original = toolkit::graph(
+                    molecule.topology(),
+                    molecule.coordinate_block_runtime(),
+                    molecule.derived_cache_runtime().valence_assignment(),
+                )
+                .unwrap();
+                for options in ["", "-SUU", "-FixedH", "-AuxNone"] {
+                    let expected = cosmolkit_inchi::mol_to_inchi(
+                        &mut toolkit::Toolkit::default(),
+                        &original,
+                        Some(options.as_bytes()),
+                    );
+                    assert_eq!(
+                        molecule.inchi_generation_output(&InchiWriteParams::new(options.into())),
+                        expected,
+                        "{smiles}, sanitize={sanitize}, options={options}"
+                    );
+                    let expected_key = cosmolkit_inchi::mol_to_inchi_key(
+                        &mut toolkit::Toolkit::default(),
+                        &original,
+                        Some(options.as_bytes()),
+                    )
+                    .map(|v| String::from_utf8(v.key).unwrap());
+                    assert_eq!(
+                        molecule.to_inchi_key_with_params(&InchiWriteParams::new(options.into())),
+                        expected_key
+                    );
+                }
+                assert_eq!(molecule, before);
+            }
+        }
+    }
+
     #[test]
     fn rdkit_2026_03_inchi_unknown_export_core_boundary() {
         // Explicit MolToInchi precondition, independent of CXSMILES parsing.

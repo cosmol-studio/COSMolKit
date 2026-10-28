@@ -10413,11 +10413,33 @@ pub(crate) fn GetDfsOrder4CT(
             // failure paths. A zero-size successful DFS has no native atom0.
             return Err(SourceHeapError::UnsupportedSourceBehavior);
         }
+        // INCHI✔️✔️: nDfsNumber[u] = ++nDfs;
+        // INCHI✔️✔️: nStackAtom[++nTopStackAtom] = (AT_NUMB)u;
+        // Resolve the four fresh work arrays once, not for every DFS edge.
+        // SAFETY: these are distinct, private allocations made above. Neither
+        // neighbor-list access nor sorting can alias them. Their buffers are
+        // never resized; descendants are last read before the source-ordered
+        // free in the non-predecessor branch. All other views die before the
+        // common cleanup. Heap directory growth does not move Vec payloads.
+        let mut stack_view = unsafe { heap.stable_slice_mut(stack)? };
+        let mut descendants_view = unsafe { heap.stable_slice_mut(number_of_descendants)? };
+        let mut dfs_view = unsafe { heap.stable_slice_mut(dfs_number)? };
+        let mut neighbor_view = unsafe { heap.stable_slice_mut(neighbor_number)? };
+        let stack_values = stack_view.prefix_mut(atom_count)?;
+        let number_of_descendants_values = descendants_view.prefix_mut(atom_count)?;
+        let dfs_number_values = dfs_view.prefix_mut(atom_count)?;
+        let neighbor_number_values = neighbor_view.prefix_mut(atom_count)?;
+
+        // SAFETY: CreateNeighListFromLinearCT owns this separate pointer table.
+        // Rows may share their data block, but no code here writes the table.
+        // FreeNeighList runs only after this closure and its views have ended.
+        let lists_view = unsafe { heap.stable_slice(neighbor_lists.as_const())? };
+        let lists = lists_view.prefix(atom_count)?;
 
         let mut start = 0_usize;
         if predecessors == 0 {
             for atom in 1..atom_count {
-                let pointers = heap.slice(neighbor_lists.as_const())?;
+                let pointers = lists;
                 let valence = heap.slice(pointers[atom].as_const())?[0];
                 let start_valence = heap.slice(pointers[start].as_const())?[0];
                 if valence < start_valence {
@@ -10431,57 +10453,53 @@ pub(crate) fn GetDfsOrder4CT(
         // unexposed fresh allocations; avoid clearing them a second time.
         // Native stack malloc's initialization and safe arena costs stay OPEN.
         let mut dfs = 1_u16;
-        heap.slice_mut(dfs_number)?[start] = dfs;
-        heap.slice_mut(number_of_descendants)?[start] = if predecessors != 0 { 0 } else { 1 };
-        heap.slice_mut(stack)?[0] = start as u16;
+        dfs_number_values[start] = dfs;
+        number_of_descendants_values[start] = if predecessors != 0 { 0 } else { 1 };
+        stack_values[0] = start as u16;
         let mut stack_top = 0_i32;
         let mut number_of_rings = 0_i32;
 
         loop {
-            let mut atom = usize::from(heap.slice(stack.as_const())?[stack_top as usize]);
+            let mut atom = usize::from(stack_values[stack_top as usize]);
             loop {
-                let neighbor_index = i32::from(heap.slice(neighbor_number.as_const())?[atom]) + 1;
-                let list_pointer = heap.slice(neighbor_lists.as_const())?[atom];
-                if i32::from(heap.slice(list_pointer.as_const())?[0]) < neighbor_index {
+                let neighbor_index = i32::from(neighbor_number_values[atom]) + 1;
+                let list_pointer = lists[atom];
+                let list = heap.slice_mut(list_pointer)?;
+                if i32::from(list[0]) < neighbor_index {
                     break;
                 }
-                heap.slice_mut(neighbor_number)?[atom] =
-                    heap.slice(neighbor_number.as_const())?[atom].wrapping_add(1);
-                let adjacent =
-                    usize::from(heap.slice(list_pointer.as_const())?[neighbor_index as usize]);
-                if heap.slice(dfs_number.as_const())?[adjacent] == 0 {
+                neighbor_number_values[atom] = neighbor_number_values[atom].wrapping_add(1);
+                let adjacent = usize::from(list[neighbor_index as usize]);
+                if dfs_number_values[adjacent] == 0 {
                     stack_top += 1;
-                    heap.slice_mut(stack)?[stack_top as usize] = adjacent as u16;
+                    stack_values[stack_top as usize] = adjacent as u16;
                     dfs = dfs.wrapping_add(1);
-                    heap.slice_mut(dfs_number)?[adjacent] = dfs;
+                    dfs_number_values[adjacent] = dfs;
                     if predecessors != 0 {
-                        heap.slice_mut(number_of_descendants)?[adjacent] = (atom + 1) as u16;
+                        number_of_descendants_values[adjacent] = (atom + 1) as u16;
                     } else {
-                        heap.slice_mut(number_of_descendants)?[adjacent] =
-                            heap.slice(number_of_descendants.as_const())?[adjacent].wrapping_add(1);
+                        number_of_descendants_values[adjacent] =
+                            number_of_descendants_values[adjacent].wrapping_add(1);
                     }
                 } else if stack_top != 0
-                    && adjacent
-                        != usize::from(heap.slice(stack.as_const())?[(stack_top - 1) as usize])
-                    && heap.slice(dfs_number.as_const())?[adjacent]
-                        < heap.slice(dfs_number.as_const())?[atom]
+                    && adjacent != usize::from(stack_values[(stack_top - 1) as usize])
+                    && dfs_number_values[adjacent] < dfs_number_values[atom]
                 {
                     if predecessors == 0 {
-                        heap.slice_mut(number_of_descendants)?[atom] =
-                            heap.slice(number_of_descendants.as_const())?[atom].wrapping_add(1);
+                        number_of_descendants_values[atom] =
+                            number_of_descendants_values[atom].wrapping_add(1);
                     }
                     number_of_rings = number_of_rings.wrapping_add(1);
                 } else {
-                    heap.slice_mut(list_pointer)?[neighbor_index as usize] = (MAX_ATOMS + 1) as u16;
+                    list[neighbor_index as usize] = (MAX_ATOMS + 1) as u16;
                 }
-                atom = usize::from(heap.slice(stack.as_const())?[stack_top as usize]);
+                atom = usize::from(stack_values[stack_top as usize]);
             }
-            heap.slice_mut(neighbor_number)?[atom] = 0;
+            neighbor_number_values[atom] = 0;
             if predecessors == 0 && stack_top != 0 {
-                let parent = usize::from(heap.slice(stack.as_const())?[(stack_top - 1) as usize]);
-                heap.slice_mut(number_of_descendants)?[parent] = heap
-                    .slice(number_of_descendants.as_const())?[parent]
-                    .wrapping_add(heap.slice(number_of_descendants.as_const())?[atom]);
+                let parent = usize::from(stack_values[(stack_top - 1) as usize]);
+                number_of_descendants_values[parent] = number_of_descendants_values[parent]
+                    .wrapping_add(number_of_descendants_values[atom]);
             }
             stack_top -= 1;
             if stack_top < 0 {
@@ -10490,31 +10508,27 @@ pub(crate) fn GetDfsOrder4CT(
         }
 
         for atom in 0..atom_count {
-            let list_pointer = heap.slice(neighbor_lists.as_const())?[atom];
-            let neighbor_count = usize::from(heap.slice(list_pointer.as_const())?[0]);
+            let list_pointer = lists[atom];
+            let list = heap.slice_mut(list_pointer)?;
+            let neighbor_count = usize::from(list[0]);
             if neighbor_count > 1 {
-                heap.with_slice_mut_and_heap(list_pointer.offset(1)?, |neighbors, read_heap| {
-                    let records = bytemuck::cast_slice_mut::<u16, u8>(
-                        neighbors
-                            .get_mut(..neighbor_count)
-                            .ok_or(SourceHeapError::PointerOutOfBounds)?,
-                    );
-                    let order = OrderStruct {
-                        dfs_number: read_heap.slice(dfs_number.as_const())?,
-                        number_of_descendants: read_heap.slice(number_of_descendants.as_const())?,
-                        current_atom: atom as i32,
-                    };
-                    insertions_sort(records, neighbor_count, 2, &mut |first, second| {
-                        CompareDfsDescendants4CT(
-                            u16::from_ne_bytes([first[0], first[1]]),
-                            u16::from_ne_bytes([second[0], second[1]]),
-                            &order,
-                        )
-                    })?;
-                    Ok(())
+                let records = bytemuck::cast_slice_mut::<u16, u8>(
+                    list.get_mut(1..=neighbor_count)
+                        .ok_or(SourceHeapError::PointerOutOfBounds)?,
+                );
+                let order = OrderStruct {
+                    dfs_number: dfs_number_values,
+                    number_of_descendants: number_of_descendants_values,
+                    current_atom: atom as i32,
+                };
+                insertions_sort(records, neighbor_count, 2, &mut |first, second| {
+                    CompareDfsDescendants4CT(
+                        u16::from_ne_bytes([first[0], first[1]]),
+                        u16::from_ne_bytes([second[0], second[1]]),
+                        &order,
+                    )
                 })?;
             }
-            let list = heap.slice_mut(list_pointer)?;
             let mut retained = 0_usize;
             while retained < neighbor_count && u32::from(list[retained + 1]) <= MAX_ATOMS {
                 retained += 1;
@@ -10540,6 +10554,12 @@ pub(crate) fn GetDfsOrder4CT(
             Err(error) => return Err(error),
         };
 
+        // SAFETY: output is another fresh allocation, disjoint from every
+        // input/work array. Early error branches free it and immediately return;
+        // no view is used after that free.
+        let mut output_view = unsafe { heap.stable_slice_mut(output)? };
+        let output_values = output_view.prefix_mut(output_length)?;
+
         if predecessors != 0 {
             let mut position = 0_usize;
             for atom in 0..atom_count {
@@ -10547,26 +10567,24 @@ pub(crate) fn GetDfsOrder4CT(
                     inchi_free(heap, output)?;
                     return Ok(SourceMutPointer::null());
                 }
-                let predecessor = heap.slice(number_of_descendants.as_const())?[atom];
-                heap.slice_mut(output)?[position] = if predecessor != 0 {
+                let predecessor = number_of_descendants_values[atom];
+                output_values[position] = if predecessor != 0 {
                     predecessor
                 } else {
                     (MAX_ATOMS + 1) as u16
                 };
-                heap.slice_mut(output)?[position + 1] = if number_hydrogens.is_null() {
+                output_values[position + 1] = if number_hydrogens.is_null() {
                     0
                 } else {
                     (16_i32 + i32::from(heap.slice(number_hydrogens)?[atom])) as u16
                 };
-                heap.slice_mut(output)?[position + 2] = if position != 0 { b',' as u16 } else { 0 };
-                let list_pointer = heap.slice(neighbor_lists.as_const())?[atom];
+                output_values[position + 2] = if position != 0 { b',' as u16 } else { 0 };
+                let list_pointer = lists[atom];
                 let list_count = usize::from(heap.slice(list_pointer.as_const())?[0]);
                 let mut list_index = 1_usize;
                 while list_index <= list_count {
                     let adjacent = heap.slice(list_pointer.as_const())?[list_index];
-                    if heap.slice(dfs_number.as_const())?[atom]
-                        <= heap.slice(dfs_number.as_const())?[usize::from(adjacent)]
-                    {
+                    if dfs_number_values[atom] <= dfs_number_values[usize::from(adjacent)] {
                         break;
                     }
                     position += 3;
@@ -10574,58 +10592,54 @@ pub(crate) fn GetDfsOrder4CT(
                         inchi_free(heap, output)?;
                         return Ok(SourceMutPointer::null());
                     }
-                    heap.slice_mut(output)?[position] = adjacent.wrapping_add(1);
-                    heap.slice_mut(output)?[position + 1] = 0;
-                    heap.slice_mut(output)?[position + 2] = b'-' as u16;
+                    output_values[position] = adjacent.wrapping_add(1);
+                    output_values[position + 1] = 0;
+                    output_values[position + 2] = b'-' as u16;
                     list_index += 1;
                 }
                 position += 3;
             }
         } else {
-            heap.slice_mut(neighbor_number)?.fill(0);
-            heap.slice_mut(stack)?[0] = start as u16;
+            neighbor_number_values.fill(0);
+            stack_values[0] = start as u16;
             stack_top = 0;
             let mut position = 0_usize;
-            heap.slice_mut(output)?[0] = (start + 1) as u16;
-            heap.slice_mut(output)?[1] = if number_hydrogens.is_null() {
+            output_values[0] = (start + 1) as u16;
+            output_values[1] = if number_hydrogens.is_null() {
                 0
             } else {
                 (16_i32 + i32::from(heap.slice(number_hydrogens)?[start])) as u16
             };
-            heap.slice_mut(output)?[2] = 0;
+            output_values[2] = 0;
             loop {
-                let atom = usize::from(heap.slice(stack.as_const())?[stack_top as usize]);
-                let list_pointer = heap.slice(neighbor_lists.as_const())?[atom];
+                let atom = usize::from(stack_values[stack_top as usize]);
+                let list_pointer = lists[atom];
                 let list_count = usize::from(heap.slice(list_pointer.as_const())?[0]);
-                let neighbor_index =
-                    usize::try_from(i32::from(heap.slice(neighbor_number.as_const())?[atom]))
-                        .map_err(|_| SourceHeapError::PointerOutOfBounds)?
-                        + 1;
+                let neighbor_index = usize::try_from(i32::from(neighbor_number_values[atom]))
+                    .map_err(|_| SourceHeapError::PointerOutOfBounds)?
+                    + 1;
                 if atom < atom_count && neighbor_index <= list_count {
                     position += 3;
                     if position + 6 > output_length {
                         inchi_free(heap, output)?;
                         return Ok(SourceMutPointer::null());
                     }
-                    heap.slice_mut(neighbor_number)?[atom] =
-                        heap.slice(neighbor_number.as_const())?[atom].wrapping_add(1);
+                    neighbor_number_values[atom] = neighbor_number_values[atom].wrapping_add(1);
                     let adjacent =
                         usize::from(heap.slice(list_pointer.as_const())?[neighbor_index]);
-                    heap.slice_mut(output)?[position] = (adjacent + 1) as u16;
-                    if heap.slice(dfs_number.as_const())?[adjacent]
-                        > heap.slice(dfs_number.as_const())?[atom]
-                    {
+                    output_values[position] = (adjacent + 1) as u16;
+                    if dfs_number_values[adjacent] > dfs_number_values[atom] {
                         stack_top += 1;
-                        heap.slice_mut(stack)?[stack_top as usize] = adjacent as u16;
-                        heap.slice_mut(output)?[position + 1] = if number_hydrogens.is_null() {
+                        stack_values[stack_top as usize] = adjacent as u16;
+                        output_values[position + 1] = if number_hydrogens.is_null() {
                             0
                         } else {
                             (16_i32 + i32::from(heap.slice(number_hydrogens)?[adjacent])) as u16
                         };
                     } else {
-                        heap.slice_mut(output)?[position + 1] = 0;
+                        output_values[position + 1] = 0;
                     }
-                    heap.slice_mut(output)?[position + 2] = if list_count > 1 {
+                    output_values[position + 2] = if list_count > 1 {
                         if neighbor_index == 1 {
                             b'(' as u16
                         } else if neighbor_index == list_count {
@@ -10638,7 +10652,7 @@ pub(crate) fn GetDfsOrder4CT(
                     };
                 } else {
                     if atom < atom_count {
-                        heap.slice_mut(neighbor_number)?[atom] = 0;
+                        neighbor_number_values[atom] = 0;
                     }
                     stack_top -= 1;
                     if stack_top < 0 {

@@ -48,6 +48,13 @@ to those matrices; fixed special-regression recipes are not randomized.
 
 ## Inputs and results
 
+InChI generation rejections compare the generation stage and exact engine
+return code (2: error, 3: fatal), only with an empty identifier. They count as
+matching source errors, not successful identifiers. Unknown failures remain
+failures; successful identifiers, keys and readback state stay bit-exact.
+The InChI-only `inchi-generation-status-v1` reference contract requires its
+three references to be prepared once; other tasks retain their cache keys.
+
 `testdata/corpora/*.smi` contains SMILES inputs. A bare corpus name selects that
 directory; an explicit path accepts any SMILES file. Blank/comment lines are
 ignored; the first whitespace-delimited field is the SMILES. Offsets and limits

@@ -83,13 +83,23 @@ pub(crate) fn NodeSetCreate(
         .wrapping_div(pCG.m_num_bit);
 
     // INCHI✔️✔️:     pSet->bitword = (bitWord**) inchi_calloc( L, sizeof( pSet->bitword[0] ) );
-    // INCHI✔️❗: Native size_t conversion and product overflow reach NULL.
-    // Same allocations/row loop, O(L) setup/O(1) scratch; arena cost OPEN.
-    pSet.bitword = match crate::source::base::util::inchi_calloc::<SourceMutPointer<bitWord>>(
-        heap,
-        L as u64,
-        SOURCE_SIZEOF_POINTER,
-    ) {
+    // INCHI✔️✔️: Every table element is overwritten by the row loop before
+    // publication. Reserve its storage now, preserving the two allocation
+    // failure points, but initialize it only once after storage succeeds.
+    // All rows share the storage allocation; retain that identity once and
+    // store only the element offsets (8 bytes, like the pinned C pointer).
+    let reserve_rows = |heap: &mut SourceHeap| {
+        (L as u64)
+            .checked_mul(SOURCE_SIZEOF_POINTER)
+            .ok_or(SourceHeapError::AllocationSizeOverflow)?;
+        let count = usize::try_from(L as u64)
+            .map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
+        let mut rows = Vec::<u64>::new();
+        rows.try_reserve_exact(count)
+            .map_err(|_| SourceHeapError::AllocationFailed)?;
+        heap.allocate(rows)
+    };
+    pSet.bitword = match reserve_rows(heap) {
         Ok(pointer) => pointer,
         // INCHI✔️✔️:     if (!pSet->bitword)
         // INCHI✔️✔️:     {
@@ -129,37 +139,26 @@ pub(crate) fn NodeSetCreate(
     };
 
     {
-        let rows = heap.slice_mut(pSet.bitword)?;
         let row_count =
             usize::try_from(L).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
-        let rows = rows
-            .get_mut(..row_count)
-            .ok_or(SourceHeapError::PointerOutOfBounds)?;
-        if rows.is_empty() {
+        if row_count == 0 {
             return Err(SourceHeapError::PointerOutOfBounds);
         }
-        let rows_pointer = rows.as_mut_ptr();
-
-        // INCHI✔️✔️:     pSet->bitword[0] = (bitWord*) allocated storage;
-        // SAFETY: the complete `L`-row prefix was validated above and remains
-        // exclusively borrowed for the source loop below.
-        unsafe { *rows_pointer = storage };
-        let mut previous = storage;
+        pSet.storage = storage;
+        let mut previous = 0_u64;
         let row_length =
             u64::try_from(len).map_err(|_| SourceHeapError::AllocationElementCountOutOfRange)?;
         // INCHI✔️✔️:     for (i = 1; i < L; i++)
         // INCHI✔️✔️:     {
-        let mut i = 1_usize;
-        while i < row_count {
+        heap.initialize_reserved_copy(pSet.bitword, row_count, |i| {
             // INCHI✔️✔️:         pSet->bitword[i] = pSet->bitword[i - 1] + len;
-            // SAFETY: storage_count == len * L was checked before allocating
-            // the contiguous storage, and i remains smaller than L.
-            previous = unsafe { previous.add_unchecked(row_length) };
-            // SAFETY: `i < row_count`, and `rows_pointer` addresses the
-            // validated, exclusively borrowed prefix.
-            unsafe { *rows_pointer.add(i) = previous };
-            i += 1;
-        }
+            // storage_count == len * L was checked before allocating the
+            // contiguous storage, and i remains smaller than L.
+            if i != 0 {
+                previous += row_length;
+            }
+            previous
+        })?;
         // INCHI✔️✔️:     }
     }
 
@@ -205,13 +204,32 @@ pub(in crate::source) fn free_node_set(
     if pSet.bitword.is_null() {
         return Ok(());
     }
-    let first = pointer_array_get(heap, pSet.bitword, 0)?;
+    let first = node_set_row(heap, pSet, 0)?;
     if !first.is_null() {
         inchi_free(heap, first)?;
     }
     inchi_free(heap, pSet.bitword)?;
     pSet.bitword = SourceMutPointer::null();
+    pSet.storage = SourceMutPointer::null();
     Ok(())
+}
+
+#[inline]
+fn node_set_row(
+    heap: &SourceHeap,
+    set: &NodeSet,
+    index: i32,
+) -> Result<SourceMutPointer<bitWord>, SourceHeapError> {
+    // INCHI✔️✔️: bitWord *Bits = cur_nodes->bitword[l - 1];
+    // NodeSetCreate initializes all rows from the same contiguous allocation.
+    // Keep checked table access and reconstruct the identical interior handle;
+    // consumers still validate the reached row access in its original order.
+    let offset = source_get(heap, set.bitword, index)?;
+    if set.storage.is_null() {
+        return Ok(SourceMutPointer::null());
+    }
+    set.storage
+        .offset(i64::try_from(offset).map_err(|_| SourceHeapError::PointerOffsetOverflow)?)
 }
 
 #[allow(non_snake_case)]
@@ -459,7 +477,7 @@ pub(crate) fn NodeSetFromVertices(
     // INCHI✔️❗: typedef U_SHORT bitWord
     // END INCHI ACTIVE MACRO CONFIGURATION: NodeSetFromVertices
 
-    let bits = pointer_array_get(heap, cur_nodes.bitword, l.wrapping_sub(1))?;
+    let bits = node_set_row(heap, cur_nodes, l.wrapping_sub(1))?;
     let len_set =
         usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice_mut(bits)?
@@ -543,8 +561,8 @@ pub(crate) fn AllNodesAreInSet(
     // INCHI✔️❗: typedef U_SHORT bitWord
     // END INCHI ACTIVE MACRO CONFIGURATION: AllNodesAreInSet
 
-    let bits_node = pointer_array_get(heap, cur_nodes.bitword, lcur_nodes.wrapping_sub(1))?;
-    let bits_set = pointer_array_get(heap, set.bitword, lset.wrapping_sub(1))?;
+    let bits_node = node_set_row(heap, cur_nodes, lcur_nodes.wrapping_sub(1))?;
+    let bits_set = node_set_row(heap, set, lset.wrapping_sub(1))?;
     // Native row-pointer selections precede the loop, row reads do not.
     if cur_nodes.len_set <= 0 {
         return Ok(1);
@@ -623,8 +641,8 @@ pub(crate) fn PartitionGetMcrAndFixSet(
     // INCHI✔️❌: typedef U_SHORT bitWord
     // END INCHI ACTIVE MACRO CONFIGURATION: PartitionGetMcrAndFixSet
 
-    let mcr_bits = pointer_array_get(heap, Mcr.bitword, l.wrapping_sub(1))?;
-    let fix_bits = pointer_array_get(heap, Fix.bitword, l.wrapping_sub(1))?;
+    let mcr_bits = node_set_row(heap, Mcr, l.wrapping_sub(1))?;
+    let fix_bits = node_set_row(heap, Fix, l.wrapping_sub(1))?;
     let len = usize::try_from(Mcr.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     heap.slice_mut(mcr_bits)?
         .get_mut(..len)
@@ -1856,7 +1874,7 @@ pub(crate) fn CellIntersectWithSet(
     // INCHI✔️❌: }
     // END INCHI C FUNCTION: CellIntersectWithSet
 
-    let mcr_bits = pointer_array_get(heap, Mcr.bitword, l.wrapping_sub(1))?;
+    let mcr_bits = node_set_row(heap, Mcr, l.wrapping_sub(1))?;
     let first = W.first;
     let next = W.next;
     if first >= next {
@@ -2305,23 +2323,50 @@ pub(crate) fn CtPartFill(
         return Ok(());
     }
 
-    // INCHI✔️❗: Native1849..2059 performs each scalar read/write in order;
-    // table, order/ranks, graph rows and metadata pairs have no restrict.
-    // Retaining whole slices across these mutations breaks valid aliases.
-    // Use canonical safe accesses without snapshots or a preliminary domain
-    // scan; reuse the one native insertion-sort implementation. Same source
-    // traversals/O(1) scratch/no allocation. Repeated checked arena lookups
-    // have unfavorable constants: INCHI-PERF-PARTITION-CT-ALIAS remains OPEN.
     let rank_mask = rank_mask_bit();
     let first_atom = source_get(heap, p.AtNumber, start_at_ord)?;
     let mut r = rank_mask & source_get(heap, p.Rank, i32::from(first_atom))?;
+    // INCHI✔️✔️: for (i = startAtOrd; i < n_tg && r == (rank_mask_bit & p->Rank[m = (int)p->AtNumber[i]]); i++, r++)
+    // Resolve order/rank arrays once, but read each scalar at its original
+    // source position: connection-table writes and neighbor sorting may alias
+    // them. Never retain shared slices across those mutations.
+    let mut atom_order = crate::source_types::NativeSourceArray::new(p.AtNumber);
+    let mut atom_ranks = crate::source_types::NativeSourceArray::new(p.Rank);
+    let mut connection_table = crate::source_types::NativeSourceArray::new(ct.Ctbl);
+    let mut connection_table_admitted = false;
+    macro_rules! read_partition {
+        ($array:ident, $index:expr) => {{
+            // SAFETY: this function and its insertion sorter never
+            // free/resize/extract storage or call user code. Resolution is
+            // lazy at the first reached read. Reads return copied scalars only;
+            // every overlapping mutation completes before the next read.
+            unsafe { $array.read(heap, i64::from($index), |value| *value) }
+        }};
+    }
+    macro_rules! write_partition {
+        ($array:ident, $index:expr, $value:expr) => {{
+            let index = $index;
+            // source_set rejects negative destination indices before admission.
+            usize::try_from(index).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
+            // SAFETY: CtPartFill and the insertion sorter do not release or
+            // resize these allocations. Each closure stores one scalar and
+            // ends before any possibly aliased read/write; no references escape.
+            unsafe { $array.update(heap, i64::from(index), |slot| *slot = $value) }
+        }};
+    }
     let mut i = start_at_ord;
     while i < n_tg {
-        let m = source_get(heap, p.AtNumber, i)?;
-        if r != rank_mask & source_get(heap, p.Rank, i32::from(m))? {
+        let m = read_partition!(atom_order, i)?;
+        if r != rank_mask & read_partition!(atom_ranks, i32::from(m))? {
             break;
         }
-        source_set(heap, ct.Ctbl, start_ctbl, r)?;
+        if !connection_table_admitted {
+            // Preserve source_set's base admission before adding an index,
+            // including invalid fabricated base pointers in modeled callers.
+            let _ = heap.slice_mut(ct.Ctbl)?;
+            connection_table_admitted = true;
+        }
+        write_partition!(connection_table, start_ctbl, r)?;
         start_ctbl = start_ctbl.wrapping_add(1);
         let neighbors = pointer_array_get(heap, G, i32::from(m))?;
         insertions_sort_NeighList_AT_NUMBERS2(heap, neighbors, p.Rank, r)?;
@@ -2329,11 +2374,11 @@ pub(crate) fn CtPartFill(
         let mut j: AT_RANK = 1;
         while j <= nn {
             let neighbor = source_get(heap, neighbors, i32::from(j))?;
-            let rj = rank_mask & source_get(heap, p.Rank, i32::from(neighbor))?;
+            let rj = rank_mask & read_partition!(atom_ranks, i32::from(neighbor))?;
             if rj >= r {
                 break;
             }
-            source_set(heap, ct.Ctbl, start_ctbl, rj)?;
+            write_partition!(connection_table, start_ctbl, rj)?;
             start_ctbl = start_ctbl.wrapping_add(1);
             j = j.wrapping_add(1);
         }
@@ -2345,23 +2390,33 @@ pub(crate) fn CtPartFill(
         // Preserve existing typed pointer admission without retaining borrows.
         let _ = heap.slice(pCD.NumH.as_const())?;
         let _ = heap.slice_mut(ct.NumH)?;
+        let mut input_h = crate::source_types::NativeSourceArray::new(pCD.NumH);
+        let mut output_h = crate::source_types::NativeSourceArray::new(ct.NumH);
         let mut nn = n.min(i) as AT_RANK;
         let mut j = start_at_ord as AT_RANK;
         while j < nn {
-            let atom = source_get(heap, p.AtNumber, i32::from(j))?;
-            let value = source_get(heap, pCD.NumH, i32::from(atom))?;
-            source_set(heap, ct.NumH, i32::from(j), value)?;
+            let atom = read_partition!(atom_order, i32::from(j))?;
+            let value = read_partition!(input_h, i32::from(atom))?;
+            write_partition!(output_h, i32::from(j), value)?;
             j = j.wrapping_add(1);
         }
         while i32::from(j) < i {
-            let atom = i32::from(source_get(heap, p.AtNumber, i32::from(j))?);
+            let atom = i32::from(read_partition!(atom_order, i32::from(j))?);
             let mut data_pos = n.wrapping_add(
                 (crate::source_types::T_NUM_NO_ISOTOPIC as i32).wrapping_mul(atom.wrapping_sub(n)),
             );
             let mut m = 0_i32;
             while m < crate::source_types::T_NUM_NO_ISOTOPIC as i32 {
-                let value = source_get(heap, pCD.NumH, data_pos)?;
-                source_set(heap, ct.NumH, i32::from(nn), value)?;
+                // source_get maps all invalid negative relative reads to
+                // PointerOutOfBounds, while admitting valid interior reads.
+                let value = read_partition!(input_h, data_pos).map_err(|error| {
+                    if data_pos < 0 {
+                        SourceHeapError::PointerOutOfBounds
+                    } else {
+                        error
+                    }
+                })?;
+                write_partition!(output_h, i32::from(nn), value)?;
                 nn = nn.wrapping_add(1);
                 data_pos = data_pos.wrapping_add(1);
                 m = m.wrapping_add(1);
@@ -2376,12 +2431,14 @@ pub(crate) fn CtPartFill(
     if !pCD.NumHfixed.is_null() && !ct.NumHfixed.is_null() {
         let _ = heap.slice(pCD.NumHfixed.as_const())?;
         let _ = heap.slice_mut(ct.NumHfixed)?;
+        let mut input_fixed_h = crate::source_types::NativeSourceArray::new(pCD.NumHfixed);
+        let mut output_fixed_h = crate::source_types::NativeSourceArray::new(ct.NumHfixed);
         let nn = n.min(i) as AT_RANK;
         let mut j = start_at_ord as AT_RANK;
         while j < nn {
-            let atom = source_get(heap, p.AtNumber, i32::from(j))?;
-            let value = source_get(heap, pCD.NumHfixed, i32::from(atom))?;
-            source_set(heap, ct.NumHfixed, i32::from(j), value)?;
+            let atom = read_partition!(atom_order, i32::from(j))?;
+            let value = read_partition!(input_fixed_h, i32::from(atom))?;
+            write_partition!(output_fixed_h, i32::from(j), value)?;
             j = j.wrapping_add(1);
         }
     }
@@ -2389,11 +2446,13 @@ pub(crate) fn CtPartFill(
     if !pCD.iso_sort_key.is_null() && !ct.iso_sort_key.is_null() {
         let _ = heap.slice(pCD.iso_sort_key.as_const())?;
         let _ = heap.slice_mut(ct.iso_sort_key)?;
+        let mut input_iso = crate::source_types::NativeSourceArray::new(pCD.iso_sort_key);
+        let mut output_iso = crate::source_types::NativeSourceArray::new(ct.iso_sort_key);
         let mut j = start_at_ord as AT_RANK;
         while i32::from(j) < i {
-            let atom = source_get(heap, p.AtNumber, i32::from(j))?;
-            let value = source_get(heap, pCD.iso_sort_key, i32::from(atom))?;
-            source_set(heap, ct.iso_sort_key, i32::from(j), value)?;
+            let atom = read_partition!(atom_order, i32::from(j))?;
+            let value = read_partition!(input_iso, i32::from(atom))?;
+            write_partition!(output_iso, i32::from(j), value)?;
             j = j.wrapping_add(1);
         }
         ct.len_iso_sort_key = i;
@@ -2404,11 +2463,13 @@ pub(crate) fn CtPartFill(
     if !pCD.iso_exchg_atnos.is_null() && !ct.iso_exchg_atnos.is_null() {
         let _ = heap.slice(pCD.iso_exchg_atnos.as_const())?;
         let _ = heap.slice_mut(ct.iso_exchg_atnos)?;
+        let mut input_exchange = crate::source_types::NativeSourceArray::new(pCD.iso_exchg_atnos);
+        let mut output_exchange = crate::source_types::NativeSourceArray::new(ct.iso_exchg_atnos);
         let mut j = start_at_ord as AT_RANK;
         while i32::from(j) < i {
-            let atom = source_get(heap, p.AtNumber, i32::from(j))?;
-            let value = source_get(heap, pCD.iso_exchg_atnos, i32::from(atom))?;
-            source_set(heap, ct.iso_exchg_atnos, i32::from(j), value)?;
+            let atom = read_partition!(atom_order, i32::from(j))?;
+            let value = read_partition!(input_exchange, i32::from(atom))?;
+            write_partition!(output_exchange, i32::from(j), value)?;
             j = j.wrapping_add(1);
         }
         ct.len_iso_exchg_atnos = i;
@@ -4296,8 +4357,8 @@ pub(crate) fn TranspositionGetMcrAndFixSetAndUnorderedPartition(
     // INCHI✔️❌: #define bRELEASE_VERSION  1
     // END INCHI ACTIVE MACRO CONFIGURATION: TranspositionGetMcrAndFixSetAndUnorderedPartition
 
-    let mcr_bits = pointer_array_get(heap, McrSet.bitword, l.wrapping_sub(1))?;
-    let fix_bits = pointer_array_get(heap, FixSet.bitword, l.wrapping_sub(1))?;
+    let mcr_bits = node_set_row(heap, McrSet, l.wrapping_sub(1))?;
+    let fix_bits = node_set_row(heap, FixSet, l.wrapping_sub(1))?;
     let set_len =
         usize::try_from(McrSet.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     // INCHI✔️✔️:     memset( McrBits, 0, len );
@@ -8506,7 +8567,7 @@ pub(crate) fn NodeSetFromRadEndpoints(
     // INCHI✔️❌: typedef U_SHORT bitWord
     // END INCHI ACTIVE MACRO CONFIGURATION: NodeSetFromRadEndpoints
 
-    let bits = pointer_array_get(heap, cur_nodes.bitword, k)?;
+    let bits = node_set_row(heap, cur_nodes, k)?;
     let len_set =
         usize::try_from(cur_nodes.len_set).map_err(|_| SourceHeapError::PointerOutOfBounds)?;
     {
@@ -8610,7 +8671,7 @@ pub(crate) fn remove_from_node_set_values(
     if cur_nodes.bitword.is_null() {
         return Ok(());
     }
-    let bits = pointer_array_get(heap, cur_nodes.bitword, k)?;
+    let bits = node_set_row(heap, cur_nodes, k)?;
     let mut i = 0_i32;
     while i < num_v {
         let j = value_at(heap, i)?;
@@ -8665,8 +8726,8 @@ pub(crate) fn DoNodeSetsIntersect(
     if cur_nodes.bitword.is_null() {
         return Ok(0);
     }
-    let bits1 = pointer_array_get(heap, cur_nodes.bitword, k1)?;
-    let bits2 = pointer_array_get(heap, cur_nodes.bitword, k2)?;
+    let bits1 = node_set_row(heap, cur_nodes, k1)?;
+    let bits2 = node_set_row(heap, cur_nodes, k2)?;
 
     // Signed native loop skips nonpositive lengths without dereferencing rows.
     if cur_nodes.len_set <= 0 {
@@ -8729,7 +8790,7 @@ pub(crate) fn IsNodeSetEmpty(
     if cur_nodes.bitword.is_null() {
         return Ok(1);
     }
-    let bits = pointer_array_get(heap, cur_nodes.bitword, k)?;
+    let bits = node_set_row(heap, cur_nodes, k)?;
 
     // Signed native loop skips nonpositive lengths without dereferencing rows.
     if cur_nodes.len_set <= 0 {
@@ -8781,8 +8842,8 @@ pub(crate) fn AddNodeSet2ToNodeSet1(
     if cur_nodes.bitword.is_null() {
         return Ok(());
     }
-    let bits1 = pointer_array_get(heap, cur_nodes.bitword, k1)?;
-    let bits2 = pointer_array_get(heap, cur_nodes.bitword, k2)?;
+    let bits1 = node_set_row(heap, cur_nodes, k1)?;
+    let bits2 = node_set_row(heap, cur_nodes, k2)?;
     let len = cur_nodes.len_set;
     let mut i = 0_i32;
     while i < len {
@@ -8862,7 +8923,7 @@ pub(crate) fn AddNodesToRadEndpoints(
         return Ok(n);
     }
 
-    let bits = pointer_array_get(heap, cur_nodes.bitword, k)?;
+    let bits = node_set_row(heap, cur_nodes, k)?;
     let len = cur_nodes.len_set;
     let mut i = 0_i32;
     let mut v: Vertex = 0;
@@ -14291,6 +14352,28 @@ pub(crate) fn GetBaseCanonRanking(
 
 #[cfg(test)]
 mod tests {
+    // The production NodeSet has one contiguous backing allocation. Keep the
+    // existing row values and assertions while arranging fixtures accordingly.
+    // Reverse physical order leaves row zero at the allocation end, retaining
+    // the existing invalid-vertex boundary and partial-write regression.
+    fn contiguous_test_rows<const N: usize>(
+        heap: &mut SourceHeap,
+        rows: [SourceMutPointer<bitWord>; N],
+    ) -> (
+        SourceMutPointer<bitWord>,
+        SourceMutPointer<u64>,
+        [SourceMutPointer<bitWord>; N],
+    ) {
+        let mut data = Vec::new();
+        let mut offsets = [0_u64; N];
+        for i in (0..N).rev() {
+            offsets[i] = data.len() as u64;
+            data.extend_from_slice(heap.slice(rows[i].as_const()).unwrap());
+        }
+        let storage = heap.allocate(data).unwrap();
+        let pointers = offsets.map(|offset| storage.offset(offset as i64).unwrap());
+        (storage, heap.allocate(offsets.to_vec()).unwrap(), pointers)
+    }
     use super::*;
 
     #[test]
@@ -15837,7 +15920,11 @@ mod tests {
         assert_eq!(NodeSetCreate(&mut heap, &globals, &mut set, 33, 3), Ok(1));
         assert_eq!(set.len_set, 3);
         assert_eq!(set.num_set, 3);
-        let rows = heap.slice(set.bitword.as_const()).unwrap().to_vec();
+        let rows = (0..set.num_set)
+            .map(|i| node_set_row(&heap, &set, i).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(heap.slice(set.bitword.as_const()).unwrap(), &[0, 3, 6]);
+        assert_eq!(size_of::<u64>(), SOURCE_SIZEOF_POINTER as usize);
         assert_eq!(rows.len(), 3);
         assert_eq!(heap.slice(rows[0].as_const()).unwrap(), &[0; 9]);
         assert_eq!(heap.slice(rows[1].as_const()).unwrap(), &[0; 6]);
@@ -15898,7 +15985,9 @@ mod tests {
         let mut set = NodeSet::default();
         assert_eq!(NodeSetCreate(&mut heap, &globals, &mut set, 20, 2), Ok(1));
         let outer = set.bitword;
-        let rows = heap.slice(set.bitword.as_const()).unwrap().to_vec();
+        let rows = (0..set.num_set)
+            .map(|i| node_set_row(&heap, &set, i).unwrap())
+            .collect::<Vec<_>>();
         assert_eq!(rows.len(), 2);
 
         assert_eq!(NodeSetFree(&mut heap, &globals, &mut set), Ok(()));
@@ -15914,11 +16003,10 @@ mod tests {
             Err(SourceHeapError::MissingAllocation)
         );
 
-        let null_row_outer = heap
-            .allocate(vec![SourceMutPointer::<bitWord>::null()])
-            .unwrap();
+        let null_row_outer = heap.allocate(vec![0_u64]).unwrap();
         let mut null_row_set = NodeSet {
             bitword: null_row_outer,
+            storage: SourceMutPointer::null(),
             len_set: 5,
             num_set: 1,
         };
@@ -15953,9 +16041,12 @@ mod tests {
         };
         let row0 = heap.allocate(vec![0x1111_u16; 3]).unwrap();
         let row1 = heap.allocate(vec![0x2222_u16; 3]).unwrap();
-        let rows = heap.allocate(vec![row0, row1]).unwrap();
+        let row0_len = heap.slice(row0.as_const()).unwrap().len();
+        let row1_len = heap.slice(row1.as_const()).unwrap().len();
+        let (rows_storage, rows, [row0, row1]) = contiguous_test_rows(&mut heap, [row0, row1]);
         let set = NodeSet {
             bitword: rows,
+            storage: rows_storage,
             num_set: 2,
             len_set: 3,
         };
@@ -15965,9 +16056,12 @@ mod tests {
             NodeSetFromVertices(&mut heap, &globals, &set, 2, vertices, 5),
             Ok(())
         );
-        assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0x1111; 3]);
         assert_eq!(
-            heap.slice(row1.as_const()).unwrap(),
+            &heap.slice(row0.as_const()).unwrap()[..row0_len],
+            &[0x1111; 3]
+        );
+        assert_eq!(
+            &heap.slice(row1.as_const()).unwrap()[..row1_len],
             &[0x8001, 0x8001, 0x0001]
         );
 
@@ -15976,40 +16070,57 @@ mod tests {
             NodeSetFromVertices(&mut heap, &globals, &set, 1, duplicate, 2),
             Ok(())
         );
-        assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0x0002, 0, 0]);
+        assert_eq!(
+            &heap.slice(row0.as_const()).unwrap()[..row0_len],
+            &[0x0002, 0, 0]
+        );
 
         assert_eq!(
             NodeSetFromVertices(&mut heap, &globals, &set, 1, duplicate, 0),
             Ok(())
         );
-        assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0; 3]);
-        heap.slice_mut(row0).unwrap().fill(0x3333);
+        assert_eq!(&heap.slice(row0.as_const()).unwrap()[..row0_len], &[0; 3]);
+        heap.slice_mut(row0)
+            .unwrap()
+            .get_mut(..row0_len)
+            .unwrap()
+            .fill(0x3333);
         assert_eq!(
             NodeSetFromVertices(&mut heap, &globals, &set, 1, duplicate, -1),
             Ok(())
         );
-        assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0; 3]);
+        assert_eq!(&heap.slice(row0.as_const()).unwrap()[..row0_len], &[0; 3]);
 
-        heap.slice_mut(row0).unwrap().fill(0x4444);
+        heap.slice_mut(row0)
+            .unwrap()
+            .get_mut(..row0_len)
+            .unwrap()
+            .fill(0x4444);
         assert_eq!(
             NodeSetFromVertices(&mut heap, &globals, &set, 0, duplicate, 2),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0x4444; 3]);
+        assert_eq!(
+            &heap.slice(row0.as_const()).unwrap()[..row0_len],
+            &[0x4444; 3]
+        );
 
         let partly_invalid = heap.allocate(vec![1_u16, 49]).unwrap();
         assert_eq!(
             NodeSetFromVertices(&mut heap, &globals, &set, 1, partly_invalid, 2),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(heap.slice(row0.as_const()).unwrap(), &[1, 0, 0]);
+        assert_eq!(
+            &heap.slice(row0.as_const()).unwrap()[..row0_len],
+            &[1, 0, 0]
+        );
 
         let zero_vertex = heap.allocate(vec![0_u16]).unwrap();
         assert_eq!(
             NodeSetFromVertices(&mut heap, &globals, &set, 1, zero_vertex, 1),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(heap.slice(row0.as_const()).unwrap(), &[0; 3]);
+        assert_eq!(&heap.slice(row0.as_const()).unwrap()[..row0_len], &[0; 3]);
     }
 
     #[test]
@@ -16017,17 +16128,25 @@ mod tests {
         let mut heap = SourceHeap::default();
         let nodes0 = heap.allocate(vec![0x0001_u16, 0x0080, 0x4000]).unwrap();
         let nodes1 = heap.allocate(vec![0x0003_u16, 0x0100, 0x8000]).unwrap();
-        let node_rows = heap.allocate(vec![nodes0, nodes1]).unwrap();
+        let nodes0_len = heap.slice(nodes0.as_const()).unwrap().len();
+        let nodes1_len = heap.slice(nodes1.as_const()).unwrap().len();
+        let (node_rows_storage, node_rows, [nodes0, nodes1]) =
+            contiguous_test_rows(&mut heap, [nodes0, nodes1]);
         let cur_nodes = NodeSet {
             bitword: node_rows,
+            storage: node_rows_storage,
             num_set: 2,
             len_set: 3,
         };
         let set0 = heap.allocate(vec![0x0001_u16, 0x0081, 0x4000]).unwrap();
         let set1 = heap.allocate(vec![0x0001_u16, 0x0100, 0x7fff]).unwrap();
-        let set_rows = heap.allocate(vec![set0, set1]).unwrap();
+        let set0_len = heap.slice(set0.as_const()).unwrap().len();
+        let set1_len = heap.slice(set1.as_const()).unwrap().len();
+        let (set_rows_storage, set_rows, [set0, set1]) =
+            contiguous_test_rows(&mut heap, [set0, set1]);
         let set = NodeSet {
             bitword: set_rows,
+            storage: set_rows_storage,
             num_set: 2,
             len_set: 99,
         };
@@ -16035,22 +16154,28 @@ mod tests {
         assert_eq!(AllNodesAreInSet(&heap, &cur_nodes, 1, &set, 1), Ok(1));
         assert_eq!(AllNodesAreInSet(&heap, &cur_nodes, 2, &set, 2), Ok(0));
 
-        heap.slice_mut(set1).unwrap()[0] = 0x0003;
+        heap.slice_mut(set1).unwrap().get_mut(..set1_len).unwrap()[0] = 0x0003;
         assert_eq!(AllNodesAreInSet(&heap, &cur_nodes, 2, &set, 2), Ok(0));
-        heap.slice_mut(set1).unwrap()[2] = 0xffff;
+        heap.slice_mut(set1).unwrap().get_mut(..set1_len).unwrap()[2] = 0xffff;
         assert_eq!(AllNodesAreInSet(&heap, &cur_nodes, 2, &set, 2), Ok(1));
 
         let short_node = heap.allocate(vec![0x0002_u16, 0]).unwrap();
         let short_set = heap.allocate(vec![0x0001_u16]).unwrap();
-        let short_node_rows = heap.allocate(vec![short_node]).unwrap();
-        let short_set_rows = heap.allocate(vec![short_set]).unwrap();
+        let short_node_len = heap.slice(short_node.as_const()).unwrap().len();
+        let (short_node_rows_storage, short_node_rows, [short_node]) =
+            contiguous_test_rows(&mut heap, [short_node]);
+        let short_set_len = heap.slice(short_set.as_const()).unwrap().len();
+        let (short_set_rows_storage, short_set_rows, [short_set]) =
+            contiguous_test_rows(&mut heap, [short_set]);
         let short_cur = NodeSet {
             bitword: short_node_rows,
+            storage: short_node_rows_storage,
             num_set: 1,
             len_set: 2,
         };
         let short_container = NodeSet {
             bitword: short_set_rows,
+            storage: short_set_rows_storage,
             num_set: 1,
             len_set: 1,
         };
@@ -16058,7 +16183,10 @@ mod tests {
             AllNodesAreInSet(&heap, &short_cur, 1, &short_container, 1),
             Ok(0)
         );
-        heap.slice_mut(short_set).unwrap()[0] = 0x0002;
+        heap.slice_mut(short_set)
+            .unwrap()
+            .get_mut(..short_set_len)
+            .unwrap()[0] = 0x0002;
         assert_eq!(
             AllNodesAreInSet(&heap, &short_cur, 1, &short_container, 1),
             Err(SourceHeapError::PointerOutOfBounds)
@@ -16066,6 +16194,7 @@ mod tests {
 
         let negative = NodeSet {
             bitword: node_rows,
+            storage: node_rows_storage,
             num_set: 2,
             len_set: -1,
         };
@@ -16098,17 +16227,25 @@ mod tests {
         };
         let mcr0 = heap.allocate(vec![0xaaaa_u16]).unwrap();
         let mcr1 = heap.allocate(vec![0xbbbb_u16]).unwrap();
-        let mcr_rows = heap.allocate(vec![mcr0, mcr1]).unwrap();
+        let mcr0_len = heap.slice(mcr0.as_const()).unwrap().len();
+        let mcr1_len = heap.slice(mcr1.as_const()).unwrap().len();
+        let (mcr_rows_storage, mcr_rows, [mcr0, mcr1]) =
+            contiguous_test_rows(&mut heap, [mcr0, mcr1]);
         let mcr = NodeSet {
             bitword: mcr_rows,
+            storage: mcr_rows_storage,
             num_set: 2,
             len_set: 1,
         };
         let fix0 = heap.allocate(vec![0xcccc_u16]).unwrap();
         let fix1 = heap.allocate(vec![0xdddd_u16]).unwrap();
-        let fix_rows = heap.allocate(vec![fix0, fix1]).unwrap();
+        let fix0_len = heap.slice(fix0.as_const()).unwrap().len();
+        let fix1_len = heap.slice(fix1.as_const()).unwrap().len();
+        let (fix_rows_storage, fix_rows, [fix0, fix1]) =
+            contiguous_test_rows(&mut heap, [fix0, fix1]);
         let fix = NodeSet {
             bitword: fix_rows,
+            storage: fix_rows_storage,
             num_set: 2,
             len_set: 1,
         };
@@ -16117,42 +16254,45 @@ mod tests {
             PartitionGetMcrAndFixSet(&mut heap, &globals, &partition, &mcr, &fix, 7, 2),
             Ok(())
         );
-        assert_eq!(heap.slice(mcr0.as_const()).unwrap(), &[0xaaaa]);
-        assert_eq!(heap.slice(fix0.as_const()).unwrap(), &[0xcccc]);
-        assert_eq!(heap.slice(mcr1.as_const()).unwrap(), &[0x001b]);
-        assert_eq!(heap.slice(fix1.as_const()).unwrap(), &[0x000a]);
+        assert_eq!(&heap.slice(mcr0.as_const()).unwrap()[..mcr0_len], &[0xaaaa]);
+        assert_eq!(&heap.slice(fix0.as_const()).unwrap()[..fix0_len], &[0xcccc]);
+        assert_eq!(&heap.slice(mcr1.as_const()).unwrap()[..mcr1_len], &[0x001b]);
+        assert_eq!(&heap.slice(fix1.as_const()).unwrap()[..fix1_len], &[0x000a]);
 
-        heap.slice_mut(mcr1).unwrap()[0] = 0xffff;
-        heap.slice_mut(fix1).unwrap()[0] = 0xffff;
+        heap.slice_mut(mcr1).unwrap().get_mut(..mcr1_len).unwrap()[0] = 0xffff;
+        heap.slice_mut(fix1).unwrap().get_mut(..fix1_len).unwrap()[0] = 0xffff;
         assert_eq!(
             PartitionGetMcrAndFixSet(&mut heap, &globals, &partition, &mcr, &fix, 0, 2),
             Ok(())
         );
-        assert_eq!(heap.slice(mcr1.as_const()).unwrap(), &[0]);
-        assert_eq!(heap.slice(fix1.as_const()).unwrap(), &[0]);
+        assert_eq!(&heap.slice(mcr1.as_const()).unwrap()[..mcr1_len], &[0]);
+        assert_eq!(&heap.slice(fix1.as_const()).unwrap()[..fix1_len], &[0]);
 
-        heap.slice_mut(mcr1).unwrap()[0] = 0xffff;
-        heap.slice_mut(fix1).unwrap()[0] = 0xffff;
+        heap.slice_mut(mcr1).unwrap().get_mut(..mcr1_len).unwrap()[0] = 0xffff;
+        heap.slice_mut(fix1).unwrap().get_mut(..fix1_len).unwrap()[0] = 0xffff;
         assert_eq!(
             PartitionGetMcrAndFixSet(&mut heap, &globals, &partition, &mcr, &fix, -1, 2),
             Ok(())
         );
-        assert_eq!(heap.slice(mcr1.as_const()).unwrap(), &[0]);
-        assert_eq!(heap.slice(fix1.as_const()).unwrap(), &[0]);
+        assert_eq!(&heap.slice(mcr1.as_const()).unwrap()[..mcr1_len], &[0]);
+        assert_eq!(&heap.slice(fix1.as_const()).unwrap()[..fix1_len], &[0]);
 
         let short_fix = heap.allocate(Vec::<u16>::new()).unwrap();
-        let short_fix_rows = heap.allocate(vec![short_fix]).unwrap();
+        let short_fix_len = heap.slice(short_fix.as_const()).unwrap().len();
+        let (short_fix_rows_storage, short_fix_rows, [short_fix]) =
+            contiguous_test_rows(&mut heap, [short_fix]);
         let short_fix_set = NodeSet {
             bitword: short_fix_rows,
+            storage: short_fix_rows_storage,
             num_set: 1,
             len_set: 0,
         };
-        heap.slice_mut(mcr0).unwrap()[0] = 0xffff;
+        heap.slice_mut(mcr0).unwrap().get_mut(..mcr0_len).unwrap()[0] = 0xffff;
         assert_eq!(
             PartitionGetMcrAndFixSet(&mut heap, &globals, &partition, &mcr, &short_fix_set, 7, 1),
             Err(SourceHeapError::PointerOutOfBounds)
         );
-        assert_eq!(heap.slice(mcr0.as_const()).unwrap(), &[0]);
+        assert_eq!(&heap.slice(mcr0.as_const()).unwrap()[..mcr0_len], &[0]);
 
         assert_eq!(
             PartitionGetMcrAndFixSet(&mut heap, &globals, &partition, &mcr, &fix, 7, 0),
@@ -17096,9 +17236,12 @@ mod tests {
         };
         let set0 = heap.allocate(vec![0b0000_1010_u16]).unwrap();
         let set1 = heap.allocate(vec![0b0000_0100_u16]).unwrap();
-        let rows = heap.allocate(vec![set0, set1]).unwrap();
+        let set0_len = heap.slice(set0.as_const()).unwrap().len();
+        let set1_len = heap.slice(set1.as_const()).unwrap().len();
+        let (rows_storage, rows, [set0, set1]) = contiguous_test_rows(&mut heap, [set0, set1]);
         let mcr = NodeSet {
             bitword: rows,
+            storage: rows_storage,
             num_set: 2,
             len_set: 1,
         };
@@ -17782,15 +17925,19 @@ mod tests {
 
         let mcr_row = heap.allocate(vec![u16::MAX]).unwrap();
         let fix_row = heap.allocate(vec![u16::MAX]).unwrap();
-        let mcr_rows = heap.allocate(vec![mcr_row]).unwrap();
-        let fix_rows = heap.allocate(vec![fix_row]).unwrap();
+        let mcr_row_len = heap.slice(mcr_row.as_const()).unwrap().len();
+        let (mcr_rows_storage, mcr_rows, [mcr_row]) = contiguous_test_rows(&mut heap, [mcr_row]);
+        let fix_row_len = heap.slice(fix_row.as_const()).unwrap().len();
+        let (fix_rows_storage, fix_rows, [fix_row]) = contiguous_test_rows(&mut heap, [fix_row]);
         let mcr_set = NodeSet {
             bitword: mcr_rows,
+            storage: mcr_rows_storage,
             num_set: 1,
             len_set: 1,
         };
         let fix_set = NodeSet {
             bitword: fix_rows,
+            storage: fix_rows_storage,
             num_set: 1,
             len_set: 1,
         };
@@ -17814,8 +17961,14 @@ mod tests {
             ),
             Ok(())
         );
-        assert_eq!(heap.slice(mcr_row.as_const()).unwrap(), &[0b001011]);
-        assert_eq!(heap.slice(fix_row.as_const()).unwrap(), &[0b000001]);
+        assert_eq!(
+            &heap.slice(mcr_row.as_const()).unwrap()[..mcr_row_len],
+            &[0b001011]
+        );
+        assert_eq!(
+            &heap.slice(fix_row.as_const()).unwrap()[..fix_row_len],
+            &[0b000001]
+        );
         assert_eq!(heap.slice(equ2.as_const()).unwrap(), &[0, 1, 1, 3, 3, 3]);
         assert_eq!(
             heap.slice(permutation.as_const()).unwrap(),
@@ -17838,12 +17991,24 @@ mod tests {
             ),
             Ok(())
         );
-        assert_eq!(heap.slice(mcr_row.as_const()).unwrap(), &[0b111111]);
-        assert_eq!(heap.slice(fix_row.as_const()).unwrap(), &[0b111111]);
+        assert_eq!(
+            &heap.slice(mcr_row.as_const()).unwrap()[..mcr_row_len],
+            &[0b111111]
+        );
+        assert_eq!(
+            &heap.slice(fix_row.as_const()).unwrap()[..fix_row_len],
+            &[0b111111]
+        );
         assert_eq!(heap.slice(equ2.as_const()).unwrap(), &[0, 1, 2, 3, 4, 5]);
 
-        heap.slice_mut(mcr_row).unwrap()[0] = u16::MAX;
-        heap.slice_mut(fix_row).unwrap()[0] = u16::MAX;
+        heap.slice_mut(mcr_row)
+            .unwrap()
+            .get_mut(..mcr_row_len)
+            .unwrap()[0] = u16::MAX;
+        heap.slice_mut(fix_row)
+            .unwrap()
+            .get_mut(..fix_row_len)
+            .unwrap()[0] = u16::MAX;
         assert_eq!(
             TranspositionGetMcrAndFixSetAndUnorderedPartition(
                 &mut heap,
@@ -17857,11 +18022,18 @@ mod tests {
             ),
             Ok(())
         );
-        assert_eq!(heap.slice(mcr_row.as_const()).unwrap(), &[0]);
-        assert_eq!(heap.slice(fix_row.as_const()).unwrap(), &[0]);
+        assert_eq!(
+            &heap.slice(mcr_row.as_const()).unwrap()[..mcr_row_len],
+            &[0]
+        );
+        assert_eq!(
+            &heap.slice(fix_row.as_const()).unwrap()[..fix_row_len],
+            &[0]
+        );
 
         let bad_set = NodeSet {
             bitword: SourceMutPointer::null(),
+            storage: SourceMutPointer::null(),
             num_set: 1,
             len_set: 1,
         };
@@ -19199,9 +19371,13 @@ mod tests {
         };
         let set0 = heap.allocate(vec![0xaaaa_u16, 0xbbbb]).unwrap();
         let set1 = heap.allocate(vec![0xffff_u16, 0xffff]).unwrap();
-        let bitword = heap.allocate(vec![set0, set1]).unwrap();
+        let set0_len = heap.slice(set0.as_const()).unwrap().len();
+        let set1_len = heap.slice(set1.as_const()).unwrap().len();
+        let (bitword_storage, bitword, [set0, set1]) =
+            contiguous_test_rows(&mut heap, [set0, set1]);
         let cur_nodes = NodeSet {
             bitword,
+            storage: bitword_storage,
             num_set: 2,
             len_set: 2,
         };
@@ -19211,15 +19387,24 @@ mod tests {
             NodeSetFromRadEndpoints(&mut heap, &globals, &cur_nodes, 1, endpoints, 6),
             Ok(())
         );
-        assert_eq!(heap.slice(set0.as_const()).unwrap(), &[0xaaaa, 0xbbbb]);
-        assert_eq!(heap.slice(set1.as_const()).unwrap(), &[0x0001, 0x8002]);
+        assert_eq!(
+            &heap.slice(set0.as_const()).unwrap()[..set0_len],
+            &[0xaaaa, 0xbbbb]
+        );
+        assert_eq!(
+            &heap.slice(set1.as_const()).unwrap()[..set1_len],
+            &[0x0001, 0x8002]
+        );
 
         let clear_only = heap.allocate(vec![12, 13]).unwrap();
         assert_eq!(
             NodeSetFromRadEndpoints(&mut heap, &globals, &cur_nodes, 1, clear_only, 1),
             Ok(())
         );
-        assert_eq!(heap.slice(set1.as_const()).unwrap(), &[0x0000, 0x0000]);
+        assert_eq!(
+            &heap.slice(set1.as_const()).unwrap()[..set1_len],
+            &[0x0000, 0x0000]
+        );
     }
 
     #[test]
@@ -19235,9 +19420,13 @@ mod tests {
         };
         let set0 = heap.allocate(vec![0xffff_u16, 0xffff]).unwrap();
         let set1 = heap.allocate(vec![0xffff_u16, 0xffff]).unwrap();
-        let bitword = heap.allocate(vec![set0, set1]).unwrap();
+        let set0_len = heap.slice(set0.as_const()).unwrap().len();
+        let set1_len = heap.slice(set1.as_const()).unwrap().len();
+        let (bitword_storage, bitword, [set0, set1]) =
+            contiguous_test_rows(&mut heap, [set0, set1]);
         let cur_nodes = NodeSet {
             bitword,
+            storage: bitword_storage,
             num_set: 2,
             len_set: 2,
         };
@@ -19247,8 +19436,14 @@ mod tests {
             RemoveFromNodeSet(&mut heap, &globals, &cur_nodes, 1, atoms, 3),
             Ok(())
         );
-        assert_eq!(heap.slice(set1.as_const()).unwrap(), &[0xfffe, 0x7ffd]);
-        assert_eq!(heap.slice(set0.as_const()).unwrap(), &[0xffff, 0xffff]);
+        assert_eq!(
+            &heap.slice(set1.as_const()).unwrap()[..set1_len],
+            &[0xfffe, 0x7ffd]
+        );
+        assert_eq!(
+            &heap.slice(set0.as_const()).unwrap()[..set0_len],
+            &[0xffff, 0xffff]
+        );
 
         let empty = NodeSet::default();
         assert_eq!(
@@ -19263,9 +19458,14 @@ mod tests {
         let set0 = heap.allocate(vec![0x0001_u16, 0x0002]).unwrap();
         let set1 = heap.allocate(vec![0x0004_u16, 0x0002]).unwrap();
         let set2 = heap.allocate(vec![0x0008_u16, 0x0010]).unwrap();
-        let bitword = heap.allocate(vec![set0, set1, set2]).unwrap();
+        let set0_len = heap.slice(set0.as_const()).unwrap().len();
+        let set1_len = heap.slice(set1.as_const()).unwrap().len();
+        let set2_len = heap.slice(set2.as_const()).unwrap().len();
+        let (bitword_storage, bitword, [set0, set1, set2]) =
+            contiguous_test_rows(&mut heap, [set0, set1, set2]);
         let cur_nodes = NodeSet {
             bitword,
+            storage: bitword_storage,
             num_set: 3,
             len_set: 2,
         };
@@ -19280,9 +19480,13 @@ mod tests {
         let mut heap = SourceHeap::default();
         let set0 = heap.allocate(vec![0x0000_u16, 0x0000]).unwrap();
         let set1 = heap.allocate(vec![0x0001_u16, 0x0000]).unwrap();
-        let bitword = heap.allocate(vec![set0, set1]).unwrap();
+        let set0_len = heap.slice(set0.as_const()).unwrap().len();
+        let set1_len = heap.slice(set1.as_const()).unwrap().len();
+        let (bitword_storage, bitword, [set0, set1]) =
+            contiguous_test_rows(&mut heap, [set0, set1]);
         let cur_nodes = NodeSet {
             bitword,
+            storage: bitword_storage,
             num_set: 2,
             len_set: 2,
         };
@@ -19298,17 +19502,31 @@ mod tests {
         let set0 = heap.allocate(vec![0x0001_u16, 0x00f0]).unwrap();
         let set1 = heap.allocate(vec![0x0004_u16, 0x0f00]).unwrap();
         let set2 = heap.allocate(vec![0x8000_u16, 0x0008]).unwrap();
-        let bitword = heap.allocate(vec![set0, set1, set2]).unwrap();
+        let set0_len = heap.slice(set0.as_const()).unwrap().len();
+        let set1_len = heap.slice(set1.as_const()).unwrap().len();
+        let set2_len = heap.slice(set2.as_const()).unwrap().len();
+        let (bitword_storage, bitword, [set0, set1, set2]) =
+            contiguous_test_rows(&mut heap, [set0, set1, set2]);
         let cur_nodes = NodeSet {
             bitword,
+            storage: bitword_storage,
             num_set: 3,
             len_set: 2,
         };
 
         assert_eq!(AddNodeSet2ToNodeSet1(&mut heap, &cur_nodes, 0, 1), Ok(()));
-        assert_eq!(heap.slice(set0.as_const()).unwrap(), &[0x0005, 0x0ff0]);
-        assert_eq!(heap.slice(set1.as_const()).unwrap(), &[0x0004, 0x0f00]);
-        assert_eq!(heap.slice(set2.as_const()).unwrap(), &[0x8000, 0x0008]);
+        assert_eq!(
+            &heap.slice(set0.as_const()).unwrap()[..set0_len],
+            &[0x0005, 0x0ff0]
+        );
+        assert_eq!(
+            &heap.slice(set1.as_const()).unwrap()[..set1_len],
+            &[0x0004, 0x0f00]
+        );
+        assert_eq!(
+            &heap.slice(set2.as_const()).unwrap()[..set2_len],
+            &[0x8000, 0x0008]
+        );
 
         assert_eq!(
             AddNodeSet2ToNodeSet1(&mut heap, &NodeSet::default(), 0, 1),
@@ -19329,9 +19547,13 @@ mod tests {
         };
         let set0 = heap.allocate(vec![0x0000_u16, 0x8003]).unwrap();
         let set1 = heap.allocate(vec![0x0004_u16, 0x0000]).unwrap();
-        let bitword = heap.allocate(vec![set0, set1]).unwrap();
+        let set0_len = heap.slice(set0.as_const()).unwrap().len();
+        let set1_len = heap.slice(set1.as_const()).unwrap().len();
+        let (bitword_storage, bitword, [set0, set1]) =
+            contiguous_test_rows(&mut heap, [set0, set1]);
         let cur_nodes = NodeSet {
             bitword,
+            storage: bitword_storage,
             num_set: 2,
             len_set: 2,
         };

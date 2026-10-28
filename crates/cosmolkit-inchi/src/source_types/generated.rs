@@ -2643,7 +2643,9 @@ pub type BNS_FLOW_CHANGES = tagBNS_FLOW_CHANGES;
 pub type bitWord = U_SHORT;
 #[derive(Clone, Debug, PartialEq)]
 pub struct tagNodeSet {
-    pub bitword: SourceMutPointer<SourceMutPointer<bitWord>>,
+    // ichican2.c NodeSetCreate: every row is an offset into one allocation.
+    pub bitword: SourceMutPointer<u64>,
+    pub storage: SourceMutPointer<bitWord>,
     pub num_set: i32,
     pub len_set: i32,
 }
@@ -2651,6 +2653,7 @@ impl ::std::default::Default for tagNodeSet {
     fn default() -> Self {
         Self {
             bitword: ::std::default::Default::default(),
+            storage: ::std::default::Default::default(),
             num_set: ::std::default::Default::default(),
             len_set: ::std::default::Default::default(),
         }

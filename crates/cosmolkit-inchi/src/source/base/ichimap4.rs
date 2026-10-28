@@ -21,7 +21,10 @@ use crate::source_types::{
     inchiTime, ppAT_RANK, sp_ATOM,
 };
 
-#[inline(always)]
+// Keep source subscript temporaries outside each recursive frame in debug;
+// optimized builds retain the original forced-inline access path.
+#[cfg_attr(not(debug_assertions), inline(always))]
+#[cfg_attr(debug_assertions, inline)]
 fn source_get<T: Clone + 'static>(
     heap: &SourceHeap,
     pointer: SourceMutPointer<T>,
@@ -50,7 +53,8 @@ fn source_get<T: Clone + 'static>(
         .ok_or(SourceHeapError::PointerOutOfBounds)
 }
 
-#[inline(always)]
+#[cfg_attr(not(debug_assertions), inline(always))]
+#[cfg_attr(debug_assertions, inline)]
 fn source_set<T: Clone + 'static>(
     heap: &mut SourceHeap,
     pointer: SourceMutPointer<T>,

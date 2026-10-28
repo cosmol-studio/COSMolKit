@@ -926,6 +926,13 @@ pub(crate) fn MakeCtStringNew(
             }
         }
         if initial_overflow == 0 {
+            // INCHI✔️✔️: for (i = 0; nDfsOrderCT[i]/* && nLen < nLen_szLinearCT*/; i += 3)
+            // SAFETY: GetDfsOrder4CT returned fresh private storage. This
+            // loop only reads it; number/format writers receive no alias of
+            // dfs and mutate separate output storage. Heap directory growth
+            // does not move its Vec buffer. The view ends before common free.
+            let dfs_view = unsafe { heap.stable_slice(dfs.as_const())? };
+            let dfs_values = dfs_view.prefix(dfs_view.len())?;
             let abc_numbers = ct_mode & CT_MODE_ABC_NUMBERS as i32 != 0;
             let predecessors = ct_mode & CT_MODE_PREDECESSORS as i32 != 0;
             let count_ring_closures =
@@ -933,9 +940,9 @@ pub(crate) fn MakeCtStringNew(
             let no_hydrogens = number_hydrogens.is_null();
             let mut remaining_ring_closures = 0_i32;
             let mut index = 0_usize;
-            while heap.slice(dfs.as_const())?[index] != 0 {
+            while dfs_values[index] != 0 {
                 let value = {
-                    let raw = heap.slice(dfs.as_const())?[index];
+                    let raw = dfs_values[index];
                     if u32::from(raw) > MAX_ATOMS {
                         0
                     } else {
@@ -943,10 +950,10 @@ pub(crate) fn MakeCtStringNew(
                     }
                 };
                 let hydrogens = {
-                    let raw = heap.slice(dfs.as_const())?[index + 1];
+                    let raw = dfs_values[index + 1];
                     if raw != 0 { i32::from(raw) - 16 } else { 0 }
                 };
-                let delimiter = heap.slice(dfs.as_const())?[index + 2];
+                let delimiter = dfs_values[index + 2];
                 let mut length = 0_i32;
 
                 if predecessors {
@@ -954,9 +961,7 @@ pub(crate) fn MakeCtStringNew(
                         if delimiter == b'-' as u16 && index > 3 && no_hydrogens {
                             if remaining_ring_closures == 0 {
                                 let mut scan = index;
-                                while heap.slice(dfs.as_const())?[scan] != 0
-                                    && heap.slice(dfs.as_const())?[scan + 2] == b'-' as u16
-                                {
+                                while dfs_values[scan] != 0 && dfs_values[scan + 2] == b'-' as u16 {
                                     remaining_ring_closures =
                                         remaining_ring_closures.wrapping_add(1);
                                     scan += 3;

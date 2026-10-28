@@ -24,6 +24,9 @@ mod source_types;
 )]
 mod source;
 
+pub mod engine;
+pub mod rdkit;
+
 pub use source::rdkit::inchi::{
     AdapterAtom as InchiAtom, AdapterBond as InchiBond, AdapterDiagnostic as InchiDiagnostic,
     AdapterDiagnosticLevel as InchiDiagnosticLevel, AdapterGraphError as InchiGraphError,

@@ -9,8 +9,17 @@
 - [cosmolkit-inchi on crates.io](https://crates.io/crates/cosmolkit-inchi) — Rust package releases.
 - [COSMolKit Rust crate directory](https://crates.io/crates/cosmolkit#rust-crates) — the public molecule API and related algorithm packages.
 
-`cosmolkit-inchi` is a toolkit-neutral, pure Rust source port of the official
-IUPAC InChI engine for the four scalar operations used by COSMolKit:
+`cosmolkit-inchi` contains the pure Rust official IUPAC InChI engine and a
+separate RDKit-compatible molecular adapter.
+
+`engine::generate(engine::Input { atoms, stereo0d, options })` accepts borrowed
+official atom/stereo records and optional `CStr` options. It performs basic
+GetINCHI generation without toolkit callbacks, sanitization or Kekulé
+preprocessing. It returns the native status and independently optional InChI,
+AuxInfo, message and log byte strings. Polymer/V3000 extension inputs are not
+part of this basic entry point.
+
+The existing graph-based APIs retain their signatures and behavior:
 
 - `mol_to_inchi`
 - `mol_to_inchi_key`
@@ -20,8 +29,12 @@ IUPAC InChI engine for the four scalar operations used by COSMolKit:
 The crate owns neutral atom, bond, coordinate, isotope, charge, hydrogen, and
 stereo representations. It does not depend on `cosmolkit-core`; the caller's
 `InchiToMolToolkit` provides borrowed valence lists and default valences.
-Conversion between a live COSMolKit `Molecule` and the neutral InChI graph belongs to the
-public `cosmolkit` facade; detached chemistry helpers remain in their owners.
+For generation, COSMolKit runs its existing valence and Kekulé owners directly
+on native detached topology, then supplies `rdkit::PreparedGraph` access to the
+shared reverse-cleanup and input encoder. Coordinates are borrowed; no neutral
+graph is constructed. Direct crate users may continue using `InchiMolecule`
+and `MolToInchiToolkit` unchanged. Their callback order and arguments are retained.
+Parsing continues to use the existing neutral graph and caller-owned cleanup.
 
 ## Examples
 
