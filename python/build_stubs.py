@@ -1,4 +1,4 @@
-"""Build once, generate the public package, then check ordinary usage."""
+"""Compile the extension and generate stubs and package files; no tests or wheel build."""
 import argparse
 import json
 import os
@@ -38,17 +38,6 @@ def main():
     print("Generate public package", flush=True)
     package = generate(library, official / "__init__.pyi", output / "package")
 
-    print("Check actual calls", flush=True)
-    subprocess.run([sys.executable, str(HERE / "tests/runtime.py"), str(package.parent)], check=True)
-    config = output / "typing.json"
-    config.write_text(json.dumps({
-        "include": [str(HERE / "tests/positive.py"), str(package / "__init__.pyi")],
-        "extraPaths": [str(package.parent)], "pythonVersion": "3.12",
-        "typeCheckingMode": "basic", "reportMissingModuleSource": False,
-    }, indent=2))
-    print("Check public usage types", flush=True)
-    subprocess.run([sys.executable, "-m", "basedpyright", "--pythonpath", sys.executable,
-                    "--project", str(config)], check=True)
     print(f"Generated package: {package}")
 
 

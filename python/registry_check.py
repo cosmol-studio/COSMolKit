@@ -563,7 +563,7 @@ def main():
     parser.add_argument("--report", type=Path, default=HERE / "artifacts/registry.json")
     options = parser.parse_args()
     if not options.snapshot_bin.is_file():
-        raise ValueError("Registry reader is not built; run build.py first. This checker never compiles.")
+        raise ValueError("Registry reader is not built; run build_stubs.py first. This checker never compiles.")
     result = subprocess.run([str(options.snapshot_bin)], text=True, capture_output=True, check=True)
     contract = expectations(json.loads(result.stdout))
     sys.path.insert(0, str(options.package.resolve()))

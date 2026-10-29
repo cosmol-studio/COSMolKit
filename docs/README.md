@@ -10,8 +10,7 @@ From the repository root, prepare the bindings and documentation tools:
 ```sh
 uv sync --group dev
 cargo install pyo3-introspection --version 0.30.1 --locked
-.venv/bin/python python/build.py
-.venv/bin/python python/registry_check.py
+.venv/bin/python python/build_stubs.py
 npm ci --prefix docs --no-audit --no-fund
 .venv/bin/python wasm/build.py --target web --out-dir target/docs-js-package
 ```
@@ -23,7 +22,7 @@ both language guides and API references together:
 .venv/bin/python -m sphinx -W --keep-going -E -b html docs/source docs/build/html
 ```
 
-Python API signatures come from the native extension and checked stub;
+Python API signatures come from the native extension and generated stub;
 JavaScript API signatures come from the public TypeScript declarations via
 TypeDoc and sphinx-js. Do not maintain handwritten signature inventories.
 

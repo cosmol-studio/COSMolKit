@@ -103,8 +103,7 @@ Prepare both bindings before building the documentation:
 ```sh
 uv sync --group dev
 cargo install pyo3-introspection --version 0.30.1 --locked
-uv run --group dev python python/build.py
-uv run --group dev python python/registry_check.py
+uv run --group dev python python/build_stubs.py
 npm ci --prefix docs --no-audit --no-fund
 python3 wasm/build.py --target web --out-dir target/docs-js-package
 uv run --group dev python -m sphinx --keep-going -E -b html docs/source docs/build/html

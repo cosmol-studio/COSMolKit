@@ -120,10 +120,10 @@ class Sample:
         public_description(None, "method", "cosmolkit.Sample.example", None, None, prose)
         self.assertEqual(prose, ['{"example": 2}', "This is a documented data example."])
 
-    def test_generates_checked_stub_before_documentation_consumers(self):
+    def test_generates_stub_before_documentation_consumers(self):
         workflow = (ROOT / ".github/workflows/docs-web.yml").read_text(encoding="utf-8")
         generate = workflow.index(
-            "python python/build.py"
+            "python python/build_stubs.py"
         )
         for consumer in (
             "unittest discover -s dev/tools -p 'test_python_docs.py'",

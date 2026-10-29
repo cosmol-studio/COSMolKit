@@ -60,7 +60,8 @@ class CoverageWorkflowTests(unittest.TestCase):
 
     def test_instrumented_build_and_profile_directories_agree_before_show_env(self):
         text = (ROOT / ".github/workflows/coverage.yml").read_text()
-        env = text.split("        env:\n", 1)[1].split("        steps:\n", 1)[0]
+        rust_job = text.split("    rust-coverage:\n", 1)[1]
+        env = rust_job.split("        env:\n", 1)[1].split("        steps:\n", 1)[0]
         values = {}
         for line in env.splitlines():
             if line.strip() and not line.strip().startswith("#"):

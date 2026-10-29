@@ -62,11 +62,10 @@ jobs:
             - name: Test deployment scripts
               run: .venv/bin/python -m unittest discover -s docs-web/scripts -p 'test_*.py' -v
 
-            - name: Generate checked Python API type declarations
+            - name: Generate Python API type declarations
               run: |
                   cargo install pyo3-introspection --version 0.30.1 --locked
-                  .venv/bin/python python/build.py
-                  .venv/bin/python python/registry_check.py
+                  .venv/bin/python python/build_stubs.py
 
             - name: Generate checkout JavaScript type declarations
               env:

@@ -17,15 +17,15 @@ uv sync --group dev
 cargo install pyo3-introspection --version 0.30.1 --locked --root target/pyo3-tools
 ```
 
-## Build
+## Build stubs
 
 ```bash
-.venv/bin/python python/build.py \
+.venv/bin/python python/build_stubs.py \
     --extractor target/pyo3-tools/bin/pyo3-introspection
 ```
 
-This command compiles the Rust extension, extracts types, generates the Python
-package and `.pyi`, then runs the runtime samples and static type checks.
+This command compiles the Rust extension, extracts types and generates the Python
+package and `.pyi`. It does not run tests or build a wheel.
 
 The package is written to
 `python/artifacts/smoke/package/cosmolkit/`.
@@ -35,14 +35,12 @@ The package is written to
 Run runtime samples and static type checks without rebuilding:
 
 ```bash
-.venv/bin/python python/tests/runtime.py \
-    python/artifacts/smoke/package
-.venv/bin/python -m basedpyright --pythonpath .venv/bin/python \
-    --project python/artifacts/smoke/typing.json
+.venv/bin/python python/check_stubs.py
 ```
 
-Use these commands when only consumer samples change. After changing bindings
-or generation rules, run `build.py` again.
+This check uses the development dependencies, including RDKit for its interop
+type annotations. Coverage and local pre-commit checks run it; publishing does not.
+After changing bindings or generation rules, run `build_stubs.py` again.
 
 ## Check registration
 
@@ -55,7 +53,7 @@ including configuration fields and errors. Writes `artifacts/registry.json`.
 
 ## Build and install a wheel
 
-After `build.py`, package the extension, `__init__.py`, `__init__.pyi` and `py.typed`:
+After `build_stubs.py`, package the extension, `__init__.py`, `__init__.pyi` and `py.typed`:
 
 ```bash
 .venv/bin/maturin build --manifest-path python/Cargo.toml \
