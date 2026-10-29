@@ -1,140 +1,124 @@
-//! Canonical sanitization and read-only chemistry problem detection.
-use crate::Molecule;
+//! Native sanitization stage selection, not independently interpreted flags.
+use crate::{Molecule, fields::Field, input, sanitize_errors::SanitizeError};
 use cosmolkit as ck;
-impl Molecule {
-    pub fn sanitize(&self) -> Result<Self, ck::OperationError> {
-        // COSMolKit❗✔️: self.inner.sanitize()
-        self.inner.borrow().sanitize().map(|inner| Self {
-            inner: inner.into(),
-        })
+use wasm_bindgen::prelude::*;
+#[wasm_bindgen]
+pub struct SanitizeOperations(pub(crate) ck::SanitizeOperations);
+crate::fields::value_field!(
+    ck::SanitizeOperations,
+    SanitizeOperations,
+    SanitizeOperationsInput,
+    "SanitizeOperations"
+);
+#[wasm_bindgen]
+impl SanitizeOperations {
+    #[wasm_bindgen(getter,js_name=NONE)]
+    pub fn none() -> Self {
+        Self(ck::SanitizeOperations::NONE)
     }
-    pub fn sanitize_with_params(
-        &self,
-        params: &ck::SanitizeParams,
-    ) -> Result<Self, ck::OperationError> {
-        // COSMolKit❗✔️: self.inner.sanitize_with_params(params)
-        self.inner
-            .borrow()
-            .sanitize_with_params(params)
-            .map(|inner| Self {
-                inner: inner.into(),
-            })
+    #[wasm_bindgen(getter,js_name=CLEANUP)]
+    pub fn cleanup() -> Self {
+        Self(ck::SanitizeOperations::CLEANUP)
     }
-    pub fn sanitize_(&self) -> Result<(), ck::OperationError> {
-        // COSMolKit❗✔️: self.inner.sanitize_()
-        self.inner.borrow_mut().sanitize_()
+    #[wasm_bindgen(getter,js_name=PROPERTIES)]
+    pub fn properties() -> Self {
+        Self(ck::SanitizeOperations::PROPERTIES)
     }
-    pub fn sanitize_with_params_(
-        &self,
-        params: &ck::SanitizeParams,
-    ) -> Result<(), ck::OperationError> {
-        // COSMolKit❗✔️: self.inner.sanitize_with_params_(params)
-        self.inner.borrow_mut().sanitize_with_params_(params)
+    #[wasm_bindgen(getter,js_name=SYMM_RINGS)]
+    pub fn symm_rings() -> Self {
+        Self(ck::SanitizeOperations::SYMM_RINGS)
     }
-    pub fn detect_chemistry_problems(
-        &self,
-    ) -> Result<ck::ChemistryProblemReport, ck::SanitizeError> {
-        // COSMolKit❗✔️: self.inner.detect_chemistry_problems()
-        self.inner.borrow().detect_chemistry_problems()
+    #[wasm_bindgen(getter,js_name=KEKULIZE)]
+    pub fn kekulize() -> Self {
+        Self(ck::SanitizeOperations::KEKULIZE)
     }
-    pub fn detect_chemistry_problems_with_params(
-        &self,
-        params: &ck::SanitizeParams,
-    ) -> Result<ck::ChemistryProblemReport, ck::SanitizeError> {
-        // COSMolKit❗✔️: self.inner.detect_chemistry_problems_with_params(params)
-        self.inner
-            .borrow()
-            .detect_chemistry_problems_with_params(params)
+    #[wasm_bindgen(getter,js_name=FIND_RADICALS)]
+    pub fn find_radicals() -> Self {
+        Self(ck::SanitizeOperations::FIND_RADICALS)
+    }
+    #[wasm_bindgen(getter,js_name=SET_AROMATICITY)]
+    pub fn set_aromaticity() -> Self {
+        Self(ck::SanitizeOperations::SET_AROMATICITY)
+    }
+    #[wasm_bindgen(getter,js_name=SET_CONJUGATION)]
+    pub fn set_conjugation() -> Self {
+        Self(ck::SanitizeOperations::SET_CONJUGATION)
+    }
+    #[wasm_bindgen(getter,js_name=SET_HYBRIDIZATION)]
+    pub fn set_hybridization() -> Self {
+        Self(ck::SanitizeOperations::SET_HYBRIDIZATION)
+    }
+    #[wasm_bindgen(getter,js_name=CLEANUP_CHIRALITY)]
+    pub fn cleanup_chirality() -> Self {
+        Self(ck::SanitizeOperations::CLEANUP_CHIRALITY)
+    }
+    #[wasm_bindgen(getter,js_name=ADJUST_HS)]
+    pub fn adjust_hs() -> Self {
+        Self(ck::SanitizeOperations::ADJUST_HS)
+    }
+    #[wasm_bindgen(getter,js_name=CLEANUP_ORGANOMETALLICS)]
+    pub fn cleanup_organometallics() -> Self {
+        Self(ck::SanitizeOperations::CLEANUP_ORGANOMETALLICS)
+    }
+    #[wasm_bindgen(getter,js_name=CLEANUP_ATROPISOMERS)]
+    pub fn cleanup_atropisomers() -> Self {
+        Self(ck::SanitizeOperations::CLEANUP_ATROPISOMERS)
+    }
+    #[wasm_bindgen(getter,js_name=ALL)]
+    pub fn all() -> Self {
+        Self(ck::SanitizeOperations::ALL)
+    }
+    #[wasm_bindgen(js_name=fromBits)]
+    pub fn from_bits(bits: tsify::Ts<input::U32Input>) -> Result<Self, JsValue> {
+        ck::SanitizeOperations::from_bits(input::read::<u32>(bits)?)
+            .map(Self)
+            .map_err(SanitizeError::from_rust)
+    }
+    #[wasm_bindgen(getter)]
+    pub fn bits(&self) -> u32 {
+        self.0.bits()
+    }
+    #[wasm_bindgen(getter,js_name=isEmpty)]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn contains(&self, other: SanitizeOperationsInput) -> Result<bool, JsValue> {
+        Ok(self.0.contains(ck::SanitizeOperations::input(other)?))
+    }
+    pub fn union(&self, other: SanitizeOperationsInput) -> Result<Self, JsValue> {
+        Ok(Self(self.0 | ck::SanitizeOperations::input(other)?))
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn compare(
-        a: Result<Molecule, ck::OperationError>,
-        b: Result<ck::Molecule, ck::OperationError>,
-    ) {
-        match (a, b) {
-            (Ok(a), Ok(b)) => assert_eq!(*a.inner.borrow(), b),
-            (Err(a), Err(b)) => assert_eq!(a.to_string(), b.to_string()),
-            _ => panic!("changed sanitize result"),
-        }
+ck::__ck_configuration_SanitizeParams!(crate::project_parameters, ck::SanitizeParams, {}, {
+    SanitizeParams
+});
+#[wasm_bindgen]
+impl Molecule {
+    pub fn sanitize(&self, params: Option<SanitizeParamsInput>) -> Result<Molecule, JsValue> {
+        SanitizeParams::with_input(params.as_ref(), |params| {
+            self.0
+                .sanitize_with_params(params)
+                .map(Molecule)
+                .map_err(crate::operation_errors::OperationError::from_rust)
+        })
     }
-    #[test]
-    fn sanitize_operations_and_ordered_reports_match_owner_for_all_stage_selections() {
-        let selections = [
-            ck::SanitizeOperations::NONE,
-            ck::SanitizeOperations::ALL,
-            ck::SanitizeOperations::CLEANUP,
-            ck::SanitizeOperations::PROPERTIES,
-            ck::SanitizeOperations::SYMM_RINGS,
-            ck::SanitizeOperations::KEKULIZE,
-            ck::SanitizeOperations::FIND_RADICALS,
-            ck::SanitizeOperations::SET_AROMATICITY,
-            ck::SanitizeOperations::SET_CONJUGATION,
-            ck::SanitizeOperations::SET_HYBRIDIZATION,
-            ck::SanitizeOperations::CLEANUP_CHIRALITY,
-            ck::SanitizeOperations::ADJUST_HS,
-            ck::SanitizeOperations::CLEANUP_ORGANOMETALLICS,
-            ck::SanitizeOperations::CLEANUP_ATROPISOMERS,
-            ck::SanitizeOperations::PROPERTIES | ck::SanitizeOperations::KEKULIZE,
-        ];
-        for text in [
-            "",
-            "CCO",
-            "c1ccccc1",
-            "[CH3]",
-            "C(F)(F)(F)(F)F",
-            "c",
-            "c1cccc1",
-            "C(F)(F)(F)(F)F.C(F)(F)(F)(F)F",
-        ] {
-            let parse = ck::SmilesParseParams {
-                sanitize: false,
-                remove_hs: false,
-                ..Default::default()
-            };
-            let owner = ck::Molecule::from_smiles_with_params(text, &parse).unwrap();
-            let m = Molecule::from_smiles_with_params(text, &parse).unwrap();
-            let before = m.inner.borrow().clone();
-            compare(m.sanitize(), owner.sanitize());
-            assert_eq!(
-                m.detect_chemistry_problems(),
-                owner.detect_chemistry_problems()
-            );
-            let fresh = Molecule::from_smiles_with_params(text, &parse).unwrap();
-            let mut expected = owner.clone();
-            assert_eq!(
-                fresh.sanitize_().map_err(|e| e.to_string()),
-                expected.sanitize_().map_err(|e| e.to_string())
-            );
-            assert_eq!(*fresh.inner.borrow(), expected);
-            for operations in selections {
-                let params = ck::SanitizeParams { operations };
-                compare(
-                    m.sanitize_with_params(&params),
-                    owner.sanitize_with_params(&params),
-                );
-                assert_eq!(
-                    m.detect_chemistry_problems_with_params(&params),
-                    owner.detect_chemistry_problems_with_params(&params)
-                );
-                let fresh = Molecule::from_smiles_with_params(text, &parse).unwrap();
-                let mut expected = owner.clone();
-                let result = fresh.sanitize_with_params_(&params);
-                let failed = result.is_err();
-                assert_eq!(
-                    result.map_err(|e| e.to_string()),
-                    expected
-                        .sanitize_with_params_(&params)
-                        .map_err(|e| e.to_string())
-                );
-                assert_eq!(*fresh.inner.borrow(), expected);
-                if failed {
-                    assert_eq!(*fresh.inner.borrow(), before);
-                }
-            }
-            assert_eq!(*m.inner.borrow(), before);
-        }
+    pub fn sanitize_(&mut self, params: Option<SanitizeParamsInput>) -> Result<(), JsValue> {
+        SanitizeParams::with_input(params.as_ref(), |params| {
+            self.0
+                .sanitize_with_params_(params)
+                .map_err(crate::operation_errors::OperationError::from_rust)
+        })
+    }
+}
+
+#[wasm_bindgen]
+impl Molecule {
+    #[wasm_bindgen(js_name = sanitizeWithParams)]
+    pub fn sanitize_with_params(&self, params: SanitizeParamsInput) -> Result<Molecule, JsValue> {
+        self.sanitize(Some(params))
+    }
+    #[wasm_bindgen(js_name = sanitizeWithParams_)]
+    pub fn sanitize_with_params_(&mut self, params: SanitizeParamsInput) -> Result<(), JsValue> {
+        self.sanitize_(Some(params))
     }
 }

@@ -200,7 +200,7 @@ const batch = ck.MoleculeBatch.fromSmilesList(["CCO", "c1ccccc1", "CC(=O)O"]);
 
 console.log(mol.toSmiles(), mol.molecularWeight());
 console.log(mol2d.toSvg(400, 300));
-console.log(fp.onBits());
+console.log(fp.onBits);
 console.log(batch.toSmiles());
 
 batch.free();

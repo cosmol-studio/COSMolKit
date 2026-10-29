@@ -1,29 +1,27 @@
 [package]
 name = "cosmolkit-wasm"
-description = "Binding-facing WASM API for COSMolKit"
-keywords = ["cheminformatics", "wasm", "webassembly", "molecule"]
-categories = ["science", "wasm"]
+version = "0.6.0-dev.1"
+description = "JavaScript and TypeScript bindings for COSMolKit"
+license = "MIT"
 repository = "https://github.com/cosmol-studio/COSMolKit"
-homepage = "https://tools.cosmol.org/"
-documentation = "https://docs.rs/cosmolkit-wasm"
-license.workspace = true
-version = "0.5.1-rc.5"
-edition.workspace = true
+edition = "2024"
 publish = false
+
+[workspace]
+members = ["macros"]
 
 [lib]
 name = "cosmolkit_wasm"
-path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
 
 [features]
-# Generated from crates/cosmolkit/Cargo.toml by tools/wasm_binding/features.py.
+# Generated from the Rust facade by features.py --write.
 default = ["full"]
 runtime-invariants = ["cosmolkit/runtime-invariants"]
 op-contracts = ["cosmolkit/op-contracts"]
 op-contracts-strict = ["cosmolkit/op-contracts-strict", "runtime-invariants", "op-contracts"]
 full = ["cosmolkit/full", "core", "bio", "conformer", "depict", "descriptors", "fingerprints", "inchi", "search", "tautomer", "stereoisomers", "reaction"]
-core = ["cosmolkit/core", "cap-smiles", "cap-hydrogens", "cap-valence", "cap-radicals", "cap-rings", "cap-matrices", "cap-transforms", "cap-stereo", "cap-kekulize", "cap-aromaticity", "cap-sanitize", "cap-io", "cap-batch"]
+core = ["cosmolkit/core", "cap-smiles", "cap-hydrogens", "cap-valence", "cap-radicals", "cap-rings", "cap-matrices", "cap-transforms", "cap-stereo", "cap-kekulize", "cap-aromaticity", "cap-sanitize", "cap-io", "cap-serialization", "cap-batch"]
 bio = ["cosmolkit/bio", "cap-bio"]
 descriptors = ["cosmolkit/descriptors", "cap-descriptors", "core"]
 tautomer = ["cosmolkit/tautomer", "cap-tautomer", "search"]
@@ -50,6 +48,7 @@ cap-io = ["cosmolkit/cap-io"]
 cap-matrices = ["cosmolkit/cap-matrices"]
 cap-transforms = ["cosmolkit/cap-transforms"]
 cap-search = ["cosmolkit/cap-search", "cap-smiles"]
+cap-serialization = ["cosmolkit/cap-serialization", "cap-io"]
 cap-smiles = ["cosmolkit/cap-smiles"]
 cap-stereo = ["cosmolkit/cap-stereo"]
 cap-stereoisomers = ["cosmolkit/cap-stereoisomers", "cap-stereo"]
@@ -61,10 +60,26 @@ cap-rings = ["cosmolkit/cap-rings"]
 cap-kekulize = ["cosmolkit/cap-kekulize"]
 cap-aromaticity = ["cosmolkit/cap-aromaticity"]
 cap-sanitize = ["cosmolkit/cap-sanitize"]
+registry-check = []
+protocol-tests = []
 
 [dependencies]
-cosmolkit = { version = "0.5.1-rc.5", path = "../crates/cosmolkit", default-features = false }
-cosmolkit-macros = { version = "0.5.1-rc.5", path = "../crates/cosmolkit-macros" }
+cosmolkit = { version = "0.6.0-dev.1", path = "../crates/cosmolkit", default-features = false }
+wasm-bindgen = "=0.2.128"
+js-sys = "0.3"
+tsify = { version = "=0.5.8", default-features = false, features = ["js"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "=1.0.154"
+paste = "1"
+cosmolkit-tsify-macros = { path = "macros" }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-tempfile = "3"
+[profile.dev]
+debug = 0
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = false

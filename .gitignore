@@ -1,4 +1,8 @@
 /target
+/wasm/target/
+/wasm/pkg/
+/wasm_old/target/
+/wasm_old/pkg/
 **/*.pyc
 __pycache__/
 .venv/

@@ -75,6 +75,16 @@ const github = {
         self.assertEqual(result["outputs"], {"tag": "v0.5.0"})
         self.assertFalse(result["failures"])
 
+    def test_prerelease_creation_flags(self):
+        script = literal_block("Create GitHub Release", "run")
+        # Shell function records arguments without invoking GitHub.
+        script = 'gh() { printf "%s\\n" "$@"; };\n' + script
+        for tag in ("v0.6.0-dev.1", "v0.6.0-dev.4", "v0.6.0-rc.6", "v0.6.0"):
+            result = subprocess.run(["bash", "-c", script], env={**os.environ, "RELEASE_TAG": tag, "RUNNER_TEMP": "/tmp"}, text=True, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual("--prerelease" in result.stdout, "-" in tag)
+            self.assertEqual("--latest=false" in result.stdout, "-" in tag)
+
     def test_untagged_or_different_commit_is_skipped(self):
         for tags in ([], [self.tag(sha="other")], [self.tag(name="non-version")]):
             with self.subTest(tags=tags):

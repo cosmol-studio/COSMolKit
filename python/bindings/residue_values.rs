@@ -183,6 +183,11 @@ impl ResidueInfo {
         self.inner.one_letter_code
     }
     #[getter]
+    /// Native FASTA code, using X for a nonstandard residue.
+    fn fasta_code(&self) -> char {
+        self.inner.fasta_code()
+    }
+    #[getter]
     /// Hydrogen count recorded in the residue table.
     fn hydrogen_count(&self) -> u8 {
         self.inner.hydrogen_count
@@ -206,6 +211,11 @@ impl ResidueInfo {
     /// Whether the native table classifies this as a modified amino acid.
     fn is_modified_amino_acid(&self) -> bool {
         self.inner.is_modified_amino_acid()
+    }
+    #[getter]
+    /// Whether the native residue table classifies this entry as an amino acid.
+    fn is_amino_acid(&self) -> bool {
+        self.inner.is_amino_acid()
     }
     #[getter]
     /// Whether this is a recognized entry rather than the unknown-residue sentinel.

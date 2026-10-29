@@ -169,5 +169,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          flags=()
+          case "$RELEASE_TAG" in
+            *-dev.*|*-rc.*) flags+=(--prerelease --latest=false) ;;
+          esac
           gh release create "$RELEASE_TAG" --verify-tag \
-            --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+            --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${flags[@]}"

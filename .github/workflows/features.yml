@@ -25,6 +25,8 @@ jobs:
 
             - name: Setup Rust
               uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: wasm32-unknown-unknown
 
             - name: Setup Rust cache
               uses: Swatinem/rust-cache@v2
@@ -33,10 +35,26 @@ jobs:
               run: |
                   python3 -m unittest discover -s dev/tools -p 'test_bump_rust_version.py' -v
                   python3 -m unittest discover -s dev/tools -p 'test_ci_coverage.py' -v
-                  python3 -m unittest discover -s wasm/tools/wasm_binding -p 'test_presets.py' -v
+                  python3 -m unittest discover -s wasm/tests -p 'test_presets.py' -v
 
             - name: Check minimal facade
               run: cargo check -p cosmolkit --no-default-features
+
+            - name: Check WASM preset compilation
+              run: |
+                  python3 - <<'PY'
+                  import subprocess
+                  import sys
+                  sys.path.insert(0, "wasm")
+                  from presets import PRESETS
+                  for name, features in PRESETS.items():
+                      print(name, flush=True)
+                      subprocess.run([
+                          "cargo", "check", "--locked", "--manifest-path", "wasm/Cargo.toml",
+                          "--target", "wasm32-unknown-unknown", "--no-default-features",
+                          "--features", ",".join(features),
+                      ], check=True)
+                  PY
 
             - name: Test minimal facade
               run: cargo test -p cosmolkit --no-default-features --features op-contracts-strict

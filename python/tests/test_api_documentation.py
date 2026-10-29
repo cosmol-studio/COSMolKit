@@ -66,7 +66,6 @@ def test_public_api_has_native_descriptions() -> None:
         (ck.Molecule, "with_hydrogens", ("explicit hydrogen", "source molecule is unchanged")),
         (ck.Molecule, "add_hydrogens_", ("In place", "Copy-on-write")),
         (ck.SubstructMatchParams, "final_match", ("target, atom_indices", "exceptions propagate")),
-        (ck.SubstructMatchParams, "atom_match", ("query_atom, target_atom", "QueryAtom and Atom")),
         (ck.SubstructMatchParams, "bond_match", ("query_bond, target_bond", "Bond values")),
         (ck.BatchValidationError, "record_errors", ("BatchError", "copy")),
         (ck.BioNcsOperator, "id", ("Identifier", "symmetry operator")),

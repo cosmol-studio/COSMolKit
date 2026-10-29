@@ -1,777 +1,536 @@
-//! Binding-facing API for compiling COSMolKit to WebAssembly.
-//!
-//! This crate deliberately contains no chemistry implementation.  It owns the
-//! language-boundary shape only and keeps the canonical [`cosmolkit::Molecule`]
-//! behind a private field.  Alef can therefore generate wasm-bindgen bindings
-//! from this small, stable surface without exposing operation internals or
-//! platform-specific Rust types.
+//! Binding protocol probe; chemistry remains in the public Rust facade.
+use cosmolkit as ck;
+use serde::{Deserialize, Serialize};
+use tsify::{Ts, Tsify};
+use wasm_bindgen::prelude::*;
+
+#[cfg(feature = "registry-check")]
+mod registry_snapshot;
+
+#[wasm_bindgen]
+pub fn version() -> String {
+    ck::version().into()
+}
 
 #[cfg(feature = "cap-alignment")]
-mod alignment;
-#[cfg(feature = "cap-aromaticity")]
-mod aromaticity;
+mod alignment_calls;
+#[cfg(feature = "cap-alignment")]
+mod alignment_errors;
+#[cfg(feature = "cap-alignment")]
+mod alignment_values;
+mod aromaticity_errors;
+mod assignment;
+#[cfg(feature = "cap-fingerprints")]
+mod atom_code;
+mod atom_properties;
+mod atoms;
+mod atropisomer_errors;
+mod attachment_values;
+#[cfg(feature = "cap-fingerprints")]
+mod avalon;
 #[cfg(feature = "cap-batch")]
 mod batch;
+#[cfg(all(feature = "cap-batch", feature = "cap-fingerprints"))]
+mod batch_output;
 #[cfg(feature = "cap-batch")]
-pub use batch::{BatchRecord, MoleculeBatch};
+mod batch_queries;
+#[cfg(feature = "cap-bio")]
+mod bio_assemblies;
+#[cfg(feature = "cap-bio")]
+mod bio_conversion_errors;
+#[cfg(feature = "cap-bio")]
+mod bio_entities;
+#[cfg(feature = "cap-bio")]
+mod bio_geometry;
+#[cfg(feature = "cap-bio")]
+mod bio_hierarchy;
+#[cfg(feature = "cap-bio")]
+mod bio_lookup;
+#[cfg(feature = "cap-bio")]
+mod bio_metadata;
+#[cfg(feature = "cap-bio")]
+mod bio_molecule;
+#[cfg(feature = "cap-bio")]
+mod bio_operations;
+#[cfg(feature = "cap-bio")]
+mod bio_parts;
+#[cfg(feature = "cap-bio")]
+mod bio_read_errors;
+#[cfg(feature = "cap-bio")]
+mod bio_relationships;
+#[cfg(feature = "cap-bio")]
+mod bio_rows;
+#[cfg(feature = "cap-bio")]
+mod bio_scalar_metadata;
+#[cfg(feature = "cap-bio")]
+mod bio_source_state;
+#[cfg(feature = "cap-bio")]
+mod bio_source_values;
+#[cfg(feature = "cap-bio")]
+mod bio_text;
+#[cfg(feature = "cap-bio")]
+mod bio_writers;
+mod builder;
+mod callback;
+mod canonical_errors;
+mod chemistry;
+mod chemistry_problems;
+mod cip_labeler_errors;
+mod cip_rank_errors;
+#[cfg(feature = "cap-conformer")]
+mod conformer_calls;
+#[cfg(feature = "cap-conformer")]
+mod conformer_errors;
+mod construction_values;
+mod coordinate_input;
+mod coordinates;
+#[cfg(any(feature = "cap-depict", feature = "cap-fingerprints"))]
+mod depict_errors;
+#[cfg(feature = "cap-descriptors")]
+mod descriptor_calls;
+#[cfg(feature = "cap-descriptors")]
+mod descriptor_errors;
+mod detached_coordinates;
+mod double_stereo_errors;
+#[cfg(feature = "cap-depict")]
+mod drawing;
+mod enums;
+mod errors;
+mod external_errors;
+mod fields;
+#[cfg(feature = "cap-fingerprints")]
+mod fingerprint_batch;
+#[cfg(feature = "cap-fingerprints")]
+mod fingerprint_errors;
+#[cfg(feature = "cap-fingerprints")]
+mod fingerprint_output;
+#[cfg(feature = "cap-fingerprints")]
+mod fingerprint_values;
+#[cfg(feature = "cap-forcefields")]
+mod forcefield_calls;
+#[cfg(feature = "cap-forcefields")]
+mod forcefield_execution_errors;
+#[cfg(feature = "cap-forcefields")]
+mod forcefield_kernel_errors;
+#[cfg(feature = "cap-forcefields")]
+mod forcefield_params;
+mod fragment_errors;
+mod fragments;
+mod group_values;
+mod hydrogen_errors;
 #[cfg(feature = "cap-inchi")]
 mod inchi;
+mod input;
+mod io_configuration;
+mod io_write_errors;
+mod iterator;
+mod kekulize_errors;
+mod legacy_stereo_errors;
+#[cfg(feature = "cap-fingerprints")]
+mod maccs;
+#[cfg(any(
+    feature = "cap-search",
+    feature = "cap-fingerprints",
+    feature = "cap-forcefields",
+    feature = "cap-descriptors",
+    feature = "cap-depict"
+))]
+mod match_error;
+#[cfg(any(
+    feature = "cap-search",
+    feature = "cap-fingerprints",
+    feature = "cap-forcefields",
+    feature = "cap-descriptors",
+    feature = "cap-depict"
+))]
+mod match_errors;
+mod matrix_calls;
+mod matrix_errors;
 #[cfg(feature = "cap-search")]
 mod mcs;
 #[cfg(feature = "cap-search")]
-pub use mcs::{maximum_common_substructure, maximum_common_substructure_with_params};
-#[cfg(feature = "cap-transforms")]
-mod coordinate_input;
-mod model_values;
-#[cfg(feature = "cap-stereo")]
-mod stereo;
-#[cfg(feature = "cap-tautomer")]
-mod tautomer;
-#[cfg(feature = "cap-tautomer")]
-pub use tautomer::canonical_tautomer_from_molecules_with_params;
+mod mcs_errors;
+mod metadata_queries;
+mod metadata_values;
+#[cfg(feature = "cap-forcefields")]
+mod mmff_errors;
+mod model_errors;
+mod mol2_errors;
+mod mol_post_errors;
+mod mol_post_support_errors;
+mod mol_write_errors;
+#[cfg(feature = "cap-hashing")]
+mod molecular_hash;
+mod molecular_io;
+mod molecular_io_errors;
+#[cfg(feature = "cap-fingerprints")]
+mod morgan_calls;
+#[cfg(feature = "cap-fingerprints")]
+mod morgan_configuration;
+#[cfg(feature = "cap-fingerprints")]
+mod morgan_errors;
+#[cfg(feature = "cap-fingerprints")]
+mod morgan_reusable;
+mod notation;
+mod operation_errors;
+mod operation_metadata;
+#[cfg(feature = "cap-fingerprints")]
+mod pair_torsion;
+mod parameters;
+mod parser_errors;
+#[cfg(feature = "cap-smiles")]
+mod path_errors;
+#[cfg(feature = "cap-fingerprints")]
+mod path_fingerprints;
+#[cfg(feature = "cap-fingerprints")]
+mod pattern;
+#[cfg(feature = "cap-io")]
+mod pdb_flags;
+#[cfg(feature = "cap-bio")]
+mod pdb_read_errors;
+mod periodic_errors;
 #[cfg(feature = "cap-forcefields")]
 mod persistent_forcefields;
+mod potential_stereo_errors;
+mod property_errors;
+mod property_values;
+#[cfg(feature = "cap-bio")]
+mod protein;
+#[cfg(feature = "cap-search")]
+mod query_calls;
+#[cfg(any(
+    feature = "cap-search",
+    feature = "cap-fingerprints",
+    feature = "cap-forcefields",
+    feature = "cap-descriptors",
+    feature = "cap-depict"
+))]
+mod query_compile_error;
+mod query_errors;
+#[cfg(feature = "cap-search")]
+mod query_matches;
+mod query_model_errors;
+mod query_values;
 #[cfg(feature = "cap-reaction")]
 mod reaction;
-#[cfg(feature = "cap-smiles")]
-mod smiles;
+#[cfg(feature = "cap-reaction")]
+mod reaction_calls;
+#[cfg(feature = "cap-reaction")]
+mod reaction_errors;
+#[cfg(feature = "cap-reaction")]
+mod reaction_execution_errors;
+#[cfg(feature = "cap-reaction")]
+mod reaction_values;
+#[cfg(feature = "cap-bio")]
+mod residue_values;
+mod ring_errors;
+mod sanitize;
+mod sanitize_errors;
+mod sanitize_leaf_errors;
+mod sanitize_support_errors;
+#[cfg(feature = "cap-hashing")]
+mod scaffold_errors;
+mod sdf_errors;
+mod sdf_records;
+#[cfg(feature = "cap-search")]
+mod search_callbacks;
+#[cfg(any(feature = "cap-search", feature = "cap-fingerprints"))]
+mod smarts_errors;
+#[cfg(any(
+    feature = "cap-search",
+    feature = "cap-fingerprints",
+    feature = "cap-forcefields",
+    feature = "cap-descriptors",
+    feature = "cap-depict"
+))]
+mod smarts_parse_errors;
+mod smiles_errors;
+mod smiles_parse_errors;
+mod smiles_stereo_errors;
+#[cfg(feature = "cap-fingerprints")]
+mod sparse_fingerprints;
+mod stereo_errors;
+mod stereo_groups;
+mod stereo_order_errors;
+mod stereo_reads;
 #[cfg(feature = "cap-stereoisomers")]
 mod stereoisomers;
-#[cfg(feature = "cap-reaction")]
-pub use reaction::{ReactionApplyResult, reaction_run};
+mod storage;
+#[cfg(feature = "cap-tautomer")]
+mod tautomer_callbacks;
+#[cfg(feature = "cap-tautomer")]
+mod tautomer_calls;
+#[cfg(feature = "cap-tautomer")]
+mod tautomer_catalog;
+#[cfg(feature = "cap-tautomer")]
+mod tautomer_errors;
+#[cfg(feature = "cap-tautomer")]
+mod tautomer_score;
+mod topology_errors;
+mod topology_values;
+#[cfg(feature = "cap-fingerprints")]
+mod torsion_path;
+#[cfg(feature = "cap-fingerprints")]
+mod torsion_reusable;
+mod transform_errors;
+#[cfg(feature = "cap-forcefields")]
+mod uff_errors;
+mod valence_errors;
+#[cfg(any(feature = "cap-search", feature = "cap-io"))]
+mod wedge_errors;
+#[cfg(any(feature = "cap-alignment", feature = "cap-fingerprints"))]
+mod worker_errors;
+mod xyz_errors;
 
-pub use cosmolkit as rust;
-/// Complete Rust facade re-export.
-///
-/// The binding crate mirrors the canonical Rust facade at its root. This
-/// keeps every existing `cosmolkit` feature available to Rust consumers while
-/// the `Molecule` type below provides the ABI-safe projection used by Alef and
-/// wasm-bindgen.
-pub use cosmolkit::*;
-pub use cosmolkit_macros::javascript_options;
+// The field list and field types come from the native declaration, not a JS list.
+ck::__ck_configuration_RingSearchParams!(crate::project_parameters, ck::RingSearchParams, {}, {
+    RingSearchParams
+});
+ck::__ck_configuration_SmilesParseParams!(crate::project_parameters, ck::SmilesParseParams, {}, {
+    SmilesParseParams
+});
+ck::__ck_configuration_SmilesWriteParams!(crate::project_parameters, ck::SmilesWriteParams, {}, {
+    SmilesWriteParams
+});
+ck::__ck_configuration_RandomSmilesWriteParams!(
+    crate::project_parameters,
+    ck::RandomSmilesWriteParams,
+    {},
+    { RandomSmilesWriteParams }
+);
+ck::__ck_configuration_FragmentSmilesWriteParams!(
+    crate::project_parameters,
+    ck::FragmentSmilesWriteParams,
+    {},
+    { FragmentSmilesWriteParams }
+);
 
-/// Returns the COSMolKit version through the binding-facing crate.
-#[must_use]
-pub fn version() -> &'static str {
-    cosmolkit::version()
+#[wasm_bindgen]
+pub struct Molecule(ck::Molecule);
+crate::fields::value_field!(ck::Molecule, Molecule, MoleculeInput, "Molecule");
+crate::fields::optional_value_array!(
+    ck::Molecule,
+    Molecule,
+    MoleculeArray,
+    "ReadonlyArray<Molecule | null | undefined>"
+);
+
+#[wasm_bindgen(js_name = molFromSmiles)]
+pub fn mol_from_smiles(
+    smiles: Ts<input::TextInput>,
+    params: Option<SmilesParseParamsInput>,
+) -> Result<Molecule, JsValue> {
+    Molecule::from_smiles(smiles, params)
 }
 
-// Decode counted chemical text only at the existing language projection.
-// Invalid UTF-8 is a binding error; bytes are never replaced or truncated.
-fn language_text(text: &cosmolkit::PropertyText) -> Result<String, String> {
-    std::str::from_utf8(text.as_bytes())
-        .map(str::to_owned)
-        .map_err(|error| format!("binding text encoding: {error}"))
-}
-
-/// Immutable identity of an element from the canonical public facade.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Element {
-    inner: cosmolkit::Element,
-}
-
-impl Element {
-    /// Returns the source element for this atomic number, or no value.
-    pub fn from_atomic_number(atomic_number: u8) -> Option<Self> {
-        cosmolkit::Element::from_atomic_number(atomic_number).map(|inner| Self { inner })
-    }
-
-    /// Returns the source element for this symbol, including source aliases.
-    pub fn from_symbol(symbol: &str) -> Option<Self> {
-        cosmolkit::Element::from_symbol(symbol).map(|inner| Self { inner })
-    }
-
-    /// Reads the copied value identity without consuming the binding object.
-    pub fn atomic_number(&self) -> u8 {
-        self.inner.atomic_number()
-    }
-
-    /// Reads the canonical source symbol.
-    pub fn symbol(&self) -> String {
-        self.inner.symbol().to_owned()
-    }
-}
-
-/// Immutable projection of the public periodic-table result's eight fields.
-#[derive(Clone, Copy, Debug)]
-pub struct ElementInfo {
-    inner: cosmolkit::ElementInfo,
-}
-
-impl ElementInfo {
-    pub fn element(&self) -> Element {
-        Element {
-            inner: self.inner.element,
-        }
-    }
-
-    pub fn symbol(&self) -> String {
-        self.inner.symbol.to_owned()
-    }
-
-    pub fn atomic_number(&self) -> u8 {
-        self.inner.atomic_number
-    }
-
-    pub fn period(&self) -> u8 {
-        self.inner.period
-    }
-
-    pub fn outer_electrons(&self) -> i32 {
-        self.inner.outer_electrons
-    }
-
-    pub fn valences(&self) -> Vec<i32> {
-        self.inner.valences.to_vec()
-    }
-
-    pub fn rb0(&self) -> f64 {
-        self.inner.rb0
-    }
-
-    pub fn atomic_weight(&self) -> f64 {
-        self.inner.atomic_weight
-    }
-}
-
-/// Looks up table metadata through the public facade with source defaults.
-#[cfg(feature = "cap-valence")]
-pub fn element_info(element: &Element) -> ElementInfo {
-    ElementInfo {
-        inner: cosmolkit::element_info(element.inner),
-    }
-}
-
-#[derive(Clone)]
-pub struct Molecule {
-    inner: std::cell::RefCell<cosmolkit::Molecule>,
-}
-
-impl From<cosmolkit::Molecule> for Molecule {
-    fn from(inner: cosmolkit::Molecule) -> Self {
-        Self {
-            inner: inner.into(),
-        }
-    }
-}
-
-impl From<Element> for cosmolkit::Element {
-    fn from(value: Element) -> Self {
-        value.inner
-    }
-}
-
+#[wasm_bindgen]
 impl Molecule {
-    /// Creates an empty molecule.
-    pub fn new() -> Self {
-        Self {
-            inner: cosmolkit::Molecule::new().into(),
-        }
+    #[wasm_bindgen(constructor)]
+    pub fn new(smiles: Ts<input::TextInput>) -> Result<Molecule, JsValue> {
+        let smiles = input::read::<String>(smiles)?;
+        ck::Molecule::from_smiles(&smiles)
+            .map(Self)
+            .map_err(smiles_errors::SmilesError::from_rust)
     }
 
-    /// Parses SMILES while explicitly selecting the source sanitization path.
-    ///
-    /// All other parser options keep their pinned source defaults.
-    #[cfg(feature = "cap-smiles")]
-    pub fn from_smiles_with_sanitize(
-        smiles: &str,
-        sanitize: bool,
-    ) -> Result<Self, cosmolkit::SmilesError> {
-        let params = cosmolkit::SmilesParseParams {
-            sanitize,
-            ..cosmolkit::SmilesParseParams::default()
-        };
-        cosmolkit::Molecule::from_smiles_with_params(smiles, &params).map(|inner| Self {
-            inner: inner.into(),
+    pub fn copy(&self) -> Molecule {
+        Self(self.0.copy())
+    }
+
+    #[wasm_bindgen(js_name = fromSmiles)]
+    pub fn from_smiles(
+        smiles: Ts<input::TextInput>,
+        params: Option<SmilesParseParamsInput>,
+    ) -> Result<Molecule, JsValue> {
+        let smiles = input::read::<String>(smiles)?;
+        SmilesParseParams::with_input(params.as_ref(), |params| {
+            ck::Molecule::from_smiles_with_params(&smiles, params)
+                .map(Self)
+                .map_err(smiles_errors::SmilesError::from_rust)
         })
     }
 
-    /// Read-only modern tetrahedral-center query with CIP labels.
-    #[cfg(feature = "cap-stereo")]
-    pub fn find_chiral_centers(
+    #[wasm_bindgen(js_name = toSmiles)]
+    pub fn to_smiles(&self, params: Option<SmilesWriteParamsInput>) -> Result<String, JsValue> {
+        SmilesWriteParams::with_input(params.as_ref(), |params| {
+            self.0
+                .to_smiles_with_params(params)
+                .map_err(smiles_errors::SmilesWriteError::from_rust)
+                .and_then(|text| property_errors::text(&text))
+        })
+    }
+
+    #[wasm_bindgen(js_name = toFragmentSmiles)]
+    pub fn to_fragment_smiles(
         &self,
-        include_unassigned: bool,
-    ) -> Result<Vec<(usize, String)>, cosmolkit::StereoReadError> {
-        self.inner.borrow().find_chiral_centers(include_unassigned)
+        params: FragmentSmilesWriteParamsInput,
+    ) -> Result<String, JsValue> {
+        FragmentSmilesWriteParams::with_input(Some(&params), |params| {
+            self.0
+                .to_fragment_smiles_with_params(params)
+                .map_err(smiles_errors::SmilesWriteError::from_rust)
+                .and_then(|text| property_errors::text(&text))
+        })
     }
 
-    /// Number of atoms in the molecular graph.
-    pub fn num_atoms(&self) -> u32 {
-        self.inner.borrow().num_atoms() as u32
+    #[wasm_bindgen(getter, js_name = numAtoms)]
+    pub fn num_atoms(&self) -> usize {
+        self.0.num_atoms()
     }
 
-    /// Number of bonds in the molecular graph.
-    pub fn num_bonds(&self) -> u32 {
-        self.inner.borrow().num_bonds() as u32
+    #[wasm_bindgen(getter, js_name = numBonds)]
+    pub fn num_bonds(&self) -> usize {
+        self.0.num_bonds()
     }
 
-    /// Returns the molecule name, or an empty string when no name is stored.
-    pub fn name_or_empty(&self) -> Result<String, String> {
-        self.inner
-            .borrow()
-            .properties()
-            .name()
-            .map(language_text)
-            .transpose()
-            .map(|text| text.unwrap_or_default())
+    pub fn atom(
+        &self,
+        index: Ts<input::IndexInput>,
+    ) -> Result<Option<atoms::MoleculeAtom>, JsValue> {
+        let index = input::read::<usize>(index)?;
+        Ok(self.0.atom(ck::AtomId::new(index)).map(atoms::MoleculeAtom))
     }
 
-    /// Returns a molecule with its name replaced.
-    pub fn with_name(&self, name: &str) -> Result<Self, String> {
-        self.inner
-            .borrow()
-            .to_builder()
-            .with_name(name.to_owned())
-            .build()
-            .map(|inner| Self {
-                inner: inner.into(),
-            })
-            .map_err(|error| error.to_string())
-    }
-
-    /// Returns a molecule with a string property replaced or inserted.
-    pub fn with_property(&self, key: &str, value: &str) -> Result<Self, String> {
-        self.inner
-            .borrow()
-            .to_builder()
-            .with_property(key.to_owned(), value.to_owned())
-            .and_then(|builder| builder.build())
-            .map(|inner| Self {
-                inner: inner.into(),
-            })
-            .map_err(|error| error.to_string())
-    }
-
-    /// Returns a molecule with an SDF data field appended.
-    pub fn with_sdf_data_field(&self, key: &str, value: &str) -> Result<Self, String> {
-        self.inner
-            .borrow()
-            .to_builder()
-            .with_sdf_data_field(key.to_owned(), value.to_owned())
-            .build()
-            .map(|inner| Self {
-                inner: inner.into(),
-            })
-            .map_err(|error| error.to_string())
-    }
-
-    /// Returns a String-tag property, or an empty string when it is absent.
-    /// Wrong value kinds and invalid UTF-8 propagate as binding errors.
-    pub fn property_or_empty(&self, key: &str) -> Result<String, String> {
-        self.inner
-            .borrow()
-            .property(key)
-            .map(|value| {
-                value
-                    .as_string()
-                    .map_err(|error| error.to_string())
-                    .and_then(language_text)
-            })
-            .transpose()
-            .map(|text| text.unwrap_or_default())
-    }
-
-    /// Returns user/computed property names in stable source insertion order.
-    pub fn property_keys(&self) -> Result<Vec<String>, String> {
-        self.inner
-            .borrow()
-            .properties()
-            .ordered_props()
-            .map(|(key, _)| language_text(key))
+    #[wasm_bindgen(getter)]
+    pub fn atoms(&self) -> Vec<atoms::MoleculeAtom> {
+        self.0
+            .atoms()
+            .into_iter()
+            .map(atoms::MoleculeAtom)
             .collect()
     }
 
-    /// Returns SDF data-field names in their source order, including duplicates.
-    pub fn sdf_data_field_names(&self) -> Result<Vec<String>, String> {
-        self.inner
-            .borrow()
-            .properties()
-            .sdf_data_fields()
-            .iter()
-            .map(|(name, _)| language_text(name))
-            .collect()
+    pub fn bond(&self, index: Ts<input::IndexInput>) -> Result<Option<atoms::Bond>, JsValue> {
+        let index = input::read::<usize>(index)?;
+        Ok(self
+            .0
+            .bond(ck::BondId::new(index))
+            .cloned()
+            .map(atoms::Bond))
     }
 
-    /// Returns the first SDF data-field value with `name`, or an empty string.
-    pub fn sdf_data_field_or_empty(&self, name: &str) -> Result<String, String> {
-        self.inner
-            .borrow()
-            .properties()
-            .sdf_data_fields()
-            .iter()
-            .find(|(field_name, _)| field_name.as_bytes() == name.as_bytes())
-            .map(|(_, value)| language_text(value))
-            .transpose()
-            .map(|text| text.unwrap_or_default())
+    #[wasm_bindgen(getter)]
+    pub fn bonds(&self) -> Vec<atoms::Bond> {
+        self.0.bonds().iter().cloned().map(atoms::Bond).collect()
     }
 
-    /// Returns atomic numbers in molecule atom order.
-    pub fn atomic_numbers(&self) -> Vec<u8> {
-        self.inner
-            .borrow()
-            .topology()
-            .atoms
-            .iter()
-            .map(|atom| atom.atomic_number())
-            .collect()
-    }
-
-    /// Returns the first 2D conformer as a flattened `[x0, y0, ...]` array.
-    pub fn coordinates_2d(&self) -> Vec<f64> {
-        self.inner
-            .borrow()
-            .coordinates_2d()
-            .map(|coordinates| {
-                coordinates
-                    .iter()
-                    .flat_map(|point| point.iter().copied())
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Returns the number of 3D conformers.
-    pub fn num_conformers_3d(&self) -> u32 {
-        self.inner.borrow().conformers_3d().len() as u32
-    }
-
-    /// Returns the exact stored 3D conformer ID as flattened XYZ rows.
-    #[cfg(feature = "cap-transforms")]
-    pub fn coordinates_3d(
+    #[wasm_bindgen(js_name = toRandomSmiles)]
+    pub fn to_random_smiles(
         &self,
-        conformer_id: usize,
-    ) -> Result<Vec<f64>, cosmolkit::Coordinate3DReadError> {
-        self.inner
-            .borrow()
-            .coordinates_3d(conformer_id)
-            .map(|coordinates| {
-                coordinates
-                    .iter()
-                    .flat_map(|point| point.iter().copied())
-                    .collect()
-            })
+        count: Ts<input::U32Input>,
+        seed: Ts<input::U32Input>,
+        params: Option<RandomSmilesWriteParamsInput>,
+    ) -> Result<Vec<String>, JsValue> {
+        let count = input::read::<u32>(count)?;
+        let seed = input::read::<u32>(seed)?;
+        RandomSmilesWriteParams::with_input(params.as_ref(), |params| {
+            self.0
+                .to_random_smiles_with_params(count, seed, params)
+                .map_err(smiles_errors::SmilesWriteError::from_rust)?
+                .iter()
+                .map(property_errors::text)
+                .collect()
+        })
     }
 
-    /// Returns a molecule with the default valence cache assigned.
-    #[cfg(feature = "cap-valence")]
-    pub fn with_assigned_valence(&self) -> Result<Self, cosmolkit::OperationError> {
-        self.inner
-            .borrow()
-            .with_assigned_valence()
-            .map(|inner| Self {
-                inner: inner.into(),
-            })
-    }
-
-    /// Returns an independent value prepared with explicit valence policies.
-    #[cfg(feature = "cap-valence")]
-    pub fn with_assigned_valence_with_params(
+    #[wasm_bindgen(js_name = toCxSmiles)]
+    pub fn to_cx_smiles(
         &self,
-        params: &cosmolkit::ValenceParams,
-    ) -> Result<Self, cosmolkit::OperationError> {
-        self.inner
-            .borrow()
-            .with_assigned_valence_with_params(params)
-            .map(|inner| Self {
-                inner: inner.into(),
-            })
+        params: Option<notation::CxSmilesWriteParamsInput>,
+    ) -> Result<String, JsValue> {
+        notation::CxSmilesWriteParams::with_input(params.as_ref(), |params| {
+            self.0
+                .to_cx_smiles_with_params(params)
+                .map_err(smiles_errors::SmilesWriteError::from_rust)
+                .and_then(|text| property_errors::text(&text))
+        })
     }
 
-    /// Prepares this value through the canonical in-place operation.
-    #[cfg(feature = "cap-valence")]
-    pub fn assign_valence_(&self) -> Result<(), cosmolkit::OperationError> {
-        self.inner.borrow_mut().assign_valence_()
-    }
-
-    /// Prepares this value through the canonical explicit-policy operation.
-    #[cfg(feature = "cap-valence")]
-    pub fn assign_valence_with_params_(
+    #[wasm_bindgen(js_name = toFragmentCxSmiles)]
+    pub fn to_fragment_cx_smiles(
         &self,
-        params: &cosmolkit::ValenceParams,
-    ) -> Result<(), cosmolkit::OperationError> {
-        self.inner.borrow_mut().assign_valence_with_params_(params)
+        params: notation::FragmentCxSmilesWriteParamsInput,
+    ) -> Result<String, JsValue> {
+        notation::FragmentCxSmilesWriteParams::with_input(Some(&params), |params| {
+            self.0
+                .to_fragment_cx_smiles_with_params(params)
+                .map_err(smiles_errors::SmilesWriteError::from_rust)
+                .and_then(|text| property_errors::text(&text))
+        })
+    }
+
+    #[cfg(feature = "cap-descriptors")]
+    #[wasm_bindgen(js_name = numRings)]
+    pub fn num_rings(&self) -> Result<u32, JsValue> {
+        self.0
+            .num_rings()
+            .map_err(descriptor_errors::DescriptorReadError::from_rust)
+    }
+
+    /// Protocol probe: deliver an independently owned COW snapshot, not a borrow.
+    #[cfg(feature = "protocol-tests")]
+    pub fn inspect(&self, callback: &InspectCallback) -> Result<bool, JsValue> {
+        let value = callback.call1(&JsValue::UNDEFINED, &JsValue::from(self.copy()))?;
+        input::read::<bool>(Ts::new_unchecked(value))
     }
 }
 
-impl Default for Molecule {
-    fn default() -> Self {
-        Self::new()
-    }
+#[cfg(feature = "protocol-tests")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(extends = js_sys::Function, typescript_type = "((molecule: Molecule) => boolean)")]
+    pub type InspectCallback;
+
 }
 
-#[cfg(all(test, feature = "full"))]
-mod tests {
-    use super::Molecule;
-
-    #[test]
-    fn valence_projection_keeps_typed_failures_and_preparation_state() {
-        let raw = |text| {
-            Molecule::from_smiles_with_params(
-                text,
-                &cosmolkit::SmilesParseParams {
-                    sanitize: false,
-                    remove_hs: false,
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-        };
-        let value = raw("CCO");
-        assert!(value.fingerprint_atom_pair().is_err());
-        let prepared = value.with_assigned_valence().unwrap();
-        assert!(prepared.fingerprint_atom_pair().is_ok());
-        assert!(value.fingerprint_atom_pair().is_err());
-        value.assign_valence_().unwrap();
-        assert!(value.fingerprint_atom_pair().is_ok());
-
-        let invalid = raw("C(F)(F)(F)(F)F");
-        let before = invalid.to_smiles().unwrap();
-        assert!(matches!(
-            invalid.with_assigned_valence(),
-            Err(cosmolkit::OperationError::Valence(_))
-        ));
-        assert!(matches!(
-            invalid.assign_valence_(),
-            Err(cosmolkit::OperationError::Valence(_))
-        ));
-        assert_eq!(invalid.to_smiles().unwrap(), before);
-        assert!(invalid.fingerprint_atom_pair().is_err());
-        let params = cosmolkit::ValenceParams {
-            strict: false,
-            ..Default::default()
-        };
-        let relaxed = invalid.with_assigned_valence_with_params(&params).unwrap();
-        assert!(relaxed.fingerprint_atom_pair().is_ok());
-        assert!(invalid.fingerprint_atom_pair().is_err());
-        invalid.assign_valence_with_params_(&params).unwrap();
-        assert!(invalid.fingerprint_atom_pair().is_ok());
+#[cfg(feature = "protocol-tests")]
+mod protocol_samples;
+#[cfg(feature = "protocol-tests")]
+pub use protocol_samples::{
+    __configuration_ProtocolNested, __configuration_ProtocolSelection, ProtocolNested,
+    ProtocolSelection,
+};
+#[wasm_bindgen]
+impl Molecule {
+    #[wasm_bindgen(js_name = toSmilesWithParams)]
+    pub fn to_smiles_with_params(&self, params: SmilesWriteParamsInput) -> Result<String, JsValue> {
+        self.to_smiles(Some(params))
     }
-
-    const ETHANOL_SDF: &str = "\
-ethanol
-     RDKit          2D
-
-  3  2  0  0  0  0  0  0  0  0999 V2000
-    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
-    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0
-    0.0000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0
-  1  2  1  0
-  2  3  1  0
-M  END
-$$$$
-";
-
-    #[test]
-    fn wrapper_forwards_construction_and_counts() {
-        let molecule = Molecule::from_smiles("CCO").expect("CCO parses");
-        assert_eq!(molecule.num_atoms(), 3);
-        assert_eq!(molecule.num_bonds(), 2);
-        assert_eq!(molecule.atomic_numbers(), vec![6, 6, 8]);
-        assert_eq!(
-            Molecule::from_smiles_with_sanitize("CCO", false)
-                .expect("unsanitized parse")
-                .num_atoms(),
-            molecule.num_atoms()
-        );
-        let from_sdf = Molecule::from_sdf(ETHANOL_SDF).expect("SDF record parses");
-        assert_eq!(from_sdf.num_atoms(), 3);
-        assert_eq!(from_sdf.num_bonds(), 2);
+    #[wasm_bindgen(js_name=toCxSmilesWithParams)]
+    pub fn to_cx_smiles_with_params(
+        &self,
+        params: notation::CxSmilesWriteParamsInput,
+    ) -> Result<String, JsValue> {
+        self.to_cx_smiles(Some(params))
     }
-
-    #[test]
-    fn wrapper_propagates_runtime_errors() {
-        assert!(Molecule::from_smiles("[").is_err());
-        assert!(Molecule::from_sdf("not an SDF record").is_err());
+    #[wasm_bindgen(js_name=toFragmentSmilesWithParams)]
+    pub fn to_fragment_smiles_with_params(
+        &self,
+        params: FragmentSmilesWriteParamsInput,
+    ) -> Result<String, JsValue> {
+        self.to_fragment_smiles(params)
     }
-
-    #[test]
-    fn wrapper_forwards_descriptor_defaults() {
-        let molecule = Molecule::from_smiles("CCO").expect("CCO parses");
-        let weight = molecule.molecular_weight().expect("average weight");
-        assert!((weight - 46.069).abs() < 1e-3, "got {weight}");
-        let exact = molecule.exact_molecular_weight().expect("exact weight");
-        assert!((exact - 46.041_864_812).abs() < 1e-9, "got {exact}");
-        assert_eq!(molecule.molecular_formula().expect("formula"), "C2H6O");
+    #[wasm_bindgen(js_name=toFragmentCxSmilesWithParams)]
+    pub fn to_fragment_cx_smiles_with_params(
+        &self,
+        params: notation::FragmentCxSmilesWriteParamsInput,
+    ) -> Result<String, JsValue> {
+        self.to_fragment_cx_smiles(params)
     }
-
-    #[test]
-    fn wrapper_round_trips_properties_through_builder() {
-        let molecule = Molecule::from_smiles("CCO").expect("CCO parses");
-        let named = molecule.with_name("ethanol").expect("name replacement");
-        assert_eq!(named.name_or_empty().unwrap(), "ethanol");
-        let propertied = named
-            .with_property("source", "binding-test")
-            .expect("property replacement");
-        assert_eq!(
-            propertied.property_or_empty("source").unwrap(),
-            "binding-test"
-        );
-        assert_eq!(propertied.property_or_empty("absent").unwrap(), "");
-        assert!(
-            propertied
-                .property_keys()
-                .unwrap()
-                .contains(&"source".to_owned())
-        );
-        let with_field = propertied
-            .with_sdf_data_field("ID", "ethanol-1")
-            .expect("SDF data field append");
-        assert_eq!(
-            with_field.sdf_data_field_names().unwrap(),
-            vec!["ID".to_owned()]
-        );
-        assert_eq!(
-            with_field.sdf_data_field_or_empty("ID").unwrap(),
-            "ethanol-1"
-        );
-        assert_eq!(with_field.sdf_data_field_or_empty("absent").unwrap(), "");
-        assert_eq!(named.num_atoms(), molecule.num_atoms());
+    #[wasm_bindgen(js_name = toRandomSmilesWithParams)]
+    pub fn to_random_smiles_with_params(
+        &self,
+        count: Ts<input::U32Input>,
+        seed: Ts<input::U32Input>,
+        params: RandomSmilesWriteParamsInput,
+    ) -> Result<Vec<String>, JsValue> {
+        self.to_random_smiles(count, seed, Some(params))
     }
-
-    #[test]
-    fn wrapper_forwards_operations_and_coordinate_accessors() {
-        let molecule = Molecule::from_smiles("CCO").expect("CCO parses");
-        let with_hydrogens = molecule.with_hydrogens().expect("hydrogen addition");
-        assert_eq!(with_hydrogens.num_atoms(), 9);
-        assert_eq!(
-            with_hydrogens
-                .without_hydrogens()
-                .expect("hydrogen removal")
-                .num_atoms(),
-            3
-        );
-        assert_eq!(molecule.num_conformers_3d(), 0);
-        assert!(molecule.coordinates_2d().is_empty());
-        let drawn = molecule.with_2d_coordinates().expect("2D layout");
-        assert_eq!(drawn.coordinates_2d().len(), 6);
-        assert_eq!(molecule.num_atoms(), 3);
-        let benzene = Molecule::from_smiles("c1ccccc1").expect("benzene parses");
-        benzene
-            .with_kekulized_bonds()
-            .expect("kekulization defaults");
-        benzene
-            .with_assigned_aromaticity()
-            .expect("aromaticity defaults");
-        molecule.sanitize().expect("sanitize defaults");
-        molecule.with_assigned_valence().expect("valence defaults");
-        molecule.with_assigned_rings().expect("ring defaults");
-        molecule
-            .with_assigned_ring_families()
-            .expect("ring family defaults");
-        molecule.with_assigned_radicals().expect("radical defaults");
-    }
-    #[test]
-    fn language_projection_preserves_nul_and_source_order() {
-        use cosmolkit::{MoleculeBuilder, MoleculeProperties};
-        let props = MoleculeProperties::default()
-            .with_name("na\0mé")
-            .with_prop("z", "v\0é")
-            .unwrap()
-            .with_prop("a", "second")
-            .unwrap()
-            .with_sdf_data_field("ID\0é", "first\0é")
-            .with_sdf_data_field("ID\0é", "second");
-        let molecule = Molecule {
-            inner: MoleculeBuilder::new()
-                .with_properties(props)
-                .build()
-                .unwrap()
-                .into(),
-        };
-        assert_eq!(molecule.name_or_empty().unwrap(), "na\0mé");
-        assert_eq!(molecule.property_or_empty("z").unwrap(), "v\0é");
-        assert_eq!(molecule.property_keys().unwrap(), ["z", "a"]);
-        assert_eq!(molecule.sdf_data_field_names().unwrap(), ["ID\0é", "ID\0é"]);
-        assert_eq!(
-            molecule.sdf_data_field_or_empty("ID\0é").unwrap(),
-            "first\0é"
-        );
-        assert_eq!(molecule.sdf_data_field_or_empty("ID").unwrap(), "");
-    }
-
-    #[test]
-    fn language_projection_rejects_opaque_bytes_and_wrong_property_kinds() {
-        use cosmolkit::{MoleculeBuilder, MoleculeProperties, PropertyText, PropertyValue};
-        let opaque = PropertyText::from_bytes(b"a\xff\0");
-        let props = MoleculeProperties::default()
-            .with_name(opaque.clone())
-            .with_prop("text", opaque.clone())
-            .unwrap()
-            .with_prop(opaque.clone(), "value")
-            .unwrap()
-            .with_prop("native", PropertyValue::Int(1))
-            .unwrap()
-            .with_sdf_data_field("ID", opaque.clone())
-            .with_sdf_data_field(opaque.clone(), "value");
-        let inner = MoleculeBuilder::new()
-            .with_properties(props)
-            .build()
-            .unwrap();
-        let before = inner.clone();
-        let molecule = Molecule {
-            inner: inner.into(),
-        };
-        assert!(
-            molecule
-                .name_or_empty()
-                .unwrap_err()
-                .starts_with("binding text encoding:")
-        );
-        assert!(molecule.property_or_empty("text").is_err());
-        assert!(
-            molecule
-                .property_or_empty("native")
-                .unwrap_err()
-                .contains("Int")
-        );
-        assert!(molecule.property_keys().is_err());
-        assert!(molecule.sdf_data_field_names().is_err());
-        assert!(molecule.sdf_data_field_or_empty("ID").is_err());
-        assert_eq!(molecule.property_or_empty("absent").unwrap(), "");
-        assert_eq!(*molecule.inner.borrow(), before);
+    #[wasm_bindgen(js_name = fromSmilesWithParams)]
+    pub fn from_smiles_with_params(
+        smiles: Ts<input::TextInput>,
+        params: SmilesParseParamsInput,
+    ) -> Result<Molecule, JsValue> {
+        Self::from_smiles(smiles, Some(params))
     }
 }
-
-#[cfg(all(test, feature = "full"))]
-mod bio_read_tests;
-
-#[cfg(all(test, feature = "full"))]
-mod bio_hierarchy_tests;
-
-#[cfg(all(test, feature = "full"))]
-mod bio_parts_tests;
-
-#[cfg(all(test, feature = "full"))]
-mod bio_selection_tests;
-
-#[cfg(all(test, feature = "full"))]
-mod bio_writers_tests;
-
-#[cfg(all(test, feature = "full"))]
-mod bio_protein_tests;
-
-#[cfg(feature = "cap-conformer")]
-mod conformer;
-#[cfg(feature = "cap-conformer")]
-pub use conformer::{EmbedMoleculeResult, EmbedMultipleConfsResult};
-
-#[cfg(all(test, feature = "cap-conformer"))]
-mod conformer_tests;
-
-#[cfg(feature = "cap-depict")]
-mod depict;
-
-#[cfg(feature = "cap-descriptors")]
-mod descriptors;
-
-#[cfg(feature = "cap-fingerprints")]
-mod path_codes;
-#[cfg(feature = "cap-fingerprints")]
-pub use path_codes::AtomPairAtomCodeResult;
-
-#[cfg(feature = "cap-fingerprints")]
-mod atom_pair;
-
-#[cfg(feature = "cap-fingerprints")]
-mod morgan;
-#[cfg(feature = "cap-fingerprints")]
-pub use morgan::{
-    morgan_generator_counts, morgan_generator_fingerprints, morgan_generator_sparse_counts,
-    morgan_generator_sparse_fingerprints,
-};
-
-#[cfg(feature = "cap-fingerprints")]
-mod topological_torsion;
-#[cfg(feature = "cap-fingerprints")]
-pub use topological_torsion::{
-    topological_torsion_generator_counts, topological_torsion_generator_fingerprints,
-    topological_torsion_generator_sparse_counts, topological_torsion_generator_sparse_fingerprints,
-};
-
-#[cfg(feature = "cap-fingerprints")]
-mod maccs;
-
-#[cfg(feature = "cap-fingerprints")]
-mod layered_pattern;
-
-#[cfg(feature = "cap-fingerprints")]
-mod topological;
-
-#[cfg(feature = "cap-forcefields")]
-mod forcefield_properties;
-
-#[cfg(feature = "cap-forcefields")]
-mod uff;
-#[cfg(feature = "cap-forcefields")]
-pub use uff::{UffConformerOptimizationResult, UffOptimizationResult};
-
-#[cfg(feature = "cap-forcefields")]
-mod mmff;
-#[cfg(feature = "cap-forcefields")]
-pub use mmff::{MmffOptimizeMoleculeConfsResult, MmffOptimizeMoleculeResult};
-
-#[cfg(feature = "cap-fingerprints")]
-mod avalon;
-#[cfg(feature = "cap-transforms")]
-mod fragments;
-#[cfg(feature = "cap-hashing")]
-mod hashing;
-
-#[cfg(feature = "cap-hydrogens")]
-mod hydrogens;
-
-#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
-mod bio_conversion;
-#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
-pub use bio_conversion::{
-    bio_structure_to_molecule, bio_structure_to_molecule_with_params, protein_to_molecule,
-    protein_to_molecule_with_params,
-};
-
-#[cfg(feature = "cap-io")]
-mod sdf_reading;
-#[cfg(feature = "cap-io")]
-pub use sdf_reading::{SdfGraph, SdfRecord};
-
-mod property_strings;
-
-#[cfg(feature = "cap-io")]
-mod xyz_mol2;
-
-#[cfg(feature = "cap-io")]
-mod mol_sdf_writing;
-
-#[cfg(feature = "cap-io")]
-mod pdb_io;
-
-#[cfg(all(feature = "cap-io", feature = "cap-bio"))]
-mod molecule_structure_reading;
-
-#[cfg(feature = "cap-io")]
-mod sdf_datasets;
-#[cfg(feature = "cap-io")]
-pub use sdf_datasets::{SdfDataset, SdfDatasetIterator, SdfReader, SdfRecordStream};
-
-#[cfg(all(feature = "cap-io", feature = "cap-batch"))]
-mod sdf_batches;
-#[cfg(all(feature = "cap-io", feature = "cap-batch"))]
-pub use sdf_batches::{SdfBatchIterator, SdfReaderBatchIterator};
-
-#[cfg(feature = "cap-kekulize")]
-mod kekulize;
-
-#[cfg(feature = "cap-matrices")]
-mod matrices;
-
-#[cfg(feature = "cap-radicals")]
-mod radicals;
-
-#[cfg(feature = "cap-rings")]
-mod rings;
-
-#[cfg(feature = "cap-sanitize")]
-mod sanitize;
-
-#[cfg(feature = "cap-search")]
-#[path = "search.rs"]
-mod search_projection;

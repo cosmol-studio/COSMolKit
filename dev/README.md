@@ -57,7 +57,7 @@ cargo install pyo3-introspection --version 0.30.1 --locked
 .venv/bin/python python/build.py
 .venv/bin/python python/registry_check.py
 .venv/bin/maturin develop --manifest-path python/Cargo.toml
-python3 wasm/tools/wasm_binding/run.py --profile dev
+python3 wasm/build.py --check
 .venv/bin/pytest python/tests
 ```
 

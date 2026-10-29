@@ -1,4 +1,5 @@
 import sys
+import tomllib
 from pathlib import Path
 
 DOCS = Path(__file__).resolve().parents[1]
@@ -7,8 +8,8 @@ sys.path.insert(0, str(ROOT / "python/artifacts/smoke/package"))
 sys.path.insert(0, str(DOCS))
 
 project = "COSMolKit"
-version = "0.5.0"
-release = "0.5.0"
+release = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+version = release
 author = "COSMolKit Contributors"
 html_title = "COSMolKit — Rust-native cheminformatics toolkit"
 
@@ -28,11 +29,11 @@ api_class_order = ["Molecule", "BioStructure", "Protein"]
 
 js_language = "typescript"
 # Only the generated public entry point, never wasm-bindgen's raw ABI exports.
-js_source_path = str(ROOT / "target/docs-js-package/wasm_wasm.d.ts")
+js_source_path = str(ROOT / "target/docs-js-package/cosmolkit_wasm.d.ts")
 if not Path(js_source_path).is_file():
     raise RuntimeError(
         "Generate the full WASM declarations first: python3 "
-        "wasm/tools/wasm_binding/run.py --preset full --skip-binding-contract "
+        "wasm/build.py --target web "
         "--out-dir target/docs-js-package"
     )
 root_for_relative_js_paths = str(Path(js_source_path).parent)

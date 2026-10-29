@@ -99,7 +99,7 @@ appear in its exports and declarations. Keep the generated JavaScript and
 ``.wasm`` asset from the same package version together.
 
 Top-level constructors such as ``ck.molFromSmiles(text)`` and
-``ck.bioFromMmcif(text)`` directly reference the corresponding class factories
+``ck.bioFromMmcif(text)`` call the corresponding class factories
 (``ck.Molecule.fromSmiles`` and ``ck.BioStructure.fromMmcif``). They accept the
 same options, return the same types and preserve the same errors. Their
 availability follows the selected package's features.
@@ -112,7 +112,7 @@ In Node.js, supply the WebAssembly bytes instead of relying on browser fetching:
    import init, * as ck from "@cosmol-studio/cosmolkit";
 
    const wasmUrl = import.meta.resolve(
-     "@cosmol-studio/cosmolkit/wasm_wasm_bg.wasm",
+     "@cosmol-studio/cosmolkit/cosmolkit_wasm_bg.wasm",
    );
    await init({ module_or_path: readFileSync(new URL(wasmUrl)) });
 
@@ -127,7 +127,7 @@ rather than returning a partially valid molecule. Atom indices are zero-based.
    const mol = ck.Molecule.fromSmiles("OCC");
    try {
      console.log(mol.toSmiles()); // CCO
-     console.log(mol.numAtoms(), mol.numBonds()); // 3, 2
+     console.log(mol.numAtoms, mol.numBonds); // 3, 2
    } finally {
      mol.free();
    }
@@ -152,13 +152,13 @@ Rust chemistry; the value-returning form uses block-level copy-on-write.
 
    const mol = ck.Molecule.fromSmiles("CCO");
    const hydrogenated = mol.withHydrogens();
-   const tagged = mol.withAtomProperty(0, "tracking_id", 42);
+   const tagged = mol.withAtomPropertyInt(0, "tracking_id", 42);
    try {
-     console.log(mol.numAtoms(), hydrogenated.numAtoms()); // 3, 9
-     console.log(tagged.atomProperty(0, "tracking_id")); // 42, a number
-     console.log(mol.atomProperty(0, "tracking_id")); // null
+     console.log(mol.numAtoms, hydrogenated.numAtoms); // 3, 9
+     console.log(tagged.atomPropertyInt(0, "tracking_id")); // 42, a number
+     console.log(mol.atomPropertyInt(0, "tracking_id")); // undefined
      mol.addHydrogens_();
-     console.log(mol.numAtoms()); // 9
+     console.log(mol.numAtoms); // 9
    } finally {
      tagged.free();
      hydrogenated.free();
@@ -214,7 +214,7 @@ Requires ``search``. Pass a plain options object, or use an explicit
        maxMatches: 100,
      });
      try {
-       console.log(matches.map((match) => match.atomMapping())); // [[1, 2]]
+       console.log(matches.map((match) => Array.from(match.atomMapping))); // [[1, 2]]
      } finally {
        for (const match of matches) match.free();
      }
@@ -227,7 +227,7 @@ Fingerprints and similarity
 ---------------------------
 
 Requires ``fingerprints``. A ``Fingerprint`` is an owned object, not a dense
-array. ``onBits()`` returns the set-bit indices; ``nBits()`` is its full length.
+array. ``onBits`` returns the set-bit indices; ``nBits`` is its full length.
 
 .. code-block:: javascript
 
@@ -237,8 +237,8 @@ array. ``onBits()`` returns the set-bit indices; ``nBits()`` is its full length.
    const right = propanol.fingerprintMorgan();
    try {
      console.log(left.tanimoto(right));
-     const dense = new Uint8Array(left.nBits());
-     for (const bit of left.onBits()) dense[bit] = 1;
+     const dense = new Uint8Array(left.nBits);
+     for (const bit of left.onBits) dense[bit] = 1;
      console.log(dense); // One 0/1 entry per fingerprint bit
    } finally {
      right.free();
@@ -286,8 +286,8 @@ you also need a molecule containing those coordinates.
    try {
      const svg = positioned.toSvg(320, 240);
      console.log(svg); // Insert into your application's molecule container
-     console.log(positioned.coordinates2d()); // Flattened x, y pairs
-     console.log(mol.coordinates2d().length); // 0: original unchanged
+     console.log(positioned.coordinates2d); // Readonly [x, y] pairs
+     console.log(mol.coordinates2d); // undefined: original unchanged
    } finally {
      positioned.free();
      mol.free();
@@ -304,16 +304,16 @@ do not silently substitute UFF when MMFF parameters are unavailable.
 
    const mol = ck.Molecule.fromSmiles("CCO");
    const hydrogenated = mol.withHydrogens();
-   const defaults = ck.EmbedParams.etkdgV3();
-   const params = defaults.withJson('{"randomSeed":42}');
+   const params = ck.EmbedParams.etkdgV3();
+   params.randomSeed = 42;
    const conformer = hydrogenated.with3dConformerWithParams(params);
    try {
-     console.log(conformer.numConformers3d()); // 1
-     console.log(conformer.coordinates3d(0)); // Flattened x, y, z triples
+     console.log(conformer.num3dConformers); // 1
+     console.log(conformer.coordinates3d(0)); // Readonly [x, y, z] triples
      const uff = conformer.withUffOptimized();
-     const optimized = uff.molecule();
+     const optimized = uff.molecule;
      try {
-       console.log(uff.energy(), uff.needsMore());
+       console.log(uff.energy, uff.needsMore);
        console.log(optimized.bestRmsdTo(conformer));
      } finally {
        optimized.free();
@@ -321,9 +321,9 @@ do not silently substitute UFF when MMFF parameters are unavailable.
      }
      if (conformer.mmffHasAllMoleculeParams()) {
        const mmff = conformer.withMmffOptimized();
-       const mmffMol = mmff.molecule();
+       const mmffMol = mmff.molecule;
        try {
-         console.log(mmff.statusCode(), mmff.needsMore());
+         console.log(mmff.statusCode, mmff.needsMore);
        } finally {
          mmffMol.free();
          mmff.free();
@@ -332,12 +332,11 @@ do not silently substitute UFF when MMFF parameters are unavailable.
    } finally {
      conformer.free();
      params.free();
-     defaults.free();
      hydrogenated.free();
      mol.free();
    }
 
-``needsMore()`` reports that the optimizer has not converged within its limit;
+``needsMore`` reports that the optimizer has not converged within its limit;
 it is not a reason to label the returned coordinates converged. For multiple
 conformers use ``with3dConformersWithParams(count, params)`` and the corresponding
 ``withUffOptimizedConformers()`` or ``withMmffOptimizedConformers()`` operation.
@@ -349,10 +348,12 @@ To collect embedding diagnostics, enable tracking and request a result:
    const params = ck.EmbedParams.etkdgV3();
    params.trackFailures = true;
    const result = mol.with3dConformersResultWithParams(8, params);
-   console.log(result.failureCounts);
+   console.log(result.failureCounts());
    console.log(result.failureCount(ck.EmbedFailureCause.InitialCoords));
+   result.free();
+   params.free();
 
-``failureCounts`` is a frozen array, or ``null`` when tracking is disabled.
+``failureCounts()`` returns an array, or ``undefined`` when tracking is disabled.
 Counters describe intermediate failure events, not missing conformers. The
 input parameters remain unchanged. ``EndOfEnum`` is not a valid query cause.
 
@@ -362,7 +363,8 @@ Persistent force fields and constraints
 Requires ``conformer``; use ``core-3d`` or ``full``. A persistent
 ``MolecularForceField`` owns its coordinates independently of the source
 molecule. Create it with ``uffForceField()`` or
-``mmffForceField({ mmffVariant: "MMFF94" })``; ``"MMFF94s"`` selects that model.
+``mmffForceField({ mmffVariant: ck.MmffVariant.Mmff94 })``;
+``ck.MmffVariant.Mmff94s`` selects the other MMFF model.
 UFF, MMFF94 and MMFF94s support the same four soft constraints.
 
 Methods accept either a parameter instance or a plain options object. All
@@ -375,7 +377,7 @@ choices, not implicit defaults. Parameter fields are writable.
    const hydrogenated = input.withHydrogens();
    const mol = hydrogenated.with3dConformer({ randomSeed: 42 });
    const field = mol.uffForceField();
-   const anchor = new ck.ForceFieldPositionConstraintParams(0.2, 100);
+   const anchor = new ck.ForceFieldPositionConstraintParams({maxDisplacement: 0.2, forceConstant: 100});
    let outcome;
    try {
      field.addDistanceConstraint_(0, 1, {
@@ -390,8 +392,8 @@ choices, not implicit defaults. Parameter fields are writable.
      anchor.forceConstant = 200;
      field.addPositionConstraint_(0, anchor);
      outcome = field.minimize_({ maxIterations: 20 });
-     console.log(outcome.energy(), outcome.converged());
-     console.log(field.positions()); // Owned coordinate snapshot, not a mutable view
+     console.log(outcome.energy, outcome.converged);
+     console.log(field.positions); // Owned coordinate snapshot, not a mutable view
    } finally {
      outcome?.free();
      anchor.free();
@@ -414,7 +416,7 @@ later ``setPosition_()``, ``setPositions_()`` and ``minimize_()`` calls do not
 recapture either baseline. Torsion bounds preserve wrapped interval semantics.
 Invalid indices, bounds or angle ranges throw typed ``ForceFieldError`` values
 without appending a contribution. The source molecule remains unchanged;
-explicitly use ``mol.with3dCoordinates(field.positions())`` to create a new
+explicitly use ``mol.with3dCoordinates(field.positions)`` to create a new
 molecule with the resulting coordinates.
 
 The :download:`complete JavaScript example <../../../wasm/examples/vanilla/forcefield_optimization.js>`
@@ -454,7 +456,7 @@ Process a batch
 
 Batch construction and SMILES output require ``core``; the fingerprint step
 also requires ``fingerprints``. Results retain input order. APIs returning
-nullable entries use ``null`` for failed records; inspect ``errors()`` and the
+optional entries use ``undefined`` for failed records; inspect ``errors`` and the
 valid/invalid counts rather than silently dropping those positions.
 
 .. code-block:: javascript
@@ -462,12 +464,13 @@ valid/invalid counts rather than silently dropping those positions.
    const batch = ck.MoleculeBatch.fromSmilesList(["CCO", "CCCO", "c1ccccc1"]);
    try {
      console.log(batch.toSmiles());
-     console.log(batch.validCount(), batch.invalidCount()); // 3, 0
+     console.log(batch.validCount, batch.invalidCount); // 3, 0
      const fingerprints = batch.fingerprintMorgan();
      try {
-       console.log(fingerprints.map((fp) => fp === null ? null : fp.onBits()));
+       console.log(fingerprints.len, fingerprints.nBits);
+       console.log(fingerprints.toUint8Array()); // Dense row-major bit matrix
      } finally {
-       for (const fp of fingerprints) fp?.free();
+       fingerprints.free();
      }
    } finally {
      batch.free();
@@ -530,7 +533,7 @@ contains one residue in chain A:
    const selection = ck.BioSelection.fromCid("/1/A/1");
    const selected = structure.withSelection(selection);
    try {
-     console.log(structure.numModels(), structure.numChains(), structure.numResidues());
+     console.log(structure.numModels, structure.numChains, structure.numResidues);
      console.log(Array.from(structure.selectedAtomIds(selection))); // [0]
      console.log(selected.toPdb()); // New structure; original unchanged
    } finally {

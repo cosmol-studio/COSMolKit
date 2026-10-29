@@ -24,17 +24,16 @@ members = [
     "crates/cosmolkit",
     "crates/cosmolkit-macros",
     "crates/cosmolkit-macros-old",
-    "wasm",
     "python",
 ]
 resolver = "2"
-# Alef's generated WASM crate is an ephemeral standalone package under tmp/.
-exclude = ["tmp/alef/wasm"]
+# WASM owns its target-specific toolchain lock and is checked by its build entrypoint.
+exclude = ["wasm", "wasm_old", "tmp/alef/wasm"]
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.5.1-rc.5"
+version = "0.6.0-dev.1"
 authors = ["COSMolKit Contributors"]
 description = "Core cheminformatics and structural biology toolkit in Rust"
 repository = "https://github.com/cosmol-studio/COSMolKit"

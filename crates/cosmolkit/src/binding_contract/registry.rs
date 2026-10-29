@@ -1007,7 +1007,7 @@ binding_contract! {
                 { name: extra_bond_check_overrides_default_check, python_type: "builtins.bool", default: "False" },
                 { name: use_generic_matchers, python_type: "builtins.bool", default: "False" },
                 { name: final_match, rust_field: extra_final_check, aliases: [extra_final_check], callback: "final_match", python_type: "typing.Optional[typing.Callable[[Molecule, typing.Sequence[builtins.int]], builtins.bool]]", default: "None" },
-                { name: atom_match, rust_field: extra_atom_check, aliases: [extra_atom_check], callback: "atom_match", python_type: "typing.Optional[typing.Callable[[QueryAtom, Atom], builtins.bool]]", default: "None" },
+                { name: atom_match, rust_field: extra_atom_check, aliases: [extra_atom_check], callback: "atom_match", python_type: "typing.Optional[typing.Callable[[QueryGraph, QueryAtom, Molecule, Atom], builtins.bool]]", default: "None" },
                 { name: bond_match, rust_field: extra_bond_check, aliases: [extra_bond_check], callback: "bond_match", python_type: "typing.Optional[typing.Callable[[Bond, Bond], builtins.bool]]", default: "None" },
             ], role: parameter,
         },
@@ -7589,6 +7589,26 @@ binding_contract! {
             parameters: [], output: Option<crate::ResidueCode>, error: none,
             state: value_returning, operation: none,
             signature: fn(crate::ResidueInfo) -> Option<crate::ResidueCode>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "ResidueInfo.is_amino_acid", item: callable,
+            owner: type_, rust: crate::ResidueInfo::is_amino_acid,
+            python: "is_amino_acid", python_property: getter, javascript: "isAminoAcid",
+            feature: "cap-bio", status: experimental, kind: instance, receiver: owned,
+            parameters: [], output: bool, error: none,
+            state: value_returning, operation: none,
+            signature: fn(crate::ResidueInfo) -> bool,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "ResidueInfo.fasta_code", item: callable,
+            owner: type_, rust: crate::ResidueInfo::fasta_code,
+            python: "fasta_code", python_property: getter, javascript: "fastaCode",
+            feature: "cap-bio", status: experimental, kind: instance, receiver: owned,
+            parameters: [], output: char, error: none,
+            state: value_returning, operation: none,
+            signature: fn(crate::ResidueInfo) -> char,
         },
         #[cfg(feature = "cap-bio")]
         {

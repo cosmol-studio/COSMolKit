@@ -8,17 +8,21 @@ runtime dependencies.
 From the repository root, using Python 3.11 or newer:
 
 ```sh
-python3 dev/tools/bump_rust_version.py 0.5.0 --dry-run
-python3 dev/tools/bump_rust_version.py 0.5.0
+python3 dev/tools/bump_rust_version.py 0.6.0-dev.1 --dry-run
+python3 dev/tools/bump_rust_version.py 0.6.0-dev.1
 ```
 
 Updates the shared Rust crate version, explicitly listed internal dependencies,
 and the marked installation example in `crates/cosmolkit/README.md`.
 Also updates the Python and WASM binding crate package versions and
 project.version in `python/pyproject.toml`.
-Rust prerelease spelling is converted
-to Python's PEP 440 spelling; stable `0.5.0` stays `0.5.0`.
-Then `cargo update --workspace` refreshes the workspace lockfile
+Accepted forms are `X.Y.Z`, `X.Y.Z-rc.N` and `X.Y.Z-dev.N`; the numeric
+suffix has no primality restriction. Python uses `X.Y.ZrcN` and `X.Y.Z.devN`.
+Dev and RC packages can be published manually or from matching tags;
+stable publication requires a tag push. npm/Conda use `dev` and `rc` labels
+for prereleases, and `latest`/`main` for stable releases. GitHub dev/RC
+releases are marked prereleases and do not replace Latest.
+Then `cargo update --workspace` refreshes both workspace lockfiles
 without upgrading already-locked third-party dependencies. Historical records and
 unmarked version examples remain unchanged.
 

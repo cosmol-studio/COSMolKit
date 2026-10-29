@@ -48,6 +48,20 @@ def format_javascript_signature(app, domain, objtype, content):
         return
     signature = next(child for child in content.parent
                      if isinstance(child, addnodes.desc_signature))
+    if objtype == "class" and hasattr(app, "_sphinxjs_analyzer"):
+        # sphinx-js invents an empty constructor when the declaration has none.
+        # Keep factory-only classes as types rather than advertise Class().
+        name = signature.get("fullname") or signature["ids"][0]
+        module = signature.get("module")
+        if module:
+            name = name.removeprefix(module + ".")
+        parts = name.split(".")
+        path = ([module + "."] if module else []) + [part + "." for part in parts[:-1]] + parts[-1:]
+        declaration = app._sphinxjs_analyzer.get_object(path, "class")
+        constructor = declaration.constructor_
+        if constructor is None or constructor.is_private:
+            for parameters in list(signature.findall(addnodes.desc_parameterlist)):
+                parameters.parent.remove(parameters)
     parameters = {
         node.astext().split("=", 1)[0].removeprefix("...").removesuffix("?"): node
         for node in signature.findall(addnodes.desc_parameter)
@@ -60,6 +74,7 @@ def format_javascript_signature(app, domain, objtype, content):
         for field in list(fields):
             name, body = field
             role, _, argument = name.astext().partition(" ")
+            argument = argument.removesuffix("?")
             if role in {"type", "paramtype"} and argument in parameters:
                 parameter = parameters[argument]
                 parameter += addnodes.desc_sig_punctuation("", ":")

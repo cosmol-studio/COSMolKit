@@ -73,12 +73,12 @@ cap-bio = ["dep:cosmolkit-bio", "dep:cosmolkit-io", "cosmolkit-io/bio"]
 cap-conformer = ["dep:cosmolkit-conformer", "cap-forcefields", "cap-alignment", "cap-io"]
 cap-hydrogens = ["dep:cosmolkit-core"]
 cap-confseq = ["dep:cosmolkit-conformer", "cap-conformer"]
-cap-depict = ["dep:cosmolkit-depict", "cosmolkit-io?/depict"]
-cap-descriptors = ["dep:cosmolkit-descriptors", "dep:cosmolkit-core"]
+cap-depict = ["dep:cosmolkit-search", "dep:cosmolkit-depict", "cosmolkit-io?/depict"]
+cap-descriptors = ["dep:cosmolkit-search", "dep:cosmolkit-descriptors", "dep:cosmolkit-core"]
 # Avalon uses stereo MOL conversion, including writer-local coordinates.
 # This internal dependency does not select the public cap-depict APIs.
-cap-fingerprints = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core", "cap-io", "cosmolkit-io/depict"]
-cap-forcefields = ["dep:cosmolkit-forcefields", "dep:cosmolkit-core"]
+cap-fingerprints = ["dep:cosmolkit-depict", "dep:cosmolkit-search", "dep:cosmolkit-smiles", "dep:cosmolkit-fingerprints", "dep:cosmolkit-core", "cap-io", "cosmolkit-io/depict"]
+cap-forcefields = ["dep:cosmolkit-search", "dep:cosmolkit-forcefields", "dep:cosmolkit-core"]
 cap-hashing = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core"]
 cap-inchi = ["dep:cosmolkit-inchi", "dep:cosmolkit-core"]
 cap-io = ["dep:cosmolkit-io", "cosmolkit-io/molecule", "dep:cosmolkit-core"]
@@ -100,24 +100,24 @@ cap-sanitize = ["dep:cosmolkit-core"]
 
 [dependencies]
 num-bigint = { version = "0.4.8", optional = true }
-cosmolkit-model = { version = "0.5.1-rc.5", path = "../cosmolkit-model" }
-cosmolkit-macros = { version = "0.5.1-rc.5", path = "../cosmolkit-macros" }
-cosmolkit-core = { version = "0.5.1-rc.5", path = "../cosmolkit-core", optional = true }
-cosmolkit-reaction = { version = "0.5.1-rc.5", path = "../cosmolkit-reaction", optional = true }
-cosmolkit-descriptors = { version = "0.5.1-rc.5", path = "../cosmolkit-descriptors", optional = true }
-cosmolkit-alignment = { version = "0.5.1-rc.5", path = "../cosmolkit-alignment", optional = true }
-cosmolkit-batch = { version = "0.5.1-rc.5", path = "../cosmolkit-batch", optional = true }
-cosmolkit-bio = { version = "0.5.1-rc.5", path = "../cosmolkit-bio", optional = true }
-cosmolkit-conformer = { version = "0.5.1-rc.5", path = "../cosmolkit-conformer", optional = true }
-cosmolkit-depict = { version = "0.5.1-rc.5", path = "../cosmolkit-depict", optional = true }
-cosmolkit-fingerprints = { version = "0.5.1-rc.5", path = "../cosmolkit-fingerprints", optional = true }
-cosmolkit-forcefields = { version = "0.5.1-rc.5", path = "../cosmolkit-forcefields", optional = true }
-cosmolkit-inchi = { version = "0.5.1-rc.5", path = "../cosmolkit-inchi", optional = true }
-cosmolkit-io = { version = "0.5.1-rc.5", path = "../cosmolkit-io", optional = true, default-features = false }
-cosmolkit-search = { version = "0.5.1-rc.5", path = "../cosmolkit-search", optional = true, default-features = false }
-cosmolkit-smiles = { version = "0.5.1-rc.5", path = "../cosmolkit-smiles", optional = true }
-cosmolkit-stereo = { version = "0.5.1-rc.5", path = "../cosmolkit-stereo", optional = true, default-features = false }
-cosmolkit-tautomer = { version = "0.5.1-rc.5", path = "../cosmolkit-tautomer", optional = true }
+cosmolkit-model = { version = "0.6.0-dev.1", path = "../cosmolkit-model" }
+cosmolkit-macros = { version = "0.6.0-dev.1", path = "../cosmolkit-macros" }
+cosmolkit-core = { version = "0.6.0-dev.1", path = "../cosmolkit-core", optional = true }
+cosmolkit-reaction = { version = "0.6.0-dev.1", path = "../cosmolkit-reaction", optional = true }
+cosmolkit-descriptors = { version = "0.6.0-dev.1", path = "../cosmolkit-descriptors", optional = true }
+cosmolkit-alignment = { version = "0.6.0-dev.1", path = "../cosmolkit-alignment", optional = true }
+cosmolkit-batch = { version = "0.6.0-dev.1", path = "../cosmolkit-batch", optional = true }
+cosmolkit-bio = { version = "0.6.0-dev.1", path = "../cosmolkit-bio", optional = true }
+cosmolkit-conformer = { version = "0.6.0-dev.1", path = "../cosmolkit-conformer", optional = true }
+cosmolkit-depict = { version = "0.6.0-dev.1", path = "../cosmolkit-depict", optional = true }
+cosmolkit-fingerprints = { version = "0.6.0-dev.1", path = "../cosmolkit-fingerprints", optional = true }
+cosmolkit-forcefields = { version = "0.6.0-dev.1", path = "../cosmolkit-forcefields", optional = true }
+cosmolkit-inchi = { version = "0.6.0-dev.1", path = "../cosmolkit-inchi", optional = true }
+cosmolkit-io = { version = "0.6.0-dev.1", path = "../cosmolkit-io", optional = true, default-features = false }
+cosmolkit-search = { version = "0.6.0-dev.1", path = "../cosmolkit-search", optional = true, default-features = false }
+cosmolkit-smiles = { version = "0.6.0-dev.1", path = "../cosmolkit-smiles", optional = true }
+cosmolkit-stereo = { version = "0.6.0-dev.1", path = "../cosmolkit-stereo", optional = true, default-features = false }
+cosmolkit-tautomer = { version = "0.6.0-dev.1", path = "../cosmolkit-tautomer", optional = true }
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["float_roundtrip"] }

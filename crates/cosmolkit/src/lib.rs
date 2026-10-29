@@ -84,9 +84,12 @@ pub use cosmolkit_core::{
 };
 #[cfg(feature = "cap-depict")]
 pub use cosmolkit_depict::{
-    Compute2DCoordinatesParams as Coordinate2DParams, Coordinate2DLayoutError,
-    Coordinate2DTemplateError, DepictError as Coordinate2DError, DrawingError, SvgParseError,
-    XmlParseError, XmlTextPos,
+    Compute2DCoordinatesParams as Coordinate2DParams, DrawingError, SvgParseError, XmlParseError,
+    XmlTextPos,
+};
+#[cfg(any(feature = "cap-depict", feature = "cap-fingerprints"))]
+pub use cosmolkit_depict::{
+    Coordinate2DLayoutError, Coordinate2DTemplateError, DepictError as Coordinate2DError,
 };
 #[cfg(feature = "cap-descriptors")]
 pub use cosmolkit_descriptors::{
@@ -191,21 +194,38 @@ mod smiles;
 mod strict;
 #[cfg(any(feature = "cap-search", feature = "cap-io"))]
 pub use cosmolkit_core::WedgeError;
-#[cfg(feature = "cap-search")]
+#[cfg(any(
+    feature = "cap-search",
+    feature = "cap-fingerprints",
+    feature = "cap-forcefields",
+    feature = "cap-descriptors",
+    feature = "cap-depict"
+))]
 pub use cosmolkit_core::parser_stereo_order::CxStereoGroupMergeError;
+#[cfg(any(feature = "cap-search", feature = "cap-fingerprints"))]
+pub use cosmolkit_search::SmartsWriteError;
 #[cfg(feature = "cap-search")]
 pub use cosmolkit_search::{
     AtomComparator as McsAtomComparator, BondComparator as McsBondComparator, CompiledQuery,
-    CxQueryLoweringError, MatchError, MatchResult, McsAtomCompareParameters,
-    McsBondCompareParameters, McsCandidateMatchError as McsError, McsError as SearchMcsError,
-    McsParameters, McsProgressError, McsResult, QueryCompileError, QueryMatchContextError,
-    SmartsParseError, SmartsParseParams, SmartsWriteError, SmartsWriteParams, SubstructMatchError,
-    SubstructMatchParams,
+    MatchResult, McsAtomCompareParameters, McsBondCompareParameters,
+    McsCandidateMatchError as McsError, McsError as SearchMcsError, McsParameters,
+    McsProgressError, McsResult, SmartsParseParams, SmartsWriteParams, SubstructMatchParams,
+};
+#[cfg(any(
+    feature = "cap-search",
+    feature = "cap-fingerprints",
+    feature = "cap-forcefields",
+    feature = "cap-descriptors",
+    feature = "cap-depict"
+))]
+pub use cosmolkit_search::{
+    CxQueryLoweringError, MatchError, QueryCompileError, QueryMatchContextError, SmartsParseError,
+    SubstructMatchError,
 };
 #[cfg(feature = "cap-search")]
 #[doc(hidden)]
 pub use cosmolkit_search::{ExtraAtomCheck, ExtraBondCheck, ExtraFinalCheck, SearchTarget};
-#[cfg(feature = "cap-search")]
+#[cfg(any(feature = "cap-search", feature = "cap-fingerprints"))]
 pub use cosmolkit_smiles::SmartsTraversalError;
 
 pub use binding_contract::conveniences::*;

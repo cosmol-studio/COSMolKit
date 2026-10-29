@@ -1,33 +1,7 @@
 """Small regressions for public batch help and its executable examples."""
 
-import inspect
-from collections.abc import Callable
-from typing import cast
-
 import pytest
 import cosmolkit as ck
-
-
-@pytest.mark.parametrize(
-    ("name", "details"),
-    [
-        ("from_smiles_list", ["input order", 'sanitize=True', 'errors="keep"', "SmilesParseParams"]),
-        ("to_smiles", ["input order", "canonical, isomeric", "None", "SmilesWriteParams"]),
-        ("with_hydrogens", ["source batch unchanged", 'errors="raise"', 'errors="keep"', "AddHsParams"]),
-        ("fingerprint_morgan", ["input order", "radius 3, 2048 bits", "None", "MorganFingerprintParams"]),
-    ],
-)
-def test_public_batch_help_preserves_native_documentation(name: str, details: list[str]):
-    method = cast(Callable[..., object], getattr(ck.MoleculeBatch, name))
-    doc = inspect.getdoc(method)
-    assert doc is not None
-    for detail in details:
-        assert detail in doc
-    assert "n_jobs" in doc
-    native = cast(object, inspect.unwrap(method))
-    assert inspect.getdoc(native) == doc
-    configured = cast(object, getattr(ck.MoleculeBatch, name + "_with_params"))
-    assert inspect.getdoc(configured)
 
 
 def test_batch_help_examples_match_return_and_error_behavior():

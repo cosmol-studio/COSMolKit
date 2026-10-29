@@ -106,7 +106,7 @@ cargo install pyo3-introspection --version 0.30.1 --locked
 uv run --group dev python python/build.py
 uv run --group dev python python/registry_check.py
 npm ci --prefix docs --no-audit --no-fund
-python3 wasm/tools/wasm_binding/run.py --preset full --skip-binding-contract --out-dir target/docs-js-package
+python3 wasm/build.py --target web --out-dir target/docs-js-package
 uv run --group dev python -m sphinx --keep-going -E -b html docs/source docs/build/html
 cargo check --manifest-path docs-web/Cargo.toml
 ```
@@ -130,8 +130,7 @@ binary. The `wasm32-unknown-unknown` Rust target must also be installed.
 
 The production deployment uses Dioxus SSG and Cloudflare Pages. Pushes to
 `main` build and deploy through `.github/workflows/docs-web.yml`, using the
-checkout's Python extension for the 0.5.0 autodoc surface rather than an older
-published wheel. URLs omit `.html` and trailing
+checkout's Python extension and generated WASM declarations. URLs omit `.html` and trailing
 slashes; legacy addresses redirect to the canonical pages.
 
 Before rebuilding, the workflow moves any cached `public` directory into the

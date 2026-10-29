@@ -6,6 +6,12 @@ from publish_policy import check_versions
 
 
 class PublishPolicyTests(unittest.TestCase):
+    def test_dev_manual_and_tagged_publication(self):
+        for number in (1, 4, 6):
+            rust, python = f"0.6.0-dev.{number}", f"0.6.0.dev{number}"
+            self.assertTrue(check_versions(rust, python, rust, "workflow_dispatch", "refs/heads/main", True))
+            self.assertTrue(check_versions(rust, python, rust, "push", f"refs/tags/v{rust}", False))
+
     def test_manual_rc_publish_and_dry_run(self):
         for requested in (False, True):
             self.assertTrue(check_versions("0.5.0-rc.13", "0.5.0rc13", "0.5.0-rc.13", "workflow_dispatch", "refs/heads/main", requested))

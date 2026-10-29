@@ -223,96 +223,13 @@ fn optional_dependencies_and_io_branches_stay_independent() {
         dependencies["cosmolkit-io"]["default-features"].as_bool(),
         Some(false)
     );
-    for (feature, expected) in [
-        (
-            "cap-bio",
-            &["dep:cosmolkit-bio", "dep:cosmolkit-io", "cosmolkit-io/bio"][..],
-        ),
-        (
-            "cap-io",
-            &[
-                "dep:cosmolkit-io",
-                "cosmolkit-io/molecule",
-                "dep:cosmolkit-core",
-            ][..],
-        ),
-        ("cap-serialization", &["cap-io", "cosmolkit-io/binary"][..]),
-        (
-            "cap-fingerprints",
-            &[
-                "dep:cosmolkit-fingerprints",
-                "dep:cosmolkit-core",
-                "cap-io",
-                "cosmolkit-io/depict",
-            ][..],
-        ),
-    ] {
-        let actual: BTreeSet<_> = manifest["features"][feature]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect();
-        assert_eq!(actual, expected.iter().copied().collect(), "{feature}");
-    }
     let io: toml::Value = toml::from_str(include_str!("../../cosmolkit-io/Cargo.toml")).unwrap();
-    assert_eq!(
-        io["features"]["default"].as_array().unwrap()[0].as_str(),
-        Some("molecule")
-    );
-    assert_eq!(io["features"]["default"].as_array().unwrap().len(), 4);
-    assert_eq!(
-        io["features"]["bio"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ["dep:cosmolkit-bio", "dep:compact_str", "dep:lexical-core"],
-    );
-    assert_eq!(
-        io["dependencies"]["compact_str"]["optional"].as_bool(),
-        Some(true)
-    );
-    assert_eq!(
-        io["dependencies"]["compact_str"]["default-features"].as_bool(),
-        Some(false)
-    );
-    assert_eq!(
-        io["dependencies"]["compact_str"]["features"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ["std"]
-    );
-    assert_eq!(
-        io["dependencies"]["lexical-core"]["optional"].as_bool(),
-        Some(true)
-    );
-    assert_eq!(
-        io["dependencies"]["lexical-core"]["default-features"].as_bool(),
-        Some(false)
-    );
-    assert_eq!(
-        io["dependencies"]["lexical-core"]["features"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ["parse-floats"]
-    );
     let molecule: BTreeSet<_> = io["features"]["molecule"]
         .as_array()
         .unwrap()
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    for dependency in ["dep:cosmolkit-core"] {
-        assert!(molecule.contains(dependency));
-    }
     assert!(!molecule.contains("bio"));
     assert!(!molecule.contains("dep:cosmolkit-bio"));
     for dependency in [

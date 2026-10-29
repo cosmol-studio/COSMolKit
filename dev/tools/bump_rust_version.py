@@ -3,6 +3,7 @@
 
 import argparse
 import difflib
+import re
 from pathlib import Path
 import subprocess
 import tomllib
@@ -45,7 +46,7 @@ DEPENDENCIES = [
     ("crates/cosmolkit-tautomer/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-smiles cosmolkit-types cosmolkit-macros"),
     ("crates/cosmolkit-tautomer/Cargo.toml", "dev-dependencies", "cosmolkit-model"),
     ("python/Cargo.toml", "dependencies", "cosmolkit"),
-    ("wasm/Cargo.toml", "dependencies", "cosmolkit cosmolkit-macros"),
+    ("wasm/Cargo.toml", "dependencies", "cosmolkit"),
 ]
 README = "crates/cosmolkit/README.md"
 # Binding crate package version is separate from its cosmolkit dependency.
@@ -54,7 +55,7 @@ PYTHON_VERSIONS = ["python/pyproject.toml"]
 BEGIN = "<!-- rust-install-version:start -->"
 END = "<!-- rust-install-version:end -->"
 LOCK_REFRESH = ["cargo", "update", "--workspace"]
-LOCK_ROOTS = ["."]
+LOCK_ROOTS = [".", "wasm"]
 
 
 def update_field(text, section, key, version):
@@ -87,14 +88,17 @@ def update_field(text, section, key, version):
 
 def prepare_updates(original, version):
     """Prepare the complete release edit set before any file is changed."""
-    base, separator, rc = version.partition("-rc.")
+    match = re.fullmatch(r"((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))(?:-(rc|dev)\.(0|[1-9][0-9]*))?", version)
+    if match is None:
+        raise ValueError("expected X.Y.Z, X.Y.Z-rc.N or X.Y.Z-dev.N")
+    base, kind, number = match.groups()
     updated = original.copy()
     # All current publishable crate versions inherit this single field.
     updated["Cargo.toml"] = update_field(updated["Cargo.toml"], "workspace.package", "version", version)
     for file in PACKAGE_VERSIONS:
         updated[file] = update_field(updated[file], "package", "version", version)
-    # Python release candidates use rcN; stable versions stay X.Y.Z.
-    python_version = base + "rc" + rc if separator else base
+    # PEP 440 uses rcN and .devN rather than SemVer prerelease separators.
+    python_version = base + ({"rc": "rc", "dev": ".dev"}[kind] + number if kind else "")
     for file in PYTHON_VERSIONS:
         updated[file] = update_field(updated[file], "project", "version", python_version)
     for file, section, names in DEPENDENCIES:
@@ -117,16 +121,9 @@ def prepare_updates(original, version):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("version", help="for example: 0.5.0-rc.9")
+    parser.add_argument("version", help="X.Y.Z, X.Y.Z-rc.N or X.Y.Z-dev.N")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    base, separator, rc = args.version.partition("-rc.")
-    numbers = base.split(".") + ([rc] if separator else [])
-    if len(base.split(".")) != 3 or not all(
-        n.isascii() and n.isdecimal() and (n == "0" or not n.startswith("0"))
-        for n in numbers
-    ):
-        parser.error("expected X.Y.Z or X.Y.Z-rc.N")
 
     root = Path(__file__).resolve().parents[2]
     files = ["Cargo.toml", README] + PYTHON_VERSIONS + PACKAGE_VERSIONS + [file for file, _, _ in DEPENDENCIES]

@@ -3,8 +3,11 @@
 import ast
 import importlib.util
 import io
+import json
+import pickle
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -19,6 +22,69 @@ from api_types import public_description, read_stub, return_signature, type_text
 
 
 class DocumentationWorkflowTests(unittest.TestCase):
+    def test_javascript_optional_parameters_survive_rendering(self):
+        # One protocol fixture, not a business API inventory. Required union
+        # types must stay required; defaults and rest parameters stay intact.
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "node_modules").symlink_to(DOCS / "node_modules", target_is_directory=True)
+            (root / "sample.ts").write_text('''
+export class Example {
+    constructor(options?: { enabled: boolean } | null) {}
+    choose(required: string | undefined, optional?: number): void {}
+    defaults(count = 3, ...names: string[]): void {}
+}
+export function query(required: string | null, optional?: boolean): number { return 0; }
+export const alias: typeof query = query;
+export class FactoryOnly {
+    private constructor() {}
+    static create(): FactoryOnly { return new FactoryOnly(); }
+}
+''')
+            hook = (DOCS / "sphinx-js.config.ts").read_text().replace(
+                'new URL("../target/docs-js-package/enums.rst", import.meta.url)',
+                f'new URL({json.dumps((root / "enums.rst").as_uri())})',
+            )
+            (root / "sphinx-js.config.ts").write_text(hook)
+            (root / "tsconfig.json").write_text(json.dumps({
+                "compilerOptions": {"target": "ES2022", "strict": True},
+                "include": ["sample.ts"],
+            }))
+            (root / "conf.py").write_text(
+                f"import sys\nsys.path.insert(0, {str(DOCS)!r})\n"
+                "extensions = ['sphinx_js', 'api_layout']\n"
+                "js_language = 'typescript'\njs_source_path = 'sample.ts'\n"
+                "root_for_relative_js_paths = '.'\n"
+                "jsdoc_tsconfig_path = 'tsconfig.json'\n"
+                f"ts_sphinx_js_config = {str(root / 'sphinx-js.config.ts')!r}\n"
+                "exclude_patterns = ['enums.rst', 'html', 'doctrees']\n"
+            )
+            (root / "index.rst").write_text(
+                "API\n===\n\n.. js:autoclass:: Example\n   :members:\n\n"
+                ".. js:autofunction:: query\n\n.. js:autofunction:: alias\n"
+                "\n.. js:autoclass:: FactoryOnly\n"
+            )
+            result = subprocess.run([
+                sys.executable, "-m", "sphinx", "-W", "--keep-going", "-E",
+                "-b", "html", "-d", str(root / "doctrees"), str(root), str(root / "html"),
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            from sphinx import addnodes
+            tree = pickle.loads((root / "doctrees/index.doctree").read_bytes())
+            signatures = [n.astext() for n in tree.findall(addnodes.desc_signature)]
+            self.assertTrue(any("options?:" in s and "null" in s for s in signatures), signatures)
+            for name in ("choose", "query", "alias"):
+                signature = next(s for s in signatures if f"{name}(" in s)
+                self.assertIn("optional?:", signature)
+                self.assertIn("required:", signature)
+                self.assertNotIn("required?", signature)
+            default = next(s for s in signatures if "defaults(" in s)
+            self.assertIn("count=3", default)
+            self.assertNotIn("count?", default)
+            self.assertIn("...names", default)
+            factory = next(s for s in signatures if s.endswith("FactoryOnly"))
+            self.assertNotIn("(", factory)
+
     def test_projection_metadata_preserves_help(self):
         spec = importlib.util.spec_from_file_location("binding_generate", ROOT / "python/generate.py")
         generate = importlib.util.module_from_spec(spec)

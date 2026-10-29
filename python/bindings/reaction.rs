@@ -923,7 +923,7 @@ def accept(target, indices):
     assert target.to_binary() == mol.to_binary()
     seen.append(tuple(indices))
     return True
-def atom(query_atom, atom):
+def atom(query, query_atom, target, atom):
     return True
 def bond(query_bond, bond):
     return True

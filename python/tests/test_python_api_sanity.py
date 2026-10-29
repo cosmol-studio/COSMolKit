@@ -696,7 +696,7 @@ def test_python_substruct_atom_bond_callback():
     atom_query = cosmolkit.parse_smarts("[#6,#8]")
     atom_calls = []
 
-    def oxygen_only(query_atom, target_atom):
+    def oxygen_only(query, query_atom, target, target_atom):
         assert isinstance(query_atom, cosmolkit.QueryAtom)
         assert isinstance(target_atom, cosmolkit.Atom)
         atom_calls.append((query_atom.id, target_atom.id))
@@ -724,7 +724,7 @@ def test_python_substruct_atom_bond_callback():
     assert {tuple(match.atom_mapping) for match in bond_matches} == {(1, 2), (2, 1)}
     assert bond_calls
 
-    def fail(_query_atom, _target_atom):
+    def fail(_query, _query_atom, _target, _target_atom):
         raise RuntimeError("atom callback failed")
 
     with pytest.raises(RuntimeError, match="atom callback failed"):

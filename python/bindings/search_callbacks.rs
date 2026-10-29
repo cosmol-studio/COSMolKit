@@ -1,9 +1,11 @@
 use crate::atom_bond_values::{Atom, Bond};
 use crate::callbacks::{CallbackErrors, typed_callback};
 use crate::native::Molecule;
+use crate::query_compiler::QueryGraph;
 use cosmolkit as ck;
 use pyo3::prelude::*;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
@@ -75,7 +77,9 @@ typed_callback!(
 typed_callback!(
     AtomMatch,
     [
+        <Py<QueryGraph> as FromPyObject>::INPUT_TYPE,
         <Py<QueryAtom> as FromPyObject>::INPUT_TYPE,
+        <Py<Molecule> as FromPyObject>::INPUT_TYPE,
         <Py<Atom> as FromPyObject>::INPUT_TYPE
     ]
 );
@@ -146,12 +150,18 @@ impl MatchInvocation {
     ) -> PyResult<Result<T, E>> {
         let mut params = self.inner;
         let errors = Arc::new(CallbackErrors::new());
+        let targets: Arc<Vec<_>> =
+            Arc::new(if self.final_match.is_some() || self.atom_match.is_some() {
+                targets.iter().map(|target| (*target).clone()).collect()
+            } else {
+                Vec::new()
+            });
         if let Some(callback) = &self.final_match {
             let callback = callback.clone_ref(py);
             // Retain native COW values, never aliases of the Python receiver.
             // Each callback then owns its own value, including when retained
             // or mutated after the matcher and its input owners have returned.
-            let targets: Vec<_> = targets.iter().map(|target| (*target).clone()).collect();
+            let targets = Arc::clone(&targets);
             let errors = Arc::clone(&errors);
             params.extra_final_check = Some(Arc::new(move |target, indices| {
                 errors.call(|py| {
@@ -187,15 +197,52 @@ impl MatchInvocation {
         if let Some(callback) = &self.atom_match {
             let callback = callback.clone_ref(py);
             let errors = Arc::clone(&errors);
-            params.extra_atom_check = Some(Arc::new(move |_, query, _, atom| {
+            let targets = Arc::clone(&targets);
+            // The matcher borrows its query tree for this entire invocation,
+            // including recursive graphs owned by that tree. Cache one owned
+            // native snapshot per actual graph, then share the existing query
+            // wrapper's Arc; never copy a query for each candidate atom.
+            let queries = Mutex::new(HashMap::<usize, QueryGraph>::new());
+            params.extra_atom_check = Some(Arc::new(move |graph, query, target, atom| {
                 errors.call(|py| {
+                    let graph = queries
+                        .lock()
+                        .map_err(|_| {
+                            pyo3::exceptions::PyRuntimeError::new_err(
+                                "callback query ownership is poisoned",
+                            )
+                        })?
+                        .entry(std::ptr::from_ref(graph) as usize)
+                        .or_insert_with(|| QueryGraph::from_rust(graph.clone()))
+                        .clone();
+                    let index = if targets.len() == 1 {
+                        0
+                    } else {
+                        target.input_index().ok_or_else(|| {
+                            pyo3::exceptions::PyRuntimeError::new_err(
+                                "native multi-input matcher omitted its input index",
+                            )
+                        })?
+                    };
+                    let target = targets.get(index).ok_or_else(|| {
+                        pyo3::exceptions::PyRuntimeError::new_err(
+                            "native matcher input index is outside this invocation",
+                        )
+                    })?;
                     callback
                         .bind(py)
                         .call1((
+                            Py::new(py, graph)?,
                             Py::new(
                                 py,
                                 QueryAtom {
                                     inner: query.clone(),
+                                },
+                            )?,
+                            Py::new(
+                                py,
+                                Molecule {
+                                    inner: target.clone(),
                                 },
                             )?,
                             Py::new(
@@ -280,8 +327,10 @@ macro_rules! match_parameters {
                 /// Callback exceptions propagate unchanged to the caller.
                 #[getter] fn final_match(&self, py: Python<'_>) -> Option<FinalMatch> { self.final_match.as_ref().map(|value| value.clone_ref(py)) }
                 #[setter] fn set_final_match(&mut self, value: Option<FinalMatch>) { self.final_match = value; }
-                /// Optional callback(query_atom, target_atom) returning whether to accept an atom pair.
-                /// Receives detached QueryAtom and Atom values, not contextual molecule views.
+                /// Optional callback(query, query_atom, target, target_atom) accepting an atom pair.
+                /// query retains the actual query graph, including recursive queries. target is
+                /// an independent COW Molecule; changes do not affect matching or later callbacks.
+                /// Atom records are detached; use target.atom(target_atom.id) for contextual reads.
                 /// Callback exceptions propagate unchanged to the caller.
                 #[getter] fn atom_match(&self, py: Python<'_>) -> Option<AtomMatch> { self.atom_match.as_ref().map(|value| value.clone_ref(py)) }
                 #[setter] fn set_atom_match(&mut self, value: Option<AtomMatch>) { self.atom_match = value; }
@@ -294,8 +343,10 @@ macro_rules! match_parameters {
                 /// Callback exceptions propagate unchanged to the caller.
                 #[getter] fn extra_final_check(&self, py: Python<'_>) -> Option<FinalMatch> { self.final_match(py) }
                 #[setter] fn set_extra_final_check(&mut self, value: Option<FinalMatch>) { self.set_final_match(value); }
-                /// Optional callback(query_atom, target_atom) returning whether to accept an atom pair.
-                /// Receives detached QueryAtom and Atom values, not contextual molecule views.
+                /// Optional callback(query, query_atom, target, target_atom) accepting an atom pair.
+                /// query retains the actual query graph, including recursive queries. target is
+                /// an independent COW Molecule; changes do not affect matching or later callbacks.
+                /// Atom records are detached; use target.atom(target_atom.id) for contextual reads.
                 /// Callback exceptions propagate unchanged to the caller.
                 #[getter] fn extra_atom_check(&self, py: Python<'_>) -> Option<AtomMatch> { self.atom_match(py) }
                 #[setter] fn set_extra_atom_check(&mut self, value: Option<AtomMatch>) { self.set_atom_match(value); }
@@ -360,8 +411,8 @@ impl SubstructMatchParams {
             },
         )
     }
-    pub(crate) fn has_final_match(&self) -> bool {
-        self.final_match.is_some()
+    pub(crate) fn needs_callback_target(&self) -> bool {
+        self.final_match.is_some() || self.atom_match.is_some()
     }
     pub(crate) fn with_callbacks<T, E>(
         &self,
@@ -559,7 +610,7 @@ marker = ValueError("original callback failure")
 def final_filter(target, indices):
     seen.append((target, tuple(indices)))
     return True
-def atom_filter(query, target):
+def atom_filter(query_graph, query, target_molecule, target):
     atoms.append((query.atomic_number, target.atomic_number))
     return True
 def bond_filter(query, target):

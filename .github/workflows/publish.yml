@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish RC versions to PyPI, npm and Anaconda.org (stable releases require a tag push)"
+        description: "Publish dev/RC versions to PyPI, npm and Anaconda.org (stable releases require a tag push)"
         type: boolean
         default: false
 
@@ -20,6 +20,7 @@ jobs:
         runs-on: ubuntu-latest
         outputs:
             manual_publish_allowed: ${{ steps.release_policy.outputs.manual_publish_allowed }}
+            conda_label: ${{ steps.release_policy.outputs.conda_label }}
 
         steps:
             - uses: actions/checkout@v4
@@ -70,8 +71,8 @@ jobs:
                   targets: wasm32-unknown-unknown
             - uses: Swatinem/rust-cache@v2
               with:
-                  shared-key: wasm-presets-v1
-                  workspaces: ". -> target/wasm"
+                  shared-key: wasm-presets-v2
+                  workspaces: "wasm -> ../target/wasm"
                   cache-workspace-crates: true
                   cache-on-failure: true
             - uses: actions/setup-python@v7
@@ -82,9 +83,9 @@ jobs:
                   node-version: "24"
             - uses: taiki-e/install-action@v2
               with:
-                  tool: alef@0.83.3,wasm-bindgen-cli@0.2.128
+                  tool: wasm-bindgen-cli@0.2.128
             - name: Test WASM build tooling
-              run: python -m unittest discover -s wasm/tools/wasm_binding -p 'test_*.py' -v
+              run: python -m unittest discover -s wasm/tests -p 'test_*.py' -v
             - name: Build and validate npm presets serially
               env:
                   NPM_PACKAGE_ROOT: ${{ runner.temp }}/cosmolkit-npm
@@ -94,7 +95,8 @@ jobs:
                   for preset in core core-search core-fingerprints core-analysis core-reaction core-depict core-3d core-bio core-inchi full; do
                       echo "::group::Build and validate npm $preset"
                       package_dir="$NPM_PACKAGE_ROOT/npm-package-$preset"
-                      python -B wasm/tools/wasm_binding/run.py --preset "$preset" --out-dir "$package_dir"
+                      python -B wasm/build.py --preset "$preset" --check
+                      python -B wasm/build.py --preset "$preset" --release --target web --out-dir "$package_dir"
                       npm pack --dry-run --json "$package_dir"
                       echo "::endgroup::"
                   done
@@ -350,9 +352,7 @@ jobs:
             - name: Publish to Anaconda.org
               env:
                   ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
-                  IS_RC: ${{ needs.generate-stubs.outputs.manual_publish_allowed }}
+                  CONDA_LABEL: ${{ needs.generate-stubs.outputs.conda_label }}
               run: |
                   test -n "$ANACONDA_API_TOKEN" || { echo 'Set the ANACONDA_API_TOKEN repository secret.' >&2; exit 1; }
-                  label=main
-                  if [ "$IS_RC" = true ]; then label=rc; fi
-                  anaconda upload --user cosmol-studio --label "$label" conda-dist/*/*.conda
+                  anaconda upload --user cosmol-studio --label "$CONDA_LABEL" conda-dist/*/*.conda

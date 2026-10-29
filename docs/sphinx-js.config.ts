@@ -22,10 +22,18 @@ export const config = {
       delete entry.type;
       delete entry.readonly;
     }
-    // sphinx-js hides explicit void results; keep every declared return type.
-    function retainVoid(declaration, entry) {
+    // sphinx-js drops parameter flags.isOptional and hides explicit void results.
+    // Carry the declared '?' through its parameter name, not an invented default.
+    function retainSignature(declaration, entry) {
       const signature = declaration.signatures?.[0]
         ?? (declaration.type?.type === "reflection" ? declaration.type.declaration.signatures?.[0] : undefined);
+      const parameters = new Map((signature?.parameters ?? []).map(param => [param.name, param]));
+      for (const param of entry.params ?? []) {
+        const original = parameters.get(param.name.replace(/\?$/, ""));
+        if (original?.flags.isOptional && !param.has_default && !param.name.endsWith("?")) {
+          param.name += "?";
+        }
+      }
       const result = signature?.type;
       if (entry.kind === "function" && !declaration.kindOf(ReflectionKind.Constructor)
           && result?.type === "intrinsic" && result.name === "void") {
@@ -34,11 +42,15 @@ export const config = {
       const children = new Map((declaration.children ?? []).map(child => [child.name, child]));
       for (const member of entry.members ?? []) {
         const child = children.get(member.name);
-        if (child) retainVoid(child, member);
+        if (child) retainSignature(child, member);
+      }
+      if (entry.constructor_) {
+        const constructor = declaration.children?.find(child => child.kindOf(ReflectionKind.Constructor));
+        if (constructor) retainSignature(constructor, entry.constructor_);
       }
     }
     for (const [declaration, entry] of typedocToIRMap) {
-      retainVoid(declaration, entry);
+      retainSignature(declaration, entry);
     }
     const lines = ["Enumerations", "------------", ""];
     for (const enumeration of project.getReflectionsByKind(ReflectionKind.Enum)) {

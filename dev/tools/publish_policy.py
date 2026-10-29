@@ -1,4 +1,4 @@
-"""Validate release versions; manual publication is restricted to matching RCs."""
+"""Validate release versions; manual publication accepts matching dev and RC builds."""
 
 import os
 from pathlib import Path
@@ -10,17 +10,17 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check_versions(rust: str, python: str, wasm: str, event: str, ref: str, requested: bool) -> bool:
-    rc = re.fullmatch(r"(\d+\.\d+\.\d+)-rc\.(\d+)", rust)
+    rc = re.fullmatch(r"(\d+\.\d+\.\d+)-(rc|dev)\.(\d+)", rust)
     stable = re.fullmatch(r"\d+\.\d+\.\d+", rust)
     if rc is None and stable is None:
-        raise ValueError("Publishing requires a stable or RC Rust version")
-    expected_python = f"{rc[1]}rc{rc[2]}" if rc else rust
+        raise ValueError("Publishing requires a stable or RC or dev Rust version")
+    expected_python = rc[1] + ("rc" if rc[2] == "rc" else ".dev") + rc[3] if rc else rust
     if python != expected_python or wasm != rust:
         raise ValueError("Rust, Python and WASM release versions must match")
     if event == "push" and ref != f"refs/tags/v{rust}":
         raise ValueError("Release tag must equal v followed by the Rust version")
     if event == "workflow_dispatch" and requested and rc is None:
-        raise ValueError("Manual publication is RC-only; publish stable releases by pushing a tag")
+        raise ValueError("Manual publication is dev/RC-only; publish stable releases by pushing a tag")
     return rc is not None
 
 
@@ -43,7 +43,10 @@ def main() -> None:
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a", encoding="utf-8") as destination:
             destination.write(f"manual_publish_allowed={str(allowed).lower()}\n")
-    print(f"Release versions match; manual RC publication allowed: {allowed}")
+            version = manifest("Cargo.toml")["workspace"]["package"]["version"]
+            label = version.split("-", 1)[1].split(".", 1)[0] if allowed else "main"
+            destination.write(f"conda_label={label}\n")
+    print(f"Release versions match; manual prerelease publication allowed: {allowed}")
 
 
 if __name__ == "__main__":

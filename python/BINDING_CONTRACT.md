@@ -607,6 +607,16 @@ the stub generator. Native read errors retain their existing exception types.
   isolated through normal operations. No eager deep-copy or universal O(1)
   promise: native Clone also copies its descriptor memo.
 
+Atom-match callbacks receive `(query, query_atom, target, target_atom)`, in the
+same order as the Rust callback. `query` retains the actual query graph (including
+recursive SMARTS); `target` is an independent native COW Molecule for the selected
+input. It may be edited or retained without changing matching, the caller's
+molecule, or subsequent callback values. Detached atom records remain detached:
+use `target.atom(target_atom.id)` for degree, valence and hydrogen queries.
+The existing final-match callback retains its `(target, atom_indices)` form.
+Callback exceptions propagate unchanged; there is no two-argument atom-callback
+fallback or callback-expiry rule.
+
 ## Collection protocols
 
 Expose `len()`, indexing and iteration only when each has an explicit,

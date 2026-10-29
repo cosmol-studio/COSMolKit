@@ -24,7 +24,7 @@ impl Drop for MatchingScope<'_> {
 impl Reaction {
     pub(crate) fn needs_callback_target(&self, py: Python<'_>) -> bool {
         self.copy_match_owner()
-            .is_some_and(|owner| owner.borrow(py).has_final_match())
+            .is_some_and(|owner| owner.borrow(py).needs_callback_target())
     }
     pub(crate) fn invoke<T: Send>(
         &mut self,
@@ -150,7 +150,7 @@ def final(target, indices):
     assert tuple(indices) == (0,)
     seen.append(target)
     return True
-def atom(query, target):
+def atom(query_graph, query, target_molecule, target):
     atoms.append(target.atomic_number)
     return True
 matching = ck.SubstructMatchParams(final_match=final, atom_match=atom)

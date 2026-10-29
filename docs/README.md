@@ -13,7 +13,7 @@ cargo install pyo3-introspection --version 0.30.1 --locked
 .venv/bin/python python/build.py
 .venv/bin/python python/registry_check.py
 npm ci --prefix docs --no-audit --no-fund
-.venv/bin/python wasm/tools/wasm_binding/run.py --preset full --out-dir target/docs-js-package
+.venv/bin/python wasm/build.py --target web --out-dir target/docs-js-package
 ```
 
 Reuse the built bindings and declarations for documentation-only edits. Build

@@ -22,7 +22,7 @@ def test_atom_types_complete_order_and_implicit_zero():
     assert ck.AtomPairsParameters.atom_types()[0]==5
 
 
-@pytest.mark.parametrize("index,symbol", enumerate(["B","C","N","O","F","Si","P","S","Cl","As","Se","Br","Sb","Te","I","*"]))
+@pytest.mark.parametrize("index,symbol", list(enumerate(["B","C","N","O","F","Si","P","S","Cl","As","Se","Br","Sb","Te","I","*"])))
 def test_type_order_drives_existing_explanation(index,symbol):
     p=ck.AtomPairsParameters
     code=(index << (p.num_branch_bits()+p.num_pi_bits())) | 7 | (3 << p.num_branch_bits())

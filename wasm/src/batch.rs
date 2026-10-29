@@ -1,1190 +1,484 @@
-//! Language values wrapping the sole public live batch and molecule owners.
-use crate::Molecule;
+//! Ordered native batch ownership and transformations.
+use crate::{
+    Molecule, SmilesParseParams, SmilesParseParamsInput,
+    chemistry::*,
+    coordinates::*,
+    errors::{error_projection, exception},
+    fields::{BoolArray, Field, IndexArray, TextArray},
+    input,
+    sanitize::*,
+    storage::ReadonlyValue,
+};
 use cosmolkit as ck;
-
-#[derive(Clone)]
-pub struct BatchRecord {
-    pub(crate) inner: ck::BatchRecord,
+use std::error::Error;
+use tsify::Ts;
+use wasm_bindgen::{JsCast, prelude::*};
+crate::enums::enum_value!(BatchErrorMode,"BatchErrorMode"{Strict="strict",KeepErrors="keep_errors"});
+ck::__ck_configuration_BatchParams!(crate::project_parameters, ck::BatchParams, {}, {
+    BatchParams
+});
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "Molecule | BatchError")]
+    pub type BatchRecord;
+    #[wasm_bindgen(typescript_type = "ReadonlyArray<BatchError>")]
+    pub type BatchErrors;
+    #[wasm_bindgen(typescript_type = "ReadonlyArray<Molecule | BatchError>")]
+    pub type BatchRecords;
 }
-
-impl BatchRecord {
-    pub fn molecule(value: &Molecule) -> Self {
-        Self {
-            inner: ck::BatchRecord::Molecule(value.inner.borrow().clone()),
+error_projection!(
+    BatchError,
+    ck::BatchError,
+    {
+        #[wasm_bindgen(getter)]
+        pub fn index(&self) -> usize {
+            self.inner.index
         }
-    }
-    pub fn error(value: &ck::BatchError) -> Self {
-        Self {
-            inner: ck::BatchRecord::Error(value.clone()),
+        #[wasm_bindgen(getter)]
+        pub fn operation(&self) -> String {
+            self.inner.operation.into()
         }
-    }
-    pub fn molecule_value(&self) -> Option<Molecule> {
-        match &self.inner {
-            ck::BatchRecord::Molecule(value) => Some(Molecule {
-                inner: value.clone().into(),
-            }),
-            ck::BatchRecord::Error(_) => None,
+        #[wasm_bindgen(getter)]
+        pub fn message(&self) -> String {
+            self.inner.message.clone()
         }
-    }
-    pub fn error_value(&self) -> Option<ck::BatchError> {
-        match &self.inner {
-            ck::BatchRecord::Molecule(_) => None,
-            ck::BatchRecord::Error(error) => Some(error.clone()),
+    },
+    source = BatchCause,
+    cause = |owner: &ReadonlyValue<ck::BatchError>| owner.source().map(|_| {
+        let node = owner.child(|e| e.source().expect("immutable native batch source"));
+        if node.is::<ck::SmilesError>() {
+            return crate::smiles_errors::SmilesError::from_owner(
+                node.child(|e| e.downcast_ref().expect("SMILES source")),
+            )
+            .unchecked_into();
         }
-    }
+        if node.is::<ck::OperationError>() {
+            return crate::operation_errors::OperationError::from_owner(
+                node.child(|e| e.downcast_ref().expect("operation source")),
+            )
+            .unchecked_into();
+        }
+        if node.is::<ck::SdfReadError>() {
+            return crate::sdf_errors::SdfReadError::from_owner(
+                node.child(|e| e.downcast_ref().expect("SDF read source")),
+            )
+            .unchecked_into();
+        }
+        if node.is::<ck::MolPostError>() {
+            return crate::mol_post_errors::MolPostError::from_owner(
+                node.child(|e| e.downcast_ref().expect("molecule finalization source")),
+            )
+            .unchecked_into();
+        }
+        macro_rules! project {
+            ($native:ty,$binding:path) => {
+                if node.is::<$native>() {
+                    return <$binding>::from_owner(
+                        node.child(|e| e.downcast_ref().expect("checked batch source type")),
+                    )
+                    .unchecked_into();
+                }
+            };
+        }
+        project!(ck::SmilesWriteError, crate::smiles_errors::SmilesWriteError);
+        #[cfg(feature = "cap-fingerprints")]
+        project!(ck::MorganReadError, crate::morgan_errors::MorganReadError);
+        #[cfg(feature = "cap-fingerprints")]
+        project!(
+            ck::AtomPairReadError,
+            crate::pair_torsion::AtomPairReadError
+        );
+        #[cfg(feature = "cap-fingerprints")]
+        project!(ck::AtomPairError, crate::morgan_errors::AtomPairError);
+        #[cfg(feature = "cap-fingerprints")]
+        project!(
+            ck::TopologicalTorsionReadError,
+            crate::pair_torsion::TopologicalTorsionReadError
+        );
+        #[cfg(feature = "cap-fingerprints")]
+        project!(
+            ck::LayeredFingerprintError,
+            crate::path_fingerprints::LayeredFingerprintError
+        );
+        #[cfg(feature = "cap-fingerprints")]
+        project!(
+            ck::PatternFingerprintError,
+            crate::pattern::PatternFingerprintError
+        );
+        #[cfg(feature = "cap-depict")]
+        project!(ck::DrawingError, crate::drawing::DrawingError);
+        #[cfg(feature = "cap-conformer")]
+        project!(
+            ck::ConformerRunError,
+            crate::conformer_errors::ConformerRunError
+        );
+        // Scheduler thread-pool failures have external-library sources.
+        crate::external_errors::standard_source(node).unchecked_into()
+    })
+);
+fn errors(rows: &[ck::BatchError]) -> BatchErrors {
+    let out = rows
+        .iter()
+        .cloned()
+        .map(BatchError::from_rust)
+        .collect::<js_sys::Array>();
+    js_sys::Object::freeze(&out);
+    out.unchecked_into()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn batch_foundation_preserves_indices_settings_and_record_value_independence() {
-        let input = ["CCO", "[", "O", "C("].map(str::to_owned);
-        let params = ck::BatchParams {
-            errors: Some(ck::BatchErrorMode::KeepErrors),
-            ..Default::default()
-        };
-        let batch = MoleculeBatch::from_smiles_list_with_params(
-            &input,
-            &ck::SmilesParseParams::default(),
-            &params,
-        )
-        .unwrap();
-        assert_eq!(batch.len(), 4);
-        assert!(!batch.is_empty());
-        assert_eq!(batch.valid_mask(), [true, false, true, false]);
-        assert_eq!(batch.invalid_mask(), [false, true, false, true]);
-        assert_eq!(batch.valid_count(), 2);
-        assert_eq!(batch.invalid_count(), 2);
-        assert_eq!(
-            batch.errors().iter().map(|e| e.index).collect::<Vec<_>>(),
-            [1, 3]
-        );
-        assert_eq!(
-            batch
-                .to_list()
-                .iter()
-                .map(Option::is_some)
-                .collect::<Vec<_>>(),
-            batch.valid_mask()
-        );
-        assert_eq!(batch.parallel_jobs(), None);
-        assert_eq!(batch.progress_bar(), None);
-        let configured = batch
-            .with_parallel_jobs(Some(2))
-            .unwrap()
-            .with_progress_bar(Some(false));
-        assert_eq!(configured.parallel_jobs(), Some(2));
-        assert_eq!(configured.progress_bar(), Some(false));
-        assert_eq!(batch.parallel_jobs(), None);
-        assert!(batch.with_parallel_jobs(Some(0)).is_err());
-        assert_eq!(batch.with_valid_records().len(), 2);
-        let strict = MoleculeBatch::from_smiles_list(&input).err().unwrap();
-        assert_eq!(strict.errors, 2);
-        assert_eq!(
-            strict
-                .record_errors
-                .iter()
-                .map(|e| e.index)
-                .collect::<Vec<_>>(),
-            [1, 3]
-        );
-        let source = Molecule::from_smiles_with_sanitize("C1=CC=CC=C1", false).unwrap();
-        let record = BatchRecord::molecule(&source);
-        let error = BatchRecord::error(&batch.errors()[0]);
-        assert!(record.error_value().is_none());
-        assert!(error.molecule_value().is_none());
-        let copied = MoleculeBatch::from_records(
-            vec![record.clone(), error.clone()],
-            ck::BatchErrorMode::KeepErrors,
-        )
-        .unwrap();
-        source.assign_aromaticity_().unwrap();
-        assert_eq!(source.to_smiles().unwrap(), "c1ccccc1".into());
-        assert_eq!(
-            record.molecule_value().unwrap().to_smiles().unwrap(),
-            "C1=CC=CC=C1".into()
-        );
-        assert_eq!(
-            copied.to_list()[0].as_ref().unwrap().to_smiles().unwrap(),
-            "C1=CC=CC=C1".into()
-        );
-        assert_eq!(error.error_value().unwrap().index, 1);
-        assert!(MoleculeBatch::from_records(vec![error], ck::BatchErrorMode::Strict).is_err());
-        assert!(
-            MoleculeBatch::from_records(Vec::new(), ck::BatchErrorMode::Strict)
-                .unwrap()
-                .is_empty()
-        );
+error_projection!(BatchValidationError, ck::BatchValidationError, {
+    #[wasm_bindgen(getter)]
+    pub fn errors(&self) -> usize {
+        self.inner.errors
     }
+    #[wasm_bindgen(getter,js_name=recordErrors)]
+    pub fn record_errors(&self) -> BatchErrors {
+        errors(&self.inner.record_errors)
+    }
+});
+#[wasm_bindgen]
+pub struct MoleculeBatch(pub(crate) ck::MoleculeBatch);
+#[wasm_bindgen(js_name = molsFromSmilesList)]
+pub fn mols_from_smiles_list(
+    smiles: Ts<TextArray>,
+    parse: Option<SmilesParseParamsInput>,
+    params: Option<BatchParamsInput>,
+) -> Result<MoleculeBatch, JsValue> {
+    MoleculeBatch::from_smiles_list(smiles, parse, params)
 }
-
-#[derive(Clone)]
-pub struct MoleculeBatch {
-    pub(crate) inner: ck::MoleculeBatch,
+#[wasm_bindgen(js_name = molsFromRecords)]
+pub fn mols_from_records(
+    records: BatchRecords,
+    mode: BatchErrorModeInput,
+) -> Result<MoleculeBatch, JsValue> {
+    MoleculeBatch::from_records(records, mode)
 }
-
+#[wasm_bindgen(js_name=molsFromSdfRecords)]
+pub fn mols_from_sdf_records(
+    text: Ts<input::TextInput>,
+    read: Option<crate::molecular_io::SdfReadParamsInput>,
+    errors: Option<BatchErrorModeInput>,
+    n_jobs: Option<Ts<input::IndexInput>>,
+    progress_bar: Option<Ts<input::BoolInput>>,
+) -> Result<MoleculeBatch, JsValue> {
+    MoleculeBatch::from_sdf_records(text, read, errors, n_jobs, progress_bar)
+}
+#[wasm_bindgen]
 impl MoleculeBatch {
-    pub fn from_records(
-        records: Vec<BatchRecord>,
-        mode: ck::BatchErrorMode,
-    ) -> Result<Self, ck::BatchValidationError> {
-        ck::MoleculeBatch::from_records(
-            records.into_iter().map(|value| value.inner).collect(),
-            mode,
-        )
-        .map(|inner| Self { inner })
+    #[wasm_bindgen(js_name=fromSdfRecords)]
+    pub fn from_sdf_records(
+        text: Ts<input::TextInput>,
+        read: Option<crate::molecular_io::SdfReadParamsInput>,
+        errors: Option<BatchErrorModeInput>,
+        n_jobs: Option<Ts<input::IndexInput>>,
+        progress_bar: Option<Ts<input::BoolInput>>,
+    ) -> Result<Self, JsValue> {
+        let text = input::read::<String>(text)?;
+        let errors = errors
+            .map(ck::BatchErrorMode::input)
+            .transpose()?
+            .unwrap_or_default();
+        let n_jobs = n_jobs.map(input::read::<usize>).transpose()?;
+        let progress_bar = progress_bar
+            .map(input::read::<bool>)
+            .transpose()?
+            .unwrap_or(false);
+        crate::molecular_io::SdfReadParams::with_input(read.as_ref(), |read| {
+            ck::MoleculeBatch::from_sdf_records_with_params(
+                &text,
+                read,
+                errors,
+                n_jobs,
+                progress_bar,
+            )
+            .map(Self)
+            .map_err(BatchValidationError::from_rust)
+        })
     }
-    #[cfg(feature = "cap-smiles")]
-    pub fn from_smiles_list(smiles: &[String]) -> Result<Self, ck::BatchValidationError> {
-        ck::MoleculeBatch::from_smiles_list(smiles).map(|inner| Self { inner })
+    #[wasm_bindgen(js_name=fromSdfRecordsWithParams)]
+    pub fn from_sdf_records_with_params(
+        text: Ts<input::TextInput>,
+        read: crate::molecular_io::SdfReadParamsInput,
+        errors: Option<BatchErrorModeInput>,
+        n_jobs: Option<Ts<input::IndexInput>>,
+        progress_bar: Option<Ts<input::BoolInput>>,
+    ) -> Result<Self, JsValue> {
+        Self::from_sdf_records(text, Some(read), errors, n_jobs, progress_bar)
     }
-    #[cfg(feature = "cap-smiles")]
+    #[wasm_bindgen(js_name=fromSmilesListWithParams)]
     pub fn from_smiles_list_with_params(
-        smiles: &[String],
-        parse: &ck::SmilesParseParams,
-        params: &ck::BatchParams,
-    ) -> Result<Self, ck::BatchValidationError> {
-        ck::MoleculeBatch::from_smiles_list_with_params(smiles, parse, params)
-            .map(|inner| Self { inner })
+        smiles: Ts<TextArray>,
+        parse: SmilesParseParamsInput,
+        params: BatchParamsInput,
+    ) -> Result<Self, JsValue> {
+        Self::from_smiles_list(smiles, Some(parse), Some(params))
     }
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-    pub fn error_mode(&self) -> ck::BatchErrorMode {
-        self.inner.error_mode()
-    }
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-    pub fn valid_mask(&self) -> Vec<bool> {
-        self.inner.valid_mask()
-    }
-    pub fn invalid_mask(&self) -> Vec<bool> {
-        self.inner.invalid_mask()
-    }
-    pub fn valid_count(&self) -> usize {
-        self.inner.valid_count()
-    }
-    pub fn invalid_count(&self) -> usize {
-        self.inner.invalid_count()
-    }
-    pub fn errors(&self) -> Vec<ck::BatchError> {
-        self.inner.errors()
-    }
-    pub fn parallel_jobs(&self) -> Option<usize> {
-        self.inner.parallel_jobs()
-    }
-    pub fn progress_bar(&self) -> Option<bool> {
-        self.inner.progress_bar()
-    }
-    pub fn to_list(&self) -> Vec<Option<Molecule>> {
-        self.inner
-            .to_list()
-            .into_iter()
-            .map(|value| {
-                value.map(|inner| Molecule {
-                    inner: inner.into(),
-                })
+    #[wasm_bindgen(js_name=fromRecords)]
+    pub fn from_records(records: BatchRecords, mode: BatchErrorModeInput) -> Result<Self, JsValue> {
+        if !js_sys::Array::is_array(records.as_ref()) {
+            return Err(js_sys::TypeError::new("expected an array of batch records").into());
+        }
+        let rows = records
+            .unchecked_ref::<js_sys::Array>()
+            .iter()
+            .map(|row| {
+                if let Ok(molecule) = ck::Molecule::decode(&row) {
+                    Ok(ck::BatchRecord::Molecule(molecule))
+                } else {
+                    BatchError::with_native(&row, |error| ck::BatchRecord::Error(error.clone()))
+                }
             })
-            .collect()
+            .collect::<Result<Vec<_>, JsValue>>()?;
+        ck::MoleculeBatch::from_records(rows, ck::BatchErrorMode::input(mode)?)
+            .map(Self)
+            .map_err(BatchValidationError::from_rust)
     }
+    #[wasm_bindgen(js_name=toList)]
+    pub fn to_list(&self) -> crate::MoleculeArray {
+        crate::MoleculeArray::from_native(self.0.to_list())
+    }
+    #[wasm_bindgen(getter)]
+    pub fn records(&self) -> BatchRecords {
+        let rows = self
+            .0
+            .records()
+            .iter()
+            .map(|row| match row {
+                ck::BatchRecord::Molecule(molecule) => JsValue::from(Molecule(molecule.clone())),
+                ck::BatchRecord::Error(error) => BatchError::from_rust(error.clone()),
+            })
+            .collect::<js_sys::Array>();
+        js_sys::Object::freeze(&rows).unchecked_into()
+    }
+    #[wasm_bindgen(js_name=fromSmilesList)]
+    pub fn from_smiles_list(
+        smiles: Ts<TextArray>,
+        parse: Option<SmilesParseParamsInput>,
+        params: Option<BatchParamsInput>,
+    ) -> Result<Self, JsValue> {
+        let smiles = Vec::<String>::input(smiles)?;
+        SmilesParseParams::with_input(parse.as_ref(), |parse| {
+            BatchParams::with_input(params.as_ref(), |p| {
+                ck::MoleculeBatch::from_smiles_list_with_params(&smiles, parse, p)
+                    .map(Self)
+                    .map_err(BatchValidationError::from_rust)
+            })
+        })
+    }
+    #[wasm_bindgen]
+    pub fn copy(&self) -> Self {
+        Self(self.0.clone())
+    }
+    #[wasm_bindgen(getter)]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    #[wasm_bindgen(getter,js_name=isEmpty)]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    #[wasm_bindgen(getter,js_name=errorMode)]
+    pub fn error_mode(&self) -> BatchErrorMode {
+        self.0.error_mode().into()
+    }
+    #[wasm_bindgen]
+    pub fn get(&self, index: Ts<input::IndexInput>) -> Result<BatchRecord, JsValue> {
+        let index = input::read::<usize>(index)?;
+        match self.0.get(index) {
+            Some(ck::BatchRecord::Molecule(v)) => {
+                Ok(JsValue::from(Molecule(v.clone())).unchecked_into())
+            }
+            Some(ck::BatchRecord::Error(v)) => {
+                Ok(BatchError::from_rust(v.clone()).unchecked_into())
+            }
+            None => Err(js_sys::RangeError::new("batch index is out of range").into()),
+        }
+    }
+    #[wasm_bindgen]
+    pub fn select(&self, indices: Ts<IndexArray>) -> Result<Self, JsValue> {
+        self.0
+            .select(&Vec::<usize>::input(indices)?)
+            .map(Self)
+            .ok_or_else(|| js_sys::RangeError::new("batch index is out of range").into())
+    }
+    #[wasm_bindgen(js_name=validMask)]
+    pub fn valid_mask(&self) -> Result<Ts<BoolArray>, JsValue> {
+        Vec::<bool>::get(crate::storage::NativeField::owned(self.0.valid_mask()))
+    }
+    #[wasm_bindgen(js_name=invalidMask)]
+    pub fn invalid_mask(&self) -> Result<Ts<BoolArray>, JsValue> {
+        Vec::<bool>::get(crate::storage::NativeField::owned(self.0.invalid_mask()))
+    }
+    #[wasm_bindgen(getter,js_name=validCount)]
+    pub fn valid_count(&self) -> usize {
+        self.0.valid_count()
+    }
+    #[wasm_bindgen(getter,js_name=invalidCount)]
+    pub fn invalid_count(&self) -> usize {
+        self.0.invalid_count()
+    }
+    #[wasm_bindgen]
+    pub fn errors(&self) -> BatchErrors {
+        errors(&self.0.errors())
+    }
+    #[wasm_bindgen(js_name=withValidRecords)]
     pub fn with_valid_records(&self) -> Self {
-        Self {
-            inner: self.inner.with_valid_records(),
-        }
+        Self(self.0.with_valid_records())
     }
-    pub fn with_parallel_jobs(
-        &self,
-        n_jobs: Option<usize>,
-    ) -> Result<Self, ck::BatchValidationError> {
-        self.inner
+    #[wasm_bindgen(js_name=withParallelJobs)]
+    pub fn with_parallel_jobs(&self, jobs: Option<Ts<input::IndexInput>>) -> Result<Self, JsValue> {
+        let jobs = jobs.map(input::read::<usize>).transpose()?;
+        self.0
             .clone()
-            .with_parallel_jobs(n_jobs)
-            .map(|inner| Self { inner })
+            .with_parallel_jobs(jobs)
+            .map(Self)
+            .map_err(BatchValidationError::from_rust)
     }
-    pub fn with_progress_bar(&self, progress_bar: Option<bool>) -> Self {
-        Self {
-            inner: self.inner.clone().with_progress_bar(progress_bar),
-        }
+    #[wasm_bindgen(getter,js_name=parallelJobs)]
+    pub fn parallel_jobs(&self) -> Option<usize> {
+        self.0.parallel_jobs()
+    }
+    #[wasm_bindgen(js_name=withProgressBar)]
+    pub fn with_progress_bar(
+        &self,
+        enabled: Option<Ts<input::BoolInput>>,
+    ) -> Result<Self, JsValue> {
+        Ok(Self(self.0.clone().with_progress_bar(
+            enabled.map(input::read::<bool>).transpose()?,
+        )))
+    }
+    #[wasm_bindgen(getter,js_name=progressBar)]
+    pub fn progress_bar(&self) -> Option<bool> {
+        self.0.progress_bar()
+    }
+    #[wasm_bindgen(js_name=sanitize)]
+    pub fn sanitize(
+        &self,
+        options: Option<SanitizeParamsInput>,
+        params: Option<BatchParamsInput>,
+    ) -> Result<Self, JsValue> {
+        SanitizeParams::with_input(options.as_ref(), |o| {
+            BatchParams::with_input(params.as_ref(), |p| {
+                self.0
+                    .sanitize_with_params(o, p)
+                    .map(Self)
+                    .map_err(BatchValidationError::from_rust)
+            })
+        })
+    }
+    #[wasm_bindgen(js_name=withHydrogens)]
+    pub fn with_hydrogens(
+        &self,
+        options: Option<AddHsParamsInput>,
+        params: Option<BatchParamsInput>,
+    ) -> Result<Self, JsValue> {
+        AddHsParams::with_input(options.as_ref(), |o| {
+            BatchParams::with_input(params.as_ref(), |p| {
+                self.0
+                    .with_hydrogens_with_params(o, p)
+                    .map(Self)
+                    .map_err(BatchValidationError::from_rust)
+            })
+        })
+    }
+    #[wasm_bindgen(js_name=withoutHydrogens)]
+    pub fn without_hydrogens(
+        &self,
+        options: Option<RemoveHsParamsInput>,
+        params: Option<BatchParamsInput>,
+    ) -> Result<Self, JsValue> {
+        RemoveHsParams::with_input(options.as_ref(), |o| {
+            BatchParams::with_input(params.as_ref(), |p| {
+                self.0
+                    .without_hydrogens_with_params(o, p)
+                    .map(Self)
+                    .map_err(BatchValidationError::from_rust)
+            })
+        })
+    }
+    #[wasm_bindgen(js_name=withKekulizedBonds)]
+    pub fn with_kekulized_bonds(
+        &self,
+        options: Option<KekulizeParamsInput>,
+        params: Option<BatchParamsInput>,
+    ) -> Result<Self, JsValue> {
+        KekulizeParams::with_input(options.as_ref(), |o| {
+            BatchParams::with_input(params.as_ref(), |p| {
+                self.0
+                    .with_kekulized_bonds_with_params(o, p)
+                    .map(Self)
+                    .map_err(BatchValidationError::from_rust)
+            })
+        })
+    }
+    #[cfg(feature = "cap-depict")]
+    #[wasm_bindgen(js_name=with2dCoordinates)]
+    pub fn with_2d_coordinates(
+        &self,
+        options: Option<Coordinate2DParamsInput>,
+        params: Option<BatchParamsInput>,
+    ) -> Result<Self, JsValue> {
+        Coordinate2DParams::with_input(options.as_ref(), |o| {
+            BatchParams::with_input(params.as_ref(), |p| {
+                self.0
+                    .with_2d_coordinates_with_params(o, p)
+                    .map(Self)
+                    .map_err(BatchValidationError::from_rust)
+            })
+        })
     }
 }
 
+cosmolkit_tsify_macros::type_union! {
+    BatchCause;
+    "SmilesError | OperationError | SdfReadError | MolPostError | SmilesWriteError | IoError | ExternalError";
+    #[cfg(feature = "cap-fingerprints")]
+    "MorganReadError | AtomPairReadError | AtomPairError | TopologicalTorsionReadError | LayeredFingerprintError | PatternFingerprintError";
+    #[cfg(feature = "cap-depict")]
+    "DrawingError";
+    #[cfg(feature = "cap-conformer")]
+    "ConformerRunError";
+}
+#[wasm_bindgen]
 impl MoleculeBatch {
-    #[cfg(feature = "cap-sanitize")]
-    pub fn sanitize(&self) -> Result<Self, ck::BatchValidationError> {
-        self.inner.sanitize().map(|inner| Self { inner })
-    }
-    #[cfg(feature = "cap-sanitize")]
+    #[wasm_bindgen(js_name=sanitizeWithParams)]
     pub fn sanitize_with_params(
         &self,
-        options: &ck::SanitizeParams,
-        params: &ck::BatchParams,
-    ) -> Result<Self, ck::BatchValidationError> {
-        self.inner
-            .sanitize_with_params(options, params)
-            .map(|inner| Self { inner })
+        options: SanitizeParamsInput,
+        params: BatchParamsInput,
+    ) -> Result<Self, JsValue> {
+        self.sanitize(Some(options), Some(params))
     }
-    #[cfg(feature = "cap-hydrogens")]
-    pub fn with_hydrogens(&self) -> Result<Self, ck::BatchValidationError> {
-        self.inner.with_hydrogens().map(|inner| Self { inner })
-    }
-    #[cfg(feature = "cap-hydrogens")]
+    #[wasm_bindgen(js_name=withHydrogensWithParams)]
     pub fn with_hydrogens_with_params(
         &self,
-        options: &ck::AddHsParams,
-        params: &ck::BatchParams,
-    ) -> Result<Self, ck::BatchValidationError> {
-        self.inner
-            .with_hydrogens_with_params(options, params)
-            .map(|inner| Self { inner })
+        options: AddHsParamsInput,
+        params: BatchParamsInput,
+    ) -> Result<Self, JsValue> {
+        self.with_hydrogens(Some(options), Some(params))
     }
-    #[cfg(feature = "cap-hydrogens")]
-    pub fn without_hydrogens(&self) -> Result<Self, ck::BatchValidationError> {
-        self.inner.without_hydrogens().map(|inner| Self { inner })
-    }
-    #[cfg(feature = "cap-hydrogens")]
+    #[wasm_bindgen(js_name=withoutHydrogensWithParams)]
     pub fn without_hydrogens_with_params(
         &self,
-        options: &ck::RemoveHsParams,
-        params: &ck::BatchParams,
-    ) -> Result<Self, ck::BatchValidationError> {
-        self.inner
-            .without_hydrogens_with_params(options, params)
-            .map(|inner| Self { inner })
+        options: RemoveHsParamsInput,
+        params: BatchParamsInput,
+    ) -> Result<Self, JsValue> {
+        self.without_hydrogens(Some(options), Some(params))
     }
-    #[cfg(feature = "cap-kekulize")]
-    pub fn with_kekulized_bonds(&self) -> Result<Self, ck::BatchValidationError> {
-        self.inner
-            .with_kekulized_bonds()
-            .map(|inner| Self { inner })
-    }
-    #[cfg(feature = "cap-kekulize")]
+    #[wasm_bindgen(js_name=withKekulizedBondsWithParams)]
     pub fn with_kekulized_bonds_with_params(
         &self,
-        options: &ck::KekulizeParams,
-        params: &ck::BatchParams,
-    ) -> Result<Self, ck::BatchValidationError> {
-        self.inner
-            .with_kekulized_bonds_with_params(options, params)
-            .map(|inner| Self { inner })
+        options: KekulizeParamsInput,
+        params: BatchParamsInput,
+    ) -> Result<Self, JsValue> {
+        self.with_kekulized_bonds(Some(options), Some(params))
     }
     #[cfg(feature = "cap-depict")]
-    pub fn with_2d_coordinates(&self) -> Result<Self, ck::BatchValidationError> {
-        self.inner.with_2d_coordinates().map(|inner| Self { inner })
-    }
-    #[cfg(feature = "cap-depict")]
+    #[wasm_bindgen(js_name=with2dCoordinatesWithParams)]
     pub fn with_2d_coordinates_with_params(
         &self,
-        options: &ck::Coordinate2DParams,
-        params: &ck::BatchParams,
-    ) -> Result<Self, ck::BatchValidationError> {
-        self.inner
-            .with_2d_coordinates_with_params(options, params)
-            .map(|inner| Self { inner })
-    }
-}
-
-#[cfg(test)]
-mod transform_tests {
-    use super::*;
-    fn snapshot(batch: &MoleculeBatch) -> Vec<Option<(usize, ck::PropertyText, Vec<f64>)>> {
-        batch
-            .to_list()
-            .iter()
-            .map(|v| {
-                v.as_ref().map(|m| {
-                    (
-                        m.num_atoms() as usize,
-                        m.to_smiles().unwrap(),
-                        m.coordinates_2d(),
-                    )
-                })
-            })
-            .collect()
-    }
-    fn facade_snapshot(
-        batch: ck::MoleculeBatch,
-    ) -> Vec<Option<(usize, ck::PropertyText, Vec<f64>)>> {
-        batch
-            .to_list()
-            .iter()
-            .map(|v| {
-                v.as_ref().map(|m| {
-                    (
-                        m.num_atoms(),
-                        m.to_smiles().unwrap(),
-                        m.coordinates_2d()
-                            .map_or(Vec::new(), |v| v.iter().flatten().copied().collect()),
-                    )
-                })
-            })
-            .collect()
-    }
-    #[test]
-    fn batch_transforms_match_all_ten_facade_calls_and_preserve_input() {
-        let input = ["CCO".to_owned(), "c1ccccc1".to_owned()];
-        let batch = MoleculeBatch::from_smiles_list(&input).unwrap();
-        let source = ck::MoleculeBatch::from_smiles_list(&input).unwrap();
-        let before = snapshot(&batch);
-        let execution = ck::BatchParams::default();
-        macro_rules! compare {
-            ($default:ident,$with:ident,$params:expr) => {{
-                assert_eq!(
-                    snapshot(&batch.$default().unwrap()),
-                    facade_snapshot(source.$default().unwrap())
-                );
-                assert_eq!(
-                    snapshot(&batch.$with(&$params, &execution).unwrap()),
-                    facade_snapshot(source.$with(&$params, &execution).unwrap())
-                );
-                assert_eq!(snapshot(&batch), before);
-            }};
-        }
-        compare!(
-            sanitize,
-            sanitize_with_params,
-            ck::SanitizeParams::default()
-        );
-        compare!(
-            with_hydrogens,
-            with_hydrogens_with_params,
-            ck::AddHsParams::default()
-        );
-        compare!(
-            without_hydrogens,
-            without_hydrogens_with_params,
-            ck::RemoveHsParams::default()
-        );
-        compare!(
-            with_kekulized_bonds,
-            with_kekulized_bonds_with_params,
-            ck::KekulizeParams::default()
-        );
-        compare!(
-            with_2d_coordinates,
-            with_2d_coordinates_with_params,
-            ck::Coordinate2DParams::default()
-        );
-        let invalid = ck::AddHsParams {
-            only_on_atoms: Some(vec![ck::AtomId::new(99)]),
-            ..Default::default()
-        };
-        let failure = batch
-            .with_hydrogens_with_params(&invalid, &execution)
-            .err()
-            .unwrap();
-        assert_eq!(failure.errors, 2);
-        assert_eq!(failure.record_errors[0].index, 0);
-        let kept = batch
-            .with_hydrogens_with_params(
-                &invalid,
-                &ck::BatchParams {
-                    errors: Some(ck::BatchErrorMode::KeepErrors),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        assert_eq!(kept.valid_mask(), [false, false]);
-        assert_eq!(snapshot(&batch), before);
-        let partial = MoleculeBatch::from_smiles_list_with_params(
-            &["C".into(), "[".into()],
-            &ck::SmilesParseParams::default(),
-            &ck::BatchParams {
-                errors: Some(ck::BatchErrorMode::KeepErrors),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let kept = partial
-            .with_hydrogens_with_params(
-                &ck::AddHsParams::default(),
-                &ck::BatchParams {
-                    errors: Some(ck::BatchErrorMode::KeepErrors),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        assert_eq!(kept.valid_mask(), [true, false]);
-        assert_eq!(kept.errors()[0].operation, "batch.from_smiles_list");
-        let empty = MoleculeBatch::from_smiles_list(&[]).unwrap();
-        assert!(empty.sanitize().unwrap().is_empty());
-    }
-}
-
-impl MoleculeBatch {
-    #[cfg(feature = "cap-smiles")]
-    pub fn to_smiles(&self) -> Result<Vec<Option<ck::PropertyText>>, ck::BatchValidationError> {
-        self.inner.to_smiles()
-    }
-    #[cfg(feature = "cap-smiles")]
-    pub fn to_smiles_with_params(
-        &self,
-        options: &ck::SmilesWriteParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::PropertyText>>, ck::BatchValidationError> {
-        self.inner.to_smiles_with_params(options, params)
-    }
-    #[cfg(feature = "cap-conformer")]
-    pub fn dg_bounds_matrix(&self) -> Result<Vec<Option<Vec<Vec<f64>>>>, ck::BatchValidationError> {
-        self.inner.dg_bounds_matrix()
-    }
-    #[cfg(feature = "cap-conformer")]
-    pub fn dg_bounds_matrix_with_params(
-        &self,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<Vec<Vec<f64>>>>, ck::BatchValidationError> {
-        self.inner.dg_bounds_matrix_with_params(params)
-    }
-    #[cfg(feature = "cap-depict")]
-    pub fn to_svg(
-        &self,
-        width: u32,
-        height: u32,
-    ) -> Result<Vec<Option<String>>, ck::BatchValidationError> {
-        self.inner.to_svg(width, height)
-    }
-    #[cfg(feature = "cap-depict")]
-    pub fn to_svg_with_params(
-        &self,
-        width: u32,
-        height: u32,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<String>>, ck::BatchValidationError> {
-        self.inner.to_svg_with_params(width, height, params)
-    }
-}
-
-#[cfg(test)]
-mod query_tests {
-    use super::*;
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-    #[test]
-    fn batch_queries_match_six_facade_calls_and_notify_every_row() {
-        let input = ["CCO".into(), "[".into(), "O".into()];
-        let parse = ck::SmilesParseParams::default();
-        let keep = ck::BatchParams {
-            errors: Some(ck::BatchErrorMode::KeepErrors),
-            ..Default::default()
-        };
-        let batch = MoleculeBatch::from_smiles_list_with_params(&input, &parse, &keep).unwrap();
-        let source =
-            ck::MoleculeBatch::from_smiles_list_with_params(&input, &parse, &keep).unwrap();
-        assert_eq!(batch.to_smiles().unwrap(), source.to_smiles().unwrap());
-        assert_eq!(
-            batch.dg_bounds_matrix().unwrap(),
-            source.dg_bounds_matrix().unwrap()
-        );
-        assert_eq!(
-            batch.to_svg(120, 100).unwrap(),
-            source.to_svg(120, 100).unwrap()
-        );
-        let ticks = Arc::new(AtomicUsize::new(0));
-        let target = Arc::clone(&ticks);
-        let params = ck::BatchQueryParams {
-            progress_callback: Some(Arc::new(move || {
-                target.fetch_add(1, Ordering::SeqCst);
-            })),
-            ..Default::default()
-        };
-        let write = ck::SmilesWriteParams {
-            all_bonds_explicit: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            batch.to_smiles_with_params(&write, &params).unwrap(),
-            source
-                .to_smiles_with_params(&write, &ck::BatchQueryParams::default())
-                .unwrap()
-        );
-        assert_eq!(ticks.swap(0, Ordering::SeqCst), 3);
-        assert_eq!(
-            batch.dg_bounds_matrix_with_params(&params).unwrap(),
-            source
-                .dg_bounds_matrix_with_params(&ck::BatchQueryParams::default())
-                .unwrap()
-        );
-        assert_eq!(ticks.swap(0, Ordering::SeqCst), 3);
-        assert_eq!(
-            batch.to_svg_with_params(120, 100, &params).unwrap(),
-            source
-                .to_svg_with_params(120, 100, &ck::BatchQueryParams::default())
-                .unwrap()
-        );
-        assert_eq!(ticks.swap(0, Ordering::SeqCst), 3);
-        let failure = batch.to_svg_with_params(0, 100, &params).unwrap_err();
-        assert_eq!(failure.errors, 2);
-        assert_eq!(
-            failure
-                .record_errors
-                .iter()
-                .map(|e| e.index)
-                .collect::<Vec<_>>(),
-            [0, 2]
-        );
-        assert_eq!(ticks.load(Ordering::SeqCst), 3);
-        assert_eq!(batch.valid_mask(), [true, false, true]);
-        assert!(batch.to_smiles().unwrap()[1].is_none());
-        assert!(
-            MoleculeBatch::from_smiles_list(&[])
-                .unwrap()
-                .dg_bounds_matrix()
-                .unwrap()
-                .is_empty()
-        );
-    }
-}
-
-#[cfg(feature = "cap-depict")]
-impl MoleculeBatch {
-    pub fn write_images(
-        &self,
-        directory: &str,
-    ) -> Result<ck::BatchExportReport, ck::BatchValidationError> {
-        self.inner.write_images(std::path::Path::new(directory))
-    }
-    pub fn write_images_with_params(
-        &self,
-        directory: &str,
-        options: &ck::BatchImageParams,
-    ) -> Result<ck::BatchExportReport, ck::BatchValidationError> {
-        self.inner
-            .write_images_with_params(std::path::Path::new(directory), options)
-    }
-}
-
-#[cfg(test)]
-mod image_tests {
-    use super::*;
-    #[test]
-    fn batch_images_write_real_png_svg_and_source_reports_with_typed_failures() {
-        let base = std::path::PathBuf::from(
-            "/home/datahouse-raid5/wjt/COSMolKit_p3/target/agent-handoff/wasm-registry-binding-v1",
-        )
-        .join(format!(
-            "batch-images-native-fixtures-{}",
-            std::process::id()
-        ));
-        assert!(!base.exists());
-        let valid = MoleculeBatch::from_smiles_list(&["CCO".into()]).unwrap();
-        let report = valid
-            .write_images(base.join("default").to_str().unwrap())
-            .unwrap();
-        assert_eq!(report.total(), 1);
-        assert_eq!(report.success(), 1);
-        assert_eq!(report.failed(), 0);
-        assert!(report.errors().is_empty());
-        assert!(
-            std::fs::read(base.join("default/mol_0.png"))
-                .unwrap()
-                .starts_with(b"\x89PNG\r\n\x1a\n")
-        );
-        let keep = ck::BatchParams {
-            errors: Some(ck::BatchErrorMode::KeepErrors),
-            ..Default::default()
-        };
-        let partial = MoleculeBatch::from_smiles_list_with_params(
-            &["CCO".into(), "[".into(), "O".into()],
-            &ck::SmilesParseParams::default(),
-            &keep,
-        )
-        .unwrap();
-        let options = ck::BatchImageParams {
-            format: "svg".into(),
-            width: 120,
-            height: 100,
-            execution: keep,
-            filenames: Some(vec![Some("ethanol".into()), None, Some("water.svg".into())]),
-            report_path: Some(base.join("counts.json")),
-        };
-        let report = partial
-            .write_images_with_params(base.join("custom").to_str().unwrap(), &options)
-            .unwrap();
-        assert_eq!(
-            (
-                report.total(),
-                report.success(),
-                report.failed(),
-                report.errors().len()
-            ),
-            (3, 2, 1, 1)
-        );
-        assert_eq!(report.errors()[0].index, 1);
-        assert_eq!(report.errors()[0].operation, "batch.from_smiles_list");
-        for path in ["custom/ethanol.svg", "custom/water.svg"] {
-            assert!(
-                std::fs::read_to_string(base.join(path))
-                    .unwrap()
-                    .contains("<svg")
-            );
-        }
-        assert!(!base.join("custom/mol_1.svg").exists());
-        assert!(
-            std::fs::read_to_string(base.join("counts.json"))
-                .unwrap()
-                .contains("\"written\": 2")
-        );
-        report.write_report(&base.join("counts.CSV")).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(base.join("counts.CSV")).unwrap(),
-            "written,failed\n2,1\n"
-        );
-        assert!(
-            report
-                .write_report(&base.join("missing/counts.json"))
-                .is_err()
-        );
-        let invalid = ck::BatchImageParams {
-            format: "gif".into(),
-            execution: keep,
-            ..Default::default()
-        };
-        let failure = partial
-            .write_images_with_params(base.join("bad-format").to_str().unwrap(), &invalid)
-            .unwrap();
-        assert_eq!(
-            (failure.written, failure.failed, failure.errors().len()),
-            (0, 3, 3)
-        );
-        assert_eq!(failure.errors()[1].index, 1);
-        assert_eq!(failure.errors()[1].operation, "batch.from_smiles_list");
-        assert!(
-            std::error::Error::source(&failure.errors[0])
-                .unwrap()
-                .downcast_ref::<ck::BatchImageError>()
-                .is_some()
-        );
-        let strict = ck::BatchImageParams {
-            execution: ck::BatchParams {
-                errors: Some(ck::BatchErrorMode::Strict),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let strict_directory = base.join("strict");
-        assert_eq!(
-            partial
-                .write_images_with_params(strict_directory.to_str().unwrap(), &strict)
-                .unwrap_err()
-                .errors,
-            1
-        );
-        let invalid = ck::BatchImageParams {
-            execution: ck::BatchParams {
-                n_jobs: Some(0),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert!(
-            valid
-                .write_images_with_params(base.join("zero").to_str().unwrap(), &invalid)
-                .is_err()
-        );
-        assert!(!base.join("zero").exists());
-        let invalid = ck::BatchImageParams {
-            filenames: Some(vec![]),
-            ..Default::default()
-        };
-        assert!(
-            valid
-                .write_images_with_params(base.join("wrong-names").to_str().unwrap(), &invalid)
-                .is_err()
-        );
-    }
-}
-
-#[cfg(feature = "cap-fingerprints")]
-impl MoleculeBatch {
-    pub fn fingerprint_atom_pair(
-        &self,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_atom_pair()
-            .map(ck::FingerprintBatch::into_values)
-    }
-    pub fn fingerprint_atom_pair_with_params(
-        &self,
-        options: &ck::AtomPairFingerprintParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_atom_pair_with_params(options, params)
-            .map(ck::FingerprintBatch::into_values)
-    }
-    pub fn fingerprint_atom_pair_sparse_count(
-        &self,
-    ) -> Result<Vec<Option<ck::SparseCountFingerprint>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_sparse_count()
-    }
-    pub fn fingerprint_atom_pair_sparse_count_with_params(
-        &self,
-        options: &ck::AtomPairFingerprintParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::SparseCountFingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_atom_pair_sparse_count_with_params(options, params)
-    }
-    pub fn fingerprint_atom_pair_count(
-        &self,
-    ) -> Result<Vec<Option<ck::SparseCountFingerprint32>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_count()
-    }
-    pub fn fingerprint_atom_pair_count_with_params(
-        &self,
-        options: &ck::AtomPairFingerprintParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::SparseCountFingerprint32>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_atom_pair_count_with_params(options, params)
-    }
-    pub fn fingerprint_atom_pair_sparse(
-        &self,
-    ) -> Result<Vec<Option<ck::SparseBitFingerprint>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_sparse()
-    }
-    pub fn fingerprint_atom_pair_sparse_with_params(
-        &self,
-        options: &ck::AtomPairFingerprintParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::SparseBitFingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_atom_pair_sparse_with_params(options, params)
-    }
-    pub fn fingerprint_atom_pair_with_output(
-        &self,
-    ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_with_output()
-    }
-    pub fn fingerprint_atom_pair_with_output_with_params(
-        &self,
-        options: &ck::AtomPairFingerprintParams,
-        collect_additional_output: bool,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
-        self.inner.fingerprint_atom_pair_with_output_with_params(
-            options,
-            collect_additional_output,
-            params,
-        )
-    }
-}
-
-#[cfg(all(test, feature = "cap-fingerprints"))]
-mod atom_pair_tests {
-    use super::*;
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-    #[test]
-    fn every_atom_pair_batch_projection_preserves_scalar_values_null_rows_and_output_policy() {
-        let batch = MoleculeBatch::from_smiles_list_with_params(
-            &["CCO".into(), "[".into(), "O".into()],
-            &ck::SmilesParseParams::default(),
-            &ck::BatchParams {
-                errors: Some(ck::BatchErrorMode::KeepErrors),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let options = ck::AtomPairFingerprintParams::default();
-        let execution = ck::BatchQueryParams::default();
-        let scalar = ck::Molecule::from_smiles("CCO").unwrap();
-        let bits = batch.fingerprint_atom_pair().unwrap();
-        assert_eq!(
-            bits[0].as_ref().unwrap(),
-            &scalar.fingerprint_atom_pair().unwrap()
-        );
-        assert!(bits[1].is_none());
-        assert_eq!(
-            bits,
-            batch
-                .fingerprint_atom_pair_with_params(&options, &execution)
-                .unwrap()
-        );
-        let sparse = batch.fingerprint_atom_pair_sparse_count().unwrap();
-        assert_eq!(
-            sparse[0].as_ref().unwrap(),
-            &scalar.fingerprint_atom_pair_sparse_count().unwrap()
-        );
-        assert_eq!(
-            sparse,
-            batch
-                .fingerprint_atom_pair_sparse_count_with_params(&options, &execution)
-                .unwrap()
-        );
-        let count = batch.fingerprint_atom_pair_count().unwrap();
-        assert_eq!(
-            count,
-            batch
-                .fingerprint_atom_pair_count_with_params(&options, &execution)
-                .unwrap()
-        );
-        let sparse_bits = batch.fingerprint_atom_pair_sparse().unwrap();
-        assert_eq!(
-            sparse_bits,
-            batch
-                .fingerprint_atom_pair_sparse_with_params(&options, &execution)
-                .unwrap()
-        );
-        let outputs = batch.fingerprint_atom_pair_with_output().unwrap();
-        assert_eq!(
-            outputs[0].as_ref().unwrap().fingerprint(),
-            bits[0].as_ref().unwrap()
-        );
-        assert_eq!(
-            outputs,
-            batch
-                .fingerprint_atom_pair_with_output_with_params(&options, true, &execution)
-                .unwrap()
-        );
-        let additional = outputs[0].as_ref().unwrap().additional_output().unwrap();
-        assert_eq!(additional.atom_counts().unwrap().len(), 3);
-        assert!(additional.bit_paths().is_none());
-        let no_output = batch
-            .fingerprint_atom_pair_with_output_with_params(&options, false, &execution)
-            .unwrap();
-        assert!(matches!(
-            no_output[0].as_ref().unwrap().additional_output(),
-            Err(ck::BatchFingerprintOutputError::MissingAdditionalOutput {
-                fingerprint_kind: "AtomPair"
-            })
-        ));
-        let ticks = Arc::new(AtomicUsize::new(0));
-        let observed = ticks.clone();
-        let callback = ck::BatchQueryParams {
-            progress_callback: Some(Arc::new(move || {
-                observed.fetch_add(1, Ordering::SeqCst);
-            })),
-            ..Default::default()
-        };
-        batch
-            .fingerprint_atom_pair_with_params(&options, &callback)
-            .unwrap();
-        assert_eq!(ticks.load(Ordering::SeqCst), 3);
-        assert_eq!(batch.valid_mask(), [true, false, true]);
-    }
-}
-
-#[cfg(feature = "cap-fingerprints")]
-impl MoleculeBatch {
-    pub fn fingerprint_layered(
-        &self,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_layered()
-            .map(ck::FingerprintBatch::into_values)
-    }
-    pub fn fingerprint_layered_with_params(
-        &self,
-        options: &ck::LayeredFingerprintParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_layered_with_params(options, params)
-            .map(ck::FingerprintBatch::into_values)
-    }
-    pub fn fingerprint_layered_with_output(
-        &self,
-    ) -> Result<Vec<Option<ck::LayeredFingerprintResult>>, ck::BatchValidationError> {
-        self.inner.fingerprint_layered_with_output()
-    }
-    pub fn fingerprint_layered_with_output_with_params(
-        &self,
-        options: &ck::LayeredFingerprintParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::LayeredFingerprintResult>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_layered_with_output_with_params(options, params)
-    }
-    pub fn fingerprint_pattern(
-        &self,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_pattern()
-            .map(ck::FingerprintBatch::into_values)
-    }
-    pub fn fingerprint_pattern_with_params(
-        &self,
-        options: &ck::PatternFingerprintParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_pattern_with_params(options, params)
-            .map(ck::FingerprintBatch::into_values)
-    }
-}
-
-#[cfg(all(test, feature = "cap-fingerprints"))]
-mod layered_pattern_tests {
-    use super::*;
-    #[test]
-    fn all_six_layered_pattern_batch_calls_preserve_scalar_results_and_seeded_counts() {
-        let batch = MoleculeBatch::from_smiles_list_with_params(
-            &["CCO".into(), "[".into(), "O".into()],
-            &ck::SmilesParseParams::default(),
-            &ck::BatchParams {
-                errors: Some(ck::BatchErrorMode::KeepErrors),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let scalar = ck::Molecule::from_smiles("CCO").unwrap();
-        let options = ck::LayeredFingerprintParams::default();
-        let query = ck::BatchQueryParams::default();
-        let dense = batch.fingerprint_layered().unwrap();
-        assert_eq!(
-            dense[0].as_ref().unwrap(),
-            &scalar.fingerprint_layered().unwrap()
-        );
-        assert!(dense[1].is_none());
-        assert_eq!(
-            dense,
-            batch
-                .fingerprint_layered_with_params(&options, &query)
-                .unwrap()
-        );
-        let output = batch.fingerprint_layered_with_output().unwrap();
-        assert_eq!(
-            output[0].as_ref().unwrap(),
-            &scalar.fingerprint_layered_with_output().unwrap()
-        );
-        assert_eq!(
-            output,
-            batch
-                .fingerprint_layered_with_output_with_params(&options, &query)
-                .unwrap()
-        );
-        assert!(output[0].as_ref().unwrap().atom_counts().is_none());
-        let pattern = batch.fingerprint_pattern().unwrap();
-        assert_eq!(
-            pattern[0].as_ref().unwrap(),
-            &scalar.fingerprint_pattern().unwrap()
-        );
-        assert_eq!(
-            pattern,
-            batch
-                .fingerprint_pattern_with_params(&ck::PatternFingerprintParams::default(), &query)
-                .unwrap()
-        );
-        let single = MoleculeBatch::from_smiles_list(&["CCO".into()]).unwrap();
-        let seeded = ck::LayeredFingerprintParams {
-            atom_counts: Some(vec![10, 20, 30]),
-            set_only_bits: Some(ck::Fingerprint::from_on_bits(2048, [674]).unwrap()),
-            ..Default::default()
-        };
-        let result = single
-            .fingerprint_layered_with_output_with_params(&seeded, &query)
-            .unwrap();
-        assert_eq!(
-            result[0].as_ref().unwrap(),
-            &scalar
-                .fingerprint_layered_with_output_with_params(&seeded)
-                .unwrap()
-        );
-        assert_eq!(
-            result[0].as_ref().unwrap().atom_counts(),
-            Some([11, 22, 31].as_slice())
-        );
-        assert_eq!(seeded.atom_counts, Some(vec![10, 20, 30]));
-        assert_eq!(batch.valid_mask(), [true, false, true]);
-    }
-}
-
-#[cfg(feature = "cap-fingerprints")]
-impl MoleculeBatch {
-    pub fn fingerprint_morgan(
-        &self,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_morgan()
-            .map(ck::FingerprintBatch::into_values)
-    }
-    pub fn fingerprint_topological_torsion_with_params(
-        &self,
-        options: &ck::TopologicalTorsionFingerprintParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_topological_torsion_with_params(options, params)
-            .map(ck::FingerprintBatch::into_values)
-    }
-    pub fn fingerprint_morgan_with_params(
-        &self,
-        options: &ck::MorganFingerprintParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_morgan_with_params(options, params)
-            .map(ck::FingerprintBatch::into_values)
-    }
-    pub fn fingerprint_morgan_with_output(
-        &self,
-    ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
-        self.inner.fingerprint_morgan_with_output()
-    }
-    pub fn fingerprint_morgan_with_output_with_params(
-        &self,
-        options: &ck::MorganFingerprintParams,
-        collect_additional_output: bool,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
-        self.inner.fingerprint_morgan_with_output_with_params(
-            options,
-            collect_additional_output,
-            params,
-        )
-    }
-    pub fn fingerprint_morgan_with_generator_params(
-        &self,
-        options: &ck::MorganGeneratorParams,
-        atom_invariants: Option<&ck::MorganAtomInvariantsGenerator>,
-        bond_invariants: Option<&ck::MorganBondInvariantsGenerator>,
-        call: &ck::MorganCallParams,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_morgan_with_generator_params(
-                options,
-                atom_invariants,
-                bond_invariants,
-                call,
-                params,
-            )
-            .map(ck::FingerprintBatch::into_values)
-    }
-    pub fn fingerprint_morgan_with_output_with_generator_params(
-        &self,
-        options: &ck::MorganGeneratorParams,
-        atom_invariants: Option<&ck::MorganAtomInvariantsGenerator>,
-        bond_invariants: Option<&ck::MorganBondInvariantsGenerator>,
-        call: &ck::MorganCallParams,
-        collect_additional_output: bool,
-        params: &ck::BatchQueryParams,
-    ) -> Result<Vec<Option<ck::BatchFingerprintOutput>>, ck::BatchValidationError> {
-        self.inner
-            .fingerprint_morgan_with_output_with_generator_params(
-                options,
-                atom_invariants,
-                bond_invariants,
-                call,
-                collect_additional_output,
-                params,
-            )
-    }
-}
-
-#[cfg(all(test, feature = "cap-fingerprints"))]
-mod morgan_tests {
-    use super::*;
-    #[test]
-    fn all_six_morgan_batch_calls_preserve_scalar_values_providers_and_optional_output() {
-        let batch = MoleculeBatch::from_smiles_list_with_params(
-            &["CCO".into(), "[".into(), "O".into()],
-            &ck::SmilesParseParams::default(),
-            &ck::BatchParams {
-                errors: Some(ck::BatchErrorMode::KeepErrors),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let scalar = ck::Molecule::from_smiles("CCO").unwrap();
-        let generator = ck::MorganGeneratorParams {
-            radius: 2,
-            ..Default::default()
-        };
-        let options = ck::MorganFingerprintParams {
-            generator: generator.clone(),
-            ..Default::default()
-        };
-        let call = ck::MorganCallParams::default();
-        let query = ck::BatchQueryParams::default();
-        let dense = batch.fingerprint_morgan().unwrap();
-        assert_eq!(
-            dense[0].as_ref().unwrap(),
-            &scalar
-                .fingerprint_morgan_with_params(&options, None)
-                .unwrap()
-        );
-        assert!(dense[1].is_none());
-        assert_eq!(
-            dense,
-            batch
-                .fingerprint_morgan_with_params(&options, &query)
-                .unwrap()
-        );
-        assert_eq!(
-            dense,
-            batch
-                .fingerprint_morgan_with_generator_params(&generator, None, None, &call, &query)
-                .unwrap()
-        );
-        let output = batch.fingerprint_morgan_with_output().unwrap();
-        assert_eq!(
-            output,
-            batch
-                .fingerprint_morgan_with_output_with_params(&options, true, &query)
-                .unwrap()
-        );
-        assert_eq!(
-            output,
-            batch
-                .fingerprint_morgan_with_output_with_generator_params(
-                    &generator, None, None, &call, true, &query
-                )
-                .unwrap()
-        );
-        assert_eq!(
-            output[0].as_ref().unwrap().fingerprint(),
-            dense[0].as_ref().unwrap()
-        );
-        assert_eq!(
-            output[0]
-                .as_ref()
-                .unwrap()
-                .additional_output()
-                .unwrap()
-                .atom_counts()
-                .unwrap()
-                .len(),
-            3
-        );
-        let missing = batch
-            .fingerprint_morgan_with_output_with_params(&options, false, &query)
-            .unwrap();
-        assert!(matches!(
-            missing[0].as_ref().unwrap().additional_output(),
-            Err(ck::BatchFingerprintOutputError::MissingAdditionalOutput {
-                fingerprint_kind: "Morgan"
-            })
-        ));
-        let atom = ck::MorganAtomInvariantsGenerator::features(Some(vec![
-            ck::search::from_smarts("[#8]").unwrap(),
-        ]));
-        let bond = ck::MorganBondInvariantsGenerator::new(false, true);
-        let configured =
-            ck::MorganFingerprintGenerator::new(Some(&generator), Some(&atom), Some(&bond))
-                .unwrap();
-        let values = batch
-            .fingerprint_morgan_with_generator_params(
-                &generator,
-                Some(&atom),
-                Some(&bond),
-                &call,
-                &query,
-            )
-            .unwrap();
-        assert_eq!(
-            values[0].as_ref().unwrap(),
-            &scalar
-                .fingerprint_morgan_with_generator(&configured, Some(&call), None)
-                .unwrap()
-        );
-        assert_eq!(batch.valid_mask(), [true, false, true]);
+        options: Coordinate2DParamsInput,
+        params: BatchParamsInput,
+    ) -> Result<Self, JsValue> {
+        self.with_2d_coordinates(Some(options), Some(params))
     }
 }

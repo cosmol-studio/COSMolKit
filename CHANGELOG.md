@@ -12,8 +12,6 @@
 <!-- release-header:end -->
 
 <!-- release-footer:start -->
-COSMolKit advances its minor compatibility series through successive prime
-numbers, just for fun. 😈
 <!-- release-footer:end -->
 
 All notable changes to COSMolKit are recorded in this file.

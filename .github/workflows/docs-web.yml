@@ -51,7 +51,7 @@ jobs:
 
             - uses: taiki-e/install-action@v2
               with:
-                  tool: alef@0.83.3,wasm-bindgen-cli@0.2.128
+                  tool: wasm-bindgen-cli@0.2.128
 
             - name: Sync documentation environment
               run: uv sync --group dev
@@ -72,7 +72,9 @@ jobs:
               env:
                   CARGO_TARGET_DIR: ${{ github.workspace }}/target/wasm
               # Validate actual exports and declarations before extracting API documentation.
-              run: .venv/bin/python wasm/tools/wasm_binding/run.py --preset full --out-dir target/docs-js-package
+              run: |
+                  .venv/bin/python wasm/build.py --check
+                  .venv/bin/python wasm/build.py --target web --out-dir target/docs-js-package
 
             - name: Build Sphinx source
               env:

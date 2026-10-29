@@ -157,11 +157,11 @@ def test_callback_pre_application_snapshot_survives_return_and_cancellation():
     assert all(isinstance(atom, ck.Atom) for atom in atoms)
     assert all(isinstance(bond, ck.Bond) for bond in bonds)
     assert [atom.atomic_number for atom in atoms] == [6, 6, 6, 8]
-    assert [atom.degree for atom in atoms] == [1, 3, 1, 1]
+    assert [source.atom_degree(atom.id) for atom in atoms] == [1, 3, 1, 1]
     assert [row.total_hydrogens for row in source.atom_metadata()] == [3, 0, 3, 0]
     assert source.atom(4) is None and source.bond(3) is None
     assert source.atom_degree(4) is None
-    assert source.atom(0).total_hydrogens == 3
+    assert source.atom_metadata()[0].total_hydrogens == 3
     assert source.bond(2).stereo_code == 0
     with pytest.raises(AttributeError):
         source.num_atoms = 0
@@ -249,10 +249,10 @@ def test_explicit_score_terms_are_detached_and_signed():
     term = ck.TautomerScoreTerm("negative carbonyl", "[C]=[O]", -9)
     assert term.name == "negative carbonyl" and term.smarts == "[C]=[O]" and term.score == -9
     assert term == ck.TautomerScoreTerm("negative carbonyl", "[C]=[O]", -9)
-    params = ck.TautomerScoreParams([term])
+    params = ck.TautomerScoreParams(terms=[term])
     score = source.tautomer_score_with_params(params)
     assert (score.ring, score.substructure, score.hetero_hydrogen, score.total) == (0, -9, 0, -9)
-    assert source.tautomer_score_with_params(ck.TautomerScoreParams([])).total == 0
+    assert source.tautomer_score_with_params(ck.TautomerScoreParams(terms=[])).total == 0
     assert source.tautomer_score().total == 5
     assert ck.TautomerScoreParams().terms is None
 

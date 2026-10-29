@@ -29,7 +29,7 @@ class ReleaseBumpTests(unittest.TestCase):
         self.assertEqual(tomllib.loads(updated["python/pyproject.toml"])["project"]["version"], "0.5.0rc9")
 
     def test_wasm_package_and_dependency_move_together(self):
-        for version in ("0.5.1-rc.10", "0.5.1"):
+        for version in ("0.5.1-rc.10", "0.5.1", "0.6.0-dev.1", "0.6.0-dev.4"):
             with self.subTest(version=version):
                 updated = bump.prepare_updates(self.original, version)
                 manifest = tomllib.loads(updated["wasm/Cargo.toml"])
@@ -43,7 +43,7 @@ class ReleaseBumpTests(unittest.TestCase):
         workspace = tomllib.loads(updated["Cargo.toml"])
         self.assertEqual(workspace["workspace"]["package"]["version"], "0.5.1-rc.10")
         checked = 0
-        for member in workspace["workspace"]["members"]:
+        for member in workspace["workspace"]["members"] + ["wasm"]:
             file = member + "/Cargo.toml"
             manifest = tomllib.loads(updated.get(file, (ROOT / file).read_text()))
             for section in ("dependencies", "dev-dependencies", "build-dependencies"):
@@ -62,7 +62,7 @@ class ReleaseBumpTests(unittest.TestCase):
         self.assertEqual(len(listed), len(set(listed)), "duplicate release dependency")
         actual = set()
         workspace = tomllib.loads(self.original["Cargo.toml"])
-        for member in workspace["workspace"]["members"]:
+        for member in workspace["workspace"]["members"] + ["wasm"]:
             file = member + "/Cargo.toml"
             manifest = tomllib.loads((ROOT / file).read_text())
             for section in ("dependencies", "dev-dependencies", "build-dependencies"):
@@ -75,6 +75,11 @@ class ReleaseBumpTests(unittest.TestCase):
         updated = bump.prepare_updates(self.original, "0.5.0")
         self.assertEqual(tomllib.loads(updated["python/pyproject.toml"])["project"]["version"], "0.5.0")
         self.assertEqual(bump.prepare_updates(updated, "0.5.0"), updated)
+
+    def test_dev_python_version(self):
+        for number in (1, 4, 6):
+            updated = bump.prepare_updates(self.original, f"0.6.0-dev.{number}")
+            self.assertEqual(tomllib.loads(updated["python/pyproject.toml"])["project"]["version"], f"0.6.0.dev{number}")
 
     def test_only_marked_installation_example_changes(self):
         updated = bump.prepare_updates(self.original, "0.5.1-rc.10")

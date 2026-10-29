@@ -294,7 +294,7 @@ impl TautomerScore {
 }
 
 crate::configuration::type_projection! {
-    #[pyclass(module = "cosmolkit", frozen)]
+    value(eq)
     /// Named SMARTS pattern and signed weight used by tautomer scoring.
     pub struct TautomerScoreTerm {
         pub(crate) inner: ck::TautomerScoreTerm,
