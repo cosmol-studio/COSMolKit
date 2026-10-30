@@ -1,9 +1,13 @@
 //! Project-native stereo reads adapted from preserved d892 source.
+use cosmolkit_core::{
+    PotentialStereoCenter, PotentialStereoDescriptor, PotentialStereoParams,
+    PotentialStereoSpecified, PotentialStereoType, potential_stereo,
+};
 use cosmolkit_core::{RingInfo, ValenceAssignment};
 use cosmolkit_model::{
     AtomId, BondId, LigandRef, TetrahedralStereo, TopologyBlock, TopologyValidationError,
 };
-use cosmolkit_types::{BondOrder, ChiralTag};
+use cosmolkit_types::BondOrder;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum StereoReadError {
@@ -29,79 +33,97 @@ pub enum StereoReadError {
 
 pub fn tetrahedral_stereo(
     topology: &TopologyBlock,
-    valence: Option<&ValenceAssignment>,
+    source_valence: Option<&ValenceAssignment>,
+    source_rings: Option<&RingInfo>,
+    include_unassigned: bool,
 ) -> Result<Vec<TetrahedralStereo>, StereoReadError> {
-    // COSMolKit-native source d892 chemistry/stereo.rs:209-347. This is the
-    // project ordered-ligand contract, not RDKit assignStereochemistry.
-    // Cost review: borrow existing adjacency instead of cloning it; retain one
-    // neighbor vector per tagged center and the same fixed 4^4 permutation walk.
-    // Detect tetrahedral stereo centers from the typed atom state.
-    // Atoms with ChiralTag::TetrahedralCw or TetrahedralCcw are stereo
-    // centers. The four ligands are the explicit neighbors plus an
-    // implicit hydrogen if degree < 4.
-    let adjacency = &topology.adjacency;
-
+    let (valence, rings) =
+        crate::chiral_centers::prepare_chiral_state(topology, source_valence, source_rings)?;
+    let perception = potential_stereo(
+        topology,
+        &valence,
+        &rings,
+        &PotentialStereoParams::default(),
+    )?;
     let mut result = Vec::new();
-    for atom in &topology.atoms {
-        let tag = atom.chiral_tag();
-        if tag != ChiralTag::TetrahedralCw && tag != ChiralTag::TetrahedralCcw {
+    // RDKit✔️✔️:       for si in itms:
+    // RDKit✔️✔️:         if si.type == StereoType.Atom_Tetrahedral and (includeUnassigned or si.specified
+    // RDKit✔️✔️:                                                        == StereoSpecified.Specified):
+    // FindMolChiralCenters modern filtering; reuse its perception owner without
+    // computing CIP labels. Ordered ligands below are COSMolKit's value convention.
+    for info in perception.stereo {
+        if info.stereo_type != PotentialStereoType::AtomTetrahedral
+            || (!include_unassigned && info.specified != PotentialStereoSpecified::Specified)
+        {
             continue;
         }
-        let center = atom.id();
-        let nbrs: Vec<AtomId> = adjacency
-            .neighbors_of(center.index())
-            .iter()
-            .map(|n| n.atom_index)
-            .map(AtomId::new)
-            .collect();
-        let degree = nbrs.len();
-        let implicit_hs = valence
-            .and_then(|v| v.implicit_hydrogens.get(center.index()).copied())
-            .unwrap_or(0) as usize;
-        let hydrogen_ligands = atom.explicit_hydrogens() as usize + implicit_hs;
-
-        // Must have 4 ligands total (explicit + implicit)
-        if degree + hydrogen_ligands != 4 {
+        let PotentialStereoCenter::Atom(center) = info.centered_on else {
+            unreachable!("tetrahedral perception uses atom identifiers");
+        };
+        if info.specified != PotentialStereoSpecified::Specified {
+            result.push(TetrahedralStereo {
+                center,
+                ligands: None,
+            });
             continue;
         }
-
-        // Build ligand list: explicit neighbors first, then implicit H
-        let mut ligands: [LigandRef; 4] = [
-            LigandRef::ImplicitHydrogen,
-            LigandRef::ImplicitHydrogen,
-            LigandRef::ImplicitHydrogen,
-            LigandRef::ImplicitHydrogen,
-        ];
-        for (i, &nbr) in nbrs.iter().enumerate().take(4) {
-            ligands[i] = LigandRef::Atom(nbr);
+        // FindStereo.cpp::getStereoInfo already folds neighbor-order parity
+        // into Tet_CW/Tet_CCW relative to the sorted controlling atoms.
+        // RDKit✔️✔️:   std::sort(sinfo.controllingAtoms.begin(), sinfo.controllingAtoms.end());
+        // The source permits P/As with two atom neighbors plus H and a lone
+        // pair, and pyramidal N/P/As/S/Se with three occupied positions.
+        // Eligibility is decided only by the perception owner, never here.
+        let hydrogens = cosmolkit_core::total_hydrogen_count_from_validated(
+            topology, &*valence, center, false,
+        )? as usize;
+        let occupied = info.controlling_atoms.len() + hydrogens;
+        if !(3..=4).contains(&occupied) || info.controlling_atoms.iter().any(Option::is_none) {
+            return Err(cosmolkit_core::PotentialStereoError::InvalidAtomDegree {
+                atom: center,
+                degree: occupied,
+            }
+            .into());
         }
-
-        // COSMolKit defines tetrahedral stereo as center + ordered ligands.
-        // RDKit-style CW/CCW tags are compatibility input state, so fold their
-        // parity into an odd ligand permutation instead of carrying a second
-        // orientation flag.
-        let perm = atom.chiral_permutation().unwrap_or(0);
-        if matches!(
-            (tag, perm % 2),
-            (ChiralTag::TetrahedralCw, 0) | (ChiralTag::TetrahedralCcw, 1)
-        ) {
-            ligands.swap(0, 1);
+        let mut ligands = [LigandRef::LonePair; 4];
+        for (slot, neighbor) in ligands.iter_mut().zip(&info.controlling_atoms) {
+            *slot = LigandRef::Atom(neighbor.expect("checked controlling atom"));
         }
-
-        let ligands = canonicalize_tetrahedral_ligands(ligands);
-
-        result.push(TetrahedralStereo { center, ligands });
+        for slot in &mut ligands[info.controlling_atoms.len()..occupied] {
+            *slot = LigandRef::ImplicitHydrogen;
+        }
+        match info.descriptor {
+            PotentialStereoDescriptor::TetrahedralClockwise => ligands.swap(0, 1),
+            PotentialStereoDescriptor::TetrahedralCounterclockwise => {}
+            _ => {
+                return Err(
+                    cosmolkit_core::PotentialStereoError::InvalidChiralPermutation {
+                        atom: center,
+                        permutation: info.permutation,
+                    }
+                    .into(),
+                );
+            }
+        }
+        result.push(TetrahedralStereo {
+            center,
+            ligands: Some(canonicalize_tetrahedral_ligands(ligands)),
+        });
     }
     Ok(result)
 }
 
 fn canonicalize_tetrahedral_ligands(ligands: [LigandRef; 4]) -> [LigandRef; 4] {
-    if ligands.contains(&LigandRef::ImplicitHydrogen) {
-        return canonicalize_tetrahedral_ligands_with_implicit_hydrogen(ligands);
-    }
-
-    let mut best = ligands;
-
+    // Keep virtual positions last; even permutations preserve handedness.
+    let last = if ligands.contains(&LigandRef::LonePair) {
+        Some(LigandRef::LonePair)
+    } else if ligands.contains(&LigandRef::ImplicitHydrogen) {
+        Some(LigandRef::ImplicitHydrogen)
+    } else {
+        None
+    };
+    let both_virtual =
+        ligands.contains(&LigandRef::LonePair) && ligands.contains(&LigandRef::ImplicitHydrogen);
+    let mut best = None;
     for a in 0..4 {
         for b in 0..4 {
             for c in 0..4 {
@@ -110,51 +132,20 @@ fn canonicalize_tetrahedral_ligands(ligands: [LigandRef; 4]) -> [LigandRef; 4] {
                     if has_duplicate_indices(perm) || !is_even_permutation(perm) {
                         continue;
                     }
-                    let candidate = [
-                        ligands[perm[0]],
-                        ligands[perm[1]],
-                        ligands[perm[2]],
-                        ligands[perm[3]],
-                    ];
-                    if candidate < best {
-                        best = candidate;
-                    }
-                }
-            }
-        }
-    }
-
-    best
-}
-
-fn canonicalize_tetrahedral_ligands_with_implicit_hydrogen(
-    ligands: [LigandRef; 4],
-) -> [LigandRef; 4] {
-    let mut best = ligands;
-
-    for a in 0..4 {
-        for b in 0..4 {
-            for c in 0..4 {
-                for d in 0..4 {
-                    let perm = [a, b, c, d];
-                    if has_duplicate_indices(perm) || !is_even_permutation(perm) {
+                    let candidate = [ligands[a], ligands[b], ligands[c], ligands[d]];
+                    if last.is_some_and(|last| candidate[3] != last)
+                        || (both_virtual && candidate[2] != LigandRef::ImplicitHydrogen)
+                    {
                         continue;
                     }
-                    let candidate = [
-                        ligands[perm[0]],
-                        ligands[perm[1]],
-                        ligands[perm[2]],
-                        ligands[perm[3]],
-                    ];
-                    if candidate[3] == LigandRef::ImplicitHydrogen && candidate < best {
-                        best = candidate;
+                    if best.is_none_or(|best| candidate < best) {
+                        best = Some(candidate);
                     }
                 }
             }
         }
     }
-
-    best
+    best.expect("an even permutation places virtual ligands last")
 }
 
 fn has_duplicate_indices(indices: [usize; 4]) -> bool {
@@ -210,7 +201,7 @@ pub fn perceive_stereochemistry(
 ) -> Result<(), StereoReadError> {
     // COSMolKit-native source d892 stereo.rs:392. This is a read-only validation
     // query: no chiral tag, CIP descriptor or geometry is assigned.
-    let _ = tetrahedral_stereo(topology, valence)?;
+    let _ = tetrahedral_stereo(topology, valence, rings, false)?;
     for bond in &topology.bonds {
         let _ = should_detect_double_bond_stereo(topology, rings, bond.id());
     }

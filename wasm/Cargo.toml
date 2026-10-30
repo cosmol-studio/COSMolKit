@@ -1,6 +1,6 @@
 [package]
 name = "cosmolkit-wasm"
-version = "0.6.0-rc.2"
+version = "0.6.0-rc.3"
 description = "JavaScript and TypeScript bindings for COSMolKit"
 license = "MIT"
 repository = "https://github.com/cosmol-studio/COSMolKit"
@@ -64,7 +64,7 @@ registry-check = []
 protocol-tests = []
 
 [dependencies]
-cosmolkit = { version = "0.6.0-rc.2", path = "../crates/cosmolkit", default-features = false }
+cosmolkit = { version = "0.6.0-rc.3", path = "../crates/cosmolkit", default-features = false }
 wasm-bindgen = "=0.2.128"
 js-sys = "0.3"
 tsify = { version = "=0.5.8", default-features = false, features = ["js"] }

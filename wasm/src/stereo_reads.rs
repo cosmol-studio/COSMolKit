@@ -71,11 +71,15 @@ impl LigandRef {
     pub fn implicit_hydrogen() -> Self {
         Self(ck::LigandRef::ImplicitHydrogen)
     }
+    #[wasm_bindgen(getter,js_name=LonePair)]
+    pub fn lone_pair() -> Self {
+        Self(ck::LigandRef::LonePair)
+    }
     #[wasm_bindgen(getter,js_name=atomId)]
     pub fn atom_id(&self) -> Option<usize> {
         match self.0 {
             ck::LigandRef::Atom(v) => Some(v.index()),
-            ck::LigandRef::ImplicitHydrogen => None,
+            ck::LigandRef::ImplicitHydrogen | ck::LigandRef::LonePair => None,
         }
     }
 }
@@ -95,10 +99,10 @@ crate::fields::value_array!(
 #[wasm_bindgen]
 impl TetrahedralStereo {
     #[wasm_bindgen(constructor)]
-    pub fn new(center: Ts<input::IndexInput>, ligands: LigandTuple) -> Result<Self, JsValue> {
-        let ligands = Vec::<ck::LigandRef>::decode(ligands.as_ref())?
+    pub fn new(center: Ts<input::IndexInput>, ligands: Option<LigandTuple>) -> Result<Self, JsValue> {
+        let ligands = ligands.map(|ligands| Vec::<ck::LigandRef>::decode(ligands.as_ref())?
             .try_into()
-            .map_err(|_: Vec<ck::LigandRef>| js_sys::TypeError::new("expected four ligands"))?;
+            .map_err(|_: Vec<ck::LigandRef>| JsValue::from(js_sys::TypeError::new("expected four ligands")))).transpose()?;
         Ok(Self(ck::TetrahedralStereo {
             center: ck::AtomId::new(input::read(center)?),
             ligands,
@@ -109,9 +113,9 @@ impl TetrahedralStereo {
         self.0.center.index()
     }
     #[wasm_bindgen(getter)]
-    pub fn ligands(&self) -> Result<LigandTuple, JsValue> {
-        Vec::<ck::LigandRef>::get(NativeField::owned(self.0.ligands.to_vec()))
-            .map(JsCast::unchecked_into)
+    pub fn ligands(&self) -> Result<Option<LigandTuple>, JsValue> {
+        self.0.ligands.map(|ligands| Vec::<ck::LigandRef>::get(NativeField::owned(ligands.to_vec()))
+            .map(JsCast::unchecked_into)).transpose()
     }
 }
 #[derive(serde::Serialize, Tsify)]
@@ -120,10 +124,10 @@ pub struct ChiralCenters(Vec<(usize, String)>);
 #[wasm_bindgen]
 impl Molecule {
     #[wasm_bindgen(js_name=tetrahedralStereo)]
-    pub fn tetrahedral_stereo(&self) -> Result<TetrahedralStereoArray, JsValue> {
+    pub fn tetrahedral_stereo(&self, include_unassigned: Option<Ts<input::BoolInput>>) -> Result<TetrahedralStereoArray, JsValue> {
         Vec::<ck::TetrahedralStereo>::get(NativeField::owned(
             self.0
-                .tetrahedral_stereo()
+                .tetrahedral_stereo(include_unassigned.map(input::read::<bool>).transpose()?.unwrap_or(true))
                 .map_err(StereoReadError::from_rust)?,
         ))
     }

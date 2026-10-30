@@ -7608,14 +7608,33 @@ pub mod native {
                 .num_saturated_carbocycles()
                 .map_err(DescriptorReadError::from_rust)
         }
-        /// Return tetrahedral stereo records from the native molecular stereo query.
-        fn tetrahedral_stereo(&self) -> PyResult<Vec<TetrahedralStereo>> {
+        /// Return (center, configuration) pairs. An undetermined configuration is None;
+        /// within an ordered configuration, None denotes hydrogen or a lone pair.
+        #[pyo3(signature = (include_unassigned=true))]
+        fn tetrahedral_stereo(
+            &self,
+            include_unassigned: bool,
+        ) -> PyResult<Vec<(usize, Option<Vec<Option<usize>>>)>> {
             self.inner
-                .tetrahedral_stereo()
+                .tetrahedral_stereo(include_unassigned)
                 .map(|values| {
                     values
                         .into_iter()
-                        .map(|inner| TetrahedralStereo { inner })
+                        .map(|value| {
+                            (
+                                value.center.index(),
+                                value.ligands.map(|ligands| {
+                                    ligands
+                                        .into_iter()
+                                        .map(|ligand| match ligand {
+                                            ck::LigandRef::Atom(atom) => Some(atom.index()),
+                                            ck::LigandRef::ImplicitHydrogen
+                                            | ck::LigandRef::LonePair => None,
+                                        })
+                                        .collect()
+                                }),
+                            )
+                        })
                         .collect()
                 })
                 .map_err(StereoReadError::from_rust)

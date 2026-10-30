@@ -18,9 +18,9 @@ documentation = "https://docs.rs/cosmolkit"
 test-probes = []
 
 [dependencies]
-cosmolkit-macros = { version = "0.6.0-rc.2", path = "../cosmolkit-macros" }
-cosmolkit-model = { version = "0.6.0-rc.2", path = "../cosmolkit-model" }
-cosmolkit-types = { version = "0.6.0-rc.2", path = "../cosmolkit-types" }
+cosmolkit-macros = { version = "0.6.0-rc.3", path = "../cosmolkit-macros" }
+cosmolkit-model = { version = "0.6.0-rc.3", path = "../cosmolkit-model" }
+cosmolkit-types = { version = "0.6.0-rc.3", path = "../cosmolkit-types" }
 serde = "1"
 compact_str = { version = "0.10.0", default-features = false, features = ["std"] }
 

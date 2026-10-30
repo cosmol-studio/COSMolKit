@@ -4572,9 +4572,8 @@ mod preserved_terminal_hydrogen_prefix_tests {
             implicit_hydrogens: vec![0; t.atoms.len()],
         }
     }
-    fn rejected_by_all_three_guards(t: &TopologyBlock, r: &RingInfo) {
+    fn rejected_by_direction_guard(t: &TopologyBlock, r: &RingInfo) {
         let before = r.clone();
-        let value = scalar(t);
         let (reason, actual, expected) = if r.atom_row_count() != t.atoms.len() {
             (
                 "atom membership row count mismatch",
@@ -4589,15 +4588,6 @@ mod preserved_terminal_hydrogen_prefix_tests {
             )
         };
         assert_eq!(
-            crate::potential_stereo(&mut t.clone(), &value, r, &Default::default()).unwrap_err(),
-            PotentialStereoError::InvalidRingInfo {
-                reason,
-                row: 0,
-                value: actual,
-                limit: expected
-            }
-        );
-        assert_eq!(
             crate::set_double_bond_neighbor_directions(t.clone(), r, None).unwrap_err(),
             DoubleBondStereoError::RingRowCount {
                 dimension: if reason.starts_with("atom") {
@@ -4607,17 +4597,6 @@ mod preserved_terminal_hydrogen_prefix_tests {
                 },
                 actual,
                 expected
-            }
-        );
-        // The internal bond candidate reaches the original bond guard after
-        // the same valid degree and used-H checks; earlier returns stay intact.
-        assert_eq!(
-            crate::potential_stereo::is_potential_bond(t, &value, r, &t.bonds[1]).unwrap_err(),
-            PotentialStereoError::InvalidRingInfo {
-                reason: "bond membership row count mismatch",
-                row: 0,
-                value: r.bond_row_count(),
-                limit: t.bonds.len()
             }
         );
         assert_eq!(r, &before);
@@ -4663,12 +4642,23 @@ mod preserved_terminal_hydrogen_prefix_tests {
     }
 
     #[test]
-    fn malformed_heavy_and_oversized_rows_retain_all_original_guard_errors() {
+    fn sparse_membership_rows_are_valid_but_oversized_rows_are_rejected() {
         let t = alkene();
         for (atoms, bonds) in [(3, 3), (7, 3), (4, 6), (6, 4)] {
             let r = RingInfo::new(RingFindType::SymmSssr, atoms, bonds);
             assert!(!preserves_appended_terminal_hydrogen_ring_prefix(&t, &r));
-            rejected_by_all_three_guards(&t, &r);
+            rejected_by_direction_guard(&t, &r);
+            let result = crate::potential_stereo(&t, &scalar(&t), &r, &Default::default());
+            // RingInfo getters return empty for absent trailing membership rows,
+            // independently of the elements or connectivity in that suffix.
+            if atoms <= t.atoms.len() && bonds <= t.bonds.len() {
+                assert!(result.is_ok());
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(PotentialStereoError::InvalidRingInfo { .. })
+                ));
+            }
         }
     }
 
@@ -4703,7 +4693,11 @@ mod preserved_terminal_hydrogen_prefix_tests {
             suffix_bond_family,
         ] {
             assert!(!preserves_appended_terminal_hydrogen_ring_prefix(&t, &r));
-            rejected_by_all_three_guards(&t, &r);
+            rejected_by_direction_guard(&t, &r);
+            assert!(matches!(
+                crate::potential_stereo(&t, &scalar(&t), &r, &Default::default()),
+                Err(PotentialStereoError::InvalidRingInfo { .. })
+            ));
         }
     }
 
@@ -4773,15 +4767,7 @@ mod preserved_terminal_hydrogen_prefix_tests {
                     expected: 6
                 })
             ));
-            assert!(matches!(
-                crate::potential_stereo(&mut t.clone(), &scalar(&t), &r, &Default::default()),
-                Err(PotentialStereoError::InvalidRingInfo {
-                    reason: "atom membership row count mismatch",
-                    value: 4,
-                    limit: 6,
-                    ..
-                })
-            ));
+            assert!(crate::potential_stereo(&t, &scalar(&t), &r, &Default::default()).is_ok());
             assert_eq!(r, before);
         }
         let mut heavy = elements;
@@ -4797,7 +4783,7 @@ mod preserved_terminal_hydrogen_prefix_tests {
             ],
         );
         assert!(!preserves_appended_terminal_hydrogen_ring_prefix(&t, &r));
-        rejected_by_all_three_guards(&t, &r);
+        rejected_by_direction_guard(&t, &r);
     }
 
     #[test]

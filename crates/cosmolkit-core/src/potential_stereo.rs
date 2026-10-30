@@ -217,10 +217,18 @@ fn validate_ring_rows(
         });
     }
     let atom_count = topology.atoms.len();
-    let preserved_prefix = (rings.atom_row_count() != atom_count
-        || rings.bond_row_count() != topology.bonds.len())
-        && crate::rings::preserves_appended_terminal_hydrogen_ring_prefix(topology, rings);
-    if rings.atom_row_count() != atom_count && !preserved_prefix {
+    // RingInfo.cpp stores memberships only through the largest ring index.
+    // RDKit✔️✔️:   if (idx < d_atomMembers.size()) {
+    // RDKit✔️✔️:     return rdcast<unsigned int>(d_atomMembers[idx].size());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return 0;
+    // RDKit✔️✔️:   if (idx < d_bondMembers.size()) {
+    // RDKit✔️✔️:     return rdcast<unsigned int>(d_bondMembers[idx].size());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return 0;
+    // Missing trailing rows are empty memberships, not evidence of a different
+    // graph. Keep bounds checks on represented rings below; do not pad or clone.
+    if rings.atom_row_count() > atom_count {
         return Err(PotentialStereoError::InvalidRingInfo {
             reason: "atom membership row count mismatch",
             row: 0,
@@ -228,7 +236,7 @@ fn validate_ring_rows(
             limit: atom_count,
         });
     }
-    if rings.bond_row_count() != topology.bonds.len() && !preserved_prefix {
+    if rings.bond_row_count() > topology.bonds.len() {
         return Err(PotentialStereoError::InvalidRingInfo {
             reason: "bond membership row count mismatch",
             row: 0,
@@ -258,24 +266,74 @@ fn validate_ring_rows(
                 limit: bonds.len(),
             });
         }
-        if let Some(atom) = atoms.iter().find(|atom| atom.index() >= atom_count) {
+        if let Some(atom) = atoms
+            .iter()
+            .find(|atom| atom.index() >= rings.atom_row_count())
+        {
             return Err(PotentialStereoError::InvalidRingInfo {
                 reason: "ring atom out of range",
                 row,
                 value: atom.index(),
-                limit: atom_count,
+                limit: rings.atom_row_count(),
             });
         }
         if let Some(bond) = bonds
             .iter()
-            .find(|bond| bond.index() >= topology.bonds.len())
+            .find(|bond| bond.index() >= rings.bond_row_count())
         {
             return Err(PotentialStereoError::InvalidRingInfo {
                 reason: "ring bond out of range",
                 row,
                 value: bond.index(),
-                limit: topology.bonds.len(),
+                limit: rings.bond_row_count(),
             });
+        }
+    }
+    // Preserve detached-input bounds checks formerly performed by the
+    // terminal-H-prefix proof, without restricting absent rows to hydrogens.
+    if rings.atom_row_count() < atom_count || rings.bond_row_count() < topology.bonds.len() {
+        let atoms =
+            (0..rings.atom_row_count()).map(|row| (row, rings.atom_members(AtomId::new(row))));
+        let bonds =
+            (0..rings.bond_row_count()).map(|row| (row, rings.bond_members(BondId::new(row))));
+        for (row, members) in atoms.chain(bonds) {
+            if let Some(&value) = members
+                .iter()
+                .find(|&&index| index >= rings.atom_rings().len())
+            {
+                return Err(PotentialStereoError::InvalidRingInfo {
+                    reason: "membership ring index out of range",
+                    row,
+                    value,
+                    limit: rings.atom_rings().len(),
+                });
+            }
+        }
+        for (row, family) in rings.atom_ring_families().iter().enumerate() {
+            if let Some(atom) = family
+                .iter()
+                .find(|atom| atom.index() >= rings.atom_row_count())
+            {
+                return Err(PotentialStereoError::InvalidRingInfo {
+                    reason: "ring family atom out of range",
+                    row,
+                    value: atom.index(),
+                    limit: rings.atom_row_count(),
+                });
+            }
+        }
+        for (row, family) in rings.bond_ring_families().iter().enumerate() {
+            if let Some(bond) = family
+                .iter()
+                .find(|bond| bond.index() >= rings.bond_row_count())
+            {
+                return Err(PotentialStereoError::InvalidRingInfo {
+                    reason: "ring family bond out of range",
+                    row,
+                    value: bond.index(),
+                    limit: rings.bond_row_count(),
+                });
+            }
         }
     }
     Ok(())
@@ -2951,7 +3009,18 @@ mod cf_smi_tetra_tests {
             })
         );
 
-        let mismatched_rings = RingInfo::new(RingFindType::Fast, 3, 3);
+        let sparse_rings = RingInfo::new(RingFindType::Fast, 3, 3);
+        assert_eq!(
+            potential_tetrahedral_centers_for_atoms(
+                &nitrogen,
+                &valence,
+                Some(&sparse_rings),
+                &[AtomId::new(0)],
+            )
+            .unwrap(),
+            vec![false]
+        );
+        let mismatched_rings = RingInfo::new(RingFindType::Fast, 5, 3);
         assert!(matches!(
             potential_tetrahedral_centers_for_atoms(
                 &nitrogen,
@@ -2961,7 +3030,7 @@ mod cf_smi_tetra_tests {
             ),
             Err(PotentialStereoError::InvalidRingInfo {
                 reason: "atom membership row count mismatch",
-                value: 3,
+                value: 5,
                 limit: 4,
                 ..
             })
@@ -3170,7 +3239,7 @@ fn is_potential_bond_impl(
             limit: 0,
         });
     }
-    if rings.bond_row_count() != topology.bonds.len()
+    if rings.bond_row_count() > topology.bonds.len()
         && !*preserved_prefix.get_or_insert_with(|| {
             crate::rings::preserves_appended_terminal_hydrogen_ring_prefix(topology, rings)
         })

@@ -5,6 +5,7 @@ use rayon::prelude::*;
 use serde_json::{Value as Json, json};
 
 pub const TASKS: &[(&str, &str)] = &[
+    ("tetrahedral_geometry", "special"),
     ("structure_tags", "special"),
     ("forcefield_optimizers", "special"),
     ("molalign_focused", "special"),
@@ -20,6 +21,7 @@ pub const TASKS: &[(&str, &str)] = &[
 ];
 pub fn input(task: &str) -> Option<&'static str> {
     match task {
+        "tetrahedral_geometry" => Some("testdata/special/tetrahedral_geometry.jsonl"),
         "structure_tags" => Some("testdata/special/structure_tags.jsonl"),
         "forcefield_optimizers" => Some("testdata/special/forcefield_optimizers.jsonl"),
         "molalign_focused" => Some("testdata/special/molalign_focused.jsonl"),
@@ -377,6 +379,7 @@ mod tests {
     fn special_inputs_are_self_contained_and_have_complete_censuses() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         for (task, count) in [
+            ("tetrahedral_geometry", 30),
             ("structure_tags", 77),
             ("forcefield_optimizers", 24),
             ("molalign_focused", 8),
@@ -395,11 +398,13 @@ mod tests {
             for line in input.lines() {
                 let row: Json = serde_json::from_str(line).unwrap();
                 assert!(
-                    row.get(if task == "structure_tags" {
-                        "case_id"
-                    } else {
-                        "case"
-                    })
+                    row.get(
+                        if matches!(task, "structure_tags" | "tetrahedral_geometry") {
+                            "case_id"
+                        } else {
+                            "case"
+                        }
+                    )
                     .is_some()
                 );
             }

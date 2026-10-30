@@ -1312,14 +1312,20 @@ impl Molecule {
         })
     }
 
-    /// Read the project-native ordered tetrahedral ligand values without changing caches.
+    /// Read perceived tetrahedral centers without changing the molecule or its caches.
+    /// Undetermined configurations have no ligand ordering and are returned only
+    /// when `include_unassigned` is true.
     #[cfg(feature = "cap-stereo")]
     pub fn tetrahedral_stereo(
         &self,
+        include_unassigned: bool,
     ) -> Result<Vec<crate::TetrahedralStereo>, crate::StereoReadError> {
+        let cache = self.derived_cache_runtime();
         cosmolkit_stereo::tetrahedral_stereo(
             self.topology(),
-            self.state.derived_cache.valence.as_ref(),
+            cache.valence_assignment(),
+            cache.valid_ring_info(),
+            include_unassigned,
         )
     }
 

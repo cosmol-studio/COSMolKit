@@ -7,7 +7,7 @@ from rdkit.Chem import AllChem, rdFMCS
 import bio
 import search_tautomer
 
-TASKS = {"structure_tags", "tautomer_focused", "tautomer_long_conjugated", "mmff_builtin",
+TASKS = {"tetrahedral_geometry", "structure_tags", "tautomer_focused", "tautomer_long_conjugated", "mmff_builtin",
          "forcefield_properties", "mcs_upstream", "mcs_jnk1", "bio_mmcif_switches", "conformer_fixed19", "conformer_library", "molalign_focused", "forcefield_optimizers"}
 
 
@@ -268,6 +268,21 @@ def cif(row):
 
 def observe(task, text):
     row = json.loads(text)
+    if task == "tetrahedral_geometry":
+        mol = Chem.MolFromSmiles(row["smiles"])
+        if mol is None:
+            raise ValueError("geometry input rejected")
+        centers = [a.GetIdx() for a in mol.GetAtoms() if a.GetChiralTag() in
+                   (Chem.ChiralType.CHI_TETRAHEDRAL_CW, Chem.ChiralType.CHI_TETRAHEDRAL_CCW)]
+        params = AllChem.ETKDGv3()
+        params.randomSeed = row["seed"]
+        embedding_status = AllChem.EmbedMolecule(mol, params)
+        if embedding_status != 0:
+            return ["embedding_failed", embedding_status]
+        positions = mol.GetConformer().GetPositions().tolist()
+        # Coordinates are an independent witness, not a CK-generated expectation.
+        return [positions, [[center, True] for center in centers],
+                [[center, True] for center in centers]]
     if task == "structure_tags":
         return structure_tags(row)
     if task == "forcefield_optimizers":

@@ -13,19 +13,30 @@ mod tests {
             for text in ["C[C@H](F)Cl", "CC(F)Cl", "CC"] {
                 let native = ck::Molecule::from_smiles(text).unwrap();
                 let before = native.to_binary().unwrap();
-                let expected_stereo = native.tetrahedral_stereo().unwrap();
+                let expected_stereo = native.tetrahedral_stereo(true).unwrap();
                 let expected_assigned = native.find_chiral_centers(false).unwrap();
                 let expected_all = native.find_chiral_centers(true).unwrap();
                 let molecule = Py::new(py, Molecule { inner: native })?;
                 let rows = molecule
                     .bind(py)
                     .call_method0("tetrahedral_stereo")?
-                    .extract::<Vec<TetrahedralStereo>>()?;
+                    .extract::<Vec<(usize, Option<Vec<Option<usize>>>)>>()?;
                 assert_eq!(
-                    rows.into_iter()
-                        .map(|value| value.inner)
-                        .collect::<Vec<_>>(),
+                    rows,
                     expected_stereo
+                        .into_iter()
+                        .map(|value| (
+                            value.center.index(),
+                            value.ligands.map(|ligands| ligands
+                                .into_iter()
+                                .map(|ligand| match ligand {
+                                    ck::LigandRef::Atom(atom) => Some(atom.index()),
+                                    ck::LigandRef::ImplicitHydrogen | ck::LigandRef::LonePair =>
+                                        None,
+                                })
+                                .collect::<Vec<_>>()),
+                        ))
+                        .collect::<Vec<_>>()
                 );
                 assert!(
                     molecule
@@ -58,7 +69,7 @@ mod tests {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object, eq)]
     #[derive(Clone, Copy, PartialEq)]
-    /// Tetrahedral ligand represented by an explicit atom or an implicit hydrogen.
+    /// Tetrahedral ligand represented by an atom, implicit hydrogen or lone pair.
     pub struct LigandRef {
         inner: ck::LigandRef,
     }
@@ -74,6 +85,12 @@ impl LigandRef {
         }
     }
     #[classattr]
+    #[pyo3(name = "LonePair")]
+    const LONE_PAIR: Self = Self {
+        inner: ck::LigandRef::LonePair,
+    };
+
+    #[classattr]
     #[pyo3(name = "ImplicitHydrogen")]
     const IMPLICIT_HYDROGEN: Self = Self {
         inner: ck::LigandRef::ImplicitHydrogen,
@@ -87,11 +104,11 @@ impl LigandRef {
         }
     }
     #[getter]
-    /// Ligand atom identifier, or None for an implicit hydrogen.
+    /// Ligand atom identifier, or None for a hydrogen or lone-pair position.
     fn atom_id(&self) -> Option<usize> {
         match self.inner {
             ck::LigandRef::Atom(value) => Some(value.index()),
-            ck::LigandRef::ImplicitHydrogen => None,
+            ck::LigandRef::ImplicitHydrogen | ck::LigandRef::LonePair => None,
         }
     }
 }
@@ -99,7 +116,7 @@ impl LigandRef {
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
-    /// Tetrahedral center and its four ordered ligand references.
+    /// Tetrahedral center with an ordered configuration, or None when undetermined.
     pub struct TetrahedralStereo {
         pub(crate) inner: ck::TetrahedralStereo,
     }
@@ -107,11 +124,12 @@ crate::configuration::type_projection! {
 #[pymethods]
 impl TetrahedralStereo {
     #[new]
-    fn new(center: usize, ligands: [LigandRef; 4]) -> Self {
+    #[pyo3(signature = (center, ligands=None))]
+    fn new(center: usize, ligands: Option<[LigandRef; 4]>) -> Self {
         Self {
             inner: ck::TetrahedralStereo {
                 center: ck::AtomId::new(center),
-                ligands: ligands.map(|value| value.inner),
+                ligands: ligands.map(|ligands| ligands.map(|value| value.inner)),
             },
         }
     }
@@ -121,9 +139,11 @@ impl TetrahedralStereo {
         self.inner.center.index()
     }
     #[getter]
-    /// Four ordered ligand references defining the tetrahedral configuration.
-    fn ligands(&self) -> [LigandRef; 4] {
-        self.inner.ligands.map(|inner| LigandRef { inner })
+    /// Four ordered ligand references, or None for an undetermined configuration.
+    fn ligands(&self) -> Option<[LigandRef; 4]> {
+        self.inner
+            .ligands
+            .map(|ligands| ligands.map(|inner| LigandRef { inner }))
     }
 }
 

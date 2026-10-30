@@ -143,7 +143,7 @@ pub fn find_chiral_centers_with_prepared_state(
     Ok(centers)
 }
 
-fn prepare_chiral_state<'a>(
+pub(crate) fn prepare_chiral_state<'a>(
     topology: &'a TopologyBlock,
     source_valence: Option<&'a ValenceAssignment>,
     source_rings: Option<&'a RingInfo>,
@@ -380,6 +380,17 @@ mod tests {
     fn chiral_centers_unknown_stereo_retains_source_no_value_fallback() {
         // RDKit's Unknown enum is truthy; its absent-CIP descriptor is NoValue.
         let topology = tetrahedron(ChiralTag::Unspecified, BondDirection::Unknown);
+        let before = topology.clone();
+        let ordered = crate::tetrahedral_stereo(&topology, None, None, true).unwrap();
+        assert_eq!(ordered.len(), 1);
+        assert_eq!(ordered[0].center.index(), 0);
+        assert_eq!(ordered[0].ligands, None);
+        assert!(
+            crate::tetrahedral_stereo(&topology, None, None, false)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(topology, before);
         assert_eq!(
             find_chiral_centers(&topology, &MoleculeProperties::default(), true).unwrap(),
             [(0, "NoValue".to_owned())]

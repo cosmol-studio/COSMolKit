@@ -1,10 +1,10 @@
 """COSMolKit chirality and tetrahedral stereo representation.
 
-Atom `chiral_tag()` values keep the SMILES/RDKit-style CW and CCW path as
-`ChiralTag` IntEnum values.
-`Molecule.tetrahedral_stereo()` returns ordered-ligand records where the
+Atom `chiral_tag` values keep the SMILES/RDKit-style CW and CCW path as
+`ChiralTag` members.
+`Molecule.tetrahedral_stereo()` returns (center, ligands) tuples where the
 ligand order itself carries the tetrahedral configuration. Ligand indices
-match the same atom indexing used by `mol.atoms()`. Even ligand permutations
+match the same atom indexing used by `mol.atoms`. Even ligand permutations
 that preserve handedness are canonicalized to one numeric representative.
 
 Specification:
@@ -24,9 +24,9 @@ for atom in mol.atoms:
 
 print("chiral centers:", mol.find_chiral_centers(include_unassigned=False))
 
-for stereo in mol.tetrahedral_stereo():
-    print("center:", stereo.center)
-    print("ordered ligands:", stereo.ligands)
+for center, ligands in mol.tetrahedral_stereo():
+    print("center:", center)
+    print("ordered ligands:", ligands)
 
 opposite = ck.mol_from_smiles("[13CH3:7][C@@H](F)Cl")
 print("opposite ordered ligands:", opposite.tetrahedral_stereo())
@@ -42,7 +42,11 @@ print(
     fully_substituted_opposite.tetrahedral_stereo(),
 )
 
-# `None` means an implicit hydrogen ligand exists but has no atom index in the
+# Inner `None` means a hydrogen or lone pair has no atom index in the
 # current molecule graph. It does not mean the ligand slot is empty.
 # The first three ligands are ordered so that, when coordinates are available,
 # det(ligand0 - center, ligand1 - center, ligand2 - center) is positive.
+
+unassigned = ck.mol_from_smiles("CC(O)C(=O)O")
+print("potential center:", unassigned.tetrahedral_stereo())  # [(1, None)]
+print("specified only:", unassigned.tetrahedral_stereo(include_unassigned=False))  # []

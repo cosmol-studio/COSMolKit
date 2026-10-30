@@ -1,6 +1,9 @@
 JavaScript Workflows
 ====================
 
+.. meta::
+   :description: Use COSMolKit from JavaScript to read and write molecules, search structures, generate fingerprints and coordinates, and run molecular workflows.
+
 The examples below use the full package. Initialize it once before running
 any workflow; see :doc:`index` for installation and feature combinations.
 

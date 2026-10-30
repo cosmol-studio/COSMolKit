@@ -1,35 +1,44 @@
 # Tetrahedral Stereo
 
-COSMolKit exposes tetrahedral stereo as:
+`tetrahedral_stereo` is a read-only query using the same tetrahedral-center
+perception as `find_chiral_centers`. Python/JavaScript default
+`include_unassigned` to true; Rust takes an explicit bool. False returns only
+centers with specified configuration.
 
 ```rust
 pub struct TetrahedralStereo {
-    pub center: usize,
-    pub ligands: [LigandRef; 4],
+    pub center: AtomId,
+    pub ligands: Option<[LigandRef; 4]>,
 }
 ```
 
-`ligands` is not just the adjacency list. Its order is the stereochemical
-value returned by `tetrahedral_stereo()`.
+Python returns `list[tuple[int, list[int | None] | None]]`:
 
-## Equality Rule
+- `(center, None)`: potential center with unspecified or unknown configuration.
+- `(center, [a, b, c, None])`: specified configuration; inner `None` has no
+  atom index (implicit hydrogen or lone pair). Rust distinguishes these as
+  `LigandRef::ImplicitHydrogen` and `LigandRef::LonePair`.
+- `[]`: no centers match the filter.
 
-For one stereocenter, even permutations of the four ligands represent the same
-handedness. COSMolKit canonicalizes them to the lexicographically smallest
-ordered ligand list.
+## Ligand Order
 
-Odd permutations are not canonicalized together with even permutations because
-they represent the opposite handedness.
+`center` and the integers in `ligands` are molecule atom indices. For
+`F[C@H](Cl)Br`, these are `F=0, C=1, Cl=2, Br=3`, so
+`(1, [0, 2, 3, None])` means center C with ordered positions F, Cl, Br, H.
 
-For explicit four-ligand centers, all four positions participate in this rule.
-For implicit-hydrogen centers, `None`/`ImplicitHydrogen` is kept in the fourth
-slot so the first three real atoms remain usable for coordinate checks.
+The fourth position is the reference ligand. For matching nondegenerate 3D
+geometry, when the first three positions have atom coordinates, the order
+encodes positive orientation:
 
-## `None`
+```text
+det(pos(ligands[0]) - pos(center),
+    pos(ligands[1]) - pos(center),
+    pos(ligands[2]) - pos(center)) > 0
+```
 
-`None` does not mean "no ligand". It means the fourth ligand is a hydrogen that
-exists chemically but is implicit in the current molecule graph, so it has no
-atom index. In Rust this is `LigandRef::ImplicitHydrogen`.
+Thus `[0, 2, 3, None]` and `[0, 3, 2, None]` encode opposite handedness.
+The query reads chemical stereo, not coordinates; it does not require or
+repair a 3D conformer.
 
 ## Examples
 
@@ -42,13 +51,12 @@ Molecule.from_smiles("F[C@H](Cl)Br").tetrahedral_stereo()
 Molecule.from_smiles("F[C@@H](Cl)Br").tetrahedral_stereo()
 # [(1, [0, 3, 2, None])]
 
-Molecule.from_smiles("F[C@](Cl)(Br)I").tetrahedral_stereo()
-# [(1, [0, 2, 3, 4])]
+Molecule.from_smiles("CC(O)C(=O)O").tetrahedral_stereo()
+# [(1, None)]
 
-Molecule.from_smiles("F[C@@](Cl)(Br)I").tetrahedral_stereo()
-# [(1, [0, 2, 4, 3])]
+Molecule.from_smiles("CC(O)C(=O)O").tetrahedral_stereo(include_unassigned=False)
+# []
+
+Molecule.from_smiles("CCO").tetrahedral_stereo()
+# []
 ```
-
-RDKit/SMILES-style `CW/CCW` tags remain important I/O semantics. COSMolKit
-maps them into the ordered ligand list instead of exposing a separate
-`CW/CCW` field on `TetrahedralStereo`.

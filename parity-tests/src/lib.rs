@@ -18,6 +18,7 @@ pub mod special_geometry;
 pub mod storage;
 pub mod structure_tags;
 pub mod tasks;
+pub mod tetrahedral_geometry;
 pub mod value;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

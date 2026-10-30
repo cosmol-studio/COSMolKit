@@ -475,16 +475,26 @@ fn validation_rejects_topology_valence_and_ring_rows_before_indexing() {
             atom_count: 5,
         })
     );
-    assert!(matches!(
+    // RDKit RingInfo::numAtomRings returns zero for absent trailing rows.
+    assert!(
         potential_stereo(
             &topology,
             &assignment,
             &RingInfo::new(RingFindType::SymmSssr, 4, topology.bonds.len()),
             &PotentialStereoParams::default(),
+        )
+        .is_ok()
+    );
+    assert!(matches!(
+        potential_stereo(
+            &topology,
+            &assignment,
+            &RingInfo::new(RingFindType::SymmSssr, 6, topology.bonds.len()),
+            &PotentialStereoParams::default(),
         ),
         Err(PotentialStereoError::InvalidRingInfo {
             reason: "atom membership row count mismatch",
-            value: 4,
+            value: 6,
             limit: 5,
             ..
         })

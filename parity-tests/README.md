@@ -60,13 +60,21 @@ directory; an explicit path accepts any SMILES file. Blank/comment lines are
 ignored; the first whitespace-delimited field is the SMILES. Offsets and limits
 count input records, not physical lines.
 
-BIO and the 12 special groups use their complete bundled JSONL construction
+BIO and the special groups use their complete bundled JSONL construction
 recipes under `testdata/bio/` and `testdata/special/`. They run independently of
 the selected SMILES range. For a custom fixed-input selection, use exactly one
 `--task` with `--corpus /path/to/cases.jsonl`; offset/limit then apply to that file.
 Molecular inputs, coordinates and options belong in recipes, never expected
 chemical outputs. No repository-root `testdata/`, historical handoffs or old
 test-runner modules are required.
+
+`--task tetrahedral_geometry` restores the historical ordered-ligand
+geometry check. Prepare uses RDKit ETKDGv3 with seed 42; comparison checks CK
+center indices and `det(ligand0-center, ligand1-center, ligand2-center) > 1e-8`
+against those independent coordinates, through scalar and batch APIs. Its 30
+inputs exclude `historical_23`, whose reference embedding failed. This is
+a handedness predicate, not a tolerance on coordinate equality. Failed reference
+embedding remains a reported unavailable comparison, never a pass.
 
 Generated references live in ignored `expected/v1/<identity>/`; streamed reports
 live in ignored `reports/run-*/`. Summaries distinguish matching values,

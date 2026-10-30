@@ -141,6 +141,8 @@ def iter_outcomes(task, profiles, smiles):
                 result = special.observe(task, text)
                 # A complete MCS timeout is observable but not a successful comparison.
                 status = 3 if task.startswith("mcs_") and result == [False] else 0
+                if task == "tetrahedral_geometry" and result[0] == "embedding_failed":
+                    status = 2  # No reference geometry: undefined, never a match.
                 value = b"\1" + encode("parse_rejected") if result is None else bytes((status,)) + encode(result)
             except Exception as error:
                 value = b"\5" + encode(f"{type(error).__name__}: {error}")

@@ -201,7 +201,9 @@ pub fn main() -> Result<()> {
                 input_digest.update((input.len() as u64).to_le_bytes());
                 input_digest.update(input.as_bytes());
             }
-            let actual = if let Some(prepared) = &prepared_search {
+            let actual = if identity.task == "tetrahedral_geometry" {
+                crate::tetrahedral_geometry::evaluate(&inputs, &expected_rows, &pool)?
+            } else if let Some(prepared) = &prepared_search {
                 prepared.evaluate(&inputs, &pool)
             } else {
                 tasks::evaluate(

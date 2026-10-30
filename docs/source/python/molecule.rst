@@ -262,9 +262,13 @@ canonicalized to one numeric representative. The precise contract is in
    print(ck.mol_from_smiles("F[C@](Cl)(Br)I").tetrahedral_stereo())
    print(ck.mol_from_smiles("F[C@@](Cl)(Br)I").tetrahedral_stereo())
 
-``None`` in the ligand list represents an implicit hydrogen ligand. It does
+``None`` in the ligand list represents an implicit hydrogen or lone pair. It does
 not mean the ligand slot is empty. If hydrogens are materialized with
 ``with_hydrogens()``, that hydrogen ligand is returned as an atom index.
+
+An undetermined configuration is returned as ``(center, None)``.
+Use ``tetrahedral_stereo(include_unassigned=False)`` to return only specified
+centers; the default includes potential unassigned centers.
 
 Potential Stereo And Stereoisomer Enumeration
 ----------------------------------------------

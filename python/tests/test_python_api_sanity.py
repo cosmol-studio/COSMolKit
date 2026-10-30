@@ -261,7 +261,7 @@ def test_1aid_sdf_reader_preserves_rdkit_ring_stereo_after_remove_hs():
     tags = [atom.chiral_tag for atom in mol.atoms]
     assert tags[0] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
     assert tags[3] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
-    centers = {row.center: row.ligands for row in mol.tetrahedral_stereo()}
+    centers = dict(mol.tetrahedral_stereo())
     assert {0, 3}.issubset(centers)
 
 
@@ -568,7 +568,7 @@ def test_1aid_mol2_reader_preserves_rdkit_ring_stereo_after_remove_hs():
     tags = [atom.chiral_tag for atom in mol.atoms]
     assert tags[0] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
     assert tags[3] == cosmolkit.ChiralTag.CHI_TETRAHEDRAL_CW
-    centers = {row.center: row.ligands for row in mol.tetrahedral_stereo()}
+    centers = dict(mol.tetrahedral_stereo())
     assert {0, 3}.issubset(centers)
 
 
@@ -576,13 +576,13 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     chiral = cosmolkit.Molecule.from_smiles("F[C@H](Cl)Br")
     stereo = chiral.tetrahedral_stereo()
     assert len(stereo) == 1
-    center, ligands = stereo[0].center, [ligand.atom_id for ligand in stereo[0].ligands]
+    center, ligands = stereo[0]
     assert center == 1
     assert ligands == [0, 2, 3, None]
 
     opposite = cosmolkit.Molecule.from_smiles("F[C@@H](Cl)Br")
     opposite_stereo = opposite.tetrahedral_stereo()
-    assert [(row.center, [ligand.atom_id for ligand in row.ligands]) for row in opposite_stereo] == [(1, [0, 3, 2, None])]
+    assert opposite_stereo == [(1, [0, 3, 2, None])]
 
     generator = cosmolkit.MorganFingerprintGenerator(params=cosmolkit.MorganGeneratorParams(radius=2, fp_size=256))
     fp = chiral.fingerprint_morgan_with_generator(generator)

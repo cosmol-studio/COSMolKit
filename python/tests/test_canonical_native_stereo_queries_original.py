@@ -11,20 +11,21 @@ import cosmolkit as ck
     ('F[C@@](Cl)(Br)I', [(1, [0, 2, 4, 3])]),
     ('[13CH3:7][C@H](F)Cl', [(1, [0, 2, 3, None])]),
 ])
-def test_original_ordered_ligand_values_and_typed_record(text, expected):
+def test_original_ordered_ligand_values_and_tuple_result(text, expected):
     source = ck.Molecule.from_smiles(text)
     before = source.to_smiles()
     result = source.tetrahedral_stereo()
-    assert [(row.center, [ligand.atom_id for ligand in row.ligands]) for row in result] == expected
+    assert result == expected
     row = result[0]
-    assert isinstance(row, ck.TetrahedralStereo)
-    center, ligands = row.center, list(row.ligands)
+    assert isinstance(row, tuple)
+    center, ligands = row
+    assert isinstance(ligands, list)
     assert center == expected[0][0] and len(ligands) == 4
     assert source.perceive_stereochemistry() is None
     assert source.to_smiles() == before
     ligands.append(99)
-    assert [(row.center, [ligand.atom_id for ligand in row.ligands]) for row in source.tetrahedral_stereo()] == expected
-    with pytest.raises(AttributeError): row.center = 0
+    assert source.tetrahedral_stereo() == expected
+    with pytest.raises(TypeError): row[0] = 0
 
 
 def test_modern_chiral_center_filter_defaults_and_exact_cip_labels():
@@ -38,6 +39,10 @@ def test_modern_chiral_center_filter_defaults_and_exact_cip_labels():
     potential = ck.Molecule.from_smiles('CC(O)Cl')
     assert potential.find_chiral_centers() == []
     assert potential.find_chiral_centers(include_unassigned=True) == [(1, '?')]
+    assert potential.tetrahedral_stereo() == [(1, None)]
+    assert potential.tetrahedral_stereo(include_unassigned=False) == []
+    assert ck.mol_from_smiles('C[P@H]CC').tetrahedral_stereo() == [(1, [0, 2, None, None])]
+    assert ck.LigandRef.LonePair != ck.LigandRef.ImplicitHydrogen
 
 
 def test_original_empty_read_and_absent_valence_fallback_are_source_defined():
@@ -47,6 +52,12 @@ def test_original_empty_read_and_absent_valence_fallback_are_source_defined():
     raw = ck.Molecule.from_smiles_with_params('F[C@](Cl)Br', ck.SmilesParseParams(sanitize=False))
     assert raw.tetrahedral_stereo() == []
     assert raw.perceive_stereochemistry() is None
+    # FindPotentialStereo rejects the duplicate carbon substituents even when
+    # parsing deliberately leaves the CW/CCW input tag unsanitized.
+    redundant = ck.Molecule.from_smiles_with_params(
+        'C[C@](C)(F)Cl', ck.SmilesParseParams(sanitize=False)
+    )
+    assert redundant.tetrahedral_stereo() == []
 
 
 def test_canonical_ligand_values_are_immutable_and_isolate_identifier_state():
