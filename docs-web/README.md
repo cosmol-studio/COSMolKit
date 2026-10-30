@@ -17,6 +17,7 @@ the article bodies into the application at build time.
 - `/python` — Python documentation landing page
 - `/python/...` — Python guides, API reference, search, and indexes
 - `/javascript` — JavaScript/WebAssembly getting started
+- `/javascript/workflows` — detailed IO, search, drawing, 3D and BIO workflows
 - `/javascript/api` — API extracted from the generated TypeScript declarations
 - `/benchmarks` — reserved benchmark page
 - `/validation` — validation evidence entry point
@@ -96,7 +97,7 @@ cargo test --manifest-path docs-web/Cargo.toml --bin cosmolkit-docs-web version_
 Python autodoc and JavaScript API extraction share one Sphinx build. JavaScript
 signatures come from the full preset's generated public `.d.ts` entry point,
 using TypeDoc and sphinx-js; no signatures are copied from the Python API.
-The pages are served at `/javascript` and `/javascript/api`.
+The pages are served at `/javascript`, `/javascript/workflows` and `/javascript/api`.
 
 Prepare both bindings before building the documentation:
 

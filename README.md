@@ -30,11 +30,13 @@
 [COSMolKit](https://github.com/cosmol-studio/COSMolKit) is a Rust-native cheminformatics and structural biology toolkit with first-class Python and JavaScript/TypeScript bindings. It provides molecular graph operations, SMILES/SMARTS and molecular file workflows, 2D depiction, native 3D conformer generation, UFF/MMFF optimization, fingerprints, molecular descriptors, InChI, batch processing, and protein structure APIs. Selected workflows are also available directly in the browser through the [COSMolKit Web Tools](https://tools.cosmol.org/tools).
 
 
-For supported cheminformatics operations, RDKit-compatible behavior is treated as the correctness floor. COSMolKit uses boundary-scoped parity claims: a feature is considered parity-covered only when its documented reference surface passes the required exact or numerical comparisons. Fixed reference oracles, source-backed implementations where reference semantics require them, committed regression corpora, and explicit capability boundaries are used together; aggregate success rates or approximate similarity are not treated as substitutes for behavioral parity.
+Chemistry implementations follow pinned upstream source semantics. Reference
+versions, comparison rules and completed results are recorded in
+[VALIDATION.md](VALIDATION.md).
 
 COSMolKit combines a native Rust API with Python interfaces for scientific and machine-learning workflows and JavaScript/TypeScript interfaces for browser applications. Molecular graphs, coordinates, fingerprints, bounds matrices, and structural data integrate with NumPy, PyTorch and JavaScript typed arrays.
 
-## COSMolKit
+## Features
 
 The current chemistry reference is RDKit **2026.09.1** (Python distribution
 `2026.9.1`). See the [upstream-diff audit](dev/source_provenance/rdkit_2026_03_6_to_2026_09_1.md)
@@ -56,7 +58,7 @@ Each public API is one logical entry with three projections:
 
 | Logical name | Rust | Python | JavaScript |
 |---|---|---|---|
-| `from_smiles` | `Molecule::from_smiles` | `Molecule.from_smiles` | `Molecule.fromSmiles` |
+| `from_smiles` | `Molecule::from_smiles("CCO")?` | `ck.mol_from_smiles("CCO")` | `ck.molFromSmiles("CCO")` |
 | `molecular_weight` | `mol.molecular_weight()` | `mol.molecular_weight()` | `mol.molecularWeight()` |
 | `to_smiles` | `mol.to_smiles()` | `mol.to_smiles()` | `mol.toSmiles()` |
 | `with_hydrogens` | `mol.with_hydrogens()` | `mol.with_hydrogens()` | `mol.withHydrogens()` |
@@ -72,21 +74,6 @@ browser-based JavaScript without relearning the chemistry API.
 * Rust documentation: https://docs.rs/cosmolkit/latest/cosmolkit/
 * Interactive Web Tools: https://tools.cosmol.org/tools
 
-<!--
-## Validation Status
-
-COSMolKit treats parity as **source-backed semantic equivalence within explicitly documented boundaries**, not as statistical agreement of final outputs. Compatibility-critical chemistry is implemented as a line-by-line, source-backed port with explicit operation contracts and traceable correspondence to pinned upstream code. Validation corpora verify that port; they are not used to iteratively tune heuristic reimplementations until outputs happen to agree.
-
-Validation of **COSMolKit 0.5.1-rc.2 against RDKit 2026.09.1** covers
-**180,000 ChEMBL 37 source records** across completed task runs, with
-**220,258,878 matching observations** and **zero unresolved mismatches**.
-Conformer and CIP checks have passed revalidation. All numerical comparisons
-are **bit-exact**, without tolerances. Timeouts and incomplete task groups are
-recorded separately, not counted as matches. Million-scale coverage remains
-pending. See [`VALIDATION.md`](VALIDATION.md) for functional coverage, profile
-boundaries and completed verification results.
--->
-
 ## Installation
 
 ```bash
@@ -99,9 +86,6 @@ pip install cosmolkit
 # JavaScript/TypeScript (browser or bundler)
 npm install @cosmol-studio/cosmolkit
 ```
-
-The npm package defaults to `full`; [smaller feature combinations](wasm/README.md#install)
-are published as separate packages.
 
 ## Core Concepts
 
@@ -156,17 +140,7 @@ mol_2d.write_png("phenol.png", width=400, height=300)
 fp = mol.fingerprint_morgan()
 print(fp.on_bits)
 
-atom_pair = mol.fingerprint_atom_pair()
-print(atom_pair.on_bits)
-
-layered = mol.fingerprint_layered()
-print(layered.on_bits)
-
-pattern = mol.fingerprint_pattern()
-print(pattern.on_bits)
-
-stereoisomers = list(ck.mol_from_smiles("FC(Cl)Br").enumerate_stereoisomers())
-print([isomer.to_smiles() for isomer in stereoisomers])
+array = fp.to_numpy()  # uint8, one entry per bit
 
 batch = (
     ck.mols_from_smiles_list(
@@ -309,7 +283,7 @@ inputs until a trusted graph has been constructed.
 - MOL/SDF reading and writing
 - MOL2 reading with RDKit-style `Mol2ParserParams`
 - XYZ block reading
-- Four scalar InChI APIs with exact source-defined official-C/RDKit parity and structured errors
+- InChI/InChIKey conversion with structured diagnostics
 - Source-backed 3D atom-chiral-tag assignment
 - Typed potential-stereo analysis and lazy, source-ordered stereoisomer
   enumeration with exhaustive, bounded random, uniqueness, enhanced-group,
@@ -324,7 +298,7 @@ inputs until a trusted graph has been constructed.
   trailing-underscore coordinate alignment
 - UFF/MMFF optimization of generated or imported 3D conformers
 - Morgan, MACCS, RDKit topological, Avalon, Pattern, AtomPair, and Topological Torsion
-  fingerprints for the validated exact-parity branches, including sparse/count
+  fingerprints, including sparse/count
   forms, provenance, tautomer-aware Pattern hashing, 2D/3D AtomPair distances,
   and ordered batch execution
 - Source-backed RDKit Layered fingerprint 0.7.0 with all six active layers,
@@ -365,141 +339,9 @@ For the current InChI interface, see
 
 ## Development
 
-Small focused Rust test filters may use the default debug profile while
-iterating:
-
-```bash
-cargo test -p cosmolkit-core <test-filter>
-```
-
-Daily checks and local parity runs use the optimized `dev-test` profile, with
-runtime strict checks enabled on `cosmolkit`:
-
-```bash
-cargo test -p cosmolkit-core --profile dev-test
-cargo test -p cosmolkit --profile dev-test --features op-contracts-strict
-```
-
-Detached core algorithms have no runtime-check features. `op-contracts-strict`
-enables operation contracts and runtime invariants on `cosmolkit` independently
-of the build profile. Distribution builds use `--release` with fat LTO and
-one codegen unit; daily `dev-test` builds avoid that overhead.
-
-## Functionality
-
-Status labels:
-
-- ✅ stable public functionality within its documented supported scope
-- 🧪 public experimental feature; available, but its behavior or API may change
-
-The ✅ status applies to the documented COSMolKit scope. It does not claim that
-every API or input branch from an upstream reference library is implemented;
-separately named upstream capabilities outside that scope are not represented
-as implemented. Every path inside a parity-covered boundary is still required
-to match; individual failing rows cannot be reclassified as out of scope.
-
-### Chemistry Core
-
-Goal: keep the supported molecular core correct before expanding breadth.
-
-- ✅ Molecule, atom, and bond graph model
-- ✅ SMILES parsing
-- ✅ SMILES writing with RDKit-style writer options for supported branches
-- ✅ Ring perception, valence handling, aromaticity, and Kekulization
-- ✅ Hydrogen addition and removal
-- ✅ Sanitization for supported chemistry workflows
-- ✅ Tautomer enumeration, canonical selection, scoring, and source-defined
-  stereochemistry and isotopic-hydrogen options
-- ✅ Stereochemistry inspection for supported atom and bond states
-- ✅ Typed potential-stereo analysis and lazy stereoisomer enumeration through
-  the pinned RDKit Python behavior, including arbitrary-width counts, seeded
-  random generation, enhanced stereo groups, uniqueness, and optional embedding
-- ✅ Atom chiral-tag assignment from selected 3D conformers, with a designated
-  77-case full-state special-regression matrix for `assignChiralTypesFrom3D`
-- ✅ Distance-geometry bounds matrices
-- ✅ Native 3D conformer generation and UFF/MMFF post-optimization for
-  supported molecules
-- ✅ `Molecule.to_inchi()`, `Molecule.to_inchi_key()`, `inchi_to_key()`, and
-  `Molecule.from_inchi()` for source-defined behavior; official-C undefined
-  allocation behavior returns a structured error
-- ✅ Source-backed Morgan, MACCS, RDKFingerprint/topological, Avalon, Pattern,
-  AtomPair, and Topological Torsion fingerprints for their validated
-  exact-parity branches, including typed provenance, count/bit forms,
-  tautomer-aware Pattern hashing, 2D/3D AtomPair distances, Tanimoto
-  similarity, and ordered batch execution
-- 🧪 Source-backed RDKit Layered fingerprint `0.7.0`, including all six active
-  layers, roots, masks, seeded counts, and ordered batch execution; upstream
-  classifies this fingerprint family as experimental
-- ✅ Substructure matching and Python SMARTS parse metadata
-- ✅ Molecular descriptors: weight/formula, H-bond and Lipinski counts,
-  Crippen/TPSA/QED, connectivity Chi, Hall-Kier/Kappa/Phi, ring and stereo
-  counts, MQN, Labute ASA, and SlogP/SMR VSA for the documented parameter space
-
-### File I/O and Depiction
-
-Goal: make common molecule import, export, and visualization workflows usable
-from Python and JavaScript.
-
-- ✅ MOL/SDF reading
-- ✅ MOL2 reading
-- ✅ XYZ block reading
-- ✅ SDF dataset indexing for large files
-- ✅ SDF writing for supported V2000/V3000 branches
-- ✅ PDB block to molecule conversion
-- ✅ mmCIF block to molecule conversion through the same molecule-conversion
-  profile
-- ✅ 2D coordinate generation
-- ✅ SVG drawing
-- ✅ PNG export
-- ✅ RDKit-style visual parity testing for supported depiction output
-- ✅ 3D conformer generation and embedding APIs
-
-### Batch-Native Workflows
-
-Goal: make high-throughput molecule preparation and export a core product
-identity.
-
-- ✅ Ordered `MoleculeBatch.from_smiles_list()`
-- ✅ Batch transforms for sanitization, hydrogens, Kekulization, and 2D
-  coordinates
-- ✅ Configurable parallelism with `with_parallel_jobs()`
-- ✅ Configurable progress display with `with_progress_bar()`
-- ✅ Per-record errors, valid masks, and error reports
-- ✅ Batch SMILES, image, and SDF export paths
-- ✅ Golden parity tests for parallel batch behavior
-
-### Protein and Structural Biology
-
-Goal: provide practical Biopython-like structure workflows without forcing users
-through low-level structural tables.
-
-- ✅ `Protein.from_pdb()` / `Protein.from_mmcif()` high-level entry points
-- ✅ `BioStructure.from_pdb()` / `BioStructure.from_mmcif()` complete-structure
-  entry points and mixed-structure hierarchy traversal
-- ✅ Protein chain, residue, and atom iteration
-- ✅ Protein-only projection from broader structural data
-- ✅ PDB/mmCIF structural parsing
-- ✅ Gemmi-aligned `BioStructure` mmCIF serialization and file writing
-- ✅ Structural selection and chain/residue/atom traversal
-
-### Python API and ML Readiness
-
-Goal: expose verified molecular behavior through a practical Python interface.
-
-- ✅ Stable value-style mutation contract for public molecule transformations
-- ✅ Graph, coordinate, fingerprint, descriptor, and bounds-matrix accessors
-- ✅ Python examples for drawing, SDF-to-SMILES, pickle round-tripping, batch
-  processing, and proteins
-- ✅ Type stubs and documentation coverage
-- ✅ NumPy fingerprint vectors and batch matrices
-
-### Browser and Deployment
-
-Goal: make validated COSMolKit functionality usable without requiring a local Python or Rust installation.
-
-* ✅ [COSMolKit Web Tools](https://tools.cosmol.org/tools) for browser-based molecular workflows
-* ✅ Browser-native deployment of selected COSMolKit functionality through WebAssembly
-* ✅ Generated JavaScript/TypeScript API with prebuilt feature combinations
+See [dev/README.md](dev/README.md) for local checks and contribution rules,
+[python/dev.md](python/dev.md) for Python builds, and
+[wasm/dev.md](wasm/dev.md) for JavaScript/TypeScript builds.
 
 ## Acknowledgments
 

@@ -43,12 +43,13 @@ fn entry_output_defaults_cover_empty_single_chain_and_disconnected_rows() {
     let chain_xy = compute_2d_coordinates(&chain, &absent_properties, &Default::default()).unwrap();
     assert_eq!(chain, source, "detached depiction must not mutate topology");
     assert_eq!(chain_xy.id(), 0);
+    // RDKit 2026.09.1 Compute2DCoords("CCC", canonOrient=True).
     assert_eq!(
         chain_xy.coordinates(),
         [
-            [0.0, 0.0],
-            [1.299038105676658, 0.7499999999999998],
-            [2.598076211353316, -6.661338147750939e-16],
+            [-1.299038105676658, -0.2499999999999997],
+            [0.0, 0.5000000000000001],
+            [1.299038105676658, -0.25000000000000033],
         ]
     );
 
@@ -220,23 +221,23 @@ fn entry_output_options_cover_orientation_route_sampling_templates_and_clear_car
         &[(0, 1), (1, 2), (2, 3), (3, 4)],
     );
     let defaults = compute_2d_coordinates(&graph, &absent_properties, &Default::default()).unwrap();
-    let canonical = compute_2d_coordinates(
+    let unaligned = compute_2d_coordinates(
         &graph,
         &absent_properties,
         &Compute2DCoordinatesParams {
-            canonical_orientation: true,
+            canonical_orientation: false,
             ..Default::default()
         },
     )
     .unwrap();
-    assert_ne!(canonical.coordinates(), defaults.coordinates());
+    assert_ne!(unaligned.coordinates(), defaults.coordinates());
     for bond in &graph.bonds {
         let [left, right] = [bond.begin().index(), bond.end().index()];
         let distance = |rows: &[[f64; 2]]| {
             (rows[left][0] - rows[right][0]).hypot(rows[left][1] - rows[right][1])
         };
         assert!(
-            (distance(canonical.coordinates()) - distance(defaults.coordinates())).abs() < 1e-12
+            (distance(unaligned.coordinates()) - distance(defaults.coordinates())).abs() < 1e-12
         );
     }
 

@@ -16,7 +16,7 @@ Do not put tokens in workflow inputs or source control.
 
 The `publish` job packages the wheel artifacts with `package_wheels.py` and
 uploads the resulting `.conda` files. Stable versions go to the `main` label;
-release candidates go to `rc`.
+release candidates go to `rc`, and development builds go to `dev`.
 
 Each of Linux x86_64, Linux ARM64, Windows x86_64, macOS Intel, and macOS ARM64
 gets CPython 3.9–3.14 packages. CPython-specific wheels are used when present;
@@ -37,5 +37,7 @@ conda install -c conda-forge cosmol-studio::cosmolkit
 For an explicitly selected release candidate:
 
 ```bash
-conda install -c conda-forge -c cosmol-studio/label/rc cosmolkit=0.5.1rc1
+conda install -c conda-forge -c cosmol-studio/label/rc cosmolkit
+# Development builds:
+conda install -c conda-forge -c cosmol-studio/label/dev cosmolkit
 ```

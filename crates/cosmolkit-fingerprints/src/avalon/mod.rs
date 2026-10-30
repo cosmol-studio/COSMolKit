@@ -127,10 +127,12 @@ pub struct AvalonFingerprintParams {
 
 impl Default for AvalonFingerprintParams {
     fn default() -> Self {
+        // RDKit✔️✔️: python::arg("bitFlags") = AvalonTools::avalonSimilarityBits
+        // External/AvalonTools/Wrap/pyAvalonTools.cpp: GetAvalonFP defaults.
         Self {
             n_bits: 512,
             is_query: false,
-            bit_flags: AvalonFingerprintFlags::ALL_FEATURES,
+            bit_flags: AvalonFingerprintFlags::SIMILARITY,
         }
     }
 }
@@ -315,18 +317,18 @@ mod tests {
     }
 
     #[test]
-    fn source_cpp_default_profile_is_typed() {
+    fn source_python_default_profile_is_typed() {
         let params = AvalonFingerprintParams::default();
         assert_eq!(params.n_bits, 512);
         assert!(!params.is_query);
-        assert_eq!(params.bit_flags, AvalonFingerprintFlags::ALL_FEATURES);
+        assert_eq!(params.bit_flags, AvalonFingerprintFlags::SIMILARITY);
     }
 
     #[test]
     fn source_python_profile_is_distinct_from_cpp_default() {
         assert_eq!(AvalonFingerprintFlags::SIMILARITY.bits(), 0xf07fff);
         assert_ne!(
-            AvalonFingerprintParams::default().bit_flags,
+            AvalonFingerprintFlags::ALL_FEATURES,
             AvalonFingerprintFlags::SIMILARITY
         );
     }
@@ -378,7 +380,10 @@ mod tests {
     fn source_adapter_bits_match_native_profiles_and_second_pass() {
         let ethanol = "\n     RDKit          2D\n\n  3  2  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.2990    0.7500    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    2.5981   -0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  1  0\nM  END\n";
         let benzene = "\n     RDKit          2D\n\n  6  6  0  0  0  0  0  0  0  0999 V2000\n    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7500   -1.2990    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.7500   -1.2990    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.7500    1.2990    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    0.7500    1.2990    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  2  3  2  0\n  3  4  1  0\n  4  5  2  0\n  5  6  1  0\n  6  1  2  0\nM  END\n";
-        let default = AvalonFingerprintParams::default();
+        let default = AvalonFingerprintParams {
+            bit_flags: AvalonFingerprintFlags::ALL_FEATURES,
+            ..Default::default()
+        };
         let ethanol_fp = avalon_fingerprint(
             &ethanol,
             &AvalonFingerprintParams {

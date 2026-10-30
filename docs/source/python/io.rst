@@ -50,7 +50,7 @@ random access, metadata inspection, or chunked processing:
    print(len(dataset))
    print(dataset.metadata(0).title)
 
-   record = dataset[12345]
+   record = dataset[0]
    print(record.title, record.data_field("supplier_id"))
 
    head = dataset[:1024]
@@ -124,7 +124,7 @@ raises if the molecule has no 3D coordinates.
 
    mol = ck.mol_from_smiles("CCO").with_2d_coordinates()
    mol.write_sdf_with_params(
-       "python/examples/output/ethanol.sdf",
+       "ethanol.sdf",
        ck.MolBlockWriteParams(format="v2000", include_stereo=True, kekulize=True),
    )
 
@@ -148,9 +148,9 @@ Use ``to_sdf_3d()`` when you explicitly want to export an existing 3D
 conformer. The molecule must already have 3D coordinates.
 
 The ``format`` argument accepts ``"v2000"``, ``"v3000"``, or ``None`` for
-automatic selection. ``include_stereo=False`` and ``kekulize=False`` are exposed
-as RDKit parity parameters; branches that are not implemented yet fail with a
-clear unsupported-path error instead of silently changing behavior.
+automatic selection. ``include_stereo`` controls stereochemical output and
+``kekulize`` controls Kekulé conversion before writing. Invalid input or
+unsupported output raises a typed error.
 
 For multi-record strings, use the batch API:
 
@@ -286,8 +286,8 @@ ETKDG conformer generation require constructing a trusted bond graph first.
 Coordinate Arrays
 -----------------
 
-``coordinates_2d()``, ``coordinates_3d()``, and ``dg_bounds_matrix()`` return NumPy
-arrays. ``coordinates_2d()`` has shape ``(num_atoms, 2)`` with x and y columns;
+``coordinates_2d``, ``coordinates_3d()``, and ``dg_bounds_matrix()`` return NumPy
+arrays. ``coordinates_2d`` has shape ``(num_atoms, 2)`` with x and y columns;
 ``coordinates_3d()`` and ``Conformer3D.coordinates`` have shape
 ``(num_atoms, 3)`` with x, y and z columns. Coordinate arrays are independent
 float64 snapshots: editing them does not modify the molecule or conformer.
@@ -311,5 +311,5 @@ Depiction Files
 
    mol = ck.mol_from_smiles("c1ccccc1O").with_2d_coordinates()
 
-   mol.write_svg("python/examples/output/phenol.svg", width=400, height=300)
-   mol.write_png("python/examples/output/phenol.png", width=400, height=300)
+   mol.write_svg("phenol.svg", width=400, height=300)
+   mol.write_png("phenol.png", width=400, height=300)

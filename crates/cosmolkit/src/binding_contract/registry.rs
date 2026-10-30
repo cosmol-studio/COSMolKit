@@ -4876,7 +4876,7 @@ binding_contract! {
 
             python_configuration: [
                 { name: coordinate_map, python_type: "typing.Optional[typing.Mapping[builtins.int, typing.Sequence[builtins.float]]]", default: "None" },
-                { name: canonical_orientation, python_type: "builtins.bool", default: "False" },
+                { name: canonical_orientation, python_type: "builtins.bool", default: "True" },
                 { name: clear_existing_2d, python_type: "builtins.bool", default: "True" },
                 { name: flips_per_sample, python_type: "builtins.int", default: "0" },
                 { name: samples, python_type: "builtins.int", default: "0" },

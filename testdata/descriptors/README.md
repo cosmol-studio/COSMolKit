@@ -6,8 +6,8 @@ comments identify the covered behavior and the pinned RDKit regression source.
 The explicit `<EMPTY>` row denotes the empty SMILES string; blank lines remain
 formatting and comments remain provenance only.
 
-This directory records fixture provenance. COSMolKit 0.5.0 corpus preparation
-and comparison use the [standard test runner](../../parity-tests_fixed/README.md),
+This directory records fixture provenance. Current corpus preparation
+and comparison use the [standard test runner](../../parity-tests/README.md),
 not an owner-local generator. Generated references remain outside Git and
 record the reference version, inputs, parameters, schema, counts and checksums.
 

@@ -35,12 +35,12 @@ Batch APIs accept ``errors``:
 - ``"raise"`` raises an exception when a record fails.
 - ``"keep"`` keeps failed records and exposes structured errors. Export methods
   write valid records and include both existing input errors and new export
-  errors in the returned report. ``total() == success() + failed()`` and
-  ``failed() == len(errors())``; there is no separate skipped state.
+  errors in the returned report. ``total == success + failed`` and
+  ``failed == len(errors)``; there is no separate skipped state.
 
 Omitting ``errors`` (or passing ``None``) inherits the batch policy for transforms
 and exports. New batches default to ``"raise"``. An explicit override becomes
-the returned batch's policy without modifying the source batch; ``error_mode()``
+the returned batch's policy without modifying the source batch; ``error_mode``
 reports that policy. Slices and filtering preserve it. Default ``BatchParams``
 and ``BatchExportParams`` therefore display ``errors=None`` (inherit).
 List-returning queries return ``None`` for existing failed records, but still
@@ -58,7 +58,7 @@ input index, operation name, and message:
    try:
        ck.mols_from_smiles_list(["C1CC"], errors=ck.BatchErrorMode.RAISE)
    except ck.BatchValidationError as exc:
-       print(exc.error_count)
+       print(exc.errors)
 
 The read-only ``BATCH_ERROR_MODE_MAP`` converts external string names to enum
 members when needed.
@@ -167,8 +167,7 @@ independent of algorithm configuration:
    )
 
 Morgan, Pattern, and AtomPair batch APIs use the same source-backed cores as
-the single-molecule APIs, preserve record order, and are covered by exact
-pinned-RDKit parity tests. Pattern batch calls reuse the fixed compile-once
+the single-molecule APIs and preserve record order. Pattern batch calls reuse the fixed compile-once
 SMARTS table and return one result per input; they are not the separate RDKit
 ``MolBundle`` intersection operation. Topological Torsion exposes the same
 ordered bulk execution through its generator methods. Morgan and AtomPair can also collect
@@ -265,7 +264,7 @@ batch default for one call:
    prepared = tracked.with_2d_coordinates(errors="keep")
    smiles = prepared.to_smiles(progress_bar=False)
 
-Pass ``None`` to clear the batch-level default and let rayon choose:
+Pass ``None`` to clear the stored batch-level override:
 
 .. code-block:: python
 

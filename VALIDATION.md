@@ -1,6 +1,10 @@
 # COSMolKit Validation
 
-## Current status: COSMolKit 0.5.1-rc.2 / RDKit 2026.09.1
+This document is the single record of measured validation coverage. Each
+section names the tested COSMolKit and reference versions; counts apply to
+that section, independently of the version shown by the current API docs.
+
+## COSMolKit 0.5.1-rc.2 / RDKit 2026.09.1
 
 Current validation covers **180,000 ChEMBL 37 source records** across **894
 completed task runs**, with **220,258,878 matching observations**, including

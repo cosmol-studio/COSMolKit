@@ -27,6 +27,10 @@ def test_native_binary_and_all_python_pickle_protocols_preserve_exact_canonical_
     function, args = molecule.__reduce__()
     assert args == (source,)
     assert function(*args).to_binary() == source
+    # 0.5.0 stored this fully qualified GLOBAL, not the current top-level path.
+    old_pickle = (b"\x80\x02ccosmolkit.cosmolkit\n_molecule_from_binary\n"
+                  + pickle.dumps((source,), protocol=2)[2:-1] + b"R.")
+    assert pickle.loads(old_pickle).to_binary() == source
     for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
         restored = pickle.loads(pickle.dumps(molecule, protocol=protocol))
         assert isinstance(restored, cosmolkit.Molecule)

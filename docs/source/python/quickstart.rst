@@ -2,18 +2,16 @@ Quick Start
 ===========
 
 .. meta::
-   :description: Start using COSMolKit in Python for value-style molecular graphs, SMILES, coordinates, conformers, fingerprints, descriptors, depiction, and batch workflows.
+   :description: Install COSMolKit, parse molecules, draw structures, calculate fingerprints and descriptors, and process batches.
 
 Installation
 ------------
-
-Install COSMolKit from PyPI:
 
 .. code-block:: bash
 
    pip install cosmolkit
 
-Verify the installation:
+Check the installed version and use its matching documentation:
 
 .. code-block:: python
 
@@ -21,344 +19,134 @@ Verify the installation:
 
    print(ck.__version__)
 
-COSMolKit depends on NumPy for array outputs such as coordinates and distance
-bounds matrices.
-
-Value-Style Molecule Values
----------------------------
-
-Top-level constructor shortcuts reference the existing class methods directly:
-
-.. code-block:: python
-
-   import cosmolkit as ck
-
-   mol = ck.mol_from_smiles("CCO")
-   batch = ck.mols_from_smiles_list(["CCO", "CCN"], n_jobs=1)
-
-Both forms accept exactly the same parameters, defaults and errors as
-``Molecule.from_smiles`` and ``MoleculeBatch.from_smiles_list``. The class
-methods remain available. Other molecule shortcuts are ``mol_from_mol``,
-``mol_from_sdf``, ``mol_from_mol2``, ``mol_from_xyz_block``, ``mol_from_inchi``,
-``mol_from_binary`` and ``mol_from_rdkit``. Batch constructors also provide
-``mols_from_sdf_records`` and ``mols_from_records``. Reaction and BIO shortcuts
-are ``reaction_from_smirks``, ``bio_from_pdb``, ``bio_from_mmcif``,
-``protein_from_pdb`` and ``protein_from_mmcif``.
-
-COSMolKit molecules use value semantics. Transform methods return a new
-``Molecule`` and leave the original object unchanged. Internally the library
-uses copy-on-write (COW) storage to share unchanged data efficiently:
-
-.. code-block:: python
-
-   import cosmolkit as ck
-
-   mol = ck.mol_from_smiles("CCO")
-   mol_h = mol.with_hydrogens()
-
-   assert mol is not mol_h
-   print(mol.to_smiles())
-   print(mol_h.to_smiles())
-
-Keep the returned ``Molecule`` when applying a value-style transformation.
-
-In-place molecule operations are explicit and always end with ``_``:
+Create and inspect a molecule
+-----------------------------
 
 .. code-block:: python
 
    mol = ck.mol_from_smiles("CCO")
-   mol.add_hydrogens_()
-   mol.add_2d_coordinates_()
-
-Molecule Graphs And Stereochemistry
------------------------------------
-
-Create a molecule from SMILES and export a depiction:
-
-.. code-block:: python
-
-   import cosmolkit as ck
-
-   mol = ck.mol_from_smiles("c1ccccc1O")
-   drawn = mol.with_2d_coordinates()
-
-   print(mol.to_smiles())
-   drawn.write_png("python/examples/output/phenol.png", width=400, height=300)
-
-Inspect atoms and bonds:
-
-.. code-block:: python
-
-   import cosmolkit as ck
-
-   mol = ck.mol_from_smiles("c1ccccc1O")
-
+   print(mol.to_smiles())       # CCO
+   print(mol.num_atoms)         # 3
    for atom in mol.atoms:
-       print(atom.id, atom.atomic_number, atom.is_aromatic)
+       print(atom.id, atom.element, atom.degree)
 
-   for bond in mol.bonds:
-       if bond.order == ck.BondOrder.SINGLE:
-           print(bond.begin, bond.end, bond.order.name)
+Top-level constructors such as ``ck.mol_from_smiles`` accept the same options
+as their class factories, such as ``ck.Molecule.from_smiles``.
 
-Inspect chiral tags without converting to an ordered tetrahedral record:
+Values and configuration
+------------------------
 
-.. code-block:: python
-
-   chiral = ck.mol_from_smiles("F[C@H](Cl)Br")
-
-   print(chiral.to_smiles())
-   print(chiral.to_smiles(isomeric_smiles=False))
-
-   for atom in chiral.atoms:
-       if atom.chiral_tag != ck.ChiralTag.CHI_UNSPECIFIED:
-           print(atom.id, atom.chiral_tag.name)
-
-Assign atom chiral tags from a stored 3D conformer:
+Transforms return new molecules. Methods ending in ``_`` modify their receiver.
+``copy()`` shares molecular storage until a modification needs a copy:
 
 .. code-block:: python
 
-   import numpy as np
+   hydrogenated = mol.with_hydrogens()
+   assert mol.num_atoms == 3
+   assert hydrogenated.num_atoms == 9
 
-   spatial = ck.mol_from_smiles("C(F)(Cl)Br").with_only_3d_conformer(
-       np.array(
-           [
-               [0.0, 0.0, 0.0],
-               [1.0, 0.0, 0.0],
-               [0.0, 1.0, 0.0],
-               [0.0, 0.0, 1.0],
-           ]
-       )
-   )
-   assigned = spatial.with_chiral_tags_from_structure()
+   editable = mol.copy()
+   editable.add_hydrogens_()
+   assert mol.num_atoms == 3
 
-   assert spatial.atoms[0].chiral_tag == ck.ChiralTag.CHI_UNSPECIFIED
-   assert assigned.atoms[0].chiral_tag != ck.ChiralTag.CHI_UNSPECIFIED
-
-``with_chiral_tags_from_structure()`` is a stable, RDKit-parity operation. Its
-in-place counterpart is ``assign_chiral_tags_from_structure_()``. The
-value-style form leaves caller state unchanged on failure. Like other in-place
-operations, the ``_`` form may retain valid partial changes after an error but
-keeps the molecule's internal storage complete.
-
-Enumerate unassigned atom and double-bond stereo lazily while preserving the
-source molecule:
+Pass either configuration keywords or a reusable parameter object, not both:
 
 .. code-block:: python
 
-   import cosmolkit as ck
+   fp = mol.fingerprint_morgan(radius=2, fp_size=2048)
+   options = ck.MorganFingerprintParams(radius=2, fp_size=2048)
+   options.from_atoms = [0, 1]
+   selected_fp = mol.fingerprint_morgan(options)
 
-   source = ck.mol_from_smiles("CC(F)C(Cl)Br")
-   options = ck.StereoisomerOptions(max_isomers=4)
+Assign sequence fields as a whole; their getters are immutable tuples.
+For example, use ``options.from_atoms = [0, 1]``, not
+``options.from_atoms.append(1)``. See :doc:`fingerprints` for generators and
+additional output.
 
-   print(source.stereoisomer_count(options))
-   print([isomer.to_smiles() for isomer in source.enumerate_stereoisomers(options)])
-
-Molecular File IO And Stored Coordinates
------------------------------------------
-
-Read and write the first SDF record:
-
-.. code-block:: python
-
-   mol = ck.Molecule.read_sdf_with_params(
-       "input.sdf", ck.SdfReadParams(coordinate_mode="preserve"),
-   )
-   mol.write_sdf_with_params(
-       "python/examples/output/output.sdf", ck.MolBlockWriteParams(format="v2000"),
-   )
-
-Read MOL2 with the RDKit-style parser profile:
+Drawing, coordinates and files
+------------------------------
 
 .. code-block:: python
 
-   mol = ck.Molecule.read_mol2("input.mol2")
+   drawn = mol.with_2d_coordinates()
+   print(drawn.coordinates_2d.shape)  # (3, 2)
+   svg = drawn.to_svg(width=400, height=300)
+   drawn.write_svg("ethanol.svg", width=400, height=300)
+   drawn.write_sdf("ethanol.sdf")
+   restored = ck.Molecule.read_sdf("ethanol.sdf")
+   print(restored.to_smiles())
 
-Access coordinates as NumPy arrays:
+Use :doc:`io` for streaming SDF, MOL2, coordinate input and file options.
+Paths are literal: expand ``~`` yourself with ``pathlib.Path.expanduser()``.
 
-.. code-block:: python
-
-   mol2d = ck.mol_from_smiles("CCO").with_2d_coordinates()
-   coords = mol2d.coordinates_2d
-
-   print(coords.shape)
-
-Round-trip a molecule through Python pickle:
-
-.. code-block:: python
-
-   import pickle
-
-   mol = ck.mol_from_smiles("F[C@H](Cl)[13CH3:7]").with_2d_coordinates()
-
-   restored = pickle.loads(pickle.dumps(mol, protocol=pickle.HIGHEST_PROTOCOL))
-
-   print(restored.to_smiles(canonical=False))
-   print(restored.has_2d_coordinates)
-
-Conformers And Force Fields
----------------------------
-
-Generate a native 3D conformer with ETKDGv3:
+Fingerprints, search and descriptors
+------------------------------------
 
 .. code-block:: python
 
-   import cosmolkit as ck
+   phenol = ck.mol_from_smiles("c1ccccc1O")
+   benzene = ck.mol_from_smiles("c1ccccc1")
+   left = phenol.fingerprint_morgan()
+   right = benzene.fingerprint_morgan()
 
-   mol = ck.mol_from_smiles("CC(=O)NC").with_hydrogens()
-   params = ck.EmbedParams.etkdg_v3()
-   params.random_seed = 0xF00D
-   params.num_threads = 1
-   params.track_failures = True
-
-   result = mol.with_3d_conformer_result(params)
-   embedded = result.molecule
-
-   print(embedded.num_3d_conformers)
-   print(embedded.coordinates_3d().shape)
-   print(result.failure_counts)
-
-``with_3d_conformer()`` follows RDKit's ETKDG behavior for trusted molecular
-graphs. A molecule without explicit hydrogens is embedded as a heavy-atom-only
-conformer; the operation does not fail and does not automatically add
-hydrogens. Add hydrogens first when you need all-atom geometry, force-field
-optimization, or hydrogen-bond-sensitive coordinates.
-
-Generate multiple conformers with RMS pruning:
-
-.. code-block:: python
-
-   params = ck.EmbedParams.etkdg()
-   params.random_seed = 123
-   params.num_threads = 1
-   params.prune_rms_thresh = 0.5
-   params.enable_sequential_random_seeds = True
-
-   conformers = mol.with_3d_conformers(5, params)
-   print(conformers.num_3d_conformers)
-
-Enum inputs accept either an enum member or its canonical snake-case string.
-For example, ``coordinate_mode="require_3d"`` and
-``coordinate_mode=ck.SdfCoordinateMode.Require3D`` are equivalent. Configuration
-assignment accepts both forms; getters continue to return enum members.
-
-Optimize an existing 3D conformer with UFF:
-
-.. code-block:: python
-
-   mol = ck.Molecule.read_sdf_with_params(
-       "input_3d.sdf", ck.SdfReadParams(coordinate_mode="require_3d"),
-   )
-
-   if mol.uff_has_all_molecule_params():
-       result = mol.with_uff_optimized_with_params(ck.UffOptimizationParams(max_iterations=200))
-       optimized = result.molecule
-
-       print(not result.needs_more)
-       print(result.status_code)
-       print(result.energy)
-       print(optimized.coordinates_3d().shape)
-
-   if mol.mmff_has_all_molecule_params():
-       result = mol.with_mmff_optimized_with_params(
-           ck.MmffOptimizationParams(mmff_variant="MMFF94", max_iterations=200),
-       )
-       print(not result.needs_more)
-       print(result.status_code)
-
-Fingerprints And SMARTS
------------------------
-
-Generate source-backed fingerprints:
-
-.. code-block:: python
-
-   import cosmolkit as ck
-
-   mol = ck.mol_from_smiles("c1ccccc1O")
-   morgan = mol.fingerprint_morgan(
-       radius=2,
-       fp_size=2048,
-   )
-   topological = mol.fingerprint_topological(fp_size=2048)
-   avalon = mol.fingerprint_avalon(n_bits=512)
-   pattern = mol.fingerprint_pattern(n_bits=2048, tautomeric=False)
-   atom_pair = mol.fingerprint_atom_pair()
-   torsion = mol.fingerprint_topological_torsion(
-       torsion_atom_count=4,
-       fp_size=2048,
-   )
-
-   print(morgan.on_bits)
-   print(topological.on_bits)
-   print(avalon.on_bits)
-   print(pattern.on_bits)
-   print(atom_pair.on_bits)
-   print(torsion.on_bits)
-
-``on_bits()`` returns the sparse bit indexes set inside the fixed-length binary
-fingerprint. The exposed Morgan, MACCS, RDKit topological, Avalon, Pattern,
-AtomPair, and Topological Torsion branches are covered by exact pinned-RDKit
-comparisons; structurally similar hashes or similarity correlation are not
-compatibility claims. It is not a dense neural embedding.
-
-Parse SMARTS metadata:
-
-.. code-block:: python
-
-   import cosmolkit as ck
+   print(left.tanimoto(right))
+   print(left.to_numpy().shape)  # Dense uint8 bit vector
+   print(left.on_bits)           # Set-bit indexes
+   print(phenol.molecular_weight(), phenol.tpsa())
 
    query = ck.parse_smarts("[#6]-O")
+   print(phenol.has_substruct_match(query))
 
-   print(query.num_atoms)
-   print(query.num_bonds)
+See :doc:`molecule` for stereochemistry and search callbacks,
+:doc:`fingerprints` for fingerprint families, and :doc:`descriptors` for
+molecular properties.
 
-``parse_smarts()`` returns a detached ``QueryGraph``, not a ``Molecule``.
-``ck.QueryGraph.from_smarts(text)`` is the equivalent class factory. Both
-delegate to the same parser and preserve its defaults and typed errors.
-Pass the query to ``mol.substruct_matches(query)`` or
-``mol.has_substruct_match(query)``. Explicit options use
-``ck.parse_smarts_with_params(text, params)`` or
-``ck.QueryGraph.from_smarts_with_params(text, params)``.
+Conformers and force fields
+---------------------------
 
-Matching accepts a parameter object or keyword options, including Python
-callbacks::
-
-   params = ck.SubstructMatchParams()
-   params.extra_final_check = lambda target, atom_ids: atom_ids[0] == 0
-   matches = mol.substruct_matches(query, params)
-   # Equivalent callback spelling:
-   matches = mol.substruct_matches(query, final_match=params.extra_final_check)
-
-``atom_match(query_atom, target_atom)`` receives a read-only ``QueryAtom`` and
-``Atom``; ``bond_match(query_bond, target_bond)`` receives two read-only
-``Bond`` values. Callback exceptions propagate unchanged. Unknown configuration
-attributes raise ``AttributeError`` instead of being silently ignored.
-
-Batch Processing
-----------------
-
-Process a list of molecules:
+Add explicit hydrogens before generating all-atom geometry:
 
 .. code-block:: python
 
-   import cosmolkit as ck
+   spatial = mol.with_hydrogens()
+   params = ck.EmbedParams.etkdg_v3()
+   params.random_seed = 42
+   params.track_failures = True
+   result = spatial.with_3d_conformer_result(params)
+   print(result.conf_id, result.failure_counts)
 
-   batch = ck.mols_from_smiles_list(
-       ["CCO", "c1ccccc1", "not-smiles"],
-       errors=ck.BatchErrorMode.KEEP,
-   ).with_parallel_jobs(8)
+   if result.ok:
+       optimized = result.molecule.with_uff_optimized()
+       print(optimized.energy, optimized.needs_more)
 
+``needs_more`` means the optimizer did not converge within its iteration
+limit. See :doc:`forcefields` for MMFF, multiple conformers and constraints.
+
+Batch processing
+----------------
+
+.. code-block:: python
+
+   batch = ck.mols_from_smiles_list(["CCO", "CCN", "invalid"], errors="keep")
+   print(batch.valid_mask)
+   print(batch.to_smiles())
    for error in batch.errors:
-       print(error.index, error.operation, error.message)
+       print(error.index, error.message)
 
-   prepared = batch.with_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
-   fingerprints = prepared.fingerprint_morgan(fp_size=2048)
+   valid = batch[batch.valid_mask]
+   matrix = valid.fingerprint_morgan(radius=2, n_jobs=4).to_numpy()
+   print(matrix.shape)  # (2, 2048)
 
-   print(prepared.valid_mask)
-   print(prepared.to_smiles(canonical=True))
-   print([mol.to_smiles() if mol is not None else None for mol in prepared])
-   print([fp.on_bits if fp is not None else None for fp in fingerprints])
+Batches preserve input order. ``errors="keep"`` retains failed positions;
+``errors="raise"`` raises instead. See :doc:`batch` for scheduling and exports.
 
-``MoleculeBatch`` preserves input order. When ``errors="keep"`` or
-``BatchErrorMode.KEEP`` is used, invalid records stay aligned with their input
-positions and appear as ``None`` in molecule-valued outputs.
+Next steps
+----------
+
+- :doc:`reaction`: reaction templates and products.
+- :doc:`protein`: PDB/mmCIF and model → chain → residue → atom traversal.
+- :doc:`mcs`: maximum common substructure.
+- :doc:`api`: complete signatures, parameter types and return values.
+
+Reference versions, comparison rules and completed results are recorded in
+`VALIDATION.md <https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md>`__.

@@ -12,12 +12,12 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-core = { version = "0.6.0-rc.1", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.6.0-rc.1", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.6.0-rc.1", path = "../cosmolkit-search", default-features = false }
+cosmolkit-core = { version = "0.6.0-rc.2", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.6.0-rc.2", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.6.0-rc.2", path = "../cosmolkit-search", default-features = false }
 thiserror = "2.0.18"
 
 [dev-dependencies]
-cosmolkit-model = { version = "0.6.0-rc.1", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
-cosmolkit-smiles = { version = "0.6.0-rc.1", path = "../cosmolkit-smiles" }
+cosmolkit-model = { version = "0.6.0-rc.2", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
+cosmolkit-smiles = { version = "0.6.0-rc.2", path = "../cosmolkit-smiles" }
 serde_json = { version = "1", features = ["float_roundtrip"] }

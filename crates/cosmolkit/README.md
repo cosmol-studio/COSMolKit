@@ -1,6 +1,6 @@
 # COSMolKit
 
-`cosmolkit` is the public Rust API and runtime owner for COSMolKit 0.5.0, a Rust-native cheminformatics and structural biology toolkit. It is the sole supported Rust entrypoint for `Molecule`, operation contracts, and domain APIs. Dedicated workspace crates own detached model values and source-backed algorithms behind this facade.
+`cosmolkit` is the public Rust API and runtime owner for COSMolKit, a Rust-native cheminformatics and structural biology toolkit. It is the sole supported Rust entrypoint for `Molecule`, operation contracts, and domain APIs. Dedicated workspace crates own detached model values and source-backed algorithms behind this facade.
 
 The current chemistry reference is RDKit **2026.09.1** (Python distribution
 `2026.9.1`), revision `fece8caa860bdf6c9c82bdb9253f22a0cf87150c`.
@@ -67,7 +67,7 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.6.0-rc.1", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.6.0-rc.2", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
@@ -169,21 +169,12 @@ Consult the package API and support status for the selected version.
 | [cosmolkit-batch](https://crates.io/crates/cosmolkit-batch) | Detached batch processing and ordered results |
 | [cosmolkit-bio](https://crates.io/crates/cosmolkit-bio) | Structural-biology values and hierarchy operations |
 
-## Validation: COSMolKit 0.5.1-rc.2 / RDKit 2026.09.1
+## Validation
 
-Current validation covers **180,000 ChEMBL 37 source records** across completed
-task runs, with **220,258,878 matching observations** and **zero unresolved
-mismatches**. Conformer and CIP checks have passed revalidation. Timeouts and
-incomplete task groups are recorded separately, not counted as matches.
-Million-scale coverage remains pending. See
 [VALIDATION.md](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
-for completed functional/profile coverage and comparison rules.
-
-Discrete results and fingerprints compare exactly. All numerical observations,
-including coordinates, energies, gradients and alignment matrices, compare
-**bit-exactly**, without numerical tolerances.
-The current preparation and comparison workflow is documented in
-[`parity-tests/README.md`](../../parity-tests/README.md).
+records tested versions, functional coverage, comparison rules and completed
+results. The [parity runner](../../parity-tests/README.md) documents preparation
+and comparison commands.
 
 ## Installation
 
@@ -510,37 +501,14 @@ cargo run -p cosmolkit --example conformer_generation
 cargo run -p cosmolkit --example forcefield_optimization
 ```
 
-## Contributor Validation
+## Development
 
-Detached core regressions and facade operation contracts are separate checks:
+Follow the [development manual](../../dev/README.md) for the canonical local
+and pre-commit checks. [Python development](../../python/dev.md) and
+[WASM development](../../wasm/dev.md) describe binding builds and checks.
+Release optimization and runtime strict checks are independent options.
 
-```bash
-cargo check -p cosmolkit-core
-cargo test -p cosmolkit-core --release
-cargo check -p cosmolkit --features op-contracts-strict
-cargo test -p cosmolkit --profile dev-test --features op-contracts-strict
-cargo check -p cosmolkit-py
-cargo fmt --all
-```
-
-Use debug-profile test filters for small local iterations. Use the optimized
-`dev-test` profile for daily suites and `release` for distribution builds.
-Enable `cosmolkit/op-contracts-strict` explicitly for operation-contract checks;
-optimization profiles do not enable strict checks themselves. Core has no
-runtime-check features. See the repository development manual for the full
-pre-commit checklist.
-
-Python binding validation:
-
-```bash
-uv sync --group dev
-cargo install pyo3-introspection --version 0.30.1 --locked
-.venv/bin/python python/build_stubs.py
-.venv/bin/maturin develop --manifest-path python/Cargo.toml
-.venv/bin/pytest
-```
-
-COSMolKit 0.5.0 uses the split-crate architecture: `cosmolkit` owns the public
+COSMolKit uses the split-crate architecture: `cosmolkit` owns the public
 `Molecule` API and operation runtime; model and domain crates own detached
 values and algorithms. Users import the public chemistry API from `cosmolkit`,
 not implementation crates. See the repository architecture and public API

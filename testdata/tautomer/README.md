@@ -1,8 +1,8 @@
 # Tautomer Test Data
 
 `fixtures/rdkit/` contains focused source-branch inputs and historical
-provenance. COSMolKit 0.5.0 corpus and designated special-regression preparation
-use the [standard test runner](../../parity-tests_fixed/README.md), which owns
+provenance. Current corpus and designated special-regression preparation
+use the [standard test runner](../../parity-tests/README.md), which owns
 inputs in `testdata/` and generated observations in `expected/` within that
 package. This directory does not define another preparation workflow.
 
@@ -24,7 +24,7 @@ and its expected canonical tautomer SMILES in column two.
 | 100k SHA-256 | `873790d2e3ab7d555c879d3dad2a71a11d62fbda9f25f1d66c03fa4a95166425` |
 
 The table records the original corpus identity, not a claim that those
-historical corpora are current runner selections or 0.5.0 passing evidence.
+historical corpora are current runner selections or current passing evidence.
 
 ## Fixed long-conjugated special regression
 
@@ -42,5 +42,5 @@ not an upstream RDKit test-file selection.
 
 Its current selector is `tautomer_long_conjugated` in the standard test runner.
 Preparation and Cargo comparison commands are documented only in the
-[runner README](../../parity-tests_fixed/README.md). It is not repeated as an
+[runner README](../../parity-tests/README.md). It is not repeated as an
 ordinary owning-crate reference-dependent test.

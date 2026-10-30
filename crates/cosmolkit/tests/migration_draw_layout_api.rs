@@ -204,12 +204,13 @@ fn short_and_parameterized_with_2d_coordinates() {
         .with_2d_coordinates_with_params(&Coordinate2DParams::default())
         .unwrap();
     assert_eq!(short.coordinates_2d(), configured.coordinates_2d());
+    // RDKit 2026.09.1 Compute2DCoords("CCC", canonOrient=True).
     assert_eq!(
         short.coordinates_2d().unwrap(),
         &[
-            [0.0, 0.0],
-            [1.299038105676658, 0.7499999999999998],
-            [2.598076211353316, -6.661338147750939e-16],
+            [-1.299038105676658, -0.2499999999999997],
+            [0.0, 0.5000000000000001],
+            [1.299038105676658, -0.25000000000000033],
         ]
     );
     assert_eq!(

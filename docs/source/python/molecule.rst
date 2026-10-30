@@ -35,7 +35,7 @@ Importing an RDKit Molecule
 ---------------------------
 
 ``ck.mol_from_rdkit()`` copies the graph fields and 3D conformers supported
-by COSMolKit 0.5.0. It constructs independent storage without a SMILES
+by COSMolKit. It constructs independent storage without a SMILES
 round trip and does not modify the RDKit object:
 
 .. code-block:: python
@@ -202,8 +202,8 @@ Molecules with 2D coordinates can be exported as SVG or PNG:
    mol = ck.mol_from_smiles("c1ccccc1O").with_2d_coordinates()
 
    svg = mol.to_svg(width=400, height=300)
-   mol.write_svg("python/examples/output/phenol.svg", width=400, height=300)
-   mol.write_png("python/examples/output/phenol.png", width=400, height=300)
+   mol.write_svg("phenol.svg", width=400, height=300)
+   mol.write_png("phenol.png", width=400, height=300)
 
 Stereo
 ------
@@ -238,7 +238,7 @@ The API remains experimental and exposes perception with CIP enabled.
 
 Read ``atom.chiral_tag`` directly when raw tags are needed.
 
-Atom and bond enum-valued fields return Python ``IntEnum`` members, so callers
+Atom and bond enum-valued fields return COSMolKit enum members, so callers
 can compare or match against ``ChiralTag``, ``BondOrder``, ``BondDirection``,
 and ``BondStereo`` instead of spelling chemistry states as strings. Read-only
 maps such as ``BOND_ORDER_MAP`` and ``CHIRAL_TAG_MAP`` are available when a
@@ -344,11 +344,9 @@ unrelated properties are preserved.
    print(assigned.atoms[0].chiral_tag)
 
 The in-place form is ``assign_chiral_tags_from_structure_()``. Missing
-conformers and invalid source state raise structured Python exceptions without
-committing partial molecule changes. A selected non-3D conformer is a
-source-defined no-op. Special regressions exercise 77 fixed full-state cases
-against the pinned RDKit ``assignChiralTypesFrom3D`` reference.
-The boundary includes tetrahedral C/S/Se centers,
+conformers and invalid source state raise structured Python exceptions. Use
+the value-returning form to preserve the input on failure. A selected non-3D conformer is a
+source-defined no-op. The boundary includes tetrahedral C/S/Se centers,
 environment-enabled square-planar, trigonal-bipyramidal, and octahedral
 centers, property updates, no-op paths, and defined errors. It does not include the
 broader ``assignStereochemistryFrom3D`` workflow, 3D double-bond direction or
@@ -359,8 +357,8 @@ Modern CIP Labels
 
 ``with_cip_labels()`` assigns molecular-context CIP descriptors and returns a
 new molecule. ``assign_cip_labels_()`` is the explicit in-place form. After
-assignment, atom and bond records expose ``cip_descriptor()`` and
-``cip_neighbor_order()``; ``cip_computed()`` reports the molecule-level
+assignment, atom and bond records expose ``cip_descriptor`` and
+``cip_neighbor_order``; ``cip_computed`` reports the molecule-level
 completion state.
 
 .. code-block:: python
@@ -380,9 +378,8 @@ remain molecular-context dependent; selection controls which configurations
 are labeled, not how their priorities are calculated. The source-backed
 boundary includes tetrahedral ``R/S/r/s``, double-bond ``E/Z``, and
 atropisomeric ``M/P/m/p`` descriptors constructed by the pinned RDKit
-``findConfigs`` dispatcher. The maintained ChEMBL 37 phase compares full,
-selected-atom, selected-bond, and empty-selection state across 2,854,362
-eligible molecules with exact agreement.
+``findConfigs`` dispatcher. See `VALIDATION.md <https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md>`__
+for measured comparison coverage.
 
 Conformer Generation And Force-Field Optimization
 -------------------------------------------------
@@ -567,7 +564,11 @@ source molecule.
 
    if mol.mmff_has_all_molecule_params():
        result = mol.with_mmff_optimized_with_params(
-           ck.MmffOptimizationParams(mmff_variant="MMFF94", max_iterations=200),
+           ck.MmffOptimizationParams(
+               mmff_variant=ck.MmffVariant.Mmff94,
+               # mmff_variant="MMFF94",
+               max_iterations=200,
+           ),
        )
        optimized = result.molecule
 
@@ -613,3 +614,25 @@ The query value can be written as SMARTS or CXSMARTS through the same owner:
 
    print(ck.write_smarts(labeled, ck.SmartsWriteParams()))
    print(ck.write_cx_smarts(labeled, ck.SmartsWriteParams()))
+
+Matching callbacks
+~~~~~~~~~~~~~~~~~~
+
+Use callbacks to reject candidate sites with application-specific criteria:
+
+.. code-block:: python
+
+   def accept_atom(query, query_atom, target, target_atom):
+       return target.atom(target_atom.id).degree <= 2
+
+   mol = ck.mol_from_smiles("CCO")
+   query = ck.parse_smarts("[#6]-O")
+   matches = mol.substruct_matches(query, atom_match=accept_atom)
+
+``atom_match(query, query_atom, target, target_atom)`` receives the query graph,
+query atom, target molecule and target atom. The target is an independent COW
+value: retaining or editing it does not change the input or matching process.
+``bond_match(query_bond, target_bond)`` receives two readonly bond values;
+``final_match(target, atom_indices)`` receives a complete candidate mapping.
+Return ``True`` to accept and ``False`` to reject. Callback exceptions propagate
+unchanged. These callbacks can also be stored in ``SubstructMatchParams``.

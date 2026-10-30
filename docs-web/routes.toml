@@ -35,6 +35,20 @@ order = 0
 summary = "Initialize the WebAssembly bindings and start using COSMolKit."
 
 [[pages]]
+component = "JavaScriptWorkflows"
+path = "/javascript/workflows"
+binding = "javascript"
+topic = "workflows"
+status = "ready"
+indexable = true
+docname = "javascript/workflows"
+source = "sphinx"
+title = "JavaScript Workflows | COSMolKit"
+label = "Workflows"
+order = 1
+summary = "Use molecular IO, search, fingerprints, drawing, conformers and BIO."
+
+[[pages]]
 component = "JavaScriptApi"
 path = "/javascript/api"
 binding = "javascript"
@@ -45,7 +59,7 @@ docname = "javascript/api"
 source = "sphinx"
 title = "JavaScript / TypeScript API | COSMolKit"
 label = "API Reference"
-order = 1
+order = 2
 summary = "Browse signatures extracted from the generated TypeScript declarations."
 
 [[pages]]

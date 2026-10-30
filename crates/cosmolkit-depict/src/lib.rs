@@ -616,9 +616,11 @@ pub struct Compute2DCoordinatesParams {
 
 impl Default for Compute2DCoordinatesParams {
     fn default() -> Self {
+        // RDKit✔️✔️: (python::arg("mol"), python::arg("canonOrient") = true,
+        // GraphMol/Depictor/Wrap/rdDepictor.cpp: Compute2DCoords defaults.
         Self {
             coordinate_map: BTreeMap::new(),
-            canonical_orientation: false,
+            canonical_orientation: true,
             clear_existing_2d: true,
             flips_per_sample: 0,
             samples: 0,

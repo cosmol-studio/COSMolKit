@@ -17,6 +17,7 @@ pip install cosmolkit
 ```python
 import cosmolkit as ck
 
+print(ck.__version__)
 mol = ck.mol_from_smiles("CCO")
 print(mol.num_atoms)  # 3
 print(mol.to_smiles())

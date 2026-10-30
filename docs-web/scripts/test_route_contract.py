@@ -37,7 +37,7 @@ class RouteContractTests(unittest.TestCase):
     def test_installation_is_first_quickstart_section(self):
         source = MANIFEST.parent.parent / "docs/source/python/quickstart.rst"
         text = source.read_text(encoding="utf-8")
-        self.assertLess(text.index("Installation\n"), text.index("Value-Style Molecule Values\n"))
+        self.assertLess(text.index("Installation\n"), text.index("Create and inspect a molecule\n"))
         self.assertIn("pip install cosmolkit", text)
         rules = redirect_rules(PAGES)
         self.assertEqual(rules["/python/installation"], ("/python/quickstart", "301"))

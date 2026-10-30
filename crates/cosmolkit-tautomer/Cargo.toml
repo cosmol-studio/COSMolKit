@@ -12,16 +12,16 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.6.0-rc.1" }
-cosmolkit-model = { version = "0.6.0-rc.1", path = "../cosmolkit-model" }
+cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.6.0-rc.2" }
+cosmolkit-model = { version = "0.6.0-rc.2", path = "../cosmolkit-model" }
 
-cosmolkit-search = { version = "0.6.0-rc.1", path = "../cosmolkit-search", default-features = false }
-cosmolkit-types = { version = "0.6.0-rc.1", path = "../cosmolkit-types" }
-cosmolkit-core = { version = "0.6.0-rc.1", path = "../cosmolkit-core" }
-cosmolkit-smiles = { version = "0.6.0-rc.1", path = "../cosmolkit-smiles" }
+cosmolkit-search = { version = "0.6.0-rc.2", path = "../cosmolkit-search", default-features = false }
+cosmolkit-types = { version = "0.6.0-rc.2", path = "../cosmolkit-types" }
+cosmolkit-core = { version = "0.6.0-rc.2", path = "../cosmolkit-core" }
+cosmolkit-smiles = { version = "0.6.0-rc.2", path = "../cosmolkit-smiles" }
 thiserror = "2"
 
 [dev-dependencies]
-cosmolkit-model = { version = "0.6.0-rc.1", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
+cosmolkit-model = { version = "0.6.0-rc.2", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
 serde_json = "1"
 tempfile = "3"

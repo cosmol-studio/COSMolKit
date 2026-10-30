@@ -32,11 +32,11 @@ fn avalon_adapter_preserves_native_bits_and_source_state() {
             .fingerprint_avalon_with_params(&params)
             .unwrap()
             .on_bits(),
-        [6, 14, 30, 31, 42]
+        [3, 6, 14, 30, 31, 42]
     );
     assert_eq!(
         source.fingerprint_avalon().unwrap().on_bits(),
-        [42, 198, 222, 262, 334, 479, 490]
+        [42, 67, 198, 222, 262, 334, 479, 490]
     );
     assert_eq!(source, before);
     assert!(source.coordinates_2d().is_none());
@@ -76,6 +76,7 @@ fn avalon_stereo_conversion_preserves_native_bits_without_writeback() {
         let fingerprint = source
             .fingerprint_avalon_with_params(&AvalonFingerprintParams {
                 n_bits: 64,
+                bit_flags: cosmolkit::AvalonFingerprintFlags::ALL_FEATURES,
                 ..Default::default()
             })
             .unwrap();

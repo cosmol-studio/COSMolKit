@@ -4,16 +4,10 @@ Fingerprints
 .. meta::
    :description: COSMolKit molecular fingerprint APIs for source-backed Morgan, Pattern, AtomPair, Topological Torsion, MACCS, RDKFingerprint, Avalon, and Layered bit and count vectors with explicit RDKit parity boundaries.
 
-COSMolKit exposes fixed-length bit vectors plus the source-defined sparse bit
-and count forms used by AtomPair. The exposed Morgan and MACCS branches are
-covered by strict RDKit bit-identical parity tests. The source-backed
-topological, Avalon, Pattern, Layered, AtomPair, and Topological Torsion
-implementations follow their pinned upstream algorithms and exact
-maintained-corpus validation.
-Similarity-shape correlation or structurally similar hashing is not a
-compatibility claim. The Python ``Fingerprint`` object is a sparse view over
-the binary vector: ``on_bits()`` returns the bit indexes whose value is 1. It
-is not a dense floating-point neural embedding.
+COSMolKit exposes fixed-length bit vectors and sparse bit/count forms.
+``fp.on_bits`` returns set-bit indexes; ``fp.to_numpy()`` returns a dense
+``uint8`` array. See `VALIDATION.md <https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md>`__
+for reference versions and measured comparison coverage.
 
 Scaffold molecules
 ------------------
@@ -155,17 +149,11 @@ conveniences additionally report computation failures as indexed
 ``BatchValidationError`` records while retaining existing invalid inputs as
 ``None`` in their original positions.
 
-Validation covers vector forms, provenance, JSON, selections, chirality,
-paths, counts, collisions, and errors against the pinned RDKit reference.
-See ``VALIDATION.md`` in the source repository for the validation scope.
-
 Source-backed topological and Avalon fingerprints
 -------------------------------------------------
 
 ``Molecule.fingerprint_topological()`` and
 ``Molecule.fingerprint_avalon()`` execute source-backed Rust implementations.
-The standard corpus workflow compares Avalon against pinned RDKit with one
-fixed-seed parameter combination per molecule.
 
 The two APIs are source-backed and return a fresh explicit bit vector:
 
@@ -178,8 +166,7 @@ The two APIs are source-backed and return a fresh explicit bit vector:
   and byte-rounded vector semantics. ``resetVect`` is an internal adapter
   detail and is not exposed on COSMolKit's value-returning API.
 
-Comparison uses exact bit vectors, not similarity correlation or partial bit
-agreement. Python defaults to ``0xF07FFF``, matching RDKit's Python wrapper.
+The default ``bit_flags=0xF07FFF`` matches RDKit's Python wrapper.
 MOL conversion leaves the original molecule unchanged. The fingerprint path
 handles molecules without stored coordinates and does not require callers to
 generate 2D coordinates first.
@@ -345,8 +332,7 @@ other fingerprint families without shared option state.
 ``n_bits`` must be greater than zero. SMARTS-compilation and substructure
 matching failures remain typed exceptions rather than selecting another
 fingerprint algorithm. RDKit labels Pattern fingerprint version ``1.0.0``
-experimental; COSMolKit preserves that upstream metadata while its documented
-ordinary-molecule boundary is tested exactly against the pinned source.
+experimental; COSMolKit preserves that upstream metadata.
 
 The pinned RDKit ordinary overload accepts ``atomCounts`` and ``setOnlyBits``
 but only validates their sizes; their values are otherwise unused and
@@ -354,12 +340,6 @@ unchanged. COSMolKit intentionally omits those inert arguments instead of
 presenting them as functional options. RDKit's separate ``MolBundle`` overload
 intersects member fingerprints. COSMolKit does not expose it because an
 ordered ``MoleculeBatch`` returns one result per record and is not a bundle.
-
-The committed focused, small, and 5,000-row matrices cover query inputs,
-tautomer mode, boundary and collision-prone widths, inert-argument behavior,
-and exact validation errors. The complete ChEMBL 37 audit compares ten full
-profiles across all 2,897,804 mutually parseable records: 28,978,040 exact
-vectors with zero mismatch.
 
 AtomPair fingerprints
 ---------------------
@@ -410,11 +390,6 @@ rows, endpoint-pair bit information, and atoms-per-bit provenance:
    print(output.atom_to_bits)
    print(output.bit_info_map)
    print(output.atoms_per_bit)
-
-The complete ChEMBL 37 validation compares 40 vectors and one full provenance
-output for every one of the 2,897,804 mutually parseable records: 118,809,964
-exact comparisons with zero mismatch. The maintained 5,000-row, ten-profile
-matrix remains the committed continuous regression gate.
 
 Topological provenance
 -----------------------
@@ -490,20 +465,19 @@ The short Morgan methods accept a parameter record or configuration keywords:
    fp = mol.fingerprint_morgan(radius=2, fp_size=256, include_chirality=True)
 
    params = ck.MorganFingerprintParams(from_atoms=[0])
-   params.generator.radius = 2
-   params.generator.fp_size = 256
-   params.from_atoms.append(1)
+   params.radius = 2
+   params.fp_size = 256
+   params.from_atoms = [0, 1]
    fp = mol.fingerprint_morgan(params)
 
-Nested parameters and configuration lists are live views of their parent
-record. Edits go through native conversion and validation; rejected edits leave
-the record unchanged. Constructor inputs are copied, so editing a parameter
-record does not modify a list or generator previously passed into it. Do not
-combine a parameter record with its configuration keywords, or ``generator=``
-with generator keywords such as ``radius=``.
+Assign sequence fields as a whole; their getters return immutable tuples.
+Nested parameter objects, where present, write through to their owning
+configuration. Rejected assignments leave the configuration unchanged.
+Constructor inputs are copied. Do not combine a parameter record with
+configuration keywords, including explicit ``None``. Execution reads the
+supplied configuration without changing it.
 
-The Python binding exposes the source-backed Morgan generator branches covered
-by exact RDKit bit parity:
+Morgan configuration includes:
 
 - ``radius`` and ``fp_size``
 - ``include_chirality`` and ``use_bond_types``
@@ -512,17 +486,13 @@ by exact RDKit bit parity:
 - ``include_redundant_environments``
 - ``from_atoms`` and ``ignore_atoms``
 - ``custom_atom_invariants`` and ``custom_bond_invariants``
-- ``atom_invariants_generator="connectivity" | "morgan" | "feature" | "fcfp"``
-- ``atom_invariants_include_ring_membership``
-- ``bond_invariants_generator="morgan" | "default" | "bond"``
-- ``bond_invariants_use_bond_types``
-- ``bond_invariants_use_chirality``
-- ``num_bits_per_feature``
+- ``invariants`` (``MorganInvariants.Connectivity``, ``MorganInvariants.Features``
+  or explicit ``MorganInvariants.FeaturePatterns``)
+- ``include_ring_membership``
+- ``bits_per_feature``
 
-The list is the tested boundary, not a claim that every RDKit fingerprint
-generator or every input-state preparation branch is implemented. Unsupported
-branches propagate an error; they do not silently fall back to another
-fingerprint algorithm.
+Invalid configurations raise typed errors; no other fingerprint algorithm is
+substituted. See the API reference for exact configuration types.
 
 Batch Fingerprints
 ------------------

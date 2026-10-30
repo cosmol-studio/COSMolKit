@@ -59,14 +59,13 @@ User metadata retains its type instead of being converted to text:
 .. code-block:: python
 
    carbon = ck.mol_from_smiles("C")
-   tagged = carbon.with_atom_property(0, "tracking_id", 42)
-   assert carbon.atom_property(0, "tracking_id") is None
-   assert tagged.atom_property(0, "tracking_id") == 42
-   tagged.set_atom_property_(0, "tracking_id", 43)
+   tagged = carbon.with_atom_property_int(0, "tracking_id", 42)
+   assert carbon.atom_property_int(0, "tracking_id") is None
+   assert tagged.atom_property_int(0, "tracking_id") == 42
+   tagged.set_atom_property_int_(0, "tracking_id", 43)
 
-Values support ``bool``, ``int`` (signed 32-bit or unsigned 32-bit), ``float``,
-``str``, homogeneous ``list[int]`` (signed 32-bit), and ``list[str]``.
-An empty list is stored as a string list. Missing keys return ``None``;
+Choose a typed suffix: ``bool``, ``int``, ``uint``, ``double``, ``string``,
+``int_vector`` or ``string_vector``. Missing keys return ``None``;
 invalid atom indices, reserved keys and unsupported value types raise errors.
 Setters accept nonempty user keys, not underscore-prefixed private keys,
 computed properties, atom-map numbers or reaction bookkeeping keys.
@@ -76,11 +75,11 @@ Reaction copying is an explicit CK extension, disabled by default:
 
 .. code-block:: python
 
-   oxygen = ck.mol_from_smiles("O").with_atom_property(0, "tracking_id", 84)
+   oxygen = ck.mol_from_smiles("O").with_atom_property_int(0, "tracking_id", 84)
    reaction = ck.Reaction.from_smirks("[C:1].[O:2]>>[C:1][O:2]")
    params = ck.ReactionRunParams(copy_atom_properties=True)
    product = reaction.run([tagged, oxygen], params)[0][0]
-   assert [product.atom_property(i, "tracking_id") for i in range(2)] == [43, 84]
+   assert [product.atom_property_int(i, "tracking_id") for i in range(2)] == [43, 84]
 
 Copying follows both the input-reactant index and source-atom index, not
 destination positions. Each duplicate inherits its source's user metadata;
@@ -90,10 +89,9 @@ computed, CIP and reaction bookkeeping properties are not additionally copied.
 ``False`` means no extra copying; it does not clear properties retained by the
 normal reaction algorithm. Chemical assignment follows the normal pipeline.
 
-JavaScript uses ``withAtomProperty``, ``setAtomProperty`` and ``atomProperty``;
-missing keys return ``null``. Numbers with integral values use the integer
-property types (except negative zero); other numbers use doubles. Arrays have
-the same homogeneous value restrictions as Python. Set
+JavaScript uses the same typed families: ``withAtomPropertyInt``,
+``setAtomPropertyInt_`` and ``atomPropertyInt``; missing keys return ``undefined``.
+Set
 ``params.copyAtomProperties = true`` before ``reaction.run(inputs, params)``.
 
 Restricted application
@@ -115,7 +113,8 @@ and ``changed`` properties. The ``_`` variant changes the receiver and returns
 the source-defined boolean, not a graph-difference approximation. Explicit
 parameter forms accept ``ReactionApplyParams``. Application requires one
 reactant and one product template and cannot add new product atoms; use
-product generation for other supported reactions. Failure is atomic.
+product generation for other supported reactions. Use the value-returning form
+when the input must remain unchanged after a failure.
 
 Templates, validation and errors
 --------------------------------
@@ -131,12 +130,12 @@ without changing the source reaction. Explicit forms accept
 ``ReactionValidationParams(silent=True)``.
 
 Results are read-only; ``ReactionRunParams`` fields are writable configuration.
-Errors retain ``domain``, ``kind`` and variant
-context such as ``role``, ``template``, ``index``, ``count`` and ``atom``.
+Errors retain ``domain``, a typed ``variant`` and payload fields such as
+``role``, ``template``, ``index``, ``count`` and ``atom`` where applicable.
 ``OperationError.__cause__`` retains ``ReactionRunError`` or
 ``ReactionApplyError``. Invalid initialization includes a validation ``report``.
-These bindings do not establish full Reaction/SMIRKS corpus parity; existing
-source-backed limitations and order-sensitive discrepancies remain unchanged.
+Measured comparison coverage is recorded in
+`VALIDATION.md <https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md>`__.
 
 JavaScript
 ----------

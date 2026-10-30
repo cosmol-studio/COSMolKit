@@ -8,6 +8,17 @@ declared overloads, indexing and NumPy annotations. See the
 
 Run all commands from the repository root.
 
+## Test published prereleases
+
+Dev and rc builds are for development testing:
+
+```bash
+pip install --upgrade --pre cosmolkit
+```
+
+`--pre` allows both dev and rc versions. To test a specific build, use
+`pip install cosmolkit==<published-version>`.
+
 ## Prepare
 
 Install development tools and the extractor matching PyO3:
@@ -49,14 +60,14 @@ After changing bindings or generation rules, run `build_stubs.py` again.
 ```
 
 Compares the canonical registry with the built package and generated types,
-including configuration fields and errors. Writes `artifacts/registry.json`.
+including configuration fields and errors. Writes `python/artifacts/registry.json`.
 
 ## Build and install a wheel
 
 After `build_stubs.py`, package the extension, `__init__.py`, `__init__.pyi` and `py.typed`:
 
 ```bash
-.venv/bin/maturin build --manifest-path python/Cargo.toml \
+.venv/bin/maturin build --release --manifest-path python/Cargo.toml \
     --target-dir target/typed_facade_projection --features extension \
     --interpreter .venv/bin/python \
     --out python/artifacts/wheels
@@ -65,8 +76,9 @@ uv pip install --python .venv/bin/python --reinstall \
 .venv/bin/python -c 'import cosmolkit as ck; print(ck.mol_from_smiles("CCO").num_atoms)'
 ```
 
-The final command prints `3`. Add `--release` to `maturin build` for an optimized
-wheel. Distribution name: `cosmolkit`; import name: `cosmolkit`.
+The final command prints `3`. Omit `--release` only for faster local debug
+builds; use optimized wheels for applications and performance measurements.
+Distribution name: `cosmolkit`; import name: `cosmolkit`.
 
 Release wheels use `release-abi3-py39` for Python 3.9 and newer, alongside
 `release-cpython` builds for Python 3.11, 3.12 and 3.13. Type declarations are

@@ -30,7 +30,7 @@ def invalid_ffi_call(operation: object) -> Callable[..., object]:
 def test_all_parameter_defaults_and_writable_fields():
     params = cosmolkit.Coordinate2DParams()
     empty_map: dict[int, list[float]] = {}
-    expected: dict[str, object] = dict(coordinate_map=empty_map, canonical_orientation=False,
+    expected: dict[str, object] = dict(coordinate_map=empty_map, canonical_orientation=True,
                     clear_existing_2d=True, flips_per_sample=0, samples=0,
                     sample_seed=0, permute_degree_four=False, force_rdkit=False,
                     use_ring_templates=False)

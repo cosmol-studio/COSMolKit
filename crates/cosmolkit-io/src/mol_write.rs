@@ -753,7 +753,12 @@ fn prepare_mol_for_writing<'a>(
             let conformer = cosmolkit_depict::compute_2d_coordinates(
                 &mol.topology,
                 mol.properties,
-                &Default::default(),
+                &cosmolkit_depict::Compute2DCoordinatesParams {
+                    // RDKit✔️✔️: bool canonOrient = false, bool clearConfs = true,
+                    // RDDepictor.h: prepareMol uses the C++ default, not the Python default.
+                    canonical_orientation: false,
+                    ..Default::default()
+                },
             )?;
             let coordinates = mol.coordinates.to_mut();
             coordinates.record_source_conformer_append(CoordinateDimension::TwoD)?;

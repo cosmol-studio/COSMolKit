@@ -130,9 +130,5 @@ Neither proposal authorizes implementation or reorders the active plan.
 | [tools/](./tools/) | Development-only checking and preparation tools |
 | [archive/](./archive/) | Historical snapshots and superseded records; never normative |
 
-[VALIDATION.md](../VALIDATION.md) records current COSMolKit 0.5.1-rc.2 validation
-against RDKit 2026.09.1: 180,000 ChEMBL 37 source records across completed task
-runs, 220,258,878 matching observations and zero unresolved mismatches after
-verified corrections. Numerical comparisons are bit-exact; timeouts and
-incomplete coverage are recorded separately.
+[VALIDATION.md](../VALIDATION.md) records tested versions, measured coverage and comparison rules.
 Historical inventories are not a second current-status ledger.

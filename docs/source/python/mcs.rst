@@ -6,7 +6,8 @@ Maximum common substructure
 
 This experimental search finds a common **query graph**, not a concrete
 molecule. It requires at least two molecules and never changes its inputs.
-Full RDKit FMCS parity and comparable performance have not been established.
+See `VALIDATION.md <https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md>`__
+for measured comparison scope.
 Result queries preserve RDKit's source-first atom and bond alternative order;
 the SMARTS comparison is exact, without sorting equivalent alternatives.
 

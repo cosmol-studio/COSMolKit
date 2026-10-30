@@ -39,6 +39,9 @@ Executable __init__.py:
 6. Re-export the existing native classes/functions without wrappers, replacement
    methods or new classes. All argument processing remains in the Rust binding.
    Indexing and property-setter adjustments above affect the stub only.
+   Emit the historical cosmolkit.cosmolkit reconstruction module for 0.5.0
+   pickles; it re-exports only the existing binary reconstruction function.
+   Emit __version__ from pyproject.toml in both package and stub.
 
 Files: write __init__.pyi and __init__.py, copy the compiled extension under its
 importable _native name, and create py.typed. Do not modify the official stub or
@@ -51,6 +54,7 @@ the method name or an inferred relationship between arbitrary union members.
 from __future__ import annotations
 
 import ast
+import tomllib
 import copy
 from importlib.machinery import EXTENSION_SUFFIXES, ExtensionFileLoader
 import importlib.util
@@ -298,6 +302,8 @@ def generate(library: Path, official_stub: Path, output: Path):
         raise ValueError("private_export requires an explicitly exported native private function")
     tree.body = [node for node in tree.body if not isinstance(node, ast.Assign) or not any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)]
     tree.body.insert(0, ast.Import(names=[ast.alias(name="builtins"), ast.alias(name="typing")]))
+    version = tomllib.loads((Path(__file__).parent / "pyproject.toml").read_text())["project"]["version"]
+    tree.body.append(ast.parse(f"__version__: str = {version!r}").body[0])
     tree.body.append(ast.parse(f"__all__ = {exports!r}").body[0])
 
     package = output / "cosmolkit"
@@ -306,8 +312,12 @@ def generate(library: Path, official_stub: Path, output: Path):
     (package / "__init__.pyi").write_text(ast.unparse(ast.fix_missing_locations(tree)) + "\n")
     runtime = f"from . import _native\nfrom ._native import {', '.join(exports + private_exports)}\n"
     runtime += "".join(f"{name}.__module__ = __name__\n" for name in private_exports)
-    runtime += f"__all__ = {exports!r}\n"
+    runtime += f"__version__ = {version!r}\n__all__ = {exports!r}\n"
     (package / "__init__.py").write_text(runtime)
+    (package / "cosmolkit.py").write_text(
+        '"""Private reconstruction path retained for 0.5.0 pickle files."""\n'
+        'from . import _molecule_from_binary\n'
+    )
     (package / "py.typed").touch()
     return package
 

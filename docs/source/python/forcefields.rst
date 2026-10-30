@@ -49,7 +49,10 @@ MMFF parameters, energy, and gradient
        raise ValueError("MMFF parameters are unavailable for this molecule")
 
    properties = mol.mmff_properties_with_params(
-       ck.MmffPropertiesParams(mmff_variant="MMFF94")
+       ck.MmffPropertiesParams(
+           mmff_variant=ck.MmffVariant.Mmff94,
+           # mmff_variant="MMFF94",
+       )
    )
    print(properties.atom_type(0))
    print(properties.formal_charge(0))
@@ -57,7 +60,8 @@ MMFF parameters, energy, and gradient
 
    evaluation = mol.mmff_energy_gradient_with_params(
        ck.MmffEvaluationParams(
-           mmff_variant="MMFF94",
+           mmff_variant=ck.MmffVariant.Mmff94,
+           # mmff_variant="MMFF94",
            conformer_id=conformer_id,
            non_bonded_threshold=100.0,
            ignore_interfragment_interactions=True,
@@ -82,7 +86,8 @@ MMFF single- and multiple-conformer optimization
 
    result = mol.with_mmff_optimized_with_params(
        ck.MmffOptimizationParams(
-           mmff_variant="MMFF94",
+           mmff_variant=ck.MmffVariant.Mmff94,
+           # mmff_variant="MMFF94",
            max_iterations=200,
            conformer_id=conformer_id,
            non_bonded_threshold=100.0,
@@ -104,7 +109,8 @@ MMFF single- and multiple-conformer optimization
        ck.MmffConformerOptimizationParams(
            num_threads=1,
            max_iterations=200,
-           mmff_variant="MMFF94",
+           mmff_variant=ck.MmffVariant.Mmff94,
+           # mmff_variant="MMFF94",
            non_bonded_threshold=100.0,
        )
    )
@@ -114,8 +120,8 @@ MMFF single- and multiple-conformer optimization
 
 These value-style calls leave ``mol`` unchanged. Status ``0`` indicates
 convergence, ``1`` indicates that more iterations are needed, and MMFF status
-``-1`` indicates invalid parameterization. Therefore ``not needs_more()``
-alone is not a success check: inspect ``status_code()`` as well.
+``-1`` indicates invalid parameterization. Therefore ``not result.needs_more``
+alone is not a success check: inspect ``result.status_code`` as well.
 
 Default single-conformer MMFF optimization uses 200 iterations and a
 non-bonded threshold of 100.0. Default multiple-conformer optimization uses
@@ -168,7 +174,8 @@ Interactive Python workflow
 
    ff = mol.mmff_force_field(
        conformer_id=conformer_id,
-       mmff_variant="MMFF94",
+       mmff_variant=ck.MmffVariant.Mmff94,
+       # mmff_variant="MMFF94",
        non_bonded_threshold=100.0,
        ignore_interfragment_interactions=True,
    )
@@ -178,7 +185,7 @@ Interactive Python workflow
    x, y, z = ff.position(1)
    ff.set_position_(1, (x + 0.2, y, z))
    print(ff.energy())
-   gradient = ff.gradient()  # independent float64 NumPy array, shape (N, 3)
+   gradient = np.asarray(ff.gradient(), dtype=np.float64)  # shape (N, 3)
 
    ff.set_fixed_atoms_([0, 2])
    full_gradient = ff.gradient_unconstrained()  # includes fixed-atom rows
@@ -189,13 +196,13 @@ Interactive Python workflow
    ff.set_position_(1, (x + 0.4, y, z))
    outcome = ff.minimize_(max_iterations=20)
 
-   positions = ff.positions  # independent writable NumPy snapshot
+   positions = np.asarray(ff.positions, dtype=np.float64)  # independent snapshot
    positions[:, 2] += 0.1
    ff.set_positions_(positions)
    ff.set_fixed_atoms_([])      # replace the fixed set with an empty set
 
    evaluation = ff.energy_gradient()
-   print(evaluation.energy, evaluation.gradient.shape)
+   print(evaluation.energy, np.asarray(evaluation.gradient).shape)
 
 Factory and configuration surface
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -205,7 +212,9 @@ Python factories accept keyword-only configuration:
 .. code-block:: python
 
    mmff = mol.mmff_force_field(
-       conformer_id=conformer_id, mmff_variant="MMFF94",
+       conformer_id=conformer_id,
+       mmff_variant=ck.MmffVariant.Mmff94,
+       # mmff_variant="MMFF94",
        non_bonded_threshold=100.0, ignore_interfragment_interactions=True,
    )
 
@@ -221,17 +230,18 @@ Reusable configuration remains available through parameter objects:
 
    params = ck.MmffForceFieldParams(
        conformer_id=conformer_id,
-       mmff_variant="MMFF94",
+       mmff_variant=ck.MmffVariant.Mmff94,
+       # mmff_variant="MMFF94",
    )
-   ff = mol.mmff_force_field_with_params(params)
-   outcome = ff.minimize_with_params_(
+   ff = mol.mmff_force_field(params)
+   outcome = ff.minimize_(
        ck.ForceFieldMinimizeParams(
            max_iterations=20, force_tolerance=1e-4, energy_tolerance=1e-6
        )
    )
 
-Python parameter-object and keyword calls use the same implementation, fields
-and defaults. The explicit ``*_with_params`` forms remain available as well.
+Python parameter-object and keyword calls use the same method, implementation,
+fields and defaults; do not combine the two call forms.
 
 Distance, angle, torsion, and position constraints
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -297,34 +307,9 @@ coordinates in a new molecule.
 Handle and result API
 ~~~~~~~~~~~~~~~~~~~~~
 
-The following signatures describe the handle and its result types:
-
-.. code-block:: text
-
-   class MolecularForceField:
-       def position(self, atom_id: int) -> tuple[float, float, float]: ...
-       def set_position_(self, atom_id: int, position) -> None: ...
-       def positions(self) -> np.ndarray: ...
-       def set_positions_(self, positions) -> None: ...
-       def fixed_atoms(self) -> tuple[int, ...]: ...
-       def set_fixed_atoms_(self, atom_ids) -> None: ...
-       def energy(self) -> float: ...
-       def gradient(self) -> np.ndarray: ...
-       def gradient_unconstrained(self) -> np.ndarray: ...
-       def energy_gradient(self) -> ForceFieldEnergyGradient: ...
-       def minimize_(self, *, max_iterations: int = 200,
-                    force_tolerance: float = 1e-4,
-                    energy_tolerance: float = 1e-6) -> ForceFieldMinimizeOutcome: ...
-       def minimize_with_params_(self, params) -> ForceFieldMinimizeOutcome: ...
-
-   class ForceFieldEnergyGradient:
-       energy: float           # read-only
-       gradient: np.ndarray    # independent (N, 3) snapshot
-
-   class ForceFieldMinimizeOutcome:
-       converged: bool         # read-only
-       iterations: int         # actual completed iterations
-       energy: float           # final energy, read-only
+See :class:`cosmolkit.MolecularForceField`,
+:class:`cosmolkit.ForceFieldEnergyGradient` and
+:class:`cosmolkit.ForceFieldMinimizeOutcome` for generated signatures.
 
 ``set_position_`` accepts a three-component sequence. ``set_positions_`` accepts
 nested numeric sequences or NumPy arrays of shape ``(N, 3)``; input values are
@@ -342,12 +327,9 @@ All three arguments reach the same source-backed optimizer. The pinned RDKit
 changing energy tolerance alone therefore does not currently change convergence.
 CK preserves that behavior rather than inventing an energy stopping criterion.
 
-Persistent factory and evaluator errors expose a typed
-``MolecularForceFieldErrorKind`` through Rust ``kind()`` and Python ``kind``.
-For example, compare ``error.kind == ck.MolecularForceFieldErrorKind.MissingConformer``,
-not a string. Context remains available through ``requested``, ``atom_index``,
-``expected``, ``actual`` and ``component`` where applicable; Rust ``source()``
-and Python ``__cause__`` preserve the concrete lower-level cause.
+Errors expose their typed discriminant through ``variant`` and preserve actual
+lower-level causes in ``__cause__``. Payload fields are documented on the
+corresponding exception in the API reference.
 ``InvalidTolerance`` identifies the source optimizer's rejected force tolerance
 (``component == 0``); energy tolerance is forwarded without a new CK-only constraint.
 
@@ -366,10 +348,11 @@ Ownership, updates, and numerical semantics
 * Coordinate updates invalidate relevant distance caches automatically.
   Users do not call ``Initialize``. A single-atom update avoids copying all
   positions or retyping atoms; this does not make energy evaluation O(1).
-* ``positions()`` and ``gradient()`` return independent NumPy snapshots.
+* ``positions`` and ``gradient()`` return independent nested lists.
+  Use ``np.asarray(values, dtype=np.float64)`` for array operations.
   Editing a snapshot alone does not change the force field.
-* ``gradient_unconstrained()`` returns an independent float64 ``(N, 3)``
-  array of full energy derivatives, including fixed-atom rows. It omits only
+* ``gradient_unconstrained()`` returns full energy derivatives as independent
+  rows of three floats, including fixed-atom rows. It omits only
   the fixed-atom zeroing performed by ``gradient()``; it does not remove energy
   terms, change the fixed set or alter minimization. Physical force is the
   negative of this gradient.

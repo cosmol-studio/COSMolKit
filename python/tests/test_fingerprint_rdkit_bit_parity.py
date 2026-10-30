@@ -90,7 +90,7 @@ def test_avalon_fingerprint_returns_source_backed_bits_without_mutating_molecule
     assert ck_mol.to_smiles() == before
 
 
-def test_avalon_native_default_and_explicit_rdkit_python_profile():
+def test_avalon_default_matches_rdkit_python_and_preserves_explicit_cpp_profile():
     mol = cosmolkit.Molecule.from_smiles("CCO")
 
     default = mol.fingerprint_avalon(n_bits=64)
@@ -101,8 +101,8 @@ def test_avalon_native_default_and_explicit_rdkit_python_profile():
     )
     cpp_profile = mol.fingerprint_avalon(n_bits=64, bit_flags=0x007FFF)
 
-    # CK follows the native Avalon parameter default, not RDKit Python's override.
-    assert _ck_bits(default) == _ck_bits(cpp_profile)
+    # pyAvalonTools.cpp: GetAvalonFP defaults bitFlags to avalonSimilarityBits.
+    assert _ck_bits(default) == _ck_bits(explicit)
     assert _ck_bits(cpp_profile) == {6, 14, 30, 31, 42}
     assert _ck_bits(explicit) == {3, 6, 14, 30, 31, 42}
 

@@ -98,20 +98,9 @@ cargo test -p cosmolkit-inchi --release \
 
 ## Validation Status
 
-Current COSMolKit **0.5.1-rc.2** validation against RDKit **2026.09.1** covers
-**180,000 ChEMBL 37 source records** across completed task runs, with
-**220,258,878 matching observations** and **zero unresolved mismatches**.
-Numerical comparisons are bit-exact; timeouts and incomplete task groups are
-recorded separately. This ChEMBL coverage does not include the InChI
-corpus/diagnostic matrix. See
-[VALIDATION.md](../../VALIDATION.md) for completed coverage and comparison rules.
-Million-scale validation remains pending.
-Focused source-port tests cover the active official-engine call graph, and
-independent official-C oracle tests compare observable output fields at the
-function boundaries. The public COSMolKit adapter is also compared exactly
-with pinned RDKit output on the committed small corpus and the 5000-row InChI
-corpus. Tests do not ignore fields, use compatibility thresholds, or route
-production calls through the C oracle.
+[VALIDATION.md](../../VALIDATION.md) records measured coverage and comparison
+rules for each tested version. The commands above run focused source-port and
+opt-in upstream-oracle checks; they do not invoke an oracle in production.
 
 ## Source Alignment
 

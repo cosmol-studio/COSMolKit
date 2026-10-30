@@ -1,5 +1,19 @@
 # WASM development
 
+## Test published prereleases
+
+Dev and rc builds are for development testing:
+
+```bash
+npm install @cosmol-studio/cosmolkit@rc
+npm install @cosmol-studio/cosmolkit@dev
+```
+
+Select one channel, or pin an exact published version for reproducibility.
+The same tags apply to the smaller feature packages.
+
+## Build from source
+
 Requires Rust with `wasm32-unknown-unknown`, Python 3.11+, Node.js/npm and
 `wasm-bindgen-cli 0.2.128`.
 
@@ -36,7 +50,7 @@ protocols do not require a second consumer inventory.
 
 The standalone Cargo workspace keeps the WASM toolchain lock separate.
 `CARGO_TARGET_DIR` can select its build cache. Publication uses the existing
-npm package names and `rc`/`latest` labels. The retained `wasm_old/` directory
+npm package names and `dev`/`rc`/`latest` labels. The retained `wasm_old/` directory
 is not used by builds, documentation or publication.
 
 Follow [BINDING_CONTRACT.md](BINDING_CONTRACT.md) for input validation, ownership,

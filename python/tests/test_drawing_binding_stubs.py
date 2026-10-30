@@ -80,7 +80,7 @@ def test_parameter_properties_types_and_defaults():
     cls = declarations()["Coordinate2DParams"]
     methods = {n.name: n for n in cls.body if isinstance(n, ast.FunctionDef)
                and not any(isinstance(d, ast.Attribute) and d.attr == "setter" for d in n.decorator_list)}
-    defaults = {"coordinate_map": {}, "canonical_orientation": False, "clear_existing_2d": True,
+    defaults = {"coordinate_map": {}, "canonical_orientation": True, "clear_existing_2d": True,
                 "flips_per_sample": 0, "samples": 0, "sample_seed": 0,
                 "permute_degree_four": False, "force_rdkit": False, "use_ring_templates": False,
                 "use_path_angle_expansion": True}

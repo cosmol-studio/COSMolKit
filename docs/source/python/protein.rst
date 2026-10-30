@@ -86,19 +86,19 @@ number of protein chains, and ``protein[i]`` returns a ``ProteinChainRef``.
 .. code-block:: python
 
    first_chain = protein[0]
-   print(first_chain.id, first_chain.kind, len(first_chain))
+   print(first_chain.id, first_chain.kind, len(first_chain.residues))
 
    for chain in protein.chains:
        for residue in chain.residues:
            if residue.code == ck.ResidueCode.MET:
                print("methionine", residue.id, residue.fasta_code)
-           print(residue.id, residue.name, residue.code, len(residue))
+           print(residue.id, residue.name, residue.code, len(residue.atoms))
 
            for atom in residue.atoms:
-               print(atom.id, atom.name, atom.element, atom.position())
+               print(atom.id, atom.name, atom.element, atom.position)
 
-``atom.position()`` returns ``None`` when the atom has no Cartesian coordinate
-in the selected structure data; otherwise it returns ``(x, y, z)``.
+``atom.position`` returns ``None`` when the atom has no Cartesian coordinate
+in the selected structure data; otherwise it returns a list ``[x, y, z]``.
 
 Residue Information
 -------------------
@@ -127,9 +127,9 @@ source-derived classification fields. Sequence expansion follows Gemmi's
        "MSE",
    ]
 
-``fasta_code()`` deliberately follows Gemmi and emits ``"X"`` for modified
+``fasta_code`` deliberately follows Gemmi and emits ``"X"`` for modified
 residues. For rendering, secondary-structure logic, or residue-family tests,
-use ``canonical_one_letter_code()`` or ``parent_standard_code()`` instead. For
+use ``canonical_one_letter_code`` or ``parent_standard_code`` instead. For
 example, ``HYP`` maps to ``PRO`` and ``SEP`` maps to ``SER`` without changing
 the raw residue name returned by ``ProteinResidueRef.name``.
 
