@@ -12,7 +12,8 @@ permissions:
 
 jobs:
     python-bindings:
-        runs-on: ubuntu-latest
+        # Python 3.13.12 has no setup-python distribution for Ubuntu 26.04.
+        runs-on: ubuntu-24.04
         env:
             CARGO_PROFILE_DEV_DEBUG: "0"
         steps:
@@ -37,7 +38,8 @@ jobs:
                   .venv/bin/python python/registry_check.py
 
     rust-coverage:
-        runs-on: ubuntu-latest
+        # Keep the pinned reference Python available when ubuntu-latest moves.
+        runs-on: ubuntu-24.04
         env:
             # Use the optimized development-test profile for all test stages.
             RUST_MIN_STACK: "8388608"

@@ -25,6 +25,9 @@ CLIENT_PRELOAD = re.compile(
 CLIENT_MODULE = re.compile(
     r'<script type="module"[^>]*cosmolkit-docs-web[^>]*></script>', re.DOTALL
 )
+CLIENT_ASSET = re.compile(
+    r"cosmolkit-docs-web(?:_bg)?(?:-[-\w]+)?\.(?:js|wasm)(?:\.map)?(?:\.(?:br|gz))?"
+)
 
 
 def strip_client_runtime(public: Path) -> int:
@@ -40,6 +43,13 @@ def strip_client_runtime(public: Path) -> int:
         if result != source:
             page.write_text(result, encoding="utf-8")
             changed += 1
+    # Removing HTML references does not remove files from the upload artifact.
+    # Delete only this application's unused hydration bundle, not search assets.
+    assets = public / "assets"
+    if assets.is_dir():
+        for asset in assets.iterdir():
+            if asset.is_file() and CLIENT_ASSET.fullmatch(asset.name):
+                asset.unlink()
     return changed
 
 

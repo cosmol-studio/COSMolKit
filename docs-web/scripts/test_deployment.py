@@ -103,6 +103,22 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(flatten_html_routes(self.public), 0)
         self.assertEqual(strip_client_runtime(self.public), 0)
 
+    def test_unused_client_bundle_removed_but_search_preserved(self):
+        assets = self.public / "assets"
+        assets.mkdir()
+        removed = ["cosmolkit-docs-web-dxh123.js",
+                   "cosmolkit-docs-web_bg-dxh456.wasm",
+                   "cosmolkit-docs-web-dxh123.js.map",
+                   "cosmolkit-docs-web_bg-dxh456.wasm.br"]
+        retained = ["docs_search-fixture.js", "docs_search_bg-fixture.wasm",
+                    "cosmolkit-docs-web.css"]
+        for name in removed + retained:
+            (assets / name).write_bytes(b"fixture")
+        self.page("index.html", "", runtime=True)
+        self.assertEqual(strip_client_runtime(self.public), 1)
+        self.assertEqual(sorted(p.name for p in assets.iterdir()), sorted(retained))
+        self.assertEqual(strip_client_runtime(self.public), 0)
+
     def test_shared_sphinx_assets_do_not_publish_python_modules_as_javascript(self):
         self.prepare()
         with tempfile.TemporaryDirectory() as temporary:

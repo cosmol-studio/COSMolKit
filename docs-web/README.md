@@ -127,7 +127,9 @@ The search tool installer uses `cargo-binstall` and keeps the matching
 package's `Cargo.toml`; `COSMOLKIT_WASM_BINDGEN` can select an existing matching
 binary. The `wasm32-unknown-unknown` Rust target must also be installed.
 
-The production deployment uses Dioxus SSG and Cloudflare Pages. Pushes to
+The production deployment renders static HTML with native Dioxus and uploads
+it to Cloudflare Pages. It does not compile the site's browser WASM; only the
+independent search engine uses WASM. Pushes to
 `main` build and deploy through `.github/workflows/docs-web.yml`, using the
 checkout's Python extension and generated WASM declarations. URLs omit `.html` and trailing
 slashes; legacy addresses redirect to the canonical pages.
@@ -137,6 +139,16 @@ runner's temporary directory. Compiler caches stay available, while old flat
 HTML files cannot conflict with the newly generated SSG routes. Likewise,
 local rebuilds should preserve the previous prepared `public` directory
 elsewhere before invoking `dx build` again.
+
+From `docs-web/`, generate the static pages without a browser application:
+
+```sh
+dx build --release --server --no-default-features --features server --inject-loading-scripts false --locked
+../.venv/bin/python scripts/render_static.py target/dx/cosmolkit-docs-web/release/web/server
+```
+
+The native renderer runs only during generation and exits afterwards. Deploy
+only its `public/` directory, not the native executable.
 
 ## SEO deployment artifacts
 

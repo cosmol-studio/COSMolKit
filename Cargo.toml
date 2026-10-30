@@ -33,7 +33,7 @@ exclude = ["wasm", "wasm_old", "tmp/alef/wasm"]
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.6.0-dev.1"
+version = "0.6.0-dev.2"
 authors = ["COSMolKit Contributors"]
 description = "Core cheminformatics and structural biology toolkit in Rust"
 repository = "https://github.com/cosmol-studio/COSMolKit"

@@ -102,7 +102,8 @@ jobs:
                   if [ -d "$public_dir" ]; then
                       mv "$public_dir" "$RUNNER_TEMP/docs-web-public-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
                   fi
-                  dx build --release --web --fullstack true --ssg --features "ssg" --force-sequential
+                  dx build --release --server --no-default-features --features server --inject-loading-scripts false --locked
+                  ../.venv/bin/python scripts/render_static.py target/dx/cosmolkit-docs-web/release/web/server
 
             - name: Prepare deployment files
               run: |

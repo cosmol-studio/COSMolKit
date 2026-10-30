@@ -17,6 +17,6 @@ runtime-invariants = []
 op-contracts = []
 
 [dependencies]
-cosmolkit-types = { version = "0.6.0-dev.1", path = "../cosmolkit-types" }
+cosmolkit-types = { version = "0.6.0-dev.2", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
 serde_json = "1"
