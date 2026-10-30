@@ -17,7 +17,7 @@ if (typeof api.__bindingRegistrySnapshot !== 'function') {
     throw new Error('Build inspection metadata first: python wasm/build.py --registry');
 }
 const snapshot = JSON.parse(api.__bindingRegistrySnapshot());
-if (snapshot.version !== 2 || !snapshot.records.length) throw new Error('Rebuild registry metadata with the current build.py --registry');
+if (snapshot.version !== 3 || !snapshot.records.length) throw new Error('Rebuild registry metadata with the current build.py --registry');
 const declarationPath = packagePath.replace(/\.js$/, '.d.ts');
 const source = ts.createSourceFile(declarationPath, fs.readFileSync(declarationPath, 'utf8'),
     ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
@@ -100,14 +100,23 @@ for (const row of rows) {
         continue;
     }
     const method = ts.isMethodDeclaration(declaration) || ts.isMethodSignature(declaration) || ts.isFunctionDeclaration(declaration);
-    if (method && typeof runtime.value !== 'function') fail('shape', 'Declaration is callable but runtime descriptor is not');
-    if (ts.isGetAccessorDeclaration(declaration) && !runtime.get) fail('shape', 'Declared getter missing at runtime');
-    if (ts.isSetAccessorDeclaration(declaration) && !runtime.set) fail('shape', 'Declared setter missing at runtime');
-    const setter = members.find(member => ts.isSetAccessorDeclaration(member) &&
-        member.name?.getText(source) === row.name &&
+    const accessors = members.filter(member => member.name?.getText(source) === row.name &&
         Boolean(member.modifiers?.some(m => m.kind === ts.SyntaxKind.StaticKeyword)) === !row.instance);
-    if (setter && !runtime.set && !ts.isSetAccessorDeclaration(declaration)) {
-        fail('shape', 'Declared paired setter missing at runtime');
+    const getters = accessors.filter(ts.isGetAccessorDeclaration);
+    const setters = accessors.filter(ts.isSetAccessorDeclaration);
+    const pairedSetter = rows.some(other => other.owner === row.owner && other.name === row.name && other.property === 'setter');
+    const field = ts.isPropertyDeclaration(declaration) || ts.isPropertySignature(declaration);
+    const fieldWritable = field && !declaration.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword);
+    if (row.property === 'getter') {
+        if (!runtime.get || (!field && getters.length !== 1)) fail('registry_shape', 'Registry requires a getter in runtime and declaration');
+        const writable = Boolean(row.setter) || row.configuration_field === true || pairedSetter;
+        if (Boolean(runtime.set) !== writable || Boolean(fieldWritable || setters.length) !== writable) {
+            fail('registry_shape', 'Property writability differs from registry');
+        }
+    } else if (row.property === 'setter') {
+        if (!runtime.set || (!fieldWritable && setters.length !== 1)) fail('registry_shape', 'Registry requires a setter in runtime and declaration');
+    } else if (!constructor && (!method || typeof runtime.value !== 'function')) {
+        fail('registry_shape', 'Registry requires a method, not a property');
     }
 }
 // Validate explicit native type expressions in the declaration's own scope.

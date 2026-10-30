@@ -11,10 +11,14 @@ input.free();
 
 const original = molecule.coordinates3d(0).flat();
 try {
-    for (const model of ["UFF", ck.MmffVariant.Mmff94, ck.MmffVariant.Mmff94s]) {
-        const field = model === "UFF"
+    for (const {model, variant} of [
+        {model: "UFF", variant: undefined},
+        {model: "MMFF94", variant: ck.MmffVariant.Mmff94},
+        {model: "MMFF94s", variant: ck.MmffVariant.Mmff94s},
+    ]) {
+        const field = variant === undefined
             ? molecule.uffForceField()
-            : molecule.mmffForceField({ mmffVariant: model });
+            : molecule.mmffForceField({ mmffVariant: variant });
         // These values are explicit example choices, not API defaults.
         const distance = new ck.ForceFieldDistanceConstraintParams({relative: false, minDistance: 1.4, maxDistance: 1.6, forceConstant: 50});
         let outcome;

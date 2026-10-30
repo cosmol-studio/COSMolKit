@@ -66,11 +66,8 @@ impl Reaction {
         let refs = reactants.iter().collect::<Vec<_>>();
         ReactionRunParams::with_input(params.as_ref(), |p| {
             self.0.write(|r| {
-                let targets = r
-                    .match_params()
-                    .extra_final_check
-                    .as_ref()
-                    .map(|_| reactants.clone());
+                let targets = crate::search_callbacks::needs_target(r.match_params())
+                    .then(|| reactants.clone());
                 crate::callback::run_with_targets(targets, || {
                     r.run(&refs, p).map(sets).map_err(OperationError::from_rust)
                 })
@@ -90,11 +87,8 @@ impl Molecule {
         let index = input::read::<usize>(reactant_template)?;
         Reaction::with_mut(&reaction, |r| {
             ReactionSingleRunParams::with_input(params.as_ref(), |p| {
-                let targets = r
-                    .match_params()
-                    .extra_final_check
-                    .as_ref()
-                    .map(|_| vec![self.0.clone()]);
+                let targets = crate::search_callbacks::needs_target(r.match_params())
+                    .then(|| vec![self.0.clone()]);
                 crate::callback::run_with_targets(targets, || {
                     self.0
                         .reaction_products_with_params(r, index, p)
@@ -115,11 +109,8 @@ impl Molecule {
         let refs = reactants.iter().collect::<Vec<_>>();
         Reaction::with_mut(&reaction, |r| {
             ReactionRunParams::with_input(params.as_ref(), |p| {
-                let targets = r
-                    .match_params()
-                    .extra_final_check
-                    .as_ref()
-                    .map(|_| reactants.clone());
+                let targets = crate::search_callbacks::needs_target(r.match_params())
+                    .then(|| reactants.clone());
                 crate::callback::run_with_targets(targets, || {
                     self.0
                         .reaction_products_from_inputs(r, &refs, p)
@@ -137,11 +128,8 @@ impl Molecule {
     ) -> Result<ReactionApplyResult, JsValue> {
         Reaction::with_mut(&reaction, |r| {
             ReactionApplyParams::with_input(params.as_ref(), |p| {
-                let targets = r
-                    .match_params()
-                    .extra_final_check
-                    .as_ref()
-                    .map(|_| vec![self.0.clone()]);
+                let targets = crate::search_callbacks::needs_target(r.match_params())
+                    .then(|| vec![self.0.clone()]);
                 crate::callback::run_with_targets(targets, || {
                     self.0
                         .apply_reaction_with_params(r, p)
@@ -159,11 +147,8 @@ impl Molecule {
     ) -> Result<bool, JsValue> {
         Reaction::with_mut(&reaction, |r| {
             ReactionApplyParams::with_input(params.as_ref(), |p| {
-                let targets = r
-                    .match_params()
-                    .extra_final_check
-                    .as_ref()
-                    .map(|_| vec![self.0.clone()]);
+                let targets = crate::search_callbacks::needs_target(r.match_params())
+                    .then(|| vec![self.0.clone()]);
                 crate::callback::run_with_targets(targets, || {
                     self.0
                         .apply_reaction_with_params_(r, p)

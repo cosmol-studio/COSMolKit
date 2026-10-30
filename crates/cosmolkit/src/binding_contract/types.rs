@@ -147,6 +147,10 @@ pub struct BindingContractEntry {
     /// Rust public-field records need not grow a redundant `new` method.
     pub python_configuration: Option<&'static [BindingConfigurationField]>,
     pub python_property: Option<BindingPropertyAccess>,
+    pub javascript_property: Option<BindingPropertyAccess>,
+    /// Existing named setter also exposed through assignment to this getter.
+    /// Configuration fields derive writability from their registered schema.
+    pub javascript_setter: Option<&'static str>,
     pub javascript_name: &'static str,
     pub javascript_projection: BindingJavascriptProjection,
     pub feature: &'static str,

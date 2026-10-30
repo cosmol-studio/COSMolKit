@@ -77,7 +77,7 @@ for model in ("UFF", "MMFF94", "MMFF94s"):
     oxygen = field.position(2)
     field.set_position_(2, [oxygen[0] + 0.3, oxygen[1] + 0.1, oxygen[2] + 0.2])
     initial = field.energy_gradient()
-    assert initial.gradient.shape == (mol.num_atoms, 3)
+    assert np.asarray(initial.gradient).shape == (mol.num_atoms, 3)
     outcome = field.minimize_()
     assert np.isfinite(outcome.energy)
     assert outcome.energy <= initial.energy

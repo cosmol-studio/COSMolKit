@@ -15,6 +15,17 @@ required. No checker-local API exclusion list is allowed. Registered setters
 remain callable functions even when a writable property delegates to the same
 native accessor. Factory names use camelCase, without case-variant aliases.
 
+Existing information is a property; computations and parameterized queries are
+methods, following the shared public API rules. Register accessors explicitly
+with `javascript_property: getter` / `setter` and use wasm-bindgen accessors.
+For example, `Molecule::num_atoms` projects to `mol.numAtoms`, not `mol.numAtoms()`.
+A getter that also supports assignment through an existing named setter links
+its canonical semantic ID: `javascript_setter: "MorganSettings.set_radius"`.
+Both `settings.radius = 2` and `settings.setRadius(2)` remain checked projections
+of that same native setter. Registered configuration fields already declare
+writability and need no duplicate setter metadata. The registry checker compares
+runtime descriptors and generated TypeScript properties against these declarations.
+
 Numeric enums remain numeric values. Approved native enum methods can project as
 domain-qualified module functions, recorded by `module_function("exportName")`
 on the canonical callable. `residueInfoKindName(value)` and

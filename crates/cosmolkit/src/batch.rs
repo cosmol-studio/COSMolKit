@@ -31,19 +31,19 @@ pub struct MoleculeBatch {
 impl MoleculeBatch {
     pub fn from_records(
         records: Vec<BatchRecord>,
-        mode: BatchErrorMode,
+        errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
-        let errors = records
+        let record_errors = records
             .iter()
             .filter_map(|r| match r {
                 BatchRecord::Error(e) => Some(e.clone()),
                 _ => None,
             })
             .collect();
-        cosmolkit_batch::validate_record_errors(errors, mode)?;
+        cosmolkit_batch::validate_record_errors(record_errors, errors)?;
         Ok(Self {
             records,
-            error_mode: mode,
+            error_mode: errors,
             n_jobs: None,
             progress_bar: None,
         })

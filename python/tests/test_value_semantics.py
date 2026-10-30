@@ -510,10 +510,10 @@ $$$$
     dataset = cosmolkit.SdfDataset.open(str(path), coordinate_mode="require_3d")
     from_dataset_index = dataset[0].molecule
     from_dataset_iter = next(iter(dataset)).molecule
-    from_dataset_batch = next(dataset.batches(size=1, mode="raise"))[0]
+    from_dataset_batch = next(dataset.batches(size=1, errors="raise"))[0]
     from_reader_batch = next(
         cosmolkit.SdfReader.open(str(path), coordinate_mode="require_3d").batches(
-            size=1, mode="raise"
+            size=1, errors="raise"
         )
     )[0]
 
@@ -645,7 +645,7 @@ $$$$
         ds[[True, False]]
     assert [record.title for record in ds] == ["carbon", "oxygen", "nitrogen"]
 
-    batches = list(ds.batches(size=2, mode="raise"))
+    batches = list(ds.batches(size=2, errors="raise"))
     assert [len(batch) for batch in batches] == [2, 1]
     assert batches[0].valid_mask == [True, True]
     assert batches[1].valid_mask == [True]
@@ -1033,7 +1033,9 @@ def test_molecule_batch_exports_use_custom_filenames(tmp_path: Path):
     image_report = batch.write_images(
         str(tmp_path / "images"),
         format="svg",
-        execution=cosmolkit.BatchParams(errors="keep"),
+        errors="keep",
+        n_jobs=2,
+        progress_bar=False,
         filenames=["ethanol", "bad.svg", None],
     )
     assert image_report.success == 2

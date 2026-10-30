@@ -14,6 +14,8 @@ const count: number = mol.symmetrizedSssr(params).numRings;
 mol.symmetrizedSssr({includeDativeBonds: true});
 mol.symmetrizedSssr();
 const matcher = new SubstructMatchParams({extraFinalCheck: (m, indices) => m.numAtoms > count && indices.length > 0});
+matcher.extraAtomCheck = (query: QueryGraph, queryAtom: import('cosmolkit').QueryAtom,
+    target: Molecule, targetAtom: import('cosmolkit').Atom): boolean => target.numAtoms > 0;
 const finalCheck: ((target: Molecule, indices: ReadonlyArray<number>) => boolean) | undefined = matcher.extraFinalCheck;
 matcher.extraFinalCheck = undefined;
 matcher.extraFinalCheck = null;

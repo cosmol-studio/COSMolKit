@@ -29,10 +29,10 @@ def main() -> None:
     try:
         _ = original.to_svg(0, 200)
     except ck.DrawingError as error:
-        assert error.domain == "drawing"
-        assert error.kind == "InvalidDimensions"
+        assert error.domain == "depict"
+        assert error.variant == ck.DrawingErrorKind.InvalidDimensions
         assert (error.width, error.height) == (0, 200)
-        print(f"{error.kind}: {error}")
+        print(f"{error.variant}: {error}")
     else:
         raise AssertionError("zero width must fail")
 

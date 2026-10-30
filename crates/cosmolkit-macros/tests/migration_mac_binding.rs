@@ -169,6 +169,8 @@ struct BindingContractEntry {
     python_native: Option<&'static str>,
     python_configuration: Option<&'static [BindingConfigurationField]>,
     python_property: Option<BindingPropertyAccess>,
+    javascript_property: Option<BindingPropertyAccess>,
+    javascript_setter: Option<&'static str>,
     javascript_name: &'static str,
     javascript_projection: BindingJavascriptProjection,
     feature: &'static str,
@@ -704,6 +706,43 @@ fn python_properties_and_constructor_are_explicit_validated_projections() {
         error:none, state:value_returning, operation:none, signature:fn()->crate::Params,
     }"#;
     let valid = format!("{getter},{setter},{constructor}");
+    let js_getter = getter.replace(
+        "javascript:\"limit\"",
+        "javascript:\"limit\",javascript_property:getter",
+    );
+    let js_setter = setter.replace(
+        "javascript:\"setLimit\"",
+        "javascript:\"limit\",javascript_property:setter",
+    );
+    let js_pair = format!("{js_getter},{js_setter}");
+    assert!(expand_binding_contract(registry_with(&js_pair)).is_ok());
+    assert!(
+        error_for(registry_with(&format!(
+            "{js_pair},{}",
+            js_getter.replace("Params.limit", "Params.other")
+        )))
+        .contains("duplicate")
+    );
+    assert!(
+        error_for(registry_with(&js_getter.replace(
+            "javascript_property:getter",
+            "javascript_property:setter"
+        )))
+        .contains("Property setter requires")
+    );
+    assert!(
+        error_for(registry_with(&js_setter.replace(
+            "javascript_property:setter",
+            "javascript_property:getter"
+        )))
+        .contains("Property getter requires")
+    );
+    let linked = js_getter.replace(
+        "javascript_property:getter",
+        "javascript_property:getter,javascript_setter:\"Params.set_limit\"",
+    );
+    assert!(expand_binding_contract(registry_with(&format!("{linked},{setter}"))).is_ok());
+    assert!(error_for(registry_with(&linked)).contains("javascript_setter must link"));
     let generated = compact(expand_binding_contract(registry_with(&valid)).unwrap());
     assert!(generated.contains("Some(crate::BindingPropertyAccess::Getter)"));
     assert!(generated.contains("Some(crate::BindingPropertyAccess::Setter)"));

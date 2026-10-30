@@ -23,6 +23,8 @@ struct Registry {
 struct Frame {
     error: Option<JsValue>,
     targets: Option<Vec<cosmolkit::Molecule>>,
+    #[cfg(feature = "cap-search")]
+    queries: HashMap<usize, crate::storage::ReadonlyValue<cosmolkit::QueryGraph>>,
 }
 thread_local! {
     static REGISTRY: RefCell<Registry> = RefCell::new(Registry::default());
@@ -176,6 +178,8 @@ pub(crate) fn run_with_targets<R>(
         frames.borrow_mut().push(Frame {
             error: None,
             targets,
+            #[cfg(feature = "cap-search")]
+            queries: HashMap::new(),
         })
     });
     let scope = Scope;
@@ -211,5 +215,24 @@ pub(crate) fn target(index: Option<usize>) -> Result<cosmolkit::Molecule, JsValu
         targets.get(index).cloned().ok_or_else(|| {
             js_sys::Error::new("native callback target index is out of range").into()
         })
+    })
+}
+
+/// Share one owned snapshot per actual query graph within this invocation,
+/// including recursive queries. No borrowed graph escapes the native call.
+#[cfg(feature = "cap-search")]
+pub(crate) fn query(
+    graph: &cosmolkit::QueryGraph,
+) -> Result<crate::storage::ReadonlyValue<cosmolkit::QueryGraph>, JsValue> {
+    FRAMES.with(|frames| {
+        let mut frames = frames.borrow_mut();
+        let frame = frames
+            .last_mut()
+            .ok_or_else(|| js_sys::Error::new("matcher callback has no active query scope"))?;
+        Ok(frame
+            .queries
+            .entry(std::ptr::from_ref(graph) as usize)
+            .or_insert_with(|| crate::storage::ReadonlyValue::owned(graph.clone()))
+            .clone())
     })
 }

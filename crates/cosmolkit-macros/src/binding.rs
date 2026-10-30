@@ -57,7 +57,7 @@ enum TypeRole {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PythonProperty {
+enum PropertyAccess {
     Getter,
     Setter,
 }
@@ -244,7 +244,9 @@ struct BindingEntry {
     python_native: Option<LitStr>,
     python_configuration: Option<Vec<PythonConfigurationField>>,
     exhaustive_configuration: bool,
-    python_property: Option<PythonProperty>,
+    python_property: Option<PropertyAccess>,
+    javascript_property: Option<PropertyAccess>,
+    javascript_setter: Option<LitStr>,
     javascript: LitStr,
     javascript_projection: JavascriptProjection,
     feature: LitStr,
@@ -391,6 +393,8 @@ struct BindingEntryDraft {
     python_configuration: Option<Vec<PythonConfigurationField>>,
     exhaustive_configuration: Option<syn::LitBool>,
     python_property: Option<Ident>,
+    javascript_property: Option<Ident>,
+    javascript_setter: Option<LitStr>,
     javascript: Option<LitStr>,
     javascript_projection: Option<JavascriptProjection>,
     feature: Option<LitStr>,
@@ -469,6 +473,10 @@ fn parse_binding_entry(
                 )?;
             }
             "python_property" => set_once(&mut draft.python_property, input.parse()?, &key)?,
+            "javascript_property" => {
+                set_once(&mut draft.javascript_property, input.parse()?, &key)?
+            }
+            "javascript_setter" => set_once(&mut draft.javascript_setter, input.parse()?, &key)?,
             "exhaustive_configuration" => {
                 set_once(&mut draft.exhaustive_configuration, input.parse()?, &key)?
             }
@@ -551,8 +559,8 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
     let python_property = draft
         .python_property
         .map(|value| match value.to_string().as_str() {
-            "getter" => Ok(PythonProperty::Getter),
-            "setter" => Ok(PythonProperty::Setter),
+            "getter" => Ok(PropertyAccess::Getter),
+            "setter" => Ok(PropertyAccess::Setter),
             _ => Err(syn::Error::new_spanned(
                 value,
                 "python_property must be getter or setter",
@@ -565,10 +573,38 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
             "python_property requires a callable accessor",
         ));
     }
+    let javascript_property = draft
+        .javascript_property
+        .map(|value| match value.to_string().as_str() {
+            "getter" => Ok(PropertyAccess::Getter),
+            "setter" => Ok(PropertyAccess::Setter),
+            _ => Err(syn::Error::new_spanned(
+                value,
+                "javascript_property must be getter or setter",
+            )),
+        })
+        .transpose()?;
+    if javascript_property.is_some() && item != ItemClass::Callable {
+        return Err(syn::Error::new_spanned(
+            &semantic_id,
+            "javascript_property requires a callable accessor",
+        ));
+    }
     let javascript = required(draft.javascript, "javascript")?;
     let javascript_projection = draft
         .javascript_projection
         .unwrap_or(JavascriptProjection::Runtime);
+    if javascript_property.is_some()
+        && !matches!(
+            javascript_projection,
+            JavascriptProjection::Runtime | JavascriptProjection::ErrorDetails
+        )
+    {
+        return Err(syn::Error::new_spanned(
+            &javascript,
+            "javascript_property requires a runtime or error_details accessor",
+        ));
+    }
     if matches!(
         javascript_projection,
         JavascriptProjection::ModuleFunction(_)
@@ -702,6 +738,8 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
             .exhaustive_configuration
             .is_some_and(|flag| flag.value),
         python_property,
+        javascript_property,
+        javascript_setter: draft.javascript_setter,
         javascript,
         javascript_projection,
         feature,
@@ -1069,6 +1107,7 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
                 &entry.javascript,
                 payload,
                 entry.python_property,
+                entry.javascript_property,
             )?;
         } else {
             validate_type_names(
@@ -1080,15 +1119,52 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
         }
     }
     let mut python = HashMap::new();
-    let mut javascript = HashSet::new();
+    let mut javascript = HashMap::new();
     for entry in entries {
+        if let Some(setter_id) = &entry.javascript_setter {
+            let setter = entries
+                .iter()
+                .find(|candidate| candidate.semantic_id.value() == setter_id.value());
+            let valid = setter
+                .and_then(|setter| setter.callable.as_ref().map(|call| (setter, call)))
+                .is_some_and(|(setter, call)| {
+                    entry.javascript_property == Some(PropertyAccess::Getter)
+                        && projection_owner_key(entry) == projection_owner_key(setter)
+                        && entry.feature.value() == setter.feature.value()
+                        && entry
+                            .requires
+                            .iter()
+                            .map(LitStr::value)
+                            .eq(setter.requires.iter().map(LitStr::value))
+                        && setter.rust.segments.last().is_some_and(|segment| {
+                            segment.ident
+                                == format!(
+                                    "set_{}",
+                                    entry.rust.segments.last().expect("accessor path").ident
+                                )
+                        })
+                        && call.kind == CallableKind::Instance
+                        && call.receiver == Some(Receiver::Mutable)
+                        && call.state == StateModel::InPlace
+                        && call.parameters.len() == 1
+                        && matches!(&call.output, Type::Tuple(tuple) if tuple.elems.is_empty())
+                        && matches!(setter.javascript_projection, JavascriptProjection::Runtime)
+                        && setter.javascript_property.is_none()
+                });
+            if !valid {
+                return Err(syn::Error::new_spanned(
+                    setter_id,
+                    "javascript_setter must link a registered mutable single-argument unit method in the same owner and feature",
+                ));
+            }
+        }
         let owner = projection_owner_key(entry);
         let key = format!("{owner}:{}", entry.python.value());
         if let Some(previous) = python.insert(key, entry.python_property) {
             if !matches!(
                 (previous, entry.python_property),
-                (Some(PythonProperty::Getter), Some(PythonProperty::Setter))
-                    | (Some(PythonProperty::Setter), Some(PythonProperty::Getter))
+                (Some(PropertyAccess::Getter), Some(PropertyAccess::Setter))
+                    | (Some(PropertyAccess::Setter), Some(PropertyAccess::Getter))
             ) {
                 return Err(syn::Error::new_spanned(
                     &entry.python,
@@ -1102,14 +1178,65 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
             }
             _ => (owner, &entry.javascript),
         };
-        insert_unique(
-            &mut javascript,
-            format!("{javascript_owner}:{}", javascript_name.value()),
-            javascript_name,
-            "duplicate JavaScript binding projection in one owner scope",
-        )?;
+        let key = format!("{javascript_owner}:{}", javascript_name.value());
+        let access = match entry.javascript_property {
+            Some(PropertyAccess::Getter) => 1,
+            Some(PropertyAccess::Setter) => 2,
+            None => 4,
+        };
+        let previous = javascript.entry(key).or_insert(0);
+        if *previous != 0 && (*previous & access != 0 || (*previous | access) & 4 != 0) {
+            return Err(syn::Error::new_spanned(
+                javascript_name,
+                "duplicate JavaScript binding projection in one owner scope",
+            ));
+        }
+        *previous |= access;
     }
     Ok(())
+}
+
+fn accessor_name<'a>(
+    access: Option<PropertyAccess>,
+    rust_name: &'a str,
+    name: &LitStr,
+    payload: &CallablePayload,
+) -> syn::Result<&'a str> {
+    Ok(match access {
+        Some(PropertyAccess::Getter) => {
+            if payload.kind != CallableKind::Instance
+                || !matches!(
+                    (payload.receiver, payload.state),
+                    (Some(Receiver::Shared), StateModel::ReadOnly)
+                        | (Some(Receiver::Owned), StateModel::ValueReturning)
+                )
+                || !payload.parameters.is_empty()
+            {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "Property getter requires a shared or Copy-owned, zero-argument read-only accessor",
+                ));
+            }
+            rust_name
+        }
+        Some(PropertyAccess::Setter) => {
+            if payload.kind != CallableKind::Instance
+                || payload.receiver != Some(Receiver::Mutable)
+                || payload.state != StateModel::InPlace
+                || payload.parameters.len() != 1
+                || !matches!(&payload.output, Type::Tuple(tuple) if tuple.elems.is_empty())
+            {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "Property setter requires a mutable, single-argument unit accessor",
+                ));
+            }
+            rust_name.strip_prefix("set_").ok_or_else(|| {
+                syn::Error::new_spanned(name, "Property setter requires a Rust set_ accessor")
+            })?
+        }
+        None => rust_name,
+    })
 }
 
 fn validate_callable(
@@ -1119,7 +1246,8 @@ fn validate_callable(
     python: &LitStr,
     javascript: &LitStr,
     payload: &CallablePayload,
-    python_property: Option<PythonProperty>,
+    python_property: Option<PropertyAccess>,
+    javascript_property: Option<PropertyAccess>,
 ) -> syn::Result<()> {
     if (payload.kind == CallableKind::Instance) != payload.receiver.is_some() {
         return Err(syn::Error::new_spanned(
@@ -1190,38 +1318,6 @@ fn validate_callable(
         ));
     }
     let expected_python = match python_property {
-        Some(PythonProperty::Getter) => {
-            if payload.kind != CallableKind::Instance
-                || !matches!(
-                    (payload.receiver, payload.state),
-                    (Some(Receiver::Shared), StateModel::ReadOnly)
-                        | (Some(Receiver::Owned), StateModel::ValueReturning)
-                )
-                || !payload.parameters.is_empty()
-            {
-                return Err(syn::Error::new_spanned(
-                    python,
-                    "Python getter requires a shared or Copy-owned, zero-argument read-only accessor",
-                ));
-            }
-            rust_name.as_str()
-        }
-        Some(PythonProperty::Setter) => {
-            if payload.kind != CallableKind::Instance
-                || payload.receiver != Some(Receiver::Mutable)
-                || payload.state != StateModel::InPlace
-                || payload.parameters.len() != 1
-                || !matches!(&payload.output, Type::Tuple(tuple) if tuple.elems.is_empty())
-            {
-                return Err(syn::Error::new_spanned(
-                    python,
-                    "Python setter requires a mutable, single-argument unit accessor",
-                ));
-            }
-            rust_name.strip_prefix("set_").ok_or_else(|| {
-                syn::Error::new_spanned(python, "Python setter requires a Rust set_ accessor")
-            })?
-        }
         None if owner == Owner::Type
             && matches!(
                 payload.kind,
@@ -1232,7 +1328,7 @@ fn validate_callable(
         {
             "__new__"
         }
-        None => rust_name.as_str(),
+        access => accessor_name(access, &rust_name, python, payload)?,
     };
     if python.value() != expected_python {
         return Err(syn::Error::new_spanned(
@@ -1254,7 +1350,8 @@ fn validate_callable(
             "only in-place callable names may end in `_`",
         ));
     }
-    let mut canonical_js = snake_to_camel(rust_name.trim_end_matches('_'));
+    let js_accessor_name = accessor_name(javascript_property, &rust_name, javascript, payload)?;
+    let mut canonical_js = snake_to_camel(js_accessor_name.trim_end_matches('_'));
     if requires_trailing_underscore {
         canonical_js.push('_');
     }
@@ -1745,8 +1842,17 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
         };
         let python_property = match entry.python_property {
             None => quote!(None),
-            Some(PythonProperty::Getter) => quote!(Some(crate::BindingPropertyAccess::Getter)),
-            Some(PythonProperty::Setter) => quote!(Some(crate::BindingPropertyAccess::Setter)),
+            Some(PropertyAccess::Getter) => quote!(Some(crate::BindingPropertyAccess::Getter)),
+            Some(PropertyAccess::Setter) => quote!(Some(crate::BindingPropertyAccess::Setter)),
+        };
+        let javascript_property = match entry.javascript_property {
+            None => quote!(None),
+            Some(PropertyAccess::Getter) => quote!(Some(crate::BindingPropertyAccess::Getter)),
+            Some(PropertyAccess::Setter) => quote!(Some(crate::BindingPropertyAccess::Setter)),
+        };
+        let javascript_setter = match &entry.javascript_setter {
+            Some(id) => quote!(Some(#id)),
+            None => quote!(None),
         };
         let javascript = &entry.javascript;
         let javascript_projection = match &entry.javascript_projection {
@@ -1840,7 +1946,7 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             #(#cfg)*
             crate::BindingContractEntry {
                 semantic_id: #semantic_id, item: #item, owner: #owner,
-                rust_path: stringify!(#rust), python_name: #python, python_native: #python_native, python_configuration: #python_configuration, python_property: #python_property, javascript_name: #javascript,
+                rust_path: stringify!(#rust), python_name: #python, python_native: #python_native, python_configuration: #python_configuration, python_property: #python_property, javascript_name: #javascript, javascript_property: #javascript_property, javascript_setter: #javascript_setter,
                 javascript_projection: #javascript_projection,
                 feature: #feature, required_capabilities: &[#(#requires),*], status: #status,
                 callable: #callable, type_role: #role,
@@ -1852,7 +1958,8 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
                 let signature = &payload.signature;
                 // By-value vocabulary accessors are valid properties only when
                 // the compiler proves reading cannot consume the Python value.
-                let copy_check = if (entry.python_property == Some(PythonProperty::Getter)
+                let copy_check = if (entry.python_property == Some(PropertyAccess::Getter)
+                    || entry.javascript_property == Some(PropertyAccess::Getter)
                     || matches!(
                         entry.javascript_projection,
                         JavascriptProjection::ErrorDetails

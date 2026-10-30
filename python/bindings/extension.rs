@@ -418,32 +418,31 @@ impl MoleculeBatch {
             report_path,
         )
     }
-    #[pyo3(signature=(directory,options=None,*,format=None,width=None,height=None,execution=None,filenames=None,report_path=None))]
+    #[pyo3(signature=(directory,options=crate::arguments::Argument::Missing,*,format=crate::arguments::Argument::Missing,width=crate::arguments::Argument::Missing,height=crate::arguments::Argument::Missing,errors=crate::arguments::Argument::Missing,n_jobs=crate::arguments::Argument::Missing,progress_bar=crate::arguments::Argument::Missing,execution=crate::arguments::Argument::Missing,filenames=crate::arguments::Argument::Missing,report_path=crate::arguments::Argument::Missing))]
     /// Render batch molecules to image files using native drawing and batch-write options.
     fn write_images(
         &self,
         py: Python<'_>,
         directory: std::path::PathBuf,
-        options: Option<&crate::io_batch_params::BatchImageParams>,
-        format: Option<String>,
-        width: Option<u32>,
-        height: Option<u32>,
-        execution: Option<&crate::io_batch_params::BatchParams>,
-        filenames: Option<Vec<Option<String>>>,
-        report_path: Option<std::path::PathBuf>,
+        options: crate::arguments::Argument<Option<PyRef<'_, crate::io_batch_params::BatchImageParams>>>,
+        format: crate::arguments::Argument<Option<String>>,
+        width: crate::arguments::Argument<Option<u32>>,
+        height: crate::arguments::Argument<Option<u32>>,
+        errors: crate::arguments::Argument<Option<crate::io_batch_params::BatchErrorModeInput>>,
+        n_jobs: crate::arguments::Argument<Option<usize>>,
+        progress_bar: crate::arguments::Argument<Option<bool>>,
+        execution: crate::arguments::Argument<Option<PyRef<'_, crate::io_batch_params::BatchParams>>>,
+        filenames: crate::arguments::Argument<Option<Vec<Option<String>>>>,
+        report_path: crate::arguments::Argument<Option<std::path::PathBuf>>,
     ) -> PyResult<crate::batch_errors::BatchExportReport> {
-        if options.is_some()
-            && (format.is_some()
-                || width.is_some()
-                || height.is_some()
-                || execution.is_some()
-                || filenames.is_some()
-                || report_path.is_some())
+        if execution.is_supplied()
+            && (errors.is_supplied() || n_jobs.is_supplied() || progress_bar.is_supplied())
         {
             return Err(pyo3::exceptions::PyTypeError::new_err(
-                "Params and image keywords are mutually exclusive",
+                "execution and batch execution keywords are mutually exclusive",
             ));
         }
+        crate::arguments::configuration_arguments!(options; format, width, height, errors, n_jobs, progress_bar, execution, filenames, report_path);
         let d = ck::BatchImageParams::default();
         let resolved = ck::BatchImageParams {
             format: format.unwrap_or(d.format),
@@ -452,7 +451,11 @@ impl MoleculeBatch {
             execution: execution
                 .map(|v| v.to_rust(py))
                 .transpose()?
-                .unwrap_or(d.execution),
+                .unwrap_or(ck::BatchParams {
+                    errors: errors.map(crate::io_batch_params::BatchErrorModeInput::into_rust).transpose()?,
+                    n_jobs,
+                    progress_bar,
+                }),
             filenames,
             report_path,
         };
@@ -471,17 +474,10 @@ impl MoleculeBatch {
         directory: std::path::PathBuf,
         options: &crate::io_batch_params::BatchImageParams,
     ) -> PyResult<crate::batch_errors::BatchExportReport> {
-        self.write_images(
-            py,
-            directory,
-            Some(options),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
+        let options = options.to_rust(py)?;
+        py.detach(|| self.inner.write_images_with_params(&directory, &options))
+            .map(|inner| crate::batch_errors::BatchExportReport { inner })
+            .map_err(crate::batch_errors::BatchValidationError::from_rust)
     }
 
     #[pyo3(signature=(options,atom_invariants,bond_invariants,call,*,execution=None))]
@@ -1267,14 +1263,14 @@ impl MoleculeBatch {
         }
     }
     #[staticmethod]
-    #[pyo3(signature=(records,mode=None))]
-    /// Construct a batch from Molecule and BatchError records using the selected error mode.
+    #[pyo3(signature=(records,errors=None))]
+    /// Construct a batch from Molecule and BatchError records using the selected error policy.
     pub(crate) fn from_records(
         py: Python<'_>,
         records: Vec<crate::batch_calls::Record>,
-        mode: Option<crate::io_batch_params::BatchErrorModeInput>,
+        errors: Option<crate::io_batch_params::BatchErrorModeInput>,
     ) -> PyResult<Self> {
-        let mode = mode
+        let errors = errors
             .map(crate::io_batch_params::BatchErrorModeInput::into_rust)
             .transpose()?
             .unwrap_or_default();
@@ -1282,24 +1278,24 @@ impl MoleculeBatch {
             .into_iter()
             .map(|v| crate::batch_calls::native_record(py, v))
             .collect();
-        py.detach(|| ck::MoleculeBatch::from_records(records, mode))
+        py.detach(|| ck::MoleculeBatch::from_records(records, errors))
             .map(|inner| Self { inner })
             .map_err(crate::batch_errors::BatchValidationError::from_rust)
     }
     #[staticmethod]
-    #[pyo3(signature=(dataset,indices,mode=None))]
+    #[pyo3(signature=(dataset,indices,errors=None))]
     /// Construct a batch from selected SDF dataset indices in the supplied order.
     fn from_dataset_indices(
         py: Python<'_>,
         dataset: &crate::sdf_sources::SdfDataset,
         indices: Vec<usize>,
-        mode: Option<crate::io_batch_params::BatchErrorModeInput>,
+        errors: Option<crate::io_batch_params::BatchErrorModeInput>,
     ) -> PyResult<Self> {
-        let mode = mode
+        let errors = errors
             .map(crate::io_batch_params::BatchErrorModeInput::into_rust)
             .transpose()?
             .unwrap_or_default();
-        py.detach(|| ck::MoleculeBatch::from_dataset_indices(&dataset.inner, &indices, mode))
+        py.detach(|| ck::MoleculeBatch::from_dataset_indices(&dataset.inner, &indices, errors))
             .map(|inner| Self { inner })
             .map_err(crate::batch_errors::BatchValidationError::from_rust)
     }

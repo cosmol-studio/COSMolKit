@@ -15,7 +15,9 @@ use wasm_bindgen::{JsCast, prelude::*};
 
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "((query: QueryAtom, target: Atom) => boolean)")]
+    #[wasm_bindgen(
+        typescript_type = "((query: QueryGraph, queryAtom: QueryAtom, target: Molecule, targetAtom: Atom) => boolean)"
+    )]
     pub type AtomMatchCallback;
     #[wasm_bindgen(typescript_type = "((query: Bond, target: Bond) => boolean)")]
     pub type BondMatchCallback;
@@ -50,15 +52,23 @@ macro_rules! callback_field {
 callback_field!(ck::ExtraAtomCheck, AtomMatchCallback, |handle: Arc<
     callback::Handle,
 >| Arc::new(
-    move |_: &ck::QueryGraph, query: &ck::QueryAtom, _: &ck::SearchTarget<'_>, atom: &ck::Atom| {
+    move |graph: &ck::QueryGraph,
+          query: &ck::QueryAtom,
+          target: &ck::SearchTarget<'_>,
+          atom: &ck::Atom| {
         handle.boolean(|| {
             let args = js_sys::Array::new();
+            args.push(&QueryGraph(callback::query(graph)?).into());
             args.push(&crate::query_values::QueryAtom(ReadonlyValue::owned(query.clone())).into());
+            args.push(&Molecule(callback::target(target.input_index())?).into());
             args.push(&crate::atoms::Atom(atom.clone()).into());
             Ok(args)
         })
     }
 ));
+pub(crate) fn needs_target(params: &ck::SubstructMatchParams) -> bool {
+    params.extra_final_check.is_some() || params.extra_atom_check.is_some()
+}
 callback_field!(ck::ExtraBondCheck, BondMatchCallback, |handle: Arc<
     callback::Handle,
 >| Arc::new(
@@ -108,15 +118,12 @@ impl Molecule {
                     .map_err(crate::match_errors::SubstructMatchError::from_rust);
             }
             SubstructMatchParams::with_input(params.as_ref(), |p| {
-                callback::run_with_targets(
-                    p.extra_final_check.as_ref().map(|_| vec![self.0.clone()]),
-                    || {
-                        self.0
-                            .substruct_match_with_params(q, p)
-                            .map(|r| r.map(MatchResult))
-                            .map_err(crate::match_errors::SubstructMatchError::from_rust)
-                    },
-                )
+                callback::run_with_targets(needs_target(p).then(|| vec![self.0.clone()]), || {
+                    self.0
+                        .substruct_match_with_params(q, p)
+                        .map(|r| r.map(MatchResult))
+                        .map_err(crate::match_errors::SubstructMatchError::from_rust)
+                })
             })
         })
     }
@@ -128,16 +135,13 @@ impl Molecule {
     ) -> Result<MatchResults, JsValue> {
         QueryGraph::with_ref(&query, |q| {
             SubstructMatchParams::with_input(params.as_ref(), |p| {
-                callback::run_with_targets(
-                    p.extra_final_check.as_ref().map(|_| vec![self.0.clone()]),
-                    || {
-                        let result = self
-                            .0
-                            .substruct_matches_with_params(q, p)
-                            .map_err(crate::match_errors::SubstructMatchError::from_rust)?;
-                        Vec::<ck::MatchResult>::get(NativeField::owned(result))
-                    },
-                )
+                callback::run_with_targets(needs_target(p).then(|| vec![self.0.clone()]), || {
+                    let result = self
+                        .0
+                        .substruct_matches_with_params(q, p)
+                        .map_err(crate::match_errors::SubstructMatchError::from_rust)?;
+                    Vec::<ck::MatchResult>::get(NativeField::owned(result))
+                })
             })
         })
     }
@@ -155,14 +159,11 @@ impl Molecule {
                     .map_err(crate::match_errors::SubstructMatchError::from_rust);
             }
             SubstructMatchParams::with_input(params.as_ref(), |p| {
-                callback::run_with_targets(
-                    p.extra_final_check.as_ref().map(|_| vec![self.0.clone()]),
-                    || {
-                        self.0
-                            .has_substruct_match_with_params(q, p)
-                            .map_err(crate::match_errors::SubstructMatchError::from_rust)
-                    },
-                )
+                callback::run_with_targets(needs_target(p).then(|| vec![self.0.clone()]), || {
+                    self.0
+                        .has_substruct_match_with_params(q, p)
+                        .map_err(crate::match_errors::SubstructMatchError::from_rust)
+                })
             })
         })
     }

@@ -17,7 +17,7 @@ fn params(params: &SdfReadParams) -> cosmolkit_batch::BatchReadParams {
 impl MoleculeBatch {
     fn from_detached(
         records: Vec<Result<cosmolkit_batch::BatchRecord, BatchError>>,
-        mode: BatchErrorMode,
+        errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
         let records = records
             .into_iter()
@@ -36,7 +36,7 @@ impl MoleculeBatch {
                 Err(e) => BatchRecord::Error(e),
             })
             .collect();
-        Self::from_records(records, mode)
+        Self::from_records(records, errors)
     }
     pub fn from_sdf_records(text: &str) -> Result<Self, BatchValidationError> {
         Self::from_sdf_records_with_params(
@@ -50,13 +50,13 @@ impl MoleculeBatch {
     pub fn from_sdf_records_with_params(
         text: &str,
         read: &SdfReadParams,
-        mode: BatchErrorMode,
+        errors: BatchErrorMode,
         n_jobs: Option<usize>,
         progress_bar: bool,
     ) -> Result<Self, BatchValidationError> {
         Self::from_detached(
             cosmolkit_batch::read_sdf_text(text, params(read), n_jobs, progress_bar)?,
-            mode,
+            errors,
         )
     }
     pub fn read_sdf(path: &str) -> Result<Self, BatchValidationError> {
@@ -71,7 +71,7 @@ impl MoleculeBatch {
     pub fn read_sdf_with_params(
         path: &str,
         read: &SdfReadParams,
-        mode: BatchErrorMode,
+        errors: BatchErrorMode,
         n_jobs: Option<usize>,
         progress_bar: bool,
     ) -> Result<Self, BatchValidationError> {
@@ -101,18 +101,18 @@ impl MoleculeBatch {
             })?;
             cosmolkit_batch::read_sdf_reader(BufReader::new(file), params(read))
         };
-        Self::from_detached(records, mode)
+        Self::from_detached(records, errors)
     }
     pub fn from_dataset_indices(
         dataset: &SdfDataset,
         indices: &[usize],
-        mode: BatchErrorMode,
+        errors: BatchErrorMode,
     ) -> Result<Self, BatchValidationError> {
         let records = indices
             .iter()
             .map(|&index| batch_record(dataset.record(index), index))
             .collect();
-        Self::from_records(records, mode)
+        Self::from_records(records, errors)
     }
 }
 fn batch_record(record: Result<SdfRecord, crate::SdfError>, index: usize) -> BatchRecord {
@@ -133,7 +133,7 @@ impl SdfDataset {
     pub fn batches(
         &self,
         size: usize,
-        mode: BatchErrorMode,
+        errors: BatchErrorMode,
         n_jobs: Option<usize>,
         progress_bar: bool,
     ) -> Result<SdfBatchIterator, BatchValidationError> {
@@ -150,7 +150,7 @@ impl SdfDataset {
             dataset: self.clone(),
             position: 0,
             size,
-            mode,
+            mode: errors,
             n_jobs,
             progress: progress_bar
                 .then(|| cosmolkit_batch::BatchProgressBar::new(self.len(), "read_sdf_batches")),
@@ -195,7 +195,7 @@ impl<R: BufRead> SdfRecordStream<R> {
     pub fn batches(
         self,
         size: usize,
-        mode: BatchErrorMode,
+        errors: BatchErrorMode,
         n_jobs: Option<usize>,
     ) -> Result<SdfReaderBatchIterator<R>, BatchValidationError> {
         if size == 0 {
@@ -210,7 +210,7 @@ impl<R: BufRead> SdfRecordStream<R> {
         Ok(SdfReaderBatchIterator {
             reader: self,
             size,
-            mode,
+            mode: errors,
             n_jobs,
         })
     }
@@ -346,7 +346,7 @@ impl SdfReader {
     pub fn batches(
         &self,
         size: usize,
-        mode: crate::BatchErrorMode,
+        errors: crate::BatchErrorMode,
         n_jobs: Option<usize>,
     ) -> Result<crate::SdfReaderBatchIterator<BufReader<File>>, crate::BatchValidationError> {
         // COSMolKit❗✔️:     pub fn batches(
@@ -403,6 +403,6 @@ impl SdfReader {
             )])
         })?;
         SdfRecordStream::with_params(BufReader::new(file), *self.params())
-            .batches(size, mode, n_jobs)
+            .batches(size, errors, n_jobs)
     }
 }

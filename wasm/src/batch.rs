@@ -148,9 +148,9 @@ pub fn mols_from_smiles_list(
 #[wasm_bindgen(js_name = molsFromRecords)]
 pub fn mols_from_records(
     records: BatchRecords,
-    mode: BatchErrorModeInput,
+    errors: BatchErrorModeInput,
 ) -> Result<MoleculeBatch, JsValue> {
-    MoleculeBatch::from_records(records, mode)
+    MoleculeBatch::from_records(records, errors)
 }
 #[wasm_bindgen(js_name=molsFromSdfRecords)]
 pub fn mols_from_sdf_records(
@@ -213,7 +213,10 @@ impl MoleculeBatch {
         Self::from_smiles_list(smiles, Some(parse), Some(params))
     }
     #[wasm_bindgen(js_name=fromRecords)]
-    pub fn from_records(records: BatchRecords, mode: BatchErrorModeInput) -> Result<Self, JsValue> {
+    pub fn from_records(
+        records: BatchRecords,
+        errors: BatchErrorModeInput,
+    ) -> Result<Self, JsValue> {
         if !js_sys::Array::is_array(records.as_ref()) {
             return Err(js_sys::TypeError::new("expected an array of batch records").into());
         }
@@ -228,7 +231,7 @@ impl MoleculeBatch {
                 }
             })
             .collect::<Result<Vec<_>, JsValue>>()?;
-        ck::MoleculeBatch::from_records(rows, ck::BatchErrorMode::input(mode)?)
+        ck::MoleculeBatch::from_records(rows, ck::BatchErrorMode::input(errors)?)
             .map(Self)
             .map_err(BatchValidationError::from_rust)
     }

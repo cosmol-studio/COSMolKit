@@ -190,7 +190,7 @@ Boolean queries use `is_`, `has_`, or a domain-specific predicate. Python
 projects existing state as a property and computation as a method, as specified
 below; a fallible stored-state read preserves its native exception.
 
-### Python information and action syntax
+### Python and JavaScript information and action syntax
 
 Python properties expose intrinsic information and already available results:
 `atom.id`, `atom.element`, `conformer.id`, `mol.num_atoms`,
@@ -211,6 +211,17 @@ function. Declare getter projections explicitly with `python_property: getter`
 and native binding getters; generators must not infer them from names,
 return types or argument counts. The same logical information uses the same
 Python form across molecular, BIO and result types.
+
+JavaScript follows the same information/action boundary with camelCase names:
+`mol.numAtoms`, `atom.element`, and `result.energy` are properties;
+`mol.atom(1)`, `mol.toSmiles()`, and `forceField.energy()` remain methods.
+Declare accessors with `javascript_property: getter` or `setter` in the same
+canonical registry. Numeric enum module-function projections remain functions.
+When a writable property also retains a named setter method, its getter links
+that method's semantic ID with `javascript_setter: "Owner.set_field"`.
+Configuration field writability comes from its existing registered schema,
+not a second field list. The binding and generated declaration must both match
+the registry's accessor kind and writability; declarations are never patched.
 
 Coordinate-reading methods on `Molecule` are dimension-specific:
 
@@ -994,12 +1005,15 @@ mol.substruct_matches(query, use_chirality=True)
 
 batch.write_images(
     directory,
-    ck.BatchImageParams(execution=ck.BatchParams(errors="keep")),
+    format="svg", errors="keep", n_jobs=4, progress_bar=False,
 )
 ```
 
-The last example preserves the distinction between image options and batch
-execution options; it does not invent a second error policy. Rust may retain
+Batch execution keywords forward to the existing Rust scheduling and error
+policy. Ordinary Python calls must not require constructing `BatchParams` or
+nesting an `execution` object. Parameter-object calls remain available for reuse;
+an explicit execution object and its individual keywords are mutually exclusive.
+Rust may retain
 explicit `_with_params` methods. Python/JavaScript expose the same operation
 through default, parameter-object and keyword/options-object forms, with the
 same defaults and errors. Do not make configurable single/boolean substructure

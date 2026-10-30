@@ -157,14 +157,14 @@ pub fn _mols_from_smiles_list_keywords(
     )
 }
 #[pyfunction]
-#[pyo3(signature=(records,mode=None))]
+#[pyo3(signature=(records,errors=None))]
 /// Construct an ordered MoleculeBatch from the supplied native batch records, preserving missing records and their errors.
 pub fn mols_from_records(
     py: Python<'_>,
     records: Vec<Record>,
-    mode: Option<BatchErrorModeInput>,
+    errors: Option<BatchErrorModeInput>,
 ) -> PyResult<MoleculeBatch> {
-    MoleculeBatch::from_records(py, records, mode)
+    MoleculeBatch::from_records(py, records, errors)
 }
 #[pyfunction]
 #[pyo3(signature=(text,read=crate::arguments::Argument::Missing,*,errors=None,n_jobs=None,progress_bar=None,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]

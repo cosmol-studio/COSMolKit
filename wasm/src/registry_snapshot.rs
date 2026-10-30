@@ -64,6 +64,13 @@ pub fn snapshot() -> String {
             "kind": if is_type { "type" } else { "member" },
             "instance": !module && entry.callable.as_ref().is_some_and(|c| c.kind == ck::BindingKind::Instance),
             "projection": projection, "native_type": native_type,
+            "property": entry.javascript_property.map(|access| match access {
+                ck::BindingPropertyAccess::Getter => "getter",
+                ck::BindingPropertyAccess::Setter => "setter",
+            }),
+            "setter": entry.javascript_setter,
+            "configuration_field": parent.and_then(|p| p.python_configuration).is_some_and(|fields|
+                fields.iter().any(|field| Some(field.name) == entry.rust_path.rsplit("::").next().map(str::trim))),
         })
     }).collect();
     let conveniences: Vec<_> = ck::BINDING_CONTRACT_CONVENIENCES
@@ -74,5 +81,5 @@ pub fn snapshot() -> String {
             "owner": null, "kind": "member", "instance": false})
         })
         .collect();
-    json!({"version": 2, "records": records, "conveniences": conveniences}).to_string()
+    json!({"version": 3, "records": records, "conveniences": conveniences}).to_string()
 }

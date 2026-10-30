@@ -345,13 +345,30 @@ To collect embedding diagnostics, enable tracking and request a result:
 
 .. code-block:: javascript
 
-   const params = ck.EmbedParams.etkdgV3();
-   params.trackFailures = true;
-   const result = mol.with3dConformersResultWithParams(8, params);
-   console.log(result.failureCounts());
-   console.log(result.failureCount(ck.EmbedFailureCause.InitialCoords));
-   result.free();
-   params.free();
+   const input = ck.molFromSmiles("CCO");
+   try {
+     const mol = input.withHydrogens();
+     try {
+       const params = ck.EmbedParams.etkdgV3();
+       try {
+         params.trackFailures = true;
+         params.randomSeed = 42;
+         const result = mol.with3dConformersResultWithParams(8, params);
+         try {
+           console.log(result.failureCounts());
+           console.log(result.failureCount(ck.EmbedFailureCause.InitialCoords));
+         } finally {
+           result.free();
+         }
+       } finally {
+         params.free();
+       }
+     } finally {
+       mol.free();
+     }
+   } finally {
+     input.free();
+   }
 
 ``failureCounts()`` returns an array, or ``undefined`` when tracking is disabled.
 Counters describe intermediate failure events, not missing conformers. The

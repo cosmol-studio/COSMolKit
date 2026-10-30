@@ -3,17 +3,25 @@ import init, { Molecule } from "@cosmol-studio/cosmolkit";
 await init();
 
 const molecule = Molecule.fromSmiles("CCOc1ccc2nc(S(N)(=O)=O)sc2c1");
-for (const [name, bits] of Object.entries({
-  pattern: molecule.fingerprintPattern(),
-  morgan: molecule.fingerprintMorgan(),
-  atomPair: molecule.fingerprintAtomPair(),
-  layered: molecule.fingerprintLayered(),
-  topological: molecule.fingerprintTopological(),
-  maccs: molecule.fingerprintMaccs(),
-  avalon: molecule.avalonFingerprint(),
-  topologicalTorsion: molecule.fingerprintTopologicalTorsion(),
-})) {
-  console.log(`${name}: ${bits.length} set bits`, bits);
+try {
+  for (const {name, create} of [
+    {name: "pattern", create: () => molecule.fingerprintPattern()},
+    {name: "morgan", create: () => molecule.fingerprintMorgan()},
+    {name: "atomPair", create: () => molecule.fingerprintAtomPair()},
+    {name: "layered", create: () => molecule.fingerprintLayered()},
+    {name: "topological", create: () => molecule.fingerprintTopological()},
+    {name: "maccs", create: () => molecule.fingerprintMaccs()},
+    {name: "avalon", create: () => molecule.fingerprintAvalon()},
+    {name: "topologicalTorsion", create: () => molecule.fingerprintTopologicalTorsion()},
+  ]) {
+    const fingerprint = create();
+    try {
+      const bits = fingerprint.onBits;
+      console.log(`${name}: ${bits.length} set bits`, bits);
+    } finally {
+      fingerprint.free();
+    }
+  }
+} finally {
+  molecule.free();
 }
-
-molecule.free();

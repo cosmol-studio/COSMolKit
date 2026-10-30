@@ -89,7 +89,7 @@ def test_exports_inherit_keep_and_strict_override_keeps_all_error_details(kind: 
     else:
         report = batch.write_images(str(tmp_path / "kept"), format="svg")
         with pytest.raises(ck.BatchValidationError) as caught:
-            _ = batch.write_images(str(tmp_path / "strict"), format="svg", execution=ck.BatchParams(errors="raise"))
+            _ = batch.write_images(str(tmp_path / "strict"), format="svg", errors="raise")
     assert (report.total, report.success, report.failed) == (2, 1, 1)
     expected = [{"index": error.index, "operation": error.operation, "message": error.message} for error in batch.errors]
     assert [{"index": error.index, "operation": error.operation, "message": error.message} for error in report.errors] == expected

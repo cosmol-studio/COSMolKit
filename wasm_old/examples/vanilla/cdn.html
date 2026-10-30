@@ -4,12 +4,14 @@
 <output id="molecule">Loading...</output>
 <script type="module">
   import init, { Molecule } from
-    "https://cdn.jsdelivr.net/npm/@cosmol-studio/cosmolkit@0.3.0/wasm_wasm.js";
+    "https://cdn.jsdelivr.net/npm/@cosmol-studio/cosmolkit@0.6.0-dev.1/cosmolkit_wasm.js";
 
-  await init(
-    "https://cdn.jsdelivr.net/npm/@cosmol-studio/cosmolkit@0.3.0/wasm_wasm_bg.wasm",
-  );
+  // Load the matching WASM asset beside the version-pinned module.
+  await init();
   const molecule = Molecule.fromSmiles("CCO");
-  document.querySelector("#molecule").textContent = molecule.toSmiles();
-  molecule.free();
+  try {
+    document.querySelector("#molecule").textContent = molecule.toSmiles();
+  } finally {
+    molecule.free();
+  }
 </script>

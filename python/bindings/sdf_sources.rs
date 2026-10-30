@@ -264,21 +264,21 @@ impl SdfDataset {
     fn __iter__(&self) -> SdfDatasetIterator {
         self.iter()
     }
-    #[pyo3(signature=(size,mode=None,n_jobs=None,progress_bar=false))]
+    #[pyo3(signature=(size,errors=None,n_jobs=None,progress_bar=false))]
     /// Create a batch iterator over this indexed dataset with the requested batch size and native execution settings.
     fn batches(
         &self,
         py: Python<'_>,
         size: usize,
-        mode: Option<BatchErrorModeInput>,
+        errors: Option<BatchErrorModeInput>,
         n_jobs: Option<usize>,
         progress_bar: bool,
     ) -> PyResult<SdfBatchIterator> {
-        let mode = mode
+        let errors = errors
             .map(BatchErrorModeInput::into_rust)
             .transpose()?
             .unwrap_or_default();
-        py.detach(|| self.inner.batches(size, mode, n_jobs, progress_bar))
+        py.detach(|| self.inner.batches(size, errors, n_jobs, progress_bar))
             .map(|inner| SdfBatchIterator { inner })
             .map_err(BatchValidationError::from_rust)
     }
@@ -439,21 +439,21 @@ impl SdfRecordStream {
     }
     /// Transfer the current stream to a batch iterator. This stream becomes
     /// unusable even if native batch-parameter validation returns an error.
-    #[pyo3(signature=(size,mode=None,n_jobs=None))]
+    #[pyo3(signature=(size,errors=None,n_jobs=None))]
     fn batches(
         &mut self,
         py: Python<'_>,
         size: usize,
-        mode: Option<BatchErrorModeInput>,
+        errors: Option<BatchErrorModeInput>,
         n_jobs: Option<usize>,
     ) -> PyResult<SdfReaderBatchIterator> {
         self.active()?;
-        let mode = mode
+        let errors = errors
             .map(BatchErrorModeInput::into_rust)
             .transpose()?
             .unwrap_or_default();
         let inner = self.inner.take().ok_or_else(Self::transferred)?;
-        py.detach(|| inner.batches(size, mode, n_jobs))
+        py.detach(|| inner.batches(size, errors, n_jobs))
             .map(|inner| SdfReaderBatchIterator { inner })
             .map_err(BatchValidationError::from_rust)
     }
@@ -563,20 +563,20 @@ impl SdfReader {
             inner: crate::parameters::NativeField::Owned(*self.inner.params()),
         }
     }
-    #[pyo3(signature=(size,mode=None,n_jobs=None))]
+    #[pyo3(signature=(size,errors=None,n_jobs=None))]
     /// Open this source as an iterator yielding molecule batches of at most size records.
     fn batches(
         &self,
         py: Python<'_>,
         size: usize,
-        mode: Option<BatchErrorModeInput>,
+        errors: Option<BatchErrorModeInput>,
         n_jobs: Option<usize>,
     ) -> PyResult<SdfReaderBatchIterator> {
-        let mode = mode
+        let errors = errors
             .map(BatchErrorModeInput::into_rust)
             .transpose()?
             .unwrap_or_default();
-        py.detach(|| self.inner.batches(size, mode, n_jobs))
+        py.detach(|| self.inner.batches(size, errors, n_jobs))
             .map(|inner| SdfReaderBatchIterator { inner })
             .map_err(BatchValidationError::from_rust)
     }
