@@ -6,9 +6,12 @@ import cosmolkit as ck
 
 def test_batch_help_examples_match_return_and_error_behavior():
     batch = ck.MoleculeBatch.from_smiles_list(["CCO", "C1CC"], errors="keep", n_jobs=1)
-    before = batch.to_smiles()
-    assert before == ["CCO", None]
-    assert batch.to_smiles(canonical=False, n_jobs=1) == before
+    with pytest.raises(ck.BatchValidationError, match="query not started"):
+        batch.to_smiles()
+    clean = batch.with_valid_records()
+    before = clean.to_smiles()
+    assert before == ["CCO"]
+    assert clean.to_smiles(canonical=False, n_jobs=1) == before
     assert [error.index for error in batch.errors] == [1]
 
     with pytest.raises(ck.BatchValidationError):
@@ -27,9 +30,10 @@ def test_batch_help_examples_match_return_and_error_behavior():
     assert original.num_atoms == 3
     assert hydrogenated.num_atoms == 9
 
-    fingerprints = batch.fingerprint_morgan(radius=2, n_jobs=1)
-    assert len(fingerprints) == len(batch)
+    with pytest.raises(ck.BatchValidationError, match="query not started"):
+        batch.fingerprint_morgan(radius=2, n_jobs=1)
+    fingerprints = clean.fingerprint_morgan(radius=2, n_jobs=1)
+    assert len(fingerprints) == len(clean)
     assert fingerprints[0] is not None
     assert fingerprints[0].n_bits == 2048
-    assert fingerprints[1] is None
-    assert batch.to_smiles() == before
+    assert batch.with_valid_records().to_smiles() == before

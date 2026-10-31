@@ -218,12 +218,16 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
     let batch = batch(&["CC", "C1", "CCC"]);
     assert_eq!(batch.errors().len(), 1);
     assert_eq!(batch.errors()[0].index, 1);
+    let input_error = batch
+        .fingerprint_atom_pair_with_params(&Default::default(), &execution(2))
+        .unwrap_err();
+    assert_eq!(input_error.record_errors[0].index, 1);
+    let batch = batch.with_valid_records();
     let values = batch
         .fingerprint_atom_pair_with_params(&Default::default(), &execution(2))
         .unwrap();
-    assert!(values[0].is_some());
-    assert!(values[1].is_none());
-    assert!(values[2].is_some());
+    assert_eq!(values.len(), 2);
+    assert!(values.iter().all(Option::is_some));
     let no_conformer = AtomPairFingerprintParams::from(AtomPairGeneratorParams {
         use_2d: false,
         ..Default::default()
@@ -237,7 +241,7 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
             .iter()
             .map(|e| e.index)
             .collect::<Vec<_>>(),
-        vec![0, 2]
+        vec![0, 1]
     );
     assert!(
         error
@@ -292,7 +296,7 @@ fn shared_batch_is_immutable_and_safe_across_mixed_family_threads() {
 }
 #[test]
 fn all_families_return_full_ordered_bits_counts_and_metadata_masks() {
-    let batch = batch(&["CCO", "C1", "c1ccccc1O", "C[C@H](O)F"]);
+    let batch = batch(&["CCO", "C1", "c1ccccc1O", "C[C@H](O)F"]).with_valid_records();
     let originals = batch.to_list();
     let ap = AtomPairFingerprintParams::default();
     let morgan = MorganFingerprintParams::from(MorganGeneratorParams {
@@ -427,13 +431,20 @@ fn ap_preflight_runs_on_empty_invalid_rows_before_scheduling_and_morgan_preserve
             fp_size: 0,
             ..Default::default()
         });
-        assert_eq!(
-            batch
-                .fingerprint_morgan_with_params(&bad, &execution(1))
-                .unwrap()
-                .len(),
-            values.len()
-        );
+        let result = batch.fingerprint_morgan_with_params(&bad, &execution(1));
+        if values.is_empty() {
+            assert!(result.unwrap().is_empty());
+        } else {
+            assert_eq!(
+                result
+                    .unwrap_err()
+                    .record_errors
+                    .iter()
+                    .map(|e| e.index)
+                    .collect::<Vec<_>>(),
+                [0, 1]
+            );
+        }
     }
     let valid = batch(&["CCO"]);
     assert!(
@@ -454,7 +465,7 @@ fn original_morgan_explicit_providers_defaults_and_empty_options_match_scalar_ow
         MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator, MorganCallParams,
         MorganFingerprintGenerator,
     };
-    let batch = batch(&["CCO", "C1", "c1ccccc1O", "C[C@H](O)F"]);
+    let batch = batch(&["CCO", "C1", "c1ccccc1O", "C[C@H](O)F"]).with_valid_records();
     let originals = batch.to_list();
     for atom in [
         MorganAtomInvariantsGenerator::connectivity(false),
@@ -582,7 +593,7 @@ fn morgan_defaults_match_scalar_with_omitted_or_explicit_workers() {
 
 #[test]
 fn legacy_morgan_batch_zero_size_and_zero_extra_bits_follow_wrapper_order() {
-    let batch = batch(&["CCO", "C1CC", "C"]);
+    let batch = batch(&["CCO", "C1CC", "C"]).with_valid_records();
     let zero = MorganFingerprintParams::from(MorganGeneratorParams {
         fp_size: 0,
         count_simulation: false,
@@ -597,7 +608,7 @@ fn legacy_morgan_batch_zero_size_and_zero_extra_bits_follow_wrapper_order() {
             .iter()
             .map(|e| e.index)
             .collect::<Vec<_>>(),
-        [0, 2]
+        [0, 1]
     );
     assert!(
         error

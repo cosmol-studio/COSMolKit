@@ -97,7 +97,11 @@ def test_batch_shortcuts_inherit_execution_configuration_and_record_state():
     options = dict(sanitize=False, errors="keep", n_jobs=1)
     actual = ck.mols_from_smiles_list(inputs, **options)
     expected = ck.MoleculeBatch.from_smiles_list(inputs, **options)
-    assert actual.to_smiles(canonical=False) == expected.to_smiles(canonical=False)
+    for batch in (actual, expected):
+        with pytest.raises(ck.BatchValidationError, match="query not started") as caught:
+            batch.to_smiles(canonical=False)
+        assert [error.index for error in caught.value.record_errors] == [1]
+    assert actual.with_valid_records().to_smiles(canonical=False) == expected.with_valid_records().to_smiles(canonical=False)
     assert len(actual.errors) == len(expected.errors) == 1
     mol = ck.mol_from_smiles("C").with_2d_coordinates()
     sdf = mol.to_sdf()

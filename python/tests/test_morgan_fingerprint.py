@@ -68,27 +68,40 @@ def test_morgan_additional_output_matches_returned_fingerprint():
     assert set(output.atoms_per_bit).issubset(set(fingerprint.on_bits))
 
 
-def test_morgan_batch_api_preserves_order_and_none_for_invalid_records():
+def test_morgan_batch_api_rejects_input_errors_and_preserves_filtered_order():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(
         ["CCO", "not-a-smiles", "CCCO"], errors="keep"
     )
     settings = cosmolkit.MorganGeneratorParams(fp_size=256)
     execution = cosmolkit.BatchQueryParams(n_jobs=2)
-    values = batch.fingerprint_morgan_with_generator_params(
+    with pytest.raises(cosmolkit.BatchValidationError, match="query not started") as caught:
+        batch.fingerprint_morgan_with_generator_params(
+            settings, None, None, cosmolkit.MorganCallParams(), execution=execution
+        )
+    assert [error.index for error in caught.value.record_errors] == [1]
+    with pytest.raises(cosmolkit.BatchValidationError, match="query not started"):
+        batch.fingerprint_morgan_with_output_with_generator_params(
+            settings, None, None, cosmolkit.MorganCallParams(), True, execution=execution
+        )
+    clean = batch.with_valid_records()
+    values = clean.fingerprint_morgan_with_generator_params(
         settings, None, None, cosmolkit.MorganCallParams(), execution=execution
     )
-    assert [value is not None for value in values] == [True, False, True]
-    assert values[0] is not None
-    assert values[0].on_bits == cosmolkit.Molecule.from_smiles("CCO").fingerprint_morgan_with_generator(
-        cosmolkit.MorganFingerprintGenerator(params=settings)
-    ).on_bits
+    assert [value is not None for value in values] == [True, True]
+    for value, text in zip(values, ["CCO", "CCCO"], strict=True):
+        assert value is not None
+        assert value.on_bits == cosmolkit.Molecule.from_smiles(text).fingerprint_morgan_with_generator(
+            cosmolkit.MorganFingerprintGenerator(params=settings)
+        ).on_bits
 
-    with_output = batch.fingerprint_morgan_with_output_with_generator_params(
+    with_output = clean.fingerprint_morgan_with_output_with_generator_params(
         settings, None, None, cosmolkit.MorganCallParams(), True, execution=execution
     )
     assert with_output[0] is not None
     assert with_output[0].additional_output.atom_counts
-    assert with_output[1] is None
+    assert len(with_output) == 2 and with_output[1] is not None
+    assert with_output[1].additional_output.atom_counts
+    assert [row.fingerprint.on_bits for row in with_output] == [fp.on_bits for fp in values]
 
 
 def test_morgan_binding_rejects_unknown_generators():

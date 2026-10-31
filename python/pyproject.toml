@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "cosmolkit"
-version = "0.6.0rc3"
+version = "0.6.0rc4"
 description = "Python bindings for the COSMolKit Rust-native cheminformatics toolkit"
 readme = "../README.md"
 requires-python = ">=3.9"
@@ -26,7 +26,6 @@ exclude = ["artifacts/smoke/package/cosmolkit/_native.so", "artifacts/smoke/pack
 # Generated Python sources are ignored by Git; include these package files explicitly.
 include = [
     { path = "cosmolkit/__init__.py", format = "wheel" },
-    { path = "cosmolkit/cosmolkit.py", format = "wheel" },
     { path = "cosmolkit/__init__.pyi", format = "wheel" },
     { path = "cosmolkit/py.typed", format = "wheel" },
     { path = "artifacts/smoke/package/cosmolkit/*.py", format = "sdist" },

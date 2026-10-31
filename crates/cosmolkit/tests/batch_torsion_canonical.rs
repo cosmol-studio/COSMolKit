@@ -31,7 +31,10 @@ fn original_batch() -> MoleculeBatch {
 
 #[test]
 fn torsion_defaults_overrides_order_invalid_rows_and_progress_preserve_inputs() {
-    let batch = original_batch();
+    let source = original_batch();
+    let error = source.fingerprint_topological_torsion().unwrap_err();
+    assert_eq!(error.record_errors[0].index, 1);
+    let batch = source.with_valid_records();
     let before = batch.to_list();
     let options = TopologicalTorsionFingerprintParams::default();
     let expected = batch
@@ -62,18 +65,18 @@ fn torsion_defaults_overrides_order_invalid_rows_and_progress_preserve_inputs() 
                 .unwrap(),
             expected
         );
-        assert_eq!(ticks.load(Ordering::SeqCst), 3);
+        assert_eq!(ticks.load(Ordering::SeqCst), 2);
         assert_eq!(batch.to_list(), before);
         assert_eq!(batch.parallel_jobs(), Some(2));
         assert_eq!(batch.progress_bar(), Some(false));
     }
-    assert_eq!(batch.errors()[0].index, 1);
-    assert_eq!(batch.errors()[0].message, "retained invalid input");
+    assert_eq!(source.errors()[0].index, 1);
+    assert_eq!(source.errors()[0].message, "retained invalid input");
 }
 
 #[test]
 fn torsion_collects_every_typed_failure_in_original_order_without_skipping_work() {
-    let batch = original_batch();
+    let batch = original_batch().with_valid_records();
     let before = batch.to_list();
     let mut options = TopologicalTorsionFingerprintParams::default();
     options.from_atoms = Some(vec![5]);
@@ -90,14 +93,14 @@ fn torsion_collects_every_typed_failure_in_original_order_without_skipping_work(
         .fingerprint_topological_torsion_with_params(&options, &params)
         .unwrap_err();
     assert_eq!(error.errors, 2);
-    assert_eq!(ticks.load(Ordering::SeqCst), 3);
+    assert_eq!(ticks.load(Ordering::SeqCst), 2);
     assert_eq!(
         error
             .record_errors
             .iter()
             .map(|e| e.index)
             .collect::<Vec<_>>(),
-        [0, 2]
+        [0, 1]
     );
     for record in &error.record_errors {
         assert_eq!(record.operation, "batch.fingerprint_topological_torsion");
@@ -127,7 +130,7 @@ fn torsion_collects_every_typed_failure_in_original_order_without_skipping_work(
 
 #[test]
 fn zero_threads_reject_before_work_and_empty_batches_keep_source_shape() {
-    let batch = original_batch();
+    let batch = original_batch().with_valid_records();
     let ticks = Arc::new(AtomicUsize::new(0));
     let worker = Arc::clone(&ticks);
     let params = BatchQueryParams {
@@ -150,7 +153,16 @@ fn zero_threads_reject_before_work_and_empty_batches_keep_source_shape() {
 fn oversized_fixed_bit_path_retains_source_empty_bits_and_original_invalid_row() {
     // The fixed-bit source route hashes environments into the configured size;
     // it does not call getResultSize, which belongs to sparse output selection.
-    let batch = original_batch();
+    let source = original_batch();
+    assert_eq!(
+        source
+            .fingerprint_topological_torsion()
+            .unwrap_err()
+            .record_errors[0]
+            .index,
+        1
+    );
+    let batch = source.with_valid_records();
     let before = batch.to_list();
     let mut options = TopologicalTorsionFingerprintParams::default();
     options.generator.torsion_atom_count = u32::MAX;
@@ -167,7 +179,7 @@ fn oversized_fixed_bit_path_retains_source_empty_bits_and_original_invalid_row()
         .fingerprint_topological_torsion_with_params(&options, &params)
         .unwrap();
     let empty = Fingerprint::from_on_bits(2048, vec![]).unwrap();
-    assert_eq!(values.values(), &[Some(empty.clone()), None, Some(empty)]);
-    assert_eq!(ticks.load(Ordering::SeqCst), 3);
+    assert_eq!(values.values(), &[Some(empty.clone()), Some(empty)]);
+    assert_eq!(ticks.load(Ordering::SeqCst), 2);
     assert_eq!(batch.to_list(), before);
 }

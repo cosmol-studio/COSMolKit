@@ -1,7 +1,13 @@
 import pickle
+import sys
 
 import cosmolkit
 import pytest
+
+
+def test_legacy_pickle_module_path_is_registered_on_import():
+    assert sys.modules["cosmolkit.cosmolkit"] is cosmolkit
+    assert callable(sys.modules["cosmolkit.cosmolkit"]._molecule_from_binary)
 
 
 @pytest.mark.parametrize("smiles", ["", "C[C@H](F)Cl", "F/C=C/F", "c1ccccc1.O", pytest.param(None, id="builder-isotope-max-map")])

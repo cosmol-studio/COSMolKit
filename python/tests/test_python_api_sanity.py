@@ -943,6 +943,21 @@ H -0.758 0.000 0.504
     assert len(matches_limited) == 1
 
 
+def test_index_sequences_accept_numpy_and_custom_protocol():
+    class Indices:
+        def __len__(self):
+            return 3
+
+        def __getitem__(self, index):
+            return [2, -3, 2][index]
+
+    batch = cosmolkit.mols_from_smiles_list(["C", "CC", "CCC"])
+    for indices in ([2, -3, 2], np.array([2, -3, 2], dtype=np.int64), Indices()):
+        selected = batch[indices]
+        assert isinstance(selected, cosmolkit.MoleculeBatch)
+        assert [mol.to_smiles() for mol in selected] == ["CCC", "C", "CCC"]
+
+
 def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(
         ["CCO", "c1ccccc1", "bad", "F[C@H](Cl)Br"],
@@ -975,24 +990,32 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
         if mol is not None:
             assert_coord_rows_match_atoms(mol)
 
-    smiles = prepared.to_smiles(canonical=False)
+    for query in (prepared.to_smiles, prepared.dg_bounds_matrix, prepared.fingerprint_morgan):
+        with pytest.raises(cosmolkit.BatchValidationError, match="query not started") as caught:
+            query()
+        assert [error.index for error in caught.value.record_errors] == [2]
+    clean = prepared.with_valid_records()
+    valid_mols = [mol for mol in mols if mol is not None]
+    smiles = clean.to_smiles(canonical=False)
     assert smiles[0] is not None and "[H]" in smiles[0]
-    assert smiles[2] is None
+    assert smiles == [mol.to_smiles(canonical=False) for mol in valid_mols]
 
-    dg = prepared.dg_bounds_matrix()
+    dg = clean.dg_bounds_matrix()
     assert mols[0] is not None
-    assert type(dg) is list and len(dg) == len(mols)
+    assert type(dg) is list and len(dg) == len(valid_mols)
     assert type(dg[0]) is list and len(dg[0]) == mols[0].num_atoms
     assert all(type(row) is list and len(row) == mols[0].num_atoms for row in dg[0])
     assert all(type(value) is float for row in dg[0] for value in row)
-    assert dg[2] is None
+    for matrix, mol in zip(dg, valid_mols, strict=True):
+        np.testing.assert_array_equal(matrix, mol.dg_bounds_matrix())
 
-    fps = prepared.fingerprint_morgan_with_generator_params(
+    fps = clean.fingerprint_morgan_with_generator_params(
         cosmolkit.MorganGeneratorParams(fp_size=128), None, None,
         cosmolkit.MorganCallParams(), execution=cosmolkit.BatchQueryParams()
     )
     assert fps[0] is not None
-    assert fps[2] is None
+    assert len(fps) == len(valid_mols)
+    assert [fp.on_bits for fp in fps] == [mol.fingerprint_morgan(fp_size=128).on_bits for mol in valid_mols]
 
     with TemporaryDirectory() as td:
         td_path = Path(td)

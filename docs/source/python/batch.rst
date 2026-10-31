@@ -30,7 +30,8 @@ progress callback or modify the configuration.
 Error Handling
 --------------
 
-Batch APIs accept ``errors``:
+Batch construction, transforms, and exports accept ``errors`` to control
+per-record failures:
 
 - ``"raise"`` raises an exception when a record fails.
 - ``"keep"`` keeps failed records and exposes structured errors. Export methods
@@ -43,8 +44,26 @@ and exports. New batches default to ``"raise"``. An explicit override becomes
 the returned batch's policy without modifying the source batch; ``error_mode``
 reports that policy. Slices and filtering preserve it. Default ``BatchParams``
 and ``BatchExportParams`` therefore display ``errors=None`` (inherit).
-List-returning queries return ``None`` for existing failed records, but still
-raise on new calculation errors rather than losing their error details.
+
+.. important::
+
+   ``errors="keep"`` is not a pipeline-wide guarantee that calls never raise.
+   Queries reject a batch containing failed records before computing any rows.
+   The ``BatchValidationError`` retains the indexed errors and explains how to
+   filter valid records before retrying. A new calculation error on a valid
+   record also raises; no partial query result is returned. The source batch
+   is unchanged.
+
+.. code-block:: python
+
+   batch = ck.mols_from_smiles_list(["CCO", "not-smiles"], errors="keep")
+   print(batch.errors)  # Inspect failures before filtering.
+   clean = batch[batch.valid_mask]  # Or batch.with_valid_records().
+   print(clean.to_smiles())
+   # ['CCO'] — filtering preserves survivor order and renumbers the rows.
+
+   clean.to_smiles(rooted_at_atom=99)
+   # Raises BatchValidationError: atom 99 is out of range for CCO.
 
 String modes remain supported, but Python callers can also pass
 ``BatchErrorMode`` enum members. Per-record ``BatchError`` values expose the
@@ -58,7 +77,7 @@ input index, operation name, and message:
    try:
        ck.mols_from_smiles_list(["C1CC"], errors=ck.BatchErrorMode.RAISE)
    except ck.BatchValidationError as exc:
-       print(exc.errors)
+       print(exc.record_errors)  # Indexed failures; exc.errors is their count.
 
 The read-only ``BATCH_ERROR_MODE_MAP`` converts external string names to enum
 members when needed.
@@ -83,8 +102,13 @@ returned as ``Molecule`` objects and invalid kept records are returned as
 
 Integer indexing returns ``Molecule | None`` because kept invalid records are
 represented as ``None``. Slices, integer index lists, and boolean masks return a
-new ``MoleculeBatch`` and preserve both input order and the batch-level
-parallel-job setting.
+``MoleculeBatch``. Selecting records does not compute molecule results: a slice
+may still contain failed records, and queries on that slice will reject them.
+Use ``batch[batch.valid_mask]`` to select only valid records. Selection preserves
+the requested order and the batch-level parallel-job setting.
+Retained errors keep their original source indices even after reordering;
+use ``valid_mask`` to locate valid rows in the current batch. New calculation
+errors after filtering refer to the filtered batch's indices.
 
 Export Images
 -------------
@@ -140,8 +164,12 @@ file:
 Derived Outputs
 ---------------
 
+Remove retained failures explicitly before querying. Keep ``prepared.errors``
+if you need the original input indices; filtering does not modify ``prepared``.
+
 .. code-block:: python
 
+   prepared = prepared.with_valid_records()
    smiles = prepared.to_smiles()
    rooted = prepared.to_smiles(rooted_at_atom=0)
    explicit = prepared.to_smiles(
@@ -245,13 +273,13 @@ this configuration step does not duplicate the molecular data.
 
    configured = batch.with_parallel_jobs(8)
    prepared = configured.with_2d_coordinates(errors="keep")
-   smiles = prepared.to_smiles()
+   smiles = prepared.with_valid_records().to_smiles()
 
 Method-level ``n_jobs`` still overrides the batch default for a single call:
 
 .. code-block:: python
 
-   svgs = prepared.to_svg(300, 300, n_jobs=2)
+   svgs = prepared.with_valid_records().to_svg(300, 300, n_jobs=2)
 
 ``with_progress_bar()`` returns a new batch with a default Rust-side progress
 bar setting. Progress is emitted by Rust to stderr, matching the usual terminal
@@ -262,7 +290,7 @@ batch default for one call:
 
    tracked = batch.with_parallel_jobs(8).with_progress_bar(True)
    prepared = tracked.with_2d_coordinates(errors="keep")
-   smiles = prepared.to_smiles(progress_bar=False)
+   smiles = prepared.with_valid_records().to_smiles(progress_bar=False)
 
 Pass ``None`` to clear the stored batch-level override:
 

@@ -37,24 +37,27 @@ transform!(with_hydrogens,with_hydrogens_with_params,chemical_params,AddHsParams
 transform!(without_hydrogens,without_hydrogens_with_params,params,RemoveHsParams);
 transform!(with_kekulized_bonds,with_kekulized_bonds_with_params,params,KekulizeParams);
 transform!(with_2d_coordinates,with_2d_coordinates_with_params,optional_configuration,Coordinate2DParams);
+let query_native = native.with_valid_records();
+let query_batch = batch.bind(py).call_method0("with_valid_records")?;
 macro_rules! bits{($name:ident,$alias:ident,$module:ident,$params:ident)=>{{
 let defaults=ck::$params::default();let options=py.get_type::<crate::$module::$params>().call0()?.extract::<Py<crate::$module::$params>>()?;
 let runtime=py.get_type::<crate::batch_query_params::BatchQueryParams>().call0()?;
-let want=native.$alias(&defaults,&Default::default()).unwrap();
-for actual in [batch.bind(py).call_method0(stringify!($name))?,batch.bind(py).call_method1(stringify!($alias),(&options,&runtime))?]{let got=actual.extract::<Py<crate::fingerprint_batch::FingerprintBatch>>()?;assert_eq!(got.borrow(py).inner.len(),want.len());for (index,want) in want.iter().enumerate(){let item=actual.get_item(index)?.extract::<Option<Py<crate::native::Fingerprint>>>()?;assert_eq!(item.as_ref().map(|v|v.borrow(py).inner.on_bits()),want.as_ref().map(ck::Fingerprint::on_bits));}}
+let want=query_native.$alias(&defaults,&Default::default()).unwrap();
+for actual in [query_batch.call_method0(stringify!($name))?,query_batch.call_method1(stringify!($alias),(&options,&runtime))?]{let got=actual.extract::<Py<crate::fingerprint_batch::FingerprintBatch>>()?;assert_eq!(got.borrow(py).inner.len(),want.len());for (index,want) in want.iter().enumerate(){let item=actual.get_item(index)?.extract::<Option<Py<crate::native::Fingerprint>>>()?;assert_eq!(item.as_ref().map(|v|v.borrow(py).inner.on_bits()),want.as_ref().map(ck::Fingerprint::on_bits));}}
 }}}
 bits!(fingerprint_morgan,fingerprint_morgan_with_params,morgan_configuration,MorganFingerprintParams);
 bits!(fingerprint_atom_pair,fingerprint_atom_pair_with_params,fingerprint_configuration,AtomPairFingerprintParams);
 bits!(fingerprint_topological_torsion,fingerprint_topological_torsion_with_params,fingerprint_configuration,TopologicalTorsionFingerprintParams);
 bits!(fingerprint_layered,fingerprint_layered_with_params,collection_params,LayeredFingerprintParams);
 bits!(fingerprint_pattern,fingerprint_pattern_with_params,params,PatternFingerprintParams);
-for name in ["fingerprint_atom_pair_sparse_count","fingerprint_atom_pair_count","fingerprint_atom_pair_sparse","fingerprint_layered_with_output","fingerprint_morgan_with_output","fingerprint_atom_pair_with_output","dg_bounds_matrix"]{let result=batch.bind(py).call_method0(name)?;assert_eq!(result.len()?,3);assert!(result.get_item(1)?.is_none());}
+for name in ["fingerprint_atom_pair_sparse_count","fingerprint_atom_pair_count","fingerprint_atom_pair_sparse","fingerprint_layered_with_output","fingerprint_morgan_with_output","fingerprint_atom_pair_with_output","dg_bounds_matrix"]{assert!(batch.bind(py).call_method0(name).unwrap_err().to_string().contains("query not started"));let result=query_batch.call_method0(name)?;assert_eq!(result.len()?,2);assert!(!result.get_item(1)?.is_none());}
 let callbacks=PyModule::from_code(py,c_str!("seen=[]\nmarker=LookupError('original batch progress')\ndef notify(): seen.append(1)\ndef fail(): raise marker\n"),c_str!("batch-progress.py"),c_str!("batch_progress"))?;
 let kw=PyDict::new(py);kw.set_item("n_jobs",1)?;kw.set_item("progress_callback",callbacks.getattr("notify")?)?;
 let runtime=py.get_type::<crate::batch_query_params::BatchQueryParams>().call((),Some(&kw))?;
-batch.bind(py).call_method1("to_smiles",(py.None(),&runtime))?;assert_eq!(callbacks.getattr("seen")?.len()?,3);
+assert!(batch.bind(py).call_method1("to_smiles",(py.None(),&runtime)).unwrap_err().to_string().contains("query not started"));assert_eq!(callbacks.getattr("seen")?.len()?,0);
+query_batch.call_method1("to_smiles",(py.None(),&runtime))?;assert_eq!(callbacks.getattr("seen")?.len()?,2);
 runtime.setattr("progress_callback",callbacks.getattr("fail")?)?;
-let fail=batch.bind(py).call_method1("to_smiles",(py.None(),&runtime)).unwrap_err();assert!(fail.value(py).is(&callbacks.getattr("marker")?));
+let fail=query_batch.call_method1("to_smiles",(py.None(),&runtime)).unwrap_err();assert!(fail.value(py).is(&callbacks.getattr("marker")?));
 callbacks.add("BatchQueryParams",py.get_type::<crate::batch_query_params::BatchQueryParams>())?;
 py.run(c_str!("import gc, weakref\nclass Cycle:\n    def __init__(self, params): self.params=params\n    def __call__(self): pass\np=BatchQueryParams()\nc=Cycle(p)\nobserver=weakref.ref(c)\np.progress_callback=c\ndel c,p\ngc.collect()\nassert observer() is None\n"),Some(&callbacks.dict()),None)?;
 let directory=std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("artifacts").join(format!("batch-complete-{}",std::process::id()));std::fs::create_dir_all(&directory).unwrap();
@@ -62,7 +65,8 @@ let report=batch.bind(py).call_method1("write_sdf",(directory.join("out.sdf"),))
 report.bind(py).call_method1("write_report",(directory.join("report.json"),))?;assert!(std::fs::read_to_string(directory.join("report.json")).unwrap().contains("written"));
 let kw=PyDict::new(py);kw.set_item("format","svg")?;kw.set_item("width",120)?;kw.set_item("height",100)?;
 let images=batch.bind(py).call_method("write_images",(directory.join("images"),),Some(&kw))?;assert_eq!(images.getattr("success")?.extract::<usize>()?,2);
-let svg=batch.bind(py).call_method1("to_svg",(120,100))?;assert_eq!(svg.len()?,3);assert!(svg.get_item(1)?.is_none());
+assert!(batch.bind(py).call_method1("to_svg",(120,100)).unwrap_err().to_string().contains("query not started"));
+let svg=query_batch.call_method1("to_svg",(120,100))?;assert_eq!(svg.len()?,2);assert!(!svg.get_item(1)?.is_none());
 let keep=batch.bind(py).getattr("errors")?.get_item(0)?;drop(batch);drop(native);assert_eq!(keep.getattr("index")?.extract::<usize>()?,1);assert!(keep.getattr("source")?.is_instance(<crate::operation_errors::SmilesError as crate::error_framework::ExceptionPayload>::exception_type(py).expect("error backend").as_any())?);
 Ok(())}).unwrap();
     }

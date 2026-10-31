@@ -30,7 +30,7 @@ SMILES = [
 
 
 def first_valid_fingerprint(batch: ck.MoleculeBatch):
-    for fingerprint in batch.fingerprint_morgan(radius=2, fp_size=1024):
+    for fingerprint in batch.with_valid_records().fingerprint_morgan(radius=2, fp_size=1024):
         if fingerprint is not None:
             return fingerprint
     raise RuntimeError("batch does not contain any valid molecules")
@@ -55,11 +55,12 @@ prepared = (
     .with_2d_coordinates(errors=ck.BatchErrorMode.KEEP)
 )
 
-fingerprints = prepared.fingerprint_morgan(radius=2, fp_size=1024)
+# Keep the mapping to the original input when filtering before a query.
+valid_indices = [index for index, valid in enumerate(prepared.valid_mask) if valid]
+valid = prepared[valid_indices]
+fingerprints = valid.fingerprint_morgan(radius=2, fp_size=1024)
 ranked: list[tuple[float, int, str]] = []
-for index, (fingerprint, smiles) in enumerate(
-    zip(fingerprints, prepared.to_smiles(), strict=True)
-):
+for index, fingerprint, smiles in zip(valid_indices, fingerprints, valid.to_smiles(), strict=True):
     if fingerprint is None or smiles is None:
         continue
     ranked.append((fingerprint.tanimoto(query_fp), index, smiles))

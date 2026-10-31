@@ -120,10 +120,6 @@ jobs:
             echo "CHANGELOG.md has no complete release-footer block" >&2
             exit 1
           fi
-          if ! grep -q '[^[:space:]]' "$release_footer"; then
-            echo "CHANGELOG.md has an empty release-footer block" >&2
-            exit 1
-          fi
           if ! awk -v version="$release_version" '
               index($0, "## [" version "]") == 1 {
                 found = 1

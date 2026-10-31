@@ -9,7 +9,8 @@ from html_metadata import read_metadata
 # Sphinx-generated utility pages have no author-written description.
 UTILITY_DESCRIPTIONS = {
     "search": "Search COSMolKit Python guides and API reference for molecules, descriptors, fingerprints, and molecular workflows.",
-    "genindex": "Browse the alphabetical index of COSMolKit Python classes, methods, and documentation topics.",
+    "python/genindex": "Browse the alphabetical index of COSMolKit Python classes, methods, and documentation topics.",
+    "javascript/genindex": "Browse the alphabetical index of COSMolKit JavaScript classes, methods, and documentation topics.",
 }
 
 

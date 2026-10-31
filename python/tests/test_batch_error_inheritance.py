@@ -12,7 +12,7 @@ import cosmolkit as ck
 @pytest.mark.parametrize("form", ["default", "keywords", "params"])
 def test_transforms_inherit_keep_in_every_call_form(name: str, form: str):
     batch = ck.MoleculeBatch.from_smiles_list(["CCO", "C1CC", "O"], errors="keep")
-    before = batch.to_smiles()
+    before = batch.with_valid_records().to_smiles()
     errors = [{"index": error.index, "operation": error.operation, "message": error.message} for error in batch.errors]
     transform = cast(Callable[..., ck.MoleculeBatch], getattr(batch, name))
     if form == "default":
@@ -28,8 +28,29 @@ def test_transforms_inherit_keep_in_every_call_form(name: str, form: str):
     with pytest.raises(ck.BatchValidationError) as caught:
         _ = transform(errors="raise")
     assert [{"index": error.index, "operation": error.operation, "message": error.message} for error in caught.value.record_errors] == errors
-    assert batch.to_smiles() == before
+    assert batch.with_valid_records().to_smiles() == before
     assert batch.error_mode == ck.BatchErrorMode.KEEP
+
+
+@pytest.mark.parametrize("method", ["to_smiles", "to_svg", "dg_bounds_matrix", "fingerprint_morgan"])
+def test_queries_reject_input_errors_before_progress_and_explain_recovery(method):
+    batch = ck.mols_from_smiles_list(["CCO", "C1CC", "O"], errors="keep")
+    ticks = []
+    execution = ck.BatchQueryParams(progress_callback=lambda: ticks.append(1))
+    with pytest.raises(ck.BatchValidationError, match="batch\\[batch.valid_mask\\]") as caught:
+        if method == "fingerprint_morgan":
+            batch.fingerprint_morgan(execution=execution)
+        elif method == "to_svg":
+            batch.to_svg(300, 300, params=execution)
+        else:
+            getattr(batch, method)(params=execution)
+    assert ticks == []
+    assert [e.index for e in caught.value.record_errors] == [1]
+    assert caught.value.record_errors[0].message == batch.errors[0].message
+    assert caught.value.record_errors[0].__cause__ is not None
+    assert batch[batch.valid_mask].to_smiles() == ["CCO", "O"]
+    assert batch.with_valid_records().to_smiles() == ["CCO", "O"]
+    assert batch.valid_mask == [True, False, True]
 
 
 def test_new_errors_are_retained_and_explicit_override_changes_only_returned_chain():

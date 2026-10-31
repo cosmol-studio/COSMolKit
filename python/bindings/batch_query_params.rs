@@ -48,7 +48,7 @@ macro_rules! batch_query_configuration {
     $($(#[$doc])* #[getter] fn $field(&self) -> $ty { self.inner.$field }
     #[setter] fn [<set_ $field>](&mut self, value: $ty) { self.inner.$field = value; })+
     #[getter]
-    /// Optional zero-argument notification after each completed input row, including invalid rows; callback exceptions propagate.
+    /// Optional zero-argument notification after each completed query row. Retained input errors reject the query before any notification; callback exceptions propagate.
     fn progress_callback(&self, py: Python<'_>) -> Option<ProgressCallback> {
         self.progress_callback
             .as_ref()

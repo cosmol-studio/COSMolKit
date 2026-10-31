@@ -112,7 +112,8 @@ class RouteContractTests(unittest.TestCase):
                 continue
             with self.subTest(page=page["path"]):
                 self.assertTrue(docname.startswith(page["binding"] + "/"))
-                self.assertTrue((source / (docname + ".rst")).is_file())
+                if page["topic"] != "genindex":
+                    self.assertTrue((source / (docname + ".rst")).is_file())
                 public = "/" + docname.removesuffix("/index")
                 self.assertEqual(page["path"], public)
         for language in ("python", "javascript"):

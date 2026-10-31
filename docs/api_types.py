@@ -1,6 +1,7 @@
 """Supply native Python API types from the generated, checked stub."""
 
 import ast
+import copy
 import json
 from pathlib import Path
 
@@ -75,20 +76,22 @@ def return_signature(app, what, name, obj, options, signature, return_annotation
     overloads = annotations(app, name)
     if not overloads:
         return None
-    returns = {type_text(node.returns) for node in overloads}
-    if len(returns) == 1:
-        return signature if signature is not None else "()", returns.pop()
+    if len(overloads) == 1:
+        return signature if signature is not None else "()", type_text(overloads[0].returns)
 
-    # Different overload results (e.g. indexing versus slicing) must remain
-    # paired with their own arguments, rather than becoming an ambiguous union.
+    # Preserve every declared call form, including overloads sharing a result.
     signatures = []
     for node in overloads:
-        args = ast.unparse(node.args)
-        if args.startswith("self, ") or args.startswith("cls, "):
-            args = args.split(", ", 1)[1]
-        elif args in {"self", "cls"}:
-            args = ""
-        signatures.append(f"({args}) -> {type_text(node.returns)}")
+        args = copy.deepcopy(node.args)
+        positional = args.posonlyargs or args.args
+        if what == "method" and positional and positional[0].arg in {"self", "cls"}:
+            positional.pop(0)
+        signatures.append(f"({ast.unparse(args)}) -> {type_text(node.returns)}")
+    # Sphinx's legacy renderer prefixes each line; the new renderer prefixes
+    # only the first line of an event-supplied multiline signature.
+    if not getattr(getattr(app, "config", None), "autodoc_use_legacy_class_based", True):
+        fullname = name.removeprefix("cosmolkit.")
+        signatures[1:] = [fullname + value for value in signatures[1:]]
     return "\n".join(signatures), None
 
 

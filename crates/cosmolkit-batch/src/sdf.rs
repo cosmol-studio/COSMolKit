@@ -78,6 +78,18 @@ impl BatchValidationError {
     pub fn parameter(name: &'static str, message: &'static str) -> Self {
         Self::from_record_errors(vec![BatchRecordError::new(0, name, message)])
     }
+
+    /// Reject retained input failures before a batch query starts.
+    pub fn from_query_input_errors(record_errors: Vec<BatchRecordError>) -> Self {
+        let mut error = Self::from_record_errors(record_errors);
+        error.message_suffix.push_str(
+            "; query not started because the batch contains failed records. \
+             Inspect the indexed errors, then filter with with_valid_records() \
+             (Rust/Python) or withValidRecords() (JavaScript) and retry. \
+             Python also supports batch[batch.valid_mask]. Filtering renumbers the remaining rows.",
+        );
+        error
+    }
 }
 /// The common source error mode is evaluated only after the entire selected
 /// chunk is consumed, retaining every failure in its original input order.

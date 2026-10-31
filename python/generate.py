@@ -39,8 +39,8 @@ Executable __init__.py:
 6. Re-export the existing native classes/functions without wrappers, replacement
    methods or new classes. All argument processing remains in the Rust binding.
    Indexing and property-setter adjustments above affect the stub only.
-   Emit the historical cosmolkit.cosmolkit reconstruction module for 0.5.0
-   pickles; it re-exports only the existing binary reconstruction function.
+   Register the historical cosmolkit.cosmolkit module path as an alias of the
+   public package so 0.5.0 pickles find the existing reconstruction function.
    Emit __version__ from pyproject.toml in both package and stub.
 
 Files: write __init__.pyi and __init__.py, copy the compiled extension under its
@@ -313,11 +313,13 @@ def generate(library: Path, official_stub: Path, output: Path):
     runtime = f"from . import _native\nfrom ._native import {', '.join(exports + private_exports)}\n"
     runtime += "".join(f"{name}.__module__ = __name__\n" for name in private_exports)
     runtime += f"__version__ = {version!r}\n__all__ = {exports!r}\n"
-    (package / "__init__.py").write_text(runtime)
-    (package / "cosmolkit.py").write_text(
-        '"""Private reconstruction path retained for 0.5.0 pickle files."""\n'
-        'from . import _molecule_from_binary\n'
+    runtime += (
+        '# Retain the module path recorded by 0.5.0 molecule pickles.\n'
+        'import sys as _sys\n'
+        '_sys.modules[__name__ + ".cosmolkit"] = _sys.modules[__name__]\n'
+        'del _sys\n'
     )
+    (package / "__init__.py").write_text(runtime)
     (package / "py.typed").touch()
     return package
 

@@ -40,7 +40,9 @@ impl Drop for Directory {
 #[test]
 #[cfg(feature = "cap-conformer")]
 fn complete_query_values_and_invalid_positions_match_scalar_serial_and_parallel() {
-    let batch = batch();
+    let source = batch();
+    assert_eq!(source.to_smiles().unwrap_err().record_errors[0].index, 1);
+    let batch = source.with_valid_records();
     let originals = batch.to_list();
     for jobs in [1, 2, 4] {
         let query = BatchQueryParams {
@@ -51,13 +53,10 @@ fn complete_query_values_and_invalid_positions_match_scalar_serial_and_parallel(
         let strings = batch
             .to_smiles_with_params(&SmilesWriteParams::default(), &query)
             .unwrap();
-        assert_eq!(
-            strings,
-            vec![Some("CCO".into()), None, Some("c1ccccc1".into())]
-        );
+        assert_eq!(strings, vec![Some("CCO".into()), Some("c1ccccc1".into())]);
         let bounds = batch.dg_bounds_matrix_with_params(&query).unwrap();
         let svg = batch.to_svg_with_params(300, 300, &query).unwrap();
-        for index in 0..3 {
+        for index in 0..originals.len() {
             match &originals[index] {
                 Some(molecule) => {
                     assert_eq!(

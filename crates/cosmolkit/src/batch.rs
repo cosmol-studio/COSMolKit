@@ -501,7 +501,8 @@ impl MoleculeBatch {
     }
 }
 
-/// Runtime overrides for ordered read results; newly failed queries always raise.
+/// Runtime overrides for ordered read results; retained failures reject a query
+/// before computation. New query failures also raise.
 #[derive(Clone, Default, cosmolkit_macros::Configuration)]
 #[configuration(stateful)]
 pub struct BatchQueryParams {
@@ -509,7 +510,8 @@ pub struct BatchQueryParams {
     pub n_jobs: Option<usize>,
     /// Optional progress reporting; None inherits the stored batch setting.
     pub progress_bar: Option<bool>,
-    /// One notification after every completed input row, including invalid rows.
+    /// One notification after every completed query row. Retained input errors
+    /// reject the query before any notification.
     #[configuration(adapter)]
     pub progress_callback: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
@@ -530,7 +532,7 @@ impl MoleculeBatch {
         params: &BatchQueryParams,
         apply: impl Fn(&Molecule) -> Result<T, E> + Sync + Send,
     ) -> Result<Vec<Option<T>>, BatchValidationError> {
-        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::collect_optional_values_with_options; same indexed order/all-result collection and scalar owner calls.
+        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::collect_optional_values_with_options; same indexed order/all-result collection and scalar owner calls, with user-approved input-error preflight below.
         // fn collect_optional_values_with_options<T, F>(
         //         &self,
         //         operation: &'static str,
@@ -575,6 +577,13 @@ impl MoleculeBatch {
         //         }
         //         Ok(values)
         //     }
+
+        // Project-defined query contract: do not compute any rows or invoke
+        // progress callbacks until the caller explicitly removes input failures.
+        let input_errors = self.errors();
+        if !input_errors.is_empty() {
+            return Err(BatchValidationError::from_query_input_errors(input_errors));
+        }
 
         let outcomes = cosmolkit_batch::run_indexed(
             self.len(),
@@ -683,8 +692,8 @@ impl MoleculeBatch {
         &self,
         params: &BatchQueryParams,
     ) -> Result<Vec<Option<Vec<Vec<f64>>>>, BatchValidationError> {
-        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::dg_bounds_matrix_with_runtime; same indexed order/all-result collection and scalar owner calls.
-        // fn dg_bounds_matrix_with_runtime(
+        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::dg_bounds_matrix_list_with_runtime; same indexed order/all-result collection and scalar owner calls.
+        // fn dg_bounds_matrix_list_with_runtime(
         //         &self,
         //         progress: BatchProgress<'_>,
         //         n_jobs: Option<usize>,
@@ -723,8 +732,8 @@ impl MoleculeBatch {
         height: u32,
         params: &BatchQueryParams,
     ) -> Result<Vec<Option<String>>, BatchValidationError> {
-        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::to_svg_with_runtime; same indexed order/all-result collection and scalar owner calls.
-        // fn to_svg_with_runtime(
+        // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::to_svg_list_with_runtime; same indexed order/all-result collection and scalar owner calls.
+        // fn to_svg_list_with_runtime(
         //         &self,
         //         width: u32,
         //         height: u32,

@@ -34,9 +34,10 @@ prepared = batch.with_hydrogens(errors=ck.BatchErrorMode.KEEP).with_2d_coordinat
     errors=ck.BatchErrorMode.KEEP
 )
 
-canonical = prepared.to_smiles()
-noncanonical = prepared.to_smiles(canonical=False)
-without_maps = prepared.to_smiles(ignore_atom_map_numbers=True)
+valid = prepared.with_valid_records()
+canonical = valid.to_smiles()
+noncanonical = valid.to_smiles(canonical=False)
+without_maps = valid.to_smiles(ignore_atom_map_numbers=True)
 
 print("canonical:", canonical)
 print("noncanonical:", noncanonical)
@@ -48,10 +49,10 @@ for idx, molecule in enumerate(prepared):
 
 valid_molecules = [molecule for molecule in prepared.to_list() if molecule is not None]
 print("valid molecule count from to_list:", len(valid_molecules))
-print("tail smiles:", prepared[2:].to_smiles())
+print("tail smiles:", prepared[2:].with_valid_records().to_smiles())
 print("valid smiles:", prepared[prepared.valid_mask].to_smiles())
 
-svgs = prepared.to_svg(width=320, height=240, progress_bar=False)
+svgs = valid.to_svg(width=320, height=240, progress_bar=False)
 print("svg count:", sum(svg is not None for svg in svgs))
 
 image_report = prepared.write_images(

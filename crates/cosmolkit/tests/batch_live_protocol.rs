@@ -40,6 +40,70 @@ fn filter_valid_preserves_surviving_input_order() {
 }
 
 #[test]
+fn queries_reject_retained_errors_before_computation_and_allow_explicit_filtering() {
+    use std::error::Error;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let batch = kept(&["CCO".into(), "C1".into(), "N".into(), "C(".into()]);
+    let original_errors = batch.errors();
+    for jobs in [1, 2] {
+        let ticks = Arc::new(AtomicUsize::new(0));
+        let worker = ticks.clone();
+        let query = cosmolkit::BatchQueryParams {
+            n_jobs: Some(jobs),
+            progress_callback: Some(Arc::new(move || {
+                worker.fetch_add(1, Ordering::SeqCst);
+            })),
+            ..Default::default()
+        };
+        // Invalid root would fail valid rows if any computation started.
+        let options = cosmolkit::SmilesWriteParams {
+            rooted_at_atom: Some(cosmolkit::AtomId::new(99)),
+            ..Default::default()
+        };
+        let error = batch.to_smiles_with_params(&options, &query).unwrap_err();
+        assert_eq!(ticks.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            error
+                .record_errors
+                .iter()
+                .map(|e| e.index)
+                .collect::<Vec<_>>(),
+            [1, 3]
+        );
+        for (actual, original) in error.record_errors.iter().zip(&original_errors) {
+            assert_eq!(actual.message, original.message);
+            assert!(std::ptr::addr_eq(
+                actual.source().unwrap(),
+                original.source().unwrap()
+            ));
+        }
+        assert!(error.to_string().contains("batch[batch.valid_mask]"));
+        let clean = batch.with_valid_records();
+        let values = clean
+            .to_smiles_with_params(&Default::default(), &query)
+            .unwrap();
+        assert_eq!(values, vec![Some("CCO".into()), Some("N".into())]);
+        assert_eq!(ticks.load(Ordering::SeqCst), 2);
+        assert!(clean.to_smiles_with_params(&options, &query).is_err());
+        assert!(
+            clean
+                .to_smiles_with_params(
+                    &Default::default(),
+                    &cosmolkit::BatchQueryParams {
+                        n_jobs: Some(0),
+                        ..Default::default()
+                    }
+                )
+                .is_err()
+        );
+        assert_eq!(batch.valid_mask(), [true, false, true, false]);
+    }
+}
+
+#[test]
 fn selection_preserves_records_and_execution_settings() {
     let batch = kept(&["C".into(), "C1".into(), "O".into()])
         .with_parallel_jobs(Some(2))

@@ -967,7 +967,13 @@ def test_molecule_batch_getitem_supports_slices_masks_and_index_lists():
     assert tail.to_smiles() == ["CC", "N"]
 
     reversed_batch = batch[::-1]
-    assert reversed_batch.to_smiles() == ["N", "CC", None, "CCO"]
+    assert [mol.to_smiles() if mol is not None else None for mol in reversed_batch] == ["N", "CC", None, "CCO"]
+    with pytest.raises(cosmolkit.BatchValidationError, match="query not started") as caught:
+        reversed_batch.to_smiles()
+    # Native select() clones the retained error unchanged, including its source index.
+    assert [error.index for error in caught.value.record_errors] == [1]
+    assert reversed_batch.valid_mask == [True, True, False, True]
+    assert reversed_batch.with_valid_records().to_smiles() == ["N", "CC", "CCO"]
 
     valid = batch[batch.valid_mask]
     assert valid.to_smiles() == ["CCO", "CC", "N"]
@@ -984,14 +990,17 @@ def test_molecule_batch_getitem_supports_slices_masks_and_index_lists():
         _ = batch[True]
 
 
-def test_molecule_batch_dg_bounds_matrix_returns_matrices_or_none():
+def test_molecule_batch_dg_bounds_matrix_requires_filtering_and_preserves_values():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(["CCO", "C1CC", "CC"], errors="keep")
 
-    matrices = batch.dg_bounds_matrix(n_jobs=2)
+    with pytest.raises(cosmolkit.BatchValidationError, match="query not started") as caught:
+        batch.dg_bounds_matrix(n_jobs=2)
+    assert [error.index for error in caught.value.record_errors] == [1]
+    matrices = batch.with_valid_records().dg_bounds_matrix(n_jobs=2)
 
-    assert type(matrices) is list and len(matrices) == 3
-    assert matrices[1] is None
-    for index, smiles, size in [(0, "CCO", 3), (2, "CC", 2)]:
+    assert type(matrices) is list and len(matrices) == 2
+    assert batch.valid_mask == [True, False, True]
+    for index, smiles, size in [(0, "CCO", 3), (1, "CC", 2)]:
         matrix = matrices[index]
         assert type(matrix) is list and len(matrix) == size
         assert all(type(row) is list and len(row) == size for row in matrix)

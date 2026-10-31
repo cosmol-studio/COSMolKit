@@ -9641,6 +9641,16 @@ pub mod native {
                 .map(|inner| MoleculeAtom { inner })
                 .collect()
         }
+        /// Return an independent list of atomic numbers in atom-index order, without creating atom handles. Dummy atoms are zero.
+        fn atomic_numbers(&self) -> Vec<u16> {
+            // PyO3 projects Vec<u8> as bytes; widen only at the language
+            // boundary to expose the promised list[int], not binary data.
+            self.inner
+                .atomic_numbers()
+                .into_iter()
+                .map(u16::from)
+                .collect()
+        }
         #[getter]
         /// Detached bond values in bond-index order.
         fn bonds(&self) -> Vec<Bond> {

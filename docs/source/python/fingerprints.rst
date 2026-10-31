@@ -145,9 +145,9 @@ at runtime. Invalid sizes, unsupported source-undefined shifts, malformed
 JSON, bad selections, and incompatible custom invariants fail visibly as
 typed Python exceptions instead of selecting another fingerprint algorithm.
 Rust exposes the corresponding ``FingerprintError``; Rust ``MoleculeBatch``
-conveniences additionally report computation failures as indexed
-``BatchValidationError`` records while retaining existing invalid inputs as
-``None`` in their original positions.
+conveniences report computation failures as indexed ``BatchValidationError``
+records. Batches with retained input errors are rejected before computation;
+inspect the errors and explicitly filter valid records before querying.
 
 Source-backed topological and Avalon fingerprints
 -------------------------------------------------
@@ -497,8 +497,16 @@ substituted. See the API reference for exact configuration types.
 Batch Fingerprints
 ------------------
 
-``MoleculeBatch`` exposes matching batch APIs. Invalid records kept with
-``errors="keep"`` produce ``None`` in the corresponding output position.
+``MoleculeBatch`` exposes matching batch APIs. If it contains failed records retained
+by ``errors="keep"``, a fingerprint query raises ``BatchValidationError`` before
+computation. Inspect ``batch.errors`` and filter with ``batch[batch.valid_mask]``
+or ``batch.with_valid_records()``. Filtering preserves survivor order but
+renumbers rows; keep the original indices separately if needed.
+
+A new calculation failure after filtering still raises an indexed error rather
+than returning partial results. Manually constructed ``FingerprintBatch`` values
+can contain ``None``; their ``to_numpy()`` rejects missing rows and unequal widths.
+This container rule is distinct from molecule-query preflight.
 
 .. code-block:: python
 
@@ -508,6 +516,8 @@ Batch Fingerprints
        ["CCO", "not-smiles", "CCCO"],
        errors="keep",
    ).with_parallel_jobs(8)
+   print(batch.errors)
+   batch = batch.with_valid_records()
    fps = batch.fingerprint_morgan(fp_size=2048)
    atom_pairs = batch.fingerprint_atom_pair(
        fp_size=2048,

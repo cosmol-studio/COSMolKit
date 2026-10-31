@@ -123,6 +123,11 @@ const github = {
         self.select(api_error=True)
 
     def test_changelog_uses_detected_tag_not_branch_name(self):
+        for footer in ("Footer", "", " \n\t"):
+            with self.subTest(footer=footer):
+                self.check_changelog_notes(footer)
+
+    def check_changelog_notes(self, footer):
         script = literal_block("Read release notes from changelog", "run")
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -131,7 +136,7 @@ const github = {
                 "## [0.5.1] - 2026-10-11\nNewer notes\n"
                 "## [0.5.0] - 2026-10-10\nSelected notes\n"
                 "## [0.4.0] - 2026-10-01\nOlder notes\n"
-                "<!-- release-footer:start -->\nFooter\n<!-- release-footer:end -->\n"
+                f"<!-- release-footer:start -->\n{footer}\n<!-- release-footer:end -->\n"
             )
             process = subprocess.run(
                 ["bash", "-c", script], cwd=root,
@@ -143,7 +148,8 @@ const github = {
             notes = (root / "release-notes.md").read_text()
             self.assertIn("Selected notes", notes)
             self.assertIn("Header", notes)
-            self.assertIn("Footer", notes)
+            self.assertEqual((root / "release-footer.md").read_text(), footer + "\n")
+            self.assertTrue(notes.endswith(footer + "\n"))
             self.assertNotIn("Newer notes", notes)
             self.assertNotIn("Older notes", notes)
 

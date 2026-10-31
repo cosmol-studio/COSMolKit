@@ -22,6 +22,35 @@ from api_types import public_description, read_stub, return_signature, type_text
 
 
 class DocumentationWorkflowTests(unittest.TestCase):
+    def test_language_indexes_do_not_mix_entries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "conf.py").write_text(
+                f"import sys\nsys.path.insert(0, {str(DOCS)!r})\n"
+                "extensions = ['api_index']\nhtml_use_index = False\n"
+                "exclude_patterns = ['html', 'doctrees']\n")
+            (root / "index.rst").write_text(
+                "API\n===\n\n.. toctree::\n\n   python/api\n   javascript/api\n")
+            for language, domain in (("python", "py"), ("javascript", "js")):
+                (root / language).mkdir()
+                (root / language / "api.rst").write_text(
+                    f"API\n===\n\n.. {domain}:class:: Sample\n\n"
+                    f".. {domain}:function:: select(value)\n")
+            result = subprocess.run([
+                sys.executable, "-m", "sphinx", "-W", "-b", "html",
+                "-d", str(root / "doctrees"), str(root), str(root / "html"),
+            ], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            from bs4 import BeautifulSoup
+            for language, other in (("python", "javascript"), ("javascript", "python")):
+                html = BeautifulSoup((root / "html" / language / "genindex.html").read_text(), "html.parser")
+                links = [a['href'] for a in html.select('.genindextable a[href]')]
+                self.assertTrue(links)
+                self.assertTrue(all(link.startswith('api.html#') for link in links), links)
+                self.assertFalse(any(other in link for link in links), links)
+                self.assertIn('Sample', html.get_text())
+                self.assertIn('select', html.get_text())
+
     def test_javascript_optional_parameters_survive_rendering(self):
         # One protocol fixture, not a business API inventory. Required union
         # types must stay required; defaults and rest parameters stay intact.
@@ -191,16 +220,25 @@ class PythonApiTypesTests(unittest.TestCase):
             self.assertEqual(app.statuscode, 0, warnings.getvalue())
             from sphinx import addnodes
             signatures = list(app.env.get_doctree("index").findall(addnodes.desc_signature))
-            self.assertEqual(len(signatures), 7)
+            self.assertEqual(len(signatures), 9)
+            for entry in signatures:
+                self.assertTrue(list(entry.findall(addnodes.desc_name)), entry.astext())
             self.assertIn("-> Molecule", signatures[0].astext())
-            self.assertIn("-> str", signatures[1].astext())
-            self.assertIn("Atom | None", signatures[2].astext())
-            self.assertIn("bool", signatures[3].astext())
-            self.assertIn("index: SupportsIndex", signatures[4].astext())
-            self.assertIn("-> Molecule | None", signatures[4].astext())
-            self.assertIn("index: slice", signatures[5].astext())
-            self.assertIn("-> MoleculeBatch", signatures[5].astext())
-            self.assertIn("PropertyValueKind", signatures[6].astext())
+            self.assertIn("sanitize:", signatures[0].astext())
+            self.assertIn("params: SmilesParseParams", signatures[1].astext())
+            self.assertIn("-> Molecule", signatures[1].astext())
+            self.assertIn("isomeric_smiles:", signatures[2].astext())
+            self.assertIn("-> str", signatures[2].astext())
+            self.assertIn("params: SmilesWriteParams", signatures[3].astext())
+            self.assertIn("-> str", signatures[3].astext())
+            self.assertNotIn("(/", signatures[3].astext())
+            self.assertIn("Atom | None", signatures[4].astext())
+            self.assertIn("bool", signatures[5].astext())
+            self.assertIn("index: SupportsIndex", signatures[6].astext())
+            self.assertIn("-> Molecule | None", signatures[6].astext())
+            self.assertIn("index: slice", signatures[7].astext())
+            self.assertIn("-> MoleculeBatch", signatures[7].astext())
+            self.assertIn("PropertyValueKind", signatures[8].astext())
 
 
 if __name__ == "__main__":

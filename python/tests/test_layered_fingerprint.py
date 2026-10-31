@@ -92,7 +92,7 @@ def test_layered_scalar_preserves_source_errors_and_unsigned_layer_bits():
         molecule.fingerprint_layered(from_atoms=[3])
 
 
-def test_layered_batch_matches_ordered_scalar_calls_and_keeps_invalid_positions():
+def test_layered_batch_matches_ordered_scalar_calls_after_explicit_filtering():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(SMILES)
     values = present_values(
         batch.fingerprint_layered(
@@ -129,8 +129,14 @@ def test_layered_batch_matches_ordered_scalar_calls_and_keeps_invalid_positions(
     kept = cosmolkit.MoleculeBatch.from_smiles_list(
         ["CC", "not-a-smiles", "CCC"], errors="keep"
     )
-    kept_values = kept.fingerprint_layered(n_jobs=2, progress_bar=False)
-    assert [value is not None for value in kept_values] == [True, False, True]
+    with pytest.raises(cosmolkit.BatchValidationError, match="query not started") as caught:
+        kept.fingerprint_layered(n_jobs=2, progress_bar=False)
+    assert [error.index for error in caught.value.record_errors] == [1]
+    kept_values = present_values(kept.with_valid_records().fingerprint_layered(n_jobs=2, progress_bar=False))
+    assert [value.on_bits for value in kept_values] == [
+        cosmolkit.Molecule.from_smiles(text).fingerprint_layered().on_bits
+        for text in ["CC", "CCC"]
+    ]
     assert [(error.index, error.operation) for error in kept.errors] == [
         (1, "batch.from_smiles_list")
     ]

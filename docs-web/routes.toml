@@ -277,9 +277,22 @@ binding = "python"
 topic = "genindex"
 status = "ready"
 indexable = false
-docname = "genindex"
+docname = "python/genindex"
 source = "sphinx"
 title = "General Index | COSMolKit"
 legacy_paths = ["/genindex"]
 label = "General Index"
 order = 13
+
+[[pages]]
+component = "JavaScriptGenindex"
+path = "/javascript/genindex"
+binding = "javascript"
+topic = "genindex"
+status = "ready"
+indexable = false
+docname = "javascript/genindex"
+source = "sphinx"
+title = "JavaScript Index | COSMolKit"
+label = "General Index"
+order = 3

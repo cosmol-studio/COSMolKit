@@ -109,18 +109,26 @@ def test_atom_pair_sparse_count_batch_preserves_source_extra_bit_range_errors():
             **kwargs, n_jobs=2, progress_bar=False)
 
 
-def test_atom_pair_batch_keeps_invalid_positions_and_reports_operation_indices():
+def test_atom_pair_batch_rejects_input_errors_and_reports_filtered_operation_indices():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(
         ["CC", "not-a-smiles", "CCC"], errors="keep"
     )
-    values = batch.fingerprint_atom_pair(n_jobs=2, progress_bar=False)
-    assert [value is not None for value in values] == [True, False, True]
+    with pytest.raises(cosmolkit.BatchValidationError, match="query not started") as caught:
+        batch.fingerprint_atom_pair(n_jobs=2, progress_bar=False)
+    assert [error.index for error in caught.value.record_errors] == [1]
     assert [(error.index, error.operation) for error in batch.errors] == [
         (1, "batch.from_smiles_list")
     ]
 
-    with pytest.raises(Exception, match="batch.fingerprint_atom_pair"):
-        batch.fingerprint_atom_pair(use_2d=False, n_jobs=2, progress_bar=False)
+    clean = batch.with_valid_records()
+    values = present_values(clean.fingerprint_atom_pair(n_jobs=2, progress_bar=False))
+    assert [value.on_bits for value in values] == [
+        cosmolkit.Molecule.from_smiles(text).fingerprint_atom_pair().on_bits
+        for text in ["CC", "CCC"]
+    ]
+    with pytest.raises(cosmolkit.BatchValidationError, match="batch.fingerprint_atom_pair") as caught:
+        clean.fingerprint_atom_pair(use_2d=False, n_jobs=2, progress_bar=False)
+    assert [error.index for error in caught.value.record_errors] == [0, 1]
 
 
 def test_atom_pair_batch_thread_counts_progress_defaults_and_repeats_are_stable():

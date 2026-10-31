@@ -319,9 +319,13 @@ Process a batch
 ---------------
 
 Batch construction and SMILES output require ``core``; the fingerprint step
-also requires ``fingerprints``. Results retain input order. APIs returning
-optional entries use ``undefined`` for failed records; inspect ``errors`` and the
-valid/invalid counts rather than silently dropping those positions.
+also requires ``fingerprints``. Results retain input order. Queries reject batches
+containing failed records before computing any rows. Inspect ``batch.errors()``,
+then query ``batch.withValidRecords()`` to explicitly exclude them. Filtering
+preserves survivor order and renumbers the rows without changing the source.
+New calculation errors still throw; queries do not return partial results.
+Retained errors keep their source indices after selection or reordering;
+new calculation errors on a filtered batch use its new row indices.
 
 .. code-block:: javascript
 

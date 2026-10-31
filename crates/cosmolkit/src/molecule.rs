@@ -1443,6 +1443,20 @@ impl Molecule {
         self.state.topology.bonds.len()
     }
 
+    /// Returns an independent snapshot of atomic numbers in atom-index order.
+    ///
+    /// Reads the stored atom rows directly without creating atom handles or
+    /// recalculating chemical properties. Dummy atoms have atomic number zero.
+    #[must_use]
+    pub fn atomic_numbers(&self) -> Vec<u8> {
+        self.state
+            .topology
+            .atoms
+            .iter()
+            .map(Atom::atomic_number)
+            .collect()
+    }
+
     /// Returns atoms in canonical row order, retaining this molecular version.
     ///
     /// Each result shares storage with this molecule. Later molecular edits do

@@ -3,7 +3,7 @@ use pyo3::BoundObject;
 use pyo3::exceptions::{PyIndexError, PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::type_hint_union;
-use pyo3::types::{PyBool, PyBytes, PySequence, PySlice, PyString};
+use pyo3::types::{PyBool, PyBytes, PySlice, PyString};
 
 pub struct Integer(pub isize);
 
@@ -48,7 +48,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Index<'py> {
                 "expected integer, slice, integer sequence or boolean mask",
             ));
         }
-        if value.is_instance_of::<PySequence>() {
+        // Match PyO3's Vec extraction protocol, not Sequence ABC membership:
+        // NumPy arrays and custom __getitem__ sequences need not register there.
+        // SAFETY: value holds a live Python object while attached to Python.
+        if unsafe { pyo3::ffi::PySequence_Check(value.as_ptr()) } != 0 {
             let values = value.extract::<Vec<Bound<'py, PyAny>>>()?;
             if !values.is_empty() && values.iter().all(|v| v.is_instance_of::<PyBool>()) {
                 return Ok(Self::Mask(

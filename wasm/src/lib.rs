@@ -391,6 +391,13 @@ impl Molecule {
         Ok(self.0.atom(ck::AtomId::new(index)).map(atoms::MoleculeAtom))
     }
 
+    /// Return an independent Uint8Array of atomic numbers in atom-index order.
+    /// No atom handles are created; dummy atoms are zero. No free() is needed.
+    #[wasm_bindgen(js_name = atomicNumbers)]
+    pub fn atomic_numbers(&self) -> Vec<u8> {
+        self.0.atomic_numbers()
+    }
+
     #[wasm_bindgen(getter)]
     pub fn atoms(&self) -> Vec<atoms::MoleculeAtom> {
         self.0

@@ -121,7 +121,11 @@ def test_batch_numpy_rejects_failed_rows_and_mismatched_widths():
     with pytest.raises(ValueError, match="row 1 has 9 bits; expected 8"):
         ck.FingerprintBatch([fp, ck.Fingerprint.from_on_bits(9, [])]).to_numpy()
     batch = ck.mols_from_smiles_list(["CCO", "C1CC"], errors="keep")
-    fps = batch.fingerprint_morgan()
-    assert len(fps) == 2 and fps[1] is None
-    with pytest.raises(ValueError, match="row 1 is None"):
-        fps.to_numpy()
+    with pytest.raises(ck.BatchValidationError, match="query not started") as caught:
+        batch.fingerprint_morgan()
+    assert [error.index for error in caught.value.record_errors] == [1]
+    fps = batch.with_valid_records().fingerprint_morgan()
+    assert len(fps) == 1
+    np.testing.assert_array_equal(
+        fps.to_numpy(), ck.mol_from_smiles("CCO").fingerprint_morgan().to_numpy()[None, :]
+    )

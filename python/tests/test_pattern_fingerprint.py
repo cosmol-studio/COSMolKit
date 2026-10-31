@@ -43,27 +43,30 @@ def test_pattern_scalar_preserves_input_and_reports_argument_errors():
         molecule.fingerprint_pattern(tautomeric="yes")  # pyright: ignore[reportArgumentType]
 
 
-def test_pattern_batch_matches_scalar_order_and_keeps_invalid_positions():
+def test_pattern_batch_matches_scalar_order_after_explicit_filtering():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(
         ["CC", "not-a-smiles", "c1ccccc1O"], errors="keep"
     )
-    values = batch.fingerprint_pattern(
+    with pytest.raises(cosmolkit.BatchValidationError, match="query not started") as caught:
+        batch.fingerprint_pattern(n_bits=257, tautomeric=True, n_jobs=2, progress_bar=False)
+    assert [error.index for error in caught.value.record_errors] == [1]
+    clean = batch.with_valid_records()
+    values = clean.fingerprint_pattern(
         n_bits=257, tautomeric=True, n_jobs=2, progress_bar=False)
 
-    assert [value is not None for value in values] == [True, False, True]
+    assert [value is not None for value in values] == [True, True]
     assert [value.on_bits if value is not None else None for value in values] == [
         cosmolkit.Molecule.from_smiles("CC")
         .fingerprint_pattern(n_bits=257, tautomeric=True)
         .on_bits,
-        None,
         cosmolkit.Molecule.from_smiles("c1ccccc1O")
         .fingerprint_pattern(n_bits=257, tautomeric=True)
         .on_bits,
     ]
     with pytest.raises(cosmolkit.BatchValidationError, match="batch.fingerprint_pattern"):
-        batch.fingerprint_pattern(n_bits=0, n_jobs=2, progress_bar=False)
+        clean.fingerprint_pattern(n_bits=0, n_jobs=2, progress_bar=False)
     with pytest.raises(ValueError, match="n_jobs"):
-        batch.fingerprint_pattern(n_jobs=0)
+        clean.fingerprint_pattern(n_jobs=0)
 
 
 def test_pattern_batch_is_deterministic_across_workers_and_concurrent_calls():
