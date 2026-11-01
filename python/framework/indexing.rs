@@ -1,4 +1,5 @@
 //! One implementation of integer/slice correspondence for object collections.
+use numpy::PyArrayMethods;
 use pyo3::BoundObject;
 use pyo3::exceptions::{PyIndexError, PyOverflowError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -42,6 +43,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Index<'py> {
     fn extract(value: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         if let Ok(slice) = value.cast::<PySlice>() {
             return Ok(Self::Slice(slice.to_owned().into_bound()));
+        }
+        // Exact dtype/rank extraction, without truthiness conversion or casting
+        // numeric arrays. Iteration also supports noncontiguous boolean views.
+        if let Ok(mask) = value.cast::<numpy::PyArray1<bool>>() {
+            return Ok(Self::Mask(
+                mask.readonly().as_array().iter().copied().collect(),
+            ));
         }
         if value.is_instance_of::<PyString>() || value.is_instance_of::<PyBytes>() {
             return Err(PyTypeError::new_err(

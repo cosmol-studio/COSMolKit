@@ -58,7 +58,7 @@ change the complete tested result.
 
 ## 2. Test Data Ownership
 
-For COSMolKit 0.5.0, corpus and designated special-regression inputs MUST be
+For COSMolKit 0.6.0, corpus and designated special-regression inputs MUST be
 stored under `parity-tests/testdata/`. Their generated references belong
 under `parity-tests/expected/`, and reports under `parity-tests/reports/`.
 The repository-level `testdata/` directory retains shared ordinary-regression
@@ -278,7 +278,7 @@ Do not duplicate these mechanisms in domain crates.
 ## 6. Rust Parity Pipeline Ownership
 
 `parity-tests/` (`cosmolkit-parity-tests`, unpublished) is the
-current 0.5.0 home for corpus and special-regression orchestration.
+current 0.6.0 home for corpus and special-regression orchestration.
 The current runner's chemistry dependency is public
 `cosmolkit` with `full`, not individual domain crates. Its Rust registry
 declares operations, variants, typed inputs/results and reference identity.

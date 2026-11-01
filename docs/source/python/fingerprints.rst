@@ -508,6 +508,11 @@ than returning partial results. Manually constructed ``FingerprintBatch`` values
 can contain ``None``; their ``to_numpy()`` rejects missing rows and unequal widths.
 This container rule is distinct from molecule-query preflight.
 
+Computed empty batches retain the requested fingerprint width: for example,
+``empty.fingerprint_morgan(fp_size=128).to_numpy().shape`` is ``(0, 128)``.
+An empty manually constructed
+``FingerprintBatch([])`` has no width information and retains width zero.
+
 .. code-block:: python
 
    import cosmolkit as ck

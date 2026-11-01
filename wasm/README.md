@@ -1,4 +1,4 @@
-# COSMolKit for JavaScript and TypeScript
+# COSMolKit 0.6 for JavaScript and TypeScript
 
 WebAssembly bindings to the public Rust API, with generated TypeScript declarations.
 

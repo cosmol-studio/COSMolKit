@@ -327,6 +327,10 @@ New calculation errors still throw; queries do not return partial results.
 Retained errors keep their source indices after selection or reordering;
 new calculation errors on a filtered batch use its new row indices.
 
+An empty computed fingerprint batch retains its requested ``nBits``. For example,
+``empty.fingerprintMorgan({fpSize: 128})`` has ``len === 0`` and ``nBits === 128``;
+``toUint8Array()`` returns zero elements, representing a 0-by-128 matrix.
+
 .. code-block:: javascript
 
    const batch = ck.MoleculeBatch.fromSmilesList(["CCO", "CCCO", "c1ccccc1"]);

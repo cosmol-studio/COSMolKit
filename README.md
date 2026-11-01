@@ -1,4 +1,4 @@
-# COSMolKit — Rust-native cheminformatics toolkit
+# COSMolKit 0.6 — Rust-native cheminformatics toolkit
 
 <p align="center">
   <a href="https://github.com/cosmol-studio/COSMolKit/actions/workflows/coverage.yml">

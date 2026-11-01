@@ -644,7 +644,7 @@ impl MoleculeBatch {
             params,
             |m| m.fingerprint_topological_torsion_with_params(options, None),
         )
-        .map(crate::FingerprintBatch::from)
+        .map(|values| crate::FingerprintBatch::from_calculation(values, options.generator.fp_size))
     }
 
     #[cfg(feature = "cap-smiles")]
@@ -1080,7 +1080,7 @@ impl MoleculeBatch {
                 })
             },
         )
-        .map(crate::FingerprintBatch::from)
+        .map(|values| crate::FingerprintBatch::from_calculation(values, options.generator.fp_size))
     }
     pub fn fingerprint_atom_pair_sparse_count(
         &self,
@@ -1274,7 +1274,7 @@ impl MoleculeBatch {
             params,
             |m| m.fingerprint_layered_with_params(options),
         )
-        .map(crate::FingerprintBatch::from)
+        .map(|values| crate::FingerprintBatch::from_calculation(values, options.fp_size))
     }
     pub fn fingerprint_layered_with_output(
         &self,
@@ -1349,7 +1349,7 @@ impl MoleculeBatch {
             params,
             |m| m.fingerprint_pattern_with_params(options),
         )
-        .map(crate::FingerprintBatch::from)
+        .map(|values| crate::FingerprintBatch::from_calculation(values, options.n_bits as u32))
     }
     pub fn fingerprint_morgan(&self) -> Result<crate::FingerprintBatch, BatchValidationError> {
         let options = crate::MorganFingerprintParams::default();
@@ -1743,7 +1743,7 @@ impl MoleculeBatch {
                 m.fingerprint_morgan_with_generator(&generator, Some(call), None)
             },
         )
-        .map(crate::FingerprintBatch::from)
+        .map(|values| crate::FingerprintBatch::from_calculation(values, options.fp_size))
     }
     pub fn fingerprint_morgan_with_output_with_generator_params(
         &self,

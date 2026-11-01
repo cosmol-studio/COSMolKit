@@ -6,9 +6,9 @@ ChEMBL comparisons and its pinned references. See
 rules. The historical workflow below does not select the current reference.
 
 This directory retains the historical ChEMBL 37 audit tooling and its original
-reference identities. It is not the current 0.5.0 prepare/test entrypoint.
+reference identities. It is not the current 0.6.0 prepare/test entrypoint.
 The old scripts and profiles still require RDKit `2026.03.1`; they must not
-be run in the current reference environment or treated as 0.5.0 acceptance.
+be run in the current reference environment or treated as 0.6.0 acceptance.
 Changing their version strings alone would not update their API or result
 contracts. Their source pins are retained to keep the original evidence
 traceable, not to select the current chemistry reference.
@@ -17,7 +17,7 @@ traceable, not to select the current chemistry reference.
 
 The remaining workflow and receipts describe the audit against RDKit
 `2026.03.1`. They are historical reproduction instructions, not current
-per-commit commands or a claim that 0.5.0 passes this audit.
+per-commit commands or a claim that 0.6.0 passes this audit.
 
 ## Prerequisites
 

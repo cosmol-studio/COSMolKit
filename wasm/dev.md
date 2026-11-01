@@ -50,8 +50,7 @@ protocols do not require a second consumer inventory.
 
 The standalone Cargo workspace keeps the WASM toolchain lock separate.
 `CARGO_TARGET_DIR` can select its build cache. Publication uses the existing
-npm package names and `dev`/`rc`/`latest` labels. The retained `wasm_old/` directory
-is not used by builds, documentation or publication.
+npm package names and `dev`/`rc`/`latest` labels.
 
 Follow [BINDING_CONTRACT.md](BINDING_CONTRACT.md) for input validation, ownership,
 configuration, callbacks and errors. Only binding declarations and shared

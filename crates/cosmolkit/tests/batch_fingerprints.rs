@@ -34,6 +34,114 @@ fn execution(jobs: usize) -> BatchQueryParams {
         ..Default::default()
     }
 }
+
+#[test]
+fn empty_dense_batches_retain_requested_width() {
+    let empty = batch(&[]);
+    let params = execution(2);
+    let results = [
+        empty
+            .fingerprint_morgan_with_params(
+                &MorganFingerprintParams {
+                    generator: MorganGeneratorParams {
+                        fp_size: 128,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &params,
+            )
+            .unwrap(),
+        empty
+            .fingerprint_atom_pair_with_params(
+                &AtomPairFingerprintParams {
+                    generator: AtomPairGeneratorParams {
+                        fp_size: 128,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &params,
+            )
+            .unwrap(),
+        empty
+            .fingerprint_layered_with_params(
+                &LayeredFingerprintParams {
+                    fp_size: 128,
+                    ..Default::default()
+                },
+                &params,
+            )
+            .unwrap(),
+        empty
+            .fingerprint_pattern_with_params(
+                &PatternFingerprintParams {
+                    n_bits: 128,
+                    ..Default::default()
+                },
+                &params,
+            )
+            .unwrap(),
+        empty
+            .fingerprint_topological_torsion_with_params(
+                &cosmolkit::TopologicalTorsionFingerprintParams {
+                    generator: cosmolkit::TopologicalTorsionGeneratorParams {
+                        fp_size: 128,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                &params,
+            )
+            .unwrap(),
+    ];
+    for result in results {
+        assert_eq!(result.len(), 0);
+        assert_eq!(result.n_bits(), 128);
+        result.validate_matrix().unwrap();
+        assert_eq!(result.select(&[]).unwrap().n_bits(), 128);
+    }
+    let generator = cosmolkit::MorganFingerprintGenerator::new(
+        Some(&MorganGeneratorParams {
+            fp_size: 256,
+            ..Default::default()
+        }),
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(generator.fingerprints(&[], 1).unwrap().n_bits(), 256);
+    let generator = cosmolkit::TopologicalTorsionFingerprintGenerator::new(
+        Some(&cosmolkit::TopologicalTorsionGeneratorParams {
+            fp_size: 256,
+            ..Default::default()
+        }),
+        None,
+    )
+    .unwrap();
+    assert_eq!(generator.fingerprints(&[], 1).unwrap().n_bits(), 256);
+}
+
+#[cfg(feature = "cap-io")]
+#[test]
+fn sdf_batch_preflight_does_not_consume_stream() {
+    type Stream = cosmolkit::SdfRecordStream<std::io::Cursor<Vec<u8>>>;
+    let text = Molecule::from_smiles("CCO").unwrap().to_sdf().unwrap();
+    let mut stream = Stream::new(std::io::Cursor::new(text.into_bytes()));
+    for (size, jobs) in [(0, None), (1, Some(0))] {
+        assert!(Stream::validate_batch_params(size, jobs).is_err());
+        assert_eq!(stream.records_consumed(), 0);
+    }
+    assert!(stream.next_record().unwrap().is_some());
+    Stream::validate_batch_params(1, Some(1)).unwrap();
+    assert!(
+        stream
+            .batches(1, BatchErrorMode::Strict, Some(1))
+            .unwrap()
+            .next()
+            .is_none()
+    );
+}
 fn additional_output() -> FingerprintAdditionalOutput {
     let mut output = FingerprintAdditionalOutput::new();
     output.allocate_atom_counts();

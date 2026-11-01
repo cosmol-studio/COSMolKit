@@ -129,6 +129,18 @@ pub struct SdfBatchIterator {
     n_jobs: Option<usize>,
     progress: Option<cosmolkit_batch::BatchProgressBar>,
 }
+fn validate_batch_params(size: usize, n_jobs: Option<usize>) -> Result<(), BatchValidationError> {
+    if size == 0 {
+        return Err(BatchValidationError::parameter("size", "size must be >= 1"));
+    }
+    if n_jobs == Some(0) {
+        return Err(BatchValidationError::parameter(
+            "n_jobs",
+            "n_jobs must be >= 1",
+        ));
+    }
+    Ok(())
+}
 impl SdfDataset {
     pub fn batches(
         &self,
@@ -137,15 +149,7 @@ impl SdfDataset {
         n_jobs: Option<usize>,
         progress_bar: bool,
     ) -> Result<SdfBatchIterator, BatchValidationError> {
-        if size == 0 {
-            return Err(BatchValidationError::parameter("size", "size must be >= 1"));
-        }
-        if n_jobs == Some(0) {
-            return Err(BatchValidationError::parameter(
-                "n_jobs",
-                "n_jobs must be >= 1",
-            ));
-        }
+        validate_batch_params(size, n_jobs)?;
         Ok(SdfBatchIterator {
             dataset: self.clone(),
             position: 0,
@@ -192,21 +196,21 @@ pub struct SdfReaderBatchIterator<R> {
     n_jobs: Option<usize>,
 }
 impl<R: BufRead> SdfRecordStream<R> {
+    /// Check batch arguments without consuming or advancing a stream.
+    pub fn validate_batch_params(
+        size: usize,
+        n_jobs: Option<usize>,
+    ) -> Result<(), BatchValidationError> {
+        validate_batch_params(size, n_jobs)
+    }
+
     pub fn batches(
         self,
         size: usize,
         errors: BatchErrorMode,
         n_jobs: Option<usize>,
     ) -> Result<SdfReaderBatchIterator<R>, BatchValidationError> {
-        if size == 0 {
-            return Err(BatchValidationError::parameter("size", "size must be >= 1"));
-        }
-        if n_jobs == Some(0) {
-            return Err(BatchValidationError::parameter(
-                "n_jobs",
-                "n_jobs must be >= 1",
-            ));
-        }
+        Self::validate_batch_params(size, n_jobs)?;
         Ok(SdfReaderBatchIterator {
             reader: self,
             size,
@@ -380,18 +384,7 @@ impl SdfReader {
         // COSMolKit❗✔️:         SdfRecordStream::with_params(BufReader::new(file), self.params).batches(size, mode, n_jobs)
         // COSMolKit❗✔️:     }
 
-        if size == 0 {
-            return Err(crate::BatchValidationError::parameter(
-                "size",
-                "size must be >= 1",
-            ));
-        }
-        if n_jobs == Some(0) {
-            return Err(crate::BatchValidationError::parameter(
-                "n_jobs",
-                "n_jobs must be >= 1",
-            ));
-        }
+        validate_batch_params(size, n_jobs)?;
         let file = File::open(self.path()).map_err(|source| {
             crate::BatchValidationError::from_record_errors(vec![crate::BatchError::with_source(
                 0,

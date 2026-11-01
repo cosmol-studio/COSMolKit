@@ -8,8 +8,8 @@ runtime dependencies.
 From the repository root, using Python 3.11 or newer:
 
 ```sh
-python3 dev/tools/bump_rust_version.py 0.6.0-dev.1 --dry-run
-python3 dev/tools/bump_rust_version.py 0.6.0-dev.1
+python3 dev/tools/bump_rust_version.py 0.6.0 --dry-run
+python3 dev/tools/bump_rust_version.py 0.6.0
 ```
 
 Updates the shared Rust crate version, explicitly listed internal dependencies,

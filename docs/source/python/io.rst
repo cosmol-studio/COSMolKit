@@ -75,6 +75,10 @@ not needed:
 ``SdfReader`` does not know the final record count without pre-indexing the
 file, so accurate record-count progress belongs to ``SdfDataset``.
 
+``SdfRecordStream.batches(size)`` transfers the remaining stream on success;
+the original stream then becomes unusable. Invalid ``size`` or ``n_jobs``
+raises before transfer, leaving the cursor at its current position.
+
 ``SdfReadParams`` exposes the RDKit-source-backed finalization parameters
 ``sanitize``, ``remove_hs``, and ``strict_parsing``. Pass this object directly
 to ``ck.mol_from_sdf()`` or ``ck.mols_from_sdf_records()``. File readers expose

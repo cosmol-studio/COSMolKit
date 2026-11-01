@@ -234,10 +234,10 @@ class PythonApiTypesTests(unittest.TestCase):
             self.assertNotIn("(/", signatures[3].astext())
             self.assertIn("Atom | None", signatures[4].astext())
             self.assertIn("bool", signatures[5].astext())
-            self.assertIn("index: SupportsIndex", signatures[6].astext())
-            self.assertIn("-> Molecule | None", signatures[6].astext())
-            self.assertIn("index: slice", signatures[7].astext())
-            self.assertIn("-> MoleculeBatch", signatures[7].astext())
+            self.assertIn("index: slice", signatures[6].astext())
+            self.assertIn("-> MoleculeBatch", signatures[6].astext())
+            self.assertIn("index: SupportsIndex", signatures[7].astext())
+            self.assertIn("-> Molecule | None", signatures[7].astext())
             self.assertIn("PropertyValueKind", signatures[8].astext())
 
 

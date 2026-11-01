@@ -28,12 +28,12 @@ members = [
 ]
 resolver = "2"
 # WASM owns its target-specific toolchain lock and is checked by its build entrypoint.
-exclude = ["wasm", "wasm_old", "tmp/alef/wasm"]
+exclude = ["wasm"]
 
 [workspace.package]
 edition = "2024"
 license = "MIT"
-version = "0.6.0-rc.4"
+version = "0.6.0"
 authors = ["COSMolKit Contributors"]
 description = "Core cheminformatics and structural biology toolkit in Rust"
 repository = "https://github.com/cosmol-studio/COSMolKit"

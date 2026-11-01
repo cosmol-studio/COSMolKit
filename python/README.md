@@ -1,4 +1,4 @@
-# COSMolKit for Python
+# COSMolKit 0.6 for Python
 
 COSMolKit provides Rust-backed molecular IO, fingerprints, ring queries,
 conformer generation and structural biology APIs, with Python type annotations

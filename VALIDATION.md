@@ -3,6 +3,8 @@
 This document is the single record of measured validation coverage. Each
 section names the tested COSMolKit and reference versions; counts apply to
 that section, independently of the version shown by the current API docs.
+The current release is **0.6.0**; measurement headings retain the versions
+actually tested.
 
 ## COSMolKit 0.5.1-rc.2 / RDKit 2026.09.1
 
@@ -94,7 +96,7 @@ source records** and **20,505,775 parameterized comparisons**, with **zero
 mismatches**. Million-scale validation remains pending.
 
 These results and comparison rules apply to **COSMolKit 0.5.0 against RDKit
-2026.03.6**, not the current development version targeting RDKit 2026.09.1.
+2026.03.6**, not COSMolKit 0.6.0, which targets RDKit 2026.09.1.
 
 ### Reference and execution scope
 

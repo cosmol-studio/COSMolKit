@@ -342,8 +342,8 @@ impl TopologicalTorsionFingerprintGenerator {
             })
             .collect::<Vec<_>>();
         self.inner
-            .fingerprints(&inputs, num_threads)
-            .map(crate::FingerprintBatch::from)
+            .fingerprints_with_width(&inputs, num_threads)
+            .map(|(values, width)| crate::FingerprintBatch::from_calculation(values, width))
             .map_err(TopologicalTorsionReadError::Generator)
     }
     pub fn sparse_fingerprints(

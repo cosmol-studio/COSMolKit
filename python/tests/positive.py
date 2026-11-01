@@ -39,6 +39,8 @@ def integer_and_slice(batch: ck.FingerprintBatch, dataset: ck.SdfDataset) -> Non
     assert_type(batch[1:], ck.FingerprintBatch)
     assert_type(batch[[0, -1]], ck.FingerprintBatch)
     assert_type(batch[[True, False]], ck.FingerprintBatch)
+    mask: np.typing.NDArray[np.bool_] = np.array([True, False])
+    assert_type(batch[mask], ck.FingerprintBatch)
     assert_type(dataset[0], ck.SdfRecord)
     assert_type(dataset[:1], ck.MoleculeBatch)
 

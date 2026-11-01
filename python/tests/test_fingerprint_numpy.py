@@ -6,6 +6,17 @@ import pytest
 import cosmolkit as ck
 
 
+def test_empty_computed_matrix_retains_width():
+    batch = ck.MoleculeBatch.from_smiles_list(["CCO"])
+    full = batch.fingerprint_morgan(fp_size=128).to_numpy()
+    empty = batch[:0].fingerprint_morgan(fp_size=128).to_numpy()
+    assert empty.shape == (0, 128)
+    assert empty.dtype == np.uint8
+    np.testing.assert_array_equal(np.concatenate([full, empty]), full)
+    invalid = ck.mols_from_smiles_list(["not-smiles"], errors="keep")
+    assert invalid.with_valid_records().fingerprint_morgan(fp_size=128).to_numpy().shape == (0, 128)
+
+
 def expected_array(fp):
     expected = np.zeros(fp.n_bits, dtype=np.uint8)
     expected[fp.on_bits] = 1
@@ -101,7 +112,7 @@ def test_batch_index_slice_iteration_and_empty_width():
     np.testing.assert_array_equal(fps[::2].to_numpy(), np.stack([fp.to_numpy()] * 2))
     assert fps[:0].to_numpy().shape == (0, 8)
     assert ck.FingerprintBatch([]).to_numpy().shape == (0, 0)
-    assert ck.mols_from_smiles_list([]).fingerprint_morgan().to_numpy().shape == (0, 0)
+    assert ck.mols_from_smiles_list([]).fingerprint_morgan().to_numpy().shape == (0, ck.MorganGeneratorParams().fp_size)
     assert ck.FingerprintBatch([ck.Fingerprint.from_on_bits(0, [])]).to_numpy().shape == (1, 0)
     with pytest.raises(IndexError):
         _ = fps[3]

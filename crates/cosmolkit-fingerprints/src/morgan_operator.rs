@@ -110,6 +110,11 @@ pub struct MorganCalculation<'a> {
 }
 
 impl MorganCalculation<'_> {
+    /// Dense width from the same locked settings used for this calculation.
+    pub fn fp_size(&self) -> u32 {
+        self.state.backend.fingerprint_arguments.fp_size
+    }
+
     pub fn needs_ring_info(&self, properties: &MoleculeProperties, call: &MorganCall<'_>) -> bool {
         // RDKit✔️✔️:   if (dp_fingerprintArguments->df_includeChirality &&
         // RDKit✔️✔️:       !mol.hasProp(common_properties::_StereochemDone)) {

@@ -1,4 +1,4 @@
-# Regression Tests and Corpus Parity — 0.5.0
+# Regression Tests and Corpus Parity — 0.6.0
 
 There are two test categories:
 

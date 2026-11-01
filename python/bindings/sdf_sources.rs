@@ -437,8 +437,14 @@ impl SdfRecordStream {
     fn lines_consumed(&self) -> PyResult<usize> {
         Ok(self.active()?.lines_consumed())
     }
-    /// Transfer the current stream to a batch iterator. This stream becomes
-    /// unusable even if native batch-parameter validation returns an error.
+    #[staticmethod]
+    /// Validate batch arguments without consuming or advancing a stream.
+    fn validate_batch_params(size: usize, n_jobs: Option<usize>) -> PyResult<()> {
+        ck::SdfRecordStream::<BufReader<File>>::validate_batch_params(size, n_jobs)
+            .map_err(BatchValidationError::from_rust)
+    }
+    /// Transfer the current stream to a batch iterator. Invalid batch arguments
+    /// leave the stream usable at its current position; success transfers ownership.
     #[pyo3(signature=(size,errors=None,n_jobs=None))]
     fn batches(
         &mut self,
@@ -448,6 +454,7 @@ impl SdfRecordStream {
         n_jobs: Option<usize>,
     ) -> PyResult<SdfReaderBatchIterator> {
         self.active()?;
+        Self::validate_batch_params(size, n_jobs)?;
         let errors = errors
             .map(BatchErrorModeInput::into_rust)
             .transpose()?
@@ -725,7 +732,9 @@ mod tests {
                     .unwrap_err();
                 assert!(error.is_instance(py, <BatchValidationError as crate::error_framework::ExceptionPayload>::exception_type(py).expect("error backend").as_any()));
                 assert_eq!(error.value(py).str()?.to_str()?, expected.to_string());
-                assert_transferred(&stream)?;
+                assert_eq!(stream.getattr("records_consumed")?.extract::<usize>()?, 0);
+                assert!(!stream.call_method0("next_record")?.is_none());
+                assert_eq!(stream.getattr("records_consumed")?.extract::<usize>()?, 1);
             }
 
             // Python argument conversion precedes the consuming Rust call.

@@ -11,13 +11,19 @@ pub struct FingerprintBatch {
 }
 
 impl FingerprintBatch {
-    pub fn new(values: Vec<Option<Fingerprint>>) -> Self {
+    /// Calculation metadata supplies the width when no row can supply it.
+    /// Nonempty results keep their actual width (including source-defined folding).
+    pub(crate) fn from_calculation(values: Vec<Option<Fingerprint>>, width: u32) -> Self {
         let n_bits = values
             .iter()
             .flatten()
             .next()
-            .map_or(0, Fingerprint::n_bits);
+            .map_or(width, Fingerprint::n_bits);
         Self { values, n_bits }
+    }
+
+    pub fn new(values: Vec<Option<Fingerprint>>) -> Self {
+        Self::from_calculation(values, 0)
     }
 
     pub fn len(&self) -> usize {

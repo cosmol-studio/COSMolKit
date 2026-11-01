@@ -26,6 +26,124 @@ fails when that tag's changelog section is missing or empty.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-01
+
+COSMolKit 0.6.0 updates the chemistry reference to RDKit 2026.09.1,
+rebuilds the Python and JavaScript bindings around the public Rust API,
+and improves molecular inspection, batch processing and persistence.
+The chemistry upgrade follows the
+[upstream source diff](dev/source_provenance/rdkit_2026_03_6_to_2026_09_1.md),
+not corpus-output fitting. The changes below are relative to 0.5.0.
+
+### Added
+
+- Context-owning molecular atom access through `mol.atom(...)` and atom
+  collections, including degree and neighboring-atom queries. Retained atoms
+  keep their molecular version through copy-on-write rather than becoming
+  invalid when the original molecule is edited.
+- Context-owning BIO hierarchy access from models to chains, residues and
+  atoms, including atom positions without a separate structure-level lookup.
+- Public `symmetrized_sssr()` ring-set queries and bulk `atomic_numbers()`
+  extraction, with corresponding Python and JavaScript projections.
+- Molecular PDB/mmCIF block readers and PDB output with explicit conformer
+  selection, separate from complete `BioStructure` structural IO.
+- Typed atom-property getters and value/in-place setters for strings,
+  integers, doubles, booleans and supported vectors.
+- Explicit conformer termination information, successful conformer IDs and
+  direct failure-count access on embedding results.
+- Distance, angle, torsion and position constraints on persistent UFF/MMFF
+  force fields, with typed parameters and explicit coordinate installation.
+- Shared tautomer progress snapshots for retaining callback results, and
+  copy-on-write molecule values for search and reaction callbacks.
+- Python `__version__`, typed fingerprint-batch NumPy matrices, and common
+  collection indexing for scalar indices, slices, index sequences and
+  boolean masks, including one-dimensional NumPy arrays.
+- Conda packages under the `cosmol-studio` channel.
+
+### Changed
+
+- Updated the RDKit reference from 2026.03.6 to 2026.09.1, including reviewed
+  ring-family/RDL handling, CIP assignment and limits, sanitization,
+  stereochemistry, canonicalization, SMILES/CX handling, tautomer selection,
+  conformer bounds and 2D layout changes within the supported scope.
+- Python bindings use PyO3 introspection for generated annotations; JavaScript
+  bindings use wasm-bindgen and Tsify for generated TypeScript declarations.
+  Both project the registered Rust API, including properties, defaults,
+  configuration types and structured error causes.
+- Removed the retired `wasm_old` bindings; `wasm/` is the JavaScript/WASM
+  implementation used by builds, documentation and publication.
+- Unified configuration handling: parameter instances and keyword/options
+  forms are mutually exclusive. Python accepts declared enum members or
+  their canonical string spelling; JavaScript validates primitive and
+  wrapped-object inputs without permissive numeric coercion.
+- Standardized value-style `with_*` coordinate operations and explicit
+  trailing-underscore in-place operations. Python `copy()` retains native
+  copy-on-write semantics.
+- Batch fingerprint methods follow the corresponding molecule method names
+  and return native fingerprint collections. Python batch execution accepts
+  direct `errors`, `n_jobs` and `progress_bar` keywords; constructing an
+  execution parameter object is optional.
+- Batch queries reject existing failed records before computation, retaining
+  indexed error details and guidance to filter valid records. Construction,
+  transforms and exports retain their documented `errors="keep"` behavior.
+- Tetrahedral stereo queries report actual centers, including unspecified
+  centers by default, with an explicit `include_unassigned` switch and
+  documented ligand ordering.
+- Native archive 2.0 writes codec 3 / `ck-wire-v1`, retaining codec-2 and
+  legacy readers. Ring-family and RDL state are preserved in the archive.
+- Replaced the corpus runner with `parity-tests`: reusable references,
+  selectable task groups, bounded-memory processing and parallel execution
+  within sequential tasks.
+- Refreshed Python and JavaScript tutorials and generated API references,
+  including return types, overloads, defaults and language-specific indexes.
+
+### Fixed and optimized
+
+- Corrected reverse InChI property-cache initialization and preserved the
+  standalone InChI crate boundary. Reduced conversion, allocation and
+  canonicalization overhead without substituting chemistry algorithms.
+- Removed avoidable allocations and repeated work in SMILES, ring,
+  descriptor and fingerprint paths; reused batch worker pools and counted
+  fingerprint intersections directly without intermediate fingerprints.
+- Aligned Python Avalon and 2D coordinate defaults with the corresponding
+  RDKit entrypoints.
+- Restored Python molecule pickle entrypoints and consistent enum equality
+  and serialization; retained typed nested error details and causes.
+- Corrected configuration getters that previously exposed detached mutable
+  copies, and preserved strict rejection of mixed configuration call forms.
+- Kept NumPy coordinate conversion on its typed array path while using
+  fixed-width coordinate rows in Rust.
+- Preserved SDF stream position after rejected batch arguments. Successful
+  transfer to a batch iterator remains consuming.
+- Preserved configured fingerprint widths for empty computed batches:
+  Python matrices retain shape `(0, n_bits)`, and JavaScript retains `nBits`.
+- Corrected shared Python indexing for large slice steps and NumPy boolean
+  masks, including agreement between runtime selection and type inference.
+
+### Upgrade notes
+
+- Use the current generated API for property access and parameter names;
+  Python/JavaScript read-only properties are no longer called as methods.
+- Batch fingerprint calls use names such as `fingerprint_morgan(...)` in
+  Python and `fingerprintMorgan(...)` in JavaScript, without a `list` suffix.
+  Convert the returned fingerprint collection explicitly to NumPy or a typed
+  array when a dense matrix is required.
+- Use `errors="raise"` or `errors="keep"` for Python batch error policy.
+  Before querying a batch with failed records, call `with_valid_records()`
+  or select its valid mask; queries do not return partial results on error.
+- Replace collection-valued configuration fields through assignment instead
+  of mutating a detached list. Configure a call with either a parameter
+  instance or individual fields, not both, including explicit `None` fields.
+- Conformer result IDs contain successful IDs only; inspect termination and
+  diagnostics rather than interpreting `-1` as a conformer or counting it.
+- Readers predating codec 3 cannot read newly written `ck-wire-v1` archives;
+  0.6.0 retains readers for earlier supported archive formats.
+
+Measured chemistry coverage and comparison rules are recorded in
+[VALIDATION.md](VALIDATION.md).
+
+Full comparison: [v0.5.0...v0.6.0](https://github.com/cosmol-studio/COSMolKit/compare/v0.5.0...v0.6.0)
+
 ## [0.5.0] - 2026-10-10
 
 COSMolKit 0.5.0 unifies its Rust, Python and JavaScript surfaces around one

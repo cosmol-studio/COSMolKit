@@ -176,8 +176,15 @@ def test_batch_iterators_and_stream_transfer_continue_at_current_record(tmp_path
     with pytest.raises(RuntimeError, match="transferred"):
         _ = stream.batches(1, ck.BatchErrorMode.RAISE, None)
     invalid = ck.SdfRecordStream.open(str(path))
+    assert invalid.next_record() is not None
+    position = (invalid.records_consumed, invalid.bytes_consumed, invalid.lines_consumed)
     with pytest.raises(ck.BatchValidationError):
         _ = invalid.batches(0, ck.BatchErrorMode.RAISE, None)
+    with pytest.raises(ck.BatchValidationError):
+        _ = invalid.batches(1, ck.BatchErrorMode.RAISE, 0)
+    assert (invalid.records_consumed, invalid.bytes_consumed, invalid.lines_consumed) == position
+    assert next(invalid).molecule.to_smiles() == "CC"
+    assert next(invalid.batches(1)).to_smiles() == ["CCC"]
 
 
 def test_torsion_batch_thin_bindings_match_scalar_and_propagate_callback_errors() -> None:

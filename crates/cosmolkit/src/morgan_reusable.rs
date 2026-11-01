@@ -184,7 +184,7 @@ impl MorganSettings {
     }
 }
 macro_rules! calculations {
-    ($bulk:ident,$method:ident,$owner:ident,$result:ty,$batch:ty) => {
+    ($bulk:ident,$method:ident,$owner:ident,$result:ty,$batch:ty,$convert:expr) => {
         impl MorganFingerprintGenerator {
             pub fn $bulk(
                 &self,
@@ -224,7 +224,7 @@ macro_rules! calculations {
                     .collect::<Vec<_>>();
                 calculation
                     .$bulk(&inputs, num_threads)
-                    .map(<$batch>::from)
+                    .map(|values| ($convert)(values, calculation.fp_size()))
                     .map_err(MorganReadError::Generator)
             }
         }
@@ -263,28 +263,32 @@ calculations!(
     fingerprint_morgan_with_generator,
     bits,
     Fingerprint,
-    crate::FingerprintBatch
+    crate::FingerprintBatch,
+    crate::FingerprintBatch::from_calculation
 );
 calculations!(
     counts,
     fingerprint_morgan_count_with_generator,
     count,
     SparseCountFingerprint32,
-    Vec<Option<SparseCountFingerprint32>>
+    Vec<Option<SparseCountFingerprint32>>,
+    |values, _width| values
 );
 calculations!(
     sparse_fingerprints,
     fingerprint_morgan_sparse_with_generator,
     sparse_bits,
     SparseBitFingerprint,
-    Vec<Option<SparseBitFingerprint>>
+    Vec<Option<SparseBitFingerprint>>,
+    |values, _width| values
 );
 calculations!(
     sparse_counts,
     fingerprint_morgan_sparse_count_with_generator,
     sparse_count,
     SparseCountFingerprint,
-    Vec<Option<SparseCountFingerprint>>
+    Vec<Option<SparseCountFingerprint>>,
+    |values, _width| values
 );
 
 #[cfg(test)]

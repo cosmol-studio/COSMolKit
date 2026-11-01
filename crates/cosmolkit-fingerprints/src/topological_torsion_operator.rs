@@ -834,6 +834,16 @@ impl TopologicalTorsionGenerator {
         inputs: &[Option<AtomPairPreparedInput<'_>>],
         num_threads: i32,
     ) -> Result<Vec<Option<Fingerprint>>, TopologicalTorsionError> {
+        self.fingerprints_with_width(inputs, num_threads)
+            .map(|(values, _)| values)
+    }
+
+    /// Retain dense width even for empty results, under the calculation lock.
+    pub fn fingerprints_with_width(
+        &self,
+        inputs: &[Option<AtomPairPreparedInput<'_>>],
+        num_threads: i32,
+    ) -> Result<(Vec<Option<Fingerprint>>, u32), TopologicalTorsionError> {
         let state = lock(&self.state)?;
         let workers = cosmolkit_core::rdkit_thread_count(num_threads)
             .map_err(TopologicalTorsionError::ThreadCount)?;
@@ -842,6 +852,7 @@ impl TopologicalTorsionGenerator {
         bulk_with_state(&state, inputs, workers, |s, input, call| {
             Self::bits_state(s, input, call, None)
         })
+        .map(|values| (values, state.common.fp_size))
     }
 }
 

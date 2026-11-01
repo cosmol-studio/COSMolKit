@@ -89,6 +89,10 @@ Batch Values
 returned as ``Molecule`` objects and invalid kept records are returned as
 ``None``:
 
+Boolean selection accepts Python boolean lists and one-dimensional NumPy
+boolean arrays, including strided views. The mask length must match the batch;
+numeric arrays are not converted to boolean masks.
+
 .. code-block:: python
 
    molecules = prepared.to_list()

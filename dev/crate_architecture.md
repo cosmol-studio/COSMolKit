@@ -1,6 +1,6 @@
 # Crate Architecture
 
-This document defines the COSMolKit 0.5.0 workspace architecture and the
+This document defines the COSMolKit 0.6.0 workspace architecture and the
 ownership rules for changes to it. Historical plans and reports preserve
 their original scope; they do not define the current architecture or queue.
 The crate directory is documented in
@@ -328,7 +328,7 @@ introduced. Existing eager multiple-output operations retain their lifecycle.
 
 ## 6. Architecture Changes and Feature Selection
 
-The split-crate layout is the 0.5.0 architecture.
+The split-crate layout is the 0.6.0 architecture.
 When changing an ownership boundary, preserve complete vertical behavior:
 
 1. Keep model values and the query AST independent of chemistry algorithms.

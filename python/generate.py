@@ -23,7 +23,8 @@ Changes to the public __init__.pyi:
 4. Expand explicit integer_selection indexing declarations with a named selection
    result (or Self), validating integer/slice/indices/mask inputs and concrete
    item/selection outputs. Unmarked __getitem__ declarations remain unchanged;
-   incompatible marked signatures fail generation. Preserve official types.
+   incompatible marked signatures fail generation. Preserve official types;
+   selection overloads precede scalar indices, matching native extraction.
 5. Remove positional-only separators from property setters as a BasedPyright
    workaround. Qualify property decorators as builtins.property so an actual
    member named property cannot shadow the decorator. Add imports and derive
@@ -209,7 +210,9 @@ def indexing_forms(owner, method):
     selection_input = ast.Name(id="slice", ctx=ast.Load())
     for sequence in sequences:
         selection_input = ast.BinOp(left=selection_input, op=ast.BitOr(), right=copy.deepcopy(sequence))
-    for input_type, output_type in ((integer, item_type), (selection_input, ast.Name(id=selected, ctx=ast.Load()))):
+    # Match native extraction precedence: array-like objects may also advertise
+    # __index__, but a sequence is a selection, not a scalar item lookup.
+    for input_type, output_type in ((selection_input, ast.Name(id=selected, ctx=ast.Load())), (integer, item_type)):
         form = overload(method)
         positional(form)[-1].annotation = copy.deepcopy(input_type)
         form.returns = copy.deepcopy(output_type)

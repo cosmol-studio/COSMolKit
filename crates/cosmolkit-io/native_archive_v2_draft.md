@@ -5,7 +5,7 @@ retained from the approved draft. Archive 2.0 is a CK-native format, not RDKit
 pickle compatibility; its version is independent of the CK package version.
 
 Archive 2.0 was introduced in COSMolKit 0.5.0 with codec 2 / `ck-storage-v1`.
-During 0.5.1 development, new writes switch to codec 3 / `ck-wire-v1`, using
+COSMolKit 0.6.0 writes codec 3 / `ck-wire-v1`, using
 Müsli 0.1.9. Both codecs remain readable under the same archive-2 envelope
 and schema-1 records. Legacy raw and archive 1.x inputs still use their
 existing reader branches.
@@ -204,7 +204,7 @@ Optional envelope blocks remain skippable by length independently of codec.
 
 ## 5. Changes requiring explicit versioned decoding/migration
 
-### RDL state added during 0.5.1 development
+### RDL state in COSMolKit 0.6.0
 
 The derived block remains schema 1. Ring records add defaultable fields 11
 (`decomposition`), 12 (`atom_members`) and 13 (`bond_members`). Müsli derive
@@ -343,7 +343,7 @@ Errors are returned through the existing `PickleError` API.
 
 #### Tracked hardening: decode-time allocation budgets
 
-Status: follow-up, not implemented and not a 0.5.0 release gate. Investigate
+Status: follow-up, not implemented in 0.6.0. Investigate
 Müsli's allocator/context/decoder controls for per-sequence admission before
 allocation and an aggregate allocation budget for nested data. Keep derive-based
 decoding rather than adding a CK sequence decoder. Cover the exact limit,

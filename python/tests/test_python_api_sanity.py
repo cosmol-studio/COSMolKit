@@ -957,6 +957,16 @@ def test_index_sequences_accept_numpy_and_custom_protocol():
         assert isinstance(selected, cosmolkit.MoleculeBatch)
         assert [mol.to_smiles() for mol in selected] == ["CCC", "C", "CCC"]
 
+    for mask in ([True, False, True], np.array([True, False, True]),
+                 np.array([True, True, False, True, True, True])[::2]):
+        assert [mol.to_smiles() for mol in batch[mask]] == ["C", "CCC"]
+    with pytest.raises(ValueError, match="length"):
+        _ = batch[np.array([], dtype=bool)]
+    assert len(batch[:0][np.array([], dtype=bool)]) == 0
+    for invalid in (np.array([1.0, 0.0]), np.array([[True, False, True]])):
+        with pytest.raises(TypeError):
+            _ = batch[invalid]
+
 
 def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
     batch = cosmolkit.MoleculeBatch.from_smiles_list(
