@@ -98,6 +98,13 @@ impl QueryGraph {
 
 #[pymethods]
 impl QueryGraph {
+    fn __repr__(&self) -> String {
+        format!(
+            "QueryGraph(num_atoms={}, num_bonds={})",
+            self.inner().num_atoms(),
+            self.inner().num_bonds()
+        )
+    }
     #[staticmethod]
     #[pyo3(signature = (text, params=crate::arguments::Argument::Missing, *, allow_cxsmiles=crate::arguments::Argument::Missing, strict_cxsmiles=crate::arguments::Argument::Missing, parse_name=crate::arguments::Argument::Missing, merge_hs=crate::arguments::Argument::Missing, skip_cleanup=crate::arguments::Argument::Missing, debug_parse=crate::arguments::Argument::Missing, replacements=crate::arguments::Argument::Missing))]
     /// Parse SMARTS into a query graph; accept a parameter object or keyword options, not both.
@@ -208,6 +215,13 @@ impl CompiledQuery {
 
 #[pymethods]
 impl CompiledQuery {
+    fn __repr__(&self) -> String {
+        format!(
+            "CompiledQuery(num_atoms={}, num_bonds={})",
+            self.inner.num_atoms(),
+            self.inner.num_bonds()
+        )
+    }
     #[getter]
     /// Number of query atoms.
     fn num_atoms(&self) -> usize {

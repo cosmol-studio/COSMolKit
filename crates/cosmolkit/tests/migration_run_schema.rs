@@ -359,7 +359,7 @@ fn drawing_entries_have_exact_experimental_shared_query_contracts() {
         for (parameter, expected_name) in callable.parameters.iter().zip(["width", "height"]) {
             assert_eq!(parameter.name, expected_name);
             assert_eq!(parameter.type_name, "u32");
-            assert_eq!(parameter.default, BindingDefault::Required);
+            assert_eq!(parameter.default, BindingDefault::Value("300"));
         }
     }
 }
@@ -625,8 +625,10 @@ fn registry_source_has_one_declaration_and_no_legacy_schema_or_cfg_products() {
     // native archive APIs must not be emitted even when `full` is selected.
     let native_archive =
         "#[cfg(all(feature = \"cap-serialization\", not(target_arch = \"wasm32\")))]";
-    // Conveniences inherit the gate from these three native declarations.
-    assert_eq!(registry.matches(native_archive).count(), 3);
+    // Only the persistent archive read/write methods remain native-only.
+    // PickleError also describes cross-platform molecule transfer failures.
+    // Conveniences inherit the gate from these two native declarations.
+    assert_eq!(registry.matches(native_archive).count(), 2);
     let remaining = registry.replace(native_archive, "");
     assert!(!remaining.contains("cfg(all"));
     assert!(!remaining.contains("cfg(not"));

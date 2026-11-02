@@ -25,6 +25,13 @@ impl TopologyBlock {
 
 #[pymethods]
 impl TopologyBlock {
+    fn __repr__(&self) -> String {
+        format!(
+            "TopologyBlock(atoms={}, bonds={})",
+            self.inner().atoms.len(),
+            self.inner().bonds.len()
+        )
+    }
     #[getter]
     /// Independent detached atom rows in stored order.
     fn atoms(&self) -> Vec<Atom> {

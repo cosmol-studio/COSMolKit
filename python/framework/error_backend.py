@@ -27,7 +27,7 @@ def install(exception, payload):
         return property(read, doc=function.__doc__)
 
     for name, descriptor in vars(payload).items():
-        if name.startswith('_') and name != '__str__':
+        if name.startswith('_') and name not in {'__str__', '__repr__'}:
             continue
         if isinstance(descriptor, types.GetSetDescriptorType):
             setattr(exception, name, getter(descriptor))

@@ -17,6 +17,10 @@ use cosmolkit_model::ring_decomposition::{RingComponent, RingDecomposition, Ring
 use musli::mode::Binary;
 use musli::{Decode, Encode};
 
+#[path = "transfer.rs"]
+mod transfer;
+pub use transfer::{MoleculeTransferError, decode_molecule_transfer, encode_molecule_transfer};
+
 const MAJOR: u16 = 2;
 pub(super) const MAGIC: &[u8; 8] = b"COSMOL\0\0";
 const MINOR: u16 = 0;

@@ -93,6 +93,15 @@ pub struct Protein {
 }
 #[pymethods]
 impl Protein {
+    fn __repr__(&self) -> String {
+        format!(
+            "Protein(models={}, chains={}, residues={}, atoms={})",
+            self.num_models(),
+            self.num_chains(),
+            self.num_residues(),
+            self.num_atoms()
+        )
+    }
     #[staticmethod]
     #[pyo3(signature=(text, params=crate::arguments::Argument::Missing, *, max_line_length=crate::arguments::Argument::Missing, check_non_ascii=crate::arguments::Argument::Missing, ignore_ter=crate::arguments::Argument::Missing, split_chain_on_ter=crate::arguments::Argument::Missing, skip_remarks=crate::arguments::Argument::Missing))]
     /// Parse PDB text into the native protein projection; use either parameters or keyword parsing options.
@@ -477,6 +486,10 @@ macro_rules! owned_view {
         pub struct $name {
             owner: Arc<ck::Protein>,
             index: usize,
+        }
+        #[pymethods]
+        impl $name {
+            fn __repr__(&self) -> String { format!("{}(id={})", stringify!($name), self.index) }
         }
         impl $name {
             fn view(&self) -> ck::$rust<'_> {

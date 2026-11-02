@@ -226,6 +226,7 @@ def check_assignment_effect(cls, field):
         if type(expected) is not type(previous) or expected == previous:
             continue
         instance = cls()
+        before_repr = repr(instance)
         setattr(instance, field, candidate)
         actual = getattr(instance, field)
         if type(actual) is not type(expected) or actual != expected:
@@ -233,8 +234,52 @@ def check_assignment_effect(cls, field):
                 f"{cls.__name__}.{field}: setter readback {actual!r} differs "
                 f"from constructor {expected!r} for input {candidate!r}"
             )
+        if repr(instance) == before_repr:
+            raise ValueError(f"{cls.__name__}.{field}: repr does not reflect the changed field")
         return True
     return False
+
+
+def check_representation(cls, fields=None):
+    """Display comes from native declarations, not a second class inventory."""
+    method = inspect.getattr_static(cls, "__repr__", None)
+    if method is None or method is object.__repr__ or method is BaseException.__repr__:
+        raise ValueError(f"{cls.__name__}: meaningful __repr__ is missing")
+    if fields is None:
+        return
+    instance = cls()
+    text = repr(instance)
+    if not text.startswith(cls.__name__ + "(") or not text.endswith(")"):
+        raise ValueError(f"{cls.__name__}: repr must be a named configuration")
+    missing = [field for field in fields if field + "=" not in text]
+    if missing:
+        raise ValueError(f"{cls.__name__}: repr omits fields: {', '.join(missing)}")
+
+
+def check_callable_defaults(operation, parameters):
+    """Check literal registered defaults on matching direct arguments.
+
+    Configuration omission markers and parameter-object dispatch keep their
+    existing protocol; they are not replaced with a guessed literal.
+    """
+    signature = inspect.signature(operation)
+    for parameter in parameters or []:
+        declared = parameter.get("default")
+        if declared is None or parameter["name"] not in signature.parameters:
+            continue
+        try:
+            expected = {"true": True, "false": False}.get(declared)
+            if expected is None:
+                expected = ast.literal_eval(declared)
+        except (ValueError, SyntaxError):
+            continue
+        if expected is None or expected is Ellipsis:
+            continue
+        actual = signature.parameters[parameter["name"]].default
+        if actual is Ellipsis:
+            continue
+        if actual != expected:
+            raise ValueError(f"{parameter['name']}: default {actual!r} differs from registered {expected!r}")
 
 
 def validate(contract, module, stub):
@@ -393,7 +438,7 @@ def validate(contract, module, stub):
             methods = [member for member in cls.body if isinstance(member, ast.FunctionDef)]
             display = [member for member in methods if member.name == "__str__"]
             if (source_getters or payload_getters
-                    or any(member.name not in {"domain", "__str__"} for member in methods)
+                    or any(member.name not in {"domain", "__str__", "__repr__"} for member in methods)
                     or any(isinstance(member, (ast.AnnAssign, ast.Assign)) for member in cls.body)
                     or len(display) != 1 or not isinstance(display[0].returns, ast.Name)
                     or display[0].returns.id != "str"):
@@ -480,6 +525,16 @@ def validate(contract, module, stub):
                 matched_runtime += 1
             else:
                 fail("runtime_kind", f"Wrong runtime kind: {path} (expected {kind})")
+            if kind == "class" and inspect.isclass(value):
+                try:
+                    check_representation(value)
+                except ValueError as error:
+                    fail("representation", str(error))
+            if kind == "callable" and record.get("parameters"):
+                try:
+                    check_callable_defaults(value, record["parameters"])
+                except (ValueError, TypeError) as error:
+                    fail("defaults", f"{path}: {error}")
             # __set__ is necessary but not proof of effective writability;
             # native readonly descriptors can expose it too. Check actual
             # configuration writes and their effects below.
@@ -525,6 +580,7 @@ def validate(contract, module, stub):
                     assignment_effect_unexercised.extend(f"{path}.{alias}" for alias in sorted(aliases))
                 else:
                     default = value()
+                    check_representation(value, fields)
                     for field in [*fields, *sorted(aliases)]:
                         setattr(default, field, getattr(default, field))
                         if check_assignment_effect(value, field):

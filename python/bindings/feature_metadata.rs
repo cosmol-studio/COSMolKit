@@ -7,6 +7,7 @@ use pyo3::prelude::*;
 pub struct FeatureSpec {
     pub(crate) inner: &'static ck::FeatureSpec,
 }
+crate::representation::native_repr!(FeatureSpec, inner);
 #[pymethods]
 impl FeatureSpec {
     #[getter]
@@ -31,6 +32,7 @@ impl FeatureSpec {
 pub struct FeatureSpecIter {
     inner: ck::FeatureSpecIter,
 }
+crate::representation::native_repr!(FeatureSpecIter, inner);
 #[pymethods]
 impl FeatureSpecIter {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {

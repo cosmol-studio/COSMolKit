@@ -447,6 +447,11 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
     if let Some(consumer) = consumer {
         let mut leaves = Vec::new();
         collect_leaves(&fields, TokenStream::new(), &mut leaves);
+        let all_names: Vec<_> = leaves
+            .iter()
+            .map(|(field, _)| field.name.to_string())
+            .collect();
+        let name = &native.segments.last().unwrap().ident;
         // Explicit Python ownership adapters generate their ordinary properties
         // from this callback and implement marked fields themselves. Keep that
         // protocol unchanged; the raw metadata export includes adapter fields.
@@ -473,6 +478,13 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
         let types: Vec<_> = leaves.iter().map(|(field, _)| &field.ty).collect();
         return Ok(quote! {
             #consumer! {#(#(#docs)* #names: #types),*}
+            #[pyo3::pymethods]
+            impl #name {
+                /// Current input fields, without executing callback objects.
+                fn __repr__(slf: &pyo3::Bound<'_, Self>) -> pyo3::PyResult<String> {
+                    crate::representation::configuration(slf.as_any(), stringify!(#name), &[#(#all_names),*])
+                }
+            }
         });
     }
     if marker == "adapter" {
@@ -488,6 +500,7 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
     let mut inputs = std::collections::HashMap::new();
     let mut factory_inputs = Vec::new();
     let mut accessors = Vec::new();
+    let mut previews = Vec::new();
     let mut required_arguments = Vec::new();
     let mut required_signatures = Vec::new();
     let mut leaves = Vec::new();
@@ -560,6 +573,9 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
             signatures.push(quote!(#field=#default));
         }
         inputs.insert(field.to_string(), ctor_value.clone());
+        previews.push(quote! {
+            fields.push(format!("{}={}", stringify!(#field), <#adapter as crate::parameters::Container>::preview(py, &native.#native_field)?));
+        });
         factory_inputs.push(ctor_value);
         let setter = format_ident!("set_{}", field);
         accessors.push(quote! {
@@ -611,12 +627,21 @@ fn emit_projection(mut projection: Projection) -> syn::Result<TokenStream> {
             type Native = #native;
             fn from_native(py: pyo3::Python<'_>, value: Self::Native) -> pyo3::PyResult<Self> { Self::from_rust(py, value) }
             fn to_native(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<Self::Native> { self.to_rust(py) }
+            fn preview(py: pyo3::Python<'_>, native: &Self::Native) -> pyo3::PyResult<String> {
+                let mut fields: Vec<String> = Vec::new();
+                #(#previews)*
+                Ok(format!("{}({})", stringify!(#name), fields.join(", ")))
+            }
         }
         impl crate::configuration::FieldProjection for #native {
             type Adapter = crate::parameters::LiveConfigurationField<#name>;
         }
         #[pyo3::pymethods]
         impl #name {
+            /// Current native configuration fields; long values are abbreviated without copying them.
+            fn __repr__(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<String> {
+                self.inner.read(py, |native| <Self as crate::parameters::Configuration>::preview(py, native))?
+            }
             #[new]
             #[pyo3(signature = (*, #(#required_signatures,)* #(#signatures,)*))]
             fn new(py: pyo3::Python<'_>, #(#required_arguments,)* #(#arguments,)*) -> pyo3::PyResult<Self> {
@@ -711,7 +736,26 @@ mod tests {
         })
         .unwrap()
         .to_string();
-        assert_eq!(projected, "scalar_properties ! { limit : usize }");
+        let projected = syn::parse_str::<syn::File>(&projected).unwrap();
+        assert_eq!(projected.items.len(), 2);
+        let syn::Item::Macro(properties) = &projected.items[0] else {
+            panic!("expected scalar properties")
+        };
+        assert!(properties.mac.path.is_ident("scalar_properties"));
+        assert_eq!(properties.mac.tokens.to_string(), "limit : usize");
+        let syn::Item::Impl(display) = &projected.items[1] else {
+            panic!("expected native display")
+        };
+        assert_eq!(display.items.len(), 1);
+        let syn::ImplItem::Fn(display) = &display.items[0] else {
+            panic!("expected display method")
+        };
+        assert_eq!(display.sig.ident, "__repr__");
+        let body = &display.block;
+        let body = quote!(#body).to_string();
+        assert!(body.contains("representation :: configuration"));
+        assert!(body.contains("\"limit\" , \"callback\""));
+        assert!(!body.contains("cache"));
     }
 
     #[test]

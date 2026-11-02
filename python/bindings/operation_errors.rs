@@ -96,6 +96,9 @@ pub struct UnsupportedFeatureError {
 }
 #[pymethods]
 impl UnsupportedFeatureError {
+    fn __repr__(&self) -> String {
+        crate::representation::native("UnsupportedFeatureError", self.owner.as_ref())
+    }
     #[getter]
     /// Name of the unsupported capability.
     fn feature(&self) -> &'static str {

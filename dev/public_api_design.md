@@ -628,8 +628,8 @@ validator must reject a projection that violates any of these requirements:
 3. Every enabled registry type, callable and declared property exists in the
    final language surface. Check the actual Python module and generated WASM
    exports as well as `.pyi`/`.d.ts`. A binding source and its generated output
-   both omitting an API is a failure. Native binary archive exclusion on WASM
-   follows the platform contract; missing implementations and Experimental
+   both omitting an API is a failure. Platform-specific persistent archive
+   entrypoints follow their declared gates. Missing implementations and Experimental
    status are not exemptions.
    A scalar value may explicitly declare a native Python projection such as
    `builtins.int`; this does not promise an independently exported wrapper class.
@@ -723,7 +723,9 @@ Molecular format parsing and writing, whether from strings or files, belong to
 the `core` bundle; there is no top-level `io` bundle. The internal IO crate
 remains the unique implementation owner. Native binary archives and batch
 processing are included in `core`, without separate plain-name selectors.
-WASM excludes binary archive APIs, implementation and binary-only dependencies.
+WASM may use binary codecs; binary formats are not prohibited.
+Existing persistent `to_binary`/`from_binary` and pickle compatibility remain
+native-only.
 
 SMIRKS parsing, reaction templates and the public `Reaction` API use
 `cap-reaction`, selected by the `reaction` bundle and included in `full`.
@@ -754,10 +756,10 @@ Public cfg gates and both registry feature fields use the owning `cap-*`
 selector. Always-present declarations use `runtime` or `metadata` labels;
 those labels are not Cargo capability selectors. Bundle membership is defined
 in `crates/cosmolkit/Cargo.toml`, not duplicated in a production registry.
-The sole platform-gate exception is native binary serialization:
+The existing persistent archive entrypoints retain their platform gate:
 `all(feature = "cap-serialization", not(target_arch = "wasm32"))`.
-It excludes native archives under WASM `full` without introducing another
-public selector. Other compound registry gates remain forbidden.
+This is not a ban on binary serialization or shared codec dependencies on WASM.
+Other compound registry gates remain forbidden.
 
 A public bundle exposes its declared prerequisites: reaction and tautomer
 include search; every molecular bundle includes core. BIO remains independent.

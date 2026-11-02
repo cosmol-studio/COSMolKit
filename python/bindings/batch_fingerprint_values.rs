@@ -17,6 +17,7 @@ error_projection!(BatchFingerprintOutputError, BatchFingerprintOutputErrorKind, 
 pub struct BatchFingerprintOutput {
     inner: Arc<ck::BatchFingerprintOutput>,
 }
+crate::representation::native_repr!(BatchFingerprintOutput, inner);
 
 impl BatchFingerprintOutput {
     pub(crate) fn from_rust(inner: ck::BatchFingerprintOutput) -> Self {
@@ -64,6 +65,12 @@ impl BatchFingerprintAdditionalOutput {
 
 #[pymethods]
 impl BatchFingerprintAdditionalOutput {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(crate::representation::native(
+            "BatchFingerprintAdditionalOutput",
+            self.inner()?,
+        ))
+    }
     #[getter]
     /// Per-atom feature contribution counts, or None when not collected.
     fn atom_counts(&self) -> PyResult<Option<Vec<u32>>> {

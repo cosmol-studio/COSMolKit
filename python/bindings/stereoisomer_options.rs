@@ -188,7 +188,6 @@ macro_rules! stereoisomer_configuration {
         self.source_owner = None;
     }
 
-                fn __repr__(&self) -> String { format!("{:?}", self.inner) }
             }
         }
     };

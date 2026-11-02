@@ -38,6 +38,7 @@ pub(crate) fn call_keywords(
 pub struct TopologicalTorsionFingerprintGenerator {
     pub(crate) inner: ck::TopologicalTorsionFingerprintGenerator,
 }
+crate::representation::native_repr!(TopologicalTorsionFingerprintGenerator, inner);
 #[pymethods]
 impl TopologicalTorsionFingerprintGenerator {
     #[new]
@@ -196,6 +197,7 @@ impl TopologicalTorsionFingerprintGenerator {
 pub struct TopologicalTorsionSettings {
     inner: ck::TopologicalTorsionSettings,
 }
+crate::representation::native_repr!(TopologicalTorsionSettings, inner);
 macro_rules! live_settings {
     ($($(#[$doc:meta])* $field:ident:$ty:ty),+ $(,)?)=>{
         paste::paste!{

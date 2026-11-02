@@ -166,6 +166,20 @@ pub struct MoleculeBatch {
     pub(crate) inner: ck::MoleculeBatch,
 }
 
+#[pymethods]
+impl MoleculeBatch {
+    /// Record, success and error counts without evaluating molecules or copying records.
+    fn __repr__(&self) -> String {
+        let valid = self.inner.valid_count();
+        format!(
+            "MoleculeBatch(records={}, valid={}, errors={})",
+            self.inner.len(),
+            valid,
+            self.inner.len() - valid
+        )
+    }
+}
+
 impl crate::indexing::Collection for MoleculeBatch {
     type Item = Option<Molecule>;
     type Selected = Self;
@@ -635,8 +649,8 @@ impl MoleculeBatch {
     ) -> PyResult<Vec<Option<Vec<Vec<f64>>>>> {
         self.dg_bounds_matrix(py, Some(params), None, None)
     }
-    #[pyo3(signature=(width,height,params=None,*,n_jobs=None,progress_bar=None))]
-    /// Render each molecule to SVG with the requested canvas dimensions and native execution settings.
+    #[pyo3(signature=(width=300,height=300,params=None,*,n_jobs=None,progress_bar=None))]
+    /// Render each molecule to SVG; width and height default to 300 pixels each.
     fn to_svg(
         &self,
         py: Python<'_>,

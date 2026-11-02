@@ -209,9 +209,9 @@ crate::error_framework::error_projection! {methods impl UffForceFieldError {
 pub struct MolecularForceField {
     pub(crate) inner: ck::MolecularForceField,
 }
+crate::representation::native_repr!(MolecularForceField, inner);
 
-// A single pymethods block is emitted; no PyO3 inventory/dependency feature is
-// needed merely to group four repetitive argument-forwarding signatures.
+// Constraint declarations group the typed argument-forwarding signatures.
 macro_rules! evaluator_methods {
     (constraints [$(($method:ident, $params_branch:ident, $keywords_branch:ident, $target:literal,
        $params:ident, [$($atom:ident),+], {$($field:ident: $ty:ty),+})),+ $(,)?]

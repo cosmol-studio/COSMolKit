@@ -509,8 +509,6 @@ pub use bio::BioMoleculeError;
 pub use cosmolkit_fingerprints::{
     AtomCodeExplanation, AtomCodeExplanationError, AtomPairsParameters,
 };
-#[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
-pub use cosmolkit_io::PickleError;
 #[cfg(feature = "cap-bio")]
 pub use cosmolkit_io::{
     AtomSiteIdentityField, CoordinateBlockSelectionError, MissingAtomSiteIdentityField,
@@ -527,6 +525,8 @@ pub use cosmolkit_io::{
     ChemCompAtomError, ChemCompModelError, JsonError, JsonErrorKind, MmjsonReadError,
     MmjsonStructureError, MmjsonUnexpectedType, MmjsonValueError,
 };
+#[cfg(feature = "cap-serialization")]
+pub use cosmolkit_io::{MoleculeTransferError, PickleError};
 #[cfg(feature = "cap-bio")]
 pub use cosmolkit_io::{
     PdbAtomFieldError, PdbChargeError, PdbCisPepRecordError, PdbConectError,

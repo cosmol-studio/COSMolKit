@@ -94,6 +94,6 @@ def test_invariant_generator_source_metadata_repr_and_frozen_protocol(chiral, co
     stub = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     node = next(n for n in stub.body if isinstance(n, ast.ClassDef) and n.name == "AtomPairAtomInvariantsGenerator")
     methods = {n.name: n for n in node.body if isinstance(n, ast.FunctionDef)}
-    assert set(methods) == {"__new__", "include_chirality", "topological_torsion_correction", "info_string", "to_json"}
+    assert set(methods) == {"__repr__", "__new__", "include_chirality", "topological_torsion_correction", "info_string", "to_json"}
     for name in ("info_string", "to_json"):
         assert ast.unparse(methods[name].returns) == "str"

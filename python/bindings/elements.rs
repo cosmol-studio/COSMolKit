@@ -3,7 +3,9 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 
 crate::configuration::type_projection! {
-    value(eq, hash)
+    custom_repr
+    #[pyo3::pyclass(module = "cosmolkit", frozen, from_py_object, eq, hash)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     /// Chemical element identified by atomic number, with value equality and hashing.
     /// DUMMY represents atomic number zero. Use from_symbol or from_atomic_number
     /// to look up a value; an unrecognized symbol or number returns None.
@@ -14,6 +16,13 @@ crate::configuration::type_projection! {
 
 #[pymethods]
 impl Element {
+    fn __repr__(&self) -> String {
+        format!(
+            "Element(symbol={:?}, atomic_number={})",
+            self.inner.symbol(),
+            self.inner.atomic_number()
+        )
+    }
     #[classattr]
     const DUMMY: Self = Self {
         inner: ck::Element::DUMMY,

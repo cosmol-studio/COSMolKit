@@ -68,6 +68,6 @@ def test_dimension_errors_and_python_integer_conversion(method: str) -> None:
         _ = operation(2**32, 80)
     with pytest.raises(TypeError):
         _ = operation("120", 80)
-    with pytest.raises(TypeError):
-        _ = operation()
+    assert operation() == operation(300, 300)
+    assert operation(120) == operation(120, 300)
     assert molecule.coordinates_2d is None

@@ -1,10 +1,39 @@
-"""Configuration values and side-effect-free display; no custom repr contract."""
+"""Configuration values and side-effect-free display through the shared projection."""
 
 from typing_extensions import override
 from pathlib import Path
+import runpy
 
 import pytest
 import cosmolkit as ck
+
+
+def test_active_representation_gate_rejects_address_only_and_incomplete_display():
+    check = runpy.run_path(str(Path(__file__).resolve().parents[1] / "registry_check.py"))["check_representation"]
+
+    class Settings:
+        def __init__(self):
+            self.count = 1
+
+    with pytest.raises(ValueError, match="__repr__ is missing"):
+        check(Settings, ["count"])
+
+    Settings.__repr__ = lambda self: "Settings()"
+    with pytest.raises(ValueError, match="omits fields"):
+        check(Settings, ["count"])
+
+    Settings.__repr__ = lambda self: f"Settings(count={self.count})"
+    check(Settings, ["count"])
+
+
+def test_active_literal_default_gate_rejects_required_or_changed_defaults():
+    check = runpy.run_path(str(Path(__file__).resolve().parents[1] / "registry_check.py"))["check_callable_defaults"]
+    fields = [{"name": "width", "default": "300"}]
+    with pytest.raises(ValueError, match="differs from registered"):
+        check(lambda width: None, fields)
+    with pytest.raises(ValueError, match="differs from registered"):
+        check(lambda width=120: None, fields)
+    check(lambda width=300: None, fields)
 
 
 @pytest.mark.parametrize("params,expected", [
@@ -19,13 +48,17 @@ def test_batch_configuration_repr_displays_all_defaults(
 ):
     assert {name: getattr(params, name) for name in expected} == expected
     assert type(params).__name__ in repr(params)
+    assert type(params).__repr__ is not object.__repr__
+    assert all(name + "=" in repr(params) for name in expected)
     assert {name: getattr(params, name) for name in expected} == expected
 
 
 def test_batch_configuration_repr_updates_after_assignment_without_mutation():
     params = ck.BatchParams(errors="keep", n_jobs=2, progress_bar=True)
     assert (params.errors, params.n_jobs, params.progress_bar) == (ck.BatchErrorMode.KEEP, 2, True)
+    previous = repr(params)
     params.n_jobs = 3
+    assert repr(params) != previous
     assert type(params).__name__ in repr(params)
     assert params.n_jobs == 3
     assert params.progress_bar is True
@@ -70,7 +103,7 @@ class Callback:
 
     @override
     def __repr__(self) -> str:
-        return "Callback()"
+        raise AssertionError("configuration display must not invoke callback repr")
 
 
 def test_query_repr_displays_callback_without_invoking_or_replacing_it():

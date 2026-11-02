@@ -26,6 +26,18 @@ macro_rules! type_projection {
     (@association $(#[$($attribute:tt)*])* $visibility:vis struct $wrapper:ident {
         $field_visibility:vis inner: $native:ty $(,)?
     }) => {
+        $crate::representation::native_repr!($wrapper, inner);
+        $crate::configuration::type_projection!(@conversion $(#[$($attribute)*])* $visibility struct $wrapper {
+            $field_visibility inner: $native
+        });
+    };
+    (custom_repr $($declaration:tt)*) => {
+        $($declaration)*
+        $crate::configuration::type_projection!(@conversion $($declaration)*);
+    };
+    (@conversion $(#[$($attribute:tt)*])* $visibility:vis struct $wrapper:ident {
+        $field_visibility:vis inner: $native:ty $(,)?
+    }) => {
         $crate::configuration::type_projection! {
             impl Configuration for $wrapper {
                 type Native = $native;
@@ -34,6 +46,9 @@ macro_rules! type_projection {
                 }
                 fn to_native(&self, _py: pyo3::Python<'_>) -> pyo3::PyResult<Self::Native> {
                     Ok(self.inner.clone())
+                }
+                fn preview(_py: pyo3::Python<'_>, value: &Self::Native) -> pyo3::PyResult<String> {
+                    Ok($crate::representation::native(stringify!($wrapper), value))
                 }
             }
         }
@@ -127,7 +142,7 @@ impl<K: FieldProjection + Ord, V: FieldProjection> FieldProjection for BTreeMap<
 pub mod fixture {
     use std::collections::BTreeMap;
 
-    #[derive(Clone, cosmolkit::Configuration)]
+    #[derive(Clone, Debug, cosmolkit::Configuration)]
     pub struct ProjectionChild {
         pub radius: u32,
     }
@@ -137,7 +152,7 @@ pub mod fixture {
         }
     }
 
-    #[derive(Clone, Default, cosmolkit::Configuration)]
+    #[derive(Clone, Debug, Default, cosmolkit::Configuration)]
     pub struct ProjectionExample {
         pub generator: ProjectionChild,
         pub optional: Option<ProjectionChild>,
@@ -157,7 +172,7 @@ mod tests {
     cosmolkit::project_configuration!(native::ProjectionChild);
     cosmolkit::project_configuration!(native::ProjectionExample);
 
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, Debug, PartialEq)]
     struct PartialValue(f64);
 
     super::type_projection! {

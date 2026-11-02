@@ -12,6 +12,7 @@ use std::sync::Arc;
 pub struct TautomerEnumeration {
     pub(crate) inner: Arc<ck::TautomerEnumeration>,
 }
+crate::representation::native_repr!(TautomerEnumeration, inner);
 #[pymethods]
 impl TautomerEnumeration {
     #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_tautomers=crate::arguments::Argument::Missing,max_transforms=crate::arguments::Argument::Missing,remove_sp3_stereo=crate::arguments::Argument::Missing,remove_bond_stereo=crate::arguments::Argument::Missing,remove_isotopic_hydrogens=crate::arguments::Argument::Missing,reassign_stereo=crate::arguments::Argument::Missing,callback=crate::arguments::Argument::Missing,scorer=crate::arguments::Argument::Missing,score_params=crate::arguments::Argument::Missing))]

@@ -44,9 +44,6 @@ impl FunctionStatus {
             | ck::FunctionStatus::Experimental => None,
         }
     }
-    fn __repr__(&self) -> String {
-        format!("{:?}", self.inner)
-    }
 }
 
 #[pyclass(module = "cosmolkit", frozen)]
@@ -54,6 +51,7 @@ impl FunctionStatus {
 pub struct MoleculeOpSpec {
     inner: &'static ck::MoleculeOpSpec,
 }
+crate::representation::native_repr!(MoleculeOpSpec, inner);
 
 impl MoleculeOpSpec {
     pub(crate) fn from_native(inner: &'static ck::MoleculeOpSpec) -> Self {
@@ -102,6 +100,7 @@ impl MoleculeOpSpec {
 pub struct SupportMatrixEntry {
     inner: &'static ck::SupportMatrixEntry,
 }
+crate::representation::native_repr!(SupportMatrixEntry, inner);
 
 #[pymethods]
 impl SupportMatrixEntry {
@@ -124,6 +123,7 @@ impl SupportMatrixEntry {
 pub struct OperationInvariantEntry {
     inner: &'static ck::OperationInvariantEntry,
 }
+crate::representation::native_repr!(OperationInvariantEntry, inner);
 
 #[pymethods]
 impl OperationInvariantEntry {
@@ -146,6 +146,7 @@ impl OperationInvariantEntry {
 pub struct ParityMatrixEntry {
     inner: &'static ck::ParityMatrixEntry,
 }
+crate::representation::native_repr!(ParityMatrixEntry, inner);
 
 #[pymethods]
 impl ParityMatrixEntry {

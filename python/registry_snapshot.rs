@@ -96,6 +96,14 @@ fn main() -> Result<(), String> {
                 "writable": entry.python_property == Some(ck::BindingPropertyAccess::Setter),
                 "native": entry.python_native,
                 "error_type": entry.type_role == Some(ck::BindingTypeRole::Error),
+                "parameters": entry.callable.as_ref().map(|callable|
+                    callable.parameters.iter().map(|parameter| json!({
+                        "name": parameter.name,
+                        "default": match parameter.default {
+                            ck::BindingDefault::Required => None,
+                            ck::BindingDefault::Value(value) => Some(value),
+                        },
+                    })).collect::<Vec<_>>()),
                 "read_accessor": entry.callable.as_ref().is_some_and(|callable|
                     callable.kind == ck::BindingKind::Instance
                     && callable.receiver == Some(ck::BindingReceiver::Shared)

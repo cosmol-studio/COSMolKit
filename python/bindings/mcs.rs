@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct McsResult {
     pub(crate) inner: Arc<ck::McsResult>,
 }
+crate::representation::native_repr!(McsResult, inner);
 
 #[pymethods]
 impl McsResult {

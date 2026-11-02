@@ -96,12 +96,12 @@ def test_generated_reusable_constructor_bound_settings_and_bulk_protocols():
     tree=ast.parse((Path(__file__).resolve().parents[1]/"artifacts/smoke/package/cosmolkit/__init__.pyi").read_text());classes={n.name:n for n in tree.body if isinstance(n,ast.ClassDef)}
     for name in ["TopologicalTorsionFingerprintGenerator","TopologicalTorsionSettings","TopologicalTorsionCallParams"]:assert name in classes
     generator={n.name:n for n in classes["TopologicalTorsionFingerprintGenerator"].body if isinstance(n,ast.FunctionDef)}
-    assert set(generator)=={"__new__","new","from_json","settings","info_string","to_json","fingerprints","sparse_fingerprints","counts","sparse_counts"}
+    assert set(generator)=={"__repr__", "__new__","new","from_json","settings","info_string","to_json","fingerprints","sparse_fingerprints","counts","sparse_counts"}
     settings={}
     for n in classes["TopologicalTorsionSettings"].body:
         if isinstance(n,ast.FunctionDef): settings.setdefault(n.name, []).append(n)
     fields = {"torsion_atom_count", "only_shortest_paths", "include_chirality", "count_simulation", "fp_size", "bits_per_feature", "count_bounds"}
-    assert set(settings) == fields | {"set_" + name for name in fields} | {"params"}
+    assert set(settings) == fields | {"set_" + name for name in fields} | {"params", "__repr__"}
     for name in ["torsion_atom_count","only_shortest_paths","include_chirality","count_simulation","fp_size","bits_per_feature","count_bounds"]:
         assert len(settings[name]) == 2
         getter,setter=settings[name]

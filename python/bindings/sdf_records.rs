@@ -271,6 +271,7 @@ pub(crate) fn molecule_mol(
 pub struct SdfRecord {
     pub(crate) inner: Arc<ck::SdfRecord>,
 }
+crate::representation::native_repr!(SdfRecord, inner);
 impl SdfRecord {
     pub(crate) fn from_rust(inner: ck::SdfRecord) -> Self {
         Self {

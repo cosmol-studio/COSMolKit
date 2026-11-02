@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 crate::configuration::type_projection! {
+    custom_repr
     /// Owned symmetrized SSSR rows; indices refer to the queried molecular version.
     #[pyclass(module = "cosmolkit._native", frozen, from_py_object)]
     #[derive(Clone)]
@@ -11,6 +12,9 @@ crate::configuration::type_projection! {
 
 #[pymethods]
 impl RingSearchResult {
+    fn __repr__(&self) -> String {
+        format!("RingSearchResult(num_rings={})", self.inner.num_rings())
+    }
     #[getter]
     /// Ordered atom-index cycles for the symmetrized SSSR, returned as independent lists.
     fn atom_rings(&self) -> Vec<Vec<usize>> {

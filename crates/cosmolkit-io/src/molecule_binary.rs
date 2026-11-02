@@ -24,6 +24,7 @@ use cosmolkit_model::{
 use cosmolkit_core::{RingFindType, RingInfo, ValenceAssignment, property_value_to_string};
 
 mod archive_v2;
+pub use archive_v2::{MoleculeTransferError, decode_molecule_transfer, encode_molecule_transfer};
 
 // ──────────────────────────────────────────────
 // Format version

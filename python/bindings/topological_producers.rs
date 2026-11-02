@@ -58,6 +58,7 @@ pub(crate) fn keyword_params(
 pub struct TopologicalFingerprintResult {
     pub(crate) inner: Arc<ck::TopologicalFingerprintResult>,
 }
+crate::representation::native_repr!(TopologicalFingerprintResult, inner);
 impl TopologicalFingerprintResult {
     pub(crate) fn from_rust(inner: ck::TopologicalFingerprintResult) -> Self {
         Self {

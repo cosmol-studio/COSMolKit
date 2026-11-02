@@ -359,7 +359,7 @@ binding_contract! {
                 { name: custom_bond_invariants, python_type: "typing.Optional[typing.Sequence[builtins.int]]", default: "None" },
             ], role:parameter,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganAtomInvariantsGenerator.connectivity",item:callable,owner:type_,rust:crate::MorganAtomInvariantsGenerator::connectivity,python:"connectivity",javascript:"connectivity",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:include_ring_membership,type:bool,default:"true"}],output:crate::MorganAtomInvariantsGenerator,error:none,state:value_returning,operation:none,signature:fn(bool)->crate::MorganAtomInvariantsGenerator,},
+        {semantic_id:"MorganAtomInvariantsGenerator.connectivity",item:callable,owner:type_,rust:crate::MorganAtomInvariantsGenerator::connectivity,python:"connectivity",javascript:"connectivity",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:include_ring_membership,type:bool,default:true}],output:crate::MorganAtomInvariantsGenerator,error:none,state:value_returning,operation:none,signature:fn(bool)->crate::MorganAtomInvariantsGenerator,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganAtomInvariantsGenerator.features",item:callable,owner:type_,rust:crate::MorganAtomInvariantsGenerator::features,python:"features",javascript:"features",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:patterns,type:Option<Vec<crate::QueryGraph>>,default:none}],output:crate::MorganAtomInvariantsGenerator,error:none,state:value_returning,operation:none,signature:fn(Option<Vec<crate::QueryGraph>>)->crate::MorganAtomInvariantsGenerator,},
         #[cfg(feature="cap-fingerprints")]
@@ -383,19 +383,19 @@ binding_contract! {
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"MorganFingerprintGenerator.to_json",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::to_json,python:"to_json",javascript:"toJson",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[],output:cosmolkit_model::PropertyText,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator)->Result<cosmolkit_model::PropertyText,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganFingerprintGenerator.fingerprints",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::fingerprints,python:"fingerprints",javascript:"fingerprints",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:"1"}],output:crate::FingerprintBatch,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<crate::FingerprintBatch,crate::MorganReadError>,},
+        {semantic_id:"MorganFingerprintGenerator.fingerprints",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::fingerprints,python:"fingerprints",javascript:"fingerprints",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:1}],output:crate::FingerprintBatch,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<crate::FingerprintBatch,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"Molecule.fingerprint_morgan_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_with_generator,python:"fingerprint_morgan_with_generator",javascript:"fingerprintMorganWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:additional_output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::Fingerprint,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::Fingerprint,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganFingerprintGenerator.counts",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::counts,python:"counts",javascript:"counts",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:"1"}],output:Vec<Option<crate::SparseCountFingerprint32>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::SparseCountFingerprint32>>,crate::MorganReadError>,},
+        {semantic_id:"MorganFingerprintGenerator.counts",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::counts,python:"counts",javascript:"counts",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:1}],output:Vec<Option<crate::SparseCountFingerprint32>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::SparseCountFingerprint32>>,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"Molecule.fingerprint_morgan_count_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_count_with_generator,python:"fingerprint_morgan_count_with_generator",javascript:"fingerprintMorganCountWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:additional_output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::SparseCountFingerprint32,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseCountFingerprint32,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganFingerprintGenerator.sparse_fingerprints",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::sparse_fingerprints,python:"sparse_fingerprints",javascript:"sparseFingerprints",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:"1"}],output:Vec<Option<crate::SparseBitFingerprint>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::SparseBitFingerprint>>,crate::MorganReadError>,},
+        {semantic_id:"MorganFingerprintGenerator.sparse_fingerprints",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::sparse_fingerprints,python:"sparse_fingerprints",javascript:"sparseFingerprints",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:1}],output:Vec<Option<crate::SparseBitFingerprint>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::SparseBitFingerprint>>,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"Molecule.fingerprint_morgan_sparse_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_sparse_with_generator,python:"fingerprint_morgan_sparse_with_generator",javascript:"fingerprintMorganSparseWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:additional_output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::SparseBitFingerprint,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseBitFingerprint,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
-        {semantic_id:"MorganFingerprintGenerator.sparse_counts",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::sparse_counts,python:"sparse_counts",javascript:"sparseCounts",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:"1"}],output:Vec<Option<crate::SparseCountFingerprint>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::SparseCountFingerprint>>,crate::MorganReadError>,},
+        {semantic_id:"MorganFingerprintGenerator.sparse_counts",item:callable,owner:type_,rust:crate::MorganFingerprintGenerator::sparse_counts,python:"sparse_counts",javascript:"sparseCounts",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:molecules,type:&'b [Option<&'b crate::Molecule>],default:required},{name:num_threads,type:i32,default:1}],output:Vec<Option<crate::SparseCountFingerprint>>,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::MorganFingerprintGenerator,&'b [Option<&'b crate::Molecule>],i32)->Result<Vec<Option<crate::SparseCountFingerprint>>,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"Molecule.fingerprint_morgan_sparse_count_with_generator",item:callable,owner:molecule,rust:crate::Molecule::fingerprint_morgan_sparse_count_with_generator,python:"fingerprint_morgan_sparse_count_with_generator",javascript:"fingerprintMorganSparseCountWithGenerator",feature:"cap-fingerprints",status:experimental,kind:instance,parameters:[{name:generator,type:&'b crate::MorganFingerprintGenerator,default:required},{name:params,type:Option<&'c crate::MorganCallParams>,default:none},{name:additional_output,type:Option<&'d mut crate::FingerprintAdditionalOutput>,default:none}],output:crate::SparseCountFingerprint,error:crate::MorganReadError,state:read_only,operation:none,signature:for<'a,'b,'c,'d> fn(&'a crate::Molecule,&'b crate::MorganFingerprintGenerator,Option<&'c crate::MorganCallParams>,Option<&'d mut crate::FingerprintAdditionalOutput>)->Result<crate::SparseCountFingerprint,crate::MorganReadError>,},
         #[cfg(feature="cap-fingerprints")]
@@ -520,9 +520,9 @@ binding_contract! {
             feature: "cap-fingerprints", kind: instance,
             parameters: [
                 { name: atom_id, type: crate::AtomId, default: required },
-                { name: branch_subtract, type: u32, default: "0" },
-                { name: include_chirality, type: bool, default: "false" },
-                { name: use_legacy_stereo_perception, type: bool, default: "true" },
+                { name: branch_subtract, type: u32, default: 0 },
+                { name: include_chirality, type: bool, default: false },
+                { name: use_legacy_stereo_perception, type: bool, default: true },
             ],
             output: crate::AtomPairAtomCodeResult, error: crate::OperationError,
             state: value_returning, operation: "with_atom_pair_atom_code",
@@ -4998,8 +4998,8 @@ binding_contract! {
                 "ROOT-SVG-CANONICAL-METADATA-20261005: public SVG declares ck=https://kit.cosmol.org/ instead of the pinned source renderer identity; all other drawing bytes retain their source comparison."
             ), kind: instance,
             parameters: [
-                { name: width, type: u32, default: required },
-                { name: height, type: u32, default: required },
+                { name: width, type: u32, default: 300 },
+                { name: height, type: u32, default: 300 },
             ],
             output: String, error: crate::DrawingError,
             state: read_only, operation: none,
@@ -5011,8 +5011,8 @@ binding_contract! {
             rust: crate::Molecule::to_png, python: "to_png", javascript: "toPng",
             feature: "cap-depict", status: experimental, kind: instance,
             parameters: [
-                { name: width, type: u32, default: required },
-                { name: height, type: u32, default: required },
+                { name: width, type: u32, default: 300 },
+                { name: height, type: u32, default: 300 },
             ],
             output: Vec<u8>, error: crate::DrawingError,
             state: read_only, operation: none,
@@ -5053,8 +5053,8 @@ binding_contract! {
             ), kind: instance,
             parameters: [
                 { name: path, type: &std::path::Path, default: required },
-                { name: width, type: u32, default: required },
-                { name: height, type: u32, default: required },
+                { name: width, type: u32, default: 300 },
+                { name: height, type: u32, default: 300 },
             ],
             output: (), error: crate::DrawingWriteError, state: read_only, operation: none,
             signature: fn(&crate::Molecule, &std::path::Path, u32, u32) -> Result<(), crate::DrawingWriteError>,
@@ -5066,8 +5066,8 @@ binding_contract! {
             feature: "cap-depict", status: experimental, kind: instance,
             parameters: [
                 { name: path, type: &std::path::Path, default: required },
-                { name: width, type: u32, default: required },
-                { name: height, type: u32, default: required },
+                { name: width, type: u32, default: 300 },
+                { name: height, type: u32, default: 300 },
             ],
             output: (), error: crate::DrawingWriteError, state: read_only, operation: none,
             signature: fn(&crate::Molecule, &std::path::Path, u32, u32) -> Result<(), crate::DrawingWriteError>,
@@ -10531,10 +10531,28 @@ binding_contract! {
         { semantic_id: "AtomCodeExplanation.pi_electrons", javascript_property: getter, item: callable, owner: type_, rust: crate::AtomCodeExplanation::pi_electrons, python: "pi_electrons", python_property: getter, javascript: "piElectrons", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->u32, },
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "AtomCodeExplanation.chirality", javascript_property: getter, item: callable, owner: type_, rust: crate::AtomCodeExplanation::chirality, python: "chirality", python_property: getter, javascript: "chirality", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: Option<&'static str>, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->Option<&'static str>, },
-        #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
+        #[cfg(feature = "cap-serialization")]
         { semantic_id:"types.PickleError", item:type, owner:type_,
           rust:crate::PickleError, python:"PickleError", javascript:"PickleError",
           feature:"cap-serialization", status:experimental, role:error, },
+        #[cfg(feature = "cap-serialization")]
+        { semantic_id:"types.MoleculeTransferError", item:type, owner:type_,
+          rust:crate::MoleculeTransferError, python:"MoleculeTransferError", javascript:"MoleculeTransferError",
+          feature:"cap-serialization", status:native, role:error, },
+        #[cfg(feature = "cap-serialization")]
+        { semantic_id:"Molecule.to_transfer_binary", item:callable, owner:molecule,
+          rust:crate::Molecule::to_transfer_binary, python:"to_transfer_binary", javascript:"toTransferBinary",
+          feature:"cap-serialization", status:native, kind:instance,
+          parameters:[], output:Vec<u8>, error:crate::MoleculeTransferError,
+          state:read_only, operation:none,
+          signature:fn(&crate::Molecule)->Result<Vec<u8>,crate::MoleculeTransferError>, },
+        #[cfg(feature = "cap-serialization")]
+        { semantic_id:"Molecule.from_transfer_binary", item:callable, owner:molecule,
+          rust:crate::Molecule::from_transfer_binary, python:"from_transfer_binary", javascript:"fromTransferBinary",
+          feature:"cap-serialization", status:native, kind:static_,
+          parameters:[{name:data,type:&[u8],default:required}], output:crate::Molecule, error:crate::MoleculeTransferError,
+          state:value_returning, operation:none,
+          signature:fn(&[u8])->Result<crate::Molecule,crate::MoleculeTransferError>, },
         #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
         { semantic_id:"Molecule.to_binary", item:callable, owner:molecule,
           rust:crate::Molecule::to_binary, python:"to_binary", javascript:"toBinary",
@@ -10851,7 +10869,7 @@ binding_contract! {
         #[cfg(feature="cap-transforms")]
         {semantic_id:"types.Coordinate3DReadError",item:type,owner:type_,rust:crate::Coordinate3DReadError,python:"Coordinate3DReadError",javascript:"Coordinate3DReadError",feature:"cap-transforms",status:native,role:error,},
         #[cfg(feature="cap-transforms")]
-        {semantic_id:"Molecule.coordinates_3d",item:callable,owner:molecule,rust:crate::Molecule::coordinates_3d,python:"coordinates_3d",javascript:"coordinates3d",feature:"cap-transforms",status:native,kind:instance,parameters:[{name:conformer_id,type:usize,default:"0"}],output:&'a [[f64;3]],error:crate::Coordinate3DReadError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::Molecule,usize)->Result<&'a [[f64;3]],crate::Coordinate3DReadError>,},
+        {semantic_id:"Molecule.coordinates_3d",item:callable,owner:molecule,rust:crate::Molecule::coordinates_3d,python:"coordinates_3d",javascript:"coordinates3d",feature:"cap-transforms",status:native,kind:instance,parameters:[{name:conformer_id,type:usize,default:0}],output:&'a [[f64;3]],error:crate::Coordinate3DReadError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::Molecule,usize)->Result<&'a [[f64;3]],crate::Coordinate3DReadError>,},
         #[cfg(feature="cap-transforms")]
         {semantic_id:"CoordinateZPolicy.from_name",item:callable,owner:type_,rust:crate::CoordinateZPolicy::from_name,python:"from_name",javascript:"fromName",javascript_projection:module_function("coordinateZPolicyFromName"),feature:"cap-transforms",status:native,kind:static_,parameters:[{name:value,type:&'a str,default:required}],output:crate::CoordinateZPolicy,error:crate::CoordinateInputError,state:value_returning,operation:none,signature:for<'a> fn(&'a str)->Result<crate::CoordinateZPolicy,crate::CoordinateInputError>,},
         #[cfg(feature="cap-transforms")]
@@ -11530,7 +11548,7 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.dg_bounds_matrix_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::dg_bounds_matrix_with_params,python:"dg_bounds_matrix_with_params",javascript:"dgBoundsMatrixWithParams",feature:"cap-batch",requires:["cap-conformer"],status:native,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<Vec<Vec<f64>>>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeBatch,&'b crate::BatchQueryParams)->Result<Vec<Option<Vec<Vec<f64>>>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.to_svg",item:callable,owner:type_,rust:crate::MoleculeBatch::to_svg,python:"to_svg",javascript:"toSvg",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:width,type:u32,default:required},{name:height,type:u32,default:required}],output:Vec<Option<String>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch,u32,u32)->Result<Vec<Option<String>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.to_svg",item:callable,owner:type_,rust:crate::MoleculeBatch::to_svg,python:"to_svg",javascript:"toSvg",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:width,type:u32,default:300},{name:height,type:u32,default:300}],output:Vec<Option<String>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch,u32,u32)->Result<Vec<Option<String>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.to_svg_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::to_svg_with_params,python:"to_svg_with_params",javascript:"toSvgWithParams",feature:"cap-batch",requires:["cap-depict"],status:native,kind:instance,receiver:shared,parameters:[{name:width,type:u32,default:required},{name:height,type:u32,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:Vec<Option<String>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::MoleculeBatch,u32,u32,&'b crate::BatchQueryParams)->Result<Vec<Option<String>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
@@ -11586,11 +11604,11 @@ binding_contract! {
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.fingerprint_atom_pair_with_output",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_with_output,python:"fingerprint_atom_pair_with_output",javascript:"fingerprintAtomPairWithOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_atom_pair_with_output_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_with_output_with_params,python:"fingerprint_atom_pair_with_output_with_params",javascript:"fingerprintAtomPairWithOutputWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:collect_additional_output,type:bool,default:true},{name:params,type:&crate::BatchQueryParams,default:crate::BatchQueryParams::default()}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,bool,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_atom_pair_with_output_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_atom_pair_with_output_with_params,python:"fingerprint_atom_pair_with_output_with_params",javascript:"fingerprintAtomPairWithOutputWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::AtomPairFingerprintParams,default:required},{name:collect_additional_output,type:bool,default:required},{name:params,type:&crate::BatchQueryParams,default:crate::BatchQueryParams::default()}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::AtomPairFingerprintParams,bool,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.fingerprint_morgan_with_output",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output,python:"fingerprint_morgan_with_output",javascript:"fingerprintMorganWithOutput",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MoleculeBatch)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
-{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_with_params,python:"fingerprint_morgan_with_output_with_params",javascript:"fingerprintMorganWithOutputWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganFingerprintParams,default:required},{name:collect_additional_output,type:bool,default:true},{name:params,type:&crate::BatchQueryParams,default:crate::BatchQueryParams::default()}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::MorganFingerprintParams,bool,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
+{semantic_id:"MoleculeBatch.fingerprint_morgan_with_output_with_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_output_with_params,python:"fingerprint_morgan_with_output_with_params",javascript:"fingerprintMorganWithOutputWithParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganFingerprintParams,default:required},{name:collect_additional_output,type:bool,default:required},{name:params,type:&crate::BatchQueryParams,default:crate::BatchQueryParams::default()}],output:Vec<Option<crate::BatchFingerprintOutput>>,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c> fn(&'a crate::MoleculeBatch,&'b crate::MorganFingerprintParams,bool,&'c crate::BatchQueryParams)->Result<Vec<Option<crate::BatchFingerprintOutput>>,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]
 {semantic_id:"MoleculeBatch.fingerprint_morgan_with_generator_params",item:callable,owner:type_,rust:crate::MoleculeBatch::fingerprint_morgan_with_generator_params,python:"fingerprint_morgan_with_generator_params",javascript:"fingerprintMorganWithGeneratorParams",feature:"cap-batch",requires:["cap-fingerprints"],status:native,kind:instance,receiver:shared,parameters:[{name:options,type:&crate::MorganGeneratorParams,default:required},{name:atom_invariants,type:Option<&crate::MorganAtomInvariantsGenerator>,default:required},{name:bond_invariants,type:Option<&crate::MorganBondInvariantsGenerator>,default:required},{name:call,type:&crate::MorganCallParams,default:required},{name:params,type:&crate::BatchQueryParams,default:required}],output:crate::FingerprintBatch,error:crate::BatchValidationError,state:read_only,operation:none,signature:for<'a,'b,'c,'d,'e,'f> fn(&'a crate::MoleculeBatch,&'b crate::MorganGeneratorParams,Option<&'c crate::MorganAtomInvariantsGenerator>,Option<&'d crate::MorganBondInvariantsGenerator>,&'e crate::MorganCallParams,&'f crate::BatchQueryParams)->Result<crate::FingerprintBatch,crate::BatchValidationError>,},
 #[cfg(feature="cap-batch")]

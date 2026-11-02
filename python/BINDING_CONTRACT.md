@@ -617,6 +617,26 @@ The existing final-match callback retains its `(target, atom_indices)` form.
 Callback exceptions propagate unchanged; there is no two-argument atom-callback
 fallback or callback-expiry rule.
 
+## Display
+
+- Public value, configuration, result and resource types provide a native
+  `__repr__`; default object addresses and message-free exception displays are
+  not useful public representations. `help()` descriptions remain a separate
+  requirement.
+- Configuration projection generates named fields from its native declaration.
+  Stateful adapters use the existing registry's public field spellings. Scalar
+  assignment must be visible immediately; display must not execute callbacks.
+- Shared value projection produces bounded previews of retained native data.
+  Collections and live owners summarize counts or resource state. Printing a
+  stream or lazy iterator must not advance it, and printing a molecule must not
+  parse, sanitize, lay out or otherwise calculate chemistry.
+- Long containers are abbreviated. Display is diagnostic text, not a promise of
+  an evaluable constructor expression or a persistence format.
+- `registry_check.py` rejects missing representations and configuration fields,
+  checks changed scalar values, and compares literal registered defaults on
+  matching direct arguments. These checks reuse native declarations and the
+  canonical registry, without a second business-type checklist.
+
 ## Collection protocols
 
 Expose `len()`, indexing and iteration only when each has an explicit,

@@ -15,6 +15,7 @@ macro_rules! sanitize_flags {
         #[derive(Clone, Copy, PartialEq)]
         /// Bit mask selecting sanitization stages; combine constants with the bitwise OR operator.
         pub struct SanitizeOperations { pub(crate) inner: ck::SanitizeOperations }
+crate::representation::native_repr!(SanitizeOperations, inner);
         #[pymethods]
         impl SanitizeOperations {
             $(#[classattr] #[allow(non_snake_case)] fn $flag() -> Self { Self { inner: ck::SanitizeOperations::$flag } })+

@@ -378,8 +378,9 @@ BIO through internal features. The facade disables IO defaults. Query IO needs
 public search; coordinate generation needs public depict. Private algorithm
 dependencies must not expose unrelated public domains. Shared IO entrypoints
 report an explicit capability error instead of dropping requested behavior.
-WASM projects this same feature tree, excluding binary archive APIs, code and
-binary-only dependencies on wasm32. No duplicated matcher is permitted.
+WASM projects this same feature tree. Existing persistent archive/pickle entrypoints
+remain native-only; binary encoding and codec dependencies are not prohibited
+on WASM. No duplicated matcher is permitted.
 
 Features select APIs and optional dependency edges, not individual functions
 inside a dependency crate. Strict runtime checks are orthogonal to capability

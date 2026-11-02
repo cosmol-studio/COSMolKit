@@ -2,9 +2,7 @@
 use cosmolkit as ck;
 use pyo3::prelude::*;
 
-ck::project_configuration!(ck::BioMmcifWriteParams, methods {
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> { self.inner.read(py, |native| format!("{native:?}")) }
-});
+ck::project_configuration!(ck::BioMmcifWriteParams);
 
 #[cfg(test)]
 mod tests {

@@ -26,6 +26,7 @@ macro_rules! flag_value {
         pub struct $name { pub(crate) inner: ck::$name }
         #[pymethods]
         impl $name {
+            fn __repr__(&self) -> String { crate::representation::native(stringify!($name), &self.inner) }
             $(#[classattr] const $flag: Self = Self { inner: ck::$name::$flag };)+
             /// Construct a mask retaining all supplied bits, including unknown bits.
             #[staticmethod] fn from_bits_retain(bits: u32) -> Self { Self { inner: ck::$name::from_bits_retain(bits) } }
@@ -50,6 +51,7 @@ flag_value!(LayeredFingerprintLayers, {
 pub struct AvalonFingerprintFlags {
     pub(crate) inner: ck::AvalonFingerprintFlags,
 }
+crate::representation::native_repr!(AvalonFingerprintFlags, inner);
 #[pymethods]
 impl AvalonFingerprintFlags {
     #[classattr]

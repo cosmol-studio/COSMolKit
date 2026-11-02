@@ -27,6 +27,9 @@ impl StereoisomerIterator {
 }
 #[pymethods]
 impl StereoisomerIterator {
+    fn __repr__(&self) -> &'static str {
+        "StereoisomerIterator(lazy=True)"
+    }
     /// Return the next stereoisomer, or None when enumeration is exhausted.
     fn next(&self, py: Python<'_>) -> PyResult<Option<Molecule>> {
         let mut inner = self.borrow()?;

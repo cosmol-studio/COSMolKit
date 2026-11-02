@@ -3,6 +3,7 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 
 crate::configuration::type_projection! {
+    custom_repr
     #[pyclass(module = "cosmolkit", frozen)]
     /// Readonly dense square matrix with native row/column indexing.
     pub struct DenseMatrix {
@@ -12,6 +13,13 @@ crate::configuration::type_projection! {
 
 #[pymethods]
 impl DenseMatrix {
+    fn __repr__(&self) -> String {
+        format!(
+            "DenseMatrix(shape=({}, {}))",
+            self.inner.dimension(),
+            self.inner.dimension()
+        )
+    }
     #[getter]
     /// Number of rows and columns in the square matrix.
     fn dimension(&self) -> usize {

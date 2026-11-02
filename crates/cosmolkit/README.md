@@ -48,8 +48,8 @@ objects. There is no separate public `forcefields` selection;
 the internal conformer, force-field and alignment crates retain their
 existing ownership boundaries.
 
-The WASM distribution excludes the binary serialization path: its APIs and
-implementation are not compiled, and binary-only dependencies are not included.
+Binary encoding is permitted on WASM. The existing persistent archive/pickle
+entrypoints remain native-only.
 Other `core` capabilities, including batch processing, remain available in WASM.
 
 Internal reuse of search or depiction helpers
@@ -67,7 +67,7 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.6.0", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.6.1", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 

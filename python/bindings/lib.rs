@@ -46,6 +46,7 @@ mod cip_atom_code_errors;
 mod collection_params;
 #[path = "../framework/configuration.rs"]
 mod configuration;
+mod molecule_transfer;
 #[cfg(test)]
 pub use configuration::fixture::{
     __configuration_ProjectionChild, __configuration_ProjectionExample,
@@ -152,6 +153,8 @@ mod reaction_parse;
 mod reaction_validation;
 mod reaction_values;
 mod reaction_writer;
+#[path = "../framework/representation.rs"]
+mod representation;
 mod residue_values;
 #[path = "../framework/retained_error.rs"]
 mod retained_error;
@@ -221,6 +224,8 @@ pub mod native {
     use super::binary_archive::{
         _molecule_from_binary, PickleError, PickleErrorKind, mol_from_binary,
     };
+    #[pymodule_export]
+    use super::molecule_transfer::{MoleculeTransferError, MoleculeTransferErrorKind};
     #[pymodule_export]
     use super::ring_results::RingSearchResult;
 
@@ -1473,6 +1478,16 @@ pub mod native {
 
     #[pymethods]
     impl Molecule {
+        /// Summarize the molecular graph and stored conformers without running chemistry.
+        fn __repr__(&self) -> String {
+            format!(
+                "Molecule(num_atoms={}, num_bonds={}, num_3d_conformers={})",
+                self.inner.num_atoms(),
+                self.inner.num_bonds(),
+                self.inner.num_3d_conformers(),
+            )
+        }
+
         /// Return an independent molecule value using copy-on-write.
         /// Molecular storage is initially shared, not eagerly deep-copied.
         /// Subsequent modifications to either molecule do not affect the other.
@@ -9559,12 +9574,14 @@ pub mod native {
                 .map_err(crate::molecular_io_errors::MolecularIoError::from_rust)
         }
 
-        /// Render a molecular SVG image at the supplied width and height, returning its XML text.
+        #[pyo3(signature = (width=300, height=300))]
+        /// Render SVG XML text. Width and height default to 300 pixels each.
         fn to_svg(&self, py: Python<'_>, width: u32, height: u32) -> PyResult<String> {
             py.detach(|| self.inner.to_svg(width, height))
                 .map_err(crate::drawing_errors::DrawingError::from_rust)
         }
-        /// Render a molecular PNG image at the supplied width and height, returning PNG bytes.
+        #[pyo3(signature = (width=300, height=300))]
+        /// Render PNG bytes. Width and height default to 300 pixels each.
         fn to_png<'py>(
             &self,
             py: Python<'py>,
@@ -9576,7 +9593,8 @@ pub mod native {
                 .map_err(crate::drawing_errors::DrawingError::from_rust)?;
             Ok(pyo3::types::PyBytes::new(py, &bytes))
         }
-        /// Render a molecular SVG image and write it to the supplied filesystem path.
+        #[pyo3(signature = (path, width=300, height=300))]
+        /// Write SVG to a filesystem path. Width and height default to 300 pixels each.
         fn write_svg(
             &self,
             py: Python<'_>,
@@ -9587,7 +9605,8 @@ pub mod native {
             py.detach(|| self.inner.write_svg(&path, width, height))
                 .map_err(crate::drawing_errors::DrawingWriteError::from_rust)
         }
-        /// Render a molecular PNG image and write it to the supplied filesystem path.
+        #[pyo3(signature = (path, width=300, height=300))]
+        /// Write PNG to a filesystem path. Width and height default to 300 pixels each.
         fn write_png(
             &self,
             py: Python<'_>,
@@ -15630,6 +15649,13 @@ pub mod native {
 
     #[pymethods]
     impl Fingerprint {
+        fn __repr__(&self) -> String {
+            format!(
+                "Fingerprint(n_bits={}, num_on_bits={})",
+                self.inner.n_bits(),
+                self.inner.num_on_bits()
+            )
+        }
         #[staticmethod]
         /// Construct a bit fingerprint of n_bits positions from the supplied set-bit indices; invalid indices raise FingerprintError.
         fn from_on_bits(n_bits: u32, on_bits: Vec<u32>) -> PyResult<Self> {

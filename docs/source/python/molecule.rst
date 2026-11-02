@@ -195,13 +195,15 @@ same behavior after restoration:
 Depictions
 ----------
 
-Molecules with 2D coordinates can be exported as SVG or PNG:
+Molecules can be exported as SVG or PNG. Images default to 300 × 300 pixels;
+missing 2D coordinates are generated for drawing without changing the molecule.
 
 .. code-block:: python
 
    mol = ck.mol_from_smiles("c1ccccc1O").with_2d_coordinates()
 
-   svg = mol.to_svg(width=400, height=300)
+   print(mol)  # Molecule(num_atoms=7, num_bonds=7, num_3d_conformers=0)
+   svg = mol.to_svg()
    mol.write_svg("phenol.svg", width=400, height=300)
    mol.write_png("phenol.png", width=400, height=300)
 

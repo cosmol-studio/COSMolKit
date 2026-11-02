@@ -47,6 +47,7 @@ input!(BatchErrorModeInput, BatchErrorMode);
 pub struct MolCoordinateSelection {
     pub(crate) inner: ck::MolCoordinateSelection,
 }
+crate::representation::native_repr!(MolCoordinateSelection, inner);
 impl From<ck::MolCoordinateSelection> for MolCoordinateSelection {
     fn from(inner: ck::MolCoordinateSelection) -> Self {
         Self { inner }

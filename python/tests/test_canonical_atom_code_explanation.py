@@ -56,7 +56,7 @@ def test_original_generated_stub_has_complete_error_and_value_protocols():
         assert getattr(ck, name).__name__ == name
     value = classes["AtomCodeExplanation"]
     methods = {node.name: node for node in value.body if isinstance(node, ast.FunctionDef)}
-    assert set(methods) == {"from_code", "symbol", "branch_count", "pi_electrons", "chirality"}
+    assert set(methods) == {"__repr__", "from_code", "symbol", "branch_count", "pi_electrons", "chirality"}
     constructor = methods["from_code"]
     assert [a.arg for a in constructor.args.args] == ["code", "branch_subtract", "include_chirality"]
     assert [ast.literal_eval(v) for v in constructor.args.defaults] == [0, False]

@@ -7,6 +7,7 @@ macro_rules! cx_fields {
         #[derive(Clone, Copy, PartialEq)]
         /// Bit mask selecting CXSMILES extension fields; combine constants with the bitwise OR operator.
         pub struct CxSmilesFields { pub(crate) inner: ck::CxSmilesFields }
+crate::representation::native_repr!(CxSmilesFields, inner);
         #[pymethods]
         impl CxSmilesFields {
             $(#[classattr] #[allow(non_snake_case)] fn $flag() -> Self { Self { inner: ck::CxSmilesFields::$flag } })+
@@ -46,6 +47,7 @@ COORDINATE_BONDS, HYDROGEN_BONDS, ZERO_BONDS, ALL, ALL_BUT_COORDS }
 pub struct CxCoordinateSelection {
     pub(crate) inner: ck::CxCoordinateSelection,
 }
+crate::representation::native_repr!(CxCoordinateSelection, inner);
 #[pymethods]
 impl CxCoordinateSelection {
     #[classattr]

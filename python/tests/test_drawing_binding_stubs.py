@@ -55,7 +55,8 @@ def test_selected_stub_classes_and_methods():
         assert ast.unparse(required_expression(methods[name].returns)) == result
     for name in ("to_svg", "to_png", "write_svg", "write_png"):
         args = methods[name].args
-        assert not args.defaults and not args.kw_defaults
+        assert [ast.literal_eval(value) for value in args.defaults] == [300, 300]
+        assert not args.kw_defaults
         names = [a.arg for a in args.posonlyargs + args.args]
         assert names == (["self", "path", "width", "height"] if name.startswith("write_") else ["self", "width", "height"])
         assert [ast.unparse(required_expression(a.annotation)) for a in args.args[-2:]] == ["SupportsIndex", "SupportsIndex"]
@@ -65,7 +66,11 @@ def test_selected_stub_classes_and_methods():
         assert callable(descriptor)
         runtime = inspect.signature(descriptor)
         assert list(runtime.parameters) == names
-        assert all(cast(object, p.default) is inspect.Parameter.empty for p in runtime.parameters.values())
+        assert runtime.parameters["width"].default == 300
+        assert runtime.parameters["height"].default == 300
+        assert runtime.parameters["self"].default is inspect.Parameter.empty
+        if name.startswith("write_"):
+            assert runtime.parameters["path"].default is inspect.Parameter.empty
     assert "builtins.property" in [ast.unparse(d) for d in methods["has_2d_coordinates"].decorator_list]
     inspect.signature(cosmolkit.Molecule.add_2d_coordinates_).bind(object())
     inplace = methods["add_2d_coordinates_with_params_"]
@@ -84,7 +89,7 @@ def test_parameter_properties_types_and_defaults():
                 "flips_per_sample": 0, "samples": 0, "sample_seed": 0,
                 "permute_degree_four": False, "force_rdkit": False, "use_ring_templates": False,
                 "use_path_angle_expansion": True}
-    assert set(methods) == {"__new__", *defaults}
+    assert set(methods) == {"__repr__", "__new__", *defaults}
     runtime = inspect.signature(cosmolkit.Coordinate2DParams)
     assert {name: cast(object, parameter.default) for name, parameter in runtime.parameters.items()} == dict.fromkeys(defaults, Ellipsis)
     params = cosmolkit.Coordinate2DParams()

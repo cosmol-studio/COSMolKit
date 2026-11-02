@@ -26,19 +26,18 @@ bio = ["dep:cosmolkit-bio", "dep:compact_str", "dep:lexical-core"]
 test-probes = ["bio", "cosmolkit-bio/test-probes"]
 
 [dependencies]
-cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.6.0" }
-cosmolkit-depict = { version = "0.6.0", path = "../cosmolkit-depict", optional = true }
-cosmolkit-bio = { version = "0.6.0", path = "../cosmolkit-bio", optional = true }
-cosmolkit-core = { version = "0.6.0", path = "../cosmolkit-core", optional = true }
-cosmolkit-model = { version = "0.6.0", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.6.0", path = "../cosmolkit-search", optional = true, default-features = false }
-cosmolkit-types = { version = "0.6.0", path = "../cosmolkit-types" }
+cosmolkit-macros = { path = "../cosmolkit-macros", version = "0.6.1" }
+cosmolkit-depict = { version = "0.6.1", path = "../cosmolkit-depict", optional = true }
+cosmolkit-bio = { version = "0.6.1", path = "../cosmolkit-bio", optional = true }
+cosmolkit-core = { version = "0.6.1", path = "../cosmolkit-core", optional = true }
+cosmolkit-model = { version = "0.6.1", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.6.1", path = "../cosmolkit-search", optional = true, default-features = false }
+cosmolkit-types = { version = "0.6.1", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
 compact_str = { version = "0.10.0", default-features = false, features = ["std"], optional = true }
 lexical-core = { version = "=1.0.6", default-features = false, features = ["parse-floats"], optional = true }
 
-# Native archives are not compiled or linked into WASM, even under `full`.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# The shared wire molecule schema also supports same-version WASM transfers.
 serde = { version = "1", features = ["derive"], optional = true }
 postcard = { version = "1.1.3", default-features = false, features = ["alloc"], optional = true }
 # Write wire codec 3; retain storage codec 2 decoding for 0.5.0 archives.
@@ -49,7 +48,7 @@ name = "migration_io_bio_rows"
 required-features = ["bio", "test-probes"]
 
 [dev-dependencies]
-cosmolkit-model = { version = "0.6.0", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
+cosmolkit-model = { version = "0.6.1", path = "../cosmolkit-model", features = ["runtime-invariants", "op-contracts"] }
 tempfile = "3"
 
 [[test]]

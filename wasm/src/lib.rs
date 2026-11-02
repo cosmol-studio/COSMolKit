@@ -155,6 +155,8 @@ mod metadata_values;
 #[cfg(feature = "cap-forcefields")]
 mod mmff_errors;
 mod model_errors;
+#[cfg(feature = "cap-serialization")]
+mod molecule_transfer;
 mod mol2_errors;
 mod mol_post_errors;
 mod mol_post_support_errors;

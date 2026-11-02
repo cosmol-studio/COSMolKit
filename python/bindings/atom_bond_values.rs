@@ -155,6 +155,7 @@ mod source_tests {
 }
 
 crate::configuration::type_projection! {
+    custom_repr
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
     /// Detached readonly atom data. Context-dependent queries are available on atoms obtained from a Molecule.
@@ -166,6 +167,9 @@ macro_rules! atom_accessors {
     ($type:ident $(, $extra:item)*) => {
 #[pymethods]
 impl $type {
+    fn __repr__(&self) -> String {
+        format!("{}(id={}, element={:?}, formal_charge={})", stringify!($type), self.inner.id().index(), self.inner.element().symbol(), self.inner.formal_charge())
+    }
     #[getter]
     /// Zero-based identifier within the originating topology.
     fn id(&self) -> usize {
@@ -275,6 +279,7 @@ impl $type {
 atom_accessors!(Atom);
 
 crate::configuration::type_projection! {
+    custom_repr
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
     /// Readonly atom view retaining its molecule's topology version for degree, valence and hydrogen queries.
@@ -327,6 +332,7 @@ atom_accessors!(
 );
 
 crate::configuration::type_projection! {
+    custom_repr
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]
     #[derive(Clone)]
     /// Detached readonly bond data, including endpoints, order and stored stereochemical annotations.
@@ -336,6 +342,15 @@ crate::configuration::type_projection! {
 }
 #[pymethods]
 impl Bond {
+    fn __repr__(&self) -> String {
+        format!(
+            "Bond(id={}, begin={}, end={}, order={:?})",
+            self.inner.id().index(),
+            self.inner.begin().index(),
+            self.inner.end().index(),
+            self.inner.order()
+        )
+    }
     #[getter]
     /// Zero-based identifier within the originating topology.
     fn id(&self) -> usize {

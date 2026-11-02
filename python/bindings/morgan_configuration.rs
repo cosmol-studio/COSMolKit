@@ -45,6 +45,7 @@ impl MorganInvariants {
 pub struct MorganAtomInvariantsGenerator {
     pub(crate) inner: ck::MorganAtomInvariantsGenerator,
 }
+crate::representation::native_repr!(MorganAtomInvariantsGenerator, inner);
 
 #[pymethods]
 impl MorganAtomInvariantsGenerator {

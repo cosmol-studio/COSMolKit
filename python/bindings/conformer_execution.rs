@@ -219,6 +219,12 @@ crate::enums::binding_enum!(UffBoundsCauseKind, {
 pub struct UffBoundsCause {
     inner: RetainedError<ck::UffBoundsError>,
 }
+#[pymethods]
+impl UffBoundsCause {
+    fn __repr__(&self) -> String {
+        crate::representation::native("UffBoundsCause", self.inner.as_ref())
+    }
+}
 
 crate::enums::binding_enum!(DistGeomForceFieldErrorKind, {
     Kernel,
@@ -231,6 +237,7 @@ crate::enums::binding_enum!(DistGeomForceFieldErrorKind, {
 pub struct DistGeomForceFieldError {
     inner: ck::DistGeomForceFieldError,
 }
+crate::representation::native_repr!(DistGeomForceFieldError, inner);
 #[pymethods]
 impl DistGeomForceFieldError {
     #[getter]
@@ -295,6 +302,7 @@ crate::enums::binding_enum!(ConformerOptimizerCauseKind, {
 pub struct ConformerOptimizerCause {
     inner: ck::ConformerOptimizerCause,
 }
+crate::representation::native_repr!(ConformerOptimizerCause, inner);
 #[pymethods]
 impl ConformerOptimizerCause {
     #[getter]

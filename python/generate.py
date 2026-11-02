@@ -312,6 +312,10 @@ def generate(library: Path, official_stub: Path, output: Path):
     package = output / "cosmolkit"
     package.mkdir(parents=True, exist_ok=True)
     shutil.copy2(library, package / ("_native" + EXTENSION_SUFFIXES[-1]))
+    # A prior maturin develop can leave a higher-priority ABI3 filename here.
+    # The generated package must load this build, not that older extension.
+    for suffix in EXTENSION_SUFFIXES[:-1]:
+        (package / ("_native" + suffix)).unlink(missing_ok=True)
     (package / "__init__.pyi").write_text(ast.unparse(ast.fix_missing_locations(tree)) + "\n")
     runtime = f"from . import _native\nfrom ._native import {', '.join(exports + private_exports)}\n"
     runtime += "".join(f"{name}.__module__ = __name__\n" for name in private_exports)

@@ -218,6 +218,10 @@ macro_rules! error_projection {
     (methods impl $name:ident { $($methods:item)* }) => {
         #[pymethods]
         impl $name {
+            /// Include the concrete exception type and original native message in containers.
+            fn __repr__(&self) -> String {
+                $crate::representation::native(stringify!($name), &self.__str__())
+            }
             #[staticmethod]
             #[doc = r#"{"role":"error_projection"}"#]
             fn _exception_type(py: Python<'_>) -> PyResult<Bound<'_, pyo3::types::PyType>> {

@@ -369,6 +369,7 @@ impl BioModRes {
 pub struct BioHelix {
     pub(crate) inner: ck::BioHelix,
 }
+crate::representation::native_repr!(BioHelix, inner);
 #[pymethods]
 impl BioHelix {
     #[new]

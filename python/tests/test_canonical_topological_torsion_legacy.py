@@ -64,7 +64,7 @@ def test_legacy_owned_inputs_conversion_and_generated_constructor_protocol():
         if isinstance(node, ast.FunctionDef):
             methods.setdefault(node.name, []).append(node)
     fields = ["torsion_atom_count", "include_chirality", "fp_size", "bits_per_entry", "from_atoms", "ignore_atoms", "custom_atom_invariants"]
-    assert set(methods) == {"__new__", "new", *fields}
+    assert set(methods) == {"__repr__", "__new__", "new", *fields}
     for field in fields:
         getter, setter = methods[field]
         assert [ast.unparse(d) for d in getter.decorator_list] == ["builtins.property"]

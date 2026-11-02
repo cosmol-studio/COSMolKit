@@ -141,13 +141,14 @@ pub use bio_pdb_write::{
     BioPdbWriteError, BioPdbWriteParams, bio_structure_to_pdb_text, write_bio_structure_pdb_file,
 };
 
-#[cfg(all(feature = "binary", not(target_arch = "wasm32")))]
+#[cfg(feature = "binary")]
 mod molecule_binary;
-#[cfg(all(feature = "binary", not(target_arch = "wasm32")))]
+#[cfg(feature = "binary")]
 #[doc(hidden)]
 pub use molecule_binary::{
-    BinaryDerivedState, BinaryDerivedView, BinaryInput, BinaryRecord, PickleError,
-    decode_molecule_binary, encode_molecule_binary,
+    BinaryDerivedState, BinaryDerivedView, BinaryInput, BinaryRecord, MoleculeTransferError,
+    PickleError, decode_molecule_binary, decode_molecule_transfer, encode_molecule_binary,
+    encode_molecule_transfer,
 };
 
 #[doc(hidden)]

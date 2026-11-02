@@ -60,6 +60,9 @@ macro_rules! structure_values {
         pub struct BioStructure { pub(crate) inner: ck::BioStructure }
         #[pymethods]
         impl BioStructure {
+            fn __repr__(&self) -> String {
+                format!("BioStructure(models={}, chains={}, residues={}, atoms={})", self.inner.num_models(), self.inner.num_chains(), self.inner.num_residues(), self.inner.num_atoms())
+            }
 
 #[staticmethod]
 #[pyo3(signature=(text,params=crate::arguments::Argument::Missing,*,max_line_length=crate::arguments::Argument::Missing,check_non_ascii=crate::arguments::Argument::Missing,ignore_ter=crate::arguments::Argument::Missing,split_chain_on_ter=crate::arguments::Argument::Missing,skip_remarks=crate::arguments::Argument::Missing))]

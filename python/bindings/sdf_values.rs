@@ -19,6 +19,24 @@ pub enum SdfGraph {
     },
 }
 
+#[pymethods]
+impl SdfGraph {
+    fn __repr__(&self) -> String {
+        match self {
+            Self::Molecule { value } => format!(
+                "SdfGraph.Molecule(num_atoms={}, num_bonds={})",
+                value.inner.num_atoms(),
+                value.inner.num_bonds()
+            ),
+            Self::Query { value } => format!(
+                "SdfGraph.Query(num_atoms={}, num_bonds={})",
+                value.inner().num_atoms(),
+                value.inner().num_bonds()
+            ),
+        }
+    }
+}
+
 impl SdfGraph {
     pub(crate) fn from_rust(inner: ck::SdfGraph) -> Self {
         match inner {

@@ -199,7 +199,7 @@ def test_original_stub_projects_all_five_types_methods_and_settings():
     for name in ("MorganFingerprintGenerator", "MorganSettings", "MorganCallParams", "MorganAtomInvariantsGenerator", "MorganBondInvariantsGenerator"):
         assert name in classes
     methods = {node.name for node in classes["MorganFingerprintGenerator"].body if isinstance(node, ast.FunctionDef)}
-    assert methods == {"__new__", "new", "from_json", "settings", "info_string", "to_json", "fingerprints", "counts", "sparse_fingerprints", "sparse_counts"}
+    assert methods == {"__repr__", "__new__", "new", "from_json", "settings", "info_string", "to_json", "fingerprints", "counts", "sparse_fingerprints", "sparse_counts"}
     names = [node.name for node in classes["MorganSettings"].body if isinstance(node, ast.FunctionDef)]
     for field in ("radius", "only_nonzero_invariants", "include_redundant_environments", "include_chirality", "count_simulation", "fp_size", "bits_per_feature", "count_bounds"):
         assert names.count(field) == 2

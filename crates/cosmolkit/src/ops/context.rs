@@ -3614,6 +3614,37 @@ mod mmff_proof_tests;
 /// semantic boundary. IO receives only detached borrowed canonical blocks;
 /// construction restores validated detached values once, without operations
 /// acquiring constructor or unrestricted block authority.
+#[cfg(feature = "cap-serialization")]
+impl Molecule {
+    /// Transfer this molecular value to an independently compiled CK module.
+    /// Preserves topology, stereo/SGroups, properties and all coordinate sets;
+    /// omits runtime caches. This is not the persistent `to_binary` archive.
+    #[doc(hidden)]
+    pub fn to_transfer_binary(&self) -> Result<Vec<u8>, crate::MoleculeTransferError> {
+        cosmolkit_io::encode_molecule_transfer(&cosmolkit_io::BinaryInput {
+            topology: &self.topology_arc_runtime(),
+            coordinates: self.coordinate_block_runtime(),
+            properties: self.properties(),
+            derived: Default::default(),
+        })
+    }
+
+    /// Restore an owned molecular value from exactly this CK version.
+    /// Never shares sender pointers or recalculates chemistry; derived caches
+    /// start empty. Older/newer CK versions and persistent archives are rejected.
+    #[doc(hidden)]
+    pub fn from_transfer_binary(data: &[u8]) -> Result<Self, crate::MoleculeTransferError> {
+        let record = cosmolkit_io::decode_molecule_transfer(data)?;
+        Self::from_runtime_parts(
+            Arc::new(record.topology),
+            Arc::new(record.coordinates),
+            Arc::new(record.properties),
+            Arc::new(DerivedCacheBlock::default()),
+        )
+        .map_err(|error| crate::PickleError::InvalidMolecule(error.to_string()).into())
+    }
+}
+
 #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
 impl Molecule {
     /// Serializes the complete molecule as a CK-native archive 2.0.

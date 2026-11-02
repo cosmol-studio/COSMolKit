@@ -163,7 +163,7 @@ class TestMorganParams:
 
     def test_stub(self):
         methods = stub_methods("MorganGeneratorParams")
-        assert set(methods) == {"__new__", *DEFAULTS, "info_string", "to_json", "with_json"}
+        assert set(methods) == {"__repr__", "__new__", *DEFAULTS, "info_string", "to_json", "with_json"}
         constructor = methods["__new__"]
         assert [arg.arg for arg in constructor.args.posonlyargs] == ["cls"]
         assert [arg.arg for arg in constructor.args.kwonlyargs] == list(DEFAULTS)
@@ -317,7 +317,7 @@ class TestAdditionalOutput:
 
     def test_stub(self):
         methods = stub_methods("FingerprintAdditionalOutput")
-        assert set(methods) == {"__new__", *OUTPUT_METHODS}
+        assert set(methods) == {"__repr__", "__new__", *OUTPUT_METHODS}
         expected_returns = {
             "atom_counts": "list[int] | None",
             "atom_to_bits": "list[list[int]] | None",
@@ -329,6 +329,6 @@ class TestAdditionalOutput:
             assert [arg.arg for arg in method.args.posonlyargs + method.args.args] == (["cls"] if name == "__new__" else ([] if name in ("default", "new") else ["self"]))
             assert not method.args.defaults and not method.args.kwonlyargs
             assert not method.args.kw_defaults and method.args.vararg is None and method.args.kwarg is None
-            expected = "FingerprintAdditionalOutput" if name in ("default", "new", "__new__") else ("builtins.str" if name == "__repr__" else ("None" if name.startswith("allocate_") else expected_returns[name]))
+            expected = "FingerprintAdditionalOutput" if name in ("default", "new", "__new__") else ("str" if name == "__repr__" else ("None" if name.startswith("allocate_") else expected_returns[name]))
             assert expression(method.returns) == expected
             assert [ast.unparse(node) for node in method.decorator_list] == (["staticmethod"] if name in ("default", "new") else (["builtins.property"] if name in OUTPUT_FIELDS else []))

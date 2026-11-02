@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 pub struct MoleculeBuilder {
     pub(crate) inner: ck::MoleculeBuilder,
 }
+crate::representation::native_repr!(MoleculeBuilder, inner);
 
 #[pymethods]
 impl MoleculeBuilder {

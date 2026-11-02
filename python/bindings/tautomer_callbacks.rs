@@ -166,6 +166,12 @@ impl TautomerMoleculeView {
 
 #[pymethods]
 impl TautomerMoleculeView {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "TautomerMoleculeView(num_atoms={})",
+            self.num_atoms()?
+        ))
+    }
     /// Explicitly own source blocks, or share the actual candidate snapshot.
     fn snapshot(&self) -> PyResult<Self> {
         let value = self.with_native(|native| native.snapshot())?;
@@ -278,6 +284,13 @@ pub struct TautomerProgress {
 }
 #[pymethods]
 impl TautomerProgress {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "TautomerProgress(candidates={}, transforms={})",
+            self.len()?,
+            self.num_transforms()?
+        ))
+    }
     /// Retain this candidate set and progress metadata as an owned shared snapshot; subsequent enumeration does not alter it.
     fn snapshot(&self) -> PyResult<Self> {
         let native = self.storage.with_native(|value| value.snapshot())?;

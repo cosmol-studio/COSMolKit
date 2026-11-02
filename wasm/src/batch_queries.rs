@@ -311,7 +311,7 @@ impl MoleculeBatch {
         height: Ts<input::U32Input>,
         runtime: BatchQueryParamsInput,
     ) -> Result<BatchTexts, JsValue> {
-        self.to_svg(width, height, Some(runtime), None, None)
+        self.to_svg(Some(width), Some(height), Some(runtime), None, None)
     }
     #[cfg(feature = "cap-conformer")]
     #[wasm_bindgen(js_name=dgBoundsMatrix)]
@@ -428,14 +428,14 @@ impl MoleculeBatch {
     #[wasm_bindgen(js_name=toSvg)]
     pub fn to_svg(
         &self,
-        width: Ts<input::U32Input>,
-        height: Ts<input::U32Input>,
+        width: Option<Ts<input::U32Input>>,
+        height: Option<Ts<input::U32Input>>,
         runtime: Option<BatchQueryParamsInput>,
         n_jobs: Option<Ts<input::IndexInput>>,
         progress_bar: Option<Ts<input::BoolInput>>,
     ) -> Result<BatchTexts, JsValue> {
-        let width = input::read::<u32>(width)?;
-        let height = input::read::<u32>(height)?;
+        let width = width.map(input::read::<u32>).transpose()?.unwrap_or(300);
+        let height = height.map(input::read::<u32>).transpose()?.unwrap_or(300);
         let values = query(runtime.as_ref(), n_jobs, progress_bar, |r| {
             self.0.to_svg_with_params(width, height, r)
         })?;

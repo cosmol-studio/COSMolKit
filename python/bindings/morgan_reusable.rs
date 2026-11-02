@@ -70,6 +70,7 @@ pub(crate) fn call_keywords(
 pub struct MorganFingerprintGenerator {
     pub(crate) inner: ck::MorganFingerprintGenerator,
 }
+crate::representation::native_repr!(MorganFingerprintGenerator, inner);
 
 #[pymethods]
 impl MorganFingerprintGenerator {
@@ -231,6 +232,7 @@ impl MorganFingerprintGenerator {
 pub struct MorganSettings {
     inner: ck::MorganSettings,
 }
+crate::representation::native_repr!(MorganSettings, inner);
 
 macro_rules! live_settings {
     ($($(#[$doc:meta])* $field:ident: $ty:ty),+ $(,)?) => {

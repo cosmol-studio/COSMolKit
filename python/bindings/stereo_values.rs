@@ -80,13 +80,6 @@ impl PotentialStereoCenter {
             ck::PotentialStereoCenter::Bond(id) => id.index(),
         }
     }
-    fn __repr__(&self) -> String {
-        format!(
-            "PotentialStereoCenter(kind='{}', index={})",
-            self.kind(),
-            self.index()
-        )
-    }
 }
 
 crate::configuration::type_projection! {

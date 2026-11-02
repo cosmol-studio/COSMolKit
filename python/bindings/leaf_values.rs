@@ -16,6 +16,7 @@ pub(crate) type MmffVariantInput =
 pub struct UffOptimizationErrorKind {
     pub(crate) inner: ck::UffOptimizationErrorKind,
 }
+crate::representation::native_repr!(UffOptimizationErrorKind, inner);
 #[pymethods]
 impl UffOptimizationErrorKind {
     #[classattr]

@@ -16,6 +16,7 @@ ck::project_configuration!(ck::MorganBondInvariantsGenerator);
 pub struct FingerprintAdditionalOutput {
     pub(crate) inner: ck::FingerprintAdditionalOutput,
 }
+crate::representation::native_repr!(FingerprintAdditionalOutput, inner);
 
 #[pymethods]
 impl FingerprintAdditionalOutput {

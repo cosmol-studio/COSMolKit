@@ -72,6 +72,9 @@ pub struct BioSelection {
 
 #[pymethods]
 impl BioSelection {
+    fn __repr__(&self) -> String {
+        format!("BioSelection(cid={:?})", self.inner.to_cid())
+    }
     #[staticmethod]
     /// Parse a CID expression into a reusable structure selector.
     fn from_cid(cid: &str) -> PyResult<Self> {

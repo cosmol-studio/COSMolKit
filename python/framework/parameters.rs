@@ -15,6 +15,9 @@ pub(crate) trait Container: Sized {
     const INPUT: pyo3::inspect::PyStaticExpr;
     fn extract(value: pyo3::Borrowed<'_, '_, PyAny>) -> PyResult<Self::Native>;
     fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>>;
+    fn preview(py: Python<'_>, value: &Self::Native) -> PyResult<String> {
+        crate::representation::python_value(&Self::output(py, value)?)
+    }
     fn output_field<'py, V: NativeView<Self::Native> + 'static>(
         py: Python<'py>,
         field: V,
@@ -175,6 +178,11 @@ where
 }
 
 impl<T: Container> Container for Option<T> {
+    fn preview(py: Python<'_>, value: &Self::Native) -> PyResult<String> {
+        value
+            .as_ref()
+            .map_or_else(|| Ok("None".into()), |value| T::preview(py, value))
+    }
     const OPTIONAL: bool = true;
     type Native = Option<T::Native>;
     const TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_union!(
@@ -281,6 +289,9 @@ pub(crate) trait Configuration: pyo3::PyClass<BaseType = PyAny> {
     }
     fn from_native(py: Python<'_>, value: Self::Native) -> PyResult<Self>;
     fn to_native(&self, py: Python<'_>) -> PyResult<Self::Native>;
+    fn preview(_py: Python<'_>, _value: &Self::Native) -> PyResult<String> {
+        Ok(format!("<{}>", Self::NAME))
+    }
 }
 
 pub(crate) struct ConfigurationField<T>(std::marker::PhantomData<T>);
@@ -294,6 +305,9 @@ impl<T: ConfigurationView> Container for LiveConfigurationField<T> {
     }
     fn output<'py>(py: Python<'py>, value: &Self::Native) -> PyResult<Bound<'py, PyAny>> {
         ConfigurationField::<T>::output(py, value)
+    }
+    fn preview(py: Python<'_>, value: &Self::Native) -> PyResult<String> {
+        T::preview(py, value)
     }
     fn output_field<'py, V: NativeView<Self::Native> + 'static>(
         py: Python<'py>,
@@ -317,6 +331,9 @@ impl<T: Configuration> Container for ConfigurationField<T> {
         Ok(Py::new(py, T::from_native(py, value.clone())?)?
             .into_bound(py)
             .into_any())
+    }
+    fn preview(py: Python<'_>, value: &Self::Native) -> PyResult<String> {
+        T::preview(py, value)
     }
 }
 
@@ -406,6 +423,9 @@ where
             .into_bound(py)
             .into_any())
     }
+    fn preview(py: Python<'_>, value: &Self::Native) -> PyResult<String> {
+        T::preview(py, value)
+    }
 }
 
 pub(crate) trait NativeScalar: Copy + 'static {
@@ -464,6 +484,21 @@ where
 /// A native vector with recursively projected immutable reads.
 pub(crate) struct List<T>(std::marker::PhantomData<T>);
 impl<T: Container> Container for List<T> {
+    fn preview(py: Python<'_>, value: &Self::Native) -> PyResult<String> {
+        let mut items = value
+            .iter()
+            .take(5)
+            .map(|value| T::preview(py, value))
+            .collect::<PyResult<Vec<_>>>()?;
+        if value.len() > 5 {
+            items.push(format!("… (len={})", value.len()));
+        }
+        Ok(format!(
+            "({}{})",
+            items.join(", "),
+            if value.len() == 1 { "," } else { "" }
+        ))
+    }
     type Native = Vec<T::Native>;
     const TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_subscript!(
         pyo3::type_hint_identifier!("builtins", "tuple"),
@@ -497,6 +532,23 @@ impl<K: Container, V: Container> Container for Dict<K, V>
 where
     K::Native: Ord,
 {
+    fn preview(py: Python<'_>, value: &Self::Native) -> PyResult<String> {
+        let mut items = value
+            .iter()
+            .take(5)
+            .map(|(key, value)| {
+                Ok(format!(
+                    "{}: {}",
+                    K::preview(py, key)?,
+                    V::preview(py, value)?
+                ))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        if value.len() > 5 {
+            items.push(format!("… (len={})", value.len()));
+        }
+        Ok(format!("{{{}}}", items.join(", ")))
+    }
     type Native = BTreeMap<K::Native, V::Native>;
     const TYPE: pyo3::inspect::PyStaticExpr = pyo3::type_hint_subscript!(
         pyo3::type_hint_identifier!("collections.abc", "Mapping"),

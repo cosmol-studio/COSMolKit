@@ -317,6 +317,7 @@ class TestElementValue:
         methods = {n.name: n for n in cls.body if isinstance(n, ast.FunctionDef)}
         expected = ({"from_atomic_number": "Element | None", "from_symbol": "Element | None", "atomic_number": "int", "symbol": "str", "__hash__": "int", "__eq__": "bool", "__ne__": "bool"}
                     if name == "Element" else {"element": "Element", "symbol": "str", "atomic_number": "int", "period": "int", "outer_electrons": "int", "valences": "list[int]", "rb0": "float", "atomic_weight": "float"})
+        expected["__repr__"] = "str"
         assert set(methods) == set(expected)
         assert {n: annotation(m.returns) for n, m in methods.items()} == expected
         runtime = ck.Element if name == "Element" else ck.ElementInfo

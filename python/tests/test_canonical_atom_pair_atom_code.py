@@ -50,7 +50,7 @@ def test_original_generated_stub_exposes_only_explicit_value_transform():
     tree = ast.parse((Path(__file__).resolve().parents[1] / "artifacts/smoke/package/cosmolkit/__init__.pyi").read_text())
     classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     result = {node.name: node for node in classes["AtomPairAtomCodeResult"].body if isinstance(node, ast.FunctionDef)}
-    assert set(result) == {"__new__", "code", "molecule"}
+    assert set(result) == {"__repr__", "__new__", "code", "molecule"}
     assert ast.unparse(result["code"].returns) == "int"
     assert ast.unparse(result["molecule"].returns) == "Molecule"
     for name in ("code", "molecule"): assert [ast.unparse(d) for d in result[name].decorator_list] == ["builtins.property"]

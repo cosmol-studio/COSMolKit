@@ -85,6 +85,9 @@ type AtomValue = Source<
 >;
 #[pymethods]
 impl AtomQueryPredicate {
+    fn __repr__(&self) -> String {
+        crate::representation::native("AtomQueryPredicate", self.inner())
+    }
     #[getter]
     /// Exact native predicate or bound variant; payload availability follows this variant.
     fn variant(&self) -> AtomQueryPredicateKind {
@@ -223,6 +226,9 @@ impl BondQueryPredicate {
 }
 #[pymethods]
 impl BondQueryPredicate {
+    fn __repr__(&self) -> String {
+        crate::representation::native("BondQueryPredicate", self.inner())
+    }
     #[getter]
     /// Exact native predicate or bound variant; payload availability follows this variant.
     fn variant(&self) -> BondQueryPredicateKind {
@@ -299,6 +305,9 @@ impl RecursiveStructureQuery {
 }
 #[pymethods]
 impl RecursiveStructureQuery {
+    fn __repr__(&self) -> String {
+        crate::representation::native("RecursiveStructureQuery", self.inner())
+    }
     #[getter]
     /// Initialized recursive query graph, or None when not initialized.
     fn query_graph(&self) -> Option<QueryGraph> {

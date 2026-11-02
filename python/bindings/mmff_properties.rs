@@ -24,6 +24,7 @@ crate::enums::binding_enum!(MmffParamParseCauseKind, {
 pub struct MmffParamParseCause {
     inner: ck::MmffParamParseCause,
 }
+crate::representation::native_repr!(MmffParamParseCause, inner);
 #[pymethods]
 impl MmffParamParseCause {
     #[getter]

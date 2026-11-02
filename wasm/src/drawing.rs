@@ -197,21 +197,27 @@ impl Molecule {
     #[wasm_bindgen(js_name=toSvg)]
     pub fn to_svg(
         &self,
-        width: Ts<input::U32Input>,
-        height: Ts<input::U32Input>,
+        width: Option<Ts<input::U32Input>>,
+        height: Option<Ts<input::U32Input>>,
     ) -> Result<String, JsValue> {
         self.0
-            .to_svg(input::read::<u32>(width)?, input::read::<u32>(height)?)
+            .to_svg(
+                width.map(input::read::<u32>).transpose()?.unwrap_or(300),
+                height.map(input::read::<u32>).transpose()?.unwrap_or(300),
+            )
             .map_err(DrawingError::from_rust)
     }
     #[wasm_bindgen(js_name=toPng)]
     pub fn to_png(
         &self,
-        width: Ts<input::U32Input>,
-        height: Ts<input::U32Input>,
+        width: Option<Ts<input::U32Input>>,
+        height: Option<Ts<input::U32Input>>,
     ) -> Result<Vec<u8>, JsValue> {
         self.0
-            .to_png(input::read::<u32>(width)?, input::read::<u32>(height)?)
+            .to_png(
+                width.map(input::read::<u32>).transpose()?.unwrap_or(300),
+                height.map(input::read::<u32>).transpose()?.unwrap_or(300),
+            )
             .map_err(DrawingError::from_rust)
     }
 }

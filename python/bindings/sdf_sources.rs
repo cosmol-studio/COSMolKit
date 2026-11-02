@@ -41,6 +41,9 @@ impl crate::indexing::Collection for SdfDataset {
 }
 #[pymethods]
 impl SdfDataset {
+    fn __repr__(&self) -> String {
+        format!("SdfDataset(records={})", self.inner.len())
+    }
     #[doc = r#"{"role":"indexing","protocol":"integer_selection","selection":"MoleculeBatch"}"#]
     /// Read an SdfRecord by integer index, or parse a selection into a MoleculeBatch.
     /// Negative indices, slices, integer sequences and length-matched boolean masks are supported.
@@ -288,6 +291,7 @@ impl SdfDataset {
 pub struct SdfDatasetIterator {
     inner: ck::SdfDatasetIterator,
 }
+crate::representation::native_repr!(SdfDatasetIterator, inner);
 #[pymethods]
 impl SdfDatasetIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
@@ -317,6 +321,9 @@ impl SdfRecordStream {
 }
 #[pymethods]
 impl SdfRecordStream {
+    fn __repr__(&self) -> String {
+        format!("SdfRecordStream(transferred={})", self.inner.is_none())
+    }
     #[staticmethod]
     #[pyo3(signature=(path,params=crate::arguments::Argument::Missing,*,sanitize=crate::arguments::Argument::Missing,remove_hs=crate::arguments::Argument::Missing,strict_parsing=crate::arguments::Argument::Missing,expand_attachment_points=crate::arguments::Argument::Missing,process_property_lists=crate::arguments::Argument::Missing,coordinate_mode=crate::arguments::Argument::Missing))]
     /// Open an SDF filesystem path using a parameter object or mutually exclusive reader keywords.
@@ -470,6 +477,7 @@ impl SdfRecordStream {
 pub struct SdfReader {
     inner: ck::SdfReader,
 }
+crate::representation::native_repr!(SdfReader, inner);
 #[pymethods]
 impl SdfReader {
     #[staticmethod]
@@ -595,6 +603,9 @@ pub struct SdfBatchIterator {
 }
 #[pymethods]
 impl SdfBatchIterator {
+    fn __repr__(&self) -> &'static str {
+        "SdfBatchIterator(single_pass=True)"
+    }
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
@@ -615,6 +626,9 @@ pub struct SdfReaderBatchIterator {
 }
 #[pymethods]
 impl SdfReaderBatchIterator {
+    fn __repr__(&self) -> &'static str {
+        "SdfReaderBatchIterator(single_pass=True)"
+    }
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }

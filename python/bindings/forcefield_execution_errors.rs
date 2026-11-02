@@ -477,6 +477,9 @@ pub struct UffEvaluationFailure {
 }
 #[pymethods]
 impl UffEvaluationFailure {
+    fn __repr__(&self) -> String {
+        crate::representation::native("UffEvaluationFailure", self.inner.as_ref())
+    }
     #[getter]
     /// Exact native error category. Variant-specific payload fields are None when that variant is not active.
     fn variant(&self) -> UffEvaluationFailureKind {

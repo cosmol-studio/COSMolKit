@@ -261,9 +261,9 @@ def test_svg_png_exact_repeats_and_observable_state(smiles: str, dimensions: tup
 @pytest.mark.parametrize("method", ["to_svg", "to_png", "write_svg", "write_png"])
 @pytest.mark.parametrize("arguments,category", [
     ((-1, 80), OverflowError), ((2**32, 80), OverflowError),
-    (("120", 80), TypeError), ((), TypeError), ((120,), TypeError),
+    (("120", 80), TypeError),
 ])
-def test_required_dimensions_and_native_extraction(tmp_path: Path, method: Literal["to_svg", "to_png", "write_svg", "write_png"], arguments: tuple[object, ...], category: type[OverflowError] | type[TypeError]) -> None:
+def test_drawing_dimensions_native_extraction(tmp_path: Path, method: Literal["to_svg", "to_png", "write_svg", "write_png"], arguments: tuple[object, ...], category: type[OverflowError] | type[TypeError]) -> None:
     source = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
     before = state(source)
     path = tmp_path / "unopened"
@@ -272,6 +272,35 @@ def test_required_dimensions_and_native_extraction(tmp_path: Path, method: Liter
         _ = invalid_ffi_call(cast(object, getattr(source, method)))(*args)
     assert state(source) == before
     assert not path.exists()
+
+
+def test_drawing_defaults_and_molecule_summary(tmp_path: Path) -> None:
+    source = cosmolkit.mol_from_smiles("CCO")
+    before = state(source)
+    summary = "Molecule(num_atoms=3, num_bonds=2, num_3d_conformers=0)"
+    assert repr(source) == str(source) == summary
+    assert source.to_svg() == source.to_svg(300, 300)
+    assert source.to_svg(width=120) == source.to_svg(120, 300)
+    assert source.to_svg(height=80) == source.to_svg(300, 80)
+    assert source.to_png() == source.to_png(300, 300)
+    svg_path = tmp_path / "default.svg"
+    png_path = tmp_path / "default.png"
+    source.write_svg(svg_path)
+    source.write_png(png_path)
+    assert svg_path.read_text() == source.to_svg()
+    assert png_path.read_bytes() == source.to_png()
+    assert state(source) == before
+
+
+def test_batch_display_and_drawing_default_follow_molecule() -> None:
+    batch = cosmolkit.mols_from_smiles_list(["CCO", "invalid"], errors="keep")
+    assert repr(batch) == "MoleculeBatch(records=2, valid=1, errors=1)"
+    assert repr(batch[:0]) == "MoleculeBatch(records=0, valid=0, errors=0)"
+    assert "at 1:" in repr(batch.errors[0])
+    assert "invalid" in repr(batch.errors)
+    clean = batch.with_valid_records()
+    assert clean.to_svg() == [source.to_svg() for source in clean if source is not None]
+    assert clean.to_svg(width=120) == clean.to_svg(120, 300)
 
 
 def test_constructor_parse_error_remains_value_error():

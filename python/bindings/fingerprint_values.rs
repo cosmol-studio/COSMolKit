@@ -6,6 +6,12 @@ pub struct AtomPairsParameters;
 
 #[pymethods]
 impl AtomPairsParameters {
+    fn __repr__(&self) -> String {
+        format!(
+            "AtomPairsParameters(version={:?})",
+            ck::AtomPairsParameters::version()
+        )
+    }
     #[staticmethod]
     /// Version of the native atom-pair encoding scheme.
     fn version() -> &'static str {
@@ -62,6 +68,7 @@ use crate::errors::FingerprintError;
 use cosmolkit as ck;
 
 crate::configuration::type_projection! {
+    custom_repr
     #[pyo3::pyclass(module = "cosmolkit", frozen)]
     /// Immutable bit fingerprint with an explicit bit-index capacity.
     /// on_bits() returns the set positions; to_numpy() expands bits to an
@@ -107,6 +114,7 @@ impl SparseBitFingerprint {
 pub struct SparseCountFingerprint {
     pub(crate) inner: ck::SparseCountFingerprint,
 }
+crate::representation::native_repr!(SparseCountFingerprint, inner);
 
 #[pymethods]
 impl SparseCountFingerprint {
@@ -211,6 +219,7 @@ impl SparseCountFingerprint {
 pub struct SparseCountFingerprint32 {
     pub(crate) inner: ck::SparseCountFingerprint32,
 }
+crate::representation::native_repr!(SparseCountFingerprint32, inner);
 
 #[pymethods]
 impl SparseCountFingerprint32 {

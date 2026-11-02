@@ -104,6 +104,15 @@ impl Reaction {
 
 #[pymethods]
 impl Reaction {
+    fn __repr__(&self) -> String {
+        let native = self.owner.inner();
+        format!(
+            "Reaction(reactants={}, products={}, agents={})",
+            native.reactant_templates().len(),
+            native.product_templates().len(),
+            native.agent_templates().len()
+        )
+    }
     #[pyo3(signature=(reactants,params=crate::arguments::Argument::Missing,*,max_products=crate::arguments::Argument::Missing,coordinate_selections=crate::arguments::Argument::Missing,copy_atom_properties=crate::arguments::Argument::Missing))]
     /// Apply reaction templates to ordered reactants and return product sets. Supply ReactionRunParams or chemical keyword options, not both.
     fn run(
@@ -845,6 +854,7 @@ pub struct ReactionTemplateRemoval {
     inner: Arc<ck::ReactionTemplateRemoval>,
     match_owner: Mutex<Option<Py<SubstructMatchParams>>>,
 }
+crate::representation::native_repr!(ReactionTemplateRemoval, inner);
 #[pymethods]
 impl ReactionTemplateRemoval {
     #[getter]
