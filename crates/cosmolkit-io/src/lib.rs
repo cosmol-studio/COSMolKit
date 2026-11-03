@@ -143,12 +143,19 @@ pub use bio_pdb_write::{
 
 #[cfg(feature = "binary")]
 mod molecule_binary;
+#[cfg(all(feature = "bio", feature = "binary"))]
+mod protein_transfer;
 #[cfg(feature = "binary")]
 #[doc(hidden)]
 pub use molecule_binary::{
     BinaryDerivedState, BinaryDerivedView, BinaryInput, BinaryRecord, MoleculeTransferError,
     PickleError, decode_molecule_binary, decode_molecule_transfer, encode_molecule_binary,
     encode_molecule_transfer,
+};
+#[cfg(all(feature = "bio", feature = "binary"))]
+#[doc(hidden)]
+pub use protein_transfer::{
+    ProteinTransferError, decode_protein_transfer, encode_protein_transfer,
 };
 
 #[doc(hidden)]

@@ -2,6 +2,8 @@
   "schema_version": 1,
   "versions": [
     {"version": "latest", "url": "https://kit.cosmol.org/"},
+    {"version": "0.6.1", "url": "https://834e0b2e.cosmolkit-docs-web.pages.dev/"},
+    {"version": "0.6.0", "url": "https://c05fb57e.cosmolkit-docs-web.pages.dev/"},
     {"version": "0.5.0", "url": "https://2f659d0f.cosmolkit-docs-web.pages.dev/"},
     {"version": "0.3.0", "url": "https://c6862989.cosmolkit-docs-web.pages.dev/"}
   ]

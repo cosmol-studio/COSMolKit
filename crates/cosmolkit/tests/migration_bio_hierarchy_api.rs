@@ -74,17 +74,9 @@ fn bio_registry_covers_existing_accessors_and_owned_conversion() {
         };
         assert_eq!(rows[0].callable.unwrap().receiver, expected, "{id}");
     }
-    for row in BINDING_CONTRACT
-        .iter()
-        .filter(|row| row.feature == "cap-bio" && row.item == BindingItem::Callable)
-    {
-        assert_eq!(
-            row.status,
-            FunctionStatus::Experimental,
-            "{}",
-            row.semantic_id
-        );
-    }
+    // The local accessors above have their declared Experimental contract.
+    // Do not impose that status on every BIO API: CK-owned viewer transfer,
+    // for example, is Native rather than an upstream chemistry reproduction.
     let structure = BioStructure::from_parts(empty_parts()).unwrap();
     let parts = structure.into_parts();
     BioStructure::validate_parts(&parts).unwrap();

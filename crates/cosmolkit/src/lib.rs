@@ -509,6 +509,8 @@ pub use bio::BioMoleculeError;
 pub use cosmolkit_fingerprints::{
     AtomCodeExplanation, AtomCodeExplanationError, AtomPairsParameters,
 };
+#[cfg(all(feature = "cap-bio", feature = "cap-serialization"))]
+pub use cosmolkit_io::ProteinTransferError;
 #[cfg(feature = "cap-bio")]
 pub use cosmolkit_io::{
     AtomSiteIdentityField, CoordinateBlockSelectionError, MissingAtomSiteIdentityField,

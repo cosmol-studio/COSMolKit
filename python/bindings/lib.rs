@@ -47,6 +47,7 @@ mod collection_params;
 #[path = "../framework/configuration.rs"]
 mod configuration;
 mod molecule_transfer;
+mod protein_transfer;
 #[cfg(test)]
 pub use configuration::fixture::{
     __configuration_ProjectionChild, __configuration_ProjectionExample,
@@ -226,6 +227,8 @@ pub mod native {
     };
     #[pymodule_export]
     use super::molecule_transfer::{MoleculeTransferError, MoleculeTransferErrorKind};
+    #[pymodule_export]
+    use super::protein_transfer::{ProteinTransferError, ProteinTransferErrorKind};
     #[pymodule_export]
     use super::ring_results::RingSearchResult;
 

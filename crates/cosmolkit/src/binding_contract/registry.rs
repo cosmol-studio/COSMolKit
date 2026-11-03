@@ -10539,6 +10539,24 @@ binding_contract! {
         { semantic_id:"types.MoleculeTransferError", item:type, owner:type_,
           rust:crate::MoleculeTransferError, python:"MoleculeTransferError", javascript:"MoleculeTransferError",
           feature:"cap-serialization", status:native, role:error, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id:"types.ProteinTransferError", item:type, owner:type_,
+          rust:crate::ProteinTransferError, python:"ProteinTransferError", javascript:"ProteinTransferError",
+          feature:"cap-bio", requires:["cap-serialization"], status:native, role:error, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id:"Protein.to_transfer_binary", item:callable, owner:type_,
+          rust:crate::Protein::to_transfer_binary, python:"to_transfer_binary", javascript:"toTransferBinary",
+          feature:"cap-bio", requires:["cap-serialization"], status:native, kind:instance,
+          parameters:[], output:Vec<u8>, error:crate::ProteinTransferError,
+          state:read_only, operation:none,
+          signature:fn(&crate::Protein)->Result<Vec<u8>,crate::ProteinTransferError>, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id:"Protein.from_transfer_binary", item:callable, owner:type_,
+          rust:crate::Protein::from_transfer_binary, python:"from_transfer_binary", javascript:"fromTransferBinary",
+          feature:"cap-bio", requires:["cap-serialization"], status:native, kind:static_,
+          parameters:[{name:data,type:&[u8],default:required}], output:crate::Protein, error:crate::ProteinTransferError,
+          state:value_returning, operation:none,
+          signature:fn(&[u8])->Result<crate::Protein,crate::ProteinTransferError>, },
         #[cfg(feature = "cap-serialization")]
         { semantic_id:"Molecule.to_transfer_binary", item:callable, owner:molecule,
           rust:crate::Molecule::to_transfer_binary, python:"to_transfer_binary", javascript:"toTransferBinary",

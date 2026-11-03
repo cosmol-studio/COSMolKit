@@ -1,7 +1,7 @@
 //! Reusable Rust source-port boundary for the IUPAC InChI engine.
 //!
-//! The crate exposes the four audited toolkit-neutral scalar InChI operations.
-//! It receives periodic valence metadata through the caller's toolkit and is
+//! The official [`engine`] reads and generates raw InChI records without a toolkit.
+//! Graph adapters receive periodic valence metadata through the caller's toolkit and are
 //! independent of `cosmolkit-core`, native RDKit, Python and external executables.
 //!
 //! See `dev/archive/plans/rdkit_inchi_full_port_plan.md` in the workspace for

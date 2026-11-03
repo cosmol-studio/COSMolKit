@@ -157,6 +157,8 @@ mod mmff_errors;
 mod model_errors;
 #[cfg(feature = "cap-serialization")]
 mod molecule_transfer;
+#[cfg(all(feature = "cap-bio", feature = "cap-serialization"))]
+mod protein_transfer;
 mod mol2_errors;
 mod mol_post_errors;
 mod mol_post_support_errors;

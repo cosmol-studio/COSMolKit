@@ -37,7 +37,8 @@ def test_transfer_version_and_malformed_data_are_structured_errors():
         ck.Molecule.from_transfer_binary(bytes(changed))
     error = failure.value
     assert error.variant == ck.MoleculeTransferErrorKind.VersionMismatch
-    assert error.expected == ck.__version__
+    # The wire header uses Rust SemVer, not Python's PEP 440 package spelling.
+    assert error.expected == ck.version()
     assert error.actual != error.expected
     assert error.__cause__ is None
     for malformed in (b"", payload[:-1], payload + b"\0"):

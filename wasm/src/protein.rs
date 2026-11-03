@@ -63,6 +63,26 @@ impl BioStructure {
 }
 #[wasm_bindgen]
 impl Protein {
+    /// @internal
+    /// Encode the viewer hierarchy, coordinates and structural annotations.
+    #[cfg(feature = "cap-serialization")]
+    #[wasm_bindgen(js_name = toTransferBinary)]
+    pub fn to_transfer_binary(&self) -> Result<js_sys::Uint8Array, JsValue> {
+        self.0.to_transfer_binary()
+            .map(|data| js_sys::Uint8Array::from(data.as_slice()))
+            .map_err(crate::protein_transfer::ProteinTransferError::from_rust)
+    }
+
+    /// @internal
+    /// Restore independently owned viewer data from the same complete CK version.
+    #[cfg(feature = "cap-serialization")]
+    #[wasm_bindgen(js_name = fromTransferBinary)]
+    pub fn from_transfer_binary(data: Ts<input::BytesInput>) -> Result<Protein, JsValue> {
+        let data = input::read::<Vec<u8>>(data)?;
+        ck::Protein::from_transfer_binary(&data)
+            .map(|inner| Self(Arc::new(inner)))
+            .map_err(crate::protein_transfer::ProteinTransferError::from_rust)
+    }
     #[wasm_bindgen(js_name=toMoleculeWithParams)]
     pub fn to_molecule_with_params(
         &self,

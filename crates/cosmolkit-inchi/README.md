@@ -19,6 +19,30 @@ preprocessing. It returns the native status and independently optional InChI,
 AuxInfo, message and log byte strings. Polymer/V3000 extension inputs are not
 part of this basic entry point.
 
+`engine::read(engine::ReadInput { inchi, options })` is the corresponding
+GetStructFromINCHI entry. Both inputs use `CStr`; its owned output retains
+official atom and Stereo0D arrays (including allene stereo), native return
+code, warning flags and optional message/log bytes. It does not sanitize,
+remove hydrogens or invoke a toolkit. Native error statuses remain in the
+output; Rust engine/transport failures return `Err`. Polymer/V3000 Ex records
+are outside this basic entry point.
+
+```rust
+use cosmolkit_inchi::engine::{self, Input, ReadInput};
+
+let structure = engine::read(ReadInput {
+    inchi: c"InChI=1S/CH4/h1H4",
+    options: None,
+})?;
+assert_eq!(structure.return_code, 0);
+let generated = engine::generate(Input {
+    atoms: &structure.atoms,
+    stereo0d: &structure.stereo0d,
+    options: None,
+})?;
+# Ok::<(), cosmolkit_inchi::InchiError>(())
+```
+
 The existing graph-based APIs retain their signatures and behavior:
 
 - `mol_to_inchi`
@@ -34,9 +58,25 @@ on native detached topology, then supplies `rdkit::PreparedGraph` access to the
 shared reverse-cleanup and input encoder. Coordinates are borrowed; no neutral
 graph is constructed. Direct crate users may continue using `InchiMolecule`
 and `MolToInchiToolkit` unchanged. Their callback order and arguments are retained.
-Parsing continues to use the existing neutral graph and caller-owned cleanup.
+The graph-based `mol_from_inchi` retains its neutral graph and caller-owned
+cleanup; `engine::read` exposes the official records without that conversion.
 
 ## Examples
+
+These examples use only the official `engine` boundary, without a toolkit:
+
+```bash
+cargo run -p cosmolkit-inchi --example engine_read_stereochemical_salt
+cargo run -p cosmolkit-inchi --example engine_isotopic_salt
+cargo run -p cosmolkit-inchi --example engine_allene_stereo
+```
+
+- `engine_read_stereochemical_salt`: inspect a polycyclic alkaloid salt's raw
+  atoms, seven stereocenters and diagnostics, then regenerate the exact InChI.
+- `engine_isotopic_salt`: construct carbon-13 sodium acetate from raw atom and
+  bond records, then preserve isotope, charge and disconnected components.
+- `engine_allene_stereo`: construct both coordinate-free allene configurations
+  using official neighbor order/parity and read/regenerate both distinctly.
 
 The direct InChIKey operation needs no toolkit adapter:
 

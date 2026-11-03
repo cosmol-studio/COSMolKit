@@ -322,6 +322,23 @@ impl BioStructure {
 }
 
 impl Protein {
+    /// Transfer a viewer value to an independently compiled CK module of the same version.
+    #[doc(hidden)]
+    #[cfg(feature = "cap-serialization")]
+    pub fn to_transfer_binary(&self) -> Result<Vec<u8>, crate::ProteinTransferError> {
+        cosmolkit_io::encode_protein_transfer(&self.structure.data)
+    }
+
+    /// Restore independently owned, structurally validated viewer data without reprojection.
+    #[doc(hidden)]
+    #[cfg(feature = "cap-serialization")]
+    pub fn from_transfer_binary(data: &[u8]) -> Result<Self, crate::ProteinTransferError> {
+        Ok(Self {
+            structure: BioStructure {
+                data: cosmolkit_io::decode_protein_transfer(data)?,
+            },
+        })
+    }
     #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
     pub fn to_molecule_with_params(
         &self,
