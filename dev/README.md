@@ -58,7 +58,17 @@ cargo install pyo3-introspection --version 0.30.1 --locked
 .venv/bin/python python/check_stubs.py
 .venv/bin/python python/registry_check.py
 .venv/bin/maturin develop --manifest-path python/Cargo.toml
-python3 wasm/build.py --check
+python3 wasm/features.py
+wasm-pack build wasm --dev --target web --out-dir pkg \
+    -- --locked --no-default-features --features full,registry-check,protocol-tests
+cp wasm/js/index.js wasm/js/index.d.ts wasm/pkg/
+npm pkg set --prefix wasm/pkg main=index.js module=index.js types=index.d.ts
+npm pkg set --prefix wasm/pkg --json private=true \
+    'files=["*.js","*.d.ts","*.wasm","snippets"]' \
+    'sideEffects=["./index.js","./snippets/*"]'
+python3 wasm/registry_check.py
+node wasm/tests/runtime.mjs
+npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
 .venv/bin/pytest python/tests
 ```
 

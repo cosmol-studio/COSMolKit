@@ -75,18 +75,17 @@ An upgrade keeps the selected combination because its package name stays the
 same. The documentation's version menu selects documentation, not your installed
 npm version; check that version's generated TypeScript declarations for its API.
 
-Initialize once
----------------
+Import and use
+--------------
 
-The package is an ES module with TypeScript declarations included. In a browser
-application with a bundler that serves WebAssembly assets, initialize before
-creating objects. All following examples use the full package:
+The package is an ES module with TypeScript declarations included. Importing it
+waits for WebAssembly initialization; no explicit init call is needed. The same
+package works in browsers and Node.js. Browser bundlers must serve its WASM asset.
+All following examples use the full package:
 
 .. code-block:: javascript
 
-   import init, * as ck from "@cosmol-studio/cosmolkit";
-
-   await init();
+   import * as ck from "@cosmol-studio/cosmolkit";
 
 For a smaller package, change that import's module name, for example to
 ``"@cosmol-studio/cosmolkit-core-analysis"``. Only its compiled capabilities
@@ -99,17 +98,8 @@ Top-level constructors such as ``ck.molFromSmiles(text)`` and
 same options, return the same types and preserve the same errors. Their
 availability follows the selected package's features.
 
-In Node.js, supply the WebAssembly bytes instead of relying on browser fetching:
-
-.. code-block:: javascript
-
-   import { readFileSync } from "node:fs";
-   import init, * as ck from "@cosmol-studio/cosmolkit";
-
-   const wasmUrl = import.meta.resolve(
-     "@cosmol-studio/cosmolkit/cosmolkit_wasm_bg.wasm",
-   );
-   await init({ module_or_path: readFileSync(new URL(wasmUrl)) });
+The entry reads the WASM file in Node.js and loads its URL in browsers.
+Initialization failures propagate as module import failures.
 
 Parse and inspect a molecule
 ----------------------------

@@ -51,7 +51,7 @@ jobs:
 
             - uses: taiki-e/install-action@v2
               with:
-                  tool: wasm-bindgen-cli@0.2.128
+                  tool: wasm-pack@0.15.1
 
             - name: Sync documentation environment
               run: uv sync --group dev
@@ -72,8 +72,19 @@ jobs:
                   CARGO_TARGET_DIR: ${{ github.workspace }}/target/wasm
               # Validate actual exports and declarations before extracting API documentation.
               run: |
-                  .venv/bin/python wasm/build.py --check
-                  .venv/bin/python wasm/build.py --target web --out-dir target/docs-js-package
+                  .venv/bin/python wasm/features.py
+                  wasm-pack build wasm --dev --target web --out-dir pkg \
+                      -- --locked --no-default-features --features full,registry-check,protocol-tests
+                  cp wasm/js/index.js wasm/js/index.d.ts wasm/pkg/
+                  npm pkg set --prefix wasm/pkg main=index.js module=index.js types=index.d.ts
+                  npm pkg set --prefix wasm/pkg --json private=true \
+                      'files=["*.js","*.d.ts","*.wasm","snippets"]' \
+                      'sideEffects=["./index.js","./snippets/*"]'
+                  .venv/bin/python wasm/registry_check.py
+                  node wasm/tests/runtime.mjs
+                  npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
+                  wasm-pack build wasm --dev --target web --out-dir ../target/docs-js-package \
+                      -- --locked --no-default-features --features full
 
             - name: Build Sphinx source
               env:

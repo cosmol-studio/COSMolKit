@@ -33,9 +33,9 @@ js_language = "typescript"
 js_source_path = str(ROOT / "target/docs-js-package/cosmolkit_wasm.d.ts")
 if not Path(js_source_path).is_file():
     raise RuntimeError(
-        "Generate the full WASM declarations first: python3 "
-        "wasm/build.py --target web "
-        "--out-dir target/docs-js-package"
+        "Generate the full WASM declarations first: wasm-pack build wasm --dev "
+        "--target web --out-dir ../target/docs-js-package "
+        "-- --locked --no-default-features --features full"
     )
 root_for_relative_js_paths = str(Path(js_source_path).parent)
 jsdoc_tsconfig_path = "../tsconfig.json"

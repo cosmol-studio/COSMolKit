@@ -1,6 +1,13 @@
 // Protocol samples only. Do not append a checklist of chemistry operations here.
-const assert = require('node:assert/strict');
-const ck = require(process.env.COSMOLKIT_WASM_PACKAGE || '../pkg/cosmolkit_wasm.js');
+import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const packageUrl = process.env.COSMOLKIT_WASM_PACKAGE
+    ? pathToFileURL(resolve(process.env.COSMOLKIT_WASM_PACKAGE))
+    : new URL('../pkg/index.js', import.meta.url);
+const ck = await import(packageUrl.href);
+assert.equal((await import(packageUrl.href)).Molecule, ck.Molecule);
+assert.equal('default' in ck, false); // The public entry needs no init call.
 
 const p = new ck.RingSearchParams();
 const m = new ck.Molecule('C1CC1');

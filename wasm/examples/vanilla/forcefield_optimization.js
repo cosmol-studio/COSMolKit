@@ -1,7 +1,6 @@
 // Use the full package, or change the import to @cosmol-studio/cosmolkit-core-3d.
-import init, * as ck from "@cosmol-studio/cosmolkit";
+import * as ck from "@cosmol-studio/cosmolkit";
 
-await init();
 
 const input = ck.molFromSmiles("CCO");
 const withHydrogens = input.withHydrogens();

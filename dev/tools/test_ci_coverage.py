@@ -165,7 +165,7 @@ class CoverageWorkflowTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/publish.yml").read_text()
         # Five wheel builds plus the standalone WASM package build.
         self.assertEqual(workflow.count("--release"), 6)
-        self.assertIn('wasm/build.py --preset "$preset" --release --target web', workflow)
+        self.assertIn('wasm-pack build wasm --release --target web', workflow)
         wasm_profiles = tomllib.loads((ROOT / "wasm/Cargo.toml").read_text())["profile"]
         for setting in ("opt-level", "lto", "codegen-units"):
             self.assertEqual(wasm_profiles["release"][setting], profiles["release"][setting])

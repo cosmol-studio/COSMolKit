@@ -7,9 +7,8 @@ npm install @cosmol-studio/cosmolkit
 ```
 
 ```typescript
-import init, { molFromSmiles } from "@cosmol-studio/cosmolkit";
+import { molFromSmiles } from "@cosmol-studio/cosmolkit";
 
-await init();
 const mol = molFromSmiles("CCO");
 console.log(mol.toSmiles());
 console.log(mol.numAtoms);
@@ -18,6 +17,7 @@ mol.free();
 
 Use the full package above or select a smaller
 [feature package](https://kit.cosmol.org/javascript/).
+Importing the package initializes WASM automatically in browsers and Node.js.
 Native objects retain Rust ownership and copy-on-write behavior.
 Params accept typed options or parameter instances; invalid inputs throw typed errors.
 

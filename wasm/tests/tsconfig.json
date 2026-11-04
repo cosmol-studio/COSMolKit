@@ -3,10 +3,10 @@
     "strict": true,
     "noEmit": true,
     "target": "ES2022",
-    "lib": ["ES2022", "ESNext.Disposable"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "paths": {"cosmolkit": ["../pkg/cosmolkit_wasm.d.ts"]}
+    "lib": ["ES2022", "ESNext.Disposable", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {"cosmolkit": ["../pkg/index.d.ts"]}
   },
   "files": ["types.ts"]
 }

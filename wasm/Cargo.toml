@@ -1,6 +1,6 @@
 [package]
 name = "cosmolkit-wasm"
-version = "0.6.2-rc.1"
+version = "0.6.2-rc.2"
 description = "JavaScript and TypeScript bindings for COSMolKit"
 license = "MIT"
 repository = "https://github.com/cosmol-studio/COSMolKit"
@@ -13,6 +13,10 @@ members = ["macros"]
 [lib]
 name = "cosmolkit_wasm"
 crate-type = ["cdylib"]
+
+[package.metadata.wasm-pack.profile.release]
+# Accept LLVM's bulk-memory and saturating float-to-int instructions.
+wasm-opt = ["-O", "--enable-bulk-memory-opt", "--enable-nontrapping-float-to-int"]
 
 [features]
 # Generated from the Rust facade by features.py --write.
@@ -64,7 +68,7 @@ registry-check = []
 protocol-tests = []
 
 [dependencies]
-cosmolkit = { version = "0.6.2-rc.1", path = "../crates/cosmolkit", default-features = false }
+cosmolkit = { version = "0.6.2-rc.2", path = "../crates/cosmolkit", default-features = false }
 wasm-bindgen = "=0.2.128"
 js-sys = "0.3"
 tsify = { version = "=0.5.8", default-features = false, features = ["js"] }

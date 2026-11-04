@@ -1,6 +1,8 @@
 // Structural registry inspection, not a second business-behavior test suite.
-const fs = require('node:fs');
-const path = require('node:path');
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 const [packagePath, reportPath] = process.argv.slice(2);
 const tsc = process.env.PATH.split(path.delimiter)
     .map(dir => path.join(dir, process.platform === 'win32' ? 'tsc.cmd' : 'tsc'))
@@ -11,14 +13,14 @@ const parserPath = [
     path.join(path.dirname(tsc), '../typescript/lib/typescript.js'),
 ].find(file => fs.existsSync(file));
 if (!parserPath) throw new Error('Cannot locate TypeScript beside its tsc executable');
-const ts = require(parserPath);
-const api = require(packagePath);
+const ts = createRequire(import.meta.url)(parserPath);
+const api = await import(pathToFileURL(packagePath));
 if (typeof api.__bindingRegistrySnapshot !== 'function') {
-    throw new Error('Build inspection metadata first: python wasm/build.py --registry');
+    throw new Error('Build a web package with wasm-pack and the registry-check feature; see wasm/dev.md');
 }
 const snapshot = JSON.parse(api.__bindingRegistrySnapshot());
-if (snapshot.version !== 3 || !snapshot.records.length) throw new Error('Rebuild registry metadata with the current build.py --registry');
-const declarationPath = packagePath.replace(/\.js$/, '.d.ts');
+if (snapshot.version !== 3 || !snapshot.records.length) throw new Error('Rebuild the web package with the current registry-check feature; see wasm/dev.md');
+const declarationPath = path.join(path.dirname(packagePath), 'cosmolkit_wasm.d.ts');
 const source = ts.createSourceFile(declarationPath, fs.readFileSync(declarationPath, 'utf8'),
     ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 if (source.parseDiagnostics.length) throw new Error('Cannot parse generated declarations');

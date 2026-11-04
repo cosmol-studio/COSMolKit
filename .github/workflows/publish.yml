@@ -82,7 +82,7 @@ jobs:
                   node-version: "24"
             - uses: taiki-e/install-action@v2
               with:
-                  tool: wasm-bindgen-cli@0.2.128
+                  tool: wasm-pack@0.15.1
             - name: Test WASM build tooling
               run: python -m unittest discover -s wasm/tests -p 'test_*.py' -v
             - name: Build and validate npm presets serially
@@ -94,8 +94,39 @@ jobs:
                   for preset in core core-search core-fingerprints core-analysis core-reaction core-depict core-3d core-bio core-inchi full; do
                       echo "::group::Build and validate npm $preset"
                       package_dir="$NPM_PACKAGE_ROOT/npm-package-$preset"
-                      python -B wasm/build.py --preset "$preset" --check
-                      python -B wasm/build.py --preset "$preset" --release --target web --out-dir "$package_dir"
+                      features="$(python -B wasm/presets.py features "$preset")"
+                      inspection_features="$features,registry-check"
+                      if [ "$preset" = full ]; then
+                          inspection_features="$inspection_features,protocol-tests"
+                      fi
+                      python -B wasm/features.py
+                      wasm-pack build wasm --dev --target web --out-dir pkg \
+                          -- --locked --no-default-features --features "$inspection_features"
+                      cp wasm/js/index.js wasm/js/index.d.ts wasm/pkg/
+                      npm pkg set --prefix wasm/pkg main=index.js module=index.js types=index.d.ts
+                      npm pkg set --prefix wasm/pkg --json private=true \
+                          'files=["*.js","*.d.ts","*.wasm","snippets"]' \
+                          'sideEffects=["./index.js","./snippets/*"]'
+                      python -B wasm/registry_check.py
+                      if [ "$preset" = full ]; then
+                          node wasm/tests/runtime.mjs
+                          npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
+                      else
+                          npx --yes --package typescript@5.8.3 tsc --noEmit --strict \
+                              --target ES2022 --lib ES2022,ESNext.Disposable,DOM wasm/pkg/index.d.ts
+                      fi
+                      # Each published preset gets a fresh directory, never the inspection package.
+                      wasm-pack build wasm --release --target web --out-dir "$package_dir" \
+                          -- --locked --no-default-features --features "$features"
+                      cp LICENSE "$package_dir/LICENSE"
+                      cp wasm/js/index.js wasm/js/index.d.ts "$package_dir/"
+                      npm pkg set --prefix "$package_dir" \
+                          main=index.js module=index.js types=index.d.ts \
+                          "name=$(python -B wasm/presets.py name "$preset")" publishConfig.access=public \
+                          "publishConfig.tag=$(python -B wasm/presets.py tag "$preset")"
+                      npm pkg set --prefix "$package_dir" --json \
+                          'files=["*.js","*.d.ts","*.wasm","snippets"]' \
+                          'sideEffects=["./index.js","./snippets/*"]'
                       npm pack --dry-run --json "$package_dir"
                       echo "::endgroup::"
                   done

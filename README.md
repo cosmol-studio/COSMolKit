@@ -159,13 +159,11 @@ prepared.write_images("molecule_images")
 
 ## JavaScript Quick Start
 
-Initialize the WASM module once. Value-style transforms leave their input
-unchanged; call `free()` when WASM objects are no longer needed.
+Importing the package initializes WASM automatically. Value-style transforms
+leave their input unchanged; call `free()` when WASM objects are no longer needed.
 
 ```js
-import init, * as ck from "@cosmol-studio/cosmolkit";
-
-await init();
+import * as ck from "@cosmol-studio/cosmolkit";
 
 const mol = ck.Molecule.fromSmiles("c1ccccc1O");
 const mol2d = mol.with2dCoordinates();
@@ -183,8 +181,8 @@ mol2d.free();
 mol.free();
 ```
 
-See the [JavaScript guide](https://kit.cosmol.org/javascript) for browser/CDN
-initialization and more examples.
+See the [JavaScript guide](https://kit.cosmol.org/javascript) for installation
+options and more examples.
 
 ## Protein Structures
 

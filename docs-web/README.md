@@ -104,17 +104,19 @@ Prepare both bindings before building the documentation:
 ```sh
 uv sync --group dev
 cargo install pyo3-introspection --version 0.30.1 --locked
+cargo install wasm-pack --version 0.15.1 --locked
 uv run --group dev python python/build_stubs.py
 npm ci --prefix docs --no-audit --no-fund
-python3 wasm/build.py --target web --out-dir target/docs-js-package
+wasm-pack build wasm --dev --target web --out-dir ../target/docs-js-package \
+    -- --locked --no-default-features --features full
 uv run --group dev python -m sphinx --keep-going -E -b html docs/source docs/build/html
 cargo check --manifest-path docs-web/Cargo.toml
 ```
 
 Reuse `target/docs-js-package` for documentation-only edits; generate it again
-after changing bindings. The WASM command uses the publication pipeline's
-temporary registry-gate policy and still compiles and tests JavaScript and
-TypeScript. It does not claim complete binding-registry validation.
+after changing bindings. This wasm-pack command builds the documentation's
+JavaScript package and declarations. Run binding checks separately as described
+in [wasm/dev.md](../wasm/dev.md).
 
 With the Dioxus CLI installed, run the web app from this directory:
 
