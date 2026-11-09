@@ -3,7 +3,9 @@
 `tetrahedral_stereo` is a read-only query using the same tetrahedral-center
 perception as `find_chiral_centers`. Python/JavaScript default
 `include_unassigned` to true; Rust takes an explicit bool. False returns only
-centers with specified configuration.
+centers with specified configuration and a CW/CCW tetrahedral direction.
+Without that direction, the configuration is undetermined even if perception
+retains a nonzero permutation: true returns `(center, None)`, false excludes it.
 
 ```rust
 pub struct TetrahedralStereo {

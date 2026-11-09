@@ -26,6 +26,51 @@ fails when that tag's changelog section is missing or empty.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-09
+
+### Added
+
+- Toolkit-free InChI reading through `cosmolkit_inchi::engine::read`, returning
+  raw atom and Stereo0D records together with status, warnings and diagnostics.
+  Added engine-only examples for stereochemical salts, isotopes and allenes.
+
+### Changed
+
+- The npm entry initializes WebAssembly automatically on import, using the same
+  ES module package in browsers and Node.js; no explicit initialization call is
+  needed when importing the package root.
+- Replaced the WASM build wrapper with explicit `wasm-pack` commands and aligned
+  package publication, examples and documentation builds with the shared entry.
+- JavaScript API documentation now reads the npm entry's declarations, excluding
+  the raw module's default initialization function from the public reference.
+- Updated the archived documentation links for 0.6.0 and 0.6.1.
+- Centralized `num-bigint` at workspace level, retaining version 0.4.8 for PyO3
+  compatibility. Updated `glam` to 0.34.3 and `hashify` to 0.3.2.
+
+### Fixed
+
+- Tetrahedral stereo queries no longer reject perceived centers that retain a
+  permutation but have no CW/CCW tetrahedral direction, including states produced
+  by PDB residue chirality cleanup. With `include_unassigned=True`, these return
+  `(center, None)`; with false, they are excluded. The molecule is not modified.
+
+Full comparison: [v0.6.1...v0.6.2](https://github.com/cosmol-studio/COSMolKit/compare/v0.6.1...v0.6.2)
+
+## [0.6.1] - 2026-11-02
+
+### Changed
+
+- Added concise Python representations for molecules, batches, fingerprints,
+  configuration objects and other bound values, showing useful summaries rather
+  than opaque object addresses and bounding large containers.
+- Python and JavaScript SVG/PNG drawing calls now default to 300 × 300 pixels
+  when dimensions are omitted. Python file-writing counterparts use the same
+  defaults.
+- Registered display and drawing-default contracts in the shared binding
+  metadata. Python distributions retain ABI3 compatibility with Python 3.9+.
+
+Full comparison: [v0.6.0...v0.6.1](https://github.com/cosmol-studio/COSMolKit/compare/v0.6.0...v0.6.1)
+
 ## [0.6.0] - 2026-11-01
 
 COSMolKit 0.6.0 updates the chemistry reference to RDKit 2026.09.1,

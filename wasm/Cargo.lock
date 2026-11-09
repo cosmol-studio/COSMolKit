@@ -134,7 +134,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-batch",
@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-alignment"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-macros",
@@ -171,7 +171,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-batch"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-io",
  "cosmolkit-macros",
@@ -183,7 +183,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-bio"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "compact_str",
  "cosmolkit-macros",
@@ -194,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-conformer"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-core",
@@ -211,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-macros",
  "cosmolkit-model",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-cx"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-depict"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-macros",
@@ -246,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-descriptors"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -256,7 +256,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-fingerprints"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-macros",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-forcefields"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-macros",
@@ -279,7 +279,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-inchi"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "bytemuck",
  "cpu-time",
@@ -290,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-io"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "compact_str",
  "cosmolkit-bio",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-macros"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-model"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-types",
  "serde_json",
@@ -327,7 +327,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-reaction"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -341,14 +341,14 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-ringdecomposer"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "cosmolkit-search"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -363,7 +363,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-smiles"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -375,7 +375,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-stereo"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-conformer",
  "cosmolkit-core",
@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-tautomer"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-macros",
@@ -411,7 +411,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-types"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "hashify",
  "serde",
@@ -420,7 +420,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-wasm"
-version = "0.6.2-rc.2"
+version = "0.6.2"
 dependencies = [
  "cosmolkit",
  "cosmolkit-tsify-macros",
@@ -608,9 +608,9 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.34.1"
+version = "0.34.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc148d4ddd3930c52f9e5ae79b89805c6f07e9ff417e7b083e0348cea60a5aba"
+checksum = "627003914c6057c9c8f0832ee4f870b5a4f599d0cfa83f4072675114860cd0ff"
 
 [[package]]
 name = "harfrust"
@@ -626,9 +626,9 @@ dependencies = [
 
 [[package]]
 name = "hashify"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66f5a65bf7824ada2de4a2cf9fa0981dabffc5392bb8550767c3c3d71ed52e4d"
+checksum = "04a037b1848eada162d6534c206770180e6bfc0eaa97292250c3e7179d8b1f73"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -49,18 +49,27 @@ pub fn tetrahedral_stereo(
     // RDKit✔️✔️:       for si in itms:
     // RDKit✔️✔️:         if si.type == StereoType.Atom_Tetrahedral and (includeUnassigned or si.specified
     // RDKit✔️✔️:                                                        == StereoSpecified.Specified):
-    // FindMolChiralCenters modern filtering; reuse its perception owner without
-    // computing CIP labels. Ordered ligands below are COSMolKit's value convention.
+    // Reuse modern perception without computing CIP labels. Ordered ligands
+    // are COSMolKit's value convention: a Specified flag without a tetrahedral
+    // CW/CCW descriptor cannot supply an orientation (e.g. retained PDB
+    // _chiralPermutation after residue chirality cleanup). Treat that result
+    // as undetermined here without altering the source perception or topology.
     for info in perception.stereo {
+        let determined = info.specified == PotentialStereoSpecified::Specified
+            && matches!(
+                info.descriptor,
+                PotentialStereoDescriptor::TetrahedralClockwise
+                    | PotentialStereoDescriptor::TetrahedralCounterclockwise
+            );
         if info.stereo_type != PotentialStereoType::AtomTetrahedral
-            || (!include_unassigned && info.specified != PotentialStereoSpecified::Specified)
+            || (!include_unassigned && !determined)
         {
             continue;
         }
         let PotentialStereoCenter::Atom(center) = info.centered_on else {
             unreachable!("tetrahedral perception uses atom identifiers");
         };
-        if info.specified != PotentialStereoSpecified::Specified {
+        if !determined {
             result.push(TetrahedralStereo {
                 center,
                 ligands: None,
@@ -94,15 +103,7 @@ pub fn tetrahedral_stereo(
         match info.descriptor {
             PotentialStereoDescriptor::TetrahedralClockwise => ligands.swap(0, 1),
             PotentialStereoDescriptor::TetrahedralCounterclockwise => {}
-            _ => {
-                return Err(
-                    cosmolkit_core::PotentialStereoError::InvalidChiralPermutation {
-                        atom: center,
-                        permutation: info.permutation,
-                    }
-                    .into(),
-                );
-            }
+            _ => unreachable!("determined tetrahedral configuration has a CW/CCW descriptor"),
         }
         result.push(TetrahedralStereo {
             center,
@@ -211,6 +212,79 @@ pub fn perceive_stereochemistry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn specified_permutation_without_tetrahedral_direction_is_undetermined() {
+        use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec};
+        use cosmolkit_types::Element;
+
+        // RDKit FindPotentialStereo: an unspecified four-coordinate Si with
+        // _chiralPermutation=2 is Atom_Tetrahedral/Specified/None/permutation=2.
+        // A retained permutation alone does not encode a CW/CCW descriptor.
+        let atoms = [
+            Element::SI,
+            Element::F,
+            Element::CL,
+            Element::BR,
+            Element::I,
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, element)| {
+            let spec = AtomSpec::new(element);
+            Atom::from_spec(
+                AtomId::new(index),
+                if index == 0 {
+                    spec.with_chiral_permutation(2)
+                } else {
+                    spec
+                },
+            )
+        })
+        .collect();
+        let bonds = (1..5)
+            .map(|index| {
+                Bond::from_spec(
+                    BondId::new(index - 1),
+                    BondSpec::new(AtomId::new(0), AtomId::new(index), BondOrder::Single),
+                )
+            })
+            .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let before = topology.clone();
+        let (valence, rings) =
+            crate::chiral_centers::prepare_chiral_state(&topology, None, None).unwrap();
+        let perception = potential_stereo(
+            &topology,
+            &valence,
+            &rings,
+            &PotentialStereoParams::default(),
+        )
+        .unwrap();
+        assert_eq!(perception.stereo.len(), 1);
+        assert_eq!(
+            perception.stereo[0].specified,
+            PotentialStereoSpecified::Specified
+        );
+        assert_eq!(
+            perception.stereo[0].descriptor,
+            PotentialStereoDescriptor::None
+        );
+        assert_eq!(perception.stereo[0].permutation, 2);
+        assert_eq!(
+            tetrahedral_stereo(&topology, None, None, true).unwrap(),
+            vec![TetrahedralStereo {
+                center: AtomId::new(0),
+                ligands: None
+            }]
+        );
+        assert!(
+            tetrahedral_stereo(&topology, None, None, false)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(topology, before);
+    }
+
     #[test]
     fn tetrahedral_stereo_canonicalizes_even_ligand_permutations() {
         let base = [

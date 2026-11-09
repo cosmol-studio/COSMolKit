@@ -15,6 +15,7 @@ cargo install wasm-pack --version 0.15.1 --locked
 npm ci --prefix docs --no-audit --no-fund
 wasm-pack build wasm --dev --target web --out-dir ../target/docs-js-package \
     -- --locked --no-default-features --features full
+cp wasm/js/index.d.ts target/docs-js-package/
 ```
 
 Reuse the built bindings and declarations for documentation-only edits. Build
@@ -25,7 +26,7 @@ both language guides and API references together:
 ```
 
 Python API signatures come from the native extension and generated stub;
-JavaScript API signatures come from the public TypeScript declarations via
+JavaScript API signatures come from the npm entry's TypeScript declarations via
 TypeDoc and sphinx-js. Do not maintain handwritten signature inventories.
 
 The [Dioxus site](../docs-web/README.md) consumes this output and preserves

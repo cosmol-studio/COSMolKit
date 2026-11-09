@@ -109,6 +109,7 @@ uv run --group dev python python/build_stubs.py
 npm ci --prefix docs --no-audit --no-fund
 wasm-pack build wasm --dev --target web --out-dir ../target/docs-js-package \
     -- --locked --no-default-features --features full
+cp wasm/js/index.d.ts target/docs-js-package/
 uv run --group dev python -m sphinx --keep-going -E -b html docs/source docs/build/html
 cargo check --manifest-path docs-web/Cargo.toml
 ```

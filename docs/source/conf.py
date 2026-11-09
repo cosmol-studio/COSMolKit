@@ -30,12 +30,11 @@ api_class_order = ["Molecule", "BioStructure", "Protein"]
 
 js_language = "typescript"
 # Only the generated public entry point, never wasm-bindgen's raw ABI exports.
-js_source_path = str(ROOT / "target/docs-js-package/cosmolkit_wasm.d.ts")
+js_source_path = str(ROOT / "target/docs-js-package/index.d.ts")
 if not Path(js_source_path).is_file():
     raise RuntimeError(
-        "Generate the full WASM declarations first: wasm-pack build wasm --dev "
-        "--target web --out-dir ../target/docs-js-package "
-        "-- --locked --no-default-features --features full"
+        "Generate the full WASM declarations and copy the public index.d.ts "
+        "as described in docs/README.md."
     )
 root_for_relative_js_paths = str(Path(js_source_path).parent)
 jsdoc_tsconfig_path = "../tsconfig.json"

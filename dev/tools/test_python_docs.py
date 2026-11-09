@@ -69,7 +69,9 @@ export class FactoryOnly {
     private constructor() {}
     static create(): FactoryOnly { return new FactoryOnly(); }
 }
+export default function initialize(): void {}
 ''')
+            (root / "index.ts").write_text("export * from './sample.js';\n")
             hook = (DOCS / "sphinx-js.config.ts").read_text().replace(
                 'new URL("../target/docs-js-package/enums.rst", import.meta.url)',
                 f'new URL({json.dumps((root / "enums.rst").as_uri())})',
@@ -77,21 +79,19 @@ export class FactoryOnly {
             (root / "sphinx-js.config.ts").write_text(hook)
             (root / "tsconfig.json").write_text(json.dumps({
                 "compilerOptions": {"target": "ES2022", "strict": True},
-                "include": ["sample.ts"],
+                "include": ["index.ts"],
             }))
             (root / "conf.py").write_text(
                 f"import sys\nsys.path.insert(0, {str(DOCS)!r})\n"
                 "extensions = ['sphinx_js', 'api_layout']\n"
-                "js_language = 'typescript'\njs_source_path = 'sample.ts'\n"
+                "js_language = 'typescript'\njs_source_path = 'index.ts'\n"
                 "root_for_relative_js_paths = '.'\n"
                 "jsdoc_tsconfig_path = 'tsconfig.json'\n"
                 f"ts_sphinx_js_config = {str(root / 'sphinx-js.config.ts')!r}\n"
                 "exclude_patterns = ['enums.rst', 'html', 'doctrees']\n"
             )
             (root / "index.rst").write_text(
-                "API\n===\n\n.. js:autoclass:: Example\n   :members:\n\n"
-                ".. js:autofunction:: query\n\n.. js:autofunction:: alias\n"
-                "\n.. js:autoclass:: FactoryOnly\n"
+                "API\n===\n\n.. js:automodule:: sample\n"
             )
             result = subprocess.run([
                 sys.executable, "-m", "sphinx", "-W", "--keep-going", "-E",
@@ -101,6 +101,7 @@ export class FactoryOnly {
             from sphinx import addnodes
             tree = pickle.loads((root / "doctrees/index.doctree").read_bytes())
             signatures = [n.astext() for n in tree.findall(addnodes.desc_signature)]
+            self.assertFalse(any("default(" in s or "initialize(" in s for s in signatures))
             self.assertTrue(any("options?:" in s and "null" in s for s in signatures), signatures)
             for name in ("choose", "query", "alias"):
                 signature = next(s for s in signatures if f"{name}(" in s)

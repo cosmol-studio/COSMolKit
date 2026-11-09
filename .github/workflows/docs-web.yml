@@ -85,6 +85,7 @@ jobs:
                   npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
                   wasm-pack build wasm --dev --target web --out-dir ../target/docs-js-package \
                       -- --locked --no-default-features --features full
+                  cp wasm/js/index.d.ts target/docs-js-package/
 
             - name: Build Sphinx source
               env:
