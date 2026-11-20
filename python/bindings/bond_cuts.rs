@@ -12,35 +12,47 @@ use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::error::Error;
 
-crate::configuration::type_projection! {
-    value(eq)
-    /// A BRICS site with two (source atom index, environment label) ends in rule-match order.
-    pub struct BricsBondMatch { pub(crate) inner: ck::BricsBondMatch }
-}
-
-#[pymethods]
-impl BricsBondMatch {
-    /// Zero-based index of the bond in the molecule used for discovery.
-    #[getter]
-    fn bond(&self) -> usize {
-        self.inner.bond().index()
-    }
-
-    /// Two (source atom index, BRICS environment label) pairs in rule order.
-    /// The first atom need not be the stored bond's begin atom.
-    #[getter]
-    fn ends(&self) -> ((usize, u8), (usize, u8)) {
-        let [left, right] = self.inner.ends().map(|(a, e)| (a.index(), e));
-        (left, right)
-    }
-
-    /// Select this source bond with each dummy label on its matched atom's side.
-    fn to_bond_cut(&self) -> BondCut {
-        BondCut {
-            inner: self.inner.to_bond_cut(),
+macro_rules! project_brics_match {
+    ($name:ident, $doc:literal) => {
+        crate::configuration::type_projection! {
+            value(eq)
+            #[doc = $doc]
+            pub struct $name { pub(crate) inner: ck::$name }
         }
-    }
+
+        #[pymethods]
+        impl $name {
+            /// Zero-based index of the bond in the molecule used for discovery.
+            #[getter]
+            fn bond(&self) -> usize {
+                self.inner.bond().index()
+            }
+
+            /// Two (source atom index, BRICS environment label) pairs in rule order.
+            /// The first atom need not be the stored bond's begin atom.
+            #[getter]
+            fn ends(&self) -> ((usize, u8), (usize, u8)) {
+                let [left, right] = self.inner.ends().map(|(a, e)| (a.index(), e));
+                (left, right)
+            }
+
+            /// Select this source bond with each dummy label on its matched atom's side.
+            fn to_bond_cut(&self) -> BondCut {
+                BondCut {
+                    inner: self.inner.to_bond_cut(),
+                }
+            }
+        }
+    };
 }
+project_brics_match!(
+    BricsBondMatch,
+    "A site with oriented standard BRICS endpoint labels."
+);
+project_brics_match!(
+    RBricsBondMatch,
+    "A site with oriented regular r-BRICS endpoint labels."
+);
 
 crate::configuration::type_projection! {
     value(eq)

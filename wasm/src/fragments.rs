@@ -81,30 +81,36 @@ mod brics {
     #[serde(transparent)]
     pub struct BricsEnds([(usize, u8); 2]);
 
-    #[wasm_bindgen]
-    pub struct BricsBondMatch(ck::BricsBondMatch);
+    macro_rules! project_brics_match {
+        ($name:ident) => {
+            #[wasm_bindgen]
+            pub struct $name(ck::$name);
 
-    #[wasm_bindgen]
-    impl BricsBondMatch {
-        #[wasm_bindgen(getter)]
-        pub fn bond(&self) -> usize {
-            self.0.bond().index()
-        }
+            #[wasm_bindgen]
+            impl $name {
+                #[wasm_bindgen(getter)]
+                pub fn bond(&self) -> usize {
+                    self.0.bond().index()
+                }
 
-        /// Two [atom index, environment label] pairs in rule-match order.
-        #[wasm_bindgen(getter)]
-        pub fn ends(&self) -> Result<tsify::Ts<BricsEnds>, JsValue> {
-            BricsEnds(self.0.ends().map(|(atom, label)| (atom.index(), label)))
-                .into_ts()
-                .map_err(JsError::from)
-                .map_err(Into::into)
-        }
+                /// Two [atom index, environment label] pairs in rule-match order.
+                #[wasm_bindgen(getter)]
+                pub fn ends(&self) -> Result<tsify::Ts<BricsEnds>, JsValue> {
+                    BricsEnds(self.0.ends().map(|(atom, label)| (atom.index(), label)))
+                        .into_ts()
+                        .map_err(JsError::from)
+                        .map_err(Into::into)
+                }
 
-        #[wasm_bindgen(js_name=toBondCut)]
-        pub fn to_bond_cut(&self) -> BondCut {
-            BondCut(self.0.to_bond_cut())
-        }
+                #[wasm_bindgen(js_name=toBondCut)]
+                pub fn to_bond_cut(&self) -> BondCut {
+                    BondCut(self.0.to_bond_cut())
+                }
+            }
+        };
     }
+    project_brics_match!(BricsBondMatch);
+    project_brics_match!(RBricsBondMatch);
 
     #[wasm_bindgen]
     impl Molecule {
@@ -122,6 +128,22 @@ mod brics {
             self.0
                 .find_brics_bonds()
                 .map(|rows| rows.into_iter().map(BricsBondMatch).collect())
+                .map_err(SubstructMatchError::from_rust)
+        }
+        /// Return unique terminal regular r-BRICS SMILES in unspecified order.
+        #[wasm_bindgen(js_name=decomposeRBrics)]
+        pub fn decompose_r_brics(&self) -> Result<Vec<String>, JsValue> {
+            self.0
+                .decompose_r_brics()
+                .map_err(BricsDecompositionError::from_rust)
+        }
+
+        /// Find regular r-BRICS sites on this topology; rediscover them after editing.
+        #[wasm_bindgen(js_name=findRBricsBonds)]
+        pub fn find_r_brics_bonds(&self) -> Result<Vec<RBricsBondMatch>, JsValue> {
+            self.0
+                .find_r_brics_bonds()
+                .map(|rows| rows.into_iter().map(RBricsBondMatch).collect())
                 .map_err(SubstructMatchError::from_rust)
         }
     }

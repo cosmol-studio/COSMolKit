@@ -4,7 +4,7 @@ from rdkit.Chem import rdMolHash
 
 TASKS = {"smiles_read","sanitize","kekulize","add_hs","remove_hs","potential_stereo",
          "distance_matrix","with_bonds_cut","fragments","largest_fragment","murcko_scaffold","net_scaffold","murcko_decompose",
-         "find_brics_bonds","brics_fragment_occurrences","decompose_brics"}
+         "find_brics_bonds","brics_fragment_occurrences","decompose_brics","find_r_brics_bonds","decompose_r_brics","r_brics_cut_graph"}
 
 def state(mol):
     return [[[a.GetAtomicNum(),a.GetFormalCharge(),a.GetIsotope(),a.GetNumExplicitHs(),
@@ -52,6 +52,18 @@ def chemistry(mol,task,p):
             result=[[int(s.type),int(s.specified),s.centeredOn,int(s.descriptor),s.permutation,list(s.controllingAtoms)] for s in rows]
             return [result,state(m) if p["clean"] else None]
         finally: Chem.SetAllowNontetrahedralChirality(before)
+    if task in ("find_r_brics_bonds", "r_brics_cut_graph", "decompose_r_brics"):
+        from upstream.r_brics import rBRICS_public as revised
+
+        if task == "decompose_r_brics":
+            return sorted(revised.rBRICSDecompose(m))
+        hits = list(revised.FindrBRICSBonds(m))
+        if task == "find_r_brics_bonds":
+            return [[m.GetBondBetweenAtoms(a, b).GetIdx(), a, int(x), b, int(y)] for (a, b), (x, y) in hits]
+        cut = revised.BreakrBRICSBonds(m, iter(hits))
+        endpoints = [a.GetIdx() if a.GetIdx() < m.GetNumAtoms() else -1 - a.GetIsotope() for a in cut.GetAtoms()]
+        return [cut.GetNumAtoms(), sorted(sorted([endpoints[b.GetBeginAtomIdx()], endpoints[b.GetEndAtomIdx()]]) for b in cut.GetBonds())]
+
     if task == "decompose_brics":
         from rdkit.Chem.BRICS import BRICSDecompose
 

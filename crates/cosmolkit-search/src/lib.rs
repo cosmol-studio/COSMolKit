@@ -14,7 +14,10 @@ mod smarts_parse;
 mod smarts_write;
 mod target;
 
-pub use brics::{BricsBondMatch, brics_reaction_smarts, find_brics_bonds};
+pub use brics::{
+    BricsBondMatch, RBricsBondMatch, brics_reaction_smarts, find_brics_bonds, find_r_brics_bonds,
+    r_brics_reaction_smarts,
+};
 pub use cx_lowering::{CxQueryLoweringError, apply_cx_to_query_graph};
 #[doc(hidden)]
 pub use cx_offsets::apply_cx_to_query_graph_with_offsets;

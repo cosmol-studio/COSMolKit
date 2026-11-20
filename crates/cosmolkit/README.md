@@ -82,7 +82,7 @@ cosmolkit = { version = "0.6.2", default-features = false, features = ["core", "
 | `conformer` | 3D conformers, ConfSeq, alignment, UFF/MMFF energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |
 | `search` | SMARTS and substructure search |
-| `fragmentation` | Standard BRICS bond discovery, labeled cuts and recursive decomposition |
+| `fragmentation` | Bond discovery, labeled cuts and recursive decomposition with standard BRICS or regular r-BRICS |
 | `reaction` | SMIRKS, reaction templates and execution, including search and SMILES |
 | `depict` | 2D layout and depiction |
 | `inchi` | InChI and InChIKey conversion |
@@ -248,6 +248,14 @@ returns canonical isomeric SMILES in unspecified order. For `CCCOCCC` the result
 contains `[4*]CCC` once and `[3*]O[3*]` once. Use the cut and extraction methods
 above when counting occurrences. With no applicable reaction, the result is
 the input's canonical SMILES. The query leaves the input unchanged.
+
+For regular [r-BRICS](https://github.com/BiomedSciAI/r-BRICS), use
+`mol.find_r_brics_bonds()?` to select bonds or `mol.decompose_r_brics()?`
+for unique terminal SMILES. On n-octane the standard finder reports no sites;
+the regular r-BRICS finder selects the central bond and labels the two ends
+20 and 21. Both cut methods accept the resulting `to_bond_cut()` selections.
+Recursive decomposition applies reactions to intermediate products and does
+not run the upstream `reBRICS` chain post-processing step.
 
 ## Protein Structures
 

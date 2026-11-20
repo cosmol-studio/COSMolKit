@@ -13,6 +13,9 @@ pub const TASKS: &[(&str, &str)] = &[
     ("potential_stereo", "core"),
     ("distance_matrix", "core"),
     ("find_brics_bonds", "fragmentation"),
+    ("find_r_brics_bonds", "r_brics"),
+    ("r_brics_cut_graph", "r_brics"),
+    ("decompose_r_brics", "r_brics"),
     ("decompose_brics", "fragmentation"),
     ("brics_fragment_occurrences", "fragmentation"),
     ("with_bonds_cut", "scaffolds"),
@@ -49,6 +52,14 @@ pub fn normalize(task: &str, p: Json) -> Result<Json> {
     }
     Ok(p)
 }
+fn oriented_site(bond: cosmolkit::BondId, [(a, x), (b, y)]: [(cosmolkit::AtomId, u8); 2]) -> Value {
+    Value::List(
+        [bond.index(), a.index(), x as usize, b.index(), y as usize]
+            .map(|n| Value::Int(n as i64))
+            .to_vec(),
+    )
+}
+
 fn flag(p: &Json, key: &str) -> Result<bool> {
     p[key]
         .as_bool()
@@ -205,30 +216,64 @@ pub fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
                 output.cleaned_molecule.as_ref().map_or(Value::Null, state),
             ])
         }
-        "decompose_brics" => {
-            let mut keys = m.decompose_brics()?;
+        "decompose_brics" | "decompose_r_brics" => {
+            let mut keys = if task == "decompose_brics" {
+                m.decompose_brics()?
+            } else {
+                m.decompose_r_brics()?
+            };
             keys.sort_unstable();
             Value::List(keys.into_iter().map(Value::Text).collect())
         }
         "find_brics_bonds" => Value::List(
             m.find_brics_bonds()?
                 .iter()
-                .map(|site| {
-                    let [(a, x), (b, y)] = site.ends();
-                    Value::List(
-                        [
-                            site.bond().index(),
-                            a.index(),
-                            x as usize,
-                            b.index(),
-                            y as usize,
-                        ]
-                        .map(|n| Value::Int(n as i64))
-                        .to_vec(),
-                    )
-                })
+                .map(|s| oriented_site(s.bond(), s.ends()))
                 .collect(),
         ),
+        "find_r_brics_bonds" => Value::List(
+            m.find_r_brics_bonds()?
+                .iter()
+                .map(|s| oriented_site(s.bond(), s.ends()))
+                .collect(),
+        ),
+        "r_brics_cut_graph" => {
+            let cuts: Vec<_> = m
+                .find_r_brics_bonds()?
+                .iter()
+                .map(|s| s.to_bond_cut())
+                .collect();
+            let cut = if cuts.is_empty() {
+                m.copy()
+            } else {
+                m.with_bonds_cut(&cuts)?
+            };
+            let endpoint = |id: cosmolkit::AtomId| {
+                if id.index() < m.num_atoms() {
+                    id.index() as i64
+                } else {
+                    -1 - i64::from(cut.atoms()[id.index()].isotope().unwrap_or(0))
+                }
+            };
+            let mut edges: Vec<_> = cut
+                .bonds()
+                .iter()
+                .map(|b| {
+                    let (a, b) = (endpoint(b.begin()), endpoint(b.end()));
+                    [a.min(b), a.max(b)]
+                })
+                .collect();
+            edges.sort_unstable();
+            Value::List(vec![
+                Value::Int(cut.num_atoms() as i64),
+                Value::List(
+                    edges
+                        .into_iter()
+                        .map(|row| Value::List(row.map(Value::Int).to_vec()))
+                        .collect(),
+                ),
+            ])
+        }
         "brics_fragment_occurrences" => {
             let cuts: Vec<_> = m
                 .find_brics_bonds()?

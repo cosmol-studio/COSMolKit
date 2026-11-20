@@ -11,6 +11,16 @@ test('BRICS sites preserve rule orientation and repeated fragments', () => {
     assert.deepEqual(mol.fragments().map(f => f.toSmiles()), ['[4*]CCC', '[3*]O[3*]', '[4*]CCC']);
 });
 
+test('regular r-BRICS labels are usable with the existing cut operation', () => {
+    const mol = new ck.Molecule('CCCCCCCC');
+    const [site] = mol.findRBricsBonds();
+    assert.ok(site instanceof ck.RBricsBondMatch);
+    assert.deepEqual(site.ends, [[3, 20], [4, 21]]);
+    assert.deepEqual(mol.decomposeRBrics().sort(), ['[20*]CCCC', '[21*]CCCC']);
+    mol.cutBonds_([site.toBondCut()]);
+    assert.equal(mol.toSmiles(), '[20*]CCCC.[21*]CCCC');
+});
+
 test('recursive BRICS returns unique terminal SMILES or the product error', () => {
     const mol = new ck.Molecule('CCCOCCC');
     assert.deepEqual(mol.decomposeBrics().sort(), ['[3*]O[3*]', '[4*]CCC']);

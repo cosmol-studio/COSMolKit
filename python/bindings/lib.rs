@@ -214,7 +214,7 @@ pub mod native {
     #[pymodule_export]
     use super::bond_cuts::{
         BondCut, BondCutError, BondCutErrorKind, BricsBondMatch, BricsDecompositionError,
-        BricsDecompositionErrorKind,
+        BricsDecompositionErrorKind, RBricsBondMatch,
     };
     #[pymodule_init]
     fn register_errors(module: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
@@ -13785,6 +13785,26 @@ pub mod native {
                 .map(|hits| {
                     hits.into_iter()
                         .map(|inner| BricsBondMatch { inner })
+                        .collect()
+                })
+                .map_err(SubstructMatchError::from_rust)
+        }
+
+        /// Return unique terminal canonical SMILES from regular r-BRICS in unspecified order.
+        /// If no BRICS reaction applies, return the molecule's canonical SMILES.
+        fn decompose_r_brics(&self, py: Python<'_>) -> PyResult<Vec<String>> {
+            py.detach(|| self.inner.decompose_r_brics())
+                .map_err(BricsDecompositionError::from_rust)
+        }
+
+        /// Return regular r-BRICS sites in rule order without cutting the molecule.
+        /// Convert the desired matches with `site.to_bond_cut()` before calling either cut method.
+        /// Re-run the search after editing: bond and atom indices refer to this topology.
+        fn find_r_brics_bonds(&self, py: Python<'_>) -> PyResult<Vec<RBricsBondMatch>> {
+            py.detach(|| self.inner.find_r_brics_bonds())
+                .map(|hits| {
+                    hits.into_iter()
+                        .map(|inner| RBricsBondMatch { inner })
                         .collect()
                 })
                 .map_err(SubstructMatchError::from_rust)

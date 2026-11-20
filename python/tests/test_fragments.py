@@ -27,6 +27,16 @@ def test_brics_sites_convert_to_selections_in_rule_order() -> None:
     assert [p.to_smiles() for p in source.fragments()] == ["[4*]CCC", "[3*]O[3*]", "[4*]CCC"]
 
 
+def test_regular_r_brics_on_octane() -> None:
+    mol = ck.Molecule.from_smiles("CCCCCCCC")
+    (site,) = mol.find_r_brics_bonds()
+    assert isinstance(site, ck.RBricsBondMatch)
+    assert site.ends == ((3, 20), (4, 21))
+    assert sorted(mol.decompose_r_brics()) == ["[20*]CCCC", "[21*]CCCC"]
+    assert mol.find_brics_bonds() == []
+    assert mol.with_bonds_cut([site.to_bond_cut()]).to_smiles() == "[20*]CCCC.[21*]CCCC"
+
+
 def test_recursive_brics_returns_unique_terminal_smiles() -> None:
     source = ck.Molecule.from_smiles("CCCOCCC")
     before = source.to_binary()

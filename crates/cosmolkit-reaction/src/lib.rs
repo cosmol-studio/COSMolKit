@@ -5,7 +5,7 @@
 mod brics;
 mod local_params;
 #[doc(hidden)]
-pub use brics::{BricsDecompositionError, decompose_brics};
+pub use brics::{BricsDecompositionError, decompose_brics, decompose_r_brics};
 mod management;
 mod model_error;
 mod product;

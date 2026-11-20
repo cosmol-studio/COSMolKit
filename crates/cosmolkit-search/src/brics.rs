@@ -42,29 +42,45 @@ use cosmolkit_core::BondCut;
 use cosmolkit_model::{AtomId, BondId};
 use std::{collections::HashSet, sync::LazyLock};
 
-/// A source bond and its two (atom, environment) ends in BRICS rule-match order.
+mod regular;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BricsBondMatch {
+struct OrientedSite {
     bond: BondId,
     ends: [(AtomId, u8); 2],
 }
 
-impl BricsBondMatch {
-    pub fn bond(&self) -> BondId {
-        self.bond
-    }
-    pub fn ends(&self) -> [(AtomId, u8); 2] {
-        self.ends
-    }
+macro_rules! bond_match {
+    ($(#[$meta:meta])* $name:ident) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct $name(OrientedSite);
+        impl $name {
+            pub fn bond(&self) -> BondId {
+                self.0.bond
+            }
+            pub fn ends(&self) -> [(AtomId, u8); 2] {
+                self.0.ends
+            }
 
-    /// Keep each label on its matched atom's side. Rediscover sites after editing the molecule.
-    pub fn to_bond_cut(&self) -> BondCut {
-        BondCut::from_matched_ends(
-            self.bond,
-            self.ends.map(|(atom, label)| (atom, usize::from(label))),
-        )
-    }
+            /// Keep each label on its matched atom's side. Rediscover sites after editing the molecule.
+            pub fn to_bond_cut(&self) -> BondCut {
+                BondCut::from_matched_ends(
+                    self.0.bond,
+                    self.0.ends.map(|(atom, label)| (atom, usize::from(label))),
+                )
+            }
+        }
+    };
 }
+bond_match!(
+    /// A bond with oriented standard BRICS environment labels.
+    BricsBondMatch
+);
+bond_match!(
+    /// A bond with oriented regular r-BRICS environment labels.
+    RBricsBondMatch
+);
 
 struct Rule {
     environments: [usize; 2],
@@ -101,45 +117,109 @@ const ENVIRONMENTS: &[(&str, &str)] = &[
     ("L16", "[c;$(c(:c):c)]"),
     ("L16b", "[c;$(c(:c):c)]"),
 ];
-const GROUPS: &[(&str, char, &[&str])] = &[
-    ("L1", '-', &["L3", "L5", "L10"]),
-    ("L3", '-', &["L4", "L13", "L14", "L15", "L16"]),
-    ("L4", '-', &["L5", "L11"]),
-    ("L5", '-', &["L12", "L14", "L16", "L13", "L15"]),
-    ("L6", '-', &["L13", "L14", "L15", "L16"]),
-    ("L7a", '=', &["L7b"]),
-    ("L8", '-', &["L9", "L10", "L13", "L14", "L15", "L16"]),
-    ("L9", '-', &["L13", "L14", "L15", "L16"]),
-    ("L10", '-', &["L13", "L14", "L15", "L16"]),
-    ("L11", '-', &["L13", "L14", "L15", "L16"]),
-    ("L13", '-', &["L14", "L15", "L16"]),
-    ("L14", '-', &["L14", "L15", "L16"]),
-    ("L15", '-', &["L16"]),
-    ("L16", '-', &["L16"]),
-];
+struct RuleSet {
+    environments: &'static [(&'static str, &'static str)],
+    groups: &'static [&'static [(&'static str, &'static str, &'static str)]],
+}
+
+const STANDARD: RuleSet = RuleSet {
+    environments: ENVIRONMENTS,
+    groups: &[
+        &[("L1", "L3", "-"), ("L1", "L5", "-"), ("L1", "L10", "-")],
+        &[
+            ("L3", "L4", "-"),
+            ("L3", "L13", "-"),
+            ("L3", "L14", "-"),
+            ("L3", "L15", "-"),
+            ("L3", "L16", "-"),
+        ],
+        &[("L4", "L5", "-"), ("L4", "L11", "-")],
+        &[
+            ("L5", "L12", "-"),
+            ("L5", "L14", "-"),
+            ("L5", "L16", "-"),
+            ("L5", "L13", "-"),
+            ("L5", "L15", "-"),
+        ],
+        &[
+            ("L6", "L13", "-"),
+            ("L6", "L14", "-"),
+            ("L6", "L15", "-"),
+            ("L6", "L16", "-"),
+        ],
+        &[("L7a", "L7b", "=")],
+        &[
+            ("L8", "L9", "-"),
+            ("L8", "L10", "-"),
+            ("L8", "L13", "-"),
+            ("L8", "L14", "-"),
+            ("L8", "L15", "-"),
+            ("L8", "L16", "-"),
+        ],
+        &[
+            ("L9", "L13", "-"),
+            ("L9", "L14", "-"),
+            ("L9", "L15", "-"),
+            ("L9", "L16", "-"),
+        ],
+        &[
+            ("L10", "L13", "-"),
+            ("L10", "L14", "-"),
+            ("L10", "L15", "-"),
+            ("L10", "L16", "-"),
+        ],
+        &[
+            ("L11", "L13", "-"),
+            ("L11", "L14", "-"),
+            ("L11", "L15", "-"),
+            ("L11", "L16", "-"),
+        ],
+        &[
+            ("L13", "L14", "-"),
+            ("L13", "L15", "-"),
+            ("L13", "L16", "-"),
+        ],
+        &[
+            ("L14", "L14", "-"),
+            ("L14", "L15", "-"),
+            ("L14", "L16", "-"),
+        ],
+        &[("L15", "L16", "-")],
+        &[("L16", "L16", "-")],
+    ],
+};
 
 struct RuleDefinition {
     environments: [usize; 2],
     labels: [u8; 2],
-    bond: char,
+    bond: &'static str,
 }
 
-fn definitions() -> impl Iterator<Item = impl Iterator<Item = RuleDefinition>> {
-    GROUPS.iter().map(|&(left, bond, partners)| {
-        partners.iter().map(move |&right| RuleDefinition {
-            environments: [left, right].map(|key| {
-                ENVIRONMENTS
-                    .iter()
-                    .position(|(name, _)| *name == key)
-                    .expect("known BRICS environment")
-            }),
-            labels: [left, right].map(|key| {
-                key.trim_matches(|c: char| c.is_ascii_alphabetic())
-                    .parse()
-                    .expect("numeric BRICS label")
-            }),
-            bond,
-        })
+fn definitions(
+    set: &'static RuleSet,
+) -> impl Iterator<Item = impl Iterator<Item = RuleDefinition>> {
+    set.groups.iter().map(move |group| {
+        group
+            .iter()
+            .map(move |&(left, right, bond)| RuleDefinition {
+                environments: [left, right].map(|key| {
+                    set.environments
+                        .iter()
+                        .position(|(name, _)| *name == key)
+                        .expect("known BRICS environment")
+                }),
+                labels: [left, right].map(|key| {
+                    key.trim_matches(|c: char| c.is_ascii_alphabetic())
+                        .parse()
+                        .expect("numeric BRICS label")
+                }),
+                // rBRICS_public.py, init_reactions: if "@" not in bnd: #Leili
+                bond: match bond {
+                    "-" => "-;!@",
+                    "=" => "=;!@",
+                    explicit => explicit,
+                },
+            })
     })
 }
 
@@ -148,21 +228,31 @@ fn definitions() -> impl Iterator<Item = impl Iterator<Item = RuleDefinition>> {
 pub fn brics_reaction_smarts() -> Vec<Vec<String>> {
     // RDKit source: rdkit/Chem/BRICS.py, smartsGps
     // RDKit❗✔️:     sma = '[$(%s):1]%s;!@[$(%s):2]>>[%s*]-[*:1].[%s*]-[*:2]' % (r1, bnd, r2, g1, g2)
-    definitions()
+    reaction_smarts(&STANDARD)
+}
+
+#[doc(hidden)]
+pub fn r_brics_reaction_smarts() -> Vec<Vec<String>> {
+    reaction_smarts(&regular::REGULAR)
+}
+
+fn reaction_smarts(set: &'static RuleSet) -> Vec<Vec<String>> {
+    // r-BRICS❗✔️:         sma = '[$(%s):1]%s[$(%s):2]>>[%s*]-[*:1].[%s*]-[*:2]' % (r1, bnd, r2, g1, g2)
+    definitions(set)
         .map(|group| {
             group
                 .map(|rule| {
-                    let [a, b] = rule.environments.map(|i| ENVIRONMENTS[i].1);
+                    let [a, b] = rule.environments.map(|i| set.environments[i].1);
                     let [x, y] = rule.labels;
                     let bond = rule.bond;
-                    format!("[$({a}):1]{bond};!@[$({b}):2]>>[{x}*]-[*:1].[{y}*]-[*:2]")
+                    format!("[$({a}):1]{bond}[$({b}):2]>>[{x}*]-[*:1].[{y}*]-[*:2]")
                 })
                 .collect()
         })
         .collect()
 }
 
-fn compile_rules() -> Rules {
+fn compile_rules(set: &'static RuleSet) -> Rules {
     // RDKit✔️✔️: for env, sma in environs.items():
     //   environMatchers[env] = Chem.MolFromSmarts(sma)
     // RDKit✔️✔️: for i, compats in enumerate(reactionDefs):
@@ -180,30 +270,48 @@ fn compile_rules() -> Rules {
         )
         .expect("valid built-in BRICS query graph")
     };
-    let bonds = definitions()
+    let bonds = definitions(set)
         .flatten()
         .map(|rule| {
-            let [a, b] = rule.environments.map(|i| ENVIRONMENTS[i].1);
+            let [a, b] = rule.environments.map(|i| set.environments[i].1);
             let bond = rule.bond;
             Rule {
                 environments: rule.environments,
                 labels: rule.labels,
-                pattern: compile(&format!("[$({a})]{bond};!@[$({b})]")),
+                pattern: compile(&format!("[$({a})]{bond}[$({b})]")),
             }
         })
         .collect();
     Rules {
-        environments: ENVIRONMENTS.iter().map(|(_, s)| compile(s)).collect(),
+        environments: set.environments.iter().map(|(_, s)| compile(s)).collect(),
         bonds,
     }
 }
 
-static RULES: LazyLock<Rules> = LazyLock::new(compile_rules);
+static RULES: LazyLock<Rules> = LazyLock::new(|| compile_rules(&STANDARD));
+static R_BRICS_RULES: LazyLock<Rules> = LazyLock::new(|| compile_rules(&regular::REGULAR));
 
 /// Return eligible bonds once each. No output molecule or fragment is constructed.
 pub fn find_brics_bonds(
     target: &SearchTarget<'_>,
 ) -> Result<Vec<BricsBondMatch>, SubstructMatchError> {
+    find_sites(target, &RULES, BricsBondMatch)
+}
+
+/// Find regular r-BRICS matches in upstream rule order.
+pub fn find_r_brics_bonds(
+    target: &SearchTarget<'_>,
+) -> Result<Vec<RBricsBondMatch>, SubstructMatchError> {
+    find_sites(target, &R_BRICS_RULES, RBricsBondMatch)
+}
+
+fn find_sites<T>(
+    target: &SearchTarget<'_>,
+    rules: &Rules,
+    wrap: fn(OrientedSite) -> T,
+) -> Result<Vec<T>, SubstructMatchError> {
+    // r-BRICS❗✔️:   for env,patt in environMatchers.items(): #Leili
+    //     envMatches[env]=mol.HasSubstructMatch(patt)
     let context = build_query_match_context(target);
     let first = SubstructMatchParams {
         max_matches: 1,
@@ -212,8 +320,8 @@ pub fn find_brics_bonds(
     let params = SubstructMatchParams::default();
     // RDKit✔️✔️: for env, patt in environMatchers.items():
     //     envMatches[env] = mol.HasSubstructMatch(patt)
-    let mut present = Vec::with_capacity(RULES.environments.len());
-    for env in &RULES.environments {
+    let mut present = Vec::with_capacity(rules.environments.len());
+    for env in &rules.environments {
         present.push(
             !try_get_substruct_atom_matches_with_compiled_query_and_context(
                 target,
@@ -239,7 +347,7 @@ pub fn find_brics_bonds(
     //           yield (((match[0], match[1]), (i1, i2)))
     let mut matches = Vec::new();
     let mut used = HashSet::new();
-    for rule in &RULES.bonds {
+    for rule in &rules.bonds {
         if !rule.environments.iter().all(|&i| present[i]) {
             continue;
         }
@@ -253,12 +361,12 @@ pub fn find_brics_bonds(
         )? {
             let bond = BondId::new(hit.bond_mapping[0]);
             if used.insert(bond) {
-                matches.push(BricsBondMatch {
+                matches.push(wrap(OrientedSite {
                     bond,
                     ends: std::array::from_fn(|i| {
                         (AtomId::new(hit.atom_mapping[i]), rule.labels[i])
                     }),
-                });
+                }));
             }
         }
     }

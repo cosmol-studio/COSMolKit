@@ -191,7 +191,7 @@ pub use sdf_batch::{BatchExportParams, SdfBatchIterator, SdfReaderBatchIterator}
 #[cfg(feature = "cap-fragmentation")]
 mod fragmentation;
 #[cfg(feature = "cap-fragmentation")]
-pub use cosmolkit_search::BricsBondMatch;
+pub use cosmolkit_search::{BricsBondMatch, RBricsBondMatch};
 #[cfg(feature = "cap-search")]
 pub mod search;
 #[cfg(any(feature = "cap-fragmentation", feature = "cap-search"))]

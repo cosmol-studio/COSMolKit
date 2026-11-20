@@ -1,6 +1,8 @@
-//! Default terminal products from RDKit Chem/BRICS.py.
+//! Terminal products from RDKit BRICS and regular r-BRICS decomposition.
 //
 //  Copyright (c) 2009, Novartis Institutes for BioMedical Research Inc.
+//  All rights reserved.
+//  Copyright (c) 2022, IBM LLC, Leili Zhang, Vasu Rao, Wendy Cornell
 //  All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -14,6 +16,10 @@
 //       disclaimer in the documentation and/or other materials provided
 //       with the distribution.
 //     * Neither the name of Novartis Institutes for BioMedical Research Inc.
+//       nor the names of its contributors may be used to endorse or promote
+//       products derived from this software without specific prior written permission.
+//
+//     * Neither the name of International Business Machine
 //       nor the names of its contributors may be used to endorse or promote
 //       products derived from this software without specific prior written permission.
 //
@@ -50,9 +56,14 @@ pub enum BricsDecompositionError {
     Encoding(#[from] std::string::FromUtf8Error),
 }
 
-static REACTIONS: LazyLock<Vec<Vec<Reaction>>> = LazyLock::new(|| {
+static REACTIONS: LazyLock<Vec<Vec<Reaction>>> =
+    LazyLock::new(|| prepare_reactions(cosmolkit_search::brics_reaction_smarts()));
+static R_BRICS_REACTIONS: LazyLock<Vec<Vec<Reaction>>> =
+    LazyLock::new(|| prepare_reactions(cosmolkit_search::r_brics_reaction_smarts()));
+
+fn prepare_reactions(groups: Vec<Vec<String>>) -> Vec<Vec<Reaction>> {
     // RDKit❗✔️: reactions = tuple([[Reactions.ReactionFromSmarts(y) for y in x] for x in smartsGps])
-    cosmolkit_search::brics_reaction_smarts()
+    groups
         .into_iter()
         .map(|group| {
             group
@@ -67,7 +78,7 @@ static REACTIONS: LazyLock<Vec<Vec<Reaction>>> = LazyLock::new(|| {
                 .collect()
         })
         .collect()
-});
+}
 
 struct Product {
     record: SmilesRecord,
@@ -119,8 +130,32 @@ fn canonical_key(input: ReactionInput<'_>) -> Result<String, BricsDecompositionE
     Ok(String::from_utf8(bytes.into_bytes())?)
 }
 
+/// Enumerate unique canonical isomeric SMILES of terminal regular r-BRICS products.
+pub fn decompose_r_brics(
+    source: ReactionInput<'_>,
+) -> Result<Vec<String>, BricsDecompositionError> {
+    terminal_products(
+        source,
+        &R_BRICS_REACTIONS,
+        FailedSanitization::RejectSequence,
+    )
+}
+
 /// Enumerate unique canonical isomeric SMILES of terminal standard BRICS products.
 pub fn decompose_brics(source: ReactionInput<'_>) -> Result<Vec<String>, BricsDecompositionError> {
+    terminal_products(source, &REACTIONS, FailedSanitization::RetainUnkeyedProduct)
+}
+
+enum FailedSanitization {
+    RejectSequence,
+    RetainUnkeyedProduct,
+}
+
+fn terminal_products(
+    source: ReactionInput<'_>,
+    reactions: &[Vec<Reaction>],
+    failed: FailedSanitization,
+) -> Result<Vec<String>, BricsDecompositionError> {
     // RDKit source: rdkit/Chem/BRICS.py, BRICSDecompose (default arguments).
     // RDKit❗❗:   mSmi = Chem.MolToSmiles(mol)
     //   activePool = {mSmi: mol}
@@ -137,7 +172,7 @@ pub fn decompose_brics(source: ReactionInput<'_>) -> Result<Vec<String>, BricsDe
     let mut active = VecDeque::from([(root, Reactant::Source(source))]);
     let params = ReactionRunParams::default();
 
-    for group in &*REACTIONS {
+    for group in reactions {
         let mut survivors = VecDeque::new();
         while let Some((key, molecule)) = active.pop_front() {
             let input = match &molecule {
@@ -177,6 +212,13 @@ pub fn decompose_brics(source: ReactionInput<'_>) -> Result<Vec<String>, BricsDe
                                     break;
                                 }
                                 candidates.push(Ok((Rc::<str>::from(smiles), product)));
+                            }
+                            // rBRICS_public.py::rBRICSDecompose
+                            // r-BRICS❗✔️:               except:
+                            //                 seqOk=False #Issue 1
+                            //                 continue
+                            Err(_) if matches!(failed, FailedSanitization::RejectSequence) => {
+                                accepted = false
                             }
                             Err(err) => candidates.push(Err(err)),
                         }

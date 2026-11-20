@@ -48,6 +48,16 @@ to those matrices; fixed special-regression recipes are not randomized.
 
 ## Inputs and results
 
+The `r_brics` suite uses the regular rules from [BiomedSciAI/r-BRICS at
+03938c2](https://github.com/BiomedSciAI/r-BRICS/tree/03938c2fd0f16abfcb7c197d4544a23c86a4b530)
+with the pinned RDKit wheel. The upstream `rBRICS_public.py` in `tools/upstream/r_brics/`
+(SHA-256 `cdf46dc3652702b12eb7910e5a47c2ee4c0605d67291bd8f672cad54e4ca6617`)
+is used only during reference preparation. Compare ordered sites, the cut graph
+(original atom indices and dummy isotope labels, independent of dummy insertion
+order), and unique terminal SMILES. `BreakrBRICSBonds` receives the explicit
+match iterator even for an empty selection. The separate `reBRICS` post-pass
+is not part of this suite.
+
 InChI generation rejections compare the generation stage and exact engine
 return code (2: error, 3: fatal), only with an empty identifier. They count as
 matching source errors, not successful identifiers. Unknown failures remain
