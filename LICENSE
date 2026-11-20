@@ -21,7 +21,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 Third-party notice: the BRICS rules and algorithms in cosmolkit-search and
-cosmolkit-reaction are derived from RDKit Chem/BRICS.py.
+cosmolkit-reaction are derived from RDKit Chem/BRICS.py. The RECAP rules and
+hierarchy in cosmolkit-reaction are derived from RDKit Chem/Recap.py.
+
+Copyright (c) 2007, Novartis Institutes for BioMedical Research Inc.
 
 Copyright (c) 2009, Novartis Institutes for BioMedical Research Inc.
 All rights reserved.

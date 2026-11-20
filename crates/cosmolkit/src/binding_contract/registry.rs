@@ -10598,6 +10598,27 @@ binding_contract! {
           state:value_returning, operation:"murcko_scaffold",
           signature:fn(&crate::Molecule)->Result<crate::Molecule,crate::OperationError>, },
         #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"types.RecapDecomposition", item:type, owner:type_, rust:crate::RecapDecomposition, python:"RecapDecomposition", javascript:"RecapDecomposition", feature:"cap-fragmentation", status:native, role:value, },
+        #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"errors.RecapDecompositionError", item:type, owner:type_, rust:crate::RecapDecompositionError, python:"RecapDecompositionError", javascript:"RecapDecompositionError", feature:"cap-fragmentation", status:native, role:error, },
+        #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"errors.RecapLookupError", item:type, owner:type_, rust:crate::RecapLookupError, python:"RecapLookupError", javascript:"RecapLookupError", feature:"cap-fragmentation", status:native, role:error, },
+        #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"Molecule.decompose_recap",item:callable,owner:molecule,rust:crate::Molecule::decompose_recap,python:"decompose_recap",javascript:"decomposeRecap",feature:"cap-fragmentation",kind:instance,
+          parameters:[],output:crate::RecapDecomposition,error:crate::RecapDecompositionError,state:read_only,operation:none,signature:fn(&crate::Molecule)->Result<crate::RecapDecomposition,crate::RecapDecompositionError>, },
+        #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"RecapDecomposition.root",item:callable,owner:type_,rust:crate::RecapDecomposition::root,python:"root",javascript:"root",python_property:getter,javascript_property:getter,feature:"cap-fragmentation",status:native,kind:instance,
+          parameters:[],output:&str,error:none,state:read_only,operation:none,signature:fn(&crate::RecapDecomposition)->&str, },
+        #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"RecapDecomposition.parents",item:callable,owner:type_,rust:crate::RecapDecomposition::parents,python:"parents",javascript:"parents",feature:"cap-fragmentation",status:native,kind:instance,
+          parameters:[{name:product,type:&str,default:required}],output:Vec<String>,error:crate::RecapLookupError,state:read_only,operation:none,signature:fn(&crate::RecapDecomposition,&str)->Result<Vec<String>,crate::RecapLookupError>, },
+        #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"RecapDecomposition.children",item:callable,owner:type_,rust:crate::RecapDecomposition::children,python:"children",javascript:"children",feature:"cap-fragmentation",status:native,kind:instance,
+          parameters:[{name:product,type:&str,default:required}],output:Vec<String>,error:crate::RecapLookupError,state:read_only,operation:none,signature:fn(&crate::RecapDecomposition,&str)->Result<Vec<String>,crate::RecapLookupError>, },
+        #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"RecapDecomposition.leaves",item:callable,owner:type_,rust:crate::RecapDecomposition::leaves,python:"leaves",javascript:"leaves",feature:"cap-fragmentation",status:native,kind:instance,
+          parameters:[],output:Vec<String>,error:none,state:read_only,operation:none,signature:fn(&crate::RecapDecomposition)->Vec<String>, },
+        #[cfg(feature = "cap-fragmentation")]
         { semantic_id:"types.BricsBondMatch", item:type, owner:type_, rust:crate::BricsBondMatch, python:"BricsBondMatch", javascript:"BricsBondMatch", feature:"cap-fragmentation", status:native, role:value, },
         #[cfg(feature = "cap-fragmentation")]
         { semantic_id:"types.RBricsBondMatch", item:type, owner:type_, rust:crate::RBricsBondMatch, python:"RBricsBondMatch", javascript:"RBricsBondMatch", feature:"cap-fragmentation", status:native, role:value, },

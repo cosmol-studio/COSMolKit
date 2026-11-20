@@ -39,10 +39,10 @@ use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
 use std::sync::LazyLock;
 
-use cosmolkit_core::{RingInfo, SanitizeError, ValenceAssignment, sanitize_owned_topology};
-use cosmolkit_smiles::{SmilesParseError, SmilesRecord, SmilesRecordView, write_smiles};
-
-use crate::{Reaction, ReactionInput, ReactionProduct, ReactionRunError, ReactionRunParams};
+use crate::decomposition::{Product, Reactant, canonical_key};
+use crate::{Reaction, ReactionInput, ReactionRunError, ReactionRunParams};
+use cosmolkit_core::SanitizeError;
+use cosmolkit_smiles::SmilesParseError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BricsDecompositionError {
@@ -78,68 +78,6 @@ fn prepare_reactions(groups: Vec<Vec<String>>) -> Vec<Vec<Reaction>> {
                 .collect()
         })
         .collect()
-}
-
-struct Product {
-    record: SmilesRecord,
-    rings: Option<RingInfo>,
-    valence: Option<ValenceAssignment>,
-}
-
-impl Product {
-    fn sanitize(product: ReactionProduct) -> Result<Self, SanitizeError> {
-        // RDKit source: Code/GraphMol/MolOps.cpp, sanitizeMol
-        // RDKit❗✔️:   mol.clearComputedProps();
-        let mut properties = product.properties;
-        properties.clear_computed_props()?;
-        let mut sanitized = sanitize_owned_topology(product.topology, &Default::default())?;
-
-        // Drop the previous reaction's atom provenance before the SMILES writer
-        // copies this topology. Each subsequent reaction assigns its own indices.
-        for atom in &mut sanitized.topology.atoms {
-            if atom.prop("react_atom_idx").is_some() {
-                atom.clear_prop("react_atom_idx")?;
-            }
-            if atom.prop("react_idx").is_some() {
-                atom.clear_prop("react_idx")?;
-            }
-        }
-
-        Ok(Self {
-            record: SmilesRecord {
-                topology: sanitized.topology,
-                coordinates: product.coordinates,
-                properties,
-            },
-            rings: sanitized.final_rings,
-            valence: sanitized.final_valence,
-        })
-    }
-
-    fn as_input(&self) -> ReactionInput<'_> {
-        ReactionInput {
-            topology: &self.record.topology,
-            properties: &self.record.properties,
-            coordinates: &self.record.coordinates,
-            rings: self.rings.as_ref(),
-            valence: self.valence.as_ref(),
-        }
-    }
-}
-
-enum Reactant<'a> {
-    Source(ReactionInput<'a>),
-    Product(Product),
-}
-
-fn canonical_key(input: ReactionInput<'_>) -> Result<String, BricsDecompositionError> {
-    let bytes = write_smiles(SmilesRecordView {
-        topology: input.topology,
-        coordinates: input.coordinates,
-        properties: input.properties,
-        rings: input.rings,
-    })?;
-    Ok(String::from_utf8(bytes.into_bytes())?)
 }
 
 /// Enumerate unique canonical isomeric SMILES of terminal regular r-BRICS products.
@@ -179,7 +117,7 @@ fn terminal_products(
     //       matched = False
     //       nSmi = next(iter(activePool))
     //       mol = activePool.pop(nSmi)
-    let root = Rc::<str>::from(canonical_key(source)?);
+    let root = Rc::<str>::from(canonical_key::<BricsDecompositionError>(source)?);
     let mut seen = HashSet::from([Rc::clone(&root)]);
     let mut active = VecDeque::from([(root, Reactant::Source(source))]);
     let params = ReactionRunParams::default();
@@ -187,10 +125,7 @@ fn terminal_products(
     for group in reactions {
         let mut survivors = VecDeque::new();
         while let Some((key, molecule)) = active.pop_front() {
-            let input = match &molecule {
-                Reactant::Source(source) => *source,
-                Reactant::Product(product) => product.as_input(),
-            };
+            let input = molecule.as_input();
             let mut matched = false;
             for reaction in group {
                 // RDKit❗❗:         ps = reaction.RunReactants((mol, ))
@@ -218,7 +153,8 @@ fn terminal_products(
                         let n = raw.topology.atoms.len();
                         match Product::sanitize(raw) {
                             Ok(product) => {
-                                let smiles = canonical_key(product.as_input())?;
+                                let smiles =
+                                    canonical_key::<BricsDecompositionError>(product.as_input())?;
                                 if n <= smiles.bytes().filter(|&b| b == b'*').count() {
                                     accepted = false;
                                     break;
@@ -271,6 +207,7 @@ fn terminal_products(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cosmolkit_core::sanitize_owned_topology;
 
     #[test]
     fn terminal_membership_follows_the_staged_reactions() {

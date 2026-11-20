@@ -58,3 +58,18 @@ test('late label overflow preserves the molecule and identifies the failing cut'
     assert.throws(() => ck.BondCut.atBond(0, undefined, 0), e =>
         e instanceof ck.BondCutError && e.variant === ck.BondCutErrorKind.IncompleteLabels);
 });
+
+test('RECAP retains shared products and distinguishes missing keys from leaves', () => {
+    const g = new ck.Molecule('CC(=O)Nc1ccc(NC(=O)C)cc1').decomposeRecap();
+    const intermediate = '*Nc1ccc(NC(C)=O)cc1';
+    assert.deepEqual(g.parents('*C(C)=O').sort(), [intermediate, g.root]);
+    assert.deepEqual(g.children(g.root).sort(), ['*C(C)=O', intermediate]);
+    assert.deepEqual(g.leaves().sort(), ['*C(C)=O', '*Nc1ccc(N*)cc1']);
+    assert.deepEqual(g.children('*C(C)=O'), []);
+    for (const method of ['parents', 'children']) {
+        assert.throws(() => g[method](42), TypeError);
+        assert.throws(() => g[method]('absent'), e =>
+            e instanceof ck.RecapLookupError && e.details.product === 'absent');
+    }
+    assert.deepEqual(new ck.Molecule('C').decomposeRecap().leaves(), []);
+});

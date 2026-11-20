@@ -123,12 +123,14 @@ pub use inchi::{
 };
 #[cfg(feature = "cap-reaction")]
 mod reaction;
-#[cfg(feature = "cap-fragmentation")]
-pub use cosmolkit_reaction::BricsDecompositionError;
 #[cfg(all(feature = "cap-reaction", not(feature = "cap-smiles")))]
 pub use cosmolkit_reaction::CxSmilesFields;
 #[cfg(all(feature = "cap-reaction", not(feature = "cap-search")))]
 pub use cosmolkit_reaction::SubstructMatchParams;
+#[cfg(feature = "cap-fragmentation")]
+pub use cosmolkit_reaction::{
+    BricsDecompositionError, RecapDecomposition, RecapDecompositionError, RecapLookupError,
+};
 #[cfg(feature = "cap-reaction")]
 pub use cosmolkit_reaction::{
     CxParseError, ReactionApplyError, ReactionApplyParams, ReactionCoordinateSelection,

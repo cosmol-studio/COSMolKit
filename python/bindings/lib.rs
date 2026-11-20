@@ -214,7 +214,8 @@ pub mod native {
     #[pymodule_export]
     use super::bond_cuts::{
         BondCut, BondCutError, BondCutErrorKind, BricsBondMatch, BricsDecompositionError,
-        BricsDecompositionErrorKind, RBricsBondMatch,
+        BricsDecompositionErrorKind, RBricsBondMatch, RecapDecomposition, RecapDecompositionError,
+        RecapDecompositionErrorKind, RecapLookupError, RecapLookupErrorKind,
     };
     #[pymodule_init]
     fn register_errors(module: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
@@ -13770,6 +13771,13 @@ pub mod native {
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Decompose this molecule into a RECAP hierarchy of canonical product SMILES.
+        fn decompose_recap(&self, py: Python<'_>) -> PyResult<RecapDecomposition> {
+            py.detach(|| self.inner.decompose_recap())
+                .map(|inner| RecapDecomposition { inner })
+                .map_err(RecapDecompositionError::from_rust)
+        }
+
         /// Return unique terminal canonical SMILES in unspecified order.
         /// If no BRICS reaction applies, return the molecule's canonical SMILES.
         fn decompose_brics(&self, py: Python<'_>) -> PyResult<Vec<String>> {

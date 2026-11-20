@@ -257,6 +257,14 @@ the regular r-BRICS finder selects the central bond and labels the two ends
 Recursive decomposition applies reactions to intermediate products and does
 not run the upstream `reBRICS` chain post-processing step.
 
+Use `let graph = mol.decompose_recap()?;` to follow individual disconnections.
+For `CC(=O)Nc1ccc(NC(=O)C)cc1`, `graph.children(graph.root())?` returns
+the acetyl product `*C(C)=O` and the intermediate `*Nc1ccc(NC(C)=O)cc1`.
+Both the root and that intermediate appear in `graph.parents("*C(C)=O")?`.
+The leaves are `*C(C)=O` and `*Nc1ccc(N*)cc1`. If no reaction applies,
+`graph.leaves()` is empty. An unknown product key raises a lookup error in the
+bindings and returns `RecapLookupError` in Rust.
+
 ## Protein Structures
 
 ```rust

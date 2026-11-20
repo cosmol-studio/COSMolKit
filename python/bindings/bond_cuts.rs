@@ -79,7 +79,7 @@ impl BondCut {
     }
 }
 
-type BricsSource = Source<
+type DecompositionSource = Source<
     ErrorObject<crate::reaction_execution_errors::ReactionRunError>,
     Source<
         ErrorObject<crate::sanitize_errors::SanitizeError>,
@@ -97,7 +97,54 @@ error_projection!(BricsDecompositionError, BricsDecompositionErrorKind, ck::Bric
     ck::BricsDecompositionError::UnkeyedProduct(e) => crate::sanitize_errors::SanitizeError::from_rust(e.clone()),
     ck::BricsDecompositionError::Smiles(e) => crate::smiles_parse_errors::SmilesParseError::from_rust(e.clone()),
     ck::BricsDecompositionError::Encoding(e) => crate::utf8_errors::FromUtf8Error::from_rust(e.clone()),
-}), source = BricsSource);
+}), source = DecompositionSource);
+
+error_projection!(RecapDecompositionError, RecapDecompositionErrorKind, ck::RecapDecompositionError, "fragmentation", {
+    Reaction(_), UnkeyedProduct(_), Smiles(_), Encoding(_),
+}, cause = |error: &ck::RecapDecompositionError| Some(match error {
+    ck::RecapDecompositionError::Reaction(e) => crate::reaction_execution_errors::ReactionRunError::from_rust(e.clone()),
+    ck::RecapDecompositionError::UnkeyedProduct(e) => crate::sanitize_errors::SanitizeError::from_rust(e.clone()),
+    ck::RecapDecompositionError::Smiles(e) => crate::smiles_parse_errors::SmilesParseError::from_rust(e.clone()),
+    ck::RecapDecompositionError::Encoding(e) => crate::utf8_errors::FromUtf8Error::from_rust(e.clone()),
+}), source = DecompositionSource);
+
+error_projection!(RecapLookupError, RecapLookupErrorKind, ck::RecapLookupError, "fragmentation", {
+    UnknownProduct { product: String => |s: &String| s.clone() },
+});
+
+crate::configuration::type_projection! {
+    value(eq)
+    /// RECAP products and the direct disconnections relating them.
+    pub struct RecapDecomposition { pub(crate) inner: ck::RecapDecomposition }
+}
+
+#[pymethods]
+impl RecapDecomposition {
+    #[getter]
+    /// Canonical isomeric SMILES of the input molecule.
+    fn root(&self) -> &str {
+        self.inner.root()
+    }
+
+    /// Return direct precursors of a canonical product; unknown keys raise RecapLookupError.
+    fn parents(&self, product: &str) -> PyResult<Vec<String>> {
+        self.inner
+            .parents(product)
+            .map_err(RecapLookupError::from_rust)
+    }
+
+    /// Return direct products of a canonical precursor; unknown keys raise RecapLookupError.
+    fn children(&self, product: &str) -> PyResult<Vec<String>> {
+        self.inner
+            .children(product)
+            .map_err(RecapLookupError::from_rust)
+    }
+
+    /// Return unique terminal descendants, excluding the root, in unspecified order.
+    fn leaves(&self) -> Vec<String> {
+        self.inner.leaves()
+    }
+}
 
 type CutSource = Source<
     EditSource,

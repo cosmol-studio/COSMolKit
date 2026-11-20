@@ -44,12 +44,18 @@ def test_recursive_brics_returns_unique_terminal_smiles() -> None:
     assert source.to_binary() == before
 
 
-def test_recursive_brics_reports_unsanitizable_product() -> None:
+def test_decomposition_reports_unsanitizable_product() -> None:
     source = ck.Molecule.from_smiles("O=C([O-])C1=CC=C(N2N=C3[N]4=C2C5=CC=CC=C5[O-][Fe+3]4[O-]C6=CC=CC=C63)C=C1")
     with pytest.raises(ck.BricsDecompositionError) as caught:
         _ = source.decompose_brics()
     assert caught.value.variant.name == "UnkeyedProduct"
     assert isinstance(caught.value.__cause__, ck.SanitizeError)
+
+    with pytest.raises(ck.RecapDecompositionError) as recap_error:
+        _ = source.decompose_recap()
+    assert recap_error.value.variant.name == "UnkeyedProduct"
+    assert isinstance(recap_error.value.__cause__, ck.SanitizeError)
+
 
 
 def test_cut_attachment_sides_and_in_place_result() -> None:
@@ -82,3 +88,23 @@ def test_invalid_cut_reports_the_source_bond_without_modifying_the_receiver() ->
     with pytest.raises(ck.BondCutError) as incomplete:
         _ = ck.BondCut.at_bond(0, end_label=0)
     assert incomplete.value.variant.name == "IncompleteLabels"
+
+
+def test_recap_shared_product_and_missing_key() -> None:
+    source = ck.Molecule.from_smiles("CC(=O)Nc1ccc(NC(=O)C)cc1")
+    before = source.to_binary()
+    graph = source.decompose_recap()
+    intermediate = "*Nc1ccc(NC(C)=O)cc1"
+    assert sorted(graph.parents("*C(C)=O")) == [intermediate, graph.root]
+    assert sorted(graph.children(graph.root)) == ["*C(C)=O", intermediate]
+    assert sorted(graph.leaves()) == ["*C(C)=O", "*Nc1ccc(N*)cc1"]
+    assert graph.children("*C(C)=O") == []
+    assert source.to_binary() == before
+    with pytest.raises(ck.RecapLookupError) as missing:
+        _ = graph.children("unknown")
+    assert missing.value.product == "unknown"
+
+    uncut = ck.Molecule.from_smiles("C").decompose_recap()
+    assert uncut.root == "C"
+    assert uncut.children(uncut.root) == uncut.parents(uncut.root) == uncut.leaves() == []
+

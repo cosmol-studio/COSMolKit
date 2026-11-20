@@ -3,6 +3,9 @@
 //! The facade retains the sole live Molecule and runtime commit authority.
 
 mod brics;
+mod decomposition;
+mod recap;
+pub use recap::{RecapDecomposition, RecapDecompositionError, RecapLookupError, decompose_recap};
 mod local_params;
 #[doc(hidden)]
 pub use brics::{BricsDecompositionError, decompose_brics, decompose_r_brics};

@@ -4,7 +4,7 @@ from rdkit.Chem import rdMolHash
 
 TASKS = {"smiles_read","sanitize","kekulize","add_hs","remove_hs","potential_stereo",
          "distance_matrix","with_bonds_cut","fragments","largest_fragment","murcko_scaffold","net_scaffold","murcko_decompose",
-         "find_brics_bonds","brics_fragment_occurrences","decompose_brics","find_r_brics_bonds","decompose_r_brics","r_brics_cut_graph"}
+         "find_brics_bonds","brics_fragment_occurrences","decompose_brics","decompose_recap","find_r_brics_bonds","decompose_r_brics","r_brics_cut_graph"}
 
 def state(mol):
     return [[[a.GetAtomicNum(),a.GetFormalCharge(),a.GetIsotope(),a.GetNumExplicitHs(),
@@ -63,6 +63,19 @@ def chemistry(mol,task,p):
         cut = revised.BreakrBRICSBonds(m, iter(hits))
         endpoints = [a.GetIdx() if a.GetIdx() < m.GetNumAtoms() else -1 - a.GetIsotope() for a in cut.GetAtoms()]
         return [cut.GetNumAtoms(), sorted(sorted([endpoints[b.GetBeginAtomIdx()], endpoints[b.GetEndAtomIdx()]]) for b in cut.GetBonds())]
+
+    if task == "decompose_recap":
+        from rdkit.Chem import Recap
+
+        nodes = {}
+        root = Recap.RecapDecompose(m, allNodes=nodes)
+        keys = sorted(nodes)
+        indices = {key: index for index, key in enumerate(keys)}
+        rows = [[key, sorted(indices[p] for p in nodes[key].parents),
+                 sorted(indices[c] for c in nodes[key].children)] for key in keys]
+        # GetLeaves visits shared subtrees once per path. All interned nodes are reachable.
+        leaves = [indices[key] for key in keys if key != root.smiles and not nodes[key].children]
+        return [root.smiles, rows, leaves]
 
     if task == "decompose_brics":
         from rdkit.Chem.BRICS import BRICSDecompose

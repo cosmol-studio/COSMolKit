@@ -17,6 +17,7 @@ pub const TASKS: &[(&str, &str)] = &[
     ("r_brics_cut_graph", "r_brics"),
     ("decompose_r_brics", "r_brics"),
     ("decompose_brics", "fragmentation"),
+    ("decompose_recap", "fragmentation"),
     ("brics_fragment_occurrences", "fragmentation"),
     ("with_bonds_cut", "scaffolds"),
     ("fragments", "scaffolds"),
@@ -214,6 +215,49 @@ pub fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
             Value::List(vec![
                 Value::List(rows),
                 output.cleaned_molecule.as_ref().map_or(Value::Null, state),
+            ])
+        }
+        "decompose_recap" => {
+            let graph = m.decompose_recap()?;
+            let mut visited = std::collections::BTreeSet::new();
+            let mut pending = vec![graph.root().to_owned()];
+            while let Some(key) = pending.pop() {
+                if !visited.contains(&key) {
+                    pending.extend(graph.children(&key)?);
+                    visited.insert(key);
+                }
+            }
+
+            let indices: std::collections::HashMap<_, _> = visited
+                .iter()
+                .enumerate()
+                .map(|(index, key)| (key.as_str(), index as i64))
+                .collect();
+            let ids = |keys: Vec<String>| -> Result<Value> {
+                let mut values = keys
+                    .iter()
+                    .map(|key| {
+                        indices
+                            .get(key.as_str())
+                            .copied()
+                            .ok_or("RECAP traversal returned a nonreachable key")
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                values.sort_unstable();
+                Ok(Value::List(values.into_iter().map(Value::Int).collect()))
+            };
+            let mut rows = Vec::with_capacity(visited.len());
+            for key in &visited {
+                rows.push(Value::List(vec![
+                    Value::Text(key.clone()),
+                    ids(graph.parents(key)?)?,
+                    ids(graph.children(key)?)?,
+                ]));
+            }
+            Value::List(vec![
+                Value::Text(graph.root().to_owned()),
+                Value::List(rows),
+                ids(graph.leaves())?,
             ])
         }
         "decompose_brics" | "decompose_r_brics" => {

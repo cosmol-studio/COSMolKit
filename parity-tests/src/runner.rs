@@ -80,6 +80,8 @@ pub fn main() -> Result<()> {
                 "decompose_r_brics" | "find_r_brics_bonds" | "r_brics_cut_graph"
             ) {
                 Some("BiomedSciAI/r-BRICS@03938c2fd0f16abfcb7c197d4544a23c86a4b530".into())
+            } else if task == "decompose_recap" {
+                Some("recap-direct-relations-indexed-v1".into())
             } else {
                 crate::inchi::TASKS
                     .iter()

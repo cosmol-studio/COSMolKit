@@ -1,10 +1,17 @@
 use crate::{BricsBondMatch, Molecule, SubstructMatchError};
 
 impl Molecule {
+    /// Return the hierarchy of unique canonical products and their direct RECAP disconnections.
+    pub fn decompose_recap(
+        &self,
+    ) -> Result<crate::RecapDecomposition, crate::RecapDecompositionError> {
+        cosmolkit_reaction::decompose_recap(self.decomposition_input())
+    }
+
     /// Return unique terminal canonical isomeric SMILES from standard BRICS decomposition.
     /// Order is unspecified. An uncut molecule contributes its own SMILES.
     pub fn decompose_brics(&self) -> Result<Vec<String>, crate::BricsDecompositionError> {
-        cosmolkit_reaction::decompose_brics(self.brics_input())
+        cosmolkit_reaction::decompose_brics(self.decomposition_input())
     }
 
     /// Find standard BRICS sites in RDKit rule and match order, leaving the molecule unchanged.
@@ -14,7 +21,7 @@ impl Molecule {
     }
     /// Enumerate unique terminal SMILES with regular r-BRICS, without the reBRICS post-pass.
     pub fn decompose_r_brics(&self) -> Result<Vec<String>, crate::BricsDecompositionError> {
-        cosmolkit_reaction::decompose_r_brics(self.brics_input())
+        cosmolkit_reaction::decompose_r_brics(self.decomposition_input())
     }
 
     /// Return regular r-BRICS sites and their oriented environment labels in upstream order.
@@ -22,7 +29,7 @@ impl Molecule {
         cosmolkit_search::find_r_brics_bonds(&self.detached_search_target())
     }
 
-    fn brics_input(&self) -> cosmolkit_reaction::ReactionInput<'_> {
+    fn decomposition_input(&self) -> cosmolkit_reaction::ReactionInput<'_> {
         let cache = self.derived_cache_runtime();
         cosmolkit_reaction::ReactionInput {
             topology: self.topology(),
