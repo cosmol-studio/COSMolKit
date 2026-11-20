@@ -92,7 +92,19 @@ impl Product {
         // RDKit❗✔️:   mol.clearComputedProps();
         let mut properties = product.properties;
         properties.clear_computed_props()?;
-        let sanitized = sanitize_owned_topology(product.topology, &Default::default())?;
+        let mut sanitized = sanitize_owned_topology(product.topology, &Default::default())?;
+
+        // Drop the previous reaction's atom provenance before the SMILES writer
+        // copies this topology. Each subsequent reaction assigns its own indices.
+        for atom in &mut sanitized.topology.atoms {
+            if atom.prop("react_atom_idx").is_some() {
+                atom.clear_prop("react_atom_idx")?;
+            }
+            if atom.prop("react_idx").is_some() {
+                atom.clear_prop("react_idx")?;
+            }
+        }
+
         Ok(Self {
             record: SmilesRecord {
                 topology: sanitized.topology,
