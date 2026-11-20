@@ -10600,6 +10600,14 @@ binding_contract! {
         #[cfg(feature = "cap-fragmentation")]
         { semantic_id:"types.BricsBondMatch", item:type, owner:type_, rust:crate::BricsBondMatch, python:"BricsBondMatch", javascript:"BricsBondMatch", feature:"cap-fragmentation", status:native, role:value, },
         #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"errors.BricsDecompositionError", item:type, owner:type_, rust:crate::BricsDecompositionError,
+          python:"BricsDecompositionError", javascript:"BricsDecompositionError", feature:"cap-fragmentation", status:native, role:error, },
+        #[cfg(feature = "cap-fragmentation")]
+        { semantic_id:"Molecule.decompose_brics", item:callable, owner:molecule, rust:crate::Molecule::decompose_brics,
+          python:"decompose_brics", javascript:"decomposeBrics", feature:"cap-fragmentation", kind:instance,
+          parameters:[],output:Vec<String>,error:crate::BricsDecompositionError,state:read_only,operation:none,
+          signature:fn(&crate::Molecule)->Result<Vec<String>,crate::BricsDecompositionError>, },
+        #[cfg(feature = "cap-fragmentation")]
         { semantic_id:"Molecule.find_brics_bonds", item:callable, owner:molecule, rust:crate::Molecule::find_brics_bonds,
           python:"find_brics_bonds", javascript:"findBricsBonds", feature:"cap-fragmentation", kind:instance,
           parameters:[],output:Vec<crate::BricsBondMatch>,error:crate::SubstructMatchError,state:read_only,operation:none,

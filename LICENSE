@@ -20,8 +20,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Third-party notice: the BRICS rule table and bond discovery algorithm in
-crates/cosmolkit-search/src/brics.rs are derived from RDKit Chem/BRICS.py.
+Third-party notice: the BRICS rules and algorithms in cosmolkit-search and
+cosmolkit-reaction are derived from RDKit Chem/BRICS.py.
 
 Copyright (c) 2009, Novartis Institutes for BioMedical Research Inc.
 All rights reserved.

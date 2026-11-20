@@ -212,7 +212,10 @@ mod xyz_errors;
 #[pyo3::pymodule(name = "_native")]
 pub mod native {
     #[pymodule_export]
-    use super::bond_cuts::{BondCut, BondCutError, BondCutErrorKind, BricsBondMatch};
+    use super::bond_cuts::{
+        BondCut, BondCutError, BondCutErrorKind, BricsBondMatch, BricsDecompositionError,
+        BricsDecompositionErrorKind,
+    };
     #[pymodule_init]
     fn register_errors(module: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
         super::error_framework::register(module)
@@ -13767,6 +13770,13 @@ pub mod native {
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Return unique terminal canonical SMILES in unspecified order.
+        /// If no BRICS reaction applies, return the molecule's canonical SMILES.
+        fn decompose_brics(&self, py: Python<'_>) -> PyResult<Vec<String>> {
+            py.detach(|| self.inner.decompose_brics())
+                .map_err(BricsDecompositionError::from_rust)
+        }
+
         /// Return standard BRICS sites in rule order without cutting the molecule.
         /// Convert the desired matches with `site.to_bond_cut()` before calling either cut method.
         /// Re-run the search after editing: bond and atom indices refer to this topology.

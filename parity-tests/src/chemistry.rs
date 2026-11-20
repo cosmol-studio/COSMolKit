@@ -13,6 +13,7 @@ pub const TASKS: &[(&str, &str)] = &[
     ("potential_stereo", "core"),
     ("distance_matrix", "core"),
     ("find_brics_bonds", "fragmentation"),
+    ("decompose_brics", "fragmentation"),
     ("brics_fragment_occurrences", "fragmentation"),
     ("with_bonds_cut", "scaffolds"),
     ("fragments", "scaffolds"),
@@ -203,6 +204,11 @@ pub fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
                 Value::List(rows),
                 output.cleaned_molecule.as_ref().map_or(Value::Null, state),
             ])
+        }
+        "decompose_brics" => {
+            let mut keys = m.decompose_brics()?;
+            keys.sort_unstable();
+            Value::List(keys.into_iter().map(Value::Text).collect())
         }
         "find_brics_bonds" => Value::List(
             m.find_brics_bonds()?

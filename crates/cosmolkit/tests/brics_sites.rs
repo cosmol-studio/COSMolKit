@@ -3,6 +3,22 @@
 use cosmolkit::{Molecule, SmilesParseParams, SubstructMatchError};
 
 #[test]
+fn terminal_products_are_unique_and_do_not_mutate_the_receiver() {
+    for (smi, expected) in [
+        ("C", vec!["C"]),
+        ("C/C=C/C", vec!["[7*]CC"]),
+        ("CCCOCCC", vec!["[3*]O[3*]", "[4*]CCC"]),
+    ] {
+        let source = Molecule::from_smiles(smi).unwrap();
+        let before = source.to_smiles().unwrap();
+        let mut products = source.decompose_brics().unwrap();
+        products.sort();
+        assert_eq!(products, expected);
+        assert_eq!(source.to_smiles().unwrap(), before);
+    }
+}
+
+#[test]
 fn ether_matches_retain_order_labels_and_both_propyl_occurrences() {
     let input = Molecule::from_smiles("CCCOCCC").unwrap();
     let sites = input.find_brics_bonds().unwrap();

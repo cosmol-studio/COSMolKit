@@ -67,6 +67,26 @@ impl BondCut {
     }
 }
 
+type BricsSource = Source<
+    ErrorObject<crate::reaction_execution_errors::ReactionRunError>,
+    Source<
+        ErrorObject<crate::sanitize_errors::SanitizeError>,
+        Source<
+            ErrorObject<crate::smiles_parse_errors::SmilesParseError>,
+            ErrorObject<crate::utf8_errors::FromUtf8Error>,
+        >,
+    >,
+>;
+
+error_projection!(BricsDecompositionError, BricsDecompositionErrorKind, ck::BricsDecompositionError, "fragmentation", {
+    Reaction(_), UnkeyedProduct(_), Smiles(_), Encoding(_),
+}, cause = |error: &ck::BricsDecompositionError| Some(match error {
+    ck::BricsDecompositionError::Reaction(e) => crate::reaction_execution_errors::ReactionRunError::from_rust(e.clone()),
+    ck::BricsDecompositionError::UnkeyedProduct(e) => crate::sanitize_errors::SanitizeError::from_rust(e.clone()),
+    ck::BricsDecompositionError::Smiles(e) => crate::smiles_parse_errors::SmilesParseError::from_rust(e.clone()),
+    ck::BricsDecompositionError::Encoding(e) => crate::utf8_errors::FromUtf8Error::from_rust(e.clone()),
+}), source = BricsSource);
+
 type CutSource = Source<
     EditSource,
     Source<

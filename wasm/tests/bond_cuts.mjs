@@ -11,6 +11,16 @@ test('BRICS sites preserve rule orientation and repeated fragments', () => {
     assert.deepEqual(mol.fragments().map(f => f.toSmiles()), ['[4*]CCC', '[3*]O[3*]', '[4*]CCC']);
 });
 
+test('recursive BRICS returns unique terminal SMILES or the product error', () => {
+    const mol = new ck.Molecule('CCCOCCC');
+    assert.deepEqual(mol.decomposeBrics().sort(), ['[3*]O[3*]', '[4*]CCC']);
+    assert.equal(mol.toSmiles(), 'CCCOCCC');
+    const complex = new ck.Molecule('O=C([O-])C1=CC=C(N2N=C3[N]4=C2C5=CC=CC=C5[O-][Fe+3]4[O-]C6=CC=CC=C63)C=C1');
+    assert.throws(() => complex.decomposeBrics(), e =>
+        e instanceof ck.BricsDecompositionError && e.variant === ck.BricsDecompositionErrorKind.UnkeyedProduct &&
+        e.cause instanceof ck.SanitizeError);
+});
+
 test('cut methods preserve attachment sides and differ only in ownership', () => {
     const source = new ck.Molecule('CCO');
     const cuts = [ck.BondCut.atBond(1, 101, 202)];

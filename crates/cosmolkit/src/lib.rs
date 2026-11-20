@@ -123,6 +123,8 @@ pub use inchi::{
 };
 #[cfg(feature = "cap-reaction")]
 mod reaction;
+#[cfg(feature = "cap-fragmentation")]
+pub use cosmolkit_reaction::BricsDecompositionError;
 #[cfg(all(feature = "cap-reaction", not(feature = "cap-smiles")))]
 pub use cosmolkit_reaction::CxSmilesFields;
 #[cfg(all(feature = "cap-reaction", not(feature = "cap-search")))]
@@ -130,11 +132,15 @@ pub use cosmolkit_reaction::SubstructMatchParams;
 #[cfg(feature = "cap-reaction")]
 pub use cosmolkit_reaction::{
     CxParseError, ReactionApplyError, ReactionApplyParams, ReactionCoordinateSelection,
-    ReactionInitializationError, ReactionModelError, ReactionParseError, ReactionParseParams,
-    ReactionProductError, ReactionRole, ReactionRunError, ReactionRunParams,
-    ReactionSingleRunParams, ReactionTemplateRemovalParams, ReactionValidationError,
-    ReactionValidationIssue, ReactionValidationIssueKind, ReactionValidationParams,
-    ReactionValidationReport, ReactionValidationSeverity, ReactionWriteError, ReactionWriteParams,
+    ReactionModelError, ReactionParseError, ReactionParseParams, ReactionRunParams,
+    ReactionSingleRunParams, ReactionTemplateRemovalParams, ReactionValidationParams,
+    ReactionWriteError, ReactionWriteParams,
+};
+#[cfg(any(feature = "cap-reaction", feature = "cap-fragmentation"))]
+pub use cosmolkit_reaction::{
+    ReactionInitializationError, ReactionProductError, ReactionRole, ReactionRunError,
+    ReactionValidationError, ReactionValidationIssue, ReactionValidationIssueKind,
+    ReactionValidationReport, ReactionValidationSeverity,
 };
 #[cfg(feature = "cap-reaction")]
 pub(crate) use ops::{

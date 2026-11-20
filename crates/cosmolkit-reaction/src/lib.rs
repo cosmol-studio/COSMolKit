@@ -2,7 +2,10 @@
 //!
 //! The facade retains the sole live Molecule and runtime commit authority.
 
+mod brics;
 mod local_params;
+#[doc(hidden)]
+pub use brics::{BricsDecompositionError, decompose_brics};
 mod management;
 mod model_error;
 mod product;

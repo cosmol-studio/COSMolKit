@@ -528,7 +528,7 @@ pub fn run_reactants(
     run_reactants_source(reaction, inputs, params)
 }
 
-fn run_reactants_source(
+pub(crate) fn run_reactants_source(
     reaction: &Reaction,
     inputs: &[ReactionInput<'_>],
     params: &ReactionRunParams,

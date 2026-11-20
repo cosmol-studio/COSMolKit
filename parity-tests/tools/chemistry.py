@@ -4,7 +4,7 @@ from rdkit.Chem import rdMolHash
 
 TASKS = {"smiles_read","sanitize","kekulize","add_hs","remove_hs","potential_stereo",
          "distance_matrix","with_bonds_cut","fragments","largest_fragment","murcko_scaffold","net_scaffold","murcko_decompose",
-         "find_brics_bonds","brics_fragment_occurrences"}
+         "find_brics_bonds","brics_fragment_occurrences","decompose_brics"}
 
 def state(mol):
     return [[[a.GetAtomicNum(),a.GetFormalCharge(),a.GetIsotope(),a.GetNumExplicitHs(),
@@ -52,6 +52,11 @@ def chemistry(mol,task,p):
             result=[[int(s.type),int(s.specified),s.centeredOn,int(s.descriptor),s.permutation,list(s.controllingAtoms)] for s in rows]
             return [result,state(m) if p["clean"] else None]
         finally: Chem.SetAllowNontetrahedralChirality(before)
+    if task == "decompose_brics":
+        from rdkit.Chem.BRICS import BRICSDecompose
+
+        return sorted(BRICSDecompose(m))
+
     if task in ("find_brics_bonds", "brics_fragment_occurrences"):
         from rdkit.Chem.BRICS import FindBRICSBonds
 

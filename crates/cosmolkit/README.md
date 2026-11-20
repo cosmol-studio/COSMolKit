@@ -82,7 +82,7 @@ cosmolkit = { version = "0.6.2", default-features = false, features = ["core", "
 | `conformer` | 3D conformers, ConfSeq, alignment, UFF/MMFF energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |
 | `search` | SMARTS and substructure search |
-| `fragmentation` | Standard BRICS bond discovery, with labeled selections for the core cut operations |
+| `fragmentation` | Standard BRICS bond discovery, labeled cuts and recursive decomposition |
 | `reaction` | SMIRKS, reaction templates and execution, including search and SMILES |
 | `depict` | 2D layout and depiction |
 | `inchi` | InChI and InChIKey conversion |
@@ -242,6 +242,12 @@ and calling `fragments()` returns two `[4*]CCC` fragments and one `[3*]O[3*]`.
 If two rules match the same bond, the first rule supplies the labels; RDKit’s
 one-shot `FragmentOnBRICSBonds` visits the rules in reverse and can label that
 bond differently. Rerun discovery after editing the input topology.
+
+Use `mol.decompose_brics()?` for a vocabulary of unique terminal products. It
+returns canonical isomeric SMILES in unspecified order. For `CCCOCCC` the result
+contains `[4*]CCC` once and `[3*]O[3*]` once. Use the cut and extraction methods
+above when counting occurrences. With no applicable reaction, the result is
+the input's canonical SMILES. The query leaves the input unchanged.
 
 ## Protein Structures
 

@@ -222,8 +222,12 @@ mod reaction;
 mod reaction_calls;
 #[cfg(feature = "cap-reaction")]
 mod reaction_errors;
-#[cfg(feature = "cap-reaction")]
+#[cfg(any(feature = "cap-reaction", feature = "cap-fragmentation"))]
 mod reaction_execution_errors;
+#[cfg(any(feature = "cap-reaction", feature = "cap-fragmentation"))]
+mod reaction_validation_errors;
+#[cfg(any(feature = "cap-reaction", feature = "cap-fragmentation"))]
+mod reaction_validation_values;
 #[cfg(feature = "cap-reaction")]
 mod reaction_values;
 #[cfg(feature = "cap-bio")]

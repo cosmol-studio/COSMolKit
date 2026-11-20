@@ -16,7 +16,63 @@ crate::fields::value_array!(ck::BondCut, BondCuts, "ReadonlyArray<BondCut>");
 #[cfg(feature = "cap-fragmentation")]
 mod brics {
     use super::{BondCut, Molecule};
-    use crate::match_errors::SubstructMatchError;
+    use crate::{
+        errors::{enum_error, exception},
+        match_errors::SubstructMatchError,
+        storage::ReadonlyValue,
+    };
+    use wasm_bindgen::JsCast;
+
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(
+            typescript_type = "ReactionRunError | SanitizeError | SmilesParseError | FromUtf8Error"
+        )]
+        #[derive(Clone)]
+        pub type BricsDecompositionCause;
+    }
+
+    fn decomposition_cause(
+        owner: &ReadonlyValue<ck::BricsDecompositionError>,
+    ) -> Option<BricsDecompositionCause> {
+        use ck::BricsDecompositionError::*;
+        Some(
+            match owner.as_ref() {
+                Reaction(_) => crate::reaction_execution_errors::ReactionRunError::from_owner(
+                    owner.child(|e| match e {
+                        Reaction(cause) => cause,
+                        _ => unreachable!("immutable BRICS error"),
+                    }),
+                ),
+                UnkeyedProduct(_) => {
+                    crate::sanitize_errors::SanitizeError::from_owner(owner.child(|e| match e {
+                        UnkeyedProduct(cause) => cause,
+                        _ => unreachable!("immutable BRICS error"),
+                    }))
+                }
+                Smiles(_) => crate::smiles_parse_errors::SmilesParseError::from_owner(owner.child(
+                    |e| match e {
+                        Smiles(cause) => cause,
+                        _ => unreachable!("immutable BRICS error"),
+                    },
+                )),
+                Encoding(_) => {
+                    crate::external_errors::FromUtf8Error::from_owner(owner.child(|e| match e {
+                        Encoding(cause) => cause,
+                        _ => unreachable!("immutable BRICS error"),
+                    }))
+                }
+            }
+            .unchecked_into(),
+        )
+    }
+
+    enum_error!(BricsDecompositionError, BricsDecompositionErrorKind, ck::BricsDecompositionError, {
+        Reaction => ck::BricsDecompositionError::Reaction(_),
+        UnkeyedProduct => ck::BricsDecompositionError::UnkeyedProduct(_),
+        Smiles => ck::BricsDecompositionError::Smiles(_),
+        Encoding => ck::BricsDecompositionError::Encoding(_),
+    }, {}, source = BricsDecompositionCause, cause = decomposition_cause);
     use cosmolkit as ck;
     use tsify::Tsify;
     use wasm_bindgen::prelude::*;
@@ -52,6 +108,14 @@ mod brics {
 
     #[wasm_bindgen]
     impl Molecule {
+        /// Return unique terminal canonical SMILES in unspecified order.
+        #[wasm_bindgen(js_name=decomposeBrics)]
+        pub fn decompose_brics(&self) -> Result<Vec<String>, JsValue> {
+            self.0
+                .decompose_brics()
+                .map_err(BricsDecompositionError::from_rust)
+        }
+
         /// Find standard BRICS sites on this topology; rediscover them after editing.
         #[wasm_bindgen(js_name=findBricsBonds)]
         pub fn find_brics_bonds(&self) -> Result<Vec<BricsBondMatch>, JsValue> {

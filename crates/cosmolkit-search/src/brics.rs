@@ -77,6 +77,91 @@ struct Rules {
     bonds: Vec<Rule>,
 }
 
+const ENVIRONMENTS: &[(&str, &str)] = &[
+    ("L1", "[C;D3]([#0,#6,#7,#8])(=O)"),
+    ("L3", "[O;D2]-;!@[#0,#6,#1]"),
+    ("L4", "[C;!D1;!$(C=*)]-;!@[#6]"),
+    (
+        "L5",
+        "[N;!D1;!$(N=*);!$(N-[!#6;!#16;!#0;!#1]);!$([N;R]@[C;R]=O)]",
+    ),
+    ("L6", "[C;D3;!R](=O)-;!@[#0,#6,#7,#8]"),
+    ("L7a", "[C;D2,D3]-[#6]"),
+    ("L7b", "[C;D2,D3]-[#6]"),
+    ("#L8", "[C;!R;!D1]-;!@[#6]"),
+    ("L8", "[C;!R;!D1;!$(C!-*)]"),
+    ("L9", "[n;+0;$(n(:[c,n,o,s]):[c,n,o,s])]"),
+    ("L10", "[N;R;$(N(@C(=O))@[C,N,O,S])]"),
+    ("L11", "[S;D2](-;!@[#0,#6])"),
+    ("L12", "[S;D4]([#6,#0])(=O)(=O)"),
+    ("L13", "[C;$(C(-;@[C,N,O,S])-;@[N,O,S])]"),
+    ("L14", "[c;$(c(:[c,n,o,s]):[n,o,s])]"),
+    ("L14b", "[c;$(c(:[c,n,o,s]):[n,o,s])]"),
+    ("L15", "[C;$(C(-;@C)-;@C)]"),
+    ("L16", "[c;$(c(:c):c)]"),
+    ("L16b", "[c;$(c(:c):c)]"),
+];
+const GROUPS: &[(&str, char, &[&str])] = &[
+    ("L1", '-', &["L3", "L5", "L10"]),
+    ("L3", '-', &["L4", "L13", "L14", "L15", "L16"]),
+    ("L4", '-', &["L5", "L11"]),
+    ("L5", '-', &["L12", "L14", "L16", "L13", "L15"]),
+    ("L6", '-', &["L13", "L14", "L15", "L16"]),
+    ("L7a", '=', &["L7b"]),
+    ("L8", '-', &["L9", "L10", "L13", "L14", "L15", "L16"]),
+    ("L9", '-', &["L13", "L14", "L15", "L16"]),
+    ("L10", '-', &["L13", "L14", "L15", "L16"]),
+    ("L11", '-', &["L13", "L14", "L15", "L16"]),
+    ("L13", '-', &["L14", "L15", "L16"]),
+    ("L14", '-', &["L14", "L15", "L16"]),
+    ("L15", '-', &["L16"]),
+    ("L16", '-', &["L16"]),
+];
+
+struct RuleDefinition {
+    environments: [usize; 2],
+    labels: [u8; 2],
+    bond: char,
+}
+
+fn definitions() -> impl Iterator<Item = impl Iterator<Item = RuleDefinition>> {
+    GROUPS.iter().map(|&(left, bond, partners)| {
+        partners.iter().map(move |&right| RuleDefinition {
+            environments: [left, right].map(|key| {
+                ENVIRONMENTS
+                    .iter()
+                    .position(|(name, _)| *name == key)
+                    .expect("known BRICS environment")
+            }),
+            labels: [left, right].map(|key| {
+                key.trim_matches(|c: char| c.is_ascii_alphabetic())
+                    .parse()
+                    .expect("numeric BRICS label")
+            }),
+            bond,
+        })
+    })
+}
+
+/// Standard BRICS reaction templates in native reaction-group order.
+#[doc(hidden)]
+pub fn brics_reaction_smarts() -> Vec<Vec<String>> {
+    // RDKit source: rdkit/Chem/BRICS.py, smartsGps
+    // RDKit❗✔️:     sma = '[$(%s):1]%s;!@[$(%s):2]>>[%s*]-[*:1].[%s*]-[*:2]' % (r1, bnd, r2, g1, g2)
+    definitions()
+        .map(|group| {
+            group
+                .map(|rule| {
+                    let [a, b] = rule.environments.map(|i| ENVIRONMENTS[i].1);
+                    let [x, y] = rule.labels;
+                    let bond = rule.bond;
+                    format!("[$({a}):1]{bond};!@[$({b}):2]>>[{x}*]-[*:1].[{y}*]-[*:2]")
+                })
+                .collect()
+        })
+        .collect()
+}
+
 fn compile_rules() -> Rules {
     // RDKit✔️✔️: for env, sma in environs.items():
     //   environMatchers[env] = Chem.MolFromSmarts(sma)
@@ -89,76 +174,26 @@ fn compile_rules() -> Rules {
     //     patt = Chem.MolFromSmarts(patt)
     //     tmp.append((i1, i2, bType, patt))
     //   bondMatchers.append(tmp)
-    let environments = [
-        ("L1", "[C;D3]([#0,#6,#7,#8])(=O)"),
-        ("L3", "[O;D2]-;!@[#0,#6,#1]"),
-        ("L4", "[C;!D1;!$(C=*)]-;!@[#6]"),
-        (
-            "L5",
-            "[N;!D1;!$(N=*);!$(N-[!#6;!#16;!#0;!#1]);!$([N;R]@[C;R]=O)]",
-        ),
-        ("L6", "[C;D3;!R](=O)-;!@[#0,#6,#7,#8]"),
-        ("L7a", "[C;D2,D3]-[#6]"),
-        ("L7b", "[C;D2,D3]-[#6]"),
-        ("#L8", "[C;!R;!D1]-;!@[#6]"),
-        ("L8", "[C;!R;!D1;!$(C!-*)]"),
-        ("L9", "[n;+0;$(n(:[c,n,o,s]):[c,n,o,s])]"),
-        ("L10", "[N;R;$(N(@C(=O))@[C,N,O,S])]"),
-        ("L11", "[S;D2](-;!@[#0,#6])"),
-        ("L12", "[S;D4]([#6,#0])(=O)(=O)"),
-        ("L13", "[C;$(C(-;@[C,N,O,S])-;@[N,O,S])]"),
-        ("L14", "[c;$(c(:[c,n,o,s]):[n,o,s])]"),
-        ("L14b", "[c;$(c(:[c,n,o,s]):[n,o,s])]"),
-        ("L15", "[C;$(C(-;@C)-;@C)]"),
-        ("L16", "[c;$(c(:c):c)]"),
-        ("L16b", "[c;$(c(:c):c)]"),
-    ];
-    let groups: &[(&str, char, &[&str])] = &[
-        ("L1", '-', &["L3", "L5", "L10"]),
-        ("L3", '-', &["L4", "L13", "L14", "L15", "L16"]),
-        ("L4", '-', &["L5", "L11"]),
-        ("L5", '-', &["L12", "L14", "L16", "L13", "L15"]),
-        ("L6", '-', &["L13", "L14", "L15", "L16"]),
-        ("L7a", '=', &["L7b"]),
-        ("L8", '-', &["L9", "L10", "L13", "L14", "L15", "L16"]),
-        ("L9", '-', &["L13", "L14", "L15", "L16"]),
-        ("L10", '-', &["L13", "L14", "L15", "L16"]),
-        ("L11", '-', &["L13", "L14", "L15", "L16"]),
-        ("L13", '-', &["L14", "L15", "L16"]),
-        ("L14", '-', &["L14", "L15", "L16"]),
-        ("L15", '-', &["L16"]),
-        ("L16", '-', &["L16"]),
-    ];
     let compile = |smarts: &str| {
         CompiledQuery::compile(
             parse_smarts(smarts, &Default::default()).expect("valid built-in BRICS SMARTS"),
         )
         .expect("valid built-in BRICS query graph")
     };
-    let mut bonds = Vec::new();
-    for &(left, bond, partners) in groups {
-        for &right in partners {
-            let indices = [left, right].map(|key| {
-                environments
-                    .iter()
-                    .position(|(name, _)| *name == key)
-                    .expect("known BRICS environment")
-            });
-            let [a, b] = indices.map(|i| environments[i].1);
-            let labels = [left, right].map(|key| {
-                key.trim_matches(|c: char| c.is_ascii_alphabetic())
-                    .parse::<u8>()
-                    .expect("numeric BRICS label")
-            });
-            bonds.push(Rule {
-                environments: indices,
-                labels,
+    let bonds = definitions()
+        .flatten()
+        .map(|rule| {
+            let [a, b] = rule.environments.map(|i| ENVIRONMENTS[i].1);
+            let bond = rule.bond;
+            Rule {
+                environments: rule.environments,
+                labels: rule.labels,
                 pattern: compile(&format!("[$({a})]{bond};!@[$({b})]")),
-            });
-        }
-    }
+            }
+        })
+        .collect();
     Rules {
-        environments: environments.iter().map(|(_, s)| compile(s)).collect(),
+        environments: ENVIRONMENTS.iter().map(|(_, s)| compile(s)).collect(),
         bonds,
     }
 }
