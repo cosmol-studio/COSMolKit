@@ -9,6 +9,7 @@ pub use cosmolkit_ringdecomposer::RingDecomposerError;
 mod aromaticity;
 mod atropisomer;
 mod attachment_points;
+mod bond_cuts;
 mod bond_dirs;
 mod cip_ranks;
 mod cleanup;
@@ -62,6 +63,8 @@ pub use platform_threads::{
 
 pub use random::{RdkitRandomEngine, RdkitRandomGenerator, with_rdkit_random_generator};
 pub use stereo_order::{invert_atom_chirality, invert_bond_chirality};
+
+pub use bond_cuts::{BondCut, BondCutError, BondCutResult, cut_selected_bonds};
 
 /// Detached, source-ordered fragment extraction with explicit topology mappings.
 pub use fragments::{

@@ -679,6 +679,59 @@ impl<'a, Access> OpParts<'a, Access> {
         }
     }
 
+    /// Borrow the current blocks when the domain edit itself constructs a mapped replacement.
+    /// Checking out owned copies first would duplicate every conformer and topology row twice.
+    pub(super) fn transform_mapped_blocks_runtime(
+        &mut self,
+        body: impl FnOnce(
+            &TopologyBlock,
+            &CoordinateBlock,
+            &MoleculeProperties,
+        ) -> Result<
+            (
+                TopologyBlock,
+                CoordinateBlock,
+                MoleculeProperties,
+                TopologyMapping,
+            ),
+            OperationError,
+        >,
+    ) -> Result<(), OperationError> {
+        self.ensure_unsealed_runtime()?;
+        #[cfg(feature = "op-contracts")]
+        {
+            self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
+            self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
+            self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
+        }
+
+        let before = self.current_coordinates_candidate()?;
+        let (topology, coordinates, properties, mapping) = body(
+            self.current_topology_candidate()?,
+            before,
+            self.current_properties_candidate()?,
+        )?;
+        #[cfg(feature = "runtime-invariants")]
+        {
+            topology
+                .validate()
+                .map_err(OperationError::InvalidTopology)?;
+            coordinates
+                .validate_for_atom_count(topology.atoms.len())
+                .map_err(OperationError::InvalidCoordinates)?;
+        }
+        // Empty conformer collections have no floating-point rows to compare and no rows to grow.
+        let retain_coordinates = before.conformers_2d.is_empty()
+            && before.conformers_3d.is_empty()
+            && before == &coordinates;
+        self.topology = WorkingBlock::Installed(topology);
+        if !retain_coordinates {
+            self.coordinates = WorkingBlock::Installed(coordinates);
+        }
+        self.properties = WorkingBlock::Installed(properties);
+        self.record_topology_mapping_runtime(mapping)
+    }
+
     pub(super) fn with_mutable_candidate_blocks_runtime<R>(
         &mut self,
         body: impl FnOnce(

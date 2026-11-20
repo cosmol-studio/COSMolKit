@@ -202,6 +202,22 @@ molecule_ops! {
         invariant_profile: "largest_fragment_mapping_and_source_cow",
     }
 
+    #[cfg(feature = "cap-transforms")]
+    op with_bonds_cut(cuts: &[crate::BondCut]) {
+        method: with_bonds_cut,
+        docs: "Cut the selected source bonds and attach a labeled dummy on each side. The result is one possibly disconnected molecule. Empty selections, duplicate bonds, stale endpoints and dummy labels above 65535 are errors.",
+        impl_fn: crate::ops::fragments::with_bonds_cut_impl,
+        domain: topology, kind: strong,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [], invalidate: [valence, rings, ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: clear, requires_mapping: required,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity: required_now, parity_profile: "fragment_on_selected_bonds_rdkit",
+        invariant_profile: "bond_cut_mapping_attachment_sides_and_cow",
+        inplace: true, inplace_method: cut_bonds_,
+    }
+
     #[cfg(feature = "cap-hashing")]
     op murcko_scaffold() {
         method: murcko_scaffold,

@@ -216,6 +216,8 @@ extern "C" {
         typescript_type = "TransformError | CoordinateInputError | MoleculeFragmentsError"
     )]
     pub type TransformPayload;
+    #[wasm_bindgen(typescript_type = "BondCutError")]
+    pub type BondCutPayload;
     #[wasm_bindgen(typescript_type = "RadicalError")]
     pub type RadicalPayload;
     #[wasm_bindgen(typescript_type = "ConformerRunError")]
@@ -275,6 +277,10 @@ fn cause(inner: &ck::OperationError) -> Option<OperationCause> {
         ck::OperationError::Fragments(v) => Some(
             crate::fragment_errors::MoleculeFragmentsError::from_rust(v.clone()).unchecked_into(),
         ),
+        #[cfg(feature = "cap-transforms")]
+        ck::OperationError::BondCut(v) => {
+            Some(crate::fragment_errors::BondCutError::from_rust(v.clone()).unchecked_into())
+        }
         #[cfg(feature = "cap-alignment")]
         ck::OperationError::Alignment(v) => {
             Some(crate::alignment_errors::AlignmentError::from_rust(v.clone()).unchecked_into())
@@ -448,6 +454,8 @@ enum_error!(OperationError, OperationErrorKind, ck::OperationError, {
     Rings => ck::OperationError::Rings(_),
     InvalidPropertyList => ck::OperationError::InvalidPropertyList { .. }, InvalidDerivedCache => ck::OperationError::InvalidDerivedCache { .. }, InvalidAlgorithmResult => ck::OperationError::InvalidAlgorithmResult { .. },
     InvalidReconstructionOrigin => ck::OperationError::InvalidReconstructionOrigin { .. }, Algorithm => ck::OperationError::Algorithm { .. },
+    #[cfg(feature = "cap-transforms")]
+    BondCut=>ck::OperationError::BondCut(_),
 }, {
     #[cfg(feature = "cap-radicals")]
     #[wasm_bindgen(getter)]pub fn radical(&self)->Option<RadicalPayload>{match self.inner.as_ref(){ck::OperationError::Radical(v)=>Some(crate::sanitize_leaf_errors::RadicalError::from_rust(v.clone()).unchecked_into()),_=>None}}
@@ -457,6 +465,8 @@ enum_error!(OperationError, OperationErrorKind, ck::OperationError, {
     #[wasm_bindgen(getter,js_name=coordinateInput)] pub fn coordinate_input(&self)->Option<TransformPayload>{match self.inner.as_ref(){ck::OperationError::CoordinateInput(v)=>Some(crate::transform_errors::CoordinateInputError::from_rust(v.clone()).unchecked_into()),_=>None}}
     #[cfg(feature = "cap-transforms")]
     #[wasm_bindgen(getter)] pub fn fragments(&self)->Option<TransformPayload>{match self.inner.as_ref(){ck::OperationError::Fragments(v)=>Some(crate::fragment_errors::MoleculeFragmentsError::from_rust(v.clone()).unchecked_into()),_=>None}}
+    #[cfg(feature = "cap-transforms")]
+    #[wasm_bindgen(getter,js_name=bondCut)] pub fn bond_cut(&self)->Option<BondCutPayload>{match self.inner.as_ref(){ck::OperationError::BondCut(v)=>Some(crate::fragment_errors::BondCutError::from_rust(v.clone()).unchecked_into()),_=>None}}
     #[cfg(feature = "cap-fingerprints")]
     #[wasm_bindgen(getter, js_name = atomCode)] pub fn atom_code(&self) -> Option<AtomCodePayload> { match self.inner.as_ref() { ck::OperationError::AtomCode(value) => Some(crate::fingerprint_errors::AtomCodeError::from_rust(value.clone()).unchecked_into()), _ => None } }
     #[cfg(feature = "cap-depict")]
@@ -569,6 +579,8 @@ enum_error!(OperationError, OperationErrorKind, ck::OperationError, {
 cosmolkit_tsify_macros::type_union! {
     OperationCause;
     "TopologyValidationError | TopologyEditError | CoordinateValidationError | MoleculePropertyError | AtomPropertyError | BondValueError | RingFindingError | KekulizeError | AromaticityError | ValenceError | PotentialStereoError | StereoError | CipLabelerError | SanitizeError | HydrogenError | TransformError | CoordinateInputError | MoleculeFragmentsError | RadicalError";
+    #[cfg(feature = "cap-transforms")]
+    "BondCutError";
     #[cfg(feature = "cap-hashing")]
     "ScaffoldError";
     #[cfg(feature = "cap-fingerprints")]

@@ -1,5 +1,6 @@
 //! Complete operation errors and readonly context, without runtime authority.
 use crate::alignment_errors::AlignmentError;
+use crate::bond_cuts::BondCutError;
 use crate::cip_atom_code_errors::AtomCodeError;
 use crate::cip_atom_code_errors::CipLabelerError;
 use crate::conformer_execution::ConformerRunError;
@@ -37,10 +38,11 @@ use crate::valence_errors::ValenceError;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::error::Error;
-type OperationSource=Source<crate::error_framework::ErrorObject<MoleculeFragmentsError>,Source<crate::error_framework::ErrorObject<ScaffoldError>,Source<crate::error_framework::ErrorObject<ReactionRunError>,Source<crate::error_framework::ErrorObject<ReactionApplyError>,Source<crate::error_framework::ErrorObject<EnumerationRunError>,Source<crate::error_framework::ErrorObject<AlignmentError>,Source<crate::error_framework::ErrorObject<ConformerRunError>,Source<crate::error_framework::ErrorObject<TautomerRunError>,Source<crate::error_framework::ErrorObject<TopologyValidationError>,Source<crate::error_framework::ErrorObject<TopologyEditError>,Source<crate::error_framework::ErrorObject<CoordinateValidationError>,Source<crate::error_framework::ErrorObject<MoleculePropertyError>,Source<crate::error_framework::ErrorObject<AtomPropertyError>,Source<crate::error_framework::ErrorObject<BondValueError>,Source<crate::error_framework::ErrorObject<ValenceError>,Source<crate::error_framework::ErrorObject<RadicalError>,Source<crate::error_framework::ErrorObject<RingFindingError>,Source<crate::error_framework::ErrorObject<PotentialStereoError>,Source<crate::error_framework::ErrorObject<StereoError>,Source<crate::error_framework::ErrorObject<CipLabelerError>,Source<crate::error_framework::ErrorObject<AtomCodeError>,Source<crate::error_framework::ErrorObject<TransformError>,Source<crate::error_framework::ErrorObject<CoordinateInputError>,Source<crate::error_framework::ErrorObject<Coordinate2DError>,Source<crate::error_framework::ErrorObject<UffOptimizationError>,Source<crate::error_framework::ErrorObject<MmffOptimizationError>,Source<crate::error_framework::ErrorObject<KekulizeError>,Source<crate::error_framework::ErrorObject<AromaticityError>,Source<crate::error_framework::ErrorObject<SanitizeError>,crate::error_framework::ErrorObject<HydrogenError>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;
+type OperationSource=Source<crate::error_framework::ErrorObject<BondCutError>,Source<crate::error_framework::ErrorObject<MoleculeFragmentsError>,Source<crate::error_framework::ErrorObject<ScaffoldError>,Source<crate::error_framework::ErrorObject<ReactionRunError>,Source<crate::error_framework::ErrorObject<ReactionApplyError>,Source<crate::error_framework::ErrorObject<EnumerationRunError>,Source<crate::error_framework::ErrorObject<AlignmentError>,Source<crate::error_framework::ErrorObject<ConformerRunError>,Source<crate::error_framework::ErrorObject<TautomerRunError>,Source<crate::error_framework::ErrorObject<TopologyValidationError>,Source<crate::error_framework::ErrorObject<TopologyEditError>,Source<crate::error_framework::ErrorObject<CoordinateValidationError>,Source<crate::error_framework::ErrorObject<MoleculePropertyError>,Source<crate::error_framework::ErrorObject<AtomPropertyError>,Source<crate::error_framework::ErrorObject<BondValueError>,Source<crate::error_framework::ErrorObject<ValenceError>,Source<crate::error_framework::ErrorObject<RadicalError>,Source<crate::error_framework::ErrorObject<RingFindingError>,Source<crate::error_framework::ErrorObject<PotentialStereoError>,Source<crate::error_framework::ErrorObject<StereoError>,Source<crate::error_framework::ErrorObject<CipLabelerError>,Source<crate::error_framework::ErrorObject<AtomCodeError>,Source<crate::error_framework::ErrorObject<TransformError>,Source<crate::error_framework::ErrorObject<CoordinateInputError>,Source<crate::error_framework::ErrorObject<Coordinate2DError>,Source<crate::error_framework::ErrorObject<UffOptimizationError>,Source<crate::error_framework::ErrorObject<MmffOptimizationError>,Source<crate::error_framework::ErrorObject<KekulizeError>,Source<crate::error_framework::ErrorObject<AromaticityError>,Source<crate::error_framework::ErrorObject<SanitizeError>,crate::error_framework::ErrorObject<HydrogenError>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;
 fn project_operation_source(inner: &RetainedError<ck::OperationError>) -> Option<PyErr> {
     let node = inner.node().source()?;
     Some(match inner.as_ref() {
+        ck::OperationError::BondCut(value) => BondCutError::from_rust(value.clone()),
         ck::OperationError::Fragments(value) => MoleculeFragmentsError::from_rust(value.clone()),
         ck::OperationError::Scaffold(value) => ScaffoldError::from_rust(value.clone()),
         ck::OperationError::ReactionRun(value) => ReactionRunError::from_rust(value.clone()),
@@ -290,10 +292,14 @@ error_projection!(retained OperationError,OperationErrorKind,ck::OperationError,
  InvalidAlgorithmResult{operation,field,actual,expected},
  InvalidReconstructionOrigin{operation,entity:&'static str,destination:usize,input:usize,row:usize,input_count:usize,row_count:Option<usize>},
  Algorithm{operation,detail:String},
+ BondCut(_),
 },cause=project_operation_source,methods={
  #[staticmethod] #[doc=r#"{"role":"error_source"}"#]
  /// Immediate native cause, also available as __cause__; None when the native error has no cause.
  fn cause<'py>(slf:Bound<'py,pyo3::exceptions::PyBaseException>)->PyResult<Option<OperationSource>>{slf.getattr("__cause__")?.extract().map_err(Into::into)}
+ #[getter] #[doc=r#"{"role":"error_payload"}"#]
+ /// Cut selection or chemistry error for the BondCut variant; otherwise None.
+ fn bond_cut(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<BondCutError>>>{match self.inner.as_ref(){ck::OperationError::BondCut(v)=>BondCutError::from_rust(v.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
  #[getter] #[doc=r#"{"role":"error_payload"}"#]
  #[doc = "Structured native error payload. Present for `OperationError.UnsupportedFeature`, `OperationError.InvalidTopologyMapping`; None when unavailable."] fn source(&self,py:Python<'_>)->PyResult<Option<Source<UnsupportedFeatureError,crate::error_framework::ErrorObject<crate::model_edit_errors::MappingValidationError>>>>{
   match self.inner.as_ref(){

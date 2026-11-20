@@ -3,6 +3,41 @@ use cosmolkit::{
 };
 
 #[test]
+fn selected_bonds_cut_value_and_in_place_share_chemistry_and_isolate_peers() {
+    use cosmolkit::{BondCut, BondId};
+    let source = Molecule::from_smiles("CCO").unwrap();
+    let cuts = [BondCut::at_bond(BondId::new(1), Some(101), Some(202)).unwrap()];
+    let value = source.with_bonds_cut(&cuts).unwrap();
+    let mut target = source.clone();
+    target.cut_bonds_(&cuts).unwrap();
+    assert_eq!(value, target);
+    assert_eq!(value.to_smiles().unwrap().as_bytes(), b"[101*]CC.[202*]O");
+    assert_eq!(source.to_smiles().unwrap().as_bytes(), b"CCO");
+    assert_eq!(target.fragments().unwrap().len(), 2);
+}
+
+#[test]
+fn invalid_later_label_changes_neither_cut_receiver_nor_peer() {
+    use cosmolkit::{AtomId, BondCut, BondCutError, BondId};
+    let mut target = Molecule::from_smiles("CCO").unwrap();
+    let untouched = target.clone();
+    let cuts = [
+        BondCut::at_bond(BondId::new(0), None, None).unwrap(),
+        BondCut::at_bond(BondId::new(1), Some(65536), Some(2)).unwrap(),
+    ];
+    let expected = OperationError::BondCut(BondCutError::IsotopeOutOfRange {
+        bond: BondId::new(1),
+        attachment: AtomId::new(1),
+        label: 65536,
+    });
+    assert_eq!(target.with_bonds_cut(&cuts).unwrap_err(), expected);
+    assert_eq!(target.cut_bonds_(&cuts).unwrap_err(), expected);
+    assert_eq!(target, untouched);
+    assert_eq!(target.to_smiles().unwrap().as_bytes(), b"CCO");
+    assert_eq!(untouched.to_smiles().unwrap().as_bytes(), b"CCO");
+}
+
+#[test]
 fn sanitized_fragment_retains_the_ring_cache_used_by_writer_stereo() {
     // RDKit 2026.03.6 MolOps::getTheFrags -> sanitizeMol retains SymmSSSR.
     // Replacing it with FastFindRings changes macrocycle cis/trans writing.

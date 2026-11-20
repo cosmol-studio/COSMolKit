@@ -294,9 +294,9 @@ pub use cosmolkit_core::{
 };
 #[cfg(feature = "cap-transforms")]
 pub use cosmolkit_core::{
-    AtomPathSubsetCopyError, AtomPositionParams, FullCopyComponentError, MoleculeFragmentsError,
-    MoleculeFragmentsFailure, OrderedFragmentBuildError, SelectedBondCopyError,
-    SelectedSubstanceGroupCopyError, SubstanceGroupAtomList, TransformError,
+    AtomPathSubsetCopyError, AtomPositionParams, BondCut, BondCutError, FullCopyComponentError,
+    MoleculeFragmentsError, MoleculeFragmentsFailure, OrderedFragmentBuildError,
+    SelectedBondCopyError, SelectedSubstanceGroupCopyError, SubstanceGroupAtomList, TransformError,
 };
 #[cfg(feature = "cap-sanitize")]
 pub use cosmolkit_core::{
@@ -400,7 +400,7 @@ pub(crate) use ops::{
     ReactionApplyReportForTestAccess, RingLiveCowCheckoutConflictForTestAccess,
 };
 #[cfg(feature = "cap-transforms")]
-pub(crate) use ops::{FragmentsAccess, LargestFragmentAccess};
+pub(crate) use ops::{FragmentsAccess, LargestFragmentAccess, WithBondsCutAccess};
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
 #[doc(inline)]
 pub use ops::{OperationError, UnsupportedFeatureError};

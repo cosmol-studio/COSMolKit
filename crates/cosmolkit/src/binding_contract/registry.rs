@@ -10598,6 +10598,26 @@ binding_contract! {
           state:value_returning, operation:"murcko_scaffold",
           signature:fn(&crate::Molecule)->Result<crate::Molecule,crate::OperationError>, },
         #[cfg(feature = "cap-transforms")]
+        { semantic_id:"types.BondCut", item:type, owner:type_, rust:crate::BondCut, python:"BondCut", javascript:"BondCut", feature:"cap-transforms", status:native, role:value, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"types.BondCutError", item:type, owner:type_, rust:crate::BondCutError, python:"BondCutError", javascript:"BondCutError", feature:"cap-transforms", status:native, role:error, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"BondCut.at_bond", item:callable, owner:type_, rust:crate::BondCut::at_bond,
+          python:"at_bond", javascript:"atBond", feature:"cap-transforms", status:native, kind:static_,
+          parameters:[{name:bond,type:crate::BondId,default:required},{name:begin_label,type:Option<usize>,default:none},{name:end_label,type:Option<usize>,default:none}],
+          output:crate::BondCut,error:crate::BondCutError,state:value_returning,operation:none,
+          signature:fn(crate::BondId,Option<usize>,Option<usize>)->Result<crate::BondCut,crate::BondCutError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.with_bonds_cut", item:callable, owner:molecule, rust:crate::Molecule::with_bonds_cut,
+          python:"with_bonds_cut", javascript:"withBondsCut", feature:"cap-transforms", kind:instance,
+          parameters:[{name:cuts,type:&[crate::BondCut],default:required}],output:crate::Molecule,error:crate::OperationError,
+          state:value_returning,operation:"with_bonds_cut",signature:fn(&crate::Molecule,&[crate::BondCut])->Result<crate::Molecule,crate::OperationError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.cut_bonds_", item:callable, owner:molecule, rust:crate::Molecule::cut_bonds_,
+          python:"cut_bonds_", javascript:"cutBonds_", feature:"cap-transforms", kind:instance,receiver:mutable,
+          parameters:[{name:cuts,type:&[crate::BondCut],default:required}],output:(),error:crate::OperationError,
+          state:in_place,operation:"cut_bonds_",signature:fn(&mut crate::Molecule,&[crate::BondCut])->Result<(),crate::OperationError>, },
+        #[cfg(feature = "cap-transforms")]
         { semantic_id:"Molecule.fragments", item:callable, owner:molecule,
           rust:crate::Molecule::fragments, python:"fragments", javascript:"fragments",
           feature:"cap-transforms", kind:instance, parameters:[], output:Vec<crate::Molecule>,

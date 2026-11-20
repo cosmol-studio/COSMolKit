@@ -558,6 +558,13 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
                 self.with_mutable_candidate_blocks_runtime(body)
             }
         });
+        if operation.fields.requires_mapping == MappingRequirement::Required {
+            methods.push(quote! {
+                pub(crate) fn transform_mapped_blocks(&mut self, body:impl FnOnce(&cosmolkit_model::TopologyBlock, &cosmolkit_model::CoordinateBlock, &cosmolkit_model::MoleculeProperties) -> Result<(cosmolkit_model::TopologyBlock,cosmolkit_model::CoordinateBlock,cosmolkit_model::MoleculeProperties,cosmolkit_model::TopologyMapping),crate::OperationError>) -> Result<(),crate::OperationError> {
+                    self.transform_mapped_blocks_runtime(body)
+                }
+            });
+        }
     }
     let capability_impl = match operation.fields.output {
         MoleculeOutput::Single => quote! {

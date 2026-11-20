@@ -110,6 +110,7 @@ jobs:
                       python -B wasm/registry_check.py
                       if [ "$preset" = full ]; then
                           node wasm/tests/runtime.mjs
+                          node --test wasm/tests/bond_cuts.mjs
                           npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
                       else
                           npx --yes --package typescript@5.8.3 tsc --noEmit --strict \

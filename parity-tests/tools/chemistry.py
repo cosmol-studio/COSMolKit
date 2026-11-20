@@ -3,7 +3,7 @@ from rdkit import Chem
 from rdkit.Chem import rdMolHash
 
 TASKS = {"smiles_read","sanitize","kekulize","add_hs","remove_hs","potential_stereo",
-         "distance_matrix","fragments","largest_fragment","murcko_scaffold","net_scaffold","murcko_decompose"}
+         "distance_matrix","with_bonds_cut","fragments","largest_fragment","murcko_scaffold","net_scaffold","murcko_decompose"}
 
 def state(mol):
     return [[[a.GetAtomicNum(),a.GetFormalCharge(),a.GetIsotope(),a.GetNumExplicitHs(),
@@ -51,6 +51,14 @@ def chemistry(mol,task,p):
             result=[[int(s.type),int(s.specified),s.centeredOn,int(s.descriptor),s.permutation,list(s.controllingAtoms)] for s in rows]
             return [result,state(m) if p["clean"] else None]
         finally: Chem.SetAllowNontetrahedralChirality(before)
+    if task == "with_bonds_cut":
+        count = m.GetNumBonds()
+        bonds = sorted({0, count - 1}) if count else []
+        if p["explicit_labels"]:
+            # RDKit orders its labels by the atom replaced, opposite the attachment side.
+            pairs = [(202 + 2*j, 101 + 2*j) for j in range(len(bonds))]
+            return state(Chem.FragmentOnBonds(m, bonds, dummyLabels=pairs))
+        return state(Chem.FragmentOnBonds(m, bonds))
     if task=="fragments": return [state(x) for x in Chem.GetMolFrags(m,asMols=True,sanitizeFrags=True)]
     if task=="largest_fragment":
         rows=Chem.GetMolFrags(m,asMols=True,sanitizeFrags=True)
