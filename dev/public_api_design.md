@@ -713,6 +713,7 @@ combined, and Cargo adds their selections together. `full` is the default.
 | `conformer` | `cap-conformer`, `cap-confseq`, `cap-alignment`, `cap-forcefields`, `core` |
 | `fingerprints` | `cap-fingerprints`, `cap-hashing`, `core` |
 | `search` | `cap-search`, `core` |
+| `fragmentation` | `cap-fragmentation`, `core` |
 | `reaction` | `cap-reaction`, `search` |
 | `stereoisomers` | `cap-stereoisomers`, `core` |
 | `depict` | `cap-depict`, `core` |

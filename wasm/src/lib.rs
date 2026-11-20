@@ -141,7 +141,8 @@ mod match_error;
     feature = "cap-fingerprints",
     feature = "cap-forcefields",
     feature = "cap-descriptors",
-    feature = "cap-depict"
+    feature = "cap-depict",
+    feature = "cap-fragmentation"
 ))]
 mod match_errors;
 mod matrix_calls;
@@ -155,10 +156,6 @@ mod metadata_values;
 #[cfg(feature = "cap-forcefields")]
 mod mmff_errors;
 mod model_errors;
-#[cfg(feature = "cap-serialization")]
-mod molecule_transfer;
-#[cfg(all(feature = "cap-bio", feature = "cap-serialization"))]
-mod protein_transfer;
 mod mol2_errors;
 mod mol_post_errors;
 mod mol_post_support_errors;
@@ -167,6 +164,8 @@ mod mol_write_errors;
 mod molecular_hash;
 mod molecular_io;
 mod molecular_io_errors;
+#[cfg(feature = "cap-serialization")]
+mod molecule_transfer;
 #[cfg(feature = "cap-fingerprints")]
 mod morgan_calls;
 #[cfg(feature = "cap-fingerprints")]
@@ -200,6 +199,8 @@ mod property_errors;
 mod property_values;
 #[cfg(feature = "cap-bio")]
 mod protein;
+#[cfg(all(feature = "cap-bio", feature = "cap-serialization"))]
+mod protein_transfer;
 #[cfg(feature = "cap-search")]
 mod query_calls;
 #[cfg(any(

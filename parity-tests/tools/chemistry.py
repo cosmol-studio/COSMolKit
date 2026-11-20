@@ -3,7 +3,8 @@ from rdkit import Chem
 from rdkit.Chem import rdMolHash
 
 TASKS = {"smiles_read","sanitize","kekulize","add_hs","remove_hs","potential_stereo",
-         "distance_matrix","with_bonds_cut","fragments","largest_fragment","murcko_scaffold","net_scaffold","murcko_decompose"}
+         "distance_matrix","with_bonds_cut","fragments","largest_fragment","murcko_scaffold","net_scaffold","murcko_decompose",
+         "find_brics_bonds","brics_fragment_occurrences"}
 
 def state(mol):
     return [[[a.GetAtomicNum(),a.GetFormalCharge(),a.GetIsotope(),a.GetNumExplicitHs(),
@@ -51,6 +52,22 @@ def chemistry(mol,task,p):
             result=[[int(s.type),int(s.specified),s.centeredOn,int(s.descriptor),s.permutation,list(s.controllingAtoms)] for s in rows]
             return [result,state(m) if p["clean"] else None]
         finally: Chem.SetAllowNontetrahedralChirality(before)
+    if task in ("find_brics_bonds", "brics_fragment_occurrences"):
+        from rdkit.Chem.BRICS import FindBRICSBonds
+
+        sites = []
+        bond_ids = []
+        labels = []
+        for (a, b), (left, right) in FindBRICSBonds(m):
+            bond = m.GetBondBetweenAtoms(a, b)
+            x, y = int(left), int(right)
+            sites.append([bond.GetIdx(), a, x, b, y])
+            bond_ids.append(bond.GetIdx())
+            labels.append((y, x) if a == bond.GetBeginAtomIdx() else (x, y))
+        if task == "find_brics_bonds":
+            return sites
+        product = Chem.FragmentOnBonds(m, bond_ids, dummyLabels=labels) if bond_ids else m
+        return [state(part) for part in Chem.GetMolFrags(product, asMols=True)]
     if task == "with_bonds_cut":
         count = m.GetNumBonds()
         bonds = sorted({0, count - 1}) if count else []

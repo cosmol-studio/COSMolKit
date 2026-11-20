@@ -14,6 +14,36 @@ use std::error::Error;
 
 crate::configuration::type_projection! {
     value(eq)
+    /// A BRICS site with two (source atom index, environment label) ends in rule-match order.
+    pub struct BricsBondMatch { pub(crate) inner: ck::BricsBondMatch }
+}
+
+#[pymethods]
+impl BricsBondMatch {
+    /// Zero-based index of the bond in the molecule used for discovery.
+    #[getter]
+    fn bond(&self) -> usize {
+        self.inner.bond().index()
+    }
+
+    /// Two (source atom index, BRICS environment label) pairs in rule order.
+    /// The first atom need not be the stored bond's begin atom.
+    #[getter]
+    fn ends(&self) -> ((usize, u8), (usize, u8)) {
+        let [left, right] = self.inner.ends().map(|(a, e)| (a.index(), e));
+        (left, right)
+    }
+
+    /// Select this source bond with each dummy label on its matched atom's side.
+    fn to_bond_cut(&self) -> BondCut {
+        BondCut {
+            inner: self.inner.to_bond_cut(),
+        }
+    }
+}
+
+crate::configuration::type_projection! {
+    value(eq)
     /// A bond selected in the input molecule, with optional attachment-side isotope labels.
     pub struct BondCut { pub(crate) inner: ck::BondCut }
 }

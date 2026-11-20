@@ -13,6 +13,56 @@ pub struct BondCut(ck::BondCut);
 crate::fields::value_field!(ck::BondCut, BondCut, BondCutInput, "BondCut");
 crate::fields::value_array!(ck::BondCut, BondCuts, "ReadonlyArray<BondCut>");
 
+#[cfg(feature = "cap-fragmentation")]
+mod brics {
+    use super::{BondCut, Molecule};
+    use crate::match_errors::SubstructMatchError;
+    use cosmolkit as ck;
+    use tsify::Tsify;
+    use wasm_bindgen::prelude::*;
+
+    #[derive(serde::Serialize, Tsify)]
+    #[serde(transparent)]
+    pub struct BricsEnds([(usize, u8); 2]);
+
+    #[wasm_bindgen]
+    pub struct BricsBondMatch(ck::BricsBondMatch);
+
+    #[wasm_bindgen]
+    impl BricsBondMatch {
+        #[wasm_bindgen(getter)]
+        pub fn bond(&self) -> usize {
+            self.0.bond().index()
+        }
+
+        /// Two [atom index, environment label] pairs in rule-match order.
+        #[wasm_bindgen(getter)]
+        pub fn ends(&self) -> Result<tsify::Ts<BricsEnds>, JsValue> {
+            BricsEnds(self.0.ends().map(|(atom, label)| (atom.index(), label)))
+                .into_ts()
+                .map_err(JsError::from)
+                .map_err(Into::into)
+        }
+
+        #[wasm_bindgen(js_name=toBondCut)]
+        pub fn to_bond_cut(&self) -> BondCut {
+            BondCut(self.0.to_bond_cut())
+        }
+    }
+
+    #[wasm_bindgen]
+    impl Molecule {
+        /// Find standard BRICS sites on this topology; rediscover them after editing.
+        #[wasm_bindgen(js_name=findBricsBonds)]
+        pub fn find_brics_bonds(&self) -> Result<Vec<BricsBondMatch>, JsValue> {
+            self.0
+                .find_brics_bonds()
+                .map(|rows| rows.into_iter().map(BricsBondMatch).collect())
+                .map_err(SubstructMatchError::from_rust)
+        }
+    }
+}
+
 #[wasm_bindgen]
 impl BondCut {
     /// Supply both attachment-side isotope labels, or omit both to label each dummy

@@ -212,7 +212,7 @@ mod xyz_errors;
 #[pyo3::pymodule(name = "_native")]
 pub mod native {
     #[pymodule_export]
-    use super::bond_cuts::{BondCut, BondCutError, BondCutErrorKind};
+    use super::bond_cuts::{BondCut, BondCutError, BondCutErrorKind, BricsBondMatch};
     #[pymodule_init]
     fn register_errors(module: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
         super::error_framework::register(module)
@@ -13767,6 +13767,19 @@ pub mod native {
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Return standard BRICS sites in rule order without cutting the molecule.
+        /// Convert the desired matches with `site.to_bond_cut()` before calling either cut method.
+        /// Re-run the search after editing: bond and atom indices refer to this topology.
+        fn find_brics_bonds(&self, py: Python<'_>) -> PyResult<Vec<BricsBondMatch>> {
+            py.detach(|| self.inner.find_brics_bonds())
+                .map(|hits| {
+                    hits.into_iter()
+                        .map(|inner| BricsBondMatch { inner })
+                        .collect()
+                })
+                .map_err(SubstructMatchError::from_rust)
+        }
+
         /// Cut selected bonds and return one molecule. Use `fragments()` to extract its components.
         /// For example, `mol.with_bonds_cut([BondCut.at_bond(1, 101, 202)])` leaves
         /// the source unchanged and labels the dummies on bond 1's begin and end sides.

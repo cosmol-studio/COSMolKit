@@ -182,8 +182,14 @@ pub use cosmolkit_batch::BatchExportReport;
 mod sdf_batch;
 #[cfg(all(feature = "cap-io", feature = "cap-batch"))]
 pub use sdf_batch::{BatchExportParams, SdfBatchIterator, SdfReaderBatchIterator};
+#[cfg(feature = "cap-fragmentation")]
+mod fragmentation;
+#[cfg(feature = "cap-fragmentation")]
+pub use cosmolkit_search::BricsBondMatch;
 #[cfg(feature = "cap-search")]
 pub mod search;
+#[cfg(any(feature = "cap-fragmentation", feature = "cap-search"))]
+mod search_target;
 #[cfg(feature = "cap-search")]
 pub use search::{
     compile_query, maximum_common_substructure, maximum_common_substructure_with_params,
@@ -218,13 +224,19 @@ pub use cosmolkit_search::{
     feature = "cap-descriptors",
     feature = "cap-depict"
 ))]
-pub use cosmolkit_search::{
-    CxQueryLoweringError, MatchError, QueryCompileError, QueryMatchContextError, SmartsParseError,
-    SubstructMatchError,
-};
+pub use cosmolkit_search::{CxQueryLoweringError, MatchError, QueryCompileError, SmartsParseError};
 #[cfg(feature = "cap-search")]
 #[doc(hidden)]
 pub use cosmolkit_search::{ExtraAtomCheck, ExtraBondCheck, ExtraFinalCheck, SearchTarget};
+#[cfg(any(
+    feature = "cap-fragmentation",
+    feature = "cap-search",
+    feature = "cap-fingerprints",
+    feature = "cap-forcefields",
+    feature = "cap-descriptors",
+    feature = "cap-depict"
+))]
+pub use cosmolkit_search::{QueryMatchContextError, SubstructMatchError};
 #[cfg(any(feature = "cap-search", feature = "cap-fingerprints"))]
 pub use cosmolkit_smiles::SmartsTraversalError;
 

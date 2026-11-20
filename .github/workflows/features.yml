@@ -68,6 +68,8 @@ jobs:
                       bio \
                       conformer \
                       cap-forcefields \
+                      fragmentation \
+                      cap-fragmentation \
                       search \
                       reaction \
                       stereoisomers \

@@ -21,6 +21,8 @@ full
 │       └── core
 ├── depict
 │   └── core
+├── fragmentation
+│   └── core
 ├── fingerprints
 │   └── core
 ├── descriptors
@@ -80,6 +82,7 @@ cosmolkit = { version = "0.6.2", default-features = false, features = ["core", "
 | `conformer` | 3D conformers, ConfSeq, alignment, UFF/MMFF energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |
 | `search` | SMARTS and substructure search |
+| `fragmentation` | Standard BRICS bond discovery, with labeled selections for the core cut operations |
 | `reaction` | SMIRKS, reaction templates and execution, including search and SMILES |
 | `depict` | 2D layout and depiction |
 | `inchi` | InChI and InChIKey conversion |
@@ -230,6 +233,15 @@ semantics are required.
 Stable molecule operations include assigning atom chiral tags from a selected
 3D conformer through `with_chiral_tags_from_structure()` and its explicit
 in-place counterpart `assign_chiral_tags_from_structure_()`.
+
+With the `fragmentation` bundle, `mol.find_brics_bonds()?` reports the source
+bond and both `(atom, environment)` ends in RDKit `FindBRICSBonds` order.
+Convert the sites you want with `site.to_bond_cut()` and pass the nonempty
+selection to `with_bonds_cut` or `cut_bonds_`. On `CCCOCCC`, cutting both sites
+and calling `fragments()` returns two `[4*]CCC` fragments and one `[3*]O[3*]`.
+If two rules match the same bond, the first rule supplies the labels; RDKit’s
+one-shot `FragmentOnBRICSBonds` visits the rules in reverse and can label that
+bond differently. Rerun discovery after editing the input topology.
 
 ## Protein Structures
 

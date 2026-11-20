@@ -347,7 +347,7 @@ crate-level ownership boundaries.
 Feature selection follows two distinct layers:
 
 - User bundles have plain names: `core`, `bio`, `descriptors`, `tautomer`,
-  `conformer`, `fingerprints`, `search`, `reaction`, `depict`, `inchi`,
+  `conformer`, `fingerprints`, `fragmentation`, `search`, `reaction`, `depict`, `inchi`,
   `stereoisomers`, and `full`. User documentation
   presents these names and included functionality, not internal capability gates.
 - Advanced capability selectors always start with `cap-`, such as

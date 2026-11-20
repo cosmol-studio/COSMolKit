@@ -300,11 +300,11 @@ jobs:
                   name: python-stubs
                   path: python/artifacts/smoke/package/cosmolkit
 
-            - name: Copy README into python package
-              run: cp README.md python/README.md
+            - name: Copy package documents for the sdist
+              run: cp README.md LICENSE python/
 
-            - name: Rewrite sdist README path
-              run: sed -i 's#readme = "../README.md"#readme = "./README.md"#' python/pyproject.toml
+            - name: Use the sdist copies of the README and license
+              run: sed -i -e 's#readme = "../README.md"#readme = "./README.md"#' -e 's#file = "../LICENSE"#file = "./LICENSE"#' python/pyproject.toml
 
             - name: Build sdist
               uses: PyO3/maturin-action@v1

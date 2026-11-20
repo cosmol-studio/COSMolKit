@@ -15,6 +15,18 @@ def test_fragment_bindings_order_tie_and_nonmutation():
     assert caught.value.variant.name == "EmptyFragments"
 
 
+def test_brics_sites_convert_to_selections_in_rule_order() -> None:
+    source = ck.Molecule.from_smiles("CCCOCCC")
+    sites = source.find_brics_bonds()
+    assert [(s.bond, s.ends) for s in sites] == [
+        (2, ((3, 3), (2, 4))), (3, ((3, 3), (4, 4))),
+    ]
+    cuts = [site.to_bond_cut() for site in sites]
+    assert source.with_bonds_cut(cuts[:1]).to_smiles() == "[3*]OCCC.[4*]CCC"
+    assert source.cut_bonds_(cuts) is None
+    assert [p.to_smiles() for p in source.fragments()] == ["[4*]CCC", "[3*]O[3*]", "[4*]CCC"]
+
+
 def test_cut_attachment_sides_and_in_place_result() -> None:
     source = ck.Molecule.from_smiles("CCO")
     target = ck.Molecule.from_smiles("CCO")

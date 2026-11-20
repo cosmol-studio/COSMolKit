@@ -40,6 +40,7 @@ full = [
     "depict",
     "descriptors",
     "fingerprints",
+    "fragmentation",
     "inchi",
     "search",
     "tautomer",
@@ -59,6 +60,7 @@ descriptors = ["cap-descriptors", "core"]
 tautomer = ["cap-tautomer", "search"]
 conformer = ["cap-conformer", "cap-confseq", "cap-alignment", "cap-forcefields", "core"]
 fingerprints = ["cap-fingerprints", "cap-hashing", "core"]
+fragmentation = ["cap-fragmentation", "core"]
 search = ["cap-search", "core"]
 reaction = ["cap-reaction", "search"]
 stereoisomers = ["cap-stereoisomers", "core"]
@@ -84,6 +86,7 @@ cap-inchi = ["dep:cosmolkit-inchi", "dep:cosmolkit-core"]
 cap-io = ["dep:cosmolkit-io", "cosmolkit-io/molecule", "dep:cosmolkit-core"]
 cap-matrices = ["dep:cosmolkit-core"]
 cap-transforms = ["dep:cosmolkit-core"]
+cap-fragmentation = ["cap-transforms", "dep:cosmolkit-search"]
 cap-search = ["dep:cosmolkit-search", "cosmolkit-search/smiles-integration", "cosmolkit-search/mcs", "cosmolkit-io?/search", "cap-smiles"]
 cap-serialization = ["cap-io", "cosmolkit-io/binary"]
 cap-smiles = ["dep:cosmolkit-smiles", "dep:cosmolkit-core"]

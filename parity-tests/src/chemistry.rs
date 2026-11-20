@@ -12,6 +12,8 @@ pub const TASKS: &[(&str, &str)] = &[
     ("remove_hs", "core"),
     ("potential_stereo", "core"),
     ("distance_matrix", "core"),
+    ("find_brics_bonds", "fragmentation"),
+    ("brics_fragment_occurrences", "fragmentation"),
     ("with_bonds_cut", "scaffolds"),
     ("fragments", "scaffolds"),
     ("largest_fragment", "scaffolds"),
@@ -201,6 +203,38 @@ pub fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
                 Value::List(rows),
                 output.cleaned_molecule.as_ref().map_or(Value::Null, state),
             ])
+        }
+        "find_brics_bonds" => Value::List(
+            m.find_brics_bonds()?
+                .iter()
+                .map(|site| {
+                    let [(a, x), (b, y)] = site.ends();
+                    Value::List(
+                        [
+                            site.bond().index(),
+                            a.index(),
+                            x as usize,
+                            b.index(),
+                            y as usize,
+                        ]
+                        .map(|n| Value::Int(n as i64))
+                        .to_vec(),
+                    )
+                })
+                .collect(),
+        ),
+        "brics_fragment_occurrences" => {
+            let cuts: Vec<_> = m
+                .find_brics_bonds()?
+                .iter()
+                .map(|s| s.to_bond_cut())
+                .collect();
+            let product = if cuts.is_empty() {
+                m.copy()
+            } else {
+                m.with_bonds_cut(&cuts)?
+            };
+            Value::List(product.fragments()?.iter().map(state).collect())
         }
         "with_bonds_cut" => {
             let explicit = flag(p, "explicit_labels")?;

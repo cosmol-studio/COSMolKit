@@ -2,6 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as ck from '../pkg/index.js';
 
+test('BRICS sites preserve rule orientation and repeated fragments', () => {
+    const mol = new ck.Molecule('CCCOCCC');
+    const sites = mol.findBricsBonds();
+    assert.deepEqual(sites.map(s => [s.bond, s.ends]), [[2, [[3, 3], [2, 4]]], [3, [[3, 3], [4, 4]]]]);
+    assert.equal(mol.withBondsCut([sites[0].toBondCut()]).toSmiles(), '[3*]OCCC.[4*]CCC');
+    assert.equal(mol.cutBonds_(sites.map(s => s.toBondCut())), undefined);
+    assert.deepEqual(mol.fragments().map(f => f.toSmiles()), ['[4*]CCC', '[3*]O[3*]', '[4*]CCC']);
+});
+
 test('cut methods preserve attachment sides and differ only in ownership', () => {
     const source = new ck.Molecule('CCO');
     const cuts = [ck.BondCut.atBond(1, 101, 202)];
