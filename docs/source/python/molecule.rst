@@ -514,6 +514,9 @@ transform, ``best_alignment_to()`` or ``best_rmsd_to()`` for symmetry-aware
 best-map alignment, and ``coordinate_rmsd_to()`` to measure coordinates in
 their existing frames without alignment.
 
+Unlike RDKit's ``GetBestRMS()``, which modifies the probe coordinates,
+COSMolKit's ``best_rmsd_to()`` leaves both molecules unchanged.
+
 .. code-block:: python
 
    import numpy as np

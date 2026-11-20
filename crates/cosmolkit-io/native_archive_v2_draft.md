@@ -64,9 +64,9 @@ Neither archive reader falls back to the other after an error.
 Codec 3 is CK's `ck-wire-v1`: Müsli wire-compatible encoding, numeric
 field/variant IDs and default Binary-mode options. Codec 2 retains its original
 `ck-storage-v1` encoding for reading existing 0.5.0 files. The implementation
-is pinned to `musli = "=0.1.9"` (`default-features = false`, features `std`,
+is pinned to `musli = "=0.2.1"` (`default-features = false`, features `std`,
 `alloc`, `storage`, `wire`); the lockfile resolves `musli`, `musli-core`, and
-`musli-macros` to 0.1.9 together. The library version is an implementation
+`musli-macros` to 0.2.1 together. The library version is an implementation
 dependency, not a permanent on-disk identity. Metadata records
 `codec_contract = "ck-wire-v1"` for new files (`"ck-storage-v1"` for codec 2)
 and molecule/derived schema versions, which

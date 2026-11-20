@@ -451,6 +451,9 @@ Transform queries, best RMSD, coordinate-frame RMSD, and all-conformer pair
 measurements are read-only. Coordinate changes are exposed only through a
 value-style method or an explicit trailing-underscore method.
 
+Unlike RDKit's `GetBestRMS()`, which modifies the probe coordinates,
+COSMolKit's `best_rmsd_to()` leaves both molecules unchanged.
+
 ```rust
 use cosmolkit::{AlignmentAtomMap, AlignmentParameters, Molecule};
 

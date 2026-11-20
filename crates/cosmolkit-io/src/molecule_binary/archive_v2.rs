@@ -1,6 +1,6 @@
 //! CK-owned archive 2.0 wire schema, independent of runtime/model layout.
 //!
-//! New writes use codec 3 / ck-wire-v1 (musli 0.1.9 wire, Binary mode).
+//! New writes use codec 3 / ck-wire-v1 (musli wire, Binary mode).
 //! Codec 2 / ck-storage-v1 archives written by 0.5.0 remain readable.
 //! The implementation version is not part of the persistent codec identity.
 //! Field and variant identities below are permanent; retired identities must not be reused.
