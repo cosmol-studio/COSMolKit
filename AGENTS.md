@@ -1,66 +1,19 @@
-# COSMolKit Agent Guidelines
+# COSMolKit
 
-## Authoritative Documents
+Development follows [dev/README.md](dev/README.md), [crate architecture](dev/crate_architecture.md) and [public API design](dev/public_api_design.md).
 
-- Follow `dev/crate_architecture.md` for ownership, `dev/README.md` for development rules, and `dev/public_api_design.md` for public APIs.
-- Read applicable rules before working. After every context compaction, reread `dev/source_reproduction_protocol.md`. Execute each plan task's preceding Read Step; prior reading is not a substitute.
-- Work on the current user-authorized task and its explicitly assigned plan. Task inventories record scope, not blanket acceptance of the current checkout. Reports and experiments do not authorize new work.
-- Report conflicting rules with concrete evidence and ask for clarification; do not choose weaker rules. Code comments specifying operation constraints or human approval are binding.
+For upstream code ports, follow [dev/source_reproduction_protocol.md](dev/source_reproduction_protocol.md).
 
-## Agent Authority
+Build instructions: [Python](python/dev.md), [WASM](wasm/dev.md), [documentation](docs/README.md) and [parity tests](parity-tests/README.md).
 
-- Reviews, diagnosis, and acceptance checks are read-only by default. Relevant non-destructive checks are allowed; do not change code, plans, or another agent's task without a request to do so.
-- Implement only the authorized scope. Follow the plan sequentially until completion, a genuine blocker, or interruption; do not skip steps or stop merely after a time interval or batch.
-- If a task is too large or lacks dependencies, split complete behaviors and immediate validation steps in the sole plan under `dev/agent_plan_standard.md`. Stubs, TODOs, and partial implementations are not completion.
-- Preserve others' changes. Do not overwrite, revert, or clean unrelated files; coordinate overlapping edits.
-- Without explicit authorization, do not perform Git operations (including read-only commands), commit/push, publish, bump versions, bulk-update dependencies, or perform destructive cleanup.
-- Do not change AGENTS.md, architecture, execution standards, or weaken checkers to accommodate implementation. Rule changes require explicit authorization. Correct test expectations only with source evidence; retain coverage and prior failures.
-- Stop and ask before changing ownership, adding crates, introducing compatibility layers, expanding scope, or violating approval comments. Fix ordinary build and test failures within scope rather than treating them as automatic stopping points.
+## Project Layout
 
-## Crate Ownership
-
-- `cosmolkit-types`: foundational vocabulary. `cosmolkit-model`: detached values and local structural validation.
-- `cosmolkit-core`: source-backed foundational algorithms; no `Molecule` or runtime ownership.
-- Domain crates own notation, IO, search, descriptors, fingerprints, bio, and other algorithms as assigned by the architecture. Production dependencies must be acyclic and must not depend back on `cosmolkit`.
-- `cosmolkit`: the sole live `Molecule`/builder, private runtime, contracts/cache, authorized extraction and validated commit, and thin public APIs. No domain algorithm implementations.
-- `cosmolkit-macros`: declaration parsing and capability, wrapper, registry, and matrix generation; no domain algorithms.
-- `python/` and `wasm/`: language projections of the public API, with chemistry dependencies only on `cosmolkit`. Do not expose runtime internals or reimplement algorithms.
-- Each behavior has one owner. Reuse correct implementations, implement missing behavior in its owner, and expose it through canonical APIs without duplication.
-
-## Operations and Public APIs
-
-- Before changing core, operation bodies, registries, or macro machinery, read `dev/README.md` and the applicable operation standards.
-- Declare topology/coordinate operation contracts through `molecule_ops!` before implementing bodies. Generate `MOLECULE_OPS`, `SUPPORT_MATRIX`, `OPERATION_INVARIANT_MATRIX`, and `PARITY_MATRIX` from declarations only.
-- The sole operation runtime boundary is `ops::runtime::{context,multiple,registry}`. Keep operation bodies outside this subtree, using only generated marker-specific capabilities. Rust visibility follows semantic modules, not physical file directories.
-- Bodies must not access internal fields, unrestricted runtime read/write primitives, or constructor/finish/abort entrypoints. Do not add handwritten parallel capability lists or a second registry.
-- Runtime owns block-level COW, mappings, effects, invariants, and atomic commit. Domain crates exchange explicit detached values, never `Molecule`, `OpParts`, or commit authority.
-- Preserve sharing of unchanged blocks and failure atomicity. Do not pass tests by cloning all state, swallowing errors, or bypassing validation.
-- Register public capabilities in `crates/cosmolkit/src/binding_contract/` before exposure. Keep signatures, defaults, features, errors, and language projections consistent. Registration does not imply implementation or supported status.
-- Non-mutating transforms return new values. In-place `Molecule` operations must end in `_`; that suffix has no other meaning. Queries return read results.
-- Keep helpers private by default and cross-crate interfaces narrow. Do not expose mutable molecule storage or compatibility aliases.
-
-## Source Reproduction
-
-- Follow `dev/source_reproduction_protocol.md` against pinned upstream sources. Place verbatim source anchors inside the implementing function, with separate behavior and complexity markers.
-- Do not hide missing behavior behind heuristics, defaults, or silent fallbacks. Reproduce only source-defined fallbacks and propagate other errors structurally.
-- Mark unmodeled independent capabilities unsupported; never relabel failures on supported inputs as unsupported. Source comments or missing oracles are not completion evidence.
-
-## Validation and Handoff
-
-- After changing tests, immediately run the most specific relevant tests. Retain commands, exit codes, counts, and failures. When the plan specifies `run_unit_validation.py`, freeze targets/features first and do not bypass the runner.
-- For core changes, run `cargo check -p cosmolkit-core` and `cargo test -p cosmolkit-core`. Core has no runtime-check features; private algorithm regressions run as ordinary unit tests, without public test bridges or feature gates.
-- For runtime, operation, or macro changes, also run affected-crate tests, `cargo check -p cosmolkit --features op-contracts-strict`, and `cargo test -p cosmolkit --features op-contracts-strict`. Explicitly enable affected capability features so cfg gates do not hide coverage.
-- For operation integration or visibility changes, run `cargo test -p cosmolkit --test migration_run_privacy`. Retain real-module-layout default/strict compile-pass and compile-fail cases; text checks or runtime rejection cannot replace compile-time isolation.
-- Final cross-crate ordinary validation: `cargo test --workspace --locked --no-fail-fast --exclude cosmolkit-parity-tests --features cosmolkit/op-contracts-strict`. Run corpus and special-corpus parity separately. Enable runtime strict on `cosmolkit`; detached core algorithms do not own runtime contract checks.
-- Use stage-specific exclusions only as prescribed by the plan. Do not report a stage pass as a full workspace pass or silently exclude members from final validation.
-- Ordinary unit/integration tests and pre-commit checks use the default unoptimized dev/test profiles, without `--release`; set `CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0` to reduce compilation cost. Corpus parity and performance tests use `--release`. Strict checks are independent of optimization: retain them for correctness and parity validation; benchmark release defaults unless strict overhead is explicitly being measured. Run `cargo fmt --all` after Rust edits.
-- Release builds use default features unless additional checks are explicitly requested. Building does not authorize publishing.
-- Report actual changes, validation, and remaining blockers. Unrun tests, zero matches, or entirely ignored suites are not passes. When authorized to commit, use Conventional Commits and honor file exclusions.
-
-## Files and Tooling
-
-- Use Rust 2024, four-space indentation, and standard naming. Keep public APIs in `lib.rs` or narrow modules.
-- Put ordinary regressions in the owning crate's unit modules or `tests/`. The current corpus/special-regression runner is `parity-tests/`: inputs belong in its `testdata/`, generated references in `expected/`, with one prepare command and Cargo comparison. Repository `testdata/` retains shared ordinary-regression fixtures and historical provenance, not a second corpus workflow. Follow `dev/repository_organization_policy.md`; do not casually commit generated data or bulk corpora.
-- Manage Python from the repository root with `uv sync --group dev`. Build and test with `.venv/bin/maturin develop --manifest-path python/Cargo.toml` and `.venv/bin/pytest`.
-- Generate stubs with `cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen`; do not hand-edit `python/cosmolkit.pyi`.
-- Build docs with `.venv/bin/python -m sphinx -b html docs/source docs/build/html`; type-check with `.venv/bin/basedpyright python/tests python/examples`.
+- `crates/cosmolkit/`: public Rust API, live Molecule and operation runtime.
+- `crates/cosmolkit-types/`, `crates/cosmolkit-model/`: shared types and detached data.
+- `crates/cosmolkit-core/` and domain crates: algorithms.
+- `crates/cosmolkit-macros/`: declaration parsing and code generation.
+- `python/`, `wasm/`: language bindings.
+- `parity-tests/`: corpus and special-regression comparisons.
+- `testdata/`: shared fixed fixtures and provenance.
+- `docs/`, `docs-web/`: documentation and website.
+- `dev/`: development standards, designs and plans.

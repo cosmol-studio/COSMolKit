@@ -545,38 +545,21 @@ This means:
 
 ## 19. Strict And Release Builds
 
-Core algorithm work must pass:
-
-```bash
-cargo check -p cosmolkit-core
-cargo test -p cosmolkit-core --release
-```
-
-Runtime, operation integration, and macro work also require affected-crate
-checks with the affected capability features enabled:
-
-```bash
-cargo check -p cosmolkit --features op-contracts-strict
-cargo test -p cosmolkit --release --features op-contracts-strict
-cargo test -p cosmolkit --release --test migration_run_privacy
-```
-
-Final cross-crate validation uses:
-
-```bash
-cargo test --workspace --release --features cosmolkit/op-contracts-strict
-```
+Core, runtime, operation and macro work follow the
+[targeted validation commands](README.md#targeted-validation) in the development
+manual. Final cross-crate validation follows its complete
+[pre-commit workflow](README.md#pre-commit-checks). Keep the executable commands
+there rather than maintaining a second copy here.
 
 Detached core algorithms have no runtime-check features. Enable strict
 runtime validation on `cosmolkit`. Preserve exact commands, exits,
 nonzero counts, and failures; only plan-prescribed stage exclusions are allowed.
 A stage pass is not a workspace pass.
 
-Small focused test filters may use the default debug profile during iteration.
-Large local runs, parity suites, and CI test runs should use release mode with
-the same strict feature set. Release-mode testing must not relax the checks
-listed below; they are controlled by `op-contracts-strict`, not by Cargo's
-optimization profile.
+Ordinary unit/integration tests and pre-commit checks use the default unoptimized
+dev/test profiles. Corpus parity and performance tests use release mode.
+Optimization must not relax the checks listed below; they are controlled by
+`op-contracts-strict`, not by Cargo's optimization profile.
 
 Strict mode catches:
 

@@ -40,6 +40,42 @@ gate. Release optimization and strict checking are independent. Published
 builds use default features unless extra checks are explicitly requested;
 building does not authorize publishing.
 
+## Targeted validation
+
+After changing tests, immediately run the most specific relevant checks. Retain
+commands, exit codes, counts and failures. A plan-specified validation runner
+must use its frozen targets/features; do not bypass it.
+
+Use the commands below for the changed area, with Cargo's default unoptimized
+dev/test profiles and debug information disabled:
+
+```bash
+export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0
+
+# Core algorithms.
+cargo check -p cosmolkit-core
+cargo test -p cosmolkit-core
+
+# Runtime, operations and macros: also run affected-crate tests and enable
+# the affected capability features in addition to strict runtime checks.
+cargo check -p cosmolkit --features op-contracts-strict
+cargo test -p cosmolkit --features op-contracts-strict
+
+# Operation integration or visibility changes.
+cargo test -p cosmolkit --test migration_run_privacy
+```
+
+Detached core algorithms have no runtime-check features. Their private
+regressions run as ordinary unit tests, without public test bridges or feature
+gates. Privacy validation must retain real-module-layout default/strict
+compile-pass and compile-fail cases; text checks or runtime rejection cannot
+replace compile-time isolation.
+
+Final cross-crate validation follows the complete pre-commit workflow below.
+Run corpus and special-corpus parity separately through the
+[parity runner](../parity-tests/README.md). Corpus and performance tests use
+optimized release builds; strict checking remains independent of optimization.
+
 ## Pre-commit checks
 
 Run from the repository root against the final changes. The command below
