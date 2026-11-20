@@ -13787,7 +13787,7 @@ pub mod native {
 
         /// Return standard BRICS sites in rule order without cutting the molecule.
         /// Convert the desired matches with `site.to_bond_cut()` before calling either cut method.
-        /// Re-run the search after editing: bond and atom indices refer to this topology.
+        /// Matches refer to this topology. Call `sanitize_()` on the cut molecule before searching it again.
         fn find_brics_bonds(&self, py: Python<'_>) -> PyResult<Vec<BricsBondMatch>> {
             py.detach(|| self.inner.find_brics_bonds())
                 .map(|hits| {
@@ -13807,7 +13807,7 @@ pub mod native {
 
         /// Return regular r-BRICS sites in rule order without cutting the molecule.
         /// Convert the desired matches with `site.to_bond_cut()` before calling either cut method.
-        /// Re-run the search after editing: bond and atom indices refer to this topology.
+        /// Matches refer to this topology. Call `sanitize_()` on the cut molecule before searching it again.
         fn find_r_brics_bonds(&self, py: Python<'_>) -> PyResult<Vec<RBricsBondMatch>> {
             py.detach(|| self.inner.find_r_brics_bonds())
                 .map(|hits| {

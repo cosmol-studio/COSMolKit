@@ -26,6 +26,14 @@ fails when that tag's changelog section is missing or empty.
 
 ## [Unreleased]
 
+### Added
+
+- `core` supports cutting selected bonds with labeled attachment points, either
+  on a new molecule or in place.
+- The `fragmentation` feature adds BRICS and regular r-BRICS cut-site discovery
+  and recursive decomposition, plus RECAP hierarchies with direct parent and
+  child lookups.
+
 ## [0.6.2] - 2026-11-09
 
 ### Added

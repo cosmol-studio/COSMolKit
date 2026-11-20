@@ -192,7 +192,7 @@ mod decomposition {
                 .map_err(BricsDecompositionError::from_rust)
         }
 
-        /// Find standard BRICS sites on this topology; rediscover them after editing.
+        /// Find standard BRICS sites on this topology. Call `sanitize_()` on the cut molecule before searching it again.
         #[wasm_bindgen(js_name=findBricsBonds)]
         pub fn find_brics_bonds(&self) -> Result<Vec<BricsBondMatch>, JsValue> {
             self.0
@@ -208,7 +208,7 @@ mod decomposition {
                 .map_err(BricsDecompositionError::from_rust)
         }
 
-        /// Find regular r-BRICS sites on this topology; rediscover them after editing.
+        /// Find regular r-BRICS sites on this topology. Call `sanitize_()` on the cut molecule before searching it again.
         #[wasm_bindgen(js_name=findRBricsBonds)]
         pub fn find_r_brics_bonds(&self) -> Result<Vec<RBricsBondMatch>, JsValue> {
             self.0

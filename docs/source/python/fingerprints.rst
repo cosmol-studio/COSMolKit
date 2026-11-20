@@ -207,6 +207,9 @@ it is not RDKit MolStandardize's chemically ranked fragment chooser. Empty
 input returns an empty fragment list; requesting its largest fragment raises
 a typed operation error.
 
+To split a connected molecule at selected bonds or follow a RECAP decomposition,
+see :ref:`python-bond-fragmentation`.
+
 Layered fingerprints
 --------------------
 

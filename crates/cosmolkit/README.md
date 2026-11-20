@@ -75,14 +75,14 @@ cosmolkit = { version = "0.6.2", default-features = false, features = ["core", "
 
 | Bundle | Area |
 |---|---|
-| `core` | Molecular text/file IO, native binary archives, batch processing, SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms |
+| `core` | Molecular text/file IO, native binary archives, batch processing, SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms, including bond cuts and component extraction |
 | `bio` | Structural biology readers, values, selection and operations |
 | `descriptors` | Molecular descriptors |
 | `tautomer` | Tautomer capability |
 | `conformer` | 3D conformers, ConfSeq, alignment, UFF/MMFF energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |
 | `search` | SMARTS and substructure search |
-| `fragmentation` | Bond discovery, labeled cuts and recursive decomposition with standard BRICS or regular r-BRICS |
+| `fragmentation` | BRICS and regular r-BRICS cut sites and unique terminal products; RECAP parent–product hierarchies |
 | `reaction` | SMIRKS, reaction templates and execution, including search and SMILES |
 | `depict` | 2D layout and depiction |
 | `inchi` | InChI and InChIKey conversion |
@@ -241,7 +241,10 @@ selection to `with_bonds_cut` or `cut_bonds_`. On `CCCOCCC`, cutting both sites
 and calling `fragments()` returns two `[4*]CCC` fragments and one `[3*]O[3*]`.
 If two rules match the same bond, the first rule supplies the labels; RDKit’s
 one-shot `FragmentOnBRICSBonds` visits the rules in reverse and can label that
-bond differently. Rerun discovery after editing the input topology.
+bond differently. Matches refer to atom and bond indices in the topology that
+was searched. Cutting bonds invalidates ring and valence information. To find
+more sites or run a recursive decomposition on the cut molecule, first call
+`cut.sanitize_()?`, then run the query on `cut`.
 
 Use `mol.decompose_brics()?` for a vocabulary of unique terminal products. It
 returns canonical isomeric SMILES in unspecified order. For `CCCOCCC` the result

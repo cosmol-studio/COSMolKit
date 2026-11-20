@@ -287,6 +287,8 @@ inputs until a trusted graph has been constructed.
   enumeration with exhaustive, bounded random, uniqueness, enhanced-group,
   and optional embedding controls
 - Hydrogen transforms and Kekulization
+- Labeled bond cuts, BRICS and regular r-BRICS cut-site discovery and recursive
+  decomposition, and RECAP product hierarchies
 - Sanitization and chemistry problem detection
 - Source-backed Rust tautomer enumeration, canonical selection, scoring,
   callbacks, current and V1 transform catalogs, and ordered result provenance

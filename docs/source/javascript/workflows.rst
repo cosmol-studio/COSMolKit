@@ -350,24 +350,62 @@ An empty computed fingerprint batch retains its requested ``nBits``. For example
 Fragments and scaffolds
 -----------------------
 
-Requires ``core``. Fragment extraction returns separate owned molecules;
-``largestFragment()`` selects one, while ``murckoScaffold()`` extracts a scaffold.
+``fragments()`` returns one owned molecule per connected component;
+``largestFragment()`` selects just one. Both are available in ``core``.
+The scaffold call below also needs ``fingerprints``: use ``core-fingerprints``,
+``core-analysis`` or ``full`` to run the whole example.
 
 .. code-block:: javascript
 
    const mol = ck.Molecule.fromSmiles("CCc1ccccc1.[Na+]");
-   const fragments = mol.fragments();
-   const largest = mol.largestFragment();
-   const scaffold = largest.murckoScaffold();
+   let fragments = [], largest, scaffold;
    try {
+     fragments = mol.fragments();
+     largest = mol.largestFragment();
+     scaffold = largest.murckoScaffold();
      console.log(fragments.map((fragment) => fragment.toSmiles()));
      console.log(largest.toSmiles(), scaffold.toSmiles());
    } finally {
-     scaffold.free();
-     largest.free();
+     scaffold?.free();
+     largest?.free();
      for (const fragment of fragments) fragment.free();
      mol.free();
    }
+
+BRICS and RECAP decomposition
+-----------------------------
+
+Use the full npm package to find BRICS sites or run a recursive decomposition.
+In dipropyl ether, cutting both BRICS sites produces two identical propyl
+fragments. ``decomposeBrics()`` returns each terminal product only once:
+
+.. code-block:: javascript
+
+   const ether = ck.Molecule.fromSmiles("CCCOCCC");
+   let sites = [], cuts = [], cut, parts = [];
+   try {
+     sites = ether.findBricsBonds();
+     for (const site of sites) cuts.push(site.toBondCut());
+     cut = ether.withBondsCut(cuts);
+     parts = cut.fragments();
+     console.log(parts.map(part => part.toSmiles())); // ["[4*]CCC", "[3*]O[3*]", "[4*]CCC"]
+     console.log(ether.decomposeBrics().sort()); // ["[3*]O[3*]", "[4*]CCC"]
+   } finally {
+     for (const value of [...parts, cut, ...cuts, ...sites]) value?.free();
+     ether.free();
+   }
+
+For regular r-BRICS, use ``findRBricsBonds()`` or ``decomposeRBrics()``.
+If you know the bond indices already, ``BondCut.atBond()`` and both cut
+methods are available in ``core``. Pass a nonempty selection to ``withBondsCut()``
+for a new molecule or to ``cutBonds_()`` to edit the source. ``fragments()``
+returns sanitized components. Before running another BRICS, r-BRICS or RECAP
+query on the cut molecule itself, call ``sanitize_()`` on it.
+
+For RECAP, ``mol.decomposeRecap()`` returns a hierarchy keyed by canonical
+SMILES. Use ``graph.children(graph.root)`` for the direct products of the
+input and ``graph.parents(product)`` to trace a product back to its immediate
+parents. Free the hierarchy when done; the SMILES strings are JS values.
 
 InChI conversion
 ----------------
