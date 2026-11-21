@@ -21,6 +21,8 @@ full
 │       └── core
 ├── depict
 │   └── core
+├── fragmentation
+│   └── core
 ├── fingerprints
 │   └── core
 ├── descriptors
@@ -80,6 +82,7 @@ cosmolkit = { version = "0.6.2", default-features = false, features = ["core", "
 | `conformer` | 3D conformers, ConfSeq, alignment, UFF/MMFF energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |
 | `search` | SMARTS and substructure search |
+| `fragmentation` | BRICS, regular r-BRICS and RECAP decomposition |
 | `reaction` | SMIRKS, reaction templates and execution, including search and SMILES |
 | `depict` | 2D layout and depiction |
 | `inchi` | InChI and InChIKey conversion |
@@ -230,6 +233,24 @@ semantics are required.
 Stable molecule operations include assigning atom chiral tags from a selected
 3D conformer through `with_chiral_tags_from_structure()` and its explicit
 in-place counterpart `assign_chiral_tags_from_structure_()`.
+
+With the `fragmentation` bundle, `mol.find_brics_bonds()?` reports the source
+bond and `(atom, environment)` labels in RDKit `FindBRICSBonds` order. The first
+matching rule wins, unlike the reversed rule order of `FragmentOnBRICSBonds`.
+Convert matches with `site.to_bond_cut()` and pass a nonempty selection to
+`with_bonds_cut()` or `cut_bonds_()`. Calling `fragments()` on the result retains
+repeated fragments. Matches belong to the searched topology; rediscover them
+after edits. Sanitize a cut molecule before searching or decomposing it again.
+
+`decompose_brics()` and `decompose_r_brics()` leave the source unchanged and
+return unique terminal canonical SMILES in unspecified order, or the input's
+SMILES when no reaction applies. `find_r_brics_bonds()` uses the regular
+[r-BRICS](https://github.com/BiomedSciAI/r-BRICS) rules; neither r-BRICS method
+includes the separate `reBRICS` post-processing step.
+
+`mol.decompose_recap()?` returns a product graph with `root()`, `parents(key)`,
+`children(key)` and `leaves()`. Shared products retain all direct parents.
+Unknown keys return `RecapLookupError`; a root without products has no leaves.
 
 ## Protein Structures
 

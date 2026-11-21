@@ -24,6 +24,8 @@ pub enum OperationError {
     },
     #[cfg(feature = "cap-transforms")]
     Fragments(cosmolkit_core::MoleculeFragmentsError),
+    #[cfg(feature = "cap-transforms")]
+    BondCut(cosmolkit_core::BondCutError),
     EmptyFragments,
     #[cfg(feature = "cap-hashing")]
     Scaffold(cosmolkit_core::ScaffoldError),
@@ -211,6 +213,8 @@ impl fmt::Display for OperationError {
             Self::Scaffold(error) => error.fmt(formatter),
             #[cfg(feature = "cap-transforms")]
             Self::Fragments(error) => error.fmt(formatter),
+            #[cfg(feature = "cap-transforms")]
+            Self::BondCut(error) => error.fmt(formatter),
             Self::EmptyFragments => {
                 formatter.write_str("largest_fragment requires at least one atom")
             }
@@ -431,6 +435,8 @@ impl std::error::Error for OperationError {
             Self::Scaffold(error) => Some(error),
             #[cfg(feature = "cap-transforms")]
             Self::Fragments(error) => Some(error),
+            #[cfg(feature = "cap-transforms")]
+            Self::BondCut(error) => Some(error),
             #[cfg(feature = "cap-reaction")]
             Self::ReactionRun(error) => Some(error),
             #[cfg(feature = "cap-reaction")]

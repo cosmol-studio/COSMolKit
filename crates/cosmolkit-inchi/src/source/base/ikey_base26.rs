@@ -25,8 +25,8 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
-*
-* The InChI library and programs are free software developed under the
+ *
+ * The InChI library and programs are free software developed under the
  * auspices of the International Union of Pure and Applied Chemistry (IUPAC).
  * Originally developed at NIST.
  * Modifications and additions by IUPAC and the InChI Trust.
@@ -36,7 +36,7 @@
  *
  * info@inchi-trust.org
  *
-*/
+ */
 static T26: [[u8; 4]; 16384] = [
     *b"AAA\0", *b"AAB\0", *b"AAC\0", *b"AAD\0", *b"AAE\0", *b"AAF\0", *b"AAG\0", *b"AAH\0",
     *b"AAI\0", *b"AAJ\0", *b"AAK\0", *b"AAL\0", *b"AAM\0", *b"AAN\0", *b"AAO\0", *b"AAP\0",
@@ -2115,8 +2115,8 @@ static T26: [[u8; 4]; 16384] = [
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
-*
-* The InChI library and programs are free software developed under the
+ *
+ * The InChI library and programs are free software developed under the
  * auspices of the International Union of Pure and Applied Chemistry (IUPAC).
  * Originally developed at NIST.
  * Modifications and additions by IUPAC and the InChI Trust.
@@ -2126,7 +2126,7 @@ static T26: [[u8; 4]; 16384] = [
  *
  * info@inchi-trust.org
  *
-*/
+ */
 // Private source-exact D26: ikey_base26.c1115..1160, including unused512..675.
 static D26: [[u8; 3]; 676] = [
     *b"AA\0", *b"AB\0", *b"AC\0", *b"AD\0", *b"AE\0", *b"AF\0", *b"AG\0", *b"AH\0", *b"AI\0",

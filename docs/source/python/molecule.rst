@@ -137,6 +137,47 @@ If an in-place method returns an error, the molecule is not guaranteed to equal
 its pre-call value. Use the value-style method when failure-preserving behavior
 is required.
 
+.. _python-bond-fragmentation:
+
+Cut bonds or enumerate decomposition products
+---------------------------------------------
+
+Use ``with_bonds_cut()`` and ``fragments()`` when you want one molecule per
+connected component, including repeated fragments. For example, cutting both
+BRICS sites in dipropyl ether gives two identical propyl fragments. Recursive
+BRICS decomposition returns each terminal product just once, as a canonical
+SMILES string. Its output order is unspecified.
+
+.. code-block:: python
+
+   import cosmolkit as ck
+
+   ether = ck.mol_from_smiles("CCCOCCC")
+   cuts = [site.to_bond_cut() for site in ether.find_brics_bonds()]
+   cut = ether.with_bonds_cut(cuts)
+   print([part.to_smiles() for part in cut.fragments()])
+   # ['[4*]CCC', '[3*]O[3*]', '[4*]CCC']
+   print(sorted(ether.decompose_brics()))
+   # ['[3*]O[3*]', '[4*]CCC']
+
+``with_bonds_cut()`` leaves the source unchanged; ``cut_bonds_()`` applies
+the cuts in place. Both take a nonempty selection. ``fragments()`` sanitizes
+the components it returns. Before running another BRICS, r-BRICS or RECAP
+query on the cut molecule itself, call ``cut.sanitize_()``. A cut that leaves
+an aromatic atom outside a ring can cause sanitization to fail.
+
+For regular r-BRICS, use ``find_r_brics_bonds()`` to choose cuts or
+``decompose_r_brics()`` to apply the rules recursively, without the separate
+``reBRICS`` post-processing step. Because the rules act on intermediate
+products, cutting all sites on the input can give different products: on
+n-decane the five cut fragments have three distinct SMILES, while recursive
+r-BRICS returns four distinct SMILES.
+
+For RECAP, use
+``graph = mol.decompose_recap()``: ``graph.children(graph.root)`` gives the
+direct products across all first disconnections, and ``graph.leaves()``
+gives the products with no further disconnections. An uncut root has no leaves.
+
 SMILES Output
 -------------
 

@@ -33,6 +33,7 @@ const BUNDLES: &[(&str, &[&str])] = &[
         ],
     ),
     ("fingerprints", &["cap-fingerprints", "cap-hashing"]),
+    ("fragmentation", &["cap-fragmentation"]),
     ("search", &["cap-search"]),
     ("reaction", &["cap-reaction"]),
     ("stereoisomers", &["cap-stereoisomers"]),
@@ -51,6 +52,7 @@ const PREREQUISITES: &[(&str, &[&str])] = &[
     ("cap-confseq", &["cap-conformer"]),
     // Avalon converts through the molecular IO owner, without enabling depiction.
     ("cap-fingerprints", &["cap-io"]),
+    ("cap-fragmentation", &["cap-transforms"]),
     ("cap-search", &["cap-smiles"]),
     ("cap-serialization", &["cap-io"]),
     ("cap-stereoisomers", &["cap-stereo"]),
@@ -162,7 +164,7 @@ fn bundle_and_capability_declarations_have_exact_membership() {
         vec!["core", "bio"],
         expected_caps(CORE.iter().copied().chain(["cap-bio"])),
     ));
-    assert_eq!(cases.len(), 54);
+    assert_eq!(cases.len(), 56);
     assert!(!manifest["features"].as_table().unwrap().contains_key("io"));
     assert!(declared_caps(&manifest, false, &["core"]).contains("cap-serialization"));
     assert!(declared_caps(&manifest, false, &["core"]).contains("cap-batch"));
@@ -259,6 +261,7 @@ fn enabled_registry_rows_use_capability_names_not_bundle_names() {
         ("cap-hashing", cfg!(feature = "cap-hashing")),
         ("cap-inchi", cfg!(feature = "cap-inchi")),
         ("cap-io", cfg!(feature = "cap-io")),
+        ("cap-fragmentation", cfg!(feature = "cap-fragmentation")),
         ("cap-search", cfg!(feature = "cap-search")),
         ("cap-serialization", cfg!(feature = "cap-serialization")),
         ("cap-smiles", cfg!(feature = "cap-smiles")),

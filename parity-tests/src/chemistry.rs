@@ -12,6 +12,14 @@ pub const TASKS: &[(&str, &str)] = &[
     ("remove_hs", "core"),
     ("potential_stereo", "core"),
     ("distance_matrix", "core"),
+    ("find_brics_bonds", "fragmentation"),
+    ("find_r_brics_bonds", "r_brics"),
+    ("r_brics_cut_graph", "r_brics"),
+    ("decompose_r_brics", "r_brics"),
+    ("decompose_brics", "fragmentation"),
+    ("decompose_recap", "fragmentation"),
+    ("brics_fragment_occurrences", "fragmentation"),
+    ("with_bonds_cut", "scaffolds"),
     ("fragments", "scaffolds"),
     ("largest_fragment", "scaffolds"),
     ("murcko_scaffold", "scaffolds"),
@@ -27,6 +35,7 @@ pub fn profiles(task: &str) -> Result<Vec<Json>> {
         "remove_hs"=>[false,true].into_iter().flat_map(|sanitize|[false,true].map(move|isotopes|json!({"sanitize":sanitize,"remove_isotopes":isotopes,"remove_mapped":true,"remove_hydrides":false}))).collect(),
         "potential_stereo"=>[false,true].into_iter().flat_map(|clean|[false,true].into_iter().flat_map(move|flag|[false,true].map(move|allow|json!({"clean":clean,"flag_possible":flag,"allow_nontetrahedral":allow})))).collect(),
         "distance_matrix"=>[false,true].into_iter().flat_map(|bo|[false,true].map(move|aw|json!({"use_bond_order":bo,"use_atom_weights":aw}))).collect(),
+        "with_bonds_cut"=>[false,true].map(|explicit|json!({"explicit_labels":explicit})).into(),
         task if TASKS.iter().any(|(name,_)|*name==task)=>vec![json!({})],
         _=>return Err(format!("unknown core task {task}").into()),
     })
@@ -44,6 +53,14 @@ pub fn normalize(task: &str, p: Json) -> Result<Json> {
     }
     Ok(p)
 }
+fn oriented_site(bond: cosmolkit::BondId, [(a, x), (b, y)]: [(cosmolkit::AtomId, u8); 2]) -> Value {
+    Value::List(
+        [bond.index(), a.index(), x as usize, b.index(), y as usize]
+            .map(|n| Value::Int(n as i64))
+            .to_vec(),
+    )
+}
+
 fn flag(p: &Json, key: &str) -> Result<bool> {
     p[key]
         .as_bool()
@@ -199,6 +216,149 @@ pub fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
                 Value::List(rows),
                 output.cleaned_molecule.as_ref().map_or(Value::Null, state),
             ])
+        }
+        "decompose_recap" => {
+            let graph = m.decompose_recap()?;
+            let mut visited = std::collections::BTreeSet::new();
+            let mut pending = vec![graph.root().to_owned()];
+            while let Some(key) = pending.pop() {
+                if !visited.contains(&key) {
+                    pending.extend(graph.children(&key)?);
+                    visited.insert(key);
+                }
+            }
+
+            let indices: std::collections::HashMap<_, _> = visited
+                .iter()
+                .enumerate()
+                .map(|(index, key)| (key.as_str(), index as i64))
+                .collect();
+            let ids = |keys: Vec<String>| -> Result<Value> {
+                let mut values = keys
+                    .iter()
+                    .map(|key| {
+                        indices
+                            .get(key.as_str())
+                            .copied()
+                            .ok_or("RECAP traversal returned a nonreachable key")
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                values.sort_unstable();
+                Ok(Value::List(values.into_iter().map(Value::Int).collect()))
+            };
+            let mut rows = Vec::with_capacity(visited.len());
+            for key in &visited {
+                rows.push(Value::List(vec![
+                    Value::Text(key.clone()),
+                    ids(graph.parents(key)?)?,
+                    ids(graph.children(key)?)?,
+                ]));
+            }
+            Value::List(vec![
+                Value::Text(graph.root().to_owned()),
+                Value::List(rows),
+                ids(graph.leaves())?,
+            ])
+        }
+        "decompose_brics" | "decompose_r_brics" => {
+            let mut keys = if task == "decompose_brics" {
+                m.decompose_brics()?
+            } else {
+                m.decompose_r_brics()?
+            };
+            keys.sort_unstable();
+            Value::List(keys.into_iter().map(Value::Text).collect())
+        }
+        "find_brics_bonds" => Value::List(
+            m.find_brics_bonds()?
+                .iter()
+                .map(|s| oriented_site(s.bond(), s.ends()))
+                .collect(),
+        ),
+        "find_r_brics_bonds" => Value::List(
+            m.find_r_brics_bonds()?
+                .iter()
+                .map(|s| oriented_site(s.bond(), s.ends()))
+                .collect(),
+        ),
+        "r_brics_cut_graph" => {
+            let cuts: Vec<_> = m
+                .find_r_brics_bonds()?
+                .iter()
+                .map(|s| s.to_bond_cut())
+                .collect();
+            let cut = if cuts.is_empty() {
+                m.copy()
+            } else {
+                m.with_bonds_cut(&cuts)?
+            };
+            let endpoint = |id: cosmolkit::AtomId| {
+                if id.index() < m.num_atoms() {
+                    id.index() as i64
+                } else {
+                    -1 - i64::from(cut.atoms()[id.index()].isotope().unwrap_or(0))
+                }
+            };
+            let mut edges: Vec<_> = cut
+                .bonds()
+                .iter()
+                .map(|b| {
+                    let (a, b) = (endpoint(b.begin()), endpoint(b.end()));
+                    [a.min(b), a.max(b)]
+                })
+                .collect();
+            edges.sort_unstable();
+            Value::List(vec![
+                Value::Int(cut.num_atoms() as i64),
+                Value::List(
+                    edges
+                        .into_iter()
+                        .map(|row| Value::List(row.map(Value::Int).to_vec()))
+                        .collect(),
+                ),
+            ])
+        }
+        "brics_fragment_occurrences" => {
+            let cuts: Vec<_> = m
+                .find_brics_bonds()?
+                .iter()
+                .map(|s| s.to_bond_cut())
+                .collect();
+            let product = if cuts.is_empty() {
+                m.copy()
+            } else {
+                m.with_bonds_cut(&cuts)?
+            };
+            Value::List(product.fragments()?.iter().map(state).collect())
+        }
+        "with_bonds_cut" => {
+            let explicit = flag(p, "explicit_labels")?;
+            let count = m.num_bonds();
+            let ends = [
+                (count > 0).then_some(0),
+                count.checked_sub(1).filter(|&last| last > 0),
+            ];
+            let cuts = ends
+                .into_iter()
+                .flatten()
+                .enumerate()
+                .map(|(j, i)| {
+                    cosmolkit::BondCut::at_bond(
+                        cosmolkit::BondId::new(i),
+                        explicit.then_some(101 + j * 2),
+                        explicit.then_some(202 + j * 2),
+                    )
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            let value = state(&m.with_bonds_cut(&cuts)?);
+            let mut target = m.copy();
+            target.cut_bonds_(&cuts)?;
+            if state(&target) != value {
+                return Err(
+                    "in-place and value-returning cuts produced different atom/bond rows".into(),
+                );
+            }
+            value
         }
         "fragments" => Value::List(m.fragments()?.iter().map(state).collect()),
         "largest_fragment" => state(&m.largest_fragment()?),

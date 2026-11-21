@@ -181,6 +181,7 @@ pub(crate) fn preserve_cache_none_probe_impl(
 
 #[cfg(cosmolkit_runtime_privacy_case = "preserve_forbidden")]
 fn preserve_read_grants_no_mutation(parts: &mut OpParts<'_, PreserveCacheReadProbeAccess>) {
+    let _ = parts.transform_mapped_blocks(|_, _, _| unreachable!());
     let _ = parts.checkout_derived_cache();
     let _ = parts.install_derived_cache(crate::molecule::DerivedCacheBlock::default());
     let _ = parts.clear_cache(crate::DerivedState::RINGS);
@@ -279,6 +280,14 @@ fn pending_cannot_be_used_twice(pending: crate::PendingMolecule<super::Potential
 fn declaration_generated_capabilities_are_visible(
     parts: &mut OpParts<'_, WithHydrogensAccess>,
 ) -> Result<(), OperationError> {
+    parts.transform_mapped_blocks(|t, c, p| {
+        Ok((
+            t.clone(),
+            c.clone(),
+            p.clone(),
+            cosmolkit_model::TopologyMapping::identity(t.atoms.len(), t.bonds.len()),
+        ))
+    })?;
     let topology = parts.checkout_topology()?;
     parts.install_topology(topology)?;
     let coordinates = parts.checkout_coordinates()?;
@@ -300,6 +309,7 @@ fn unauthorized_generated_method_is_hidden(parts: &OpParts<'_, WithHydrogensAcce
 
 #[cfg(cosmolkit_runtime_privacy_case = "forbidden")]
 fn unrestricted_single_output_primitives_are_hidden(parts: &mut OpParts<'_, WithHydrogensAccess>) {
+    let _ = parts.transform_mapped_blocks_runtime(|_, _, _| unreachable!());
     let _ = parts.read_properties_runtime();
     let _ = parts.checkout_topology_runtime();
     let _ = parts.checkout_coordinates_runtime();

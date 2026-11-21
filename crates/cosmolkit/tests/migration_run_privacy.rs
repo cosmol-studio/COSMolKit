@@ -42,6 +42,7 @@ const ACCESS: &[Case] = &[
     (
         "preserve_forbidden",
         &[
+            "transform_mapped_blocks",
             "checkout_derived_cache",
             "install_derived_cache",
             "clear_cache",
@@ -96,6 +97,7 @@ const ACCESS: &[Case] = &[
     (
         "forbidden",
         &[
+            "transform_mapped_blocks_runtime",
             "properties",
             "read_properties_runtime",
             "checkout_topology_runtime",

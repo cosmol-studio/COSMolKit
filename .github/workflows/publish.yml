@@ -110,6 +110,7 @@ jobs:
                       python -B wasm/registry_check.py
                       if [ "$preset" = full ]; then
                           node wasm/tests/runtime.mjs
+                          node --test wasm/tests/bond_cuts.mjs
                           npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
                       else
                           npx --yes --package typescript@5.8.3 tsc --noEmit --strict \
@@ -299,11 +300,11 @@ jobs:
                   name: python-stubs
                   path: python/artifacts/smoke/package/cosmolkit
 
-            - name: Copy README into python package
-              run: cp README.md python/README.md
+            - name: Copy package documents for the sdist
+              run: cp README.md LICENSE python/
 
-            - name: Rewrite sdist README path
-              run: sed -i 's#readme = "../README.md"#readme = "./README.md"#' python/pyproject.toml
+            - name: Use the sdist copies of the README and license
+              run: sed -i -e 's#readme = "../README.md"#readme = "./README.md"#' -e 's#file = "../LICENSE"#file = "./LICENSE"#' python/pyproject.toml
 
             - name: Build sdist
               uses: PyO3/maturin-action@v1

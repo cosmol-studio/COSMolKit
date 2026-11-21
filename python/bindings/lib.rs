@@ -34,6 +34,7 @@ mod bio_source_values;
 mod bio_structure;
 mod bio_values;
 mod bio_write_configuration;
+mod bond_cuts;
 mod builder;
 #[path = "../framework/callbacks.rs"]
 mod callbacks;
@@ -210,6 +211,12 @@ mod xyz_errors;
 
 #[pyo3::pymodule(name = "_native")]
 pub mod native {
+    #[pymodule_export]
+    use super::bond_cuts::{
+        BondCut, BondCutError, BondCutErrorKind, BricsBondMatch, BricsDecompositionError,
+        BricsDecompositionErrorKind, RBricsBondMatch, RecapDecomposition, RecapDecompositionError,
+        RecapDecompositionErrorKind, RecapLookupError, RecapLookupErrorKind,
+    };
     #[pymodule_init]
     fn register_errors(module: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
         super::error_framework::register(module)
@@ -13764,6 +13771,70 @@ pub mod native {
                 .map(|inner| Molecule { inner })
                 .map_err(super::operation_errors::OperationError::from_rust)
         }
+        /// Decompose this molecule into a RECAP hierarchy of canonical product SMILES.
+        fn decompose_recap(&self, py: Python<'_>) -> PyResult<RecapDecomposition> {
+            py.detach(|| self.inner.decompose_recap())
+                .map(|inner| RecapDecomposition { inner })
+                .map_err(RecapDecompositionError::from_rust)
+        }
+
+        /// Return unique terminal canonical SMILES in unspecified order.
+        /// If no BRICS reaction applies, return the molecule's canonical SMILES.
+        fn decompose_brics(&self, py: Python<'_>) -> PyResult<Vec<String>> {
+            py.detach(|| self.inner.decompose_brics())
+                .map_err(BricsDecompositionError::from_rust)
+        }
+
+        /// Return standard BRICS sites in rule order without cutting the molecule.
+        /// Convert the desired matches with `site.to_bond_cut()` before calling either cut method.
+        /// Matches refer to this topology. Call `sanitize_()` on the cut molecule before searching it again.
+        fn find_brics_bonds(&self, py: Python<'_>) -> PyResult<Vec<BricsBondMatch>> {
+            py.detach(|| self.inner.find_brics_bonds())
+                .map(|hits| {
+                    hits.into_iter()
+                        .map(|inner| BricsBondMatch { inner })
+                        .collect()
+                })
+                .map_err(SubstructMatchError::from_rust)
+        }
+
+        /// Return unique terminal canonical SMILES from regular r-BRICS in unspecified order.
+        /// If no BRICS reaction applies, return the molecule's canonical SMILES.
+        fn decompose_r_brics(&self, py: Python<'_>) -> PyResult<Vec<String>> {
+            py.detach(|| self.inner.decompose_r_brics())
+                .map_err(BricsDecompositionError::from_rust)
+        }
+
+        /// Return regular r-BRICS sites in rule order without cutting the molecule.
+        /// Convert the desired matches with `site.to_bond_cut()` before calling either cut method.
+        /// Matches refer to this topology. Call `sanitize_()` on the cut molecule before searching it again.
+        fn find_r_brics_bonds(&self, py: Python<'_>) -> PyResult<Vec<RBricsBondMatch>> {
+            py.detach(|| self.inner.find_r_brics_bonds())
+                .map(|hits| {
+                    hits.into_iter()
+                        .map(|inner| RBricsBondMatch { inner })
+                        .collect()
+                })
+                .map_err(SubstructMatchError::from_rust)
+        }
+
+        /// Cut selected bonds and return one molecule. Use `fragments()` to extract its components.
+        /// For example, `mol.with_bonds_cut([BondCut.at_bond(1, 101, 202)])` leaves
+        /// the source unchanged and labels the dummies on bond 1's begin and end sides.
+        fn with_bonds_cut(&self, py: Python<'_>, cuts: Vec<BondCut>) -> PyResult<Molecule> {
+            let cuts: Vec<_> = cuts.into_iter().map(|cut| cut.inner).collect();
+            py.detach(|| self.inner.with_bonds_cut(&cuts))
+                .map(|inner| Molecule { inner })
+                .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
+        /// Apply the same cuts to this molecule and return None. Selection errors leave it unchanged.
+        fn cut_bonds_(&mut self, py: Python<'_>, cuts: Vec<BondCut>) -> PyResult<()> {
+            let cuts: Vec<_> = cuts.into_iter().map(|cut| cut.inner).collect();
+            py.detach(|| self.inner.cut_bonds_(&cuts))
+                .map_err(super::operation_errors::OperationError::from_rust)
+        }
+
         /// Return the fragment selected by the native largest-fragment policy; the source is unchanged.
         fn largest_fragment(&self, py: Python<'_>) -> PyResult<Molecule> {
             py.detach(|| self.inner.largest_fragment())

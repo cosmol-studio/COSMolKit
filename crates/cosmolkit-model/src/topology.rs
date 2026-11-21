@@ -4837,15 +4837,31 @@ fn clear_source_incident_bond_stereo(
             if other_index == index || (other.begin() != endpoint && other.end() != endpoint) {
                 continue;
             }
-            if other.stereo_atom_references().contains(&removed_neighbor) {
-                if matches!(other.stereo(), BondStereo::Cis | BondStereo::Trans) {
-                    other
-                        .set_stereo(BondStereo::None)
-                        .map_err(TopologyEditError::InvalidBond)?;
-                }
-                other.set_stereo_atoms(None);
-            }
+            clear_source_bond_stereo_reference(other, removed_neighbor)?;
         }
+    }
+    Ok(())
+}
+
+fn clear_source_bond_stereo_reference(
+    bond: &mut Bond,
+    removed_neighbor: AtomId,
+) -> Result<(), TopologyEditError> {
+    // RDKit✔️✔️: if (std::find(obnd->getStereoAtoms().begin(),
+    // RDKit✔️✔️:               obnd->getStereoAtoms().end(),
+    // RDKit✔️✔️:               atoms[1]->getIdx()) != obnd->getStereoAtoms().end()) {
+    // RDKit✔️✔️:   if (obnd->getStereo() == Bond::BondStereo::STEREOCIS ||
+    // RDKit✔️✔️:       obnd->getStereo() == Bond::BondStereo::STEREOTRANS) {
+    // RDKit✔️✔️:     obnd->setStereo(Bond::BondStereo::STEREONONE);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   obnd->getStereoAtoms().clear();
+    // RDKit✔️✔️: }
+    if bond.stereo_atom_references().contains(&removed_neighbor) {
+        if matches!(bond.stereo(), BondStereo::Cis | BondStereo::Trans) {
+            bond.set_stereo(BondStereo::None)
+                .map_err(TopologyEditError::InvalidBond)?;
+        }
+        bond.set_stereo_atoms(None);
     }
     Ok(())
 }
@@ -4944,8 +4960,11 @@ pub fn batch_remove_bonds_source<E: From<TopologyEditError>>(
     // Native pointer/null/width/allocator states are unmodeled. This actual
     // source batch method is separate from the local structural mapping finish;
     // native consumer integration remains at the whole source gate.
-    // Cost: per-delete canonical row stereo scans/Vec erase O(E), plus one dense
-    // ID alias map/CSR rebuild. These add source-absent work; no graph clone.
+    // Index physical rows once: source IDs may be sparse after a partial error.
+    // Defer physical compaction until the source-ordered side effects finish.
+    // This removes per-deletion O(E) scans and Vec shifts without reordering
+    // stereo/group/bookmark effects. Compact completed deletions on errors and
+    // unwinding too; failed deletions and unrenumbered source IDs survive.
     let Some(pending) = pending else {
         return Ok(());
     };
@@ -4953,33 +4972,117 @@ pub fn batch_remove_bonds_source<E: From<TopologyEditError>>(
         return Ok(());
     }
     let original_count = topology.bonds.len();
+    // Physical row indices, independent of potentially sparse source BondIds.
+    // Three flat buffers avoid a hash lookup and an allocation for every atom.
+    let atom_count = topology.atoms.len();
+    // Deletion only clears stereo references; it never creates any. An empty
+    // reference set proves that every neighbor-stereo action is a no-op.
+    let needs_stereo = topology
+        .bonds
+        .iter()
+        .any(|bond| !bond.stereo_atom_references().is_empty());
+    let indexed = needs_stereo
+        && topology
+            .bonds
+            .iter()
+            .all(|bond| bond.begin().index() < atom_count && bond.end().index() < atom_count);
+    let (offsets, incident) = if indexed {
+        let mut offsets = vec![0; atom_count + 1];
+        for bond in &topology.bonds {
+            offsets[bond.begin().index() + 1] += 1;
+            if bond.end() != bond.begin() {
+                offsets[bond.end().index() + 1] += 1;
+            }
+        }
+        for atom in 0..atom_count {
+            offsets[atom + 1] += offsets[atom];
+        }
+        let mut next = offsets[..atom_count].to_vec();
+        let mut incident = vec![0; offsets[atom_count]];
+        for (row, bond) in topology.bonds.iter().enumerate() {
+            for atom in [
+                Some(bond.begin()),
+                (bond.end() != bond.begin()).then_some(bond.end()),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                incident[next[atom.index()]] = row;
+                next[atom.index()] += 1;
+            }
+        }
+        (offsets, incident)
+    } else {
+        // No index is needed without stereo references. Malformed detached
+        // endpoints retain the old scan and error order instead of gaining
+        // a different validation policy.
+        (Vec::new(), Vec::new())
+    };
+    let mut removed = vec![false; original_count];
     let mut minimum = original_count;
-    for index in (0..pending.len()).rev() {
-        if !pending[index] {
-            continue;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        for index in (0..pending.len()).rev() {
+            if !pending[index] {
+                continue;
+            }
+            let bond = topology.bonds.get(index).ok_or_else(|| {
+                E::from(TopologyEditError::BondOutOfRange {
+                    bond: BondId::new(index),
+                    bond_count: topology.bonds.len(),
+                })
+            })?;
+            let old_id = bond.id();
+            let begin = bond.begin();
+            let end = bond.end();
+            minimum = index;
+            if let Some(bookmarks) = bookmarks.as_deref_mut() {
+                clear_source_bond_bookmarks(bookmarks, old_id);
+            }
+            if needs_stereo {
+                for (endpoint, removed_neighbor) in [(begin, end), (end, begin)] {
+                    let rows = if indexed {
+                        offsets[endpoint.index()]..offsets[endpoint.index() + 1]
+                    } else {
+                        0..original_count
+                    };
+                    for slot in rows {
+                        let other = if indexed { incident[slot] } else { slot };
+                        let adjacent = &topology.bonds[other];
+                        if other != index
+                            && !removed[other]
+                            && (adjacent.begin() == endpoint || adjacent.end() == endpoint)
+                        {
+                            clear_source_bond_stereo_reference(
+                                &mut topology.bonds[other],
+                                removed_neighbor,
+                            )
+                            .map_err(E::from)?;
+                        }
+                    }
+                }
+            }
+            crate::sgroup::remove_source_groups_referencing_bond(
+                &mut topology.substance_groups,
+                BondId::new(index),
+                uint_reader,
+            )?;
+            for group in &mut topology.stereo_groups {
+                group.remove_bond(old_id);
+            }
+            topology.stereo_groups.retain(|g| !g.is_empty());
+            removed[index] = true;
         }
-        let bond = topology.bonds.get(index).ok_or_else(|| {
-            E::from(TopologyEditError::BondOutOfRange {
-                bond: BondId::new(index),
-                bond_count: topology.bonds.len(),
-            })
-        })?;
-        let old_id = bond.id();
-        minimum = index;
-        if let Some(bookmarks) = bookmarks.as_deref_mut() {
-            clear_source_bond_bookmarks(bookmarks, old_id);
-        }
-        clear_source_incident_bond_stereo(topology, index).map_err(E::from)?;
-        crate::sgroup::remove_source_groups_referencing_bond(
-            &mut topology.substance_groups,
-            BondId::new(index),
-            uint_reader,
-        )?;
-        for group in &mut topology.stereo_groups {
-            group.remove_bond(old_id);
-        }
-        topology.stereo_groups.retain(|g| !g.is_empty());
-        topology.bonds.remove(index);
+        Ok::<(), E>(())
+    }));
+    let mut row = 0;
+    topology.bonds.retain(|_| {
+        let keep = !removed[row];
+        row += 1;
+        keep
+    });
+    match result {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
     }
     let mut aliases = vec![None; original_count];
     let mut next = minimum;
@@ -5113,6 +5216,36 @@ mod source_batch_remove_bonds_complete_tests {
         #[cfg(feature = "runtime-invariants")]
         topology.validate().unwrap();
     }
+    #[test]
+    fn source_batch_remove_bonds_unwind_keeps_completed_deletions() {
+        let mut topology = topology();
+        let mut group = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+            .with_bonds(vec![BondId::new(0)]);
+        group.set_prop("PARENT", PropertyValue::UInt(10)).unwrap();
+        group.set_prop("index", PropertyValue::Bool(false)).unwrap();
+        topology.substance_groups.push(group);
+        let before_adjacency = topology.adjacency.clone();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            batch_remove_bonds_source::<TopologyEditError>(
+                &mut topology,
+                Some(&[true, false, true]),
+                None,
+                &mut |value| {
+                    if matches!(value, PropertyValue::Bool(_)) {
+                        panic!("interrupted property conversion");
+                    }
+                    uint(value)
+                },
+            )
+        }));
+        assert!(result.is_err());
+        assert_eq!(topology.bonds.len(), 2);
+        assert_eq!(topology.bonds[0].id(), BondId::new(0));
+        assert_eq!(topology.bonds[1].id(), BondId::new(1));
+        assert_eq!(topology.bonds[1].stereo(), BondStereo::None);
+        assert_eq!(topology.adjacency, before_adjacency);
+    }
+
     #[test]
     fn source_batch_remove_bonds_later_group_error_retains_prior_high_deletion_and_unrenumbered_ids()
      {

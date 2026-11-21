@@ -6,7 +6,7 @@ use wasm_bindgen::{JsCast, prelude::*};
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(
-        typescript_type = "ReactionProductError | ReactionRunError | ReactionApplyError | StereoGroupError | CoordinateValidationError | TopologyEditError | AdjacencyError | RingFindingError | PropertyUIntReadError | ValenceError | StereoOrderError | DoubleBondStereoError | SmilesParseError | QueryAtomConversionError | MoleculePropertyError | AtomPropertyError | BondValueError | ReactionValidationError | SubstructMatchError | PropertyIntReadError | ReactionInitializationError | PropertyStringError | PropertyULongReadError | LegacyStereoError | PotentialStereoError | ParserStereoOrderError | PropertyValueError | ParserCarrierError | KekulizeError | SanitizeError | HydrogenError | SmilesStereoError | AtropisomerError | RequiredPropertyStringError | TopologyValidationError | TemplateAttachmentOrderError | RingDecomposerError | UIntLexicalReadError"
+        typescript_type = "ReactionProductError | ReactionRunError | StereoGroupError | CoordinateValidationError | TopologyEditError | AdjacencyError | RingFindingError | PropertyUIntReadError | ValenceError | StereoOrderError | DoubleBondStereoError | SmilesParseError | QueryAtomConversionError | MoleculePropertyError | AtomPropertyError | BondValueError | ReactionValidationError | SubstructMatchError | PropertyIntReadError | ReactionInitializationError | PropertyStringError | PropertyULongReadError | LegacyStereoError | PotentialStereoError | ParserStereoOrderError | PropertyValueError | ParserCarrierError | KekulizeError | SanitizeError | HydrogenError | SmilesStereoError | AtropisomerError | RequiredPropertyStringError | TopologyValidationError | TemplateAttachmentOrderError | RingDecomposerError | UIntLexicalReadError"
     )]
     #[derive(Clone)]
     pub type ReactionExecutionCause;
@@ -120,7 +120,7 @@ fn reaction_product_error_cause(
             .map(JsCast::unchecked_into)
         }
         ck::ReactionProductError::TemplateProperty(_) => {
-            crate::reaction_errors::ReactionValidationError::native_cause(&owner.child(
+            crate::reaction_validation_errors::ReactionValidationError::native_cause(&owner.child(
                 |e| match e {
                     ck::ReactionProductError::TemplateProperty(source) => source,
                     _ => unreachable!("immutable native reaction cause"),
@@ -176,7 +176,7 @@ enum_error!(ReactionProductError,ReactionProductErrorKind,ck::ReactionProductErr
 #[wasm_bindgen(getter,js_name=moleculeProperty)]pub fn molecule_property(&self)->Option<ReactionExecutionCause>{match self.inner.as_ref(){ck::ReactionProductError::MoleculeProperty(_)=>Some(crate::model_errors::MoleculePropertyError::from_owner(self.inner.child(|e|match e{ck::ReactionProductError::MoleculeProperty(v)=>v,_=>unreachable!("immutable native payload")})).unchecked_into()),_=>None}}
 #[wasm_bindgen(getter,js_name=atomProperty)]pub fn atom_property(&self)->Option<ReactionExecutionCause>{match self.inner.as_ref(){ck::ReactionProductError::AtomProperty(_)=>Some(crate::model_errors::AtomPropertyError::from_owner(self.inner.child(|e|match e{ck::ReactionProductError::AtomProperty(v)=>v,_=>unreachable!("immutable native payload")})).unchecked_into()),_=>None}}
 #[wasm_bindgen(getter,js_name=bondValue)]pub fn bond_value(&self)->Option<ReactionExecutionCause>{match self.inner.as_ref(){ck::ReactionProductError::BondValue(_)=>Some(crate::model_errors::BondValueError::from_owner(self.inner.child(|e|match e{ck::ReactionProductError::BondValue(v)=>v,_=>unreachable!("immutable native payload")})).unchecked_into()),_=>None}}
-#[wasm_bindgen(getter,js_name=templateProperty)]pub fn template_property(&self)->Option<ReactionExecutionCause>{match self.inner.as_ref(){ck::ReactionProductError::TemplateProperty(_)=>Some(crate::reaction_errors::ReactionValidationError::from_owner(self.inner.child(|e|match e{ck::ReactionProductError::TemplateProperty(v)=>v,_=>unreachable!("immutable native payload")})).unchecked_into()),_=>None}}
+#[wasm_bindgen(getter,js_name=templateProperty)]pub fn template_property(&self)->Option<ReactionExecutionCause>{match self.inner.as_ref(){ck::ReactionProductError::TemplateProperty(_)=>Some(crate::reaction_validation_errors::ReactionValidationError::from_owner(self.inner.child(|e|match e{ck::ReactionProductError::TemplateProperty(v)=>v,_=>unreachable!("immutable native payload")})).unchecked_into()),_=>None}}
 },source=ReactionExecutionCause,cause=reaction_product_error_cause);
 fn reaction_run_error_cause(
     owner: &ReadonlyValue<ck::ReactionRunError>,
@@ -190,12 +190,12 @@ fn reaction_run_error_cause(
             .unchecked_into(),
         ),
         ck::ReactionRunError::Initialization(_) => {
-            crate::reaction_errors::ReactionInitializationError::native_cause(&owner.child(|e| {
-                match e {
+            crate::reaction_validation_errors::ReactionInitializationError::native_cause(
+                &owner.child(|e| match e {
                     ck::ReactionRunError::Initialization(source) => source,
                     _ => unreachable!("immutable native reaction cause"),
-                }
-            }))
+                }),
+            )
             .map(JsCast::unchecked_into)
         }
         ck::ReactionRunError::Matching { .. } => Some(
@@ -219,53 +219,60 @@ enum_error!(ReactionRunError,ReactionRunErrorKind,ck::ReactionRunError,{Product=
 #[wasm_bindgen(getter,js_name=atom)]pub fn atom(&self)->Option<usize>{match self.inner.as_ref(){ck::ReactionRunError::MatchAtomIndex{atom,..}=>Some(*atom as usize),_=>None}}
 #[wasm_bindgen(getter,js_name=atomCount)]pub fn atom_count(&self)->Option<usize>{match self.inner.as_ref(){ck::ReactionRunError::MatchAtomIndex{atom_count,..}=>Some(*atom_count as usize),_=>None}}
 #[wasm_bindgen(getter,js_name=level)]pub fn level(&self)->Option<u32>{match self.inner.as_ref(){ck::ReactionRunError::CombinationLevel{level,..}=>Some(*level),_=>None}}
-#[wasm_bindgen(getter,js_name=initialization)]pub fn initialization(&self)->Option<ReactionExecutionCause>{match self.inner.as_ref(){ck::ReactionRunError::Initialization(_)=>Some(crate::reaction_errors::ReactionInitializationError::from_owner(self.inner.child(|e|match e{ck::ReactionRunError::Initialization(v)=>v,_=>unreachable!("immutable native payload")})).unchecked_into()),_=>None}}
+#[wasm_bindgen(getter,js_name=initialization)]pub fn initialization(&self)->Option<ReactionExecutionCause>{match self.inner.as_ref(){ck::ReactionRunError::Initialization(_)=>Some(crate::reaction_validation_errors::ReactionInitializationError::from_owner(self.inner.child(|e|match e{ck::ReactionRunError::Initialization(v)=>v,_=>unreachable!("immutable native payload")})).unchecked_into()),_=>None}}
 },source=ReactionExecutionCause,cause=reaction_run_error_cause);
-fn reaction_apply_error_cause(
-    owner: &ReadonlyValue<ck::ReactionApplyError>,
-) -> Option<ReactionExecutionCause> {
-    match owner.as_ref() {
-        ck::ReactionApplyError::SourceText(_) => {
-            crate::property_errors::PropertyStringError::native_cause(&owner.child(|e| match e {
-                ck::ReactionApplyError::SourceText(source) => source,
-                _ => unreachable!("immutable native reaction cause"),
-            }))
-            .map(JsCast::unchecked_into)
-        }
-        ck::ReactionApplyError::Initialization(_) => {
-            crate::reaction_errors::ReactionInitializationError::native_cause(&owner.child(|e| {
-                match e {
-                    ck::ReactionApplyError::Initialization(source) => source,
+#[cfg(feature = "cap-reaction")]
+pub(crate) use apply::ReactionApplyError;
+#[cfg(feature = "cap-reaction")]
+mod apply {
+    use super::*;
+    fn reaction_apply_error_cause(
+        owner: &ReadonlyValue<ck::ReactionApplyError>,
+    ) -> Option<ReactionExecutionCause> {
+        match owner.as_ref() {
+            ck::ReactionApplyError::SourceText(_) => {
+                crate::property_errors::PropertyStringError::native_cause(&owner.child(
+                    |e| match e {
+                        ck::ReactionApplyError::SourceText(source) => source,
+                        _ => unreachable!("immutable native reaction cause"),
+                    },
+                ))
+                .map(JsCast::unchecked_into)
+            }
+            ck::ReactionApplyError::Initialization(_) => {
+                crate::reaction_errors::ReactionInitializationError::native_cause(&owner.child(
+                    |e| match e {
+                        ck::ReactionApplyError::Initialization(source) => source,
+                        _ => unreachable!("immutable native reaction cause"),
+                    },
+                ))
+                .map(JsCast::unchecked_into)
+            }
+            ck::ReactionApplyError::Matching(_) => {
+                ReactionRunError::native_cause(&owner.child(|e| match e {
+                    ck::ReactionApplyError::Matching(source) => source,
                     _ => unreachable!("immutable native reaction cause"),
-                }
-            }))
-            .map(JsCast::unchecked_into)
+                }))
+                .map(JsCast::unchecked_into)
+            }
+            ck::ReactionApplyError::Product(_) => {
+                ReactionProductError::native_cause(&owner.child(|e| match e {
+                    ck::ReactionApplyError::Product(source) => source,
+                    _ => unreachable!("immutable native reaction cause"),
+                }))
+                .map(JsCast::unchecked_into)
+            }
+            ck::ReactionApplyError::Edit(_) => {
+                crate::topology_errors::TopologyEditError::native_cause(&owner.child(|e| match e {
+                    ck::ReactionApplyError::Edit(source) => source,
+                    _ => unreachable!("immutable native reaction cause"),
+                }))
+                .map(JsCast::unchecked_into)
+            }
+            _ => None,
         }
-        ck::ReactionApplyError::Matching(_) => {
-            ReactionRunError::native_cause(&owner.child(|e| match e {
-                ck::ReactionApplyError::Matching(source) => source,
-                _ => unreachable!("immutable native reaction cause"),
-            }))
-            .map(JsCast::unchecked_into)
-        }
-        ck::ReactionApplyError::Product(_) => {
-            ReactionProductError::native_cause(&owner.child(|e| match e {
-                ck::ReactionApplyError::Product(source) => source,
-                _ => unreachable!("immutable native reaction cause"),
-            }))
-            .map(JsCast::unchecked_into)
-        }
-        ck::ReactionApplyError::Edit(_) => {
-            crate::topology_errors::TopologyEditError::native_cause(&owner.child(|e| match e {
-                ck::ReactionApplyError::Edit(source) => source,
-                _ => unreachable!("immutable native reaction cause"),
-            }))
-            .map(JsCast::unchecked_into)
-        }
-        _ => None,
     }
-}
-enum_error!(ReactionApplyError,ReactionApplyErrorKind,ck::ReactionApplyError,{SourceText=>ck::ReactionApplyError::SourceText(_),Initialization=>ck::ReactionApplyError::Initialization(_),ApplicabilityArity=>ck::ReactionApplyError::ApplicabilityArity{..},AddsProductAtom=>ck::ReactionApplyError::AddsProductAtom{..},Matching=>ck::ReactionApplyError::Matching(_),Product=>ck::ReactionApplyError::Product(_),Edit=>ck::ReactionApplyError::Edit(_)},{
+    enum_error!(ReactionApplyError,ReactionApplyErrorKind,ck::ReactionApplyError,{SourceText=>ck::ReactionApplyError::SourceText(_),Initialization=>ck::ReactionApplyError::Initialization(_),ApplicabilityArity=>ck::ReactionApplyError::ApplicabilityArity{..},AddsProductAtom=>ck::ReactionApplyError::AddsProductAtom{..},Matching=>ck::ReactionApplyError::Matching(_),Product=>ck::ReactionApplyError::Product(_),Edit=>ck::ReactionApplyError::Edit(_)},{
 #[wasm_bindgen(getter,js_name=reactants)]pub fn reactants(&self)->Option<usize>{match self.inner.as_ref(){ck::ReactionApplyError::ApplicabilityArity{reactants,..}=>Some(*reactants as usize),_=>None}}
 #[wasm_bindgen(getter,js_name=products)]pub fn products(&self)->Option<usize>{match self.inner.as_ref(){ck::ReactionApplyError::ApplicabilityArity{products,..}=>Some(*products as usize),_=>None}}
 #[wasm_bindgen(getter,js_name=atom)]pub fn atom(&self)->Option<usize>{match self.inner.as_ref(){ck::ReactionApplyError::AddsProductAtom{atom,..}=>Some(atom.index()),_=>None}}
@@ -275,3 +282,4 @@ enum_error!(ReactionApplyError,ReactionApplyErrorKind,ck::ReactionApplyError,{So
 #[wasm_bindgen(getter,js_name=product)]pub fn product(&self)->Option<ReactionExecutionCause>{match self.inner.as_ref(){ck::ReactionApplyError::Product(_)=>Some(ReactionProductError::from_owner(self.inner.child(|e|match e{ck::ReactionApplyError::Product(v)=>v,_=>unreachable!("immutable native payload")})).unchecked_into()),_=>None}}
 #[wasm_bindgen(getter,js_name=edit)]pub fn edit(&self)->Option<ReactionExecutionCause>{match self.inner.as_ref(){ck::ReactionApplyError::Edit(_)=>Some(crate::topology_errors::TopologyEditError::from_owner(self.inner.child(|e|match e{ck::ReactionApplyError::Edit(v)=>v,_=>unreachable!("immutable native payload")})).unchecked_into()),_=>None}}
 },source=ReactionExecutionCause,cause=reaction_apply_error_cause);
+}

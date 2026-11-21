@@ -7,6 +7,70 @@ use crate::{
 };
 use cosmolkit as ck;
 use wasm_bindgen::{JsCast, prelude::*};
+
+use ck::BondCutError as Cut;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "readonly [number, number]")]
+    pub type CutEndpoints;
+    #[wasm_bindgen(
+        typescript_type = "TopologyEditError | CoordinateValidationError | StereoOrderError | BondValueError | AtomPropertyError | PropertyUIntReadError | PropertyStringError | ValenceError"
+    )]
+    pub type CutPayload;
+    #[wasm_bindgen(
+        typescript_type = "NonNullable<TopologyEditError['cause']> | NonNullable<StereoOrderError['cause']> | UIntLexicalReadError | TopologyValidationError"
+    )]
+    #[derive(Clone)]
+    pub type CutCause;
+}
+
+fn endpoints([begin, end]: [ck::AtomId; 2]) -> CutEndpoints {
+    let pair = js_sys::Array::of2(&begin.index().into(), &end.index().into());
+    js_sys::Object::freeze(&pair).unchecked_into()
+}
+
+fn cut_cause(error: &Cut) -> Option<CutCause> {
+    match error {
+        Cut::Edit(e) => crate::topology_errors::cause(e).map(JsCast::unchecked_into),
+        Cut::Stereo(e) => crate::stereo_order_errors::cause(e).map(JsCast::unchecked_into),
+        Cut::Valence(e) => crate::valence_errors::cause(e).map(JsCast::unchecked_into),
+        Cut::NumericProperty(ck::PropertyUIntReadError::Lexical { source, .. }) => {
+            Some(UIntLexicalReadError::from_rust(source.clone()).unchecked_into())
+        }
+        _ => None,
+    }
+}
+
+enum_error!(BondCutError, BondCutErrorKind, ck::BondCutError, {
+    IncompleteLabels => Cut::IncompleteLabels { .. }, EmptySelection => Cut::EmptySelection,
+    Duplicate => Cut::Duplicate { .. }, BondOutOfRange => Cut::BondOutOfRange { .. },
+    EndpointsChanged => Cut::EndpointsChanged { .. },
+    IncidentOrderProperty => Cut::IncidentOrderProperty { .. }, Edit => Cut::Edit(_), Coordinates => Cut::Coordinates(_),
+    Stereo => Cut::Stereo(_), BondProperty => Cut::BondProperty(_), AtomProperty => Cut::AtomProperty(_),
+    NumericProperty => Cut::NumericProperty(_), TextProperty => Cut::TextProperty(_), Valence => Cut::Valence(_),
+}, {
+    #[wasm_bindgen(getter)] pub fn bond(&self) -> Option<usize> { match *self.inner {
+        Cut::IncompleteLabels { bond } | Cut::Duplicate { bond } | Cut::BondOutOfRange { bond, .. } |
+        Cut::EndpointsChanged { bond, .. } => Some(bond.index()), _ => None,
+    } }
+    #[wasm_bindgen(getter)] pub fn count(&self) -> Option<usize> { match *self.inner { Cut::BondOutOfRange { count, .. } => Some(count), _ => None } }
+    #[wasm_bindgen(getter)] pub fn expected(&self) -> Option<CutEndpoints> { match *self.inner { Cut::EndpointsChanged { expected, .. } => Some(endpoints(expected)), _ => None } }
+    #[wasm_bindgen(getter)] pub fn actual(&self) -> Option<CutEndpoints> { match *self.inner { Cut::EndpointsChanged { actual, .. } => Some(endpoints(actual)), _ => None } }
+    #[wasm_bindgen(getter)] pub fn atom(&self) -> Option<usize> { match *self.inner { Cut::IncidentOrderProperty { atom, .. } => Some(atom.index()), _ => None } }
+    #[wasm_bindgen(getter)] pub fn kind(&self) -> Option<PropertyValueKind> { match *self.inner { Cut::IncidentOrderProperty { kind, .. } => Some(kind.into()), _ => None } }
+    #[wasm_bindgen(getter)] pub fn source(&self) -> Option<CutPayload> { Some(match self.inner.as_ref() {
+        Cut::Edit(e) => TopologyEditError::from_rust(e.clone()),
+        Cut::Coordinates(e) => CoordinateValidationError::from_rust(e.clone()),
+        Cut::Stereo(e) => crate::stereo_order_errors::StereoOrderError::from_rust(e.clone()),
+        Cut::BondProperty(e) => BondValueError::from_rust(e.clone()),
+        Cut::AtomProperty(e) => AtomPropertyError::from_rust(e.clone()),
+        Cut::NumericProperty(e) => PropertyUIntReadError::from_rust(e.clone()),
+        Cut::TextProperty(e) => PropertyStringError::from_rust(*e),
+        Cut::Valence(e) => crate::valence_errors::ValenceError::from_rust(e.clone()), _ => return None,
+    }.unchecked_into()) }
+}, source = CutCause, cause = cut_cause);
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(

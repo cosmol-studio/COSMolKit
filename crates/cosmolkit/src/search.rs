@@ -114,68 +114,6 @@ impl Molecule {
         )
     }
 
-    fn detached_search_target(&self) -> cosmolkit_search::SearchTarget<'_> {
-        #[cfg(any(
-            feature = "cap-valence",
-            feature = "cap-fingerprints",
-            feature = "cap-hydrogens",
-            feature = "cap-smiles",
-            feature = "cap-sanitize",
-            feature = "cap-descriptors",
-            feature = "cap-forcefields"
-        ))]
-        let cache = self.derived_cache_runtime();
-        #[cfg(any(
-            feature = "cap-valence",
-            feature = "cap-fingerprints",
-            feature = "cap-hydrogens",
-            feature = "cap-smiles",
-            feature = "cap-sanitize",
-            feature = "cap-descriptors",
-            feature = "cap-forcefields"
-        ))]
-        let valence = cache.valence_assignment();
-        #[cfg(not(any(
-            feature = "cap-valence",
-            feature = "cap-fingerprints",
-            feature = "cap-hydrogens",
-            feature = "cap-smiles",
-            feature = "cap-sanitize",
-            feature = "cap-descriptors",
-            feature = "cap-forcefields"
-        )))]
-        let valence = None;
-        #[cfg(any(
-            feature = "cap-rings",
-            feature = "cap-descriptors",
-            feature = "cap-smiles",
-            feature = "cap-sanitize",
-            feature = "cap-hydrogens",
-            feature = "cap-kekulize",
-            feature = "cap-aromaticity",
-            feature = "cap-fingerprints"
-        ))]
-        let rings = self.derived_cache_runtime().valid_ring_info();
-        #[cfg(not(any(
-            feature = "cap-rings",
-            feature = "cap-descriptors",
-            feature = "cap-smiles",
-            feature = "cap-sanitize",
-            feature = "cap-hydrogens",
-            feature = "cap-kekulize",
-            feature = "cap-aromaticity",
-            feature = "cap-fingerprints"
-        )))]
-        let rings = None;
-        cosmolkit_search::SearchTarget::new(
-            self.topology(),
-            self.coordinate_block_runtime(),
-            &self.topology().stereo_groups,
-            rings,
-            valence,
-        )
-    }
-
     /// Return the first source-ordered match, propagating matcher failures.
     pub fn substruct_match(
         &self,

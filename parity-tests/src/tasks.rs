@@ -225,6 +225,41 @@ pub(crate) fn failed_error(error: &(dyn std::error::Error + 'static)) -> Vec<u8>
     let mut cause = Some(error);
     let mut optimizer_domain = false;
     while let Some(inner) = cause {
+        if matches!(
+            inner.downcast_ref::<cosmolkit::BricsDecompositionError>(),
+            Some(cosmolkit::BricsDecompositionError::UnkeyedProduct(_))
+        ) {
+            return outcome(
+                1,
+                Value::List(vec![
+                    Value::Text("UnkeyedBricsProduct".into()),
+                    Value::Text(error.to_string()),
+                ]),
+            );
+        }
+        if matches!(
+            inner.downcast_ref::<cosmolkit::RecapDecompositionError>(),
+            Some(cosmolkit::RecapDecompositionError::UnkeyedProduct(_))
+        ) {
+            return outcome(
+                1,
+                Value::List(vec![
+                    Value::Text("UnkeyedRecapProduct".into()),
+                    Value::Text(error.to_string()),
+                ]),
+            );
+        }
+        if let Some(cosmolkit::BondCutError::EmptySelection) =
+            inner.downcast_ref::<cosmolkit::BondCutError>()
+        {
+            return outcome(
+                1,
+                Value::List(vec![
+                    Value::Text("EmptyBondSelection".into()),
+                    Value::Text(error.to_string()),
+                ]),
+            );
+        }
         if let Some(cosmolkit::InchiError {
             operation: "mol_from_inchi",
             kind: cosmolkit::InchiErrorKind::SanitizeFailed,
@@ -352,6 +387,20 @@ pub fn matching_error(task: &str, expected: &[u8], actual: &[u8]) -> bool {
         return false;
     };
     match task {
+        "decompose_brics" => {
+            // BRICS.py::BRICSDecompose reads prod.pSmi from each accepted product,
+            // including one whose failed sanitation skipped assignment of that attribute.
+            native == "AttributeError: 'Mol' object has no attribute 'pSmi'"
+                && matches!(ck.as_slice(), [Value::Text(kind), Value::Text(_)] if kind == "UnkeyedBricsProduct")
+        }
+        "decompose_recap" => {
+            native == "AttributeError: 'Mol' object has no attribute 'pSmi'"
+                && matches!(ck.as_slice(), [Value::Text(kind), Value::Text(_)] if kind == "UnkeyedRecapProduct")
+        }
+        "with_bonds_cut" => {
+            native == "ValueError: empty bond indices"
+                && matches!(ck.as_slice(), [Value::Text(kind), Value::Text(_)] if kind == "EmptyBondSelection")
+        }
         "inchi_roundtrip" => {
             // rdkit/Chem/inchi.py::MolFromInchi:
             // RDKit✔️✔️:   except ValueError as e:

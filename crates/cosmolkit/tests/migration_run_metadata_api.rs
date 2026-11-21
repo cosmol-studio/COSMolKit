@@ -82,7 +82,12 @@ fn expected_feature_names() -> Vec<&'static str> {
 fn expected_operation_methods() -> Vec<&'static str> {
     let mut expected = Vec::new();
     if cfg!(feature = "cap-transforms") {
-        expected.extend(["with_atom_property", "fragments", "largest_fragment"]);
+        expected.extend([
+            "with_atom_property",
+            "fragments",
+            "largest_fragment",
+            "with_bonds_cut",
+        ]);
     }
     if cfg!(feature = "cap-hashing") {
         expected.extend(["murcko_scaffold", "net_scaffold", "murcko_decompose"]);

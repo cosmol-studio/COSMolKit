@@ -34,7 +34,7 @@ below are under the ``@cosmol-studio/`` scope; install and import the same name.
      - SMARTS and substructure matching
    * - ``cosmolkit-core-fingerprints``
      - ``core + fingerprints``
-     - Fingerprints and similarity
+     - Fingerprints, similarity and Murcko scaffolds
    * - ``cosmolkit-core-analysis``
      - ``core + search + fingerprints + descriptors``
      - Search, similarity and molecular descriptors together
@@ -53,6 +53,10 @@ below are under the ``@cosmol-studio/`` scope; install and import the same name.
    * - ``cosmolkit-core-inchi``
      - ``core + inchi``
      - InChI and InChIKey conversion
+
+Of the npm presets, only ``full`` enables BRICS, regular r-BRICS and RECAP.
+Use ``core`` if you already know which bonds to cut and just need the resulting
+components.
 
 ``reaction`` includes ``search``; ``conformer`` includes forcefields and
 alignment. Other domains are not implicitly enabled: for example,

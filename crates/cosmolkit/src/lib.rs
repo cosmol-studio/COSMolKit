@@ -127,14 +127,22 @@ mod reaction;
 pub use cosmolkit_reaction::CxSmilesFields;
 #[cfg(all(feature = "cap-reaction", not(feature = "cap-search")))]
 pub use cosmolkit_reaction::SubstructMatchParams;
+#[cfg(feature = "cap-fragmentation")]
+pub use cosmolkit_reaction::{
+    BricsDecompositionError, RecapDecomposition, RecapDecompositionError, RecapLookupError,
+};
 #[cfg(feature = "cap-reaction")]
 pub use cosmolkit_reaction::{
     CxParseError, ReactionApplyError, ReactionApplyParams, ReactionCoordinateSelection,
-    ReactionInitializationError, ReactionModelError, ReactionParseError, ReactionParseParams,
-    ReactionProductError, ReactionRole, ReactionRunError, ReactionRunParams,
-    ReactionSingleRunParams, ReactionTemplateRemovalParams, ReactionValidationError,
-    ReactionValidationIssue, ReactionValidationIssueKind, ReactionValidationParams,
-    ReactionValidationReport, ReactionValidationSeverity, ReactionWriteError, ReactionWriteParams,
+    ReactionModelError, ReactionParseError, ReactionParseParams, ReactionRunParams,
+    ReactionSingleRunParams, ReactionTemplateRemovalParams, ReactionValidationParams,
+    ReactionWriteError, ReactionWriteParams,
+};
+#[cfg(any(feature = "cap-reaction", feature = "cap-fragmentation"))]
+pub use cosmolkit_reaction::{
+    ReactionInitializationError, ReactionProductError, ReactionRole, ReactionRunError,
+    ReactionValidationError, ReactionValidationIssue, ReactionValidationIssueKind,
+    ReactionValidationReport, ReactionValidationSeverity,
 };
 #[cfg(feature = "cap-reaction")]
 pub(crate) use ops::{
@@ -182,8 +190,14 @@ pub use cosmolkit_batch::BatchExportReport;
 mod sdf_batch;
 #[cfg(all(feature = "cap-io", feature = "cap-batch"))]
 pub use sdf_batch::{BatchExportParams, SdfBatchIterator, SdfReaderBatchIterator};
+#[cfg(feature = "cap-fragmentation")]
+mod fragmentation;
+#[cfg(feature = "cap-fragmentation")]
+pub use cosmolkit_search::{BricsBondMatch, RBricsBondMatch};
 #[cfg(feature = "cap-search")]
 pub mod search;
+#[cfg(any(feature = "cap-fragmentation", feature = "cap-search"))]
+mod search_target;
 #[cfg(feature = "cap-search")]
 pub use search::{
     compile_query, maximum_common_substructure, maximum_common_substructure_with_params,
@@ -218,13 +232,19 @@ pub use cosmolkit_search::{
     feature = "cap-descriptors",
     feature = "cap-depict"
 ))]
-pub use cosmolkit_search::{
-    CxQueryLoweringError, MatchError, QueryCompileError, QueryMatchContextError, SmartsParseError,
-    SubstructMatchError,
-};
+pub use cosmolkit_search::{CxQueryLoweringError, MatchError, QueryCompileError, SmartsParseError};
 #[cfg(feature = "cap-search")]
 #[doc(hidden)]
 pub use cosmolkit_search::{ExtraAtomCheck, ExtraBondCheck, ExtraFinalCheck, SearchTarget};
+#[cfg(any(
+    feature = "cap-fragmentation",
+    feature = "cap-search",
+    feature = "cap-fingerprints",
+    feature = "cap-forcefields",
+    feature = "cap-descriptors",
+    feature = "cap-depict"
+))]
+pub use cosmolkit_search::{QueryMatchContextError, SubstructMatchError};
 #[cfg(any(feature = "cap-search", feature = "cap-fingerprints"))]
 pub use cosmolkit_smiles::SmartsTraversalError;
 
@@ -294,9 +314,9 @@ pub use cosmolkit_core::{
 };
 #[cfg(feature = "cap-transforms")]
 pub use cosmolkit_core::{
-    AtomPathSubsetCopyError, AtomPositionParams, FullCopyComponentError, MoleculeFragmentsError,
-    MoleculeFragmentsFailure, OrderedFragmentBuildError, SelectedBondCopyError,
-    SelectedSubstanceGroupCopyError, SubstanceGroupAtomList, TransformError,
+    AtomPathSubsetCopyError, AtomPositionParams, BondCut, BondCutError, FullCopyComponentError,
+    MoleculeFragmentsError, MoleculeFragmentsFailure, OrderedFragmentBuildError,
+    SelectedBondCopyError, SelectedSubstanceGroupCopyError, SubstanceGroupAtomList, TransformError,
 };
 #[cfg(feature = "cap-sanitize")]
 pub use cosmolkit_core::{
@@ -400,7 +420,7 @@ pub(crate) use ops::{
     ReactionApplyReportForTestAccess, RingLiveCowCheckoutConflictForTestAccess,
 };
 #[cfg(feature = "cap-transforms")]
-pub(crate) use ops::{FragmentsAccess, LargestFragmentAccess};
+pub(crate) use ops::{FragmentsAccess, LargestFragmentAccess, WithBondsCutAccess};
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
 #[doc(inline)]
 pub use ops::{OperationError, UnsupportedFeatureError};

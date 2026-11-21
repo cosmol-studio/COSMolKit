@@ -2,6 +2,31 @@
 use crate::{DerivedState, OperationError};
 use cosmolkit_macros::{mol_multi_op_body, mol_op_body};
 
+#[mol_op_body(with_bonds_cut, parts)]
+pub(crate) fn with_bonds_cut_impl(cuts: &[crate::BondCut]) -> Result<(), OperationError> {
+    parts.transform_mapped_blocks(|topology, coordinates, properties| {
+        let result = cosmolkit_core::cut_selected_bonds(topology, coordinates, properties, cuts)
+            .map_err(OperationError::BondCut)?;
+        Ok((
+            result.topology,
+            result.coordinates,
+            result.properties,
+            result.mapping,
+        ))
+    })?;
+    parts.clear_cache(
+        DerivedState::VALENCE
+            .union(DerivedState::RINGS)
+            .union(DerivedState::RING_FAMILIES)
+            .union(DerivedState::AROMATICITY)
+            .union(DerivedState::STEREO)
+            .union(DerivedState::COORDINATES)
+            .union(DerivedState::DRAWING)
+            .union(DerivedState::FINGERPRINT),
+    )?;
+    parts.apply_cip_policy()
+}
+
 #[mol_multi_op_body(fragments, parts)]
 pub(crate) fn fragments_impl() -> Result<(), OperationError> {
     let fragments = cosmolkit_core::get_molecule_fragments(
