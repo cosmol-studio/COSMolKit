@@ -82,6 +82,7 @@ const github = {
         for tag in ("v0.6.0-dev.1", "v0.6.0-dev.4", "v0.6.0-rc.6", "v0.6.0"):
             result = subprocess.run(["bash", "-c", script], env={**os.environ, "RELEASE_TAG": tag, "RUNNER_TEMP": "/tmp"}, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"COSMolKit V{tag.removeprefix('v')}", result.stdout.splitlines())
             self.assertEqual("--prerelease" in result.stdout, "-" in tag)
             self.assertEqual("--latest=false" in result.stdout, "-" in tag)
 

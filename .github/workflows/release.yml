@@ -170,4 +170,4 @@ jobs:
             *-dev.*|*-rc.*) flags+=(--prerelease --latest=false) ;;
           esac
           gh release create "$RELEASE_TAG" --verify-tag \
-            --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" "${flags[@]}"
+            --title "COSMolKit V${RELEASE_TAG#v}" --notes-file "$RUNNER_TEMP/release-notes.md" "${flags[@]}"

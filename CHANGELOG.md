@@ -1,17 +1,24 @@
 # Changelog
 
 <!-- release-header:start -->
-**COSMolKit** is a pure-Rust cheminformatics toolkit.
-
-[Source repository](https://github.com/cosmol-studio/COSMolKit) ·
-[Documentation](https://kit.cosmol.org/) ·
-[Web tools](https://tools.cosmol.org/) ·
-[Rust crate](https://crates.io/crates/cosmolkit) ·
-[Python package](https://pypi.org/project/cosmolkit/) ·
-[JavaScript package](https://www.npmjs.com/package/@cosmol-studio/cosmolkit).
+<p align="center">
+  <img src="https://raw.githubusercontent.com/cosmol-studio/COSMolKit/main/docs-web/assets/logo.svg" alt="COSMolKit Logo" width="110" height="110" />
+</p>
+<h1 align="center">COSMolKit</h1>
+<p align="center"><em>Rust-native cheminformatics for Rust, Python and JavaScript.</em></p>
 <!-- release-header:end -->
 
 <!-- release-footer:start -->
+---
+
+<p align="center">
+  <a href="https://kit.cosmol.org/">Documentation</a> ·
+  <a href="https://tools.cosmol.org/">Web tools</a> ·
+  <a href="https://crates.io/crates/cosmolkit">Rust</a> ·
+  <a href="https://pypi.org/project/cosmolkit/">Python</a> ·
+  <a href="https://www.npmjs.com/package/@cosmol-studio/cosmolkit">JavaScript</a> ·
+  <a href="https://github.com/cosmol-studio/COSMolKit">Source</a>
+</p>
 <!-- release-footer:end -->
 
 All notable changes to COSMolKit are recorded in this file.
@@ -26,13 +33,35 @@ fails when that tag's changelog section is missing or empty.
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-21
+
 ### Added
 
 - `core` supports cutting selected bonds with labeled attachment points, either
   on a new molecule or in place.
 - The `fragmentation` feature adds BRICS and regular r-BRICS cut-site discovery
   and recursive decomposition, plus RECAP hierarchies with direct parent and
-  child lookups.
+  child lookups. These APIs are available in Rust, Python and JavaScript.
+
+### Changed
+
+- Batch bond deletion indexes incident stereo references and compacts bond rows
+  once, avoiding repeated whole-table scans and shifts while preserving ordered
+  effects, partial-error behavior and copy-on-write semantics.
+- Updated `musli` to 0.2.1 and `resvg`/`usvg` to 0.50.0, together with their font
+  dependencies.
+- Clarified that RMSD queries preserve molecule coordinates, including
+  `best_rmsd_to()`, unlike RDKit's coordinate-modifying `GetBestRMS()`.
+
+### Fixed
+
+- Python source distributions include the README and license at the paths used
+  by their package metadata. Bundled upstream code retains its license notices.
+
+Thanks to [@isty2e](https://github.com/isty2e) for contributing molecular
+fragmentation in [#14](https://github.com/cosmol-studio/COSMolKit/pull/14)!
+
+Full comparison: [v0.6.2...v0.6.3](https://github.com/cosmol-studio/COSMolKit/compare/v0.6.2...v0.6.3)
 
 ## [0.6.2] - 2026-11-09
 
