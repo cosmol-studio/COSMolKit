@@ -73,15 +73,15 @@ def test_cut_attachment_sides_and_in_place_result() -> None:
 def test_invalid_cut_reports_the_source_bond_without_modifying_the_receiver() -> None:
     mol = ck.Molecule.from_smiles("CCO")
     before = mol.to_binary()
-    cuts = [ck.BondCut.at_bond(0), ck.BondCut.at_bond(1, 65536, 8)]
+    cuts = [ck.BondCut.at_bond(0), ck.BondCut.at_bond(2)]
 
     for apply in (mol.with_bonds_cut, mol.cut_bonds_):
         with pytest.raises(ck.OperationError) as caught:
             _ = apply(cuts)
         detail = caught.value.bond_cut
         assert isinstance(detail, ck.BondCutError)
-        assert detail.variant.name == "IsotopeOutOfRange"
-        assert (detail.bond, detail.attachment, detail.label) == (1, 1, 65536)
+        assert detail.variant.name == "BondOutOfRange"
+        assert (detail.bond, detail.count) == (2, 2)
         assert isinstance(caught.value.__cause__, ck.BondCutError)
         assert mol.to_binary() == before
 

@@ -66,8 +66,7 @@ impl BondCut {
     #[pyo3(signature = (bond, begin_label=None, end_label=None))]
     /// Select a bond by its zero-based index. Supply both labels or omit both.
     /// An explicit label stays on its named endpoint's side. By default each dummy
-    /// takes the index of the atom it replaces. Both cut methods check that the
-    /// effective labels fit in the isotope field (0 through 65535).
+    /// takes the index of the atom it replaces. Labels use RDKit's uint16 narrowing.
     fn at_bond(
         bond: usize,
         begin_label: Option<usize>,
@@ -160,7 +159,6 @@ type CutSource = Source<
 error_projection!(BondCutError, BondCutErrorKind, ck::BondCutError, "fragmentation", {
     IncompleteLabels { bond }, EmptySelection, Duplicate { bond }, BondOutOfRange { bond, count: usize },
     EndpointsChanged { bond, expected: (usize,usize) => |v: &[ck::AtomId;2]| (v[0].index(),v[1].index()), actual: (usize,usize) => |v: &[ck::AtomId;2]| (v[0].index(),v[1].index()) },
-    IsotopeOutOfRange { bond, attachment: usize => |v: &ck::AtomId| v.index(), label: usize },
     IncidentOrderProperty { atom: usize => |v: &ck::AtomId| v.index(), kind: PropertyValueKind => |v: &ck::PropertyValueKind| (*v).into() },
     Edit(_), Coordinates(_), Stereo(_), BondProperty(_), AtomProperty(_), NumericProperty(_), TextProperty(_), Valence(_),
 }, cause = |inner: &ck::BondCutError| Python::attach(|py| match inner {
@@ -173,13 +171,13 @@ error_projection!(BondCutError, BondCutErrorKind, ck::BondCutError, "fragmentati
     ck::BondCutError::TextProperty(e) => PropertyStringError::from_rust(e.clone()).cause(py),
     ck::BondCutError::Valence(e) => ValenceError::from_rust(e.clone()).cause(py),
     ck::BondCutError::IncompleteLabels{..} | ck::BondCutError::EmptySelection | ck::BondCutError::Duplicate{..}
-    | ck::BondCutError::BondOutOfRange{..} | ck::BondCutError::EndpointsChanged{..} | ck::BondCutError::IsotopeOutOfRange{..} | ck::BondCutError::IncidentOrderProperty{..} => None,
+    | ck::BondCutError::BondOutOfRange{..} | ck::BondCutError::EndpointsChanged{..} | ck::BondCutError::IncidentOrderProperty{..} => None,
 }), source = Option<CutSource>, methods = {
     #[getter]
     /// Source bond selected by the failed instruction, when available.
     fn bond(&self) -> Option<usize> { match &self.inner {
         ck::BondCutError::IncompleteLabels{bond} | ck::BondCutError::Duplicate{bond} | ck::BondCutError::BondOutOfRange{bond,..}
-        | ck::BondCutError::EndpointsChanged{bond,..} | ck::BondCutError::IsotopeOutOfRange{bond,..} => Some(bond.index()), _=>None,
+        | ck::BondCutError::EndpointsChanged{bond,..} => Some(bond.index()), _=>None,
     } }
     #[getter]
     #[doc = r#"{"role":"error_payload"}"#]

@@ -45,20 +45,18 @@ fn cut_cause(error: &Cut) -> Option<CutCause> {
 enum_error!(BondCutError, BondCutErrorKind, ck::BondCutError, {
     IncompleteLabels => Cut::IncompleteLabels { .. }, EmptySelection => Cut::EmptySelection,
     Duplicate => Cut::Duplicate { .. }, BondOutOfRange => Cut::BondOutOfRange { .. },
-    EndpointsChanged => Cut::EndpointsChanged { .. }, IsotopeOutOfRange => Cut::IsotopeOutOfRange { .. },
+    EndpointsChanged => Cut::EndpointsChanged { .. },
     IncidentOrderProperty => Cut::IncidentOrderProperty { .. }, Edit => Cut::Edit(_), Coordinates => Cut::Coordinates(_),
     Stereo => Cut::Stereo(_), BondProperty => Cut::BondProperty(_), AtomProperty => Cut::AtomProperty(_),
     NumericProperty => Cut::NumericProperty(_), TextProperty => Cut::TextProperty(_), Valence => Cut::Valence(_),
 }, {
     #[wasm_bindgen(getter)] pub fn bond(&self) -> Option<usize> { match *self.inner {
         Cut::IncompleteLabels { bond } | Cut::Duplicate { bond } | Cut::BondOutOfRange { bond, .. } |
-        Cut::EndpointsChanged { bond, .. } | Cut::IsotopeOutOfRange { bond, .. } => Some(bond.index()), _ => None,
+        Cut::EndpointsChanged { bond, .. } => Some(bond.index()), _ => None,
     } }
     #[wasm_bindgen(getter)] pub fn count(&self) -> Option<usize> { match *self.inner { Cut::BondOutOfRange { count, .. } => Some(count), _ => None } }
     #[wasm_bindgen(getter)] pub fn expected(&self) -> Option<CutEndpoints> { match *self.inner { Cut::EndpointsChanged { expected, .. } => Some(endpoints(expected)), _ => None } }
     #[wasm_bindgen(getter)] pub fn actual(&self) -> Option<CutEndpoints> { match *self.inner { Cut::EndpointsChanged { actual, .. } => Some(endpoints(actual)), _ => None } }
-    #[wasm_bindgen(getter)] pub fn label(&self) -> Option<usize> { match *self.inner { Cut::IsotopeOutOfRange { label, .. } => Some(label), _ => None } }
-    #[wasm_bindgen(getter)] pub fn attachment(&self) -> Option<usize> { match *self.inner { Cut::IsotopeOutOfRange { attachment, .. } => Some(attachment.index()), _ => None } }
     #[wasm_bindgen(getter)] pub fn atom(&self) -> Option<usize> { match *self.inner { Cut::IncidentOrderProperty { atom, .. } => Some(atom.index()), _ => None } }
     #[wasm_bindgen(getter)] pub fn kind(&self) -> Option<PropertyValueKind> { match *self.inner { Cut::IncidentOrderProperty { kind, .. } => Some(kind.into()), _ => None } }
     #[wasm_bindgen(getter)] pub fn source(&self) -> Option<CutPayload> { Some(match self.inner.as_ref() {

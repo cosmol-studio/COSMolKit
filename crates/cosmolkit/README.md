@@ -75,14 +75,14 @@ cosmolkit = { version = "0.6.2", default-features = false, features = ["core", "
 
 | Bundle | Area |
 |---|---|
-| `core` | Molecular text/file IO, native binary archives, batch processing, SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms, including bond cuts and component extraction |
+| `core` | Molecular text/file IO, native binary archives, batch processing, SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms |
 | `bio` | Structural biology readers, values, selection and operations |
 | `descriptors` | Molecular descriptors |
 | `tautomer` | Tautomer capability |
 | `conformer` | 3D conformers, ConfSeq, alignment, UFF/MMFF energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |
 | `search` | SMARTS and substructure search |
-| `fragmentation` | BRICS and regular r-BRICS cut sites and unique terminal products; RECAP parent–product hierarchies |
+| `fragmentation` | BRICS, regular r-BRICS and RECAP decomposition |
 | `reaction` | SMIRKS, reaction templates and execution, including search and SMILES |
 | `depict` | 2D layout and depiction |
 | `inchi` | InChI and InChIKey conversion |
@@ -235,38 +235,22 @@ Stable molecule operations include assigning atom chiral tags from a selected
 in-place counterpart `assign_chiral_tags_from_structure_()`.
 
 With the `fragmentation` bundle, `mol.find_brics_bonds()?` reports the source
-bond and both `(atom, environment)` ends in RDKit `FindBRICSBonds` order.
-Convert the sites you want with `site.to_bond_cut()` and pass the nonempty
-selection to `with_bonds_cut` or `cut_bonds_`. On `CCCOCCC`, cutting both sites
-and calling `fragments()` returns two `[4*]CCC` fragments and one `[3*]O[3*]`.
-If two rules match the same bond, the first rule supplies the labels; RDKit’s
-one-shot `FragmentOnBRICSBonds` visits the rules in reverse and can label that
-bond differently. Matches refer to atom and bond indices in the topology that
-was searched. Cutting bonds invalidates ring and valence information. To find
-more sites or run a recursive decomposition on the cut molecule, first call
-`cut.sanitize_()?`, then run the query on `cut`.
+bond and `(atom, environment)` labels in RDKit `FindBRICSBonds` order. The first
+matching rule wins, unlike the reversed rule order of `FragmentOnBRICSBonds`.
+Convert matches with `site.to_bond_cut()` and pass a nonempty selection to
+`with_bonds_cut()` or `cut_bonds_()`. Calling `fragments()` on the result retains
+repeated fragments. Matches belong to the searched topology; rediscover them
+after edits. Sanitize a cut molecule before searching or decomposing it again.
 
-Use `mol.decompose_brics()?` for a vocabulary of unique terminal products. It
-returns canonical isomeric SMILES in unspecified order. For `CCCOCCC` the result
-contains `[4*]CCC` once and `[3*]O[3*]` once. Use the cut and extraction methods
-above when counting occurrences. With no applicable reaction, the result is
-the input's canonical SMILES. The query leaves the input unchanged.
+`decompose_brics()` and `decompose_r_brics()` leave the source unchanged and
+return unique terminal canonical SMILES in unspecified order, or the input's
+SMILES when no reaction applies. `find_r_brics_bonds()` uses the regular
+[r-BRICS](https://github.com/BiomedSciAI/r-BRICS) rules; neither r-BRICS method
+includes the separate `reBRICS` post-processing step.
 
-For regular [r-BRICS](https://github.com/BiomedSciAI/r-BRICS), use
-`mol.find_r_brics_bonds()?` to select bonds or `mol.decompose_r_brics()?`
-for unique terminal SMILES. On n-octane the standard finder reports no sites;
-the regular r-BRICS finder selects the central bond and labels the two ends
-20 and 21. Both cut methods accept the resulting `to_bond_cut()` selections.
-Recursive decomposition applies reactions to intermediate products and does
-not run the upstream `reBRICS` chain post-processing step.
-
-Use `let graph = mol.decompose_recap()?;` to follow individual disconnections.
-For `CC(=O)Nc1ccc(NC(=O)C)cc1`, `graph.children(graph.root())?` returns
-the acetyl product `*C(C)=O` and the intermediate `*Nc1ccc(NC(C)=O)cc1`.
-Both the root and that intermediate appear in `graph.parents("*C(C)=O")?`.
-The leaves are `*C(C)=O` and `*Nc1ccc(N*)cc1`. If no reaction applies,
-`graph.leaves()` is empty. An unknown product key raises a lookup error in the
-bindings and returns `RecapLookupError` in Rust.
+`mol.decompose_recap()?` returns a product graph with `root()`, `parents(key)`,
+`children(key)` and `leaves()`. Shared products retain all direct parents.
+Unknown keys return `RecapLookupError`; a root without products has no leaves.
 
 ## Protein Structures
 

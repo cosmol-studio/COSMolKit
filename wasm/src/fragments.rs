@@ -222,7 +222,7 @@ mod decomposition {
 #[wasm_bindgen]
 impl BondCut {
     /// Supply both attachment-side isotope labels, or omit both to label each dummy
-    /// with the index of the atom it replaces. Effective labels must fit in 16 bits.
+    /// with the index of the atom it replaces. Labels use RDKit's uint16 narrowing.
     #[wasm_bindgen(js_name=atBond)]
     pub fn at_bond(
         bond: Ts<input::IndexInput>,

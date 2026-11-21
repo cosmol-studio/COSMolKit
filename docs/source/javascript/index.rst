@@ -28,7 +28,7 @@ below are under the ``@cosmol-studio/`` scope; install and import the same name.
      - All operations in this guide
    * - ``cosmolkit-core``
      - ``core``
-     - SMILES, molecular IO, hydrogen handling, selected bond cuts, connected components, batch processing
+     - SMILES, molecular IO, hydrogen handling, fragments, batch processing
    * - ``cosmolkit-core-search``
      - ``core + search``
      - SMARTS and substructure matching

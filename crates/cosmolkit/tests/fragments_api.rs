@@ -17,18 +17,17 @@ fn selected_bonds_cut_value_and_in_place_share_chemistry_and_isolate_peers() {
 }
 
 #[test]
-fn invalid_later_label_changes_neither_cut_receiver_nor_peer() {
-    use cosmolkit::{AtomId, BondCut, BondCutError, BondId};
+fn invalid_later_selection_changes_neither_cut_receiver_nor_peer() {
+    use cosmolkit::{BondCut, BondCutError, BondId};
     let mut target = Molecule::from_smiles("CCO").unwrap();
     let untouched = target.clone();
     let cuts = [
         BondCut::at_bond(BondId::new(0), None, None).unwrap(),
-        BondCut::at_bond(BondId::new(1), Some(65536), Some(2)).unwrap(),
+        BondCut::at_bond(BondId::new(2), None, None).unwrap(),
     ];
-    let expected = OperationError::BondCut(BondCutError::IsotopeOutOfRange {
-        bond: BondId::new(1),
-        attachment: AtomId::new(1),
-        label: 65536,
+    let expected = OperationError::BondCut(BondCutError::BondOutOfRange {
+        bond: BondId::new(2),
+        count: 2,
     });
     assert_eq!(target.with_bonds_cut(&cuts).unwrap_err(), expected);
     assert_eq!(target.cut_bonds_(&cuts).unwrap_err(), expected);

@@ -62,12 +62,6 @@ pub enum BondCutError {
         expected: [AtomId; 2],
         actual: [AtomId; 2],
     },
-    #[error("dummy isotope {label} on the atom {attachment} side of bond {bond} exceeds 65535")]
-    IsotopeOutOfRange {
-        bond: BondId,
-        attachment: AtomId,
-        label: usize,
-    },
     #[error(
         "atom {atom} has a pre-existing _newBondOrder of type {kind:?}, expected an incident-bond list"
     )]
@@ -144,19 +138,12 @@ fn resolve_cuts<'a>(
                 }
             };
 
-            // RDKit❗✔️: void Atom::setIsotope(unsigned int what) { d_isotope = what; }
-            // RDKit❗✔️:   std::uint16_t d_isotope;
-            // COSMolKit rejects unrepresentable labels instead of wrapping to a different isotope.
-            let isotope = |side: usize| {
-                u16::try_from(labels[side]).map_err(|_| BondCutError::IsotopeOutOfRange {
-                    bond: cut.bond,
-                    attachment: actual[side],
-                    label: labels[side],
-                })
-            };
+            // RDKit✔️✔️: void Atom::setIsotope(unsigned int what) { d_isotope = what; }
+            // RDKit✔️✔️:   std::uint16_t d_isotope;
+            // Preserve unsigned narrowing, including default source atom indices.
             Ok(ResolvedBondCut {
                 bond,
-                attachment_labels: [isotope(0)?, isotope(1)?],
+                attachment_labels: labels.map(|label| label as u16),
             })
         })
         .collect()
@@ -381,10 +368,9 @@ pub fn cut_selected_bonds(
         }
     }
 
-    // RDKit❗❌:   res->commitBatchEdit();
+    // RDKit❗✔️:   res->commitBatchEdit();
     // RDKit❗✔️:   res->clearComputedProps();
-    // The shared dense-row batch kernel compacts bonds and clears computed properties.
-    // It can scan/shift surviving rows for each removed bond, unlike native edge deletion.
+    // The shared batch kernel indexes incident rows and compacts surviving bonds once.
     let (mut topology, mapping) = edit.finish_source::<BondCutError>(
         &mut coordinates,
         &mut properties,

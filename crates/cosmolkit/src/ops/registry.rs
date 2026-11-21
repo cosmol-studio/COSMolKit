@@ -205,7 +205,7 @@ molecule_ops! {
     #[cfg(feature = "cap-transforms")]
     op with_bonds_cut(cuts: &[crate::BondCut]) {
         method: with_bonds_cut,
-        docs: "Cut the selected source bonds and attach a labeled dummy on each side. The result is one possibly disconnected molecule. Empty selections, duplicate bonds, stale endpoints and dummy labels above 65535 are errors.",
+        docs: "Cut the selected source bonds and attach a labeled dummy on each side. The result is one possibly disconnected molecule. Empty selections, duplicate bonds and stale endpoints are errors. Isotope labels use RDKit's uint16 narrowing.",
         impl_fn: crate::ops::fragments::with_bonds_cut_impl,
         domain: topology, kind: strong,
         access: { read: [], write: [topology, coordinates, properties, derived_cache] },

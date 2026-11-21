@@ -94,7 +94,7 @@ fn attachment_side_labels_and_all_conformer_rows_follow_opposite_source_atoms() 
 }
 
 #[test]
-fn isotope_range_applies_only_to_effective_labels_in_the_selection() {
+fn source_isotope_narrowing_and_selection_errors() {
     let source = graph(65_537, &[(0, 1), (65_535, 65_536), (0, 65_535)]);
     let coords = CoordinateBlock::default();
     let props = MoleculeProperties::default();
@@ -129,22 +129,20 @@ fn isotope_range_applies_only_to_effective_labels_in_the_selection() {
         )]),
         BondCutError::EndpointsChanged { .. }
     ));
-    assert_eq!(
-        error(&[at(0), at(1)]),
-        BondCutError::IsotopeOutOfRange {
-            bond: BondId::new(1),
-            attachment: AtomId::new(65_535),
-            label: 65_536
-        }
-    );
-    assert_eq!(
-        error(&[at(0), labeled(1, 0, 65_536)]),
-        BondCutError::IsotopeOutOfRange {
-            bond: BondId::new(1),
-            attachment: AtomId::new(65_536),
-            label: 65_536
-        }
-    );
+    // Atom::setIsotope stores uint16_t: 65536 -> 0, 65537 -> 1.
+    for (selection, expected) in [
+        (vec![at(1)], [65_535, 0]),
+        (vec![labeled(1, 65_536, 65_537)], [1, 0]),
+    ] {
+        let result = cut(&selection).unwrap();
+        assert_eq!(
+            result.topology.atoms[65_537..]
+                .iter()
+                .map(|a| a.isotope().unwrap_or(0))
+                .collect::<Vec<_>>(),
+            expected,
+        );
+    }
 
     let r = cut(&[at(0), labeled(1, 65_535, 0), at(2)]).unwrap();
     let labels = r.topology.atoms[65_537..]
