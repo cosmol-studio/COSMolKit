@@ -104,3 +104,39 @@ jobs:
 
             - name: Test core with unified private IO dependencies
               run: cargo test -p cosmolkit --no-default-features --features core,op-contracts-strict,cosmolkit-io/depict,cosmolkit-io/search --test feature_selection
+
+    wasm-mapped-fragments:
+        name: WASM mapped fragments (${{ matrix.preset }})
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                preset: [core, full]
+        env:
+            CARGO_PROFILE_DEV_DEBUG: "0"
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                  targets: wasm32-unknown-unknown
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: wasm -> target
+                  key: ${{ matrix.preset }}
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "24"
+            - uses: taiki-e/install-action@v2
+              with:
+                  tool: wasm-pack@0.15.1
+
+            - name: Build the package and test JavaScript and TypeScript consumers
+              env:
+                  PRESET: ${{ matrix.preset }}
+              run: |
+                  features="$(python3 wasm/presets.py features "$PRESET")"
+                  wasm-pack build wasm --dev --target web --out-dir pkg \
+                      -- --locked --no-default-features --features "$features"
+                  cp wasm/js/index.js wasm/js/index.d.ts wasm/pkg/
+                  node --test wasm/tests/mapped_fragments.mjs
+                  npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.core.json

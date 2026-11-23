@@ -104,6 +104,7 @@ npm pkg set --prefix wasm/pkg --json private=true \
     'sideEffects=["./index.js","./snippets/*"]'
 python3 wasm/registry_check.py
 node wasm/tests/runtime.mjs
+node --test wasm/tests/mapped_fragments.mjs
 npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
 .venv/bin/pytest python/tests
 ```

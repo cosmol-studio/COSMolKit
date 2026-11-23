@@ -112,11 +112,11 @@ jobs:
                       if [ "$preset" = full ]; then
                           node wasm/tests/runtime.mjs
                           node --test wasm/tests/bond_cuts.mjs
-                          npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
+                          tsconfig=wasm/tests/tsconfig.json
                       else
-                          npx --yes --package typescript@5.8.3 tsc --noEmit --strict \
-                              --target ES2022 --lib ES2022,ESNext.Disposable,DOM wasm/pkg/index.d.ts
+                          tsconfig=wasm/tests/tsconfig.core.json
                       fi
+                      npx --yes --package typescript@5.8.3 tsc -p "$tsconfig"
                       # Each published preset gets a fresh directory, never the inspection package.
                       wasm-pack build wasm --release --target web --out-dir "$package_dir" \
                           -- --locked --no-default-features --features "$features"
