@@ -21,6 +21,7 @@ pub const TASKS: &[(&str, &str)] = &[
     ("brics_fragment_occurrences", "fragmentation"),
     ("with_bonds_cut", "scaffolds"),
     ("fragments", "scaffolds"),
+    ("fragments_with_atom_mapping", "scaffolds"),
     ("largest_fragment", "scaffolds"),
     ("murcko_scaffold", "scaffolds"),
     ("net_scaffold", "scaffolds"),
@@ -36,6 +37,7 @@ pub fn profiles(task: &str) -> Result<Vec<Json>> {
         "potential_stereo"=>[false,true].into_iter().flat_map(|clean|[false,true].into_iter().flat_map(move|flag|[false,true].map(move|allow|json!({"clean":clean,"flag_possible":flag,"allow_nontetrahedral":allow})))).collect(),
         "distance_matrix"=>[false,true].into_iter().flat_map(|bo|[false,true].map(move|aw|json!({"use_bond_order":bo,"use_atom_weights":aw}))).collect(),
         "with_bonds_cut"=>[false,true].map(|explicit|json!({"explicit_labels":explicit})).into(),
+        "fragments_with_atom_mapping"=>[false,true].map(|sanitize|json!({"sanitize":sanitize})).into(),
         task if TASKS.iter().any(|(name,_)|*name==task)=>vec![json!({})],
         _=>return Err(format!("unknown core task {task}").into()),
     })
@@ -361,6 +363,24 @@ pub fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
             value
         }
         "fragments" => Value::List(m.fragments()?.iter().map(state).collect()),
+        "fragments_with_atom_mapping" => {
+            let params = cosmolkit::FragmentExtractionParams {
+                sanitize: flag(p, "sanitize")?,
+            };
+            Value::List(
+                m.fragments_with_atom_mapping_with_params(&params)?
+                    .iter()
+                    .map(|part| {
+                        let indices = part
+                            .source_atom_indices()
+                            .iter()
+                            .map(|id| Value::Int(id.index() as i64))
+                            .collect();
+                        Value::List(vec![state(part.molecule()), Value::List(indices)])
+                    })
+                    .collect(),
+            )
+        }
         "largest_fragment" => state(&m.largest_fragment()?),
         "murcko_scaffold" => Value::Bytes(m.murcko_scaffold()?.to_smiles()?.into_bytes()),
         "net_scaffold" => Value::Bytes(m.net_scaffold()?.to_smiles()?.into_bytes()),

@@ -85,6 +85,7 @@ fn expected_operation_methods() -> Vec<&'static str> {
         expected.extend([
             "with_atom_property",
             "fragments",
+            "fragments_with_atom_mapping_with_params",
             "largest_fragment",
             "with_bonds_cut",
         ]);

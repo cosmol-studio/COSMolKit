@@ -47,6 +47,7 @@ mod cip_atom_code_errors;
 mod collection_params;
 #[path = "../framework/configuration.rs"]
 mod configuration;
+mod mapped_fragments;
 mod molecule_transfer;
 mod protein_transfer;
 #[cfg(test)]
@@ -217,6 +218,8 @@ pub mod native {
         BricsDecompositionErrorKind, RBricsBondMatch, RecapDecomposition, RecapDecompositionError,
         RecapDecompositionErrorKind, RecapLookupError, RecapLookupErrorKind,
     };
+    #[pymodule_export]
+    use super::mapped_fragments::MappedFragment;
     #[pymodule_init]
     fn register_errors(module: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
         super::error_framework::register(module)
@@ -945,11 +948,12 @@ pub mod native {
         AtomPositionParams, BioMoleculeParams, BioPdbReadParams, BioPdbWriteParams,
         Coordinate3DInputParams, DistanceMatrix3dParams, DistanceMatrixParams,
         ForceFieldAngleConstraintParams, ForceFieldDistanceConstraintParams,
-        ForceFieldPositionConstraintParams, ForceFieldTorsionConstraintParams, InchiReadParams,
-        InchiWriteParams, KekulizeParams, MaccsFingerprintParams, McsAtomCompareParameters,
-        McsBondCompareParameters, MmffConformerOptimizationParams, MmffEvaluationParams,
-        MmffOptimizationParams, MmffPropertiesParams, MorganCallParams, PatternFingerprintParams,
-        PotentialStereoParams, RandomSmilesWriteParams, ReactionApplyParams, ReactionParseParams,
+        ForceFieldPositionConstraintParams, ForceFieldTorsionConstraintParams,
+        FragmentExtractionParams, InchiReadParams, InchiWriteParams, KekulizeParams,
+        MaccsFingerprintParams, McsAtomCompareParameters, McsBondCompareParameters,
+        MmffConformerOptimizationParams, MmffEvaluationParams, MmffOptimizationParams,
+        MmffPropertiesParams, MorganCallParams, PatternFingerprintParams, PotentialStereoParams,
+        RandomSmilesWriteParams, ReactionApplyParams, ReactionParseParams,
         ReactionTemplateRemovalParams, ReactionValidationParams, RemoveHsParams,
         Replace3DCoordinatesParams, RingSearchParams, SmartsWriteParams, StructureTagParams,
         TopologicalFingerprintOutputRequest, TopologicalTorsionCallParams,

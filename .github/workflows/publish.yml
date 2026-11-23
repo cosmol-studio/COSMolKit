@@ -108,6 +108,7 @@ jobs:
                           'files=["*.js","*.d.ts","*.wasm","snippets"]' \
                           'sideEffects=["./index.js","./snippets/*"]'
                       python -B wasm/registry_check.py
+                      node --test wasm/tests/mapped_fragments.mjs
                       if [ "$preset" = full ]; then
                           node wasm/tests/runtime.mjs
                           node --test wasm/tests/bond_cuts.mjs

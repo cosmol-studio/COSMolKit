@@ -3,7 +3,7 @@ from rdkit import Chem
 from rdkit.Chem import rdMolHash
 
 TASKS = {"smiles_read","sanitize","kekulize","add_hs","remove_hs","potential_stereo",
-         "distance_matrix","with_bonds_cut","fragments","largest_fragment","murcko_scaffold","net_scaffold","murcko_decompose",
+         "distance_matrix","with_bonds_cut","fragments","fragments_with_atom_mapping","largest_fragment","murcko_scaffold","net_scaffold","murcko_decompose",
          "find_brics_bonds","brics_fragment_occurrences","decompose_brics","decompose_recap","find_r_brics_bonds","decompose_r_brics","r_brics_cut_graph"}
 
 def state(mol):
@@ -107,6 +107,10 @@ def chemistry(mol,task,p):
             return state(Chem.FragmentOnBonds(m, bonds, dummyLabels=pairs))
         return state(Chem.FragmentOnBonds(m, bonds))
     if task=="fragments": return [state(x) for x in Chem.GetMolFrags(m,asMols=True,sanitizeFrags=True)]
+    if task == "fragments_with_atom_mapping":
+        mapping = []
+        parts = Chem.GetMolFrags(m, asMols=True, sanitizeFrags=p["sanitize"], fragsMolAtomMapping=mapping)
+        return [[state(part), list(indices)] for part, indices in zip(parts, mapping, strict=True)]
     if task=="largest_fragment":
         rows=Chem.GetMolFrags(m,asMols=True,sanitizeFrags=True)
         if not rows: raise ValueError("empty fragments")

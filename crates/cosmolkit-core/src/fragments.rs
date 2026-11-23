@@ -2242,24 +2242,33 @@ pub struct MoleculeFragment {
     prepared: Option<(crate::ValenceAssignment, crate::RingInfo)>,
 }
 
+/// Component storage, row mapping and any facts from final fragment sanitization.
+pub type MappedFragmentParts = (
+    TopologyBlock,
+    CoordinateBlock,
+    MoleculeProperties,
+    TopologyMapping,
+    Option<(crate::ValenceAssignment, crate::RingInfo)>,
+);
+
 impl MoleculeFragment {
     /// Move the detached component, mapping and actual final sanitizer facts.
     /// The facts are absent when fragment sanitation was not requested.
-    pub fn into_mapped_parts(
-        self,
-    ) -> (
-        TopologyBlock,
-        CoordinateBlock,
-        MoleculeProperties,
-        TopologyMapping,
-        Option<(crate::ValenceAssignment, crate::RingInfo)>,
-    ) {
+    pub fn into_mapped_parts(self) -> MappedFragmentParts {
+        self.into_indexed_parts().1
+    }
+
+    /// Move the source rows alongside the exact candidate they describe.
+    pub fn into_indexed_parts(self) -> (Vec<AtomId>, MappedFragmentParts) {
         (
-            self.copy.topology,
-            self.copy.coordinates,
-            self.copy.molecule_properties,
-            self.copy.mapping,
-            self.prepared,
+            self.component_atoms,
+            (
+                self.copy.topology,
+                self.copy.coordinates,
+                self.copy.molecule_properties,
+                self.copy.mapping,
+                self.prepared,
+            ),
         )
     }
 

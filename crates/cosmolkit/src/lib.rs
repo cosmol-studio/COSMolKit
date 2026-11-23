@@ -377,6 +377,9 @@ mod legacy_topological_torsion;
 pub use legacy_topological_torsion::LegacyTopologicalTorsionParams;
 #[cfg(feature = "cap-fingerprints")]
 mod topological_torsion;
+#[cfg(feature = "cap-transforms")]
+#[doc(hidden)]
+pub use ops::__configuration_FragmentExtractionParams;
 pub(crate) use ops::DerivedState;
 #[cfg(cosmolkit_runtime_privacy_probe)]
 pub(crate) use ops::LazyOutputProbeAccess;
@@ -420,7 +423,12 @@ pub(crate) use ops::{
     ReactionApplyReportForTestAccess, RingLiveCowCheckoutConflictForTestAccess,
 };
 #[cfg(feature = "cap-transforms")]
-pub(crate) use ops::{FragmentsAccess, LargestFragmentAccess, WithBondsCutAccess};
+pub use ops::{FragmentExtractionParams, MappedFragment};
+#[cfg(feature = "cap-transforms")]
+pub(crate) use ops::{
+    FragmentsAccess, FragmentsWithAtomMappingWithParamsAccess, LargestFragmentAccess,
+    WithBondsCutAccess,
+};
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
 #[doc(inline)]
 pub use ops::{OperationError, UnsupportedFeatureError};

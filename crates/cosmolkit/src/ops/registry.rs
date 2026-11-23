@@ -188,6 +188,24 @@ molecule_ops! {
     }
 
     #[cfg(feature = "cap-transforms")]
+    op fragments_with_atom_mapping_with_params(params: &crate::FragmentExtractionParams) {
+        method: fragments_with_atom_mapping_with_params,
+        default_method: fragments_with_atom_mapping, default_args: [&crate::FragmentExtractionParams::default()],
+        docs: "Extract connected components in source order with conformers and local-to-source atom indices. Components are sanitized by default.",
+        impl_fn: crate::ops::fragments::fragments_with_atom_mapping_impl,
+        output: multiple, result_type: Vec<crate::MappedFragment>,
+        assemble_fn: crate::ops::fragments::assemble_mapped_fragments,
+        domain: topology, kind: strong,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [valence, rings], preserve: [], invalidate: [ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: fragment_source_transition, requires_mapping: required,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity: required_now, parity_profile: "fragments_rdkit_atom_mapping",
+        invariant_profile: "fragment_compacting_mapping_order_coordinates_and_source_cow",
+    }
+
+    #[cfg(feature = "cap-transforms")]
     op largest_fragment() {
         method: largest_fragment,
         docs: "Return the sanitized fragment with most atoms, choosing the last on ties. Empty input is an error; self remains unchanged.",

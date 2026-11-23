@@ -166,6 +166,22 @@ the components it returns. Before running another BRICS, r-BRICS or RECAP
 query on the cut molecule itself, call ``cut.sanitize_()``. A cut that leaves
 an aromatic atom outside a ring can cause sanitization to fail.
 
+To carry atom names or other per-atom data into each component, use
+``fragments_with_atom_mapping()``. Entry ``i`` of ``part.source_atom_indices``
+is the index of atom ``i`` of ``part.molecule`` in the molecule you split.
+Here both components are ethane, but their atom names differ:
+
+.. code-block:: python
+
+   source = ck.Molecule.from_smiles("C1.CC.C1")
+   names = ("A", "B", "C", "D")
+   parts = source.fragments_with_atom_mapping()
+   print([tuple(names[i] for i in part.source_atom_indices) for part in parts])
+   # [('A', 'D'), ('B', 'C')]
+
+If you split a cut molecule, the indices refer to that molecule, including its
+dummy atoms. To extract components before sanitizing them, pass ``sanitize=False``.
+
 For regular r-BRICS, use ``find_r_brics_bonds()`` to choose cuts or
 ``decompose_r_brics()`` to apply the rules recursively, without the separate
 ``reBRICS`` post-processing step. Because the rules act on intermediate
