@@ -166,3 +166,34 @@ pub(crate) fn largest_fragment_impl() -> Result<(), OperationError> {
     }
     parts.apply_cip_policy()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{AtomId, OperationError, assemble_mapped_fragments};
+    use crate::{AtomSpec, Element, MoleculeBuilder};
+
+    #[test]
+    fn inconsistent_source_atom_rows_reject_the_entire_fragment_result() {
+        let mut builder = MoleculeBuilder::new();
+        builder.add_atom(AtomSpec::new(Element::C));
+        let carbon = builder.build().unwrap();
+        let [a, b, c] = [0, 1, 2].map(AtomId::new);
+
+        for (rows, field, actual, expected) in [
+            (vec![vec![a]], "component count", 1, 2),
+            (vec![vec![a], vec![b], vec![c]], "component count", 3, 2),
+            (vec![vec![a], vec![]], "source atom indices", 0, 1),
+            (vec![vec![a], vec![b, c]], "source atom indices", 2, 1),
+        ] {
+            assert_eq!(
+                assemble_mapped_fragments(vec![carbon.clone(); 2], rows),
+                Err(OperationError::InvalidAlgorithmResult {
+                    operation: "fragments_with_atom_mapping_with_params",
+                    field,
+                    actual,
+                    expected,
+                })
+            );
+        }
+    }
+}
