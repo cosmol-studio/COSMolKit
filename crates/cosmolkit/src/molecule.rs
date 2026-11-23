@@ -485,6 +485,7 @@ impl DerivedCacheBlock {
     pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
         #[cfg(any(
             feature = "cap-inchi",
+            feature = "cap-transforms",
             feature = "cap-valence",
             feature = "cap-kekulize",
             feature = "cap-stereo",
@@ -551,6 +552,7 @@ impl DerivedCacheBlock {
         self.validate_for_atom_count(topology.atoms.len())?;
         #[cfg(any(
             feature = "cap-inchi",
+            feature = "cap-transforms",
             feature = "cap-rings",
             feature = "cap-stereo",
             feature = "cap-descriptors",
@@ -602,8 +604,15 @@ impl DerivedCacheBlock {
                             expected: rings.atom_ring_families().len(),
                         });
                     }
-                    if rings.are_ring_families_initialized() {
-                        rings.num_relevant_cycles().map_err(OperationError::Rings)?;
+                    if rings.are_ring_families_initialized()
+                        && rings.persisted_relevant_cycle_count().is_none()
+                    {
+                        return Err(OperationError::InvalidDerivedCache {
+                            state: "rings",
+                            field: "relevant_cycle_count",
+                            actual: 0,
+                            expected: 1,
+                        });
                     }
                     for (atoms, bonds) in rings.atom_rings().iter().zip(rings.bond_rings()) {
                         if atoms.len() != bonds.len() {
