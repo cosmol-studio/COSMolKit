@@ -82,6 +82,7 @@ pub(crate) enum CipStatePolicy {
     ReactionSourceTransition,
     ScaffoldSourceTransition,
     FragmentSourceTransition,
+    IndexedGraphSourceTransition,
 }
 
 #[derive(Clone, Debug)]
@@ -813,20 +814,38 @@ fn validate_cip_transition(
     may_mutate: &[MoleculeBlock],
     auto_remap: &[MoleculeBlock],
 ) -> syn::Result<()> {
-    if cip_state == CipStatePolicy::FragmentSourceTransition {
+    if matches!(
+        cip_state,
+        CipStatePolicy::FragmentSourceTransition | CipStatePolicy::IndexedGraphSourceTransition
+    ) {
         let blocks = [
             MoleculeBlock::Topology,
             MoleculeBlock::Coordinates,
             MoleculeBlock::Properties,
             MoleculeBlock::DerivedCache,
         ];
-        let valid = matches!(
-            (operation.to_string().as_str(), output),
-            (
-                "fragments" | "fragments_with_atom_mapping_with_params",
-                MoleculeOutput::Multiple
-            ) | ("largest_fragment", MoleculeOutput::Single)
-        ) && operation == method
+        let allowed = if cip_state == CipStatePolicy::IndexedGraphSourceTransition {
+            output == MoleculeOutput::Single
+                && matches!(
+                    operation.to_string().as_str(),
+                    "with_atoms_renumbered"
+                        | "without_atom"
+                        | "with_atom_replaced"
+                        | "with_bond_replaced"
+                        | "with_molecule_appended"
+                        | "extract_subgraph_with_params"
+                )
+        } else {
+            matches!(
+                (operation.to_string().as_str(), output),
+                (
+                    "fragments" | "fragments_with_atom_mapping_with_params",
+                    MoleculeOutput::Multiple
+                ) | ("largest_fragment", MoleculeOutput::Single)
+            )
+        };
+        let valid = allowed
+            && operation == method
             && kind == OperationKind::Strong
             && mapping == MappingRequirement::Required
             && access.read.is_empty()
@@ -841,7 +860,7 @@ fn validate_cip_transition(
         } else {
             Err(syn::Error::new(
                 operation.span(),
-                "fragment source transition requires an exact mapped strong fragment operation and four write-owned blocks",
+                "source transition requires a declared strong graph operation, a mapping and four write-owned blocks",
             ))
         };
     }
@@ -1719,6 +1738,7 @@ fn parse_cip_state(value: &Ident) -> syn::Result<CipStatePolicy> {
         "reaction_source_transition" => Ok(CipStatePolicy::ReactionSourceTransition),
         "scaffold_source_transition" => Ok(CipStatePolicy::ScaffoldSourceTransition),
         "fragment_source_transition" => Ok(CipStatePolicy::FragmentSourceTransition),
+        "indexed_graph_source_transition" => Ok(CipStatePolicy::IndexedGraphSourceTransition),
         other => Err(syn::Error::new_spanned(
             value,
             format!("unknown CIP state policy '{other}'"),

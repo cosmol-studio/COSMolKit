@@ -205,6 +205,8 @@ pub enum CipStatePolicy {
     ScaffoldSourceTransition,
     /// MolOps fragment copying and sanitation in the detached core owner.
     FragmentSourceTransition,
+    /// Source-indexed graph transformations copy, replace or clear properties in the detached owner.
+    IndexedGraphSourceTransition,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

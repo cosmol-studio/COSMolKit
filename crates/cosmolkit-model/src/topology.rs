@@ -224,6 +224,50 @@ impl Default for TopologyBlock {
 }
 
 impl TopologyBlock {
+    /// Copy complete substance groups with their typed references in the destination index space.
+    pub fn remapped_substance_groups(
+        &self,
+        atoms: &[Option<AtomId>],
+        bonds: &[Option<BondId>],
+    ) -> Vec<SubstanceGroup> {
+        let mut survives: Vec<_> = self
+            .substance_groups
+            .iter()
+            .map(|sg| sg.can_remap_without_parent(atoms, bonds))
+            .collect();
+        loop {
+            let mut changed = false;
+            for idx in 0..self.substance_groups.len() {
+                if survives[idx]
+                    && self.substance_groups[idx]
+                        .parent()
+                        .is_some_and(|p| !survives.get(p.index()).copied().unwrap_or(false))
+                {
+                    survives[idx] = false;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        let mut sgroup_map = vec![None; self.substance_groups.len()];
+        let mut next_sgroup_index = 0usize;
+        for (idx, keep) in survives.iter().copied().enumerate() {
+            if keep {
+                sgroup_map[idx] = Some(crate::SubstanceGroupId::new(next_sgroup_index));
+                next_sgroup_index += 1;
+            }
+        }
+        self.substance_groups
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, sg)| {
+                sgroup_map[idx].and_then(|id| sg.remapped(id, atoms, bonds, &sgroup_map))
+            })
+            .collect()
+    }
+
     pub fn try_from_parts(
         atoms: Vec<Atom>,
         bonds: Vec<Bond>,
@@ -1594,46 +1638,9 @@ impl TopologyBatchEdit {
         // and surviving-member order. The detached maps below combine the same
         // row shifts, while this source-shaped member pass removes one matching
         // entry for each removed ID before compacting the groups.
-        let mut survives: Vec<_> = self
-            .working
-            .substance_groups
-            .iter()
-            .map(|sg| sg.can_remap_without_parent(&all_atom_to_new, &bond_old_to_new))
-            .collect();
-        loop {
-            let mut changed = false;
-            for idx in 0..self.working.substance_groups.len() {
-                if survives[idx]
-                    && self.working.substance_groups[idx]
-                        .parent()
-                        .is_some_and(|p| !survives.get(p.index()).copied().unwrap_or(false))
-                {
-                    survives[idx] = false;
-                    changed = true;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
-        let mut sgroup_map = vec![None; self.working.substance_groups.len()];
-        let mut next_sgroup_index = 0usize;
-        for (idx, keep) in survives.iter().copied().enumerate() {
-            if keep {
-                sgroup_map[idx] = Some(crate::SubstanceGroupId::new(next_sgroup_index));
-                next_sgroup_index += 1;
-            }
-        }
         let substance_groups = self
             .working
-            .substance_groups
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, sg)| {
-                sgroup_map[idx]
-                    .and_then(|id| sg.remapped(id, &all_atom_to_new, &bond_old_to_new, &sgroup_map))
-            })
-            .collect();
+            .remapped_substance_groups(&all_atom_to_new, &bond_old_to_new);
         let stereo_groups = self
             .working
             .stereo_groups
@@ -3646,7 +3653,32 @@ enum SourceAtomRemovalState<'a, E> {
     },
 }
 
-#[allow(dead_code)]
+/// Eager source deletion for a live molecule candidate. Detached algorithms own
+/// neither pointer bookmarks nor the live ring cache.
+#[doc(hidden)]
+pub fn remove_indexed_atom<E: From<TopologyEditError>>(
+    topology: &mut TopologyBlock,
+    atom: AtomId,
+    coordinates: &mut crate::CoordinateBlock,
+    properties: &mut crate::MoleculeProperties,
+    mut uint_reader: impl FnMut(&crate::PropertyValue) -> Result<u32, E>,
+    mut text_reader: impl FnMut(&crate::PropertyValue) -> Result<crate::PropertyText, E>,
+) -> Result<(), E> {
+    remove_atom_source_index(
+        topology,
+        atom,
+        SourceAtomRemovalState::Immediate {
+            atom_bookmarks: &mut Default::default(),
+            bond_bookmarks: &mut Default::default(),
+            coordinates,
+            properties,
+            reset_ring: &mut || {},
+            uint_reader: &mut uint_reader,
+            text_reader: &mut text_reader,
+        },
+    )
+}
+
 fn remove_atom_source_index<E: From<TopologyEditError>>(
     topology: &mut TopologyBlock,
     index: AtomId,

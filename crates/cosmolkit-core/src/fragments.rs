@@ -2041,20 +2041,213 @@ fn copy_mol_subset_atom_path_with_view(
     let mut selection_info = FragmentSubsetInfo::default();
     get_subset_info_for_atom_path(source_topology, path, &mut selection_info);
 
+    copy_subset_members(
+        source_topology,
+        source_coordinates,
+        selection_info,
+        sanitize,
+        copy_coordinates,
+        SubsetCopyMode::Component,
+    )
+}
+
+/// Select by source atom rows, bond rows, or an explicit joint membership.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SubgraphSelection {
+    Atoms(Vec<AtomId>),
+    Bonds(Vec<BondId>),
+    AtomsAndBonds(Vec<AtomId>, Vec<BondId>),
+}
+
+impl SubgraphSelection {
+    pub fn atoms(atoms: Vec<AtomId>) -> Self {
+        Self::Atoms(atoms)
+    }
+    pub fn bonds(bonds: Vec<BondId>) -> Self {
+        Self::Bonds(bonds)
+    }
+    pub fn atoms_and_bonds(atoms: Vec<AtomId>, bonds: Vec<BondId>) -> Self {
+        Self::AtomsAndBonds(atoms, bonds)
+    }
+}
+
+/// Controls preparation, conformer rows and computed properties of an explicitly selected graph.
+#[derive(Clone, Debug, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(scalar)]
+pub struct SubgraphExtractionParams {
+    /// Sanitize the selected graph before returning it.
+    pub sanitize: bool,
+    /// Copy the selected rows of every conformer.
+    pub copy_coordinates: bool,
+    /// Discard computed properties on the extracted molecule, atoms and bonds.
+    pub clear_computed_props: bool,
+}
+
+impl Default for SubgraphExtractionParams {
+    fn default() -> Self {
+        Self {
+            sanitize: false,
+            copy_coordinates: true,
+            clear_computed_props: false,
+        }
+    }
+}
+
+/// All three selectors go through membership validation even when the supplied
+/// lists have the same lengths as the two source tables.
+pub fn extract_indexed_subgraph(
+    t: &TopologyBlock,
+    coords: &CoordinateBlock,
+    props: &MoleculeProperties,
+    selection: &SubgraphSelection,
+    params: &SubgraphExtractionParams,
+) -> Result<
+    (
+        TopologyBlock,
+        CoordinateBlock,
+        MoleculeProperties,
+        TopologyMapping,
+    ),
+    AtomPathSubsetCopyError,
+> {
+    // BEGIN RDKIT CPP FUNCTION copyMolSubset (Release_2026_09_1)
+    // RDKit❗✔️: std::unique_ptr<RDKit::RWMol> copyMolSubset(
+    // RDKit❗✔️:     const RDKit::ROMol &mol, const std::vector<unsigned int> &atoms,
+    // RDKit❗✔️:     const std::vector<unsigned int> &bonds, SubsetInfo &selection_info,
+    // RDKit❗✔️:     const SubsetOptions &options) {
+    // RDKit❗✔️:   const auto natoms = mol.getNumAtoms();
+    // RDKit❗✔️:   const auto nbonds = mol.getNumBonds();
+    // RDKit❌❌:   if ((atoms.size() == natoms && bonds.size() == nbonds)) {
+    // RDKit❌❌:     // optimization to copy the entire thing
+    // RDKit❌❌:     return std::make_unique<RDKit::RWMol>(mol);
+    // RDKit❌❌:   }
+    //
+    // RDKit❗✔️:   selection_info.selectedAtoms.reset();
+    // RDKit❗✔️:   selection_info.selectedAtoms.resize(natoms);
+    // RDKit❗✔️:   selection_info.selectedBonds.reset();
+    // RDKit❗✔️:   selection_info.selectedBonds.resize(nbonds);
+    // RDKit❗✔️:   selection_info.atomMapping.clear();
+    // RDKit❗✔️:   selection_info.bondMapping.clear();
+    //
+    // RDKit❗✔️:   for (auto v : atoms) {
+    // RDKit❗✔️:     if (v < natoms) {
+    // RDKit❗✔️:       selection_info.selectedAtoms.set(v);
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       throw IndexErrorException(static_cast<int>(v));
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto v : bonds) {
+    // RDKit❗✔️:     if (v < nbonds) {
+    // RDKit❗✔️:       selection_info.selectedBonds.set(v);
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       throw IndexErrorException(static_cast<int>(v));
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    //
+    // RDKit❗✔️:   auto res = copyMolSubset(mol, selection_info, options);
+    // Never take the full-length shortcut: explicit selection must validate each
+    // index, honor the copy options and produce both row mappings.
+    // END RDKIT CPP FUNCTION copyMolSubset
+    use SubgraphSelection::*;
+    let mut info = FragmentSubsetInfo::default();
+    info.selected_atoms.resize(t.atoms.len());
+    info.selected_bonds.resize(t.bonds.len());
+    if let Atoms(atoms) | AtomsAndBonds(atoms, _) = selection {
+        for &atom in atoms {
+            if atom.index() >= t.atoms.len() {
+                return Err(TopologyEditError::AtomOutOfRange {
+                    atom,
+                    atom_count: t.atoms.len(),
+                }
+                .into());
+            }
+            info.selected_atoms.set(atom.index());
+        }
+    }
+    match selection {
+        Atoms(_) => {
+            for b in &t.bonds {
+                if info.selected_atoms.contains(b.begin().index())
+                    && info.selected_atoms.contains(b.end().index())
+                {
+                    info.selected_bonds.set(b.id().index());
+                }
+            }
+        }
+        Bonds(bonds) | AtomsAndBonds(_, bonds) => {
+            for &bond in bonds {
+                let b = t
+                    .bonds
+                    .get(bond.index())
+                    .ok_or(TopologyEditError::BondOutOfRange {
+                        bond,
+                        bond_count: t.bonds.len(),
+                    })?;
+                for atom in [b.begin(), b.end()] {
+                    if matches!(selection, Bonds(_)) {
+                        info.selected_atoms.set(atom.index());
+                    } else if !info.selected_atoms.contains(atom.index()) {
+                        return Err(
+                            SelectedBondCopyError::MissingEndpointMapping { bond, atom }.into()
+                        );
+                    }
+                }
+                info.selected_bonds.set(bond.index());
+            }
+        }
+    }
+    let result = copy_subset_members(
+        t,
+        &FragmentCoordinateView::from_coordinate_block(coords),
+        info,
+        params.sanitize,
+        params.copy_coordinates,
+        SubsetCopyMode::Selection {
+            computed_from: (!params.clear_computed_props).then_some(props),
+        },
+    )?;
+    Ok((
+        result.topology,
+        result.coordinates,
+        result.molecule_properties,
+        result.mapping,
+    ))
+}
+
+enum SubsetCopyMode<'a> {
+    Component,
+    Selection {
+        computed_from: Option<&'a MoleculeProperties>,
+    },
+}
+
+fn copy_subset_members(
+    source_topology: &TopologyBlock,
+    source_coordinates: &FragmentCoordinateView<'_>,
+    mut selection_info: FragmentSubsetInfo,
+    sanitize: bool,
+    copy_coordinates: bool,
+    mode: SubsetCopyMode<'_>,
+) -> Result<AtomPathSubsetCopy, AtomPathSubsetCopyError> {
     let atoms = copy_selected_atoms(source_topology, &mut selection_info)?;
     let bonds = copy_selected_bonds(source_topology, &mut selection_info)?;
-    let substance_groups =
-        copy_selected_substance_groups(&source_topology.substance_groups, &selection_info)?;
-    let stereo_groups =
-        copy_selected_stereo_groups(&source_topology.stereo_groups, &selection_info)?;
-
-    let mut topology =
-        TopologyBlock::try_from_parts(atoms, bonds, substance_groups, stereo_groups)?;
     let mapping = topology_mapping_from_subset_info(
         &selection_info,
         source_topology.atoms.len(),
         source_topology.bonds.len(),
     )?;
+    let substance_groups = match mode {
+        SubsetCopyMode::Component => {
+            copy_selected_substance_groups(&source_topology.substance_groups, &selection_info)?
+        }
+        SubsetCopyMode::Selection { .. } => source_topology
+            .remapped_substance_groups(&mapping.atoms.old_to_new, &mapping.bonds.old_to_new),
+    };
+    let stereo_groups =
+        copy_selected_stereo_groups(&source_topology.stereo_groups, &selection_info)?;
+
+    let mut topology =
+        TopologyBlock::try_from_parts(atoms, bonds, substance_groups, stereo_groups)?;
     let coordinates = if copy_coordinates {
         copy_subset_coordinates_with_view(source_coordinates, &selection_info.atom_mapping)
     } else {
@@ -2062,10 +2255,34 @@ fn copy_mol_subset_atom_path_with_view(
     };
     sanitize_subset_if_requested(&mut topology, sanitize)?;
 
-    // A new source RWMol starts with no copied molecule-level property map;
-    // clearComputedProps=true then runs after optional sanitation.
     let mut molecule_properties = MoleculeProperties::default();
-    clear_subset_computed_props(&mut topology, &mut molecule_properties)?;
+    if let SubsetCopyMode::Selection {
+        computed_from: Some(source),
+    } = mode
+    {
+        // BEGIN RDKIT CPP FUNCTION Subset.cpp :: copyComputedProps (2026.09.1)
+        // RDKit❗🔝:   dst.updateProps(src);
+        // RDKit❗🔝:   for (auto &v : dst.getPropList(true, false)) {
+        // RDKit❗🔝:     if (v != RDKit::detail::computedPropName) {
+        // RDKit❗🔝:       dst.clearProp(v);
+        // RDKit❗🔝:     }
+        // RDKit❗🔝:   }
+        // Only the modeled computed dictionary is copied; ordinary entries never need cloning.
+        for name in source
+            .computed_prop_names()
+            .map_err(cosmolkit_model::MoleculePropertyError::ComputedListKind)?
+            .unwrap_or_default()
+        {
+            if let Some(value) = source.prop(name) {
+                molecule_properties.set_computed_prop(name.clone(), value.clone())?;
+            } else {
+                molecule_properties.register_transient_computed_name(name.clone())?;
+            }
+        }
+        // END RDKIT CPP FUNCTION copyComputedProps
+    } else {
+        clear_subset_computed_props(&mut topology, &mut molecule_properties)?;
+    }
 
     Ok(AtomPathSubsetCopy {
         topology,

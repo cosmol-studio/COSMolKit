@@ -7,6 +7,163 @@ pub static BINDING_CONTRACT_PYTHON_COLLECTIONS: &[(&str, &str)] = &[];
 
 binding_contract! {
     pub static BINDING_CONTRACT = [
+#[cfg(feature="cap-transforms")]
+        {semantic_id:"types.SubgraphMapping",item:type,owner:type_,rust:crate::SubgraphMapping,python:"SubgraphMapping",javascript:"SubgraphMapping",role:result, feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"types.MappedSubgraph",item:type,owner:type_,rust:crate::MappedSubgraph,python:"MappedSubgraph",javascript:"MappedSubgraph",role:result, feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"types.SubgraphSelection",item:type,owner:type_,rust:crate::SubgraphSelection,python:"SubgraphSelection",javascript:"SubgraphSelection",role:value, feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"types.IndexedGraphError",item:type,owner:type_,rust:crate::IndexedGraphError,python:"IndexedGraphError",javascript:"IndexedGraphError",role:error, feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"types.SubgraphExtractionParams",item:type,owner:type_,rust:crate::SubgraphExtractionParams,python:"SubgraphExtractionParams",javascript:"SubgraphExtractionParams",role:parameter,python_configuration:[{name:sanitize,python_type:"builtins.bool",default:"False"},{name:copy_coordinates,python_type:"builtins.bool",default:"True"},{name:clear_computed_props,python_type:"builtins.bool",default:"False"}], feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"SubgraphSelection.atoms",item:callable,owner:type_,rust:crate::SubgraphSelection::atoms,python:"atoms",javascript:"atoms",kind:static_,
+          parameters:[{name:indices,type:Vec<crate::AtomId>,default:required}],output:crate::SubgraphSelection,error:none,state:value_returning,operation:none,signature:fn(Vec<crate::AtomId>)->crate::SubgraphSelection, feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"SubgraphSelection.bonds",item:callable,owner:type_,rust:crate::SubgraphSelection::bonds,python:"bonds",javascript:"bonds",kind:static_,
+          parameters:[{name:indices,type:Vec<crate::BondId>,default:required}],output:crate::SubgraphSelection,error:none,state:value_returning,operation:none,signature:fn(Vec<crate::BondId>)->crate::SubgraphSelection, feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"SubgraphSelection.atoms_and_bonds",item:callable,owner:type_,rust:crate::SubgraphSelection::atoms_and_bonds,python:"atoms_and_bonds",javascript:"atomsAndBonds",kind:static_,
+          parameters:[{name:atoms,type:Vec<crate::AtomId>,default:required},{name:bonds,type:Vec<crate::BondId>,default:required}],output:crate::SubgraphSelection,error:none,state:value_returning,operation:none,signature:fn(Vec<crate::AtomId>,Vec<crate::BondId>)->crate::SubgraphSelection, feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"SubgraphMapping.source_atom_indices",item:callable,owner:type_,rust:crate::SubgraphMapping::source_atom_indices,python:"source_atom_indices",javascript:"sourceAtomIndices",python_property:getter,javascript_property:getter,kind:instance,
+          parameters:[],output:&[crate::AtomId],error:none,state:read_only,operation:none,signature:fn(&crate::SubgraphMapping)->&[crate::AtomId], feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"SubgraphMapping.source_bond_indices",item:callable,owner:type_,rust:crate::SubgraphMapping::source_bond_indices,python:"source_bond_indices",javascript:"sourceBondIndices",python_property:getter,javascript_property:getter,kind:instance,
+          parameters:[],output:&[crate::BondId],error:none,state:read_only,operation:none,signature:fn(&crate::SubgraphMapping)->&[crate::BondId], feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"MappedSubgraph.mapping",item:callable,owner:type_,rust:crate::MappedSubgraph::mapping,python:"mapping",javascript:"mapping",python_property:getter,javascript_property:getter,kind:instance,
+          parameters:[],output:&crate::SubgraphMapping,error:none,state:read_only,operation:none,signature:fn(&crate::MappedSubgraph)->&crate::SubgraphMapping, feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"MappedSubgraph.molecule",item:callable,owner:type_,rust:crate::MappedSubgraph::molecule,python:"molecule",javascript:"molecule",python_property:getter,javascript_property:getter,kind:instance,
+          parameters:[],output:&crate::Molecule,error:none,state:read_only,operation:none,signature:fn(&crate::MappedSubgraph)->&crate::Molecule, feature:"cap-transforms",status:experimental,},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.with_atoms_renumbered",item:callable,owner:molecule,rust:crate::Molecule::with_atoms_renumbered,python:"with_atoms_renumbered",javascript:"withAtomsRenumbered",kind:instance,
+          parameters:[{name:order,type:&[crate::AtomId],default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_atoms_renumbered",signature:fn(&crate::Molecule,&[crate::AtomId])->Result<crate::Molecule,crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.renumber_atoms_",item:callable,owner:molecule,rust:crate::Molecule::renumber_atoms_,python:"renumber_atoms_",javascript:"renumberAtoms_",kind:instance,receiver:mutable,
+          parameters:[{name:order,type:&[crate::AtomId],default:required}],output:(),error:crate::OperationError,state:in_place,operation:"renumber_atoms_",signature:fn(&mut crate::Molecule,&[crate::AtomId])->Result<(),crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.without_atom",item:callable,owner:molecule,rust:crate::Molecule::without_atom,python:"without_atom",javascript:"withoutAtom",kind:instance,
+          parameters:[{name:atom,type:crate::AtomId,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"without_atom",signature:fn(&crate::Molecule,crate::AtomId)->Result<crate::Molecule,crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.remove_atom_",item:callable,owner:molecule,rust:crate::Molecule::remove_atom_,python:"remove_atom_",javascript:"removeAtom_",kind:instance,receiver:mutable,
+          parameters:[{name:atom,type:crate::AtomId,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"remove_atom_",signature:fn(&mut crate::Molecule,crate::AtomId)->Result<(),crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.with_atom_replaced",item:callable,owner:molecule,rust:crate::Molecule::with_atom_replaced,python:"with_atom_replaced",javascript:"withAtomReplaced",kind:instance,
+          parameters:[{name:atom,type:crate::AtomId,default:required},{name:replacement,type:&crate::AtomSpec,default:required},{name:preserve_props,type:bool,default:false}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_atom_replaced",signature:fn(&crate::Molecule,crate::AtomId,&crate::AtomSpec,bool)->Result<crate::Molecule,crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.replace_atom_",item:callable,owner:molecule,rust:crate::Molecule::replace_atom_,python:"replace_atom_",javascript:"replaceAtom_",kind:instance,receiver:mutable,
+          parameters:[{name:atom,type:crate::AtomId,default:required},{name:replacement,type:&crate::AtomSpec,default:required},{name:preserve_props,type:bool,default:false}],output:(),error:crate::OperationError,state:in_place,operation:"replace_atom_",signature:fn(&mut crate::Molecule,crate::AtomId,&crate::AtomSpec,bool)->Result<(),crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.with_bond_replaced",item:callable,owner:molecule,rust:crate::Molecule::with_bond_replaced,python:"with_bond_replaced",javascript:"withBondReplaced",kind:instance,
+          parameters:[{name:bond,type:crate::BondId,default:required},{name:replacement,type:&crate::BondSpec,default:required},{name:preserve_props,type:bool,default:false},{name:keep_sgroups,type:bool,default:true}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_bond_replaced",signature:fn(&crate::Molecule,crate::BondId,&crate::BondSpec,bool,bool)->Result<crate::Molecule,crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.replace_bond_",item:callable,owner:molecule,rust:crate::Molecule::replace_bond_,python:"replace_bond_",javascript:"replaceBond_",kind:instance,receiver:mutable,
+          parameters:[{name:bond,type:crate::BondId,default:required},{name:replacement,type:&crate::BondSpec,default:required},{name:preserve_props,type:bool,default:false},{name:keep_sgroups,type:bool,default:true}],output:(),error:crate::OperationError,state:in_place,operation:"replace_bond_",signature:fn(&mut crate::Molecule,crate::BondId,&crate::BondSpec,bool,bool)->Result<(),crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.with_molecule_appended",item:callable,owner:molecule,rust:crate::Molecule::with_molecule_appended,python:"with_molecule_appended",javascript:"withMoleculeAppended",kind:instance,
+          parameters:[{name:right,type:&crate::Molecule,default:required}],output:crate::Molecule,error:crate::OperationError,state:value_returning,operation:"with_molecule_appended",signature:fn(&crate::Molecule,&crate::Molecule)->Result<crate::Molecule,crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.insert_molecule_",item:callable,owner:molecule,rust:crate::Molecule::insert_molecule_,python:"insert_molecule_",javascript:"insertMolecule_",kind:instance,receiver:mutable,
+          parameters:[{name:right,type:&crate::Molecule,default:required}],output:(),error:crate::OperationError,state:in_place,operation:"insert_molecule_",signature:fn(&mut crate::Molecule,&crate::Molecule)->Result<(),crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.extract_subgraph",item:callable,owner:molecule,rust:crate::Molecule::extract_subgraph,python:"extract_subgraph",javascript:"extractSubgraph",kind:instance,
+          parameters:[{name:selection,type:&crate::SubgraphSelection,default:required}],output:crate::MappedSubgraph,error:crate::OperationError,state:value_returning,operation:"extract_subgraph",signature:fn(&crate::Molecule,&crate::SubgraphSelection)->Result<crate::MappedSubgraph,crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.extract_subgraph_with_params",item:callable,owner:molecule,rust:crate::Molecule::extract_subgraph_with_params,python:"extract_subgraph_with_params",javascript:"extractSubgraphWithParams",kind:instance,
+          parameters:[{name:selection,type:&crate::SubgraphSelection,default:required},{name:params,type:&crate::SubgraphExtractionParams,default:required}],output:crate::MappedSubgraph,error:crate::OperationError,state:value_returning,operation:"extract_subgraph_with_params",signature:fn(&crate::Molecule,&crate::SubgraphSelection,&crate::SubgraphExtractionParams)->Result<crate::MappedSubgraph,crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.retain_subgraph_",item:callable,owner:molecule,rust:crate::Molecule::retain_subgraph_,python:"retain_subgraph_",javascript:"retainSubgraph_",kind:instance,receiver:mutable,
+          parameters:[{name:selection,type:&crate::SubgraphSelection,default:required}],output:crate::SubgraphMapping,error:crate::OperationError,state:in_place,operation:"retain_subgraph_",signature:fn(&mut crate::Molecule,&crate::SubgraphSelection)->Result<crate::SubgraphMapping,crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature="cap-transforms")]
+        {semantic_id:"Molecule.retain_subgraph_with_params_",item:callable,owner:molecule,rust:crate::Molecule::retain_subgraph_with_params_,python:"retain_subgraph_with_params_",javascript:"retainSubgraphWithParams_",kind:instance,receiver:mutable,
+          parameters:[{name:selection,type:&crate::SubgraphSelection,default:required},{name:params,type:&crate::SubgraphExtractionParams,default:required}],output:crate::SubgraphMapping,error:crate::OperationError,state:in_place,operation:"retain_subgraph_with_params_",signature:fn(&mut crate::Molecule,&crate::SubgraphSelection,&crate::SubgraphExtractionParams)->Result<crate::SubgraphMapping,crate::OperationError>, feature:"cap-transforms",},
+        #[cfg(feature = "cap-kekulize")]
+        { semantic_id:"types.AtomRankParams", item:type, owner:type_, rust:crate::AtomRankParams, python:"AtomRankParams", javascript:"AtomRankParams", feature:"cap-kekulize", status:experimental, python_configuration:[{name:break_ties,python_type:"builtins.bool",default:"True"},{name:include_chirality,python_type:"builtins.bool",default:"True"},{name:include_isotopes,python_type:"builtins.bool",default:"True"},{name:include_atom_maps,python_type:"builtins.bool",default:"True"},{name:include_chiral_presence,python_type:"builtins.bool",default:"False"}], role:parameter, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"types.PathEnumerationParams", item:type, owner:type_, rust:crate::PathEnumerationParams, python:"PathEnumerationParams", javascript:"PathEnumerationParams", feature:"cap-transforms", status:experimental, python_configuration:[{name:use_atom_indices,python_type:"builtins.bool",default:"False"},{name:use_hydrogens,python_type:"builtins.bool",default:"False"},{name:rooted_at_atom,python_type:"typing.Optional[builtins.int]",default:"None"},{name:only_shortest_paths,python_type:"builtins.bool",default:"False"}], role:parameter, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"types.SubgraphEnumerationParams", item:type, owner:type_, rust:crate::SubgraphEnumerationParams, python:"SubgraphEnumerationParams", javascript:"SubgraphEnumerationParams", feature:"cap-transforms", status:experimental, python_configuration:[{name:use_hydrogens,python_type:"builtins.bool",default:"False"},{name:rooted_at_atom,python_type:"typing.Optional[builtins.int]",default:"None"}], role:parameter, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"types.UniqueSubgraphSearchParams", item:type, owner:type_, rust:crate::UniqueSubgraphSearchParams, python:"UniqueSubgraphSearchParams", javascript:"UniqueSubgraphSearchParams", feature:"cap-transforms", status:experimental, python_configuration:[{name:use_hydrogens,python_type:"builtins.bool",default:"False"},{name:rooted_at_atom,python_type:"typing.Optional[builtins.int]",default:"None"},{name:use_bond_orders,python_type:"builtins.bool",default:"True"}], role:parameter, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"types.AtomEnvironmentParams", item:type, owner:type_, rust:crate::AtomEnvironmentParams, python:"AtomEnvironmentParams", javascript:"AtomEnvironmentParams", feature:"cap-transforms", status:experimental, python_configuration:[{name:use_hydrogens,python_type:"builtins.bool",default:"False"},{name:enforce_radius,python_type:"builtins.bool",default:"True"}], role:parameter, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"types.AtomEnvironment", item:type, owner:type_, rust:crate::AtomEnvironment, python:"AtomEnvironment", javascript:"AtomEnvironment", feature:"cap-transforms", status:experimental, role:result, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"AtomEnvironment.bonds", item:callable, owner:type_, rust:crate::AtomEnvironment::bonds, python:"bonds", python_property:getter, javascript:"bonds", javascript_property:getter, feature:"cap-transforms", status:experimental, kind:instance, parameters:[], output:&[crate::BondId], error:none, state:read_only,operation:none,signature:fn(&crate::AtomEnvironment)->&[crate::BondId], },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"AtomEnvironment.atom_distances", item:callable, owner:type_, rust:crate::AtomEnvironment::atom_distances, python:"atom_distances", python_property:getter, javascript:"atomDistances", javascript_property:getter, feature:"cap-transforms", status:experimental, kind:instance, parameters:[], output:&std::collections::BTreeMap<crate::AtomId,usize>, error:none, state:read_only,operation:none,signature:fn(&crate::AtomEnvironment)->&std::collections::BTreeMap<crate::AtomId,usize>, },
+        #[cfg(feature = "cap-kekulize")]
+        { semantic_id:"Molecule.canonical_atom_ranks", item:callable, owner:molecule, rust:crate::Molecule::canonical_atom_ranks, python:"canonical_atom_ranks", javascript:"canonicalAtomRanks", feature:"cap-kekulize", status:experimental, kind:instance,
+          parameters:[], output:Vec<usize>, error:crate::CanonicalRankError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule)->Result<Vec<usize>,crate::CanonicalRankError>, },
+        #[cfg(feature = "cap-kekulize")]
+        { semantic_id:"Molecule.canonical_atom_ranks_with_params", item:callable, owner:molecule, rust:crate::Molecule::canonical_atom_ranks_with_params, python:"canonical_atom_ranks_with_params", javascript:"canonicalAtomRanksWithParams", feature:"cap-kekulize", status:experimental, kind:instance,
+          parameters:[{name:params,type:&crate::AtomRankParams,default:required}], output:Vec<usize>, error:crate::CanonicalRankError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,&crate::AtomRankParams)->Result<Vec<usize>,crate::CanonicalRankError>, },
+        #[cfg(feature = "cap-kekulize")]
+        { semantic_id:"Molecule.canonical_atom_ranks_in_fragment", item:callable, owner:molecule, rust:crate::Molecule::canonical_atom_ranks_in_fragment, python:"canonical_atom_ranks_in_fragment", javascript:"canonicalAtomRanksInFragment", feature:"cap-kekulize", status:experimental, kind:instance,
+          parameters:[{name:atoms,type:&[crate::AtomId],default:required},{name:bonds,type:&[crate::BondId],default:required}], output:Vec<i64>, error:crate::CanonicalRankError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,&[crate::AtomId],&[crate::BondId])->Result<Vec<i64>,crate::CanonicalRankError>, },
+        #[cfg(feature = "cap-kekulize")]
+        { semantic_id:"Molecule.canonical_atom_ranks_in_fragment_with_params", item:callable, owner:molecule, rust:crate::Molecule::canonical_atom_ranks_in_fragment_with_params, python:"canonical_atom_ranks_in_fragment_with_params", javascript:"canonicalAtomRanksInFragmentWithParams", feature:"cap-kekulize", status:experimental, kind:instance,
+          parameters:[{name:atoms,type:&[crate::AtomId],default:required},{name:bonds,type:&[crate::BondId],default:required},{name:atom_symbols,type:Option<&[String]>,default:required},{name:params,type:&crate::AtomRankParams,default:required}], output:Vec<i64>, error:crate::CanonicalRankError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,&[crate::AtomId],&[crate::BondId],Option<&[String]>,&crate::AtomRankParams)->Result<Vec<i64>,crate::CanonicalRankError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.paths_of_length", item:callable, owner:molecule, rust:crate::Molecule::paths_of_length, python:"paths_of_length", javascript:"pathsOfLength", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:length,type:usize,default:required}], output:Vec<crate::GraphPath>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize)->Result<Vec<crate::GraphPath>,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.paths_of_length_with_params", item:callable, owner:molecule, rust:crate::Molecule::paths_of_length_with_params, python:"paths_of_length_with_params", javascript:"pathsOfLengthWithParams", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:length,type:usize,default:required},{name:params,type:&crate::PathEnumerationParams,default:required}], output:Vec<crate::GraphPath>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize,&crate::PathEnumerationParams)->Result<Vec<crate::GraphPath>,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.subgraphs_of_length", item:callable, owner:molecule, rust:crate::Molecule::subgraphs_of_length, python:"subgraphs_of_length", javascript:"subgraphsOfLength", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:length,type:usize,default:required}], output:Vec<Vec<crate::BondId>>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize)->Result<Vec<Vec<crate::BondId>>,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.subgraphs_of_length_with_params", item:callable, owner:molecule, rust:crate::Molecule::subgraphs_of_length_with_params, python:"subgraphs_of_length_with_params", javascript:"subgraphsOfLengthWithParams", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:length,type:usize,default:required},{name:params,type:&crate::SubgraphEnumerationParams,default:required}], output:Vec<Vec<crate::BondId>>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize,&crate::SubgraphEnumerationParams)->Result<Vec<Vec<crate::BondId>>,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.subgraphs_in_range", item:callable, owner:molecule, rust:crate::Molecule::subgraphs_in_range, python:"subgraphs_in_range", javascript:"subgraphsInRange", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:min,type:usize,default:required},{name:max,type:usize,default:required}], output:Vec<Vec<Vec<crate::BondId>>>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize,usize)->Result<Vec<Vec<Vec<crate::BondId>>>,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.subgraphs_in_range_with_params", item:callable, owner:molecule, rust:crate::Molecule::subgraphs_in_range_with_params, python:"subgraphs_in_range_with_params", javascript:"subgraphsInRangeWithParams", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:min,type:usize,default:required},{name:max,type:usize,default:required},{name:params,type:&crate::SubgraphEnumerationParams,default:required}], output:Vec<Vec<Vec<crate::BondId>>>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize,usize,&crate::SubgraphEnumerationParams)->Result<Vec<Vec<Vec<crate::BondId>>>,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.unique_subgraphs_of_length", item:callable, owner:molecule, rust:crate::Molecule::unique_subgraphs_of_length, python:"unique_subgraphs_of_length", javascript:"uniqueSubgraphsOfLength", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:length,type:usize,default:required}], output:Vec<Vec<crate::BondId>>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize)->Result<Vec<Vec<crate::BondId>>,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.unique_subgraphs_of_length_with_params", item:callable, owner:molecule, rust:crate::Molecule::unique_subgraphs_of_length_with_params, python:"unique_subgraphs_of_length_with_params", javascript:"uniqueSubgraphsOfLengthWithParams", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:length,type:usize,default:required},{name:params,type:&crate::UniqueSubgraphSearchParams,default:required}], output:Vec<Vec<crate::BondId>>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize,&crate::UniqueSubgraphSearchParams)->Result<Vec<Vec<crate::BondId>>,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.atom_environment", item:callable, owner:molecule, rust:crate::Molecule::atom_environment, python:"atom_environment", javascript:"atomEnvironment", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:radius,type:usize,default:required},{name:root,type:crate::AtomId,default:required}], output:crate::AtomEnvironment, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize,crate::AtomId)->Result<crate::AtomEnvironment,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.atom_environment_with_params", item:callable, owner:molecule, rust:crate::Molecule::atom_environment_with_params, python:"atom_environment_with_params", javascript:"atomEnvironmentWithParams", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:radius,type:usize,default:required},{name:root,type:crate::AtomId,default:required},{name:params,type:&crate::AtomEnvironmentParams,default:required}], output:crate::AtomEnvironment, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,usize,crate::AtomId,&crate::AtomEnvironmentParams)->Result<crate::AtomEnvironment,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.bond_between_atoms", item:callable, owner:molecule, rust:crate::Molecule::bond_between_atoms, python:"bond_between_atoms", javascript:"bondBetweenAtoms", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:begin,type:crate::AtomId,default:required},{name:end,type:crate::AtomId,default:required}], output:Option<crate::BondId>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,crate::AtomId,crate::AtomId)->Result<Option<crate::BondId>,crate::PathError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.shortest_path", item:callable, owner:molecule, rust:crate::Molecule::shortest_path, python:"shortest_path", javascript:"shortestPath", feature:"cap-transforms", status:experimental, kind:instance,
+          parameters:[{name:begin,type:crate::AtomId,default:required},{name:end,type:crate::AtomId,default:required}], output:Vec<crate::AtomId>, error:crate::PathError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,crate::AtomId,crate::AtomId)->Result<Vec<crate::AtomId>,crate::PathError>, },
+        #[cfg(feature = "cap-matrices")]
+        { semantic_id:"Molecule.adjacency_matrix", item:callable, owner:molecule, rust:crate::Molecule::adjacency_matrix, python:"adjacency_matrix", javascript:"adjacencyMatrix", feature:"cap-matrices", status:experimental, kind:instance,
+          parameters:[{name:use_bond_order,type:bool,default:false}], output:crate::DenseMatrix, error:crate::MatrixError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,bool)->Result<crate::DenseMatrix,crate::MatrixError>, },
         #[cfg(feature="cap-rings")]
         {semantic_id:"types.RingSearchResult",item:type,owner:type_,rust:crate::RingSearchResult,python:"RingSearchResult",javascript:"RingSearchResult",feature:"cap-rings",status:experimental,role:result,},
         #[cfg(feature="cap-rings")]
@@ -10246,6 +10403,11 @@ binding_contract! {
           parameters:[],output:bool,error:crate::PropertyValueError,state:read_only,operation:none,signature:fn(&crate::Molecule)->Result<bool,crate::PropertyValueError>, },
         {semantic_id:"AtomSpec.new",item:callable,owner:type_,rust:crate::AtomSpec::new,python:"new",javascript:"new",feature:"runtime",status:experimental,kind:static_,parameters:[{name:element,type:crate::Element,default:required},],output:crate::AtomSpec,error:none,state:value_returning,operation:none,signature:fn(crate::Element)->crate::AtomSpec,},
         {semantic_id:"BondSpec.new",item:callable,owner:type_,rust:crate::BondSpec::new,python:"new",javascript:"new",feature:"runtime",status:experimental,kind:static_,parameters:[{name:begin,type:crate::AtomId,default:required},{name:end,type:crate::AtomId,default:required},{name:order,type:crate::BondOrder,default:required},],output:crate::BondSpec,error:none,state:value_returning,operation:none,signature:fn(crate::AtomId,crate::AtomId,crate::BondOrder)->crate::BondSpec,},
+        {semantic_id:"AtomSpec.with_prop",item:callable,owner:type_,rust:crate::AtomSpec::with_prop,python:"with_prop",javascript:"withProp",feature:"runtime",status:experimental,kind:instance,receiver:owned,parameters:[{name:key,type:crate::PropertyText,default:required},{name:value,type:crate::PropertyValue,default:required}],output:crate::AtomSpec,error:crate::AtomPropertyError,state:value_returning,operation:none,signature:fn(crate::AtomSpec,crate::PropertyText,crate::PropertyValue)->Result<crate::AtomSpec,crate::AtomPropertyError>,},
+        {semantic_id:"AtomSpec.with_chiral_tag",item:callable,owner:type_,rust:crate::AtomSpec::with_chiral_tag,python:"with_chiral_tag",javascript:"withChiralTag",feature:"runtime",status:experimental,kind:instance,receiver:owned,parameters:[{name:value,type:crate::ChiralTag,default:required}],output:crate::AtomSpec,error:none,state:value_returning,operation:none,signature:fn(crate::AtomSpec,crate::ChiralTag)->crate::AtomSpec,},
+        {semantic_id:"BondSpec.with_prop",item:callable,owner:type_,rust:crate::BondSpec::with_prop,python:"with_prop",javascript:"withProp",feature:"runtime",status:experimental,kind:instance,receiver:owned,parameters:[{name:key,type:crate::PropertyText,default:required},{name:value,type:crate::PropertyValue,default:required}],output:crate::BondSpec,error:crate::BondValueError,state:value_returning,operation:none,signature:fn(crate::BondSpec,crate::PropertyText,crate::PropertyValue)->Result<crate::BondSpec,crate::BondValueError>,},
+        {semantic_id:"BondSpec.with_stereo",item:callable,owner:type_,rust:crate::BondSpec::with_stereo,python:"with_stereo",javascript:"withStereo",feature:"runtime",status:experimental,kind:instance,receiver:owned,parameters:[{name:value,type:crate::BondStereo,default:required}],output:crate::BondSpec,error:none,state:value_returning,operation:none,signature:fn(crate::BondSpec,crate::BondStereo)->crate::BondSpec,},
+        {semantic_id:"BondSpec.with_stereo_atoms",item:callable,owner:type_,rust:crate::BondSpec::with_stereo_atoms,python:"with_stereo_atoms",javascript:"withStereoAtoms",feature:"runtime",status:experimental,kind:instance,receiver:owned,parameters:[{name:begin_ref,type:crate::AtomId,default:required},{name:end_ref,type:crate::AtomId,default:required}],output:crate::BondSpec,error:none,state:value_returning,operation:none,signature:fn(crate::BondSpec,crate::AtomId,crate::AtomId)->crate::BondSpec,},
         {semantic_id:"AtomSpec.with_formal_charge",item:callable,owner:type_,rust:crate::AtomSpec::with_formal_charge,python:"with_formal_charge",javascript:"withFormalCharge",feature:"runtime",status:experimental,kind:instance,receiver:owned,parameters:[{name:value,type:i8,default:required},],output:crate::AtomSpec,error:none,state:value_returning,operation:none,signature:fn(crate::AtomSpec,i8)->crate::AtomSpec,},
         {semantic_id:"AtomSpec.with_explicit_hydrogens",item:callable,owner:type_,rust:crate::AtomSpec::with_explicit_hydrogens,python:"with_explicit_hydrogens",javascript:"withExplicitHydrogens",feature:"runtime",status:experimental,kind:instance,receiver:owned,parameters:[{name:value,type:u8,default:required},],output:crate::AtomSpec,error:none,state:value_returning,operation:none,signature:fn(crate::AtomSpec,u8)->crate::AtomSpec,},
         {semantic_id:"AtomSpec.with_atom_map",item:callable,owner:type_,rust:crate::AtomSpec::with_atom_map,python:"with_atom_map",javascript:"withAtomMap",feature:"runtime",status:experimental,kind:instance,receiver:owned,parameters:[{name:value,type:u32,default:required},],output:crate::AtomSpec,error:none,state:value_returning,operation:none,signature:fn(crate::AtomSpec,u32)->crate::AtomSpec,},

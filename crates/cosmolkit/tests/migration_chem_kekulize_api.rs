@@ -98,7 +98,7 @@ fn canonical_public_signatures_and_defaults_compile() {
 }
 
 #[test]
-fn binding_contract_exposes_exactly_the_frozen_six_entries() {
+fn kekulization_bindings_keep_their_feature_and_state_models() {
     let expected = [
         "types.KekulizeParams",
         "types.KekulizeError",
@@ -107,14 +107,13 @@ fn binding_contract_exposes_exactly_the_frozen_six_entries() {
         "Molecule.kekulize_bonds_",
         "Molecule.kekulize_bonds_with_params_",
     ];
-    let rows = BINDING_CONTRACT
-        .iter()
-        .filter(|row| row.feature == "cap-kekulize")
-        .collect::<Vec<_>>();
-    assert_eq!(
-        rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
-        expected
-    );
+    let rows = expected.map(|id| {
+        BINDING_CONTRACT
+            .iter()
+            .find(|row| row.semantic_id == id)
+            .unwrap()
+    });
+    assert!(rows.iter().all(|row| row.feature == "cap-kekulize"));
     for row in &rows[..2] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);

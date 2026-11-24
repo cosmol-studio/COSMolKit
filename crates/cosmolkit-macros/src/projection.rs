@@ -428,7 +428,7 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
     if operation.fields.requires_mapping != MappingRequirement::None {
         methods.push(quote! {
             pub(crate) fn record_topology_mapping(&mut self, mapping: cosmolkit_model::TopologyMapping) -> Result<(), crate::OperationError> {
-                self.record_topology_mapping_runtime(mapping)
+                self.record_topology_mapping_runtime(mapping).map(|_| ())
             }
         });
     }
@@ -560,7 +560,7 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
         });
         if operation.fields.requires_mapping == MappingRequirement::Required {
             methods.push(quote! {
-                pub(crate) fn transform_mapped_blocks(&mut self, body:impl FnOnce(&cosmolkit_model::TopologyBlock, &cosmolkit_model::CoordinateBlock, &cosmolkit_model::MoleculeProperties) -> Result<(cosmolkit_model::TopologyBlock,cosmolkit_model::CoordinateBlock,cosmolkit_model::MoleculeProperties,cosmolkit_model::TopologyMapping),crate::OperationError>) -> Result<(),crate::OperationError> {
+                pub(crate) fn transform_mapped_blocks(&mut self, body:impl FnOnce(&cosmolkit_model::TopologyBlock, &cosmolkit_model::CoordinateBlock, &cosmolkit_model::MoleculeProperties) -> Result<(cosmolkit_model::TopologyBlock,cosmolkit_model::CoordinateBlock,cosmolkit_model::MoleculeProperties,cosmolkit_model::TopologyMapping),crate::OperationError>) -> Result<&cosmolkit_model::TopologyMapping,crate::OperationError> {
                     self.transform_mapped_blocks_runtime(body)
                 }
             });

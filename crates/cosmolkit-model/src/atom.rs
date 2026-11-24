@@ -1058,6 +1058,14 @@ impl Atom {
         self
     }
 
+    /// Replace just the source property dictionary, preserving the replacement's chemical fields.
+    #[doc(hidden)]
+    pub fn replace_source_properties_from(&mut self, source: &Self) {
+        self.properties
+            .props
+            .update_from(&source.properties.props, false);
+    }
+
     #[doc(hidden)]
     pub fn set_element(&mut self, element: Element) {
         // RDKit✔️✔️: void setAtomicNum(int newNum) { d_atomicNum = newNum; }

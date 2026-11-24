@@ -89,7 +89,7 @@ pub use topology::{SourceBondBatchMasks, SourceBondNeighbors, add_source_bond_or
 pub use topology::{SourceBatchCommitState, batch_remove_bonds_source, commit_batch_edit_source};
 
 #[doc(hidden)]
-pub use topology::{replace_source_bond, source_bond_between_atoms};
+pub use topology::{remove_indexed_atom, replace_source_bond, source_bond_between_atoms};
 
 #[doc(hidden)]
 pub use topology::add_source_bond_value;

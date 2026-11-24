@@ -106,13 +106,30 @@ pub use descriptors::DescriptorReadError;
 pub use drawing::DrawingWriteError;
 #[cfg(feature = "cap-alignment")]
 mod alignment;
+#[cfg(feature = "cap-kekulize")]
+mod atom_ranking;
 #[cfg(feature = "cap-inchi")]
 mod inchi;
 #[cfg(feature = "cap-matrices")]
 mod matrices;
 mod molecule;
+#[cfg(feature = "cap-kekulize")]
+#[doc(hidden)]
+pub use atom_ranking::__configuration_AtomRankParams;
+#[cfg(feature = "cap-kekulize")]
+pub use atom_ranking::AtomRankParams;
+#[cfg(feature = "cap-transforms")]
+mod graph_queries;
+#[cfg(any(feature = "cap-kekulize", feature = "cap-smiles"))]
+pub use cosmolkit_core::CanonicalRankError;
+#[cfg(feature = "cap-transforms")]
+pub use cosmolkit_core::GraphPath;
+#[cfg(any(feature = "cap-smiles", feature = "cap-transforms"))]
+pub use cosmolkit_core::PathError;
 #[doc(hidden)]
 pub use cosmolkit_macros::{Configuration, project_configuration};
+#[cfg(feature = "cap-transforms")]
+pub use graph_queries::*;
 mod molecule_builder;
 #[cfg(feature = "cap-inchi")]
 pub use cosmolkit_inchi::{InchiError, InchiErrorKind};
@@ -306,11 +323,11 @@ pub use rings::RingSearchResult;
 // Detached metadata and its error are always-present model vocabulary.
 #[cfg(feature = "cap-smiles")]
 pub use cosmolkit_core::{
-    AdjustHsError, AtropisomerError, CanonicalRankError, CleanupError, ConjugationError,
-    DoubleBondStereoError, HybridizationError, LegacyStereoError, PathError, PeriodicTableError,
-    PropertyCacheError, PropertyIntReadError, PropertyUIntReadError, PropertyULongReadError,
-    RadicalError, RequiredPropertyStringError, RingDecomposerError, RingFindingError,
-    StereoOrderError, UIntLexicalReadError,
+    AdjustHsError, AtropisomerError, CleanupError, ConjugationError, DoubleBondStereoError,
+    HybridizationError, LegacyStereoError, PeriodicTableError, PropertyCacheError,
+    PropertyIntReadError, PropertyUIntReadError, PropertyULongReadError, RadicalError,
+    RequiredPropertyStringError, RingDecomposerError, RingFindingError, StereoOrderError,
+    UIntLexicalReadError,
 };
 #[cfg(feature = "cap-transforms")]
 pub use cosmolkit_core::{
@@ -379,6 +396,15 @@ pub use legacy_topological_torsion::LegacyTopologicalTorsionParams;
 mod topological_torsion;
 #[cfg(feature = "cap-transforms")]
 #[doc(hidden)]
+pub use cosmolkit_core::{
+    __ck_configuration_SubgraphExtractionParams, __configuration_SubgraphExtractionParams,
+};
+#[cfg(feature = "cap-transforms")]
+pub use cosmolkit_core::{
+    SubgraphExtractionParams, SubgraphSelection, indexed_edits::IndexedGraphError,
+};
+#[cfg(feature = "cap-transforms")]
+#[doc(hidden)]
 pub use ops::__configuration_FragmentExtractionParams;
 pub(crate) use ops::DerivedState;
 #[cfg(cosmolkit_runtime_privacy_probe)]
@@ -423,12 +449,19 @@ pub(crate) use ops::{
     ReactionApplyReportForTestAccess, RingLiveCowCheckoutConflictForTestAccess,
 };
 #[cfg(feature = "cap-transforms")]
+pub(crate) use ops::{
+    ExtractSubgraphWithParamsAccess, WithAtomReplacedAccess, WithAtomsRenumberedAccess,
+    WithBondReplacedAccess, WithMoleculeAppendedAccess, WithoutAtomAccess,
+};
+#[cfg(feature = "cap-transforms")]
 pub use ops::{FragmentExtractionParams, MappedFragment};
 #[cfg(feature = "cap-transforms")]
 pub(crate) use ops::{
     FragmentsAccess, FragmentsWithAtomMappingWithParamsAccess, LargestFragmentAccess,
     WithBondsCutAccess,
 };
+#[cfg(feature = "cap-transforms")]
+pub use ops::{MappedSubgraph, SubgraphMapping};
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
 #[doc(inline)]
 pub use ops::{OperationError, UnsupportedFeatureError};

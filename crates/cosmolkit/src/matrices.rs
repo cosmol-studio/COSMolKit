@@ -16,6 +16,21 @@ pub struct DistanceMatrixParams {
 }
 
 impl Molecule {
+    /// Adjacency in source atom order. With bond orders, a row receives the bond's
+    /// valence contribution to that atom (which is directional for dative bonds).
+    pub fn adjacency_matrix(
+        &self,
+        use_bond_order: bool,
+    ) -> Result<cosmolkit_core::DenseMatrix, cosmolkit_core::MatrixError> {
+        cosmolkit_core::adjacency_matrix(
+            self.topology(),
+            &cosmolkit_core::AdjacencyMatrixParams {
+                use_bond_order,
+                ..Default::default()
+            },
+        )
+    }
+
     /// Returns the full topological distance matrix with source defaults.
     pub fn distance_matrix(
         &self,

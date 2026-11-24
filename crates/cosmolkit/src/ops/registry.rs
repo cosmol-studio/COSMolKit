@@ -221,6 +221,80 @@ molecule_ops! {
     }
 
     #[cfg(feature = "cap-transforms")]
+    op with_atoms_renumbered(order: &[crate::AtomId]) {
+        method: with_atoms_renumbered, docs: "Renumber atoms using new-to-old source indices, remapping all conformer rows.",
+        impl_fn: crate::ops::indexed_edits::with_atoms_renumbered_impl,
+        domain: topology, kind: strong, access: {read: [], write:[topology, coordinates, properties, derived_cache]},
+        may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
+        derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
+        cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity:required_now, parity_profile:"with_atoms_renumbered_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        inplace:true, inplace_method:renumber_atoms_,
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    op without_atom(atom: crate::AtomId) {
+        method: without_atom, docs: "Delete the atom and its incident bonds, compacting surviving rows.",
+        impl_fn: crate::ops::indexed_edits::without_atom_impl,
+        domain: topology, kind: strong, access: {read: [], write:[topology, coordinates, properties, derived_cache]},
+        may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
+        derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
+        cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity:required_now, parity_profile:"without_atom_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        inplace:true, inplace_method:remove_atom_,
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    op with_atom_replaced(atom: crate::AtomId, replacement: &crate::AtomSpec, preserve_props: bool) {
+        method: with_atom_replaced, docs: "Replace one atom slot, optionally using the original property dictionary.",
+        impl_fn: crate::ops::indexed_edits::with_atom_replaced_impl,
+        domain: topology, kind: strong, access: {read: [], write:[topology, coordinates, properties, derived_cache]},
+        may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
+        derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
+        cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity:required_now, parity_profile:"with_atom_replaced_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        inplace:true, inplace_method:replace_atom_,
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    op with_bond_replaced(bond: crate::BondId, replacement: &crate::BondSpec, preserve_props: bool, keep_sgroups: bool) {
+        method: with_bond_replaced, docs: "Replace a bond in its original slot and retain its endpoints.",
+        impl_fn: crate::ops::indexed_edits::with_bond_replaced_impl,
+        domain: topology, kind: strong, access: {read: [], write:[topology, coordinates, properties, derived_cache]},
+        may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
+        derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
+        cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity:required_now, parity_profile:"with_bond_replaced_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        inplace:true, inplace_method:replace_bond_,
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    op with_molecule_appended(right: &crate::Molecule) {
+        method: with_molecule_appended, docs: "Append a disjoint graph, pairing conformers by dimension and ID.",
+        impl_fn: crate::ops::indexed_edits::with_molecule_appended_impl,
+        domain: topology, kind: strong, access: {read: [], write:[topology, coordinates, properties, derived_cache]},
+        may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
+        derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
+        cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity:required_now, parity_profile:"with_molecule_appended_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        inplace:true, inplace_method:insert_molecule_,
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    op extract_subgraph_with_params(selection: &crate::SubgraphSelection, params: &crate::SubgraphExtractionParams) {
+        method: extract_subgraph_with_params, docs: "Keep the selected atoms and bonds in source order and return their pre-call correspondence.",
+        impl_fn: crate::ops::indexed_edits::extract_subgraph_with_params_impl,
+        report_type: crate::SubgraphMapping, report_result_type: crate::MappedSubgraph, inplace_result_type: crate::SubgraphMapping,
+        default_method: extract_subgraph, default_args:[&crate::SubgraphExtractionParams::default()], default_inplace_method: retain_subgraph_,
+        domain: topology, kind: strong, access: {read: [], write:[topology, coordinates, properties, derived_cache]},
+        may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
+        derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
+        cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity:required_now, parity_profile:"extract_subgraph_with_params_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        inplace:true, inplace_method:retain_subgraph_with_params_,
+    }
+
+    #[cfg(feature = "cap-transforms")]
     op with_bonds_cut(cuts: &[crate::BondCut]) {
         method: with_bonds_cut,
         docs: "Cut the selected source bonds and attach a labeled dummy on each side. The result is one possibly disconnected molecule. Empty selections, duplicate bonds and stale endpoints are errors. Isotope labels use RDKit's uint16 narrowing.",

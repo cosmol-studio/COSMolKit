@@ -18,6 +18,13 @@ use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum CanonicalRankError {
+    #[error("fragment ranking needs at least one selected atom")]
+    EmptyFragment,
+    #[error("selected bond {bond_index} is outside the {bond_count} source bonds")]
+    FragmentBondOutOfRange {
+        bond_index: usize,
+        bond_count: usize,
+    },
     #[error("hanoi scratch is too small")]
     HanoiScratchTooSmall,
     #[error("{0}")]
@@ -4037,6 +4044,7 @@ struct CanonAtom<'a> {
     isotope: u16,
     atom_map: u32,
     source_atom: &'a Atom,
+    source_neighbors: &'a [cosmolkit_model::NeighborRef],
     formal_charge: i8,
     chiral_tag: ChiralTag,
     total_num_hs: usize,
@@ -4189,6 +4197,7 @@ fn empty_canon_atom_from_source_atom<'a>(atom: &'a Atom) -> CanonAtom<'a> {
         // Like source canon_atom::atom, borrow without reading rank metadata.
         // Property lookup and conversion belong to the guarded comparator.
         source_atom: atom,
+        source_neighbors: &[],
         formal_charge: atom.formal_charge(),
         chiral_tag: atom.chiral_tag(),
         total_num_hs: 0,
@@ -4392,6 +4401,7 @@ fn init_canon_atom_storage<'a>(
     let mut next_neighbor = 0;
     for atom_idx in 0..view.num_atoms() {
         atoms[atom_idx].is_in_play = atom_selected(atom_idx);
+        atoms[atom_idx].source_neighbors = view.adjacency.neighbors_of(atom_idx);
         atoms[atom_idx].degree = 0;
         atoms[atom_idx].bonds.clear();
         if !atom_selected(atom_idx) {
@@ -6932,7 +6942,8 @@ fn get_chiral_rank_for_kekulize(atoms: &[CanonAtom<'_>], atom_idx: usize) -> u32
     // RDKit✔️✔️:   std::vector<unsigned int> perm;
     // RDKit✔️✔️:   perm.reserve(dp_atoms[i].atom->getDegree());
     let mut res = 0u32;
-    let mut perm = Vec::<i32>::with_capacity(atoms[atom_idx].nbr_ids.len());
+    let neighbors = atoms[atom_idx].source_neighbors;
+    let mut perm = Vec::<i32>::with_capacity(neighbors.len());
     // RDKit✔️✔️:   for (const auto nbr : dp_mol->atomNeighbors(dp_atoms[i].atom)) {
     // RDKit✔️✔️:     auto rnk = dp_atoms[nbr->getIdx()].index;
     // RDKit✔️✔️:     if (std::find(perm.begin(), perm.end(), rnk) != perm.end()) {
@@ -6941,15 +6952,15 @@ fn get_chiral_rank_for_kekulize(atoms: &[CanonAtom<'_>], atom_idx: usize) -> u32
     // RDKit✔️✔️:       perm.push_back(rnk);
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
-    for neighbor in atoms[atom_idx].nbr_ids.iter().copied() {
-        let rank = atoms[neighbor].index;
+    for neighbor in neighbors {
+        let rank = atoms[neighbor.atom_index].index;
         if perm.contains(&rank) {
             break;
         }
         perm.push(rank);
     }
     // RDKit✔️✔️:   if (perm.size() == dp_atoms[i].atom->getDegree()) {
-    if perm.len() == atoms[atom_idx].nbr_ids.len() {
+    if perm.len() == neighbors.len() {
         // RDKit✔️✔️:     auto ctag = dp_atoms[i].atom->getChiralTag();
         // RDKit✔️✔️:     if (ctag == Atom::ChiralType::CHI_TETRAHEDRAL_CW ||
         // RDKit✔️✔️:         ctag == Atom::ChiralType::CHI_TETRAHEDRAL_CCW) {

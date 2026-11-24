@@ -696,7 +696,7 @@ impl<'a, Access> OpParts<'a, Access> {
             ),
             OperationError,
         >,
-    ) -> Result<(), OperationError> {
+    ) -> Result<&TopologyMapping, OperationError> {
         self.ensure_unsealed_runtime()?;
         #[cfg(feature = "op-contracts")]
         {
@@ -864,7 +864,7 @@ impl<'a, Access> OpParts<'a, Access> {
     pub(super) fn record_topology_mapping_runtime(
         &mut self,
         mapping: TopologyMapping,
-    ) -> Result<(), OperationError> {
+    ) -> Result<&TopologyMapping, OperationError> {
         #[cfg(feature = "op-contracts")]
         if self.topology_mapping.is_some() {
             return Err(OperationError::MappingContract {
@@ -881,8 +881,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 requirement: self.spec.requires_mapping,
             });
         }
-        self.topology_mapping = Some(mapping);
-        Ok(())
+        Ok(self.topology_mapping.insert(mapping))
     }
 
     #[cfg(feature = "runtime-invariants")]
@@ -1304,18 +1303,34 @@ impl<'a, Access> OpParts<'a, Access> {
             && spec.may_mutate.contains(BlockSet::PROPERTIES);
         match spec.cip_state {
             CipStatePolicy::Preserve => {}
-            CipStatePolicy::FragmentSourceTransition => {
+            CipStatePolicy::FragmentSourceTransition
+            | CipStatePolicy::IndexedGraphSourceTransition => {
                 let blocks = BlockSet::TOPOLOGY
                     .union(BlockSet::COORDINATES)
                     .union(BlockSet::PROPERTIES)
                     .union(BlockSet::DERIVED_CACHE);
-                if !matches!(
-                    (spec.method, spec.output),
-                    (
-                        "fragments" | "fragments_with_atom_mapping_with_params",
-                        MoleculeOpOutput::Multiple
-                    ) | ("largest_fragment", MoleculeOpOutput::Single)
-                ) || spec.kind != crate::MoleculeOpKind::Strong
+                let allowed = if spec.cip_state == CipStatePolicy::IndexedGraphSourceTransition {
+                    spec.output == MoleculeOpOutput::Single
+                        && matches!(
+                            spec.method,
+                            "with_atoms_renumbered"
+                                | "without_atom"
+                                | "with_atom_replaced"
+                                | "with_bond_replaced"
+                                | "with_molecule_appended"
+                                | "extract_subgraph_with_params"
+                        )
+                } else {
+                    matches!(
+                        (spec.method, spec.output),
+                        (
+                            "fragments" | "fragments_with_atom_mapping_with_params",
+                            MoleculeOpOutput::Multiple
+                        ) | ("largest_fragment", MoleculeOpOutput::Single)
+                    )
+                };
+                if !allowed
+                    || spec.kind != crate::MoleculeOpKind::Strong
                     || spec.requires_mapping != MappingRequirement::Required
                     || !spec.access.read().is_empty()
                     || spec.access.write() != blocks
@@ -1325,7 +1340,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     return Err(OperationError::CipStateContract {
                         operation: spec.method,
                         policy: spec.cip_state,
-                        issue: "fragment source transition requires exact mapped strong fragment authority",
+                        issue: "source transition requires a declared strong graph operation with mapped write authority",
                     });
                 }
             }
@@ -3072,6 +3087,9 @@ impl<'a, Access> OpParts<'a, Access> {
                         });
                     }
                 }
+            }
+            CipStatePolicy::IndexedGraphSourceTransition => {
+                // Each indexed edit installs the source operation's row properties.
             }
             CipStatePolicy::FragmentSourceTransition => {
                 // MolOps::getTheFrags copies/remaps atom and bond properties,

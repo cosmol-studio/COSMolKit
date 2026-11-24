@@ -65,12 +65,14 @@ pub use random::{RdkitRandomEngine, RdkitRandomGenerator, with_rdkit_random_gene
 pub use stereo_order::{invert_atom_chirality, invert_bond_chirality};
 
 pub use bond_cuts::{BondCut, BondCutError, BondCutResult, cut_selected_bonds};
+pub mod indexed_edits;
 
 /// Detached, source-ordered fragment extraction with explicit topology mappings.
 pub use fragments::{
     AtomPathSubsetCopyError, FullCopyComponentError, MoleculeFragment, MoleculeFragmentsError,
     MoleculeFragmentsFailure, OrderedFragmentBuildError, SelectedBondCopyError,
-    SelectedSubstanceGroupCopyError, SubstanceGroupAtomList, get_largest_molecule_fragment,
+    SelectedSubstanceGroupCopyError, SubgraphExtractionParams, SubgraphSelection,
+    SubstanceGroupAtomList, extract_indexed_subgraph, get_largest_molecule_fragment,
     get_molecule_fragments,
 };
 pub use scaffolds::{
@@ -80,7 +82,7 @@ pub use scaffolds::{
 /// Narrow borrowed fragment bridge used by sibling algorithm crates.
 #[doc(hidden)]
 pub use fragments::{
-    FragmentCoordinateView, FragmentCoordinateViewError,
+    __configuration_SubgraphExtractionParams, FragmentCoordinateView, FragmentCoordinateViewError,
     get_molecule_fragments_with_coordinate_view,
 };
 

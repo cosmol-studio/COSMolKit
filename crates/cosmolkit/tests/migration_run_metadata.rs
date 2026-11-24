@@ -80,6 +80,12 @@ fn expected_operation_methods() -> Vec<&'static str> {
             "fragments",
             "fragments_with_atom_mapping_with_params",
             "largest_fragment",
+            "with_atoms_renumbered",
+            "without_atom",
+            "with_atom_replaced",
+            "with_bond_replaced",
+            "with_molecule_appended",
+            "extract_subgraph_with_params",
             "with_bonds_cut",
         ]);
     }

@@ -24,8 +24,17 @@ mod error;
 #[cfg(feature = "cap-transforms")]
 mod fragments;
 #[cfg(feature = "cap-transforms")]
+mod indexed_edits;
+#[cfg(feature = "cap-transforms")]
 pub use fragments::{
     __configuration_FragmentExtractionParams, FragmentExtractionParams, MappedFragment,
+};
+#[cfg(feature = "cap-transforms")]
+pub use indexed_edits::{MappedSubgraph, SubgraphMapping};
+#[cfg(feature = "cap-transforms")]
+pub(crate) use runtime::registry::{
+    ExtractSubgraphWithParamsAccess, WithAtomReplacedAccess, WithAtomsRenumberedAccess,
+    WithBondReplacedAccess, WithMoleculeAppendedAccess, WithoutAtomAccess,
 };
 #[cfg(feature = "cap-transforms")]
 pub(crate) use runtime::registry::{
