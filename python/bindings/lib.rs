@@ -47,6 +47,9 @@ mod cip_atom_code_errors;
 mod collection_params;
 #[path = "../framework/configuration.rs"]
 mod configuration;
+mod graph_queries;
+mod indexed_edits;
+mod indexed_graph_errors;
 mod mapped_fragments;
 mod molecule_transfer;
 mod protein_transfer;
@@ -218,6 +221,12 @@ pub mod native {
         BricsDecompositionErrorKind, RBricsBondMatch, RecapDecomposition, RecapDecompositionError,
         RecapDecompositionErrorKind, RecapLookupError, RecapLookupErrorKind,
     };
+    #[pymodule_export]
+    use super::graph_queries::AtomEnvironment;
+    #[pymodule_export]
+    use super::indexed_edits::{MappedSubgraph, SubgraphMapping, SubgraphSelection};
+    #[pymodule_export]
+    use super::indexed_graph_errors::{IndexedGraphError, IndexedGraphErrorKind};
     #[pymodule_export]
     use super::mapped_fragments::MappedFragment;
     #[pymodule_init]
@@ -945,19 +954,20 @@ pub mod native {
 
     #[pymodule_export]
     use super::params::{
-        AtomPositionParams, BioMoleculeParams, BioPdbReadParams, BioPdbWriteParams,
-        Coordinate3DInputParams, DistanceMatrix3dParams, DistanceMatrixParams,
-        ForceFieldAngleConstraintParams, ForceFieldDistanceConstraintParams,
+        AtomEnvironmentParams, AtomPositionParams, AtomRankParams, BioMoleculeParams,
+        BioPdbReadParams, BioPdbWriteParams, Coordinate3DInputParams, DistanceMatrix3dParams,
+        DistanceMatrixParams, ForceFieldAngleConstraintParams, ForceFieldDistanceConstraintParams,
         ForceFieldPositionConstraintParams, ForceFieldTorsionConstraintParams,
         FragmentExtractionParams, InchiReadParams, InchiWriteParams, KekulizeParams,
         MaccsFingerprintParams, McsAtomCompareParameters, McsBondCompareParameters,
         MmffConformerOptimizationParams, MmffEvaluationParams, MmffOptimizationParams,
-        MmffPropertiesParams, MorganCallParams, PatternFingerprintParams, PotentialStereoParams,
-        RandomSmilesWriteParams, ReactionApplyParams, ReactionParseParams,
+        MmffPropertiesParams, MorganCallParams, PathEnumerationParams, PatternFingerprintParams,
+        PotentialStereoParams, RandomSmilesWriteParams, ReactionApplyParams, ReactionParseParams,
         ReactionTemplateRemovalParams, ReactionValidationParams, RemoveHsParams,
         Replace3DCoordinatesParams, RingSearchParams, SmartsWriteParams, StructureTagParams,
-        TopologicalFingerprintOutputRequest, TopologicalTorsionCallParams,
-        UffConformerOptimizationParams, UffEvaluationParams, UffOptimizationParams, XyzWriteParams,
+        SubgraphEnumerationParams, SubgraphExtractionParams, TopologicalFingerprintOutputRequest,
+        TopologicalTorsionCallParams, UffConformerOptimizationParams, UffEvaluationParams,
+        UffOptimizationParams, UniqueSubgraphSearchParams, XyzWriteParams,
     };
 
     #[pyfunction]

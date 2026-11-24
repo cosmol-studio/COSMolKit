@@ -12,6 +12,7 @@ use crate::forcefield_execution_errors::MmffOptimizationError;
 use crate::forcefield_execution_errors::UffOptimizationError;
 use crate::fragment_errors::MoleculeFragmentsError;
 use crate::hydrogen_errors::HydrogenError;
+use crate::indexed_graph_errors::IndexedGraphError;
 use crate::kekulize_errors::KekulizeError;
 use crate::model_edit_errors::AtomPropertyError;
 use crate::model_edit_errors::BondValueError;
@@ -38,11 +39,14 @@ use crate::valence_errors::ValenceError;
 use cosmolkit as ck;
 use pyo3::prelude::*;
 use std::error::Error;
-type OperationSource=Source<crate::error_framework::ErrorObject<BondCutError>,Source<crate::error_framework::ErrorObject<MoleculeFragmentsError>,Source<crate::error_framework::ErrorObject<ScaffoldError>,Source<crate::error_framework::ErrorObject<ReactionRunError>,Source<crate::error_framework::ErrorObject<ReactionApplyError>,Source<crate::error_framework::ErrorObject<EnumerationRunError>,Source<crate::error_framework::ErrorObject<AlignmentError>,Source<crate::error_framework::ErrorObject<ConformerRunError>,Source<crate::error_framework::ErrorObject<TautomerRunError>,Source<crate::error_framework::ErrorObject<TopologyValidationError>,Source<crate::error_framework::ErrorObject<TopologyEditError>,Source<crate::error_framework::ErrorObject<CoordinateValidationError>,Source<crate::error_framework::ErrorObject<MoleculePropertyError>,Source<crate::error_framework::ErrorObject<AtomPropertyError>,Source<crate::error_framework::ErrorObject<BondValueError>,Source<crate::error_framework::ErrorObject<ValenceError>,Source<crate::error_framework::ErrorObject<RadicalError>,Source<crate::error_framework::ErrorObject<RingFindingError>,Source<crate::error_framework::ErrorObject<PotentialStereoError>,Source<crate::error_framework::ErrorObject<StereoError>,Source<crate::error_framework::ErrorObject<CipLabelerError>,Source<crate::error_framework::ErrorObject<AtomCodeError>,Source<crate::error_framework::ErrorObject<TransformError>,Source<crate::error_framework::ErrorObject<CoordinateInputError>,Source<crate::error_framework::ErrorObject<Coordinate2DError>,Source<crate::error_framework::ErrorObject<UffOptimizationError>,Source<crate::error_framework::ErrorObject<MmffOptimizationError>,Source<crate::error_framework::ErrorObject<KekulizeError>,Source<crate::error_framework::ErrorObject<AromaticityError>,Source<crate::error_framework::ErrorObject<SanitizeError>,crate::error_framework::ErrorObject<HydrogenError>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;
+type OperationSource =
+    Source<crate::error_framework::ErrorObject<IndexedGraphError>, LegacyOperationSource>;
+type LegacyOperationSource=Source<crate::error_framework::ErrorObject<BondCutError>,Source<crate::error_framework::ErrorObject<MoleculeFragmentsError>,Source<crate::error_framework::ErrorObject<ScaffoldError>,Source<crate::error_framework::ErrorObject<ReactionRunError>,Source<crate::error_framework::ErrorObject<ReactionApplyError>,Source<crate::error_framework::ErrorObject<EnumerationRunError>,Source<crate::error_framework::ErrorObject<AlignmentError>,Source<crate::error_framework::ErrorObject<ConformerRunError>,Source<crate::error_framework::ErrorObject<TautomerRunError>,Source<crate::error_framework::ErrorObject<TopologyValidationError>,Source<crate::error_framework::ErrorObject<TopologyEditError>,Source<crate::error_framework::ErrorObject<CoordinateValidationError>,Source<crate::error_framework::ErrorObject<MoleculePropertyError>,Source<crate::error_framework::ErrorObject<AtomPropertyError>,Source<crate::error_framework::ErrorObject<BondValueError>,Source<crate::error_framework::ErrorObject<ValenceError>,Source<crate::error_framework::ErrorObject<RadicalError>,Source<crate::error_framework::ErrorObject<RingFindingError>,Source<crate::error_framework::ErrorObject<PotentialStereoError>,Source<crate::error_framework::ErrorObject<StereoError>,Source<crate::error_framework::ErrorObject<CipLabelerError>,Source<crate::error_framework::ErrorObject<AtomCodeError>,Source<crate::error_framework::ErrorObject<TransformError>,Source<crate::error_framework::ErrorObject<CoordinateInputError>,Source<crate::error_framework::ErrorObject<Coordinate2DError>,Source<crate::error_framework::ErrorObject<UffOptimizationError>,Source<crate::error_framework::ErrorObject<MmffOptimizationError>,Source<crate::error_framework::ErrorObject<KekulizeError>,Source<crate::error_framework::ErrorObject<AromaticityError>,Source<crate::error_framework::ErrorObject<SanitizeError>,crate::error_framework::ErrorObject<HydrogenError>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>;
 fn project_operation_source(inner: &RetainedError<ck::OperationError>) -> Option<PyErr> {
     let node = inner.node().source()?;
     Some(match inner.as_ref() {
         ck::OperationError::BondCut(value) => BondCutError::from_rust(value.clone()),
+        ck::OperationError::IndexedGraph(value) => IndexedGraphError::from_rust(value.clone()),
         ck::OperationError::Fragments(value) => MoleculeFragmentsError::from_rust(value.clone()),
         ck::OperationError::Scaffold(value) => ScaffoldError::from_rust(value.clone()),
         ck::OperationError::ReactionRun(value) => ReactionRunError::from_rust(value.clone()),
@@ -292,8 +296,11 @@ error_projection!(retained OperationError,OperationErrorKind,ck::OperationError,
  InvalidAlgorithmResult{operation,field,actual,expected},
  InvalidReconstructionOrigin{operation,entity:&'static str,destination:usize,input:usize,row:usize,input_count:usize,row_count:Option<usize>},
  Algorithm{operation,detail:String},
- BondCut(_),
+ BondCut(_), IndexedGraph(_),
 },cause=project_operation_source,methods={
+ #[getter] #[doc=r#"{"role":"error_payload"}"#]
+ /// Indexed-graph failure, including the operand or coordinate key when applicable.
+ fn indexed_graph(&self,py:Python<'_>)->PyResult<Option<crate::error_framework::ErrorObject<IndexedGraphError>>>{match self.inner.as_ref(){ck::OperationError::IndexedGraph(v)=>IndexedGraphError::from_rust(v.clone()).value(py).extract().map(Some).map_err(Into::into),_=>Ok(None)}}
  #[staticmethod] #[doc=r#"{"role":"error_source"}"#]
  /// Immediate native cause, also available as __cause__; None when the native error has no cause.
  fn cause<'py>(slf:Bound<'py,pyo3::exceptions::PyBaseException>)->PyResult<Option<OperationSource>>{slf.getattr("__cause__")?.extract().map_err(Into::into)}

@@ -137,6 +137,63 @@ If an in-place method returns an error, the molecule is not guaranteed to equal
 its pre-call value. Use the value-style method when failure-preserving behavior
 is required.
 
+Order atoms and extract a graph by index
+----------------------------------------
+
+``canonical_atom_ranks()`` returns one rank per source atom. Sort the atom
+indices by rank to obtain the permutation expected by ``with_atoms_renumbered``:
+entry ``i`` names the source atom to put at row ``i``. Bond rows keep their
+order; their endpoints, stereo references and the rows of every conformer follow
+the atoms. ``renumber_atoms_`` applies the same change to the receiver. Both
+forms reject an invalid permutation before editing. Like RDKit's
+``RenumberAtoms``, even an identity permutation drops molecule-level user
+properties and substance groups.
+
+.. code-block:: python
+
+   from cosmolkit import Molecule, SubgraphSelection
+
+   source = Molecule.from_smiles("OCC")
+   ranks = source.canonical_atom_ranks()                         # [1, 2, 0]
+   ordered = source.with_atoms_renumbered(sorted(range(3), key=ranks.__getitem__))
+   path = ordered.shortest_path(0, 2)                           # [0, 2]
+   bonds = []
+   for a, b in zip(path, path[1:]):
+       bond = ordered.bond_between_atoms(a, b)
+       assert bond is not None  # consecutive path atoms share a bond
+       bonds.append(bond)
+   part = ordered.extract_subgraph(SubgraphSelection.bonds(bonds))
+   assert list(part.mapping.source_atom_indices) == [0, 2]      # rows of ordered
+   assert list(part.mapping.source_bond_indices) == [1]
+
+Use ``break_ties=False`` for symmetry classes. ``canonical_atom_ranks_in_fragment``
+takes explicit atom and bond indices: omitting the bonds selects no bonds,
+and unselected atoms have rank ``-1``. Ranking uses temporary valence or ring
+data when needed, including after a topology edit.
+
+``paths_of_length(n)`` returns paths of ``n`` bonds; ``use_atom_indices=True``
+instead returns paths of ``n`` atoms. ``subgraphs_of_length``, ``subgraphs_in_range``
+and ``unique_subgraphs_of_length`` return bond indices and include branches.
+The range is inclusive, with one group per length. ``atom_environment(radius, root)``
+reports both bond indices and atom distances. ``shortest_path`` returns an empty
+sequence between components; ``bond_between_atoms`` returns ``None`` for a missing bond.
+
+``SubgraphSelection.atoms`` includes bonds between selected atoms. Use ``bonds``
+for bonds and their endpoints, or ``atoms_and_bonds`` to specify both sets. An
+explicit empty bond set keeps the selected atoms disconnected. Extraction copies
+all conformers by default, without sanitization. The detached mapping points to
+the molecule at call entry. ``retain_subgraph_`` edits that molecule and returns
+the mapping directly.
+
+``without_atom`` removes one atom and its incident bonds. ``with_atom_replaced``
+and ``with_bond_replaced`` replace the specified row with an ``AtomSpec`` or
+``BondSpec``. The bond keeps its original endpoints. Replacement uses the new
+row's properties unless ``preserve_props=True`` selects the old dictionary.
+The in-place forms are ``remove_atom_``, ``replace_atom_`` and ``replace_bond_``.
+``with_molecule_appended`` and ``insert_molecule_`` append a second graph without
+connecting it. They pair conformers by dimension and ID and reject missing or
+ambiguous pairs. A coordinate-free empty molecule contributes no rows.
+
 .. _python-bond-fragmentation:
 
 Cut bonds or enumerate decomposition products

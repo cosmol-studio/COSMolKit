@@ -30,6 +30,24 @@ impl AtomSpec {
             inner: self.inner.clone().with_formal_charge(value),
         }
     }
+    /// Set the stored chiral tag on a new specification.
+    fn with_chiral_tag(&self, value: crate::chemical_values::ChiralTag) -> Self {
+        Self {
+            inner: self.inner.clone().with_chiral_tag(value.into()),
+        }
+    }
+    /// Return a specification with this named atom property set or replaced.
+    fn with_prop(
+        &self,
+        key: String,
+        value: &crate::property_values::PropertyValue,
+    ) -> PyResult<Self> {
+        self.inner
+            .clone()
+            .with_prop(key, value.inner.clone())
+            .map(|inner| Self { inner })
+            .map_err(crate::model_edit_errors::AtomPropertyError::from_rust)
+    }
     /// Return an independent atom specification with the explicit hydrogen count replaced.
     fn with_explicit_hydrogens(&self, value: u8) -> Self {
         Self {
@@ -66,6 +84,33 @@ crate::configuration::type_projection! {
 
 #[pymethods]
 impl BondSpec {
+    /// Set the stored stereo label on a new specification.
+    fn with_stereo(&self, value: crate::chemical_values::BondStereo) -> Self {
+        Self {
+            inner: self.inner.clone().with_stereo(value.into()),
+        }
+    }
+    /// Specify the adjacent atom on each endpoint's side of the bond.
+    fn with_stereo_atoms(&self, begin_ref: usize, end_ref: usize) -> Self {
+        Self {
+            inner: self
+                .inner
+                .clone()
+                .with_stereo_atoms(ck::AtomId::new(begin_ref), ck::AtomId::new(end_ref)),
+        }
+    }
+    /// Return a specification with this named bond property set or replaced.
+    fn with_prop(
+        &self,
+        key: String,
+        value: &crate::property_values::PropertyValue,
+    ) -> PyResult<Self> {
+        self.inner
+            .clone()
+            .with_prop(key, value.inner.clone())
+            .map(|inner| Self { inner })
+            .map_err(crate::model_edit_errors::BondValueError::from_rust)
+    }
     #[new]
     fn py_new(begin: usize, end: usize, order: BondOrderInput) -> PyResult<Self> {
         Self::new(begin, end, order)

@@ -161,6 +161,7 @@ type CanonicalSource = Source<
 >;
 
 error_projection!(CanonicalRankError, CanonicalRankErrorKind, ck::CanonicalRankError, "canonical_rank", {
+    EmptyFragment, FragmentBondOutOfRange { bond_index: usize, bond_count: usize },
     HanoiScratchTooSmall, StereoGroup(_),
     UnsignedRankOverflow { atom_index, property, value: u32 },
     InvalidPropertyKind { atom_index, property, kind },
@@ -184,6 +185,7 @@ error_projection!(CanonicalRankError, CanonicalRankErrorKind, ck::CanonicalRankE
     | ck::CanonicalRankError::BondMaskLength { .. } | ck::CanonicalRankError::AtomSymbolLength { .. }
     | ck::CanonicalRankError::BondSymbolLength { .. } | ck::CanonicalRankError::PreparedValenceLength { .. }
     | ck::CanonicalRankError::PreparedValenceInvalid { .. } | ck::CanonicalRankError::PreparedRingLength { .. }
+    | ck::CanonicalRankError::EmptyFragment | ck::CanonicalRankError::FragmentBondOutOfRange { .. }
     | ck::CanonicalRankError::ProtocolDebt { .. } => None,
 }), source = Option<CanonicalSource>, methods = {
     #[getter]
