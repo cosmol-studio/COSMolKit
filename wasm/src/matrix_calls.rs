@@ -15,7 +15,7 @@ ck::__ck_configuration_DistanceMatrix3dParams!(
     { DistanceMatrix3dParams }
 );
 #[wasm_bindgen]
-pub struct DenseMatrix(ck::DenseMatrix);
+pub struct DenseMatrix(pub(crate) ck::DenseMatrix);
 #[wasm_bindgen]
 impl DenseMatrix {
     #[wasm_bindgen(getter)]

@@ -13,6 +13,27 @@ pub struct AtomSpec(pub(crate) ck::AtomSpec);
 crate::fields::value_field!(ck::AtomSpec, AtomSpec, AtomSpecInput, "AtomSpec");
 #[wasm_bindgen]
 impl AtomSpec {
+    #[wasm_bindgen(js_name=withChiralTag)]
+    pub fn with_chiral_tag(&self, value: crate::enums::ChiralTagInput) -> Result<Self, JsValue> {
+        Ok(Self(
+            self.0.clone().with_chiral_tag(ck::ChiralTag::input(value)?),
+        ))
+    }
+    #[wasm_bindgen(js_name=withProp)]
+    pub fn with_prop(
+        &self,
+        key: Ts<input::TextInput>,
+        value: crate::property_values::PropertyValueInput,
+    ) -> Result<Self, JsValue> {
+        let key = input::read::<String>(key)?;
+        crate::property_values::PropertyValue::with_ref(&value, |v| {
+            self.0
+                .clone()
+                .with_prop(key, v.clone())
+                .map(Self)
+                .map_err(crate::model_errors::AtomPropertyError::from_rust)
+        })
+    }
     #[wasm_bindgen(constructor)]
     pub fn new(element: ElementInput) -> Result<Self, JsValue> {
         Element::with_ref(&element, |v| Ok(Self(ck::AtomSpec::new(*v))))
@@ -45,6 +66,38 @@ pub struct BondSpec(pub(crate) ck::BondSpec);
 crate::fields::value_field!(ck::BondSpec, BondSpec, BondSpecInput, "BondSpec");
 #[wasm_bindgen]
 impl BondSpec {
+    #[wasm_bindgen(js_name=withStereo)]
+    pub fn with_stereo(&self, value: crate::enums::BondStereoInput) -> Result<Self, JsValue> {
+        Ok(Self(
+            self.0.clone().with_stereo(ck::BondStereo::input(value)?),
+        ))
+    }
+    #[wasm_bindgen(js_name=withStereoAtoms)]
+    pub fn with_stereo_atoms(
+        &self,
+        begin_ref: Ts<input::IndexInput>,
+        end_ref: Ts<input::IndexInput>,
+    ) -> Result<Self, JsValue> {
+        Ok(Self(self.0.clone().with_stereo_atoms(
+            ck::AtomId::new(input::read(begin_ref)?),
+            ck::AtomId::new(input::read(end_ref)?),
+        )))
+    }
+    #[wasm_bindgen(js_name=withProp)]
+    pub fn with_prop(
+        &self,
+        key: Ts<input::TextInput>,
+        value: crate::property_values::PropertyValueInput,
+    ) -> Result<Self, JsValue> {
+        let key = input::read::<String>(key)?;
+        crate::property_values::PropertyValue::with_ref(&value, |v| {
+            self.0
+                .clone()
+                .with_prop(key, v.clone())
+                .map(Self)
+                .map_err(crate::model_errors::BondValueError::from_rust)
+        })
+    }
     #[wasm_bindgen(constructor)]
     pub fn new(
         begin: Ts<input::IndexInput>,

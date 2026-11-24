@@ -116,10 +116,13 @@ mod forcefield_kernel_errors;
 mod forcefield_params;
 mod fragment_errors;
 mod fragments;
+mod graph_queries;
 mod group_values;
 mod hydrogen_errors;
 #[cfg(feature = "cap-inchi")]
 mod inchi;
+mod indexed_edits;
+mod indexed_graph_errors;
 mod input;
 mod io_configuration;
 mod io_write_errors;

@@ -32,7 +32,9 @@ pub(crate) fn cause(value: &ck::CanonicalRankError) -> Option<CanonicalCause> {
         ck::CanonicalRankError::Valence(value) => {
             valence_errors::cause(value).map(JsCast::unchecked_into)
         }
-        ck::CanonicalRankError::HanoiScratchTooSmall
+        ck::CanonicalRankError::EmptyFragment
+        | ck::CanonicalRankError::FragmentBondOutOfRange { .. }
+        | ck::CanonicalRankError::HanoiScratchTooSmall
         | ck::CanonicalRankError::UnsignedRankOverflow { .. }
         | ck::CanonicalRankError::InvalidPropertyKind { .. }
         | ck::CanonicalRankError::ComponentAtomOutOfRange { .. }
@@ -48,6 +50,7 @@ pub(crate) fn cause(value: &ck::CanonicalRankError) -> Option<CanonicalCause> {
     }
 }
 enum_error!(CanonicalRankError, CanonicalRankErrorKind, ck::CanonicalRankError, {
+    EmptyFragment => ck::CanonicalRankError::EmptyFragment, FragmentBondOutOfRange => ck::CanonicalRankError::FragmentBondOutOfRange { .. },
     HanoiScratchTooSmall => ck::CanonicalRankError::HanoiScratchTooSmall, StereoGroup => ck::CanonicalRankError::StereoGroup(_),
     UnsignedRankOverflow => ck::CanonicalRankError::UnsignedRankOverflow { .. }, InvalidPropertyKind => ck::CanonicalRankError::InvalidPropertyKind { .. },
     ComponentAtomOutOfRange => ck::CanonicalRankError::ComponentAtomOutOfRange { .. }, DuplicateComponentAtom => ck::CanonicalRankError::DuplicateComponentAtom { .. },
@@ -57,6 +60,8 @@ enum_error!(CanonicalRankError, CanonicalRankErrorKind, ck::CanonicalRankError, 
     PreparedRingLength => ck::CanonicalRankError::PreparedRingLength { .. }, ProtocolDebt => ck::CanonicalRankError::ProtocolDebt { .. },
     TemplateAttachmentRemap => ck::CanonicalRankError::TemplateAttachmentRemap { .. }, RingFinding => ck::CanonicalRankError::RingFinding(_), Valence => ck::CanonicalRankError::Valence(_),
 }, {
+    #[wasm_bindgen(getter,js_name=bondIndex)] pub fn bond_index(&self)->Option<usize>{match *self.inner {ck::CanonicalRankError::FragmentBondOutOfRange {bond_index,..} => Some(bond_index), _ => None}}
+    #[wasm_bindgen(getter,js_name=bondCount)] pub fn bond_count(&self)->Option<usize>{match *self.inner {ck::CanonicalRankError::FragmentBondOutOfRange {bond_count,..} => Some(bond_count), _ => None}}
     #[wasm_bindgen(getter, js_name = atomIndex)] pub fn atom_index(&self) -> Option<usize> { match *self.inner {
         ck::CanonicalRankError::UnsignedRankOverflow { atom_index, .. } | ck::CanonicalRankError::InvalidPropertyKind { atom_index, .. }
         | ck::CanonicalRankError::ComponentAtomOutOfRange { atom_index, .. } | ck::CanonicalRankError::DuplicateComponentAtom { atom_index } | ck::CanonicalRankError::PreparedValenceInvalid { atom_index } => Some(atom_index), _ => None,

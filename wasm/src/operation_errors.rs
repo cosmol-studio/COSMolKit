@@ -218,6 +218,8 @@ extern "C" {
     pub type TransformPayload;
     #[wasm_bindgen(typescript_type = "BondCutError")]
     pub type BondCutPayload;
+    #[wasm_bindgen(typescript_type = "IndexedGraphError")]
+    pub type IndexedGraphPayload;
     #[wasm_bindgen(typescript_type = "RadicalError")]
     pub type RadicalPayload;
     #[wasm_bindgen(typescript_type = "ConformerRunError")]
@@ -281,6 +283,10 @@ fn cause(inner: &ck::OperationError) -> Option<OperationCause> {
         ck::OperationError::BondCut(v) => {
             Some(crate::fragment_errors::BondCutError::from_rust(v.clone()).unchecked_into())
         }
+        #[cfg(feature = "cap-transforms")]
+        ck::OperationError::IndexedGraph(v) => Some(
+            crate::indexed_graph_errors::IndexedGraphError::from_rust(v.clone()).unchecked_into(),
+        ),
         #[cfg(feature = "cap-alignment")]
         ck::OperationError::Alignment(v) => {
             Some(crate::alignment_errors::AlignmentError::from_rust(v.clone()).unchecked_into())
@@ -456,7 +462,11 @@ enum_error!(OperationError, OperationErrorKind, ck::OperationError, {
     InvalidReconstructionOrigin => ck::OperationError::InvalidReconstructionOrigin { .. }, Algorithm => ck::OperationError::Algorithm { .. },
     #[cfg(feature = "cap-transforms")]
     BondCut=>ck::OperationError::BondCut(_),
+    #[cfg(feature="cap-transforms")]
+    IndexedGraph=>ck::OperationError::IndexedGraph(_),
 }, {
+    #[cfg(feature="cap-transforms")]
+    #[wasm_bindgen(getter,js_name=indexedGraph)] pub fn indexed_graph(&self)->Option<IndexedGraphPayload>{match self.inner.as_ref(){ck::OperationError::IndexedGraph(v)=>Some(crate::indexed_graph_errors::IndexedGraphError::from_rust(v.clone()).unchecked_into()),_=>None}}
     #[cfg(feature = "cap-radicals")]
     #[wasm_bindgen(getter)]pub fn radical(&self)->Option<RadicalPayload>{match self.inner.as_ref(){ck::OperationError::Radical(v)=>Some(crate::sanitize_leaf_errors::RadicalError::from_rust(v.clone()).unchecked_into()),_=>None}}
     #[cfg(feature = "cap-transforms")]
@@ -580,7 +590,7 @@ cosmolkit_tsify_macros::type_union! {
     OperationCause;
     "TopologyValidationError | TopologyEditError | CoordinateValidationError | MoleculePropertyError | AtomPropertyError | BondValueError | RingFindingError | KekulizeError | AromaticityError | ValenceError | PotentialStereoError | StereoError | CipLabelerError | SanitizeError | HydrogenError | TransformError | CoordinateInputError | MoleculeFragmentsError | RadicalError";
     #[cfg(feature = "cap-transforms")]
-    "BondCutError";
+    "BondCutError | IndexedGraphError";
     #[cfg(feature = "cap-hashing")]
     "ScaffoldError";
     #[cfg(feature = "cap-fingerprints")]

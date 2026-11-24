@@ -347,6 +347,32 @@ An empty computed fingerprint batch retains its requested ``nBits``. For example
      batch.free();
    }
 
+Extract a path by atom and bond index
+-------------------------------------
+
+``shortestPath`` reports atom indices. Resolve consecutive atoms to bond
+indices before using ``SubgraphSelection.bonds``. The extracted molecule and
+its mapping have independent lifetimes; each mapping entry identifies a row
+in the molecule you queried.
+
+.. code-block:: javascript
+
+   import { Molecule, SubgraphSelection } from '@cosmol-studio/cosmolkit';
+
+   const mol = Molecule.fromSmiles('OCC');
+   const path = mol.shortestPath(0, 2);
+   const bonds = path.slice(1).map((end, i) => mol.bondBetweenAtoms(path[i], end));
+   const selection = SubgraphSelection.bonds(bonds);
+   const part = mol.extractSubgraph(selection);
+   const map = part.mapping;
+   console.log(map.sourceAtomIndices, map.sourceBondIndices); // [0, 1, 2], [0, 1]
+   map.free(); part.free(); selection.free(); mol.free();
+
+``withAtomsRenumbered(order)`` returns a molecule; ``renumberAtoms_(order)``
+applies the same new-to-old permutation in place. ``retainSubgraph_`` edits the
+receiver and returns just its mapping. ``insertMolecule_`` appends a disjoint
+graph, matching conformers by dimension and ID as ``withMoleculeAppended`` does.
+
 Fragments and scaffolds
 -----------------------
 
