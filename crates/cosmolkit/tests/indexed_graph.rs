@@ -36,6 +36,12 @@ fn xyz(m: &Molecule, id: usize) -> Vec<f64> {
 
 #[test]
 fn ranks_are_source_indexed_and_fragment_masks_are_explicit() {
+    assert!(
+        Molecule::default()
+            .canonical_atom_ranks()
+            .unwrap()
+            .is_empty()
+    );
     let m = mol("CC(C)O");
     assert_eq!(m.canonical_atom_ranks().unwrap(), [0, 3, 1, 2]);
     let p = AtomRankParams {
@@ -174,6 +180,14 @@ fn traversal_keeps_kind_order_and_disconnected_atoms() {
 
 #[test]
 fn permutation_then_extraction_preserves_row_identity() {
+    use cosmolkit::{IndexedGraphError, OperationError};
+
+    assert_eq!(
+        Molecule::default().renumber_atoms_(&[]),
+        Err(OperationError::IndexedGraph(
+            IndexedGraphError::EmptyAtomOrder
+        ))
+    );
     let m = with_x("OCC", &[(4, &[1., 2., 3.]), (9, &[11., 12., 13.])]);
     let mut edit = m.clone();
     for bad in [
@@ -216,6 +230,80 @@ fn permutation_then_extraction_preserves_row_identity() {
 }
 
 #[test]
+fn stored_ring_stereo_references_follow_permutations_and_insertions() {
+    use cosmolkit::PropertyValue as V;
+
+    for (smiles, sign) in [
+        ("C[C@H]1CC[C@H](C)CC1 |&4:1,4|", -1),
+        ("C[C@H]1CC[C@@H](C)CC1 |&4:1,4|", 1),
+    ] {
+        let mut t = mol(smiles).topology().clone();
+        // RDKit records a signed, one-based peer and a separate zero-based peer index.
+        for (site, other) in [(1, 4u32), (4, 1)] {
+            t.atoms[site]
+                .set_computed_prop(
+                    "_ringStereoAtoms",
+                    V::IntVector(vec![sign * (other as i32 + 1)]),
+                )
+                .unwrap();
+            t.atoms[site]
+                .set_computed_prop("_ringStereoOtherAtom", other)
+                .unwrap();
+        }
+        cosmolkit::set_stereo_group_write_id(&mut t.stereo_groups[0], 9);
+        let source = Molecule::from_parts(t, Default::default(), Default::default()).unwrap();
+        let permuted = source
+            .with_atoms_renumbered(&[6, 2, 4, 0, 7, 1, 5, 3].map(a))
+            .unwrap();
+        let group = &permuted.topology().stereo_groups[0];
+        assert_eq!((group.id(), group.write_id()), (Some(4), 0));
+        assert_eq!(group.atoms(), [a(5), a(2)]);
+
+        let mut joined = mol("CO");
+        joined.insert_molecule_(&source).unwrap();
+        for (result, sites) in [(&permuted, [5, 2]), (&joined, [3, 6])] {
+            for (site, other) in [(sites[0], sites[1]), (sites[1], sites[0])] {
+                let atom = &result.topology().atoms[site];
+                assert_eq!(
+                    atom.prop("_ringStereoAtoms"),
+                    Some(&V::IntVector(vec![sign * (other as i32 + 1)]))
+                );
+                assert_eq!(
+                    atom.prop("_ringStereoOtherAtom"),
+                    Some(&V::UInt(other as u32))
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn malformed_ring_stereo_reports_the_atom_and_property() {
+    use cosmolkit::{IndexedGraphError, PropertyValue as V};
+    use std::error::Error;
+
+    let source = mol("C1CC1");
+    for (key, invalid) in [
+        ("_ringStereoAtoms", V::Int(2)),
+        ("_ringStereoAtoms", V::IntVector(vec![0])),
+        ("_ringStereoOtherAtom", V::UInt(3)),
+    ] {
+        let mut t = source.topology().clone();
+        t.atoms[0].set_prop(key, invalid).unwrap();
+        let m = Molecule::from_parts(t, Default::default(), Default::default()).unwrap();
+        let err = m.with_atoms_renumbered(&[a(0), a(2), a(1)]).unwrap_err();
+        assert_eq!(
+            err.source().unwrap().downcast_ref::<IndexedGraphError>(),
+            Some(&IndexedGraphError::InvalidIndexProperty {
+                atom: a(0),
+                property: key
+            })
+        );
+        assert!(err.to_string().contains(key));
+    }
+}
+
+#[test]
 fn subset_membership_and_options_do_not_depend_on_list_lengths() {
     let m = mol("C1CC1");
     let all = vec![a(0), a(1), a(2)];
@@ -235,10 +323,14 @@ fn subset_membership_and_options_do_not_depend_on_list_lengths() {
             n
         );
     }
-    let bad = SubgraphSelection::AtomsAndBonds(vec![a(0)], vec![b(0)]);
     let mut target = m.clone();
-    assert!(target.retain_subgraph_(&bad).is_err());
-    assert_eq!(target, m);
+    for bad in [
+        SubgraphSelection::atoms(vec![a(0), a(1), a(3)]),
+        SubgraphSelection::atoms_and_bonds(vec![a(0)], vec![b(0)]),
+    ] {
+        assert!(target.retain_subgraph_(&bad).is_err());
+        assert_eq!(target, m);
+    }
     let m = with_x(
         "CCCO",
         &[(4, &[40., 41., 42., 43.]), (9, &[90., 91., 92., 93.])],
@@ -263,6 +355,9 @@ fn subset_membership_and_options_do_not_depend_on_list_lengths() {
 #[test]
 fn local_edits_keep_surviving_slots_and_union_matches_conformer_ids() {
     let m = with_x("CCO", &[(1, &[1., 2., 3.])]);
+    let mut unchanged = m.clone();
+    assert!(unchanged.remove_atom_(a(3)).is_err());
+    assert_eq!(unchanged, m);
     let deleted = m.without_atom(a(1)).unwrap();
     assert_eq!(deleted.num_bonds(), 0);
     assert_eq!(xyz(&deleted, 1), [1., 3.]);
@@ -338,6 +433,92 @@ fn subset_group_links_identify_the_same_surviving_members() {
         (attachment.atom, attachment.leaving_atom),
         (a(1), Some(a(0)))
     );
+}
+
+#[test]
+fn indexed_edits_preserve_substance_group_references_or_drop_the_hierarchy() {
+    use cosmolkit::{
+        IndexedGraphError, OperationError, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
+    };
+
+    let left = mol("CCO |Sg:n:1::ht:::|");
+    let mut t = mol("CCCO").topology().clone();
+    let parent = SubstanceGroup::new(
+        SubstanceGroupId::new(0),
+        SubstanceGroupKind::StructuralRepeatUnit,
+    )
+    .with_atoms(vec![a(1), a(2)])
+    .with_bonds(vec![b(0), b(2)])
+    .with_head_crossing_bonds(vec![b(0)])
+    .with_crossing_bond_correspondence(vec![b(0), b(2)])
+    .with_prop("index", 1u32)
+    .unwrap();
+    let child = SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
+        .with_atoms(vec![a(3)])
+        .with_parent(parent.id())
+        .with_prop("PARENT", 1u32)
+        .unwrap();
+    t.substance_groups = vec![parent, child];
+    let right = Molecule::from_parts(t, Default::default(), Default::default()).unwrap();
+
+    // Three atoms, two bonds, one group on the left: the offsets are distinct.
+    let joined = left.with_molecule_appended(&right).unwrap();
+    let [original, parent, child] = joined.topology().substance_groups.as_slice() else {
+        panic!("expected the left group and both inserted groups");
+    };
+    assert_eq!(original, &left.topology().substance_groups[0]);
+    assert_eq!(parent.atoms(), [a(4), a(5)]);
+    assert_eq!(parent.bonds(), [b(2), b(4)]);
+    assert_eq!(parent.head_crossing_bonds(), [b(2)]);
+    assert_eq!(parent.crossing_bond_correspondence(), [b(2), b(4)]);
+    assert_eq!((parent.id().index(), child.id().index()), (1, 2));
+    assert_eq!(child.parent(), Some(parent.id()));
+    assert_eq!(child.atoms(), [a(6)]);
+
+    let bond = BondSpec::new(a(0), a(1), BondOrder::Single);
+    let replaced = right.with_bond_replaced(b(0), &bond, false, false).unwrap();
+    let deleted = right.without_atom(a(1)).unwrap();
+    assert!(replaced.topology().substance_groups.is_empty());
+    assert!(deleted.topology().substance_groups.is_empty());
+
+    let mut t = right.topology().clone();
+    t.substance_groups[1]
+        .set_prop("PARENT", "not an integer")
+        .unwrap();
+    let malformed = Molecule::from_parts(t, Default::default(), Default::default()).unwrap();
+    let err = malformed
+        .with_bond_replaced(b(0), &bond, false, false)
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        OperationError::IndexedGraph(IndexedGraphError::NumericProperty(_))
+    ));
+}
+
+#[test]
+fn removing_an_atom_reindexes_multicenter_bond_endpoints() {
+    use cosmolkit::{IndexedGraphError, OperationError, PropertyValue, TopologyEditError};
+
+    let with_endpoints = |endpoints: &str| {
+        let mut t = mol("CCCC").topology().clone();
+        t.bonds[2]
+            .set_prop("_MolFileBondEndPts", endpoints)
+            .unwrap();
+        Molecule::from_parts(t, Default::default(), Default::default()).unwrap()
+    };
+    let edited = with_endpoints("(2 1 4)").without_atom(a(0)).unwrap();
+    assert_eq!(
+        edited.topology().bonds[1].prop("_MolFileBondEndPts"),
+        Some(&PropertyValue::from("(1 3)"))
+    );
+
+    let err = with_endpoints("(1 ?)").without_atom(a(0)).unwrap_err();
+    assert!(matches!(
+        err,
+        OperationError::IndexedGraph(IndexedGraphError::TopologyEdit(
+            TopologyEditError::BondEndPointsParse { .. }
+        ))
+    ));
 }
 
 #[test]
@@ -422,6 +603,9 @@ fn identity_permutations_and_subsets_have_different_property_rules() {
     let mut props = MoleculeProperties::default();
     props.set_prop("ordinary", 1_i32).unwrap();
     props.set_computed_prop("derived", 33_i32).unwrap();
+    props
+        .register_transient_computed_name("extraRings")
+        .unwrap();
     let m = Molecule::from_parts(t, Default::default(), props).unwrap();
     for (order, local, refs) in [([0, 1, 2, 3], 1, [0, 3]), ([3, 2, 1, 0], 2, [3, 0])] {
         let n = m.with_atoms_renumbered(&order.map(a)).unwrap();
@@ -449,6 +633,11 @@ fn identity_permutations_and_subsets_have_different_property_rules() {
         assert!(n.topology().atoms[1].prop("derived").is_none());
         assert_eq!(n.topology().bonds[1].prop("derived").is_some(), !clear);
         assert_eq!(n.properties().prop("derived").is_some(), !clear);
+        assert_eq!(
+            n.properties().is_prop_computed("extraRings").unwrap(),
+            !clear
+        );
+        assert!(n.properties().prop("extraRings").is_none());
         assert_eq!(n.topology().bonds[1].stereo(), BondStereo::Trans);
     }
     let m = mol("C[C@H](O)[C@@H](C)O |&1:1,3|");
@@ -460,23 +649,23 @@ fn identity_permutations_and_subsets_have_different_property_rules() {
 
 #[test]
 fn union_pairs_each_dimension_independently_and_requires_unique_keys() {
-    use cosmolkit::Conformer2D;
+    use cosmolkit::{Conformer2D, IndexedGraphError, OperationError};
     let left = mol("[CH4:7]");
     let right = mol("[OH2:7]");
-    let coords = |x| CoordinateBlock {
-        conformers_2d: vec![Conformer2D::new(3, vec![[x, 0.]])],
-        conformers_3d: vec![Conformer3D::new(3, vec![[x, 1., 2.]], true)],
+    let coords = |x, label: &str| CoordinateBlock {
+        conformers_2d: vec![Conformer2D::new(3, vec![[x, 0.]]).with_prop("layout", label)],
+        conformers_3d: vec![Conformer3D::new(3, vec![[x, 1., 2.]], true).with_prop("pose", label)],
         ..Default::default()
     };
     let mut left = Molecule::from_parts(
         left.topology().clone(),
-        coords(11.),
+        coords(11., "left"),
         left.properties().clone(),
     )
     .unwrap();
     let right = Molecule::from_parts(
         right.topology().clone(),
-        coords(22.),
+        coords(22., "right"),
         right.properties().clone(),
     )
     .unwrap();
@@ -487,13 +676,41 @@ fn union_pairs_each_dimension_independently_and_requires_unique_keys() {
         [22.]
     );
     let duplicate = with_x("O", &[(3, &[8.]), (3, &[9.])]);
-    let mut duplicate_left = duplicate.clone();
-    assert!(duplicate_left.insert_molecule_(&duplicate).is_err());
-    assert_eq!(duplicate_left, duplicate);
+    let single = with_x("C", &[(3, &[10.])]);
+    let extra = with_x("O", &[(3, &[8.]), (7, &[9.])]);
+    for (receiver, other, bad_id) in [
+        (&duplicate, &single, 3),
+        (&single, &duplicate, 3),
+        (&single, &extra, 7),
+    ] {
+        let mut target = receiver.clone();
+        let err = target.insert_molecule_(other).unwrap_err();
+        assert!(
+            matches!(err, OperationError::IndexedGraph(IndexedGraphError::CoordinateKey { dimension: 3, id, .. }) if id == bad_id)
+        );
+        assert_eq!(&target, receiver);
+    }
     let peer = left.clone();
     left.insert_molecule_(&right).unwrap();
     assert_eq!(left.coordinates_2d().unwrap(), [[11., 0.], [22., 0.]]);
     assert_eq!(xyz(&left, 3), [11., 22.]);
+    let joined = left.to_builder();
+    let original = peer.to_builder();
+    assert_eq!(
+        joined.coordinates().conformers_2d[0].props(),
+        original.coordinates().conformers_2d[0].props()
+    );
+    assert_eq!(
+        left.conformers_3d()[0].props(),
+        peer.conformers_3d()[0].props()
+    );
+    let reordered = left.with_atoms_renumbered(&[a(1), a(0)]).unwrap();
+    assert_eq!(reordered.coordinates_2d().unwrap(), [[22., 0.], [11., 0.]]);
+    assert!(
+        reordered.to_builder().coordinates().conformers_2d[0]
+            .props()
+            .is_empty()
+    );
     assert_eq!(
         left.topology().atoms[0].atom_map(),
         left.topology().atoms[1].atom_map()
