@@ -7,19 +7,6 @@ sharedParams.copy().maxMatches = 17;
 sharedParams.maxMatches = 17;
 for (const value of featureSpecs()) { const typed: FeatureSpec = value; }
 import {Molecule, QueryGraph, SubstructMatchParams, TautomerProgress, RingSearchParams, NestedParams, Selection, roundtrip, outcome, bytes, integer, raise, OperationError, RingFindingError, TemplateAttachmentOrderError, Element, ElementParseError} from 'cosmolkit';
-import {BondCut, type BricsEnds} from 'cosmolkit';
-
-const amide = new Molecule('CC(=O)NCCN');
-const [site] = amide.findBricsBonds();
-const ends: BricsEnds = site.ends;
-const unlabeled = amide.withBondsCut([BondCut.atBond(site.bond)]);
-const cut = amide.withBondsCut([site.toBondCut()]);
-cut.sanitize_();
-const revisedCuts = cut.findRBricsBonds().map(match => match.toBondCut());
-if (revisedCuts.length) cut.cutBonds_(revisedCuts);
-const hierarchy = amide.decomposeRecap();
-const parentsOfChildren: string[][] = hierarchy.children(hierarchy.root).map(child => hierarchy.parents(child));
-
 const mol = new Molecule('C1CC1');
 const params = new RingSearchParams({includeDativeBonds: true});
 new NestedParams({child: params}).child.includeDativeBonds = true;

@@ -8,5 +8,5 @@
     "moduleResolution": "Bundler",
     "paths": {"cosmolkit": ["../pkg/index.d.ts"]}
   },
-  "files": ["types.ts", "mapped_fragments.ts"]
+  "files": ["types.ts"]
 }

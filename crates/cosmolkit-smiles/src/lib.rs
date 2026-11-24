@@ -497,7 +497,7 @@ fn parse_bracket_element(
         };
         let aromatic = matches!(
             token,
-            "b" | "c" | "n" | "o" | "p" | "s" | "as" | "se" | "te"
+            "b" | "c" | "n" | "o" | "p" | "s" | "si" | "as" | "se" | "te"
         );
         let element = match token {
             "b" => Some(Element::B),
@@ -506,6 +506,13 @@ fn parse_bracket_element(
             "o" => Some(Element::O),
             "p" => Some(Element::P),
             "s" => Some(Element::S),
+            // RDKit✔️✔️: <IN_ATOM_STATE>si   {	yylval->atom = new Atom( 14 );
+            // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+            // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+            // RDKit✔️✔️: 			}
+            // Behavior: bracket-only aromatic silicon, including decorated atoms.
+            // Complexity: fixed token dispatch, without allocation or graph scans.
+            "si" => Some(Element::SI),
             "as" => Some(Element::AS),
             "se" => Some(Element::SE),
             // RDKit✔️✔️: <IN_ATOM_STATE>te   {	yylval->atom = new Atom( 52 );
@@ -2706,6 +2713,42 @@ mod tests {
             (cx.topology.bonds[4].begin(), cx.topology.bonds[4].end()),
             (AtomId::new(2), AtomId::new(0))
         );
+    }
+
+    #[test]
+    fn bracket_aromatic_silicon_preserves_source_atom_state() {
+        let record = parse_smiles("[si-]1ccccc1", &Default::default()).unwrap();
+        assert_eq!(record.topology.atoms.len(), 6);
+        assert_eq!(record.topology.bonds.len(), 6);
+        let silicon = &record.topology.atoms[0];
+        assert_eq!(silicon.element(), Element::SI);
+        assert!(silicon.is_aromatic());
+        assert!(silicon.no_implicit());
+        assert_eq!(silicon.formal_charge(), -1);
+        assert!(
+            record
+                .topology
+                .bonds
+                .iter()
+                .all(|b| b.order() == BondOrder::Aromatic)
+        );
+
+        let decorated = parse_smiles("[29siH-:7]", &Default::default()).unwrap();
+        let atom = &decorated.topology.atoms[0];
+        assert_eq!(atom.element(), Element::SI);
+        assert!(atom.is_aromatic());
+        assert_eq!(atom.isotope(), Some(29));
+        assert_eq!(atom.explicit_hydrogens(), 1);
+        assert_eq!(atom.formal_charge(), -1);
+        assert_eq!(atom.atom_map(), Some(7));
+        assert!(
+            !parse_smiles("[Si-]", &Default::default())
+                .unwrap()
+                .topology
+                .atoms[0]
+                .is_aromatic()
+        );
+        assert!(parse_smiles("si1ccccc1", &Default::default()).is_err());
     }
 
     #[test]

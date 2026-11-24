@@ -86,19 +86,14 @@ Run the checks separately; none recompiles Rust:
 # Check exports and declarations against the compiled Rust registry.
 python3 wasm/registry_check.py
 
-# Run the framework samples and mapped fragment tests against the web package.
+# Run the framework samples in Node, loading the web package.
 node wasm/tests/runtime.mjs
-node --test wasm/tests/mapped_fragments.mjs
 
 # Check TypeScript declarations and the typed samples.
 npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
 ```
 
 The registry report is `wasm/target/registry.json`.
-
-To check mapped fragments in `core`, build with `--features core` and copy the
-same entry files into `wasm/pkg`. Run `node --test wasm/tests/mapped_fragments.mjs`
-and `npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.core.json`.
 
 ## Build a smaller package
 

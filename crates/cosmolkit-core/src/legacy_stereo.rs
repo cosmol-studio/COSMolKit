@@ -13,8 +13,7 @@ use crate::{
     RingInfo, StereoOrderError, ValenceAssignment, ValenceError,
     assign_atom_cip_ranks_with_query_state, assign_directional_double_bond_stereo,
     bond_affects_atom_chirality, cleanup_atropisomer_stereo_groups, count_swaps_to_interconvert,
-    invert_tetrahedral_tag, is_atom_bridgehead_from_topology,
-    refine_atom_cip_ranks_from_invariants_with_query_state,
+    is_atom_bridgehead_from_topology, refine_atom_cip_ranks_from_invariants_with_query_state,
 };
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -206,7 +205,7 @@ fn assign_atom_codes(
     flag_possible_stereo_centers: bool,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<(bool, bool), LegacyStereoError> {
-    // BEGIN RDKIT CPP FUNCTION assign_atom_codes pinned Chirality.cpp:1741-1821
+    // BEGIN RDKIT CPP FUNCTION assign_atom_codes pinned Chirality.cpp:1724-1804
     // RDKit✔️✔️: std::pair<bool, bool> assignAtomChiralCodes(ROMol &mol, UINT_VECT &ranks,
     // RDKit✔️✔️:                                             bool flagPossibleStereoCenters) {
     // RDKit✔️✔️:   PRECONDITION((!ranks.size() || ranks.size() == mol.getNumAtoms()),
@@ -333,10 +332,7 @@ fn assign_atom_codes(
         if legal && !duplicates && flag_possible_stereo_centers {
             topology.atoms[index].set_prop("_ChiralityPossible", 1_i32)?;
         }
-        if legal
-            && !duplicates
-            && matches!(tag, ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw)
-        {
+        if legal && !duplicates && !matches!(tag, ChiralTag::Unspecified | ChiralTag::Other) {
             changed = true;
             unassigned -= 1;
             neighbors.sort_by_key(|(rank, bond)| (*rank, bond.index()));
@@ -356,7 +352,15 @@ fn assign_atom_codes(
                 swaps += 1;
             }
             let effective = if swaps % 2 == 1 {
-                invert_tetrahedral_tag(tag)?
+                // RDKit's legacy branch also accepts non-tetrahedral tags.
+                // It maps every tag other than CCW to CCW on an odd swap;
+                // Atom::invertChirality is a different operation.
+                // This changes only the local label calculation, not the tag.
+                if tag == ChiralTag::TetrahedralCcw {
+                    ChiralTag::TetrahedralCw
+                } else {
+                    ChiralTag::TetrahedralCcw
+                }
             } else {
                 tag
             };
@@ -1333,6 +1337,48 @@ mod legacy_ring_prepass_tests {
     use super::*;
     use cosmolkit_model::{Atom, AtomSpec, Bond, BondId, BondSpec};
     use cosmolkit_types::Element;
+
+    #[test]
+    fn legacy_square_planar_codes_follow_source_neighbor_parity() {
+        // Pinned assignAtomChiralCodes assigns R/S even to square-planar tags.
+        // These two bond orders exercise both branches of the local tag flip.
+        for (ligands, permutation, expected) in [
+            ([Element::F, Element::CL, Element::BR, Element::I], 1, "R"),
+            ([Element::BR, Element::I, Element::CL, Element::F], 2, "S"),
+        ] {
+            let mut atoms = vec![Atom::from_spec(
+                AtomId::new(0),
+                AtomSpec::new(Element::PT)
+                    .with_no_implicit(true)
+                    .with_chiral_tag(ChiralTag::SquarePlanar)
+                    .with_chiral_permutation(permutation),
+            )];
+            atoms.extend(
+                ligands.into_iter().enumerate().map(|(i, element)| {
+                    Atom::from_spec(AtomId::new(i + 1), AtomSpec::new(element))
+                }),
+            );
+            let bonds = (0..4)
+                .map(|i| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        BondSpec::new(AtomId::new(0), AtomId::new(i + 1), BondOrder::Single),
+                    )
+                })
+                .collect();
+            let topology =
+                TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap();
+            let rings = crate::symmetrized_sssr(&topology, &Default::default()).unwrap();
+            let result = assign_with_rings(&topology, &rings);
+            assert_eq!(
+                result.atoms[0].prop("_CIPCode"),
+                Some(&cosmolkit_model::PropertyValue::from(expected))
+            );
+            assert_eq!(result.atoms[0].chiral_tag(), ChiralTag::SquarePlanar);
+            assert_eq!(result.atoms[0].chiral_permutation(), Some(permutation));
+            assert_eq!(result.bonds, topology.bonds);
+        }
+    }
 
     fn two_six_membered_rings() -> TopologyBlock {
         let atoms = (0..12)

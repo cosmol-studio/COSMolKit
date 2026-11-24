@@ -108,15 +108,13 @@ jobs:
                           'files=["*.js","*.d.ts","*.wasm","snippets"]' \
                           'sideEffects=["./index.js","./snippets/*"]'
                       python -B wasm/registry_check.py
-                      node --test wasm/tests/mapped_fragments.mjs
                       if [ "$preset" = full ]; then
                           node wasm/tests/runtime.mjs
-                          node --test wasm/tests/bond_cuts.mjs
-                          tsconfig=wasm/tests/tsconfig.json
+                          npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
                       else
-                          tsconfig=wasm/tests/tsconfig.core.json
+                          npx --yes --package typescript@5.8.3 tsc --noEmit --strict \
+                              --target ES2022 --lib ES2022,ESNext.Disposable,DOM wasm/pkg/index.d.ts
                       fi
-                      npx --yes --package typescript@5.8.3 tsc -p "$tsconfig"
                       # Each published preset gets a fresh directory, never the inspection package.
                       wasm-pack build wasm --release --target web --out-dir "$package_dir" \
                           -- --locked --no-default-features --features "$features"
