@@ -822,7 +822,10 @@ fn validate_cip_transition(
         ];
         let valid = matches!(
             (operation.to_string().as_str(), output),
-            ("fragments", MoleculeOutput::Multiple) | ("largest_fragment", MoleculeOutput::Single)
+            (
+                "fragments" | "fragments_with_atom_mapping_with_params",
+                MoleculeOutput::Multiple
+            ) | ("largest_fragment", MoleculeOutput::Single)
         ) && operation == method
             && kind == OperationKind::Strong
             && mapping == MappingRequirement::Required

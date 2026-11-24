@@ -25,6 +25,7 @@ ck::project_configuration!(ck::TopologicalTorsionCallParams);
 ck::project_configuration!(ck::RemoveHsParams);
 ck::project_configuration!(ck::KekulizeParams);
 ck::project_configuration!(ck::RingSearchParams);
+ck::project_configuration!(ck::FragmentExtractionParams);
 ck::project_configuration!(ck::StructureTagParams);
 ck::project_configuration!(ck::PotentialStereoParams);
 ck::project_configuration!(ck::DistanceMatrixParams);

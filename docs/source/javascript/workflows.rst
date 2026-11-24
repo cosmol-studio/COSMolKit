@@ -402,6 +402,28 @@ for a new molecule or to ``cutBonds_()`` to edit the source. ``fragments()``
 returns sanitized components. Before running another BRICS, r-BRICS or RECAP
 query on the cut molecule itself, call ``sanitize_()`` on it.
 
+All npm packages include ``fragmentsWithAtomMapping()``. To look up data for
+atom ``i`` of ``part.molecule``, use ``part.sourceAtomIndices[i]`` as the index
+in the molecule you split. Here the two ethane components have different atom names:
+
+.. code-block:: javascript
+
+   const source = ck.Molecule.fromSmiles("C1.CC.C1");
+   const names = ["A", "B", "C", "D"];
+   let parts = [];
+   try {
+     parts = source.fragmentsWithAtomMapping();
+     console.log(parts.map(p => p.sourceAtomIndices.map(i => names[i]))); // [["A", "D"], ["B", "C"]]
+   } finally {
+     for (const part of parts) part.free();
+     source.free();
+   }
+
+Pass ``{ sanitize: false }`` to extract unsanitized components. The indices
+are ordinary read-only arrays. Each read of ``part.molecule`` returns a new
+``Molecule`` handle. Keep the handle for repeated use and call ``free()`` on
+each handle you obtain.
+
 For RECAP, ``mol.decomposeRecap()`` returns a hierarchy keyed by canonical
 SMILES. Use ``graph.children(graph.root)`` for the direct products of the
 input and ``graph.parents(product)`` to trace a product back to its immediate

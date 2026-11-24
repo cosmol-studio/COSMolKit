@@ -10696,6 +10696,34 @@ binding_contract! {
           error:crate::OperationError, state:value_returning, operation:"fragments",
           signature:fn(&crate::Molecule)->Result<Vec<crate::Molecule>,crate::OperationError>, },
         #[cfg(feature = "cap-transforms")]
+        { semantic_id:"types.FragmentExtractionParams", item:type, owner:type_, rust:crate::FragmentExtractionParams,
+          python:"FragmentExtractionParams", javascript:"FragmentExtractionParams", feature:"cap-transforms", status:experimental,
+          python_configuration:[{name:sanitize,python_type:"builtins.bool",default:"True"}], role:parameter, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"types.MappedFragment", item:type, owner:type_, rust:crate::MappedFragment,
+          python:"MappedFragment", javascript:"MappedFragment", feature:"cap-transforms", status:experimental, role:result, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"MappedFragment.molecule", item:callable, owner:type_, rust:crate::MappedFragment::molecule,
+          python:"molecule", python_property:getter, javascript:"molecule", javascript_property:getter,
+          feature:"cap-transforms", status:experimental, kind:instance, parameters:[], output:&'a crate::Molecule,
+          error:none, state:read_only, operation:none, signature:for<'a> fn(&'a crate::MappedFragment)->&'a crate::Molecule, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"MappedFragment.source_atom_indices", item:callable, owner:type_, rust:crate::MappedFragment::source_atom_indices,
+          python:"source_atom_indices", python_property:getter, javascript:"sourceAtomIndices", javascript_property:getter,
+          feature:"cap-transforms", status:experimental, kind:instance, parameters:[], output:&'a [crate::AtomId],
+          error:none, state:read_only, operation:none, signature:for<'a> fn(&'a crate::MappedFragment)->&'a [crate::AtomId], },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.fragments_with_atom_mapping", item:callable, owner:molecule, rust:crate::Molecule::fragments_with_atom_mapping,
+          python:"fragments_with_atom_mapping", javascript:"fragmentsWithAtomMapping", feature:"cap-transforms", kind:instance,
+          parameters:[], output:Vec<crate::MappedFragment>, error:crate::OperationError, state:value_returning, operation:"fragments_with_atom_mapping",
+          signature:fn(&crate::Molecule)->Result<Vec<crate::MappedFragment>,crate::OperationError>, },
+        #[cfg(feature = "cap-transforms")]
+        { semantic_id:"Molecule.fragments_with_atom_mapping_with_params", item:callable, owner:molecule, rust:crate::Molecule::fragments_with_atom_mapping_with_params,
+          python:"fragments_with_atom_mapping_with_params", javascript:"fragmentsWithAtomMappingWithParams", feature:"cap-transforms", kind:instance,
+          parameters:[{name:params,type:&crate::FragmentExtractionParams,default:required}], output:Vec<crate::MappedFragment>, error:crate::OperationError,
+          state:value_returning, operation:"fragments_with_atom_mapping_with_params",
+          signature:fn(&crate::Molecule,&crate::FragmentExtractionParams)->Result<Vec<crate::MappedFragment>,crate::OperationError>, },
+        #[cfg(feature = "cap-transforms")]
         { semantic_id:"Molecule.largest_fragment", item:callable, owner:molecule,
           rust:crate::Molecule::largest_fragment, python:"largest_fragment", javascript:"largestFragment",
           feature:"cap-transforms", kind:instance, parameters:[], output:crate::Molecule,

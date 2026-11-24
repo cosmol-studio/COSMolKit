@@ -1311,8 +1311,10 @@ impl<'a, Access> OpParts<'a, Access> {
                     .union(BlockSet::DERIVED_CACHE);
                 if !matches!(
                     (spec.method, spec.output),
-                    ("fragments", MoleculeOpOutput::Multiple)
-                        | ("largest_fragment", MoleculeOpOutput::Single)
+                    (
+                        "fragments" | "fragments_with_atom_mapping_with_params",
+                        MoleculeOpOutput::Multiple
+                    ) | ("largest_fragment", MoleculeOpOutput::Single)
                 ) || spec.kind != crate::MoleculeOpKind::Strong
                     || spec.requires_mapping != MappingRequirement::Required
                     || !spec.access.read().is_empty()

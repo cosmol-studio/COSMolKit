@@ -8,6 +8,38 @@ use tsify::Ts;
 use wasm_bindgen::prelude::*;
 crate::fields::value_array!(ck::Molecule, Molecules, "ReadonlyArray<Molecule>");
 
+ck::__ck_configuration_FragmentExtractionParams!(
+    crate::project_parameters,
+    ck::FragmentExtractionParams,
+    {},
+    { FragmentExtractionParams }
+);
+
+/// A connected component and its local-to-source atom correspondence.
+#[wasm_bindgen]
+pub struct MappedFragment(ck::MappedFragment);
+
+#[wasm_bindgen]
+impl MappedFragment {
+    /// Independently editable molecule in fragment-local atom order.
+    #[wasm_bindgen(getter)]
+    pub fn molecule(&self) -> Molecule {
+        Molecule(self.0.molecule().clone())
+    }
+
+    /// Entry i identifies local atom i in the input at extraction time.
+    #[wasm_bindgen(getter, js_name = sourceAtomIndices)]
+    pub fn source_atom_indices(&self) -> Result<Ts<crate::fields::IndexArray>, JsValue> {
+        let indices = self
+            .0
+            .source_atom_indices()
+            .iter()
+            .map(|a| a.index())
+            .collect();
+        Vec::<usize>::get(NativeField::owned(indices))
+    }
+}
+
 #[wasm_bindgen]
 pub struct BondCut(ck::BondCut);
 crate::fields::value_field!(ck::BondCut, BondCut, BondCutInput, "BondCut");
@@ -264,6 +296,28 @@ impl Molecule {
             self.0.fragments().map_err(OperationError::from_rust)?,
         ))
     }
+    /// Extract each component with its source atom indices. Defaults to sanitized fragments.
+    #[wasm_bindgen(js_name = fragmentsWithAtomMapping)]
+    pub fn fragments_with_atom_mapping(
+        &self,
+        params: Option<FragmentExtractionParamsInput>,
+    ) -> Result<Vec<MappedFragment>, JsValue> {
+        FragmentExtractionParams::with_input(params.as_ref(), |params| {
+            self.0
+                .fragments_with_atom_mapping_with_params(params)
+                .map(|parts| parts.into_iter().map(MappedFragment).collect())
+                .map_err(OperationError::from_rust)
+        })
+    }
+
+    #[wasm_bindgen(js_name = fragmentsWithAtomMappingWithParams)]
+    pub fn fragments_with_atom_mapping_with_params(
+        &self,
+        params: FragmentExtractionParamsInput,
+    ) -> Result<Vec<MappedFragment>, JsValue> {
+        self.fragments_with_atom_mapping(Some(params))
+    }
+
     #[wasm_bindgen(js_name=largestFragment)]
     pub fn largest_fragment(&self) -> Result<Self, JsValue> {
         self.0

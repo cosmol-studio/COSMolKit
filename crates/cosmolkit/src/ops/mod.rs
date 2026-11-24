@@ -24,7 +24,14 @@ mod error;
 #[cfg(feature = "cap-transforms")]
 mod fragments;
 #[cfg(feature = "cap-transforms")]
-pub(crate) use runtime::registry::{FragmentsAccess, LargestFragmentAccess, WithBondsCutAccess};
+pub use fragments::{
+    __configuration_FragmentExtractionParams, FragmentExtractionParams, MappedFragment,
+};
+#[cfg(feature = "cap-transforms")]
+pub(crate) use runtime::registry::{
+    FragmentsAccess, FragmentsWithAtomMappingWithParamsAccess, LargestFragmentAccess,
+    WithBondsCutAccess,
+};
 #[cfg(feature = "cap-hashing")]
 mod scaffolds;
 #[cfg(feature = "cap-hashing")]
