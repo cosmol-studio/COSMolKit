@@ -234,13 +234,21 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
         BlockSet::NONE,
     );
     assert_eq!(
-        OpParts::<MappingAccess>::validate_mapping_obligation(none, &one, &one, None, false),
+        OpParts::<MappingAccess>::validate_mapping_obligation(
+            none,
+            one.atoms.iter().map(|row| row.id()),
+            one.bonds.iter().map(|row| row.id()),
+            &one,
+            None,
+            false
+        ),
         Ok(())
     );
     assert!(matches!(
         OpParts::<MappingAccess>::validate_mapping_obligation(
             none,
-            &one,
+            one.atoms.iter().map(|row| row.id()),
+            one.bonds.iter().map(|row| row.id()),
             &one,
             Some(&TopologyMapping::identity(1, 0)),
             false
@@ -260,7 +268,14 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
         BlockSet::NONE,
     );
     assert!(matches!(
-        OpParts::<MappingAccess>::validate_mapping_obligation(identity, &one, &one, None, false),
+        OpParts::<MappingAccess>::validate_mapping_obligation(
+            identity,
+            one.atoms.iter().map(|row| row.id()),
+            one.bonds.iter().map(|row| row.id()),
+            &one,
+            None,
+            false
+        ),
         Err(OperationError::MappingContract {
             issue: "required mapping was not recorded",
             ..
@@ -269,7 +284,8 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
     assert_eq!(
         OpParts::<MappingAccess>::validate_mapping_obligation(
             identity,
-            &one,
+            one.atoms.iter().map(|row| row.id()),
+            one.bonds.iter().map(|row| row.id()),
             &one,
             Some(&TopologyMapping::identity(1, 0)),
             false
@@ -280,7 +296,8 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
     assert!(matches!(
         OpParts::<MappingAccess>::validate_mapping_obligation(
             identity,
-            &one,
+            one.atoms.iter().map(|row| row.id()),
+            one.bonds.iter().map(|row| row.id()),
             &one,
             Some(&nonidentity),
             false
@@ -307,7 +324,12 @@ fn weak_operations_reject_changed_row_identity_without_an_edit_label() {
     for after in [topology(&[Element::C, Element::N]), changed_id] {
         assert_eq!(
             OpParts::<MappingAccess>::validate_mapping_obligation(
-                operation, &before, &after, None, false
+                operation,
+                before.atoms.iter().map(|row| row.id()),
+                before.bonds.iter().map(|row| row.id()),
+                &after,
+                None,
+                false
             ),
             Err(OperationError::MappingContract {
                 operation: "weak-row-identity",
@@ -413,7 +435,8 @@ fn atom_mapping_failures_preserve_exact_direction_and_fields() {
         assert_eq!(
             OpParts::<MappingAccess>::validate_mapping_obligation(
                 required,
-                &topology,
+                topology.atoms.iter().map(|row| row.id()),
+                topology.bonds.iter().map(|row| row.id()),
                 &topology,
                 Some(&candidate),
                 false
@@ -517,7 +540,8 @@ fn bond_mapping_failures_preserve_exact_direction_and_fields() {
         assert_eq!(
             OpParts::<MappingAccess>::validate_mapping_obligation(
                 required,
-                &topology,
+                topology.atoms.iter().map(|row| row.id()),
+                topology.bonds.iter().map(|row| row.id()),
                 &topology,
                 Some(&candidate),
                 false

@@ -30,7 +30,7 @@ def test_canonical_order_then_extract_a_path_with_coordinates() -> None:
     assert list(retained.source_atom_indices) == [0, 2]
 
 
-def test_selection_errors_and_self_insertion_leave_owned_results_usable() -> None:
+def test_selection_errors_and_explicit_copy_insertion_leave_owned_results_usable() -> None:
     m = ck.Molecule.from_smiles("OCC")
     assert list(m.canonical_atom_ranks_in_fragment([0, 2], break_ties=False)) == [2, -1, 1]
     assert m.atom_environment(1, 0).atom_distances == {0: 0, 1: 1}
@@ -48,7 +48,11 @@ def test_selection_errors_and_self_insertion_leave_owned_results_usable() -> Non
     assert m.num_bonds == 2
 
     clone = m.with_molecule_appended(m)
-    m.insert_molecule_(m)
+    with pytest.raises(RuntimeError):
+        m.insert_molecule_(m)
+    assert m.num_atoms == 3
+    right = m.copy()
+    m.insert_molecule_(right)
     assert m.to_smiles() == clone.to_smiles()
     assert m.num_atoms == 6 and m.bond_between_atoms(3, 4) == 2
     assert m.shortest_path(0, 3) == []

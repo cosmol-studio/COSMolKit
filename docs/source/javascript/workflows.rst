@@ -370,8 +370,11 @@ in the molecule you queried.
 
 ``withAtomsRenumbered(order)`` returns a molecule; ``renumberAtoms_(order)``
 applies the same new-to-old permutation in place. ``retainSubgraph_`` edits the
-receiver and returns just its mapping. ``insertMolecule_`` appends a disjoint
-graph, matching conformers by dimension and ID as ``withMoleculeAppended`` does.
+receiver and returns just its mapping. SGroups are omitted by default. Use
+``mol.extractSubgraph(selection, {preserveSgroups: true})`` to preserve source-selected
+groups; references outside the extracted graph cause an error rather than silent
+group removal. ``insertMolecule_`` appends a disjoint graph, matching conformers
+by dimension and ID as ``withMoleculeAppended`` does.
 
 Fragments and scaffolds
 -----------------------

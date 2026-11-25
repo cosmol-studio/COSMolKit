@@ -1,5 +1,8 @@
 //! Source-indexed transformations of detached molecule blocks.
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use crate::{property_value_to_string, property_value_to_uint};
 use cosmolkit_model::{
@@ -281,14 +284,12 @@ pub fn remove_atom(
     Ok((t, c, p, map))
 }
 
-pub fn replace_atom(
+pub fn prepare_atom_replacement(
     t: &TopologyBlock,
-    c: &CoordinateBlock,
-    p: &MoleculeProperties,
     target: AtomId,
     spec: &AtomSpec,
     preserve_props: bool,
-) -> Result<IndexedEdit, IndexedGraphError> {
+) -> Result<Atom, IndexedGraphError> {
     let old = t
         .atoms
         .get(target.index())
@@ -305,26 +306,35 @@ pub fn replace_atom(
     if preserve_props {
         atom.replace_source_properties_from(old);
     }
-    let mut new = t.clone();
-    new.atoms[target.index()] = atom;
+    // These are detached local-ID inputs, not native pointers. Validate the
+    // replacement's references before a live runtime can apply the prepared row.
+    if let Some(order) = atom.template_attachment_order() {
+        order
+            .validate_for_atom_count(t.atoms.len())
+            .map_err(|source| TopologyValidationError::TemplateAttachmentOrder {
+                atom: target,
+                source,
+            })?;
+    }
     // END RDKIT CPP FUNCTION RWMol::replaceAtom
-    Ok((
-        new,
-        c.clone(),
-        p.clone(),
-        TopologyMapping::identity(t.atoms.len(), t.bonds.len()),
-    ))
+    Ok(atom)
 }
 
-pub fn replace_bond(
+pub fn replace_atom(topology: &mut Cow<'_, TopologyBlock>, atom: Atom) {
+    // RDKit❗✔️:   d_graph[vd] = atom_p;
+    // Row identity and endpoints are unchanged; no coordinate/property mapping
+    // or clone of an unrelated block is required.
+    let index = atom.id().index();
+    topology.to_mut().atoms[index] = atom;
+}
+
+pub fn prepare_bond_replacement(
     t: &TopologyBlock,
-    c: &CoordinateBlock,
-    p: &MoleculeProperties,
     target: BondId,
     spec: &BondSpec,
     preserve_props: bool,
     keep_sgroups: bool,
-) -> Result<IndexedEdit, IndexedGraphError> {
+) -> Result<PreparedBondReplacement, IndexedGraphError> {
     let old = t
         .bonds
         .get(target.index())
@@ -360,22 +370,71 @@ pub fn replace_bond(
             }
         }
     }
-    let mut new = t.clone();
-    cosmolkit_model::replace_source_bond::<IndexedGraphError>(
-        &mut new,
+    // RDKit❗✔️:   auto orderDifference =
+    // RDKit❗✔️:       bond_p->getBondTypeAsDouble() - obond->getBondTypeAsDouble();
+    // RDKit❗✔️:   if (!keepSGroups) {
+    // RDKit❗✔️:     removeSubstanceGroupsReferencingBond(*this, idx);
+    // RDKit❗✔️:   }
+    for &atom in replacement.stereo_atom_references() {
+        if atom.index() >= t.atoms.len() {
+            return Err(TopologyValidationError::StereoReferenceOutOfRange {
+                bond: target,
+                atom,
+                atom_count: t.atoms.len(),
+            }
+            .into());
+        }
+    }
+    // Perform fallible preparation on the affected groups only. A bad raw
+    // PARENT value must not leave live topology partly edited.
+    crate::bond_type_as_double(replacement.order())?;
+    crate::bond_type_as_double(old.order())?;
+    let groups = if !keep_sgroups && !t.substance_groups.is_empty() {
+        let mut groups = t.substance_groups.clone();
+        cosmolkit_model::remove_source_groups_referencing_bond::<IndexedGraphError>(
+            &mut groups,
+            target,
+            &mut |v| Ok(property_value_to_uint(v)?),
+        )?;
+        Some(groups)
+    } else {
+        None
+    };
+    Ok(PreparedBondReplacement {
         target,
-        &replacement,
+        replacement,
         preserve_props,
-        keep_sgroups,
+        groups,
+    })
+}
+
+pub struct PreparedBondReplacement {
+    target: BondId,
+    replacement: Bond,
+    preserve_props: bool,
+    groups: Option<Vec<cosmolkit_model::SubstanceGroup>>,
+}
+
+pub fn replace_bond(
+    topology: &mut Cow<'_, TopologyBlock>,
+    prepared: PreparedBondReplacement,
+) -> Result<(), IndexedGraphError> {
+    let topology = topology.to_mut();
+    // The same model kernel owns bond replacement. Group conversion and bond
+    // order reads have succeeded before mutation; no second group pass is needed.
+    cosmolkit_model::replace_source_bond::<IndexedGraphError>(
+        topology,
+        prepared.target,
+        &prepared.replacement,
+        prepared.preserve_props,
+        true,
         |order| Ok(crate::bond_type_as_double(order)?),
         |v| Ok(property_value_to_uint(v)?),
     )?;
-    Ok((
-        new,
-        c.clone(),
-        p.clone(),
-        TopologyMapping::identity(t.atoms.len(), t.bonds.len()),
-    ))
+    if let Some(groups) = prepared.groups {
+        topology.substance_groups = groups;
+    }
+    Ok(())
 }
 
 fn match_coordinates<'a, C>(
@@ -414,55 +473,30 @@ fn match_coordinates<'a, C>(
     Ok(matched)
 }
 
-fn union_coordinates(
-    l: &CoordinateBlock,
-    r: &CoordinateBlock,
-    ln: usize,
-    rn: usize,
-) -> Result<CoordinateBlock, IndexedGraphError> {
-    if ln == 0 && l.conformers_2d.is_empty() && l.conformers_3d.is_empty() {
-        return Ok(r.clone());
-    }
-    if rn == 0 && r.conformers_2d.is_empty() && r.conformers_3d.is_empty() {
-        return Ok(l.clone());
-    }
-    let r2 = match_coordinates(&l.conformers_2d, &r.conformers_2d, 2, Conformer2D::id)?;
-    let r3 = match_coordinates(&l.conformers_3d, &r.conformers_3d, 3, Conformer3D::id)?;
-    let mut result = CoordinateBlock {
-        source_coordinate_dim: l.source_coordinate_dim,
-        source_conformer_order: l.source_conformer_order.clone(),
-        ..Default::default()
-    };
-    for (a, b) in l.conformers_2d.iter().zip(r2) {
-        let coords = [a.coordinates(), b.coordinates()].concat();
-        let conf = a
-            .props()
-            .iter()
-            .fold(Conformer2D::new(a.id(), coords), |c, (k, v)| {
-                c.with_prop(k.clone(), v.clone())
-            });
-        result.conformers_2d.push(conf);
-    }
-    for (a, b) in l.conformers_3d.iter().zip(r3) {
-        let coords = [a.coordinates(), b.coordinates()].concat();
-        let conf = a
-            .props()
-            .iter()
-            .fold(Conformer3D::new(a.id(), coords, a.is_3d()), |c, (k, v)| {
-                c.with_prop(k.clone(), v.clone())
-            });
-        result.conformers_3d.push(conf);
-    }
-    Ok(result)
+enum AppendedCoordinates<'a> {
+    Unchanged,
+    Replace(&'a CoordinateBlock),
+    Extend {
+        two_d: Vec<&'a Conformer2D>,
+        three_d: Vec<&'a Conformer3D>,
+    },
 }
 
-pub fn append_molecule(
+pub struct PreparedAppend<'a> {
+    atoms: Vec<Atom>,
+    bonds: Vec<Bond>,
+    groups: Vec<cosmolkit_model::SubstanceGroup>,
+    stereo: Option<Vec<cosmolkit_model::StereoGroup>>,
+    coordinates: AppendedCoordinates<'a>,
+    mapping: TopologyMapping,
+}
+
+pub fn prepare_molecule_append<'a>(
     left: &TopologyBlock,
     lc: &CoordinateBlock,
-    lp: &MoleculeProperties,
     right: &TopologyBlock,
-    rc: &CoordinateBlock,
-) -> Result<IndexedEdit, IndexedGraphError> {
+    rc: &'a CoordinateBlock,
+) -> Result<PreparedAppend<'a>, IndexedGraphError> {
     // BEGIN RDKIT CPP FUNCTION RWMol::insertMol (Release_2026_09_1)
     // RDKit❗❌: void RWMol::insertMol(const ROMol &other) {
     // RDKit❗❌:   auto origNumAtoms = getNumAtoms();
@@ -490,9 +524,26 @@ pub fn append_molecule(
     // RDKit❗❌:                      val + origNumAtoms, true);
     // RDKit❗❌:     }
     // RDKit❗❌:   }
-    // Construct a detached result; native insertion can append directly to an owned receiver.
+    // Prepare only incoming rows and fallible remapping. Runtime supplies the
+    // owned-or-borrowed left blocks; applying this plan appends in place.
     let (na, nb) = (left.atoms.len(), left.bonds.len());
-    let coords = union_coordinates(lc, rc, na, right.atoms.len())?;
+    let coordinates = if na == 0 && lc.conformers_2d.is_empty() && lc.conformers_3d.is_empty() {
+        if rc.conformers_2d.is_empty() && rc.conformers_3d.is_empty() && lc == rc {
+            AppendedCoordinates::Unchanged
+        } else {
+            AppendedCoordinates::Replace(rc)
+        }
+    } else if right.atoms.is_empty() && rc.conformers_2d.is_empty() && rc.conformers_3d.is_empty() {
+        AppendedCoordinates::Unchanged
+    } else {
+        let two_d = match_coordinates(&lc.conformers_2d, &rc.conformers_2d, 2, Conformer2D::id)?;
+        let three_d = match_coordinates(&lc.conformers_3d, &rc.conformers_3d, 3, Conformer3D::id)?;
+        if two_d.is_empty() && three_d.is_empty() {
+            AppendedCoordinates::Unchanged
+        } else {
+            AppendedCoordinates::Extend { two_d, three_d }
+        }
+    };
     let atom_id = |a: AtomId| AtomId::new(na + a.index());
     let bond_id = |b: BondId| BondId::new(nb + b.index());
     let right_map = right
@@ -500,7 +551,7 @@ pub fn append_molecule(
         .iter()
         .map(|a| Some(atom_id(a.id())))
         .collect::<Vec<_>>();
-    let mut atoms = left.atoms.clone();
+    let mut atoms = Vec::with_capacity(right.atoms.len());
     for old in &right.atoms {
         let mut a = old.clone().with_id(atom_id(old.id()));
         a.remap_template_attachment_order(&right_map)
@@ -511,7 +562,7 @@ pub fn append_molecule(
         remap_ring_stereo(&mut a, &right_map)?;
         atoms.push(a);
     }
-    let mut bonds = left.bonds.clone();
+    let mut bonds = Vec::with_capacity(right.bonds.len());
     // RDKit❗❌:   for (const auto obond : other.bonds()) {
     // RDKit❗❌:     Bond *bond_p = obond->copy();
     // RDKit❗❌:     unsigned int idx1, idx2;
@@ -550,7 +601,7 @@ pub fn append_molecule(
     // RDKit❗✔️:   insertSubstanceGroups(*this, other, origNumAtoms, origNumBonds);
     // Substance group crossing bonds and parent IDs are typed indices in this model.
     // END RDKIT CPP FUNCTION RWMol::insertMol
-    let mut groups = left.substance_groups.clone();
+    let mut groups = Vec::with_capacity(right.substance_groups.len());
     for (i, old) in right.substance_groups.iter().enumerate() {
         let mut g = old
             .clone()
@@ -574,12 +625,74 @@ pub fn append_molecule(
         }
         groups.push(g);
     }
-    let stereo =
-        cosmolkit_model::insert_stereo_groups(&left.stereo_groups, &right.stereo_groups, na, nb)
-            .map_err(TopologyEditError::from)?;
-    let t = TopologyBlock::try_from_parts(atoms, bonds, groups, stereo)?;
-    let map = TopologyMapping::with_appended(na, nb, right.atoms.len(), right.bonds.len());
-    let mut props = lp.clone();
-    props.remap_topology(&map.atoms.new_to_old, &map.bonds.new_to_old);
-    Ok((t, coords, props, map))
+    let stereo = if right.stereo_groups.is_empty() {
+        None
+    } else {
+        Some(
+            cosmolkit_model::insert_stereo_groups(
+                &left.stereo_groups,
+                &right.stereo_groups,
+                na,
+                nb,
+            )
+            .map_err(TopologyEditError::from)?,
+        )
+    };
+    let mapping = TopologyMapping::with_appended(na, nb, right.atoms.len(), right.bonds.len());
+    Ok(PreparedAppend {
+        atoms,
+        bonds,
+        groups,
+        stereo,
+        coordinates,
+        mapping,
+    })
+}
+
+pub fn append_molecule(
+    topology: &mut Cow<'_, TopologyBlock>,
+    coordinates: &mut Cow<'_, CoordinateBlock>,
+    properties: &mut Cow<'_, MoleculeProperties>,
+    prepared: PreparedAppend<'_>,
+) -> TopologyMapping {
+    // RDKit❗❌:     addAtom(newAt, updateLabel, takeOwnership);
+    // RDKit❗❌:     addBond(bond_p, takeOwnership);
+    // Source ownership is respected: append new rows to unique left storage;
+    // shared left storage detaches once. CSR adjacency and explicit mapping
+    // still require O(V+E) rebuilding, unlike the upstream mutable graph.
+    if !prepared.atoms.is_empty()
+        || !prepared.bonds.is_empty()
+        || !prepared.groups.is_empty()
+        || prepared.stereo.is_some()
+    {
+        let topology = topology.to_mut();
+        topology.atoms.extend(prepared.atoms);
+        topology.bonds.extend(prepared.bonds);
+        topology.substance_groups.extend(prepared.groups);
+        if let Some(stereo) = prepared.stereo {
+            topology.stereo_groups = stereo;
+        }
+        topology.adjacency =
+            cosmolkit_model::AdjacencyList::from_topology(topology.atoms.len(), &topology.bonds);
+    }
+    match prepared.coordinates {
+        AppendedCoordinates::Unchanged => {}
+        AppendedCoordinates::Replace(right) => *coordinates = Cow::Owned(right.clone()),
+        AppendedCoordinates::Extend { two_d, three_d } => {
+            let left = coordinates.to_mut();
+            for (a, b) in left.conformers_2d.iter_mut().zip(two_d) {
+                a.append_atom_positions(b.coordinates());
+            }
+            for (a, b) in left.conformers_3d.iter_mut().zip(three_d) {
+                a.append_atom_positions(b.coordinates());
+            }
+        }
+    }
+    if !properties.sdf_property_lists().is_empty() {
+        properties.to_mut().remap_topology(
+            &prepared.mapping.atoms.new_to_old,
+            &prepared.mapping.bonds.new_to_old,
+        );
+    }
+    prepared.mapping
 }

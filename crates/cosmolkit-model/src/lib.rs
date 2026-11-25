@@ -102,3 +102,6 @@ pub mod ring_decomposition;
 mod source_ring_info;
 #[doc(hidden)]
 pub use source_ring_info::SourceRingInfo;
+
+#[doc(hidden)]
+pub use sgroup::remove_source_groups_referencing_bond;

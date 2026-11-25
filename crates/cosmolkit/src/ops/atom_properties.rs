@@ -39,34 +39,35 @@ pub(crate) fn with_atom_property_impl(
             key: key.to_owned(),
         });
     }
-    let mut topology = parts.checkout_topology()?;
-    // Always restore the owned block before propagating any fallible result.
-    // MODEL validates the key before writing. No coordinate/property/cache clone
-    // is used to implement rollback; the source value remains protected by COW.
-    let result = (|| {
-        let count = topology.atoms.len();
-        let row =
-            topology
-                .atoms
-                .get_mut(atom.index())
-                .ok_or(OperationError::AtomPropertyIndex {
-                    atom,
-                    atom_count: count,
-                })?;
-        if row
-            .is_prop_computed(key)
-            .map_err(cosmolkit_model::AtomPropertyError::ComputedListKind)
-            .map_err(OperationError::AtomProperty)?
-        {
-            return Err(OperationError::ReservedAtomPropertyKey {
-                key: key.to_owned(),
-            });
-        }
-        row.set_prop(key, value)
-            .map_err(OperationError::AtomProperty)
-    })();
-    parts.install_topology(topology)?;
-    result?;
+    parts.edit_topology(
+        |topology| {
+            let row =
+                topology
+                    .atoms
+                    .get(atom.index())
+                    .ok_or(OperationError::AtomPropertyIndex {
+                        atom,
+                        atom_count: topology.atoms.len(),
+                    })?;
+            if row
+                .is_prop_computed(key)
+                .map_err(cosmolkit_model::AtomPropertyError::ComputedListKind)
+                .map_err(OperationError::AtomProperty)?
+            {
+                return Err(OperationError::ReservedAtomPropertyKey {
+                    key: key.to_owned(),
+                });
+            }
+            let mut row = row.clone();
+            row.set_prop(key, value)
+                .map_err(OperationError::AtomProperty)?;
+            Ok(row)
+        },
+        |topology, row| {
+            topology.to_mut().atoms[atom.index()] = row;
+            Ok(())
+        },
+    )?;
     parts.clear_cache(DerivedState::DRAWING.union(DerivedState::FINGERPRINT))?;
     parts.prove_preserved(
         DerivedState::RINGS

@@ -34,7 +34,7 @@ test('canonical order, bond selection and coordinates use the same source rows',
     mapping.free(); other.free();
 });
 
-test('failed in-place edits preserve the receiver; a handle can be inserted into itself', () => {
+test('failed in-place edits preserve the receiver; insertion uses an independent handle', () => {
     const m = ck.Molecule.fromSmiles('OCC');
     const env = m.atomEnvironment(1, 0);
     assert.deepEqual(env.atomDistances, new Map([[0, 0], [1, 1]]));
@@ -46,20 +46,13 @@ test('failed in-place edits preserve the receiver; a handle can be inserted into
     assert.throws(() => m.renumberAtoms_([0, 1, 0]), ck.OperationError);
     assert.equal(m.numAtoms, 3);
     const clone = m.withMoleculeAppended(m);
-    m.insertMolecule_(m);
+    assert.throws(() => m.insertMolecule_(m), TypeError);
+    assert.equal(m.numAtoms, 3);
+    const right = m.copy();
+    try { m.insertMolecule_(right); }
+    finally { right.free(); }
     assert.equal(m.toSmiles(), clone.toSmiles());
     assert.equal(m.bondBetweenAtoms(3, 4), 2);
     assert.deepEqual(m.shortestPath(0, 3), []);
     clone.free(); m.free();
-});
-
-test('explicit WASM entry can insert a second reference to the same handle', async () => {
-    const {Molecule} = await import('../pkg/cosmolkit_wasm.js');
-    const m = Molecule.fromSmiles('CO');
-    const released = m.copy();
-    released.free();
-    assert.throws(() => m.insertMolecule_(released), TypeError);
-    m.insertMolecule_(new Proxy(m, {}));
-    assert.equal(m.numAtoms, 4);
-    m.free();
 });

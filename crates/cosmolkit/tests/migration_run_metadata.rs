@@ -528,6 +528,12 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
                 | "with_3d_conformer_result_with_params"
                 | "with_3d_conformers_with_params"
                 | "with_3d_conformers_result_with_params"
+                | "with_atoms_renumbered"
+                | "without_atom"
+                | "with_atom_replaced"
+                | "with_bond_replaced"
+                | "with_molecule_appended"
+                | "extract_subgraph_with_params"
         ) {
             ParityPolicy::RequiredWhenSupported
         } else if matches!(

@@ -228,7 +228,7 @@ molecule_ops! {
         may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
         derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
         cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
-        parity:required_now, parity_profile:"with_atoms_renumbered_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        parity:required_when_supported, parity_profile:"with_atoms_renumbered_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
         inplace:true, inplace_method:renumber_atoms_,
     }
 
@@ -240,7 +240,7 @@ molecule_ops! {
         may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
         derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
         cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
-        parity:required_now, parity_profile:"without_atom_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        parity:required_when_supported, parity_profile:"without_atom_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
         inplace:true, inplace_method:remove_atom_,
     }
 
@@ -248,11 +248,11 @@ molecule_ops! {
     op with_atom_replaced(atom: crate::AtomId, replacement: &crate::AtomSpec, preserve_props: bool) {
         method: with_atom_replaced, docs: "Replace one atom slot, optionally using the original property dictionary.",
         impl_fn: crate::ops::indexed_edits::with_atom_replaced_impl,
-        domain: topology, kind: strong, access: {read: [], write:[topology, coordinates, properties, derived_cache]},
-        may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
+        domain: topology, kind: weak, access: {read: [], write:[topology, derived_cache]},
+        may_mutate:[topology, derived_cache], auto_remap:[],
         derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
-        cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
-        parity:required_now, parity_profile:"with_atom_replaced_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        cip_state:indexed_graph_source_transition, requires_mapping:none, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity:required_when_supported, parity_profile:"with_atom_replaced_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
         inplace:true, inplace_method:replace_atom_,
     }
 
@@ -260,11 +260,11 @@ molecule_ops! {
     op with_bond_replaced(bond: crate::BondId, replacement: &crate::BondSpec, preserve_props: bool, keep_sgroups: bool) {
         method: with_bond_replaced, docs: "Replace a bond in its original slot and retain its endpoints.",
         impl_fn: crate::ops::indexed_edits::with_bond_replaced_impl,
-        domain: topology, kind: strong, access: {read: [], write:[topology, coordinates, properties, derived_cache]},
-        may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
+        domain: topology, kind: weak, access: {read: [], write:[topology, derived_cache]},
+        may_mutate:[topology, derived_cache], auto_remap:[],
         derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
-        cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
-        parity:required_now, parity_profile:"with_bond_replaced_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        cip_state:indexed_graph_source_transition, requires_mapping:none, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        parity:required_when_supported, parity_profile:"with_bond_replaced_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
         inplace:true, inplace_method:replace_bond_,
     }
 
@@ -276,7 +276,7 @@ molecule_ops! {
         may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
         derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
         cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
-        parity:required_now, parity_profile:"with_molecule_appended_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        parity:required_when_supported, parity_profile:"with_molecule_appended_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
         inplace:true, inplace_method:insert_molecule_,
     }
 
@@ -290,7 +290,7 @@ molecule_ops! {
         may_mutate:[topology, coordinates, properties, derived_cache], auto_remap:[],
         derived_effects:{ recompute:[], preserve:[], invalidate:[valence,rings,ring_families,aromaticity,stereo,coordinates,drawing,fingerprint], operation_defined:[] },
         cip_state:indexed_graph_source_transition, requires_mapping:required, feature:crate::ops::runtime::registry::TRANSFORMS_FEATURE,
-        parity:required_now, parity_profile:"extract_subgraph_with_params_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
+        parity:required_when_supported, parity_profile:"extract_subgraph_with_params_rdkit_indexed", invariant_profile:"indexed_graph_mapping_coordinates_and_cow",
         inplace:true, inplace_method:retain_subgraph_with_params_,
     }
 

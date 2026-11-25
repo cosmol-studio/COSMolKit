@@ -394,22 +394,56 @@ fn local_edits_keep_surviving_slots_and_union_matches_conformer_ids() {
 #[test]
 fn subset_group_links_identify_the_same_surviving_members() {
     use cosmolkit::{SGroupAttachPoint, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind};
+    let params = SubgraphExtractionParams {
+        preserve_sgroups: true,
+        ..Default::default()
+    };
     let m = mol("CCCC |Sg:n:0::ht:::,Sg:n:1::ht:::,Sg:n:2::ht:::,SgH:2:1|");
     let part = m
-        .extract_subgraph(&SubgraphSelection::atoms([1, 2, 3].map(a).to_vec()))
+        .extract_subgraph_with_params(
+            &SubgraphSelection::atoms([1, 2, 3].map(a).to_vec()),
+            &params,
+        )
         .unwrap();
     let groups = &part.molecule().topology().substance_groups;
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].atoms(), [a(1)]);
     assert_eq!(groups[0].head_crossing_bonds(), [b(0)]);
     let m = mol("CCC |Sg:n:1::ht:::,Sg:n:2::ht:::,SgH:0:1|");
+    let selection = SubgraphSelection::atoms([0, 1, 2].map(a).to_vec());
     assert!(
-        m.extract_subgraph(&SubgraphSelection::bonds(vec![b(1)]))
+        m.extract_subgraph(&selection)
             .unwrap()
             .molecule()
             .topology()
             .substance_groups
             .is_empty()
+    );
+    let part = m.extract_subgraph_with_params(&selection, &params).unwrap();
+    assert_eq!(
+        part.molecule().topology().substance_groups,
+        m.topology().substance_groups
+    );
+
+    // RDKit Subset.cpp selects the child even if its parent is excluded.
+    // CK cannot store that dangling typed reference: report it, never drop it.
+    let selection = SubgraphSelection::bonds(vec![b(1)]);
+    assert!(
+        m.extract_subgraph(&selection)
+            .unwrap()
+            .molecule()
+            .topology()
+            .substance_groups
+            .is_empty()
+    );
+    assert!(
+        matches!(m.extract_subgraph_with_params(&selection, &params),
+            Err(cosmolkit::OperationError::IndexedGraph(cosmolkit::IndexedGraphError::Subset(
+                cosmolkit::AtomPathSubsetCopyError::SubstanceGroupCopy(
+                    cosmolkit::SelectedSubstanceGroupCopyError::UnmappedReference { group }
+                )
+            ))) if group == SubstanceGroupId::new(1)
+        )
     );
 
     let m = mol("CCOC");
@@ -426,7 +460,10 @@ fn subset_group_links_identify_the_same_surviving_members() {
     );
     let m = Molecule::from_parts(t, Default::default(), Default::default()).unwrap();
     let part = m
-        .extract_subgraph(&SubgraphSelection::atoms([1, 2, 3].map(a).to_vec()))
+        .extract_subgraph_with_params(
+            &SubgraphSelection::atoms([1, 2, 3].map(a).to_vec()),
+            &params,
+        )
         .unwrap();
     let attachment = &part.molecule().topology().substance_groups[0].attach_points()[0];
     assert_eq!(
@@ -623,6 +660,7 @@ fn identity_permutations_and_subsets_have_different_property_rules() {
                 &selection,
                 &SubgraphExtractionParams {
                     clear_computed_props: clear,
+                    preserve_sgroups: true,
                     ..Default::default()
                 },
             )

@@ -9,34 +9,6 @@ use crate::{
 use cosmolkit as ck;
 use tsify::Ts;
 use wasm_bindgen::prelude::*;
-// wasm-bindgen acquires &mut self before converting other arguments. A second
-// JS reference (including a transparent Proxy) may denote that same handle.
-// Stage the right graph through a copy-on-write handle before either bridge
-// can acquire the exclusive borrow. Install this on the generated class so
-// explicit initialization and the automatic package entry have one contract.
-#[wasm_bindgen(inline_js = "
-export function stageMoleculeInsertion(sample) {
-    const prototype = Object.getPrototypeOf(sample);
-    sample.free();
-    const {copy, insertMolecule_: insert} = prototype;
-    prototype.insertMolecule_ = function (right) {
-        if (!(right instanceof prototype.constructor)) throw new TypeError('expected Molecule');
-        let snapshot;
-        try { snapshot = copy.call(right); }
-        catch (cause) { throw new TypeError('expected Molecule', {cause}); }
-        try { return insert.call(this, snapshot); }
-        finally { snapshot.free(); }
-    };
-}")]
-extern "C" {
-    #[wasm_bindgen(js_name=stageMoleculeInsertion)]
-    fn stage_molecule_insertion(sample: Molecule);
-}
-
-#[wasm_bindgen(start, private)]
-fn initialize_graph_methods() {
-    stage_molecule_insertion(Molecule(ck::Molecule::default()));
-}
 ck::__ck_configuration_SubgraphExtractionParams!(
     crate::project_parameters,
     ck::SubgraphExtractionParams,
@@ -283,7 +255,7 @@ impl Molecule {
         })
     }
 
-    /// Return a new molecule and local-to-source mappings for the selected atoms and bonds.
+    /// Return a new molecule and local-to-source mappings for the selected atoms and bonds. SGroups are omitted unless preserveSgroups is enabled; unrepresentable references cause an error.
     #[wasm_bindgen(js_name=extractSubgraph)]
     pub fn extract_subgraph(
         &self,
@@ -308,7 +280,7 @@ impl Molecule {
         self.extract_subgraph(selection, Some(params))
     }
 
-    /// Retain the selected graph in this molecule; return its local-to-source mapping.
+    /// Retain the selected graph in this molecule; return its local-to-source mapping. SGroups are omitted unless preserveSgroups is enabled; unrepresentable references cause an error.
     #[wasm_bindgen(js_name=retainSubgraph_)]
     pub fn retain_subgraph_(
         &mut self,

@@ -404,3 +404,24 @@ fn sanitize_unrestricted_runtime_and_lifecycle_are_hidden(parts: &mut OpParts<'_
     let _ = OpParts::<SanitizeAccess>::abort_in_place;
     let _ = OpParts::<SanitizeAccess>::finish_in_place;
 }
+
+#[cfg(cosmolkit_runtime_privacy_case = "scoped_cow_allowed")]
+fn scoped_cow_allowed(
+    parts: &mut OpParts<'_, super::WithAtomReplacedAccess>,
+) -> Result<(), OperationError> {
+    parts.edit_topology(|_| Ok(()), |_, ()| Ok(()))
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "scoped_cow_forbidden")]
+fn scoped_cow_forbidden(parts: &mut OpParts<'_, PreserveCacheNoneProbeAccess>) {
+    let _ = parts.edit_topology(|_| Ok(()), |_, ()| Ok(()));
+    let _ = parts.edit_topology_runtime(|_| Ok(()), |_, ()| Ok(()));
+    let _ = crate::ops::RuntimeWritePermit(());
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "scoped_cow_narrow")]
+fn scoped_cow_narrow(parts: &mut OpParts<'_, super::WithAtomReplacedAccess>) {
+    let _ = parts.checkout_coordinates();
+    let _ = parts.checkout_properties();
+    let _ = parts.edit_mapped_blocks(|_, _, _| Ok(()), |_, _, _, ()| unreachable!());
+}

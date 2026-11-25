@@ -6,6 +6,7 @@ type Case = (&'static str, &'static [&'static str]);
 
 const ALLOWED: &[&str] = &[
     "model_local_preconditions",
+    "scoped_cow_allowed",
     "allowed",
     "cip_cow_allowed",
     "atom_code_cow_allowed",
@@ -15,6 +16,25 @@ const ALLOWED: &[&str] = &[
 ];
 
 const ACCESS: &[Case] = &[
+    (
+        "scoped_cow_forbidden",
+        &[
+            "E0599",
+            "edit_topology",
+            "edit_topology_runtime",
+            "RuntimeWritePermit",
+            "private",
+        ],
+    ),
+    (
+        "scoped_cow_narrow",
+        &[
+            "E0599",
+            "checkout_coordinates",
+            "checkout_properties",
+            "edit_mapped_blocks",
+        ],
+    ),
     (
         "cip_assignment_wrong_marker",
         &["E0599", "apply_cip_assignment_policy"],
@@ -255,9 +275,9 @@ fn compile_probe(cases: &[&str], strict: bool) -> Output {
         .and_then(|path| path.parent())
         .unwrap();
     let features = if strict {
-        "cap-hydrogens,cap-stereo,cap-stereoisomers,cap-fingerprints,cap-sanitize,op-contracts-strict"
+        "cap-transforms,cap-hydrogens,cap-stereo,cap-stereoisomers,cap-fingerprints,cap-sanitize,op-contracts-strict"
     } else {
-        "cap-hydrogens,cap-stereo,cap-stereoisomers,cap-fingerprints,cap-sanitize"
+        "cap-transforms,cap-hydrogens,cap-stereo,cap-stereoisomers,cap-fingerprints,cap-sanitize"
     };
     let mut command = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
     command

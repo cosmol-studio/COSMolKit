@@ -769,6 +769,10 @@ pub enum SubstanceGroupAtomList {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SelectedSubstanceGroupCopyError {
+    #[error(
+        "selected SGroup {group:?} has a parent or auxiliary atom/bond reference outside the selection"
+    )]
+    UnmappedReference { group: SubstanceGroupId },
     #[error("subset SGroup {group:?} {list:?} atom {atom:?} has no atom mapping")]
     MissingAtomMapping {
         group: SubstanceGroupId,
@@ -1017,6 +1021,53 @@ fn copy_selected_substance_groups(
     }
 
     Ok(copied_groups)
+}
+
+/// Use the source subset membership rule, not batch-deletion hierarchy pruning.
+fn copy_indexed_substance_groups(
+    source: &TopologyBlock,
+    selection: &FragmentSubsetInfo,
+    mapping: &TopologyMapping,
+) -> Result<Vec<SubstanceGroup>, SelectedSubstanceGroupCopyError> {
+    // RDKit❗✔️: for (const auto &sgroup : getSubstanceGroups(reference_mol)) {
+    // RDKit❗✔️:   if (!isSelectedSGroup(sgroup, selection_info)) {
+    // RDKit❗✔️:     continue;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   SubstanceGroup extracted_sgroup(sgroup);
+    // RDKit❗✔️:   extracted_sgroup.setOwningMol(&extracted_mol);
+    // Membership follows Subset.cpp. CK stores additional references as typed
+    // local IDs: remap those while retaining the source raw properties. If a
+    // selected group's references cannot be represented, fail instead of
+    // silently removing that group. Each source group/member is visited once.
+    let mut next = 0;
+    let groups: Vec<_> = source
+        .substance_groups
+        .iter()
+        .map(|group| {
+            is_selected_substance_group(group, selection).then(|| {
+                let id = SubstanceGroupId::new(next);
+                next += 1;
+                id
+            })
+        })
+        .collect();
+    source
+        .substance_groups
+        .iter()
+        .zip(&groups)
+        .filter_map(|(group, id)| {
+            id.map(|id| {
+                group
+                    .remapped(
+                        id,
+                        &mapping.atoms.old_to_new,
+                        &mapping.bonds.old_to_new,
+                        &groups,
+                    )
+                    .ok_or(SelectedSubstanceGroupCopyError::UnmappedReference { group: group.id() })
+            })
+        })
+        .collect()
 }
 
 fn copy_selected_stereo_groups(
@@ -2081,6 +2132,8 @@ pub struct SubgraphExtractionParams {
     pub copy_coordinates: bool,
     /// Discard computed properties on the extracted molecule, atoms and bonds.
     pub clear_computed_props: bool,
+    /// Preserve complete source-selected SGroups; unrepresentable references are errors.
+    pub preserve_sgroups: bool,
 }
 
 impl Default for SubgraphExtractionParams {
@@ -2089,6 +2142,7 @@ impl Default for SubgraphExtractionParams {
             sanitize: false,
             copy_coordinates: true,
             clear_computed_props: false,
+            preserve_sgroups: false,
         }
     }
 }
@@ -2145,8 +2199,11 @@ pub fn extract_indexed_subgraph(
     // RDKit❗✔️:   }
     //
     // RDKit❗✔️:   auto res = copyMolSubset(mol, selection_info, options);
-    // Never take the full-length shortcut: explicit selection must validate each
-    // index, honor the copy options and produce both row mappings.
+    // User-approved intentional difference: full selections still validate each
+    // index, apply the requested extraction options and produce both row mappings.
+    // RDKit's early full-copy return skips those steps; this is not an equivalent
+    // reproduction of that branch. Ordinary molecule-property loss is not covered
+    // by this approval.
     // END RDKIT CPP FUNCTION copyMolSubset
     use SubgraphSelection::*;
     let mut info = FragmentSubsetInfo::default();
@@ -2204,6 +2261,7 @@ pub fn extract_indexed_subgraph(
         params.copy_coordinates,
         SubsetCopyMode::Selection {
             computed_from: (!params.clear_computed_props).then_some(props),
+            preserve_sgroups: params.preserve_sgroups,
         },
     )?;
     Ok((
@@ -2218,6 +2276,7 @@ enum SubsetCopyMode<'a> {
     Component,
     Selection {
         computed_from: Option<&'a MoleculeProperties>,
+        preserve_sgroups: bool,
     },
 }
 
@@ -2240,8 +2299,14 @@ fn copy_subset_members(
         SubsetCopyMode::Component => {
             copy_selected_substance_groups(&source_topology.substance_groups, &selection_info)?
         }
-        SubsetCopyMode::Selection { .. } => source_topology
-            .remapped_substance_groups(&mapping.atoms.old_to_new, &mapping.bonds.old_to_new),
+        SubsetCopyMode::Selection {
+            preserve_sgroups: false,
+            ..
+        } => Vec::new(),
+        SubsetCopyMode::Selection {
+            preserve_sgroups: true,
+            ..
+        } => copy_indexed_substance_groups(source_topology, &selection_info, &mapping)?,
     };
     let stereo_groups =
         copy_selected_stereo_groups(&source_topology.stereo_groups, &selection_info)?;
@@ -2258,6 +2323,7 @@ fn copy_subset_members(
     let mut molecule_properties = MoleculeProperties::default();
     if let SubsetCopyMode::Selection {
         computed_from: Some(source),
+        ..
     } = mode
     {
         // BEGIN RDKIT CPP FUNCTION Subset.cpp :: copyComputedProps (2026.09.1)

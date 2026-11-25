@@ -193,3 +193,5 @@ pub use uff_optimization::__configuration_UffConformerOptimizationParams;
 #[doc(hidden)]
 #[cfg(feature = "cap-forcefields")]
 pub use uff_optimization::__configuration_UffOptimizationParams;
+
+pub(crate) use runtime::context::RuntimeWritePermit;

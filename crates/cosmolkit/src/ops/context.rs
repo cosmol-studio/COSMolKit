@@ -22,6 +22,49 @@ enum WorkingBlock<T> {
     Installed(T),
 }
 
+/// Only the operation runtime can construct this authority. Molecule storage
+/// helpers require it; generated body capabilities never expose it.
+pub(crate) struct RuntimeWritePermit(());
+
+/// Temporarily own a unique detached value without replacing its Arc allocation.
+/// Shared values remain borrowed until the domain owner actually writes them.
+fn with_cow<T: Clone + Default, R>(
+    block: &mut Arc<T>,
+    body: impl FnOnce(&mut Cow<'_, T>) -> R,
+) -> R {
+    use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+    if let Some(value) = Arc::get_mut(block) {
+        let mut working = Cow::Owned(std::mem::take(value));
+        let result = catch_unwind(AssertUnwindSafe(|| body(&mut working)));
+        *value = working.into_owned();
+        match result {
+            Ok(result) => result,
+            Err(payload) => resume_unwind(payload),
+        }
+    } else {
+        let mut working = Cow::Borrowed(block.as_ref());
+        let result = catch_unwind(AssertUnwindSafe(|| body(&mut working)));
+        let replacement = match working {
+            Cow::Borrowed(value) if std::ptr::eq(value, block.as_ref()) => None,
+            Cow::Borrowed(value) => Some(value.clone()),
+            Cow::Owned(value) => Some(value),
+        };
+        if let Some(value) = replacement {
+            *block = Arc::new(value);
+        }
+        match result {
+            Ok(result) => result,
+            Err(payload) => resume_unwind(payload),
+        }
+    }
+}
+
+#[cfg(feature = "op-contracts")]
+struct OriginalRows {
+    atoms: Vec<cosmolkit_model::AtomId>,
+    bonds: Vec<cosmolkit_model::BondId>,
+}
+
 // Preservation is an identity claim, not floating-point numerical equality.
 // In particular, an untouched NaN must pass and a changed signed zero must not.
 // Shared blocks need no traversal; detached candidates use a borrowed O(N) scan.
@@ -178,9 +221,9 @@ impl EffectTrace {
 
 /// One private transaction whose access type is emitted by `molecule_ops!`.
 ///
-/// Construction shares Arc-backed blocks and copies preserved query rows once.
-/// Individual semantic
-/// blocks detach lazily when their generated capability checks them out.
+/// Value operations share source blocks; in-place operations temporarily own
+/// the receiver. Generated scoped capabilities detach only blocks actually
+/// written, and restore complete storage on errors and unwinding.
 pub(crate) struct OpParts<'a, Access> {
     spec: &'static MoleculeOpSpec,
     source: Molecule,
@@ -197,6 +240,15 @@ pub(crate) struct OpParts<'a, Access> {
     in_place_target: Option<&'a mut Molecule>,
     access: PhantomData<Access>,
     pending_identity: Option<Arc<()>>,
+    direct_writes: BlockSet,
+    #[cfg(feature = "op-contracts")]
+    original_rows: Option<OriginalRows>,
+    #[cfg(feature = "op-contracts")]
+    original_topology: Option<TopologyBlock>,
+    #[cfg(feature = "op-contracts")]
+    original_coordinates: Option<CoordinateBlock>,
+    #[cfg(feature = "op-contracts")]
+    original_properties: Option<MoleculeProperties>,
 }
 
 impl<'a, Access> OpParts<'a, Access> {
@@ -221,13 +273,18 @@ impl<'a, Access> OpParts<'a, Access> {
         target: &'a mut Molecule,
         spec: &'static MoleculeOpSpec,
     ) -> Result<Self, OperationError> {
-        let source = target.operation_snapshot_runtime(
-            matches!(
-                spec.cip_state,
-                CipStatePolicy::Preserve | CipStatePolicy::Assign
-            ),
-            spec.method,
-        )?;
+        // Validate before taking ownership. No snapshot may artificially turn
+        // an otherwise unique in-place value into shared storage.
+        target.check_operation_queries_runtime(spec.method)?;
+        if spec.output != MoleculeOpOutput::Single {
+            return Err(OperationError::OutputMismatch {
+                operation: spec.method,
+                expected: MoleculeOpOutput::Single,
+                actual: spec.output,
+            });
+        }
+        Self::validate_semantic_preconditions(spec)?;
+        let source = std::mem::replace(target, Molecule::new());
         Self::from_source(source, Some(target), spec)
     }
 
@@ -258,6 +315,15 @@ impl<'a, Access> OpParts<'a, Access> {
             in_place_target,
             access: PhantomData,
             pending_identity: None,
+            direct_writes: BlockSet::NONE,
+            #[cfg(feature = "op-contracts")]
+            original_rows: None,
+            #[cfg(feature = "op-contracts")]
+            original_topology: None,
+            #[cfg(feature = "op-contracts")]
+            original_coordinates: None,
+            #[cfg(feature = "op-contracts")]
+            original_properties: None,
         })
     }
 
@@ -298,7 +364,7 @@ impl<'a, Access> OpParts<'a, Access> {
             operation,
         };
         let result = result.resolve_pending(&mut finalizer)?;
-        if let Some(parts) = finalizer.parts {
+        if let Some(parts) = finalizer.parts.take() {
             // None still completes the original transaction. A sealed value
             // omitted from the returned result must not bypass finalization.
             parts.ensure_unsealed_runtime()?;
@@ -402,6 +468,216 @@ impl<'a, Access> OpParts<'a, Access> {
                 block: "derived_cache",
             }),
         }
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn remember_original_blocks(&mut self, writes: BlockSet) {
+        if self.original_rows.is_none() {
+            self.original_rows = Some(OriginalRows {
+                atoms: self
+                    .source
+                    .topology()
+                    .atoms
+                    .iter()
+                    .map(|a| a.id())
+                    .collect(),
+                bonds: self
+                    .source
+                    .topology()
+                    .bonds
+                    .iter()
+                    .map(|b| b.id())
+                    .collect(),
+            });
+        }
+        // Strict proof facts are detached values, never shared runtime handles.
+        // Graph edits that invalidate all derived state need only row identities.
+        if !self.spec.derived_effects.preserve.is_empty()
+            || matches!(
+                self.spec.cip_state,
+                CipStatePolicy::Preserve | CipStatePolicy::Assign
+            )
+        {
+            if writes.contains(BlockSet::TOPOLOGY) && self.original_topology.is_none() {
+                self.original_topology = Some(self.source.topology().clone());
+            }
+            if writes.contains(BlockSet::COORDINATES) && self.original_coordinates.is_none() {
+                self.original_coordinates = Some(self.source.coordinate_block_runtime().clone());
+            }
+            if writes.contains(BlockSet::PROPERTIES) && self.original_properties.is_none() {
+                self.original_properties = Some(self.source.properties().clone());
+            }
+        }
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn before_topology(&self) -> &TopologyBlock {
+        self.original_topology
+            .as_ref()
+            .unwrap_or_else(|| self.source.topology())
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn before_coordinates(&self) -> &CoordinateBlock {
+        self.original_coordinates
+            .as_ref()
+            .unwrap_or_else(|| self.source.coordinate_block_runtime())
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn before_properties(&self) -> &MoleculeProperties {
+        self.original_properties
+            .as_ref()
+            .unwrap_or_else(|| self.source.properties())
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn original_atom_ids(&self) -> impl ExactSizeIterator<Item = cosmolkit_model::AtomId> + '_ {
+        let count = self
+            .original_rows
+            .as_ref()
+            .map_or(self.source.topology().atoms.len(), |r| r.atoms.len());
+        (0..count).map(|i| {
+            self.original_rows
+                .as_ref()
+                .map_or_else(|| self.source.topology().atoms[i].id(), |r| r.atoms[i])
+        })
+    }
+
+    #[cfg(feature = "op-contracts")]
+    fn original_bond_ids(&self) -> impl ExactSizeIterator<Item = cosmolkit_model::BondId> + '_ {
+        let count = self
+            .original_rows
+            .as_ref()
+            .map_or(self.source.topology().bonds.len(), |r| r.bonds.len());
+        (0..count).map(|i| {
+            self.original_rows
+                .as_ref()
+                .map_or_else(|| self.source.topology().bonds[i].id(), |r| r.bonds[i])
+        })
+    }
+
+    /// Shared staging remains detached. In-place scopes instead own the actual
+    /// source storage, so unique buffers survive and untouched blocks stay shared.
+    fn edit_blocks_runtime<P, R>(
+        &mut self,
+        writes: BlockSet,
+        prepare: impl FnOnce(
+            &TopologyBlock,
+            &CoordinateBlock,
+            &MoleculeProperties,
+        ) -> Result<P, OperationError>,
+        body: impl FnOnce(
+            &mut Cow<'_, TopologyBlock>,
+            &mut Cow<'_, CoordinateBlock>,
+            &mut Cow<'_, MoleculeProperties>,
+            P,
+        ) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        self.ensure_unsealed_runtime()?;
+        self.ensure_complete_blocks()?;
+        let prepared = prepare(
+            self.current_topology_candidate()?,
+            self.current_coordinates_candidate()?,
+            self.current_properties_candidate()?,
+        )?;
+        if self.in_place_target.is_some()
+            && matches!(self.topology, WorkingBlock::Shared)
+            && matches!(self.coordinates, WorkingBlock::Shared)
+            && matches!(self.properties, WorkingBlock::Shared)
+        {
+            #[cfg(feature = "op-contracts")]
+            self.remember_original_blocks(writes);
+            self.direct_writes = self.direct_writes.union(writes);
+            self.source
+                .with_operation_blocks_runtime(&RuntimeWritePermit(()), |t, c, p| {
+                    with_cow(t, |t| {
+                        with_cow(c, |c| with_cow(p, |p| body(t, c, p, prepared)))
+                    })
+                })
+        } else {
+            fn stage<T: Clone, R>(
+                slot: &mut WorkingBlock<T>,
+                source: &T,
+                body: impl FnOnce(&mut Cow<'_, T>) -> R,
+            ) -> R {
+                let mut value = match std::mem::replace(slot, WorkingBlock::CheckedOut) {
+                    WorkingBlock::Shared => Cow::Borrowed(source),
+                    WorkingBlock::Installed(value) => Cow::Owned(value),
+                    WorkingBlock::CheckedOut => {
+                        unreachable!("complete blocks checked before scoped edit")
+                    }
+                };
+                let result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| body(&mut value)));
+                *slot = match value {
+                    Cow::Borrowed(value) if std::ptr::eq(value, source) => WorkingBlock::Shared,
+                    Cow::Borrowed(value) => WorkingBlock::Installed(value.clone()),
+                    Cow::Owned(value) => WorkingBlock::Installed(value),
+                };
+                match result {
+                    Ok(result) => result,
+                    Err(payload) => std::panic::resume_unwind(payload),
+                }
+            }
+            stage(&mut self.topology, self.source.topology(), |t| {
+                stage(
+                    &mut self.coordinates,
+                    self.source.coordinate_block_runtime(),
+                    |c| {
+                        stage(&mut self.properties, self.source.properties(), |p| {
+                            body(t, c, p, prepared)
+                        })
+                    },
+                )
+            })
+        }
+    }
+
+    pub(super) fn edit_topology_runtime<P, R>(
+        &mut self,
+        prepare: impl FnOnce(&TopologyBlock) -> Result<P, OperationError>,
+        body: impl FnOnce(&mut Cow<'_, TopologyBlock>, P) -> Result<R, OperationError>,
+    ) -> Result<R, OperationError> {
+        #[cfg(feature = "op-contracts")]
+        self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
+        self.edit_blocks_runtime(
+            BlockSet::TOPOLOGY,
+            |t, _, _| prepare(t),
+            |t, _, _, prepared| body(t, prepared),
+        )
+    }
+
+    pub(super) fn edit_mapped_blocks_runtime<P>(
+        &mut self,
+        prepare: impl FnOnce(
+            &TopologyBlock,
+            &CoordinateBlock,
+            &MoleculeProperties,
+        ) -> Result<P, OperationError>,
+        body: impl FnOnce(
+            &mut Cow<'_, TopologyBlock>,
+            &mut Cow<'_, CoordinateBlock>,
+            &mut Cow<'_, MoleculeProperties>,
+            P,
+        ) -> Result<TopologyMapping, OperationError>,
+    ) -> Result<(), OperationError> {
+        #[cfg(feature = "op-contracts")]
+        for (block, name) in [
+            (BlockSet::TOPOLOGY, "topology"),
+            (BlockSet::COORDINATES, "coordinates"),
+            (BlockSet::PROPERTIES, "properties"),
+        ] {
+            self.ensure_write_access(block, name)?;
+        }
+        let mapping = self.edit_blocks_runtime(
+            BlockSet::TOPOLOGY
+                .union(BlockSet::COORDINATES)
+                .union(BlockSet::PROPERTIES),
+            prepare,
+            body,
+        )?;
+        self.record_topology_mapping_runtime(mapping).map(|_| ())
     }
 
     pub(super) fn checkout_topology_runtime(&mut self) -> Result<TopologyBlock, OperationError> {
@@ -910,23 +1186,24 @@ impl<'a, Access> OpParts<'a, Access> {
     #[cfg(feature = "op-contracts")]
     fn validate_mapping_obligation(
         spec: &'static MoleculeOpSpec,
-        before: &TopologyBlock,
+        before_atoms: impl ExactSizeIterator<Item = cosmolkit_model::AtomId>,
+        before_bonds: impl ExactSizeIterator<Item = cosmolkit_model::BondId>,
         after: &TopologyBlock,
         mapping: Option<&TopologyMapping>,
         reconstruction_validated: bool,
     ) -> Result<(), OperationError> {
-        let row_identity_unchanged = before.atoms.len() == after.atoms.len()
-            && before.bonds.len() == after.bonds.len()
-            && before
-                .atoms
-                .iter()
+        let old_atom_count = before_atoms.len();
+        let old_bond_count = before_bonds.len();
+        let new_atom_count = after.atoms.len();
+        let new_bond_count = after.bonds.len();
+        let row_identity_unchanged = old_atom_count == new_atom_count
+            && old_bond_count == new_bond_count
+            && before_atoms
                 .zip(&after.atoms)
-                .all(|(source, candidate)| source.id() == candidate.id())
-            && before
-                .bonds
-                .iter()
+                .all(|(id, row)| id == row.id())
+            && before_bonds
                 .zip(&after.bonds)
-                .all(|(source, candidate)| source.id() == candidate.id());
+                .all(|(id, row)| id == row.id());
         if spec.kind == crate::MoleculeOpKind::Weak && !row_identity_unchanged {
             return Err(OperationError::MappingContract {
                 operation: spec.method,
@@ -935,10 +1212,6 @@ impl<'a, Access> OpParts<'a, Access> {
             });
         }
 
-        let old_atom_count = before.atoms.len();
-        let new_atom_count = after.atoms.len();
-        let old_bond_count = before.bonds.len();
-        let new_bond_count = after.bonds.len();
         match spec.requires_mapping {
             MappingRequirement::Reconstruction => {
                 if !reconstruction_validated
@@ -1037,7 +1310,8 @@ impl<'a, Access> OpParts<'a, Access> {
         #[cfg(feature = "op-contracts")]
         Self::validate_mapping_obligation(
             self.spec,
-            source_topology,
+            self.original_atom_ids(),
+            self.original_bond_ids(),
             candidate_topology,
             self.topology_mapping.as_ref(),
             self.reconstruction_validated,
@@ -1329,18 +1603,25 @@ impl<'a, Access> OpParts<'a, Access> {
                         ) | ("largest_fragment", MoleculeOpOutput::Single)
                     )
                 };
+                let local_blocks = BlockSet::TOPOLOGY.union(BlockSet::DERIVED_CACHE);
+                let local = spec.cip_state == CipStatePolicy::IndexedGraphSourceTransition
+                    && spec.kind == crate::MoleculeOpKind::Weak
+                    && spec.requires_mapping == MappingRequirement::None
+                    && spec.access.write() == local_blocks
+                    && spec.may_mutate == local_blocks;
+                let mapped = spec.kind == crate::MoleculeOpKind::Strong
+                    && spec.requires_mapping == MappingRequirement::Required
+                    && spec.access.write() == blocks
+                    && spec.may_mutate == blocks;
                 if !allowed
-                    || spec.kind != crate::MoleculeOpKind::Strong
-                    || spec.requires_mapping != MappingRequirement::Required
                     || !spec.access.read().is_empty()
-                    || spec.access.write() != blocks
-                    || spec.may_mutate != blocks
                     || !spec.auto_remap.is_empty()
+                    || !(local || mapped)
                 {
                     return Err(OperationError::CipStateContract {
                         operation: spec.method,
                         policy: spec.cip_state,
-                        issue: "source transition requires a declared strong graph operation with mapped write authority",
+                        issue: "source transition requires stable-row topology/cache authority or mapped strong graph authority",
                     });
                 }
             }
@@ -1591,7 +1872,7 @@ impl<'a, Access> OpParts<'a, Access> {
             return Ok(());
         }
         if matches!(self.derived_cache, WorkingBlock::Shared) {
-            let candidate = self.source.derived_cache_runtime().clone();
+            let candidate = self.source.derived_cache_runtime().clone_clearing(states);
             self.derived_cache = WorkingBlock::Installed(candidate);
         }
         match &mut self.derived_cache {
@@ -1668,7 +1949,7 @@ impl<'a, Access> OpParts<'a, Access> {
         match proof {
             PreservationProof::AtomUserProperties => {
                 if OPERATION_CONTRACTS_ENABLED {
-                    let source = self.source.topology();
+                    let source = self.before_topology();
                     let candidate = self.current_topology_candidate()?;
                     let mut valid = source.atoms.len() == candidate.atoms.len()
                         && source.bonds == candidate.bonds
@@ -1709,12 +1990,12 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
             }
             PreservationProof::UnchangedInput => {
-                let unchanged = self.current_topology_candidate()? == self.source.topology()
+                let unchanged = self.current_topology_candidate()? == self.before_topology()
                     && coordinates_preserved(
-                        self.source.coordinate_block_runtime(),
+                        self.before_coordinates(),
                         self.current_coordinates_candidate()?,
                     )
-                    && self.current_properties_candidate()? == self.source.properties()
+                    && self.current_properties_candidate()? == self.before_properties()
                     && self
                         .current_cache_candidate()?
                         .valid_states()
@@ -1734,7 +2015,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
             }
             PreservationProof::StableAtomCoordinates => {
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let candidate = self.current_topology_candidate()?;
                 let stable_atoms = source.atoms.len() == candidate.atoms.len()
                     && source
@@ -1746,7 +2027,7 @@ impl<'a, Access> OpParts<'a, Access> {
                                 && before.atomic_number() == after.atomic_number()
                         });
                 let unchanged_coordinates =
-                    self.current_coordinates_candidate()? == self.source.coordinate_block_runtime();
+                    self.current_coordinates_candidate()? == self.before_coordinates();
                 let unchanged_validity = self
                     .current_cache_candidate()?
                     .valid_states()
@@ -1771,8 +2052,8 @@ impl<'a, Access> OpParts<'a, Access> {
             }
             PreservationProof::CoordinateOnly => {
                 let non_coordinate_blocks_are_unchanged = self.current_topology_candidate()?
-                    == self.source.topology()
-                    && self.current_properties_candidate()? == self.source.properties();
+                    == self.before_topology()
+                    && self.current_properties_candidate()? == self.before_properties();
                 let coordinates_are_valid = self
                     .current_coordinates_candidate()?
                     .validate_for_atom_count(self.source.num_atoms())
@@ -1799,7 +2080,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
             }
             PreservationProof::StereoisomerRingFamilies => {
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let candidate = self.current_topology_candidate()?;
                 let same_rows = source.atoms.len() == candidate.atoms.len()
                     && source
@@ -1838,7 +2119,7 @@ impl<'a, Access> OpParts<'a, Access> {
             }
             PreservationProof::StereoCleanup => {
                 let candidate = self.current_topology_candidate()?;
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let mut normalized = candidate.clone();
                 let stable_shape = normalized.atoms.len() == source.atoms.len()
                     && normalized.bonds.len() == source.bonds.len();
@@ -1862,8 +2143,8 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
                 let only_stereo_changed = stable_shape && normalized == *source;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinate_block_runtime()
-                    && self.current_properties_candidate()? == self.source.properties()
+                    == self.before_coordinates()
+                    && self.current_properties_candidate()? == self.before_properties()
                     && self
                         .current_cache_candidate()?
                         .valid_states()
@@ -1888,7 +2169,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 const ASSIGNMENT_PROPERTIES: [&str; 2] =
                     ["_chiralPermutation", "_NonExplicit3DChirality"];
                 let candidate = self.current_topology_candidate()?;
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let mut property_error: Option<OperationError> = None;
                 let atoms_only_change_structure_tags = candidate.atoms.len() == source.atoms.len()
                     && candidate.atoms.iter().zip(&source.atoms).all(
@@ -1920,14 +2201,14 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.stereo_groups == source.stereo_groups
                     && candidate.adjacency == source.adjacency;
 
-                let mut expected_properties = self.source.properties().clone();
+                let mut expected_properties = self.before_properties().clone();
                 if clear_stereochem_done {
                     expected_properties
                         .clear_prop("_StereochemDone")
                         .map_err(OperationError::InvalidProperty)?;
                 }
                 let preserved_blocks_are_unchanged = coordinates_preserved(
-                    self.source.coordinate_block_runtime(),
+                    self.before_coordinates(),
                     self.current_coordinates_candidate()?,
                 ) && self.current_properties_candidate()?
                     == &expected_properties
@@ -1958,7 +2239,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 const ATOM_KEYS: [&str; 2] = ["_CIPCode", "_CIPNeighborOrder"];
                 const BOND_KEYS: [&str; 2] = ["_CIPCode", "_CIPNeighborOrder"];
                 let candidate = self.current_topology_candidate()?;
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let mut property_error: Option<OperationError> = None;
                 let atoms_only_change_cip = candidate.atoms.len() == source.atoms.len()
                     && candidate.atoms.iter().zip(&source.atoms).all(
@@ -2076,7 +2357,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.substance_groups == source.substance_groups
                     && candidate.stereo_groups == source.stereo_groups;
 
-                let mut expected_properties = self.source.properties().clone();
+                let mut expected_properties = self.before_properties().clone();
                 expected_properties
                     .clear_prop("_CIPComputed")
                     .map_err(OperationError::InvalidProperty)?;
@@ -2103,7 +2384,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     }
                 }
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinate_block_runtime()
+                    == self.before_coordinates()
                     && self.current_properties_candidate()? == &expected_properties
                     && self
                         .current_cache_candidate()?
@@ -2135,7 +2416,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
 
                 let candidate = self.current_topology_candidate()?;
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let mapping = self.topology_mapping.as_ref().ok_or_else(|| {
                     Self::effect_error(
                         self.spec,
@@ -2249,7 +2530,7 @@ impl<'a, Access> OpParts<'a, Access> {
             }
             PreservationProof::RadicalElectronAssignment => {
                 let candidate = self.current_topology_candidate()?;
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let atoms_only_change_radicals = candidate.atoms.len() == source.atoms.len()
                     && candidate.atoms.iter().zip(&source.atoms).all(
                         |(candidate_atom, source_atom)| {
@@ -2264,8 +2545,8 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.stereo_groups == source.stereo_groups
                     && candidate.adjacency == source.adjacency;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinate_block_runtime()
-                    && self.current_properties_candidate()? == self.source.properties()
+                    == self.before_coordinates()
+                    && self.current_properties_candidate()? == self.before_properties()
                     && self
                         .current_cache_candidate()?
                         .valid_states()
@@ -2286,7 +2567,7 @@ impl<'a, Access> OpParts<'a, Access> {
             }
             PreservationProof::KekulizeBondAssignment => {
                 let candidate = self.current_topology_candidate()?;
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let atoms_only_change_kekulize_fields = candidate.atoms.len() == source.atoms.len()
                     && candidate.atoms.iter().zip(&source.atoms).all(
                         |(candidate_atom, source_atom)| {
@@ -2313,8 +2594,8 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.stereo_groups == source.stereo_groups
                     && candidate.adjacency == source.adjacency;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinate_block_runtime()
-                    && self.current_properties_candidate()? == self.source.properties()
+                    == self.before_coordinates()
+                    && self.current_properties_candidate()? == self.before_properties()
                     && self
                         .current_cache_candidate()?
                         .valid_states()
@@ -2335,7 +2616,7 @@ impl<'a, Access> OpParts<'a, Access> {
             }
             PreservationProof::AromaticityAssignment => {
                 let candidate = self.current_topology_candidate()?;
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let atoms_only_change_aromaticity_fields = candidate.atoms.len()
                     == source.atoms.len()
                     && candidate.atoms.iter().zip(&source.atoms).all(
@@ -2362,8 +2643,8 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.stereo_groups == source.stereo_groups
                     && candidate.adjacency == source.adjacency;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinate_block_runtime()
-                    && self.current_properties_candidate()? == self.source.properties()
+                    == self.before_coordinates()
+                    && self.current_properties_candidate()? == self.before_properties()
                     && self
                         .current_cache_candidate()?
                         .valid_states()
@@ -2390,14 +2671,14 @@ impl<'a, Access> OpParts<'a, Access> {
                 // Existing proof variants and their checks remain unchanged.
                 let allowed = DerivedState::RING_FAMILIES.union(DerivedState::COORDINATES);
                 let candidate = self.current_topology_candidate()?;
-                let source = self.source.topology();
+                let source = self.before_topology();
                 // Preparation guard and its source anchors are owned by
                 // cosmolkit-forcefields/src/mmff/mol_properties.rs::new_prepared
                 // (ForceFieldHelpers/MMFF/AtomTyper.cpp:2354-2366).
                 // Structural permission only: the domain owner still selects
                 // Kekule bonds; runtime must not replay the chemical algorithm.
                 let kekulize_preparation =
-                    self.source.properties().prop("_MMFFSanitized").is_none()
+                    self.before_properties().prop("_MMFFSanitized").is_none()
                         && source.atoms.iter().any(|atom| atom.is_aromatic());
                 let expected_bond = |row: &cosmolkit_model::Bond, old: &cosmolkit_model::Bond| {
                     let mut expected = old.clone();
@@ -2441,7 +2722,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.substance_groups == source.substance_groups
                     && candidate.stereo_groups == source.stereo_groups;
                 let coordinates = self.current_coordinates_candidate()?;
-                let old_coordinates = self.source.coordinate_block_runtime();
+                let old_coordinates = self.before_coordinates();
                 let coordinate_metadata = coordinates.conformers_2d
                     == old_coordinates.conformers_2d
                     && coordinates.source_coordinate_dim == old_coordinates.source_coordinate_dim
@@ -2459,7 +2740,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     && coordinates
                         .validate_for_atom_count(source.atoms.len())
                         .is_ok();
-                let mut expected_properties = self.source.properties().clone();
+                let mut expected_properties = self.before_properties().clone();
                 // Exact native tag and computed-list lifecycle; every other
                 // property and its source insertion order remain checked.
                 if expected_properties.prop("_MMFFSanitized").is_none() {
@@ -2714,7 +2995,7 @@ impl<'a, Access> OpParts<'a, Access> {
             }
             PreservationProof::SanitizeTopologyState => {
                 let candidate = self.current_topology_candidate()?;
-                let source = self.source.topology();
+                let source = self.before_topology();
                 let atom_identity_is_stable = candidate.atoms.len() == source.atoms.len()
                     && candidate.atoms.iter().zip(&source.atoms).all(
                         |(candidate_atom, source_atom)| candidate_atom.id() == source_atom.id(),
@@ -2738,8 +3019,8 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.adjacency == source.adjacency
                     && candidate.substance_groups == source.substance_groups;
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
-                    == self.source.coordinate_block_runtime()
-                    && self.current_properties_candidate()? == self.source.properties()
+                    == self.before_coordinates()
+                    && self.current_properties_candidate()? == self.before_properties()
                     && self
                         .current_cache_candidate()?
                         .valid_states()
@@ -2835,15 +3116,15 @@ impl<'a, Access> OpParts<'a, Access> {
         const BOND_KEYS: [&str; 2] = ["_CIPCode", "_CIPNeighborOrder"];
         let candidate_topology = self.current_topology_candidate()?;
         let candidate_properties = self.current_properties_candidate()?;
-        if candidate_topology.atoms.len() != self.source.topology().atoms.len()
-            || candidate_topology.bonds.len() != self.source.topology().bonds.len()
+        if candidate_topology.atoms.len() != self.before_topology().atoms.len()
+            || candidate_topology.bonds.len() != self.before_topology().bonds.len()
         {
             return Ok(false);
         }
         for (candidate, source) in candidate_topology
             .atoms
             .iter()
-            .zip(&self.source.topology().atoms)
+            .zip(&self.before_topology().atoms)
         {
             for key in ATOM_KEYS {
                 if candidate.prop(key) != source.prop(key)
@@ -2864,7 +3145,7 @@ impl<'a, Access> OpParts<'a, Access> {
         for (candidate, source) in candidate_topology
             .bonds
             .iter()
-            .zip(&self.source.topology().bonds)
+            .zip(&self.before_topology().bonds)
         {
             for key in BOND_KEYS {
                 if candidate.prop(key) != source.prop(key)
@@ -2883,7 +3164,7 @@ impl<'a, Access> OpParts<'a, Access> {
             }
         }
         Ok(candidate_properties.prop("_CIPComputed")
-            == self.source.properties().prop("_CIPComputed")
+            == self.before_properties().prop("_CIPComputed")
             && candidate_properties
                 .is_prop_computed("_CIPComputed")
                 .map_err(|error| {
@@ -2920,7 +3201,7 @@ impl<'a, Access> OpParts<'a, Access> {
         if self.spec.cip_state != CipStatePolicy::Assign {
             return Err(error("selection evidence requires the Assign policy"));
         }
-        let before = self.source.topology();
+        let before = self.before_topology();
         let after = self.current_topology_candidate()?;
         if before.atoms.len() != after.atoms.len() || before.bonds.len() != after.bonds.len() {
             return Err(error("CIP assignment changed atom or bond counts"));
@@ -3131,7 +3412,8 @@ impl<'a, Access> OpParts<'a, Access> {
 
     #[cfg(feature = "op-contracts")]
     fn has_staged_state(&self) -> bool {
-        !matches!(self.topology, WorkingBlock::Shared)
+        !self.direct_writes.is_empty()
+            || !matches!(self.topology, WorkingBlock::Shared)
             || !matches!(self.coordinates, WorkingBlock::Shared)
             || !matches!(self.properties, WorkingBlock::Shared)
             || !matches!(self.derived_cache, WorkingBlock::Shared)
@@ -3258,7 +3540,8 @@ impl<'a, Access> OpParts<'a, Access> {
         let candidate_topology = self.current_topology_candidate()?;
         Self::validate_mapping_obligation(
             self.spec,
-            self.source.topology(),
+            self.original_atom_ids(),
+            self.original_bond_ids(),
             candidate_topology,
             self.topology_mapping.as_ref(),
             self.reconstruction_validated,
@@ -3342,18 +3625,22 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     pub(super) fn finish(self) -> Result<Molecule, OperationError> {
-        #[allow(unused_mut)]
         let mut owned = self;
+        owned.finish_value()
+    }
+
+    fn finish_value(&mut self) -> Result<Molecule, OperationError> {
+        let owned = self;
+        let (topology, coordinates, properties, derived_cache) = owned.finish_parts()?;
+        #[allow(unused_mut)]
+        let mut result =
+            Molecule::from_runtime_parts(topology, coordinates, properties, derived_cache)?;
         #[cfg(feature = "cap-descriptors")]
         let memo = matches!(
             owned.spec.cip_state,
             CipStatePolicy::Preserve | CipStatePolicy::Assign
         )
         .then(|| owned.source.take_descriptor_queries_runtime());
-        let (topology, coordinates, properties, derived_cache) = owned.finish_parts()?;
-        #[allow(unused_mut)]
-        let mut result =
-            Molecule::from_runtime_parts(topology, coordinates, properties, derived_cache)?;
         #[cfg(feature = "cap-descriptors")]
         if let Some(memo) = memo {
             result.install_descriptor_queries_runtime(memo);
@@ -3362,7 +3649,7 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     fn finish_parts(
-        self,
+        &mut self,
     ) -> Result<
         (
             Arc<TopologyBlock>,
@@ -3377,25 +3664,25 @@ impl<'a, Access> OpParts<'a, Access> {
         self.validate_candidate()?;
         let operation = self.spec.method;
         let topology = Self::materialize(
-            self.topology,
+            std::mem::replace(&mut self.topology, WorkingBlock::Shared),
             self.source.topology_arc_runtime(),
             operation,
             "topology",
         )?;
         let coordinates = Self::materialize(
-            self.coordinates,
+            std::mem::replace(&mut self.coordinates, WorkingBlock::Shared),
             self.source.coordinates_arc_runtime(),
             operation,
             "coordinates",
         )?;
         let properties = Self::materialize(
-            self.properties,
+            std::mem::replace(&mut self.properties, WorkingBlock::Shared),
             self.source.properties_arc_runtime(),
             operation,
             "properties",
         )?;
         let derived_cache = Self::materialize(
-            self.derived_cache,
+            std::mem::replace(&mut self.derived_cache, WorkingBlock::Shared),
             self.source.derived_cache_arc_runtime(),
             operation,
             "derived_cache",
@@ -3408,13 +3695,22 @@ impl<'a, Access> OpParts<'a, Access> {
             return;
         }
 
-        // The authoritative target is not replaced until `finish_in_place`.
-        // Explicitly discard every staged value and its contract evidence so
-        // the body-error path cannot retain a checked-out block, mapping, or
-        // derived-state transition and cannot accidentally be finalized by a
-        // later internal call. The Arc-backed source is the same cheap COW
-        // input used by the operation body; no second rollback runtime or
-        // mutable live-state handle is created here.
+        // Staged replacements roll back by dropping their detached values.
+        // Scoped in-place writes follow the documented basic guarantee: keep
+        // complete storage and invalidate derived state affected by the edit.
+        if !self.direct_writes.is_empty() {
+            self.source.clear_operation_cache_runtime(
+                &RuntimeWritePermit(()),
+                self.spec
+                    .derived_effects
+                    .invalidate
+                    .union(self.spec.derived_effects.recompute)
+                    .union(self.spec.derived_effects.operation_defined),
+            );
+            #[cfg(feature = "cap-descriptors")]
+            drop(self.source.take_descriptor_queries_runtime());
+            self.direct_writes = BlockSet::NONE;
+        }
         self.topology = WorkingBlock::Shared;
         self.coordinates = WorkingBlock::Shared;
         self.properties = WorkingBlock::Shared;
@@ -3425,6 +3721,7 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     pub(super) fn finish_in_place(mut self) -> Result<(), OperationError> {
+        let replacement = self.finish_value()?;
         let target = self
             .in_place_target
             .take()
@@ -3432,9 +3729,19 @@ impl<'a, Access> OpParts<'a, Access> {
                 operation: self.spec.method,
                 block: "in_place_target",
             })?;
-        let replacement = self.finish()?;
         *target = replacement;
         Ok(())
+    }
+}
+
+impl<Access> Drop for OpParts<'_, Access> {
+    fn drop(&mut self) {
+        if self.in_place_target.is_some() {
+            self.abort_in_place();
+            if let Some(target) = self.in_place_target.take() {
+                *target = std::mem::replace(&mut self.source, Molecule::new());
+            }
+        }
     }
 }
 
@@ -3598,6 +3905,15 @@ pub(super) fn validate_multiple_candidate(
         in_place_target: None,
         access: PhantomData,
         pending_identity: None,
+        direct_writes: BlockSet::NONE,
+        #[cfg(feature = "op-contracts")]
+        original_rows: None,
+        #[cfg(feature = "op-contracts")]
+        original_topology: None,
+        #[cfg(feature = "op-contracts")]
+        original_coordinates: None,
+        #[cfg(feature = "op-contracts")]
+        original_properties: None,
     };
 
     #[cfg(feature = "op-contracts")]
@@ -3925,5 +4241,230 @@ mod property_list_audit_tests {
             );
             assert_eq!(properties, before);
         }
+    }
+}
+
+#[cfg(test)]
+mod scoped_cow_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Default)]
+    struct Counted(Vec<u8>);
+    static CLONES: AtomicUsize = AtomicUsize::new(0);
+    impl Clone for Counted {
+        fn clone(&self) -> Self {
+            CLONES.fetch_add(1, Ordering::Relaxed);
+            Self(self.0.clone())
+        }
+    }
+
+    #[test]
+    fn scoped_storage_detaches_only_shared_writes_and_restores_on_unwind() {
+        CLONES.store(0, Ordering::Relaxed);
+        let mut block = Arc::new(Counted(vec![1, 2]));
+        let allocation = Arc::as_ptr(&block);
+        let rows = block.0.as_ptr();
+        with_cow(&mut block, |value| value.to_mut().0[0] = 3);
+        assert_eq!(allocation, Arc::as_ptr(&block));
+        assert_eq!(rows, block.0.as_ptr());
+        assert_eq!(CLONES.load(Ordering::Relaxed), 0);
+        let peer = block.clone();
+        with_cow(&mut block, |value| assert_eq!(value.0[0], 3));
+        assert!(Arc::ptr_eq(&peer, &block));
+        with_cow(&mut block, |value| value.to_mut().0[0] = 4);
+        assert_eq!(CLONES.load(Ordering::Relaxed), 1);
+        assert_eq!(peer.0, [3, 2]);
+        let rows = block.0.as_ptr();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            with_cow(&mut block, |value| {
+                value.to_mut().0[1] = 5;
+                panic!("scoped failure");
+            });
+        }));
+        assert!(result.is_err());
+        assert_eq!(block.0, [4, 5]);
+        assert_eq!(rows, block.0.as_ptr());
+        assert_eq!(CLONES.load(Ordering::Relaxed), 1);
+        static ALTERNATE: std::sync::LazyLock<Counted> =
+            std::sync::LazyLock::new(|| Counted(vec![9]));
+        let peer = block.clone();
+        with_cow(&mut block, |value| *value = Cow::Borrowed(&ALTERNATE));
+        assert_eq!(block.0, [9]);
+        assert_eq!(peer.0, [4, 5]);
+        assert_eq!(CLONES.load(Ordering::Relaxed), 2);
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    #[test]
+    fn in_place_scope_owns_storage_and_prepare_errors_leave_input_untouched() {
+        use cosmolkit_model::{Atom, AtomId, AtomSpec, Element};
+        let mut molecule = Molecule::from_parts(
+            TopologyBlock::try_from_parts(
+                vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap(),
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+        )
+        .unwrap();
+        let rows = molecule.topology().atoms.as_ptr();
+        let coordinates = molecule.coordinates_arc_runtime();
+        let properties = molecule.properties_arc_runtime();
+        let spec = crate::operation_spec("with_atom_replaced").unwrap();
+        {
+            let mut parts = OpParts::<()>::new_in_place(&mut molecule, spec).unwrap();
+            let result = parts.edit_topology_runtime(
+                |_| {
+                    Err::<(), _>(OperationError::IncompleteCommit {
+                        operation: spec.method,
+                        block: "test prepare",
+                    })
+                },
+                |_, ()| Ok(()),
+            );
+            assert!(result.is_err());
+        }
+        assert_eq!(rows, molecule.topology().atoms.as_ptr());
+        {
+            let mut parts = OpParts::<()>::new_in_place(&mut molecule, spec).unwrap();
+            parts
+                .edit_topology_runtime(
+                    |_| Ok(()),
+                    |t, ()| {
+                        t.to_mut().atoms[0] =
+                            Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::N));
+                        Ok(())
+                    },
+                )
+                .unwrap();
+            // Dropping before finalization follows the basic in-place guarantee.
+        }
+        assert_eq!(rows, molecule.topology().atoms.as_ptr());
+        assert_eq!(molecule.topology().atoms[0].atomic_number(), 7);
+        assert!(Arc::ptr_eq(
+            &coordinates,
+            &molecule.coordinates_arc_runtime()
+        ));
+        assert!(Arc::ptr_eq(&properties, &molecule.properties_arc_runtime()));
+        let atom_view = molecule.atom(AtomId::new(0)).unwrap();
+        {
+            let mut parts = OpParts::<()>::new_in_place(&mut molecule, spec).unwrap();
+            parts
+                .edit_topology_runtime(
+                    |_| Ok(()),
+                    |t, ()| {
+                        t.to_mut().atoms[0] =
+                            Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::O));
+                        Ok(())
+                    },
+                )
+                .unwrap();
+        }
+        assert_eq!(atom_view.atomic_number(), 7);
+        assert_eq!(molecule.topology().atoms[0].atomic_number(), 8);
+        assert_ne!(rows, molecule.topology().atoms.as_ptr());
+    }
+    #[cfg(feature = "cap-transforms")]
+    #[test]
+    fn public_scoped_edits_reuse_unique_buffers_and_share_unwritten_blocks() {
+        use cosmolkit_model::{Atom, AtomId, AtomSpec, Conformer3D, Element};
+        let mut atoms = Vec::with_capacity(8);
+        atoms.push(Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)));
+        let mut xyz = Vec::with_capacity(8);
+        xyz.push([-0.0, 1.0, 2.0]);
+        let mut molecule = Molecule::from_parts(
+            TopologyBlock::try_from_parts(atoms, vec![], vec![], vec![]).unwrap(),
+            CoordinateBlock {
+                conformers_3d: vec![Conformer3D::new(4, xyz, true)],
+                ..Default::default()
+            },
+            MoleculeProperties::default()
+                .with_prop("tag", "retained")
+                .unwrap(),
+        )
+        .unwrap();
+        let invalid = AtomSpec::new(Element::N).with_template_attachment_order(
+            cosmolkit_model::TemplateAttachmentOrder::new(vec![
+                cosmolkit_model::TemplateAttachment::new(AtomId::new(99), "bad"),
+            ])
+            .unwrap(),
+        );
+        let before = molecule.topology().atoms.as_ptr();
+        assert!(matches!(
+            molecule.replace_atom_(AtomId::new(0), &invalid, false),
+            Err(OperationError::IndexedGraph(
+                crate::IndexedGraphError::Topology(
+                    cosmolkit_model::TopologyValidationError::TemplateAttachmentOrder { .. }
+                )
+            ))
+        ));
+        assert_eq!(before, molecule.topology().atoms.as_ptr());
+        assert_eq!(molecule.topology().atoms[0].atomic_number(), 6);
+        let rows = molecule.topology().atoms.as_ptr();
+        let xyz = molecule.coordinate_block_runtime().conformers_3d[0]
+            .coordinates()
+            .as_ptr();
+        let properties = molecule.properties_arc_runtime();
+        let coordinates = molecule.coordinates_arc_runtime();
+        assert!(
+            molecule
+                .replace_atom_(AtomId::new(99), &AtomSpec::new(Element::N), false)
+                .is_err()
+        );
+        assert_eq!(rows, molecule.topology().atoms.as_ptr());
+        molecule
+            .replace_atom_(AtomId::new(0), &AtomSpec::new(Element::N), false)
+            .unwrap();
+        assert_eq!(rows, molecule.topology().atoms.as_ptr());
+        assert!(Arc::ptr_eq(
+            &coordinates,
+            &molecule.coordinates_arc_runtime()
+        ));
+        assert!(Arc::ptr_eq(&properties, &molecule.properties_arc_runtime()));
+        let value = molecule
+            .with_atom_replaced(AtomId::new(0), &AtomSpec::new(Element::O), false)
+            .unwrap();
+        assert!(Arc::ptr_eq(&coordinates, &value.coordinates_arc_runtime()));
+        assert!(Arc::ptr_eq(&properties, &value.properties_arc_runtime()));
+        assert_eq!(molecule.topology().atoms[0].atomic_number(), 7);
+        drop(value);
+        // Drop our observation handle before testing uniquely owned coordinate writes.
+        drop(coordinates);
+        let right = Molecule::from_parts(
+            TopologyBlock::try_from_parts(
+                vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::O))],
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap(),
+            CoordinateBlock {
+                conformers_3d: vec![Conformer3D::new(4, vec![[3.0, 4.0, 5.0]], true)],
+                ..Default::default()
+            },
+            MoleculeProperties::default(),
+        )
+        .unwrap();
+        molecule.insert_molecule_(&right).unwrap();
+        assert_eq!(rows, molecule.topology().atoms.as_ptr());
+        assert_eq!(
+            xyz,
+            molecule.coordinate_block_runtime().conformers_3d[0]
+                .coordinates()
+                .as_ptr()
+        );
+        assert!(Arc::ptr_eq(&properties, &molecule.properties_arc_runtime()));
+        assert_eq!(molecule.num_atoms(), 2);
+        let coord = molecule.coordinate_block_runtime().conformers_3d[0].coordinates();
+        assert_eq!(coord[0][0].to_bits(), (-0.0f64).to_bits());
+        assert_eq!(coord[1], [3.0, 4.0, 5.0]);
+        molecule
+            .set_atom_property_(AtomId::new(0), "label", &crate::PropertyValue::from("test"))
+            .unwrap();
+        assert_eq!(rows, molecule.topology().atoms.as_ptr());
     }
 }

@@ -196,16 +196,14 @@ impl Molecule {
     }
 
     /// Append the other graph without an inter-molecular bond. Match coordinate sets by dimension and ID. Changes this molecule.
-    fn insert_molecule_(slf: &Bound<'_, Self>, right: &Bound<'_, Self>) -> PyResult<()> {
-        let snapshot = right.try_borrow()?.inner.clone();
-        slf.try_borrow_mut()?
-            .inner
-            .insert_molecule_(&snapshot)
+    fn insert_molecule_(&mut self, right: &Self) -> PyResult<()> {
+        self.inner
+            .insert_molecule_(&right.inner)
             .map_err(OperationError::from_rust)
     }
 
-    /// Return a new molecule and local-to-source mappings for the selected atoms and bonds. By default all conformers follow the selected rows and the subset is not sanitized.
-    #[pyo3(signature=(selection,params=Argument::Missing,*,sanitize=Argument::Missing,copy_coordinates=Argument::Missing,clear_computed_props=Argument::Missing))]
+    /// Return a new molecule and local-to-source mappings for the selected atoms and bonds. By default conformers follow the selected rows, the subset is not sanitized and SGroups are omitted. Set preserve_sgroups to retain complete source-selected groups; unrepresentable references raise an error.
+    #[pyo3(signature=(selection,params=Argument::Missing,*,sanitize=Argument::Missing,copy_coordinates=Argument::Missing,clear_computed_props=Argument::Missing,preserve_sgroups=Argument::Missing))]
     fn extract_subgraph(
         &self,
         py: Python<'_>,
@@ -214,17 +212,20 @@ impl Molecule {
         sanitize: Argument<Option<bool>>,
         copy_coordinates: Argument<Option<bool>>,
         clear_computed_props: Argument<Option<bool>>,
+        preserve_sgroups: Argument<Option<bool>>,
     ) -> PyResult<MappedSubgraph> {
         let keywords = sanitize.is_supplied()
             || copy_coordinates.is_supplied()
-            || clear_computed_props.is_supplied();
-        configuration_arguments!(params; sanitize,copy_coordinates,clear_computed_props);
+            || clear_computed_props.is_supplied()
+            || preserve_sgroups.is_supplied();
+        configuration_arguments!(params; sanitize,copy_coordinates,clear_computed_props,preserve_sgroups);
         if keywords {
             self._extract_subgraph_keywords(
                 selection,
                 sanitize,
                 copy_coordinates,
                 clear_computed_props,
+                preserve_sgroups,
             )
         } else {
             self._extract_subgraph_params(py, selection, params.as_deref())
@@ -248,19 +249,21 @@ impl Molecule {
             .map_err(OperationError::from_rust)
     }
     #[doc = r#"{"role":"overload","target":"Molecule.extract_subgraph"}"#]
-    #[pyo3(signature=(selection,*,sanitize=None,copy_coordinates=None,clear_computed_props=None))]
+    #[pyo3(signature=(selection,*,sanitize=None,copy_coordinates=None,clear_computed_props=None,preserve_sgroups=None))]
     fn _extract_subgraph_keywords(
         &self,
         selection: &SubgraphSelection,
         sanitize: Option<bool>,
         copy_coordinates: Option<bool>,
         clear_computed_props: Option<bool>,
+        preserve_sgroups: Option<bool>,
     ) -> PyResult<MappedSubgraph> {
         let defaults = ck::SubgraphExtractionParams::default();
         let p = ck::SubgraphExtractionParams {
             sanitize: sanitize.unwrap_or(defaults.sanitize),
             copy_coordinates: copy_coordinates.unwrap_or(defaults.copy_coordinates),
             clear_computed_props: clear_computed_props.unwrap_or(defaults.clear_computed_props),
+            preserve_sgroups: preserve_sgroups.unwrap_or(defaults.preserve_sgroups),
         };
         self.inner
             .extract_subgraph_with_params(&selection.inner, &p)
@@ -277,8 +280,8 @@ impl Molecule {
         self._extract_subgraph_params(py, selection, Some(params))
     }
 
-    /// Retain the selected graph in this molecule; return its local-to-source mapping. By default all conformers follow the selected rows and the subset is not sanitized.
-    #[pyo3(signature=(selection,params=Argument::Missing,*,sanitize=Argument::Missing,copy_coordinates=Argument::Missing,clear_computed_props=Argument::Missing))]
+    /// Retain the selected graph in this molecule; return its local-to-source mapping. By default conformers follow the selected rows, the subset is not sanitized and SGroups are omitted. Set preserve_sgroups to retain complete source-selected groups; unrepresentable references raise an error.
+    #[pyo3(signature=(selection,params=Argument::Missing,*,sanitize=Argument::Missing,copy_coordinates=Argument::Missing,clear_computed_props=Argument::Missing,preserve_sgroups=Argument::Missing))]
     fn retain_subgraph_(
         &mut self,
         py: Python<'_>,
@@ -287,17 +290,20 @@ impl Molecule {
         sanitize: Argument<Option<bool>>,
         copy_coordinates: Argument<Option<bool>>,
         clear_computed_props: Argument<Option<bool>>,
+        preserve_sgroups: Argument<Option<bool>>,
     ) -> PyResult<SubgraphMapping> {
         let keywords = sanitize.is_supplied()
             || copy_coordinates.is_supplied()
-            || clear_computed_props.is_supplied();
-        configuration_arguments!(params; sanitize,copy_coordinates,clear_computed_props);
+            || clear_computed_props.is_supplied()
+            || preserve_sgroups.is_supplied();
+        configuration_arguments!(params; sanitize,copy_coordinates,clear_computed_props,preserve_sgroups);
         if keywords {
             self._retain_subgraph_keywords(
                 selection,
                 sanitize,
                 copy_coordinates,
                 clear_computed_props,
+                preserve_sgroups,
             )
         } else {
             self._retain_subgraph_params(py, selection, params.as_deref())
@@ -321,19 +327,21 @@ impl Molecule {
             .map_err(OperationError::from_rust)
     }
     #[doc = r#"{"role":"overload","target":"Molecule.retain_subgraph_"}"#]
-    #[pyo3(signature=(selection,*,sanitize=None,copy_coordinates=None,clear_computed_props=None))]
+    #[pyo3(signature=(selection,*,sanitize=None,copy_coordinates=None,clear_computed_props=None,preserve_sgroups=None))]
     fn _retain_subgraph_keywords(
         &mut self,
         selection: &SubgraphSelection,
         sanitize: Option<bool>,
         copy_coordinates: Option<bool>,
         clear_computed_props: Option<bool>,
+        preserve_sgroups: Option<bool>,
     ) -> PyResult<SubgraphMapping> {
         let defaults = ck::SubgraphExtractionParams::default();
         let p = ck::SubgraphExtractionParams {
             sanitize: sanitize.unwrap_or(defaults.sanitize),
             copy_coordinates: copy_coordinates.unwrap_or(defaults.copy_coordinates),
             clear_computed_props: clear_computed_props.unwrap_or(defaults.clear_computed_props),
+            preserve_sgroups: preserve_sgroups.unwrap_or(defaults.preserve_sgroups),
         };
         self.inner
             .retain_subgraph_with_params_(&selection.inner, &p)

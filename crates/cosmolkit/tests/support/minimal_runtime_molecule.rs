@@ -28,6 +28,12 @@ impl DerivedCacheBlock {
         self.valid = self.valid.difference(states);
     }
 
+    pub(crate) fn clone_clearing(&self, states: DerivedState) -> Self {
+        Self {
+            valid: self.valid.difference(states),
+        }
+    }
+
     pub(crate) fn validate_for_topology(
         &self,
         _topology: &TopologyBlock,
@@ -65,12 +71,59 @@ impl PartialEq for Molecule {
 }
 
 impl Molecule {
+    pub fn new() -> Self {
+        Self::from_parts(
+            TopologyBlock::default(),
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+        )
+        .expect("the statically empty molecule blocks are valid")
+    }
+
     pub(crate) fn operation_snapshot_runtime(
         &self,
         _preserve_queries: bool,
         _operation: &'static str,
     ) -> Result<Self, OperationError> {
         Ok(self.clone())
+    }
+
+    pub(crate) fn check_operation_queries_runtime(
+        &self,
+        _operation: &'static str,
+    ) -> Result<(), OperationError> {
+        // No descriptor memo exists in this fixture, so it cannot be poisoned.
+        Ok(())
+    }
+
+    pub(crate) fn with_operation_blocks_runtime<R>(
+        &mut self,
+        _permit: &crate::context::RuntimeWritePermit,
+        body: impl FnOnce(
+            &mut Arc<TopologyBlock>,
+            &mut Arc<CoordinateBlock>,
+            &mut Arc<MoleculeProperties>,
+        ) -> R,
+    ) -> R {
+        let state = Arc::make_mut(&mut self.state);
+        body(
+            &mut state.topology,
+            &mut state.coordinates,
+            &mut state.properties,
+        )
+    }
+
+    pub(crate) fn clear_operation_cache_runtime(
+        &mut self,
+        _permit: &crate::context::RuntimeWritePermit,
+        states: DerivedState,
+    ) {
+        let state = Arc::make_mut(&mut self.state);
+        if let Some(cache) = Arc::get_mut(&mut state.derived_cache) {
+            cache.clear(states);
+        } else {
+            state.derived_cache = Arc::new(state.derived_cache.clone_clearing(states));
+        }
     }
 
     // This synthetic fixture models no descriptor memo. Actual copy/clear and
@@ -110,9 +163,11 @@ impl Molecule {
         derived_cache: Arc<DerivedCacheBlock>,
         runtime_constructions: usize,
     ) -> Result<Self, OperationError> {
+        #[cfg(feature = "runtime-invariants")]
         topology
             .validate()
             .map_err(OperationError::InvalidTopology)?;
+        #[cfg(any(feature = "runtime-invariants", feature = "op-contracts"))]
         coordinates
             .validate_for_atom_count(topology.atoms.len())
             .map_err(OperationError::InvalidCoordinates)?;

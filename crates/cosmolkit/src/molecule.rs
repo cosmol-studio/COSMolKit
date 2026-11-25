@@ -256,6 +256,76 @@ impl DerivedCacheBlock {
         self.valid = self.valid.union(states);
     }
 
+    pub(crate) fn clone_clearing(&self, states: DerivedState) -> Self {
+        Self {
+            valid: self.valid.difference(states),
+            #[cfg(any(
+                feature = "cap-inchi",
+                feature = "cap-transforms",
+                feature = "cap-valence",
+                feature = "cap-kekulize",
+                feature = "cap-stereo",
+                feature = "cap-fingerprints",
+                feature = "cap-hydrogens",
+                feature = "cap-smiles",
+                feature = "cap-io",
+                feature = "cap-stereoisomers",
+                feature = "cap-sanitize",
+                feature = "cap-descriptors",
+                feature = "cap-forcefields",
+                feature = "cap-tautomer",
+                feature = "cap-reaction",
+                feature = "cap-hashing",
+                feature = "cap-serialization",
+                feature = "cap-io"
+            ))]
+            valence: if states.contains(DerivedState::VALENCE) {
+                None
+            } else {
+                self.valence.clone()
+            },
+            #[cfg(any(
+                feature = "cap-inchi",
+                feature = "cap-transforms",
+                feature = "cap-rings",
+                feature = "cap-stereo",
+                feature = "cap-descriptors",
+                feature = "cap-smiles",
+                feature = "cap-io",
+                feature = "cap-stereoisomers",
+                feature = "cap-sanitize",
+                feature = "cap-hydrogens",
+                feature = "cap-kekulize",
+                feature = "cap-aromaticity",
+                feature = "cap-forcefields",
+                feature = "cap-fingerprints",
+                feature = "cap-tautomer",
+                feature = "cap-reaction",
+                feature = "cap-hashing",
+                feature = "cap-serialization",
+                feature = "cap-io"
+            ))]
+            rings: if states.contains(DerivedState::RINGS) {
+                None
+            } else {
+                self.rings.clone()
+            },
+            #[cfg(any(
+                feature = "cap-inchi",
+                feature = "cap-rings",
+                feature = "cap-stereo",
+                feature = "cap-fingerprints",
+                feature = "cap-serialization",
+                feature = "cap-io"
+            ))]
+            ring_families: if states.contains(DerivedState::RING_FAMILIES) {
+                None
+            } else {
+                self.ring_families.clone()
+            },
+        }
+    }
+
     pub(crate) fn clear(&mut self, states: DerivedState) {
         self.valid = self.valid.difference(states);
         #[cfg(any(
@@ -1182,8 +1252,60 @@ impl Molecule {
         })
     }
 
-    /// Move the already copied transaction memo into its validated result.
-    /// The operation snapshot is private, unpoisoned and never queried by bodies.
+    pub(crate) fn check_operation_queries_runtime(
+        &self,
+        operation: &'static str,
+    ) -> Result<(), OperationError> {
+        #[cfg(feature = "cap-descriptors")]
+        drop(
+            self.descriptor_queries_runtime()
+                .map_err(|_| OperationError::OperationContract {
+                    operation,
+                    field: "descriptor_query_cache",
+                    issue: "descriptor query cache is poisoned",
+                    expected: 0,
+                    actual: 1,
+                })?,
+        );
+        #[cfg(not(feature = "cap-descriptors"))]
+        let _ = operation;
+        Ok(())
+    }
+
+    pub(crate) fn with_operation_blocks_runtime<R>(
+        &mut self,
+        _permit: &crate::ops::RuntimeWritePermit,
+        body: impl FnOnce(
+            &mut Arc<TopologyBlock>,
+            &mut Arc<CoordinateBlock>,
+            &mut Arc<MoleculeProperties>,
+        ) -> R,
+    ) -> R {
+        // Detach the state header first: atom views can share the header even
+        // when each individual block Arc has a single strong owner.
+        let state = Arc::make_mut(&mut self.state);
+        body(
+            &mut state.topology,
+            &mut state.coordinates,
+            &mut state.properties,
+        )
+    }
+
+    pub(crate) fn clear_operation_cache_runtime(
+        &mut self,
+        _permit: &crate::ops::RuntimeWritePermit,
+        states: crate::DerivedState,
+    ) {
+        let state = Arc::make_mut(&mut self.state);
+        if let Some(cache) = Arc::get_mut(&mut state.derived_cache) {
+            cache.clear(states);
+        } else {
+            state.derived_cache = Arc::new(state.derived_cache.clone_clearing(states));
+        }
+    }
+
+    /// Move the operation-owned memo into its validated result. Value operations
+    /// own a policy snapshot; in-place operations own the original memo.
     #[cfg(feature = "cap-descriptors")]
     pub(crate) fn take_descriptor_queries_runtime(
         &mut self,

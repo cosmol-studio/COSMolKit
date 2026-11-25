@@ -181,8 +181,11 @@ sequence between components; ``bond_between_atoms`` returns ``None`` for a missi
 ``SubgraphSelection.atoms`` includes bonds between selected atoms. Use ``bonds``
 for bonds and their endpoints, or ``atoms_and_bonds`` to specify both sets. An
 explicit empty bond set keeps the selected atoms disconnected. Extraction copies
-all conformers by default, without sanitization. The detached mapping points to
-the molecule at call entry. ``retain_subgraph_`` edits that molecule and returns
+all conformers by default, without sanitization or SGroups. Set
+``preserve_sgroups=True`` to retain groups selected by RDKit's subset membership
+rule. A selected group whose parent or auxiliary references cannot be represented
+in the extracted graph raises an error instead of being silently discarded.
+The detached mapping points to the molecule at call entry. ``retain_subgraph_`` edits that molecule and returns
 the mapping directly.
 
 ``without_atom`` removes one atom and its incident bonds. ``with_atom_replaced``

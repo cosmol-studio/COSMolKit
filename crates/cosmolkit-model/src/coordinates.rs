@@ -153,6 +153,11 @@ impl Conformer2D {
         &self.coords
     }
 
+    /// Append already validated coordinate rows to this detached conformer.
+    pub fn append_atom_positions(&mut self, positions: &[[f64; 2]]) {
+        self.coords.extend_from_slice(positions);
+    }
+
     pub fn coordinates_mut(&mut self) -> &mut [[f64; 2]] {
         &mut self.coords
     }
@@ -291,6 +296,11 @@ impl Conformer3D {
         // Detached model conformers have no owning-molecule pointer, so the
         // source ownership precondition is unreachable in the modeled state.
         &self.coords
+    }
+
+    /// Append already validated coordinate rows to this detached conformer.
+    pub fn append_atom_positions(&mut self, positions: &[[f64; 3]]) {
+        self.coords.extend_from_slice(positions);
     }
 
     pub fn coordinates_mut(&mut self) -> &mut [[f64; 3]] {

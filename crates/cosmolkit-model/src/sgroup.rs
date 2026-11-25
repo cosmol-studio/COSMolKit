@@ -2186,7 +2186,8 @@ fn remove_source_groups_referencing<E: From<crate::TopologyEditError>>(
     Ok(())
 }
 
-pub(crate) fn remove_source_groups_referencing_bond<E: From<crate::TopologyEditError>>(
+#[doc(hidden)]
+pub fn remove_source_groups_referencing_bond<E: From<crate::TopologyEditError>>(
     groups: &mut Vec<SubstanceGroup>,
     bond: BondId,
     uint_reader: &mut (impl FnMut(&PropertyValue) -> Result<u32, E> + ?Sized),

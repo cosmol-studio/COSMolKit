@@ -91,10 +91,16 @@ pub(crate) fn with_atom_replaced_impl(
     replacement: &crate::AtomSpec,
     preserve_props: bool,
 ) -> Result<(), OperationError> {
-    parts.transform_mapped_blocks(|t, c, p| {
-        core::replace_atom(t, c, p, atom, replacement, preserve_props)
-            .map_err(OperationError::IndexedGraph)
-    })?;
+    parts.edit_topology(
+        |t| {
+            core::prepare_atom_replacement(t, atom, replacement, preserve_props)
+                .map_err(OperationError::IndexedGraph)
+        },
+        |t, replacement| {
+            core::replace_atom(t, replacement);
+            Ok(())
+        },
+    )?;
     parts.clear_cache(GRAPH_DERIVED)?;
     parts.apply_cip_policy()
 }
@@ -106,20 +112,26 @@ pub(crate) fn with_bond_replaced_impl(
     preserve_props: bool,
     keep_sgroups: bool,
 ) -> Result<(), OperationError> {
-    parts.transform_mapped_blocks(|t, c, p| {
-        core::replace_bond(t, c, p, bond, replacement, preserve_props, keep_sgroups)
-            .map_err(OperationError::IndexedGraph)
-    })?;
+    parts.edit_topology(
+        |t| {
+            core::prepare_bond_replacement(t, bond, replacement, preserve_props, keep_sgroups)
+                .map_err(OperationError::IndexedGraph)
+        },
+        |t, prepared| core::replace_bond(t, prepared).map_err(OperationError::IndexedGraph),
+    )?;
     parts.clear_cache(GRAPH_DERIVED)?;
     parts.apply_cip_policy()
 }
 
 #[mol_op_body(with_molecule_appended, parts)]
 pub(crate) fn with_molecule_appended_impl(right: &crate::Molecule) -> Result<(), OperationError> {
-    parts.transform_mapped_blocks(|t, c, p| {
-        core::append_molecule(t, c, p, right.topology(), right.coordinate_block_runtime())
-            .map_err(OperationError::IndexedGraph)
-    })?;
+    parts.edit_mapped_blocks(
+        |t, c, _| {
+            core::prepare_molecule_append(t, c, right.topology(), right.coordinate_block_runtime())
+                .map_err(OperationError::IndexedGraph)
+        },
+        |t, c, p, prepared| Ok(core::append_molecule(t, c, p, prepared)),
+    )?;
     parts.clear_cache(GRAPH_DERIVED)?;
     parts.apply_cip_policy()
 }

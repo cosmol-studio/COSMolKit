@@ -844,23 +844,33 @@ fn validate_cip_transition(
                 ) | ("largest_fragment", MoleculeOutput::Single)
             )
         };
-        let valid = allowed
-            && operation == method
-            && kind == OperationKind::Strong
+        let local_blocks = [MoleculeBlock::Topology, MoleculeBlock::DerivedCache];
+        let local = cip_state == CipStatePolicy::IndexedGraphSourceTransition
+            && kind == OperationKind::Weak
+            && mapping == MappingRequirement::None
+            && access.write.len() == local_blocks.len()
+            && may_mutate.len() == local_blocks.len()
+            && local_blocks
+                .iter()
+                .all(|b| access.write.contains(b) && may_mutate.contains(b));
+        let mapped = kind == OperationKind::Strong
             && mapping == MappingRequirement::Required
-            && access.read.is_empty()
             && access.write.len() == blocks.len()
             && may_mutate.len() == blocks.len()
             && blocks
                 .iter()
-                .all(|b| access.write.contains(b) && may_mutate.contains(b))
-            && auto_remap.is_empty();
+                .all(|b| access.write.contains(b) && may_mutate.contains(b));
+        let valid = allowed
+            && operation == method
+            && access.read.is_empty()
+            && auto_remap.is_empty()
+            && (local || mapped);
         return if valid {
             Ok(())
         } else {
             Err(syn::Error::new(
                 operation.span(),
-                "source transition requires a declared strong graph operation, a mapping and four write-owned blocks",
+                "source transition requires either stable-row topology/cache authority or a mapped strong graph edit",
             ))
         };
     }

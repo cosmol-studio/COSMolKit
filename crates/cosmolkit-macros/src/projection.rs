@@ -425,6 +425,40 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
         });
     }
 
+    if operation.fields.output == MoleculeOutput::Single
+        && operation.fields.auto_remap.is_empty()
+        && operation
+            .fields
+            .access
+            .write
+            .contains(&MoleculeBlock::Topology)
+    {
+        methods.push(quote! {
+            pub(crate) fn edit_topology<P, R>(
+                &mut self,
+                prepare: impl FnOnce(&cosmolkit_model::TopologyBlock) -> Result<P, crate::OperationError>,
+                body: impl FnOnce(&mut std::borrow::Cow<'_, cosmolkit_model::TopologyBlock>, P) -> Result<R, crate::OperationError>,
+            ) -> Result<R, crate::OperationError> {
+                self.edit_topology_runtime(prepare, body)
+            }
+        });
+        if operation.fields.requires_mapping == MappingRequirement::Required
+            && [MoleculeBlock::Coordinates, MoleculeBlock::Properties]
+                .iter()
+                .all(|block| operation.fields.access.write.contains(block))
+        {
+            methods.push(quote! {
+                pub(crate) fn edit_mapped_blocks<P>(
+                    &mut self,
+                    prepare: impl FnOnce(&cosmolkit_model::TopologyBlock, &cosmolkit_model::CoordinateBlock, &cosmolkit_model::MoleculeProperties) -> Result<P, crate::OperationError>,
+                    body: impl FnOnce(&mut std::borrow::Cow<'_, cosmolkit_model::TopologyBlock>, &mut std::borrow::Cow<'_, cosmolkit_model::CoordinateBlock>, &mut std::borrow::Cow<'_, cosmolkit_model::MoleculeProperties>, P) -> Result<cosmolkit_model::TopologyMapping, crate::OperationError>,
+                ) -> Result<(), crate::OperationError> {
+                    self.edit_mapped_blocks_runtime(prepare, body)
+                }
+            });
+        }
+    }
+
     if operation.fields.requires_mapping != MappingRequirement::None {
         methods.push(quote! {
             pub(crate) fn record_topology_mapping(&mut self, mapping: cosmolkit_model::TopologyMapping) -> Result<(), crate::OperationError> {

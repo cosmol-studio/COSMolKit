@@ -71,7 +71,7 @@ protocol-tests = []
 
 [dependencies]
 cosmolkit = { version = "0.6.3", path = "../crates/cosmolkit", default-features = false }
-wasm-bindgen = "=0.2.128"
+wasm-bindgen = "=0.2.130"
 js-sys = "0.3"
 tsify = { version = "=0.5.8", default-features = false, features = ["js"] }
 serde = { version = "1", features = ["derive"] }

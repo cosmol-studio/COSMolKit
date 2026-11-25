@@ -185,7 +185,12 @@ fn source_shape_keeps_state_cache_and_cow_install_private() {
     ] {
         assert!(source.contains(shared_block));
     }
-    assert!(context.contains("let replacement = self.finish()?;"));
+    // Finalization borrows the transaction so Drop can restore its owned
+    // receiver on failure. Commit authority still stays inside this runtime.
+    assert!(context.contains("let replacement = self.finish_value()?;"));
+    assert_eq!(context.matches("fn finish_value(&mut self)").count(), 1);
+    assert!(!context.contains("pub(crate) fn finish_value"));
+    assert!(!context.contains("pub(super) fn finish_value"));
     assert!(context.contains("*target = replacement;"));
     assert!(!source.contains("pub struct MoleculeState"));
     assert!(!source.contains("pub state:"));

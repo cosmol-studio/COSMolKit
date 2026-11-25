@@ -100,9 +100,9 @@ enum_error!(SelectedBondCopyError,SelectedBondCopyErrorKind,ck::SelectedBondCopy
     #[wasm_bindgen(getter)]pub fn stereo(&self)->Option<FragmentPayload>{match self.inner.as_ref(){ck::SelectedBondCopyError::Stereo(v)=>Some(BondValueError::from_rust(v.clone()).unchecked_into()),_=>None}}
 },source=FragmentCause,cause=bond_cause);
 enum_error!(SelectedSubstanceGroupCopyError,SelectedSubstanceGroupCopyErrorKind,ck::SelectedSubstanceGroupCopyError,{
- MissingAtomMapping=>ck::SelectedSubstanceGroupCopyError::MissingAtomMapping{..},AtomOutOfRange=>ck::SelectedSubstanceGroupCopyError::AtomOutOfRange{..},MissingBondMapping=>ck::SelectedSubstanceGroupCopyError::MissingBondMapping{..},BondOutOfRange=>ck::SelectedSubstanceGroupCopyError::BondOutOfRange{..}
+ UnmappedReference=>ck::SelectedSubstanceGroupCopyError::UnmappedReference{..},MissingAtomMapping=>ck::SelectedSubstanceGroupCopyError::MissingAtomMapping{..},AtomOutOfRange=>ck::SelectedSubstanceGroupCopyError::AtomOutOfRange{..},MissingBondMapping=>ck::SelectedSubstanceGroupCopyError::MissingBondMapping{..},BondOutOfRange=>ck::SelectedSubstanceGroupCopyError::BondOutOfRange{..}
 },{
- #[wasm_bindgen(getter)]pub fn group(&self)->usize{use ck::SelectedSubstanceGroupCopyError as E;match *self.inner{E::MissingAtomMapping{group,..}|E::AtomOutOfRange{group,..}|E::MissingBondMapping{group,..}|E::BondOutOfRange{group,..}=>group.index()}}
+ #[wasm_bindgen(getter)]pub fn group(&self)->usize{use ck::SelectedSubstanceGroupCopyError as E;match *self.inner{E::UnmappedReference{group}|E::MissingAtomMapping{group,..}|E::AtomOutOfRange{group,..}|E::MissingBondMapping{group,..}|E::BondOutOfRange{group,..}=>group.index()}}
  #[wasm_bindgen(getter)]pub fn list(&self)->Option<crate::enums::SubstanceGroupAtomList>{use ck::SelectedSubstanceGroupCopyError as E;match *self.inner{E::MissingAtomMapping{list,..}|E::AtomOutOfRange{list,..}=>Some(list.into()),_=>None}}
  #[wasm_bindgen(getter)]pub fn atom(&self)->Option<usize>{match *self.inner{ck::SelectedSubstanceGroupCopyError::MissingAtomMapping{atom,..}=>Some(atom.index()),_=>None}}
  #[wasm_bindgen(getter)]pub fn bond(&self)->Option<usize>{match *self.inner{ck::SelectedSubstanceGroupCopyError::MissingBondMapping{bond,..}=>Some(bond.index()),_=>None}}

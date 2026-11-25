@@ -26,6 +26,7 @@ error_projection!(SelectedBondCopyError, SelectedBondCopyErrorKind, ck::Selected
 }, source = Option<crate::error_framework::ErrorObject<BondValueError>>);
 
 error_projection!(SelectedSubstanceGroupCopyError, SelectedSubstanceGroupCopyErrorKind, ck::SelectedSubstanceGroupCopyError, "fragments", {
+    UnmappedReference { group },
     MissingAtomMapping { group, list, atom: usize => |v: &ck::AtomId| v.index() },
     AtomOutOfRange { group, list,
         source_atom: usize => |v: &ck::AtomId| v.index(), mapped_atom: usize => |v: &ck::AtomId| v.index(), atom_count: usize },
@@ -34,8 +35,9 @@ error_projection!(SelectedSubstanceGroupCopyError, SelectedSubstanceGroupCopyErr
         mapped_bond: usize => |v: &ck::BondId| v.index(), bond_count: usize },
 }, cause = |_: &ck::SelectedSubstanceGroupCopyError| None::<PyErr>, methods = {
     #[getter]
-    #[doc = "Group identifier involved in the failure. Applies to SelectedSubstanceGroupCopyError.MissingAtomMapping, SelectedSubstanceGroupCopyError.AtomOutOfRange, SelectedSubstanceGroupCopyError.MissingBondMapping, SelectedSubstanceGroupCopyError.BondOutOfRange."] fn group(&self) -> usize { match self.inner {
-        ck::SelectedSubstanceGroupCopyError::MissingAtomMapping { group, .. }
+    #[doc = "Source group identifier involved in the failure."] fn group(&self) -> usize { match self.inner {
+        ck::SelectedSubstanceGroupCopyError::UnmappedReference { group }
+        | ck::SelectedSubstanceGroupCopyError::MissingAtomMapping { group, .. }
         | ck::SelectedSubstanceGroupCopyError::AtomOutOfRange { group, .. }
         | ck::SelectedSubstanceGroupCopyError::MissingBondMapping { group, .. }
         | ck::SelectedSubstanceGroupCopyError::BondOutOfRange { group, .. } => group.index(),
