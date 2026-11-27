@@ -33,6 +33,38 @@ fails when that tag's changelog section is missing or empty.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-27
+
+### Added
+
+- Indexed graph queries in Rust, Python and JavaScript: canonical atom ranks,
+  shortest paths, path and subgraph enumeration, and atom environments.
+- Subgraph extraction with source atom/bond mappings, atom renumbering,
+  atom/bond replacement and molecule insertion, with explicit in-place forms.
+  Extraction can optionally preserve SGroups with validated reference remapping.
+- `fragments_with_atom_mapping()` returns connected components together with
+  their source atom indices.
+- Optional `EmbedParams.pruning_timeout` limits symmetry matching and RMS
+  pruning after conformer embedding. It defaults to zero (disabled, without
+  clock reads); native and WASM execution return the timeout status and retain
+  conformers already accepted before expiration.
+
+### Fixed
+
+- Recognize bracketed aromatic silicon in SMILES and align legacy CIP assignment
+  for non-tetrahedral tags with RDKit, including source neighbor ordering during
+  canonical ranking.
+- Enforce block-level copy-on-write and failure atomicity for indexed graph
+  edits, preserving sharing of unchanged blocks.
+- Validate fragment caches when the rings capability is disabled, and correct
+  WASM borrow cleanup after rejected calls.
+
+Thanks to [@isty2e](https://github.com/isty2e) for source atom mappings and indexed
+graph APIs in [#15](https://github.com/cosmol-studio/COSMolKit/pull/15) and
+[#16](https://github.com/cosmol-studio/COSMolKit/pull/16)!
+
+Full comparison: [v0.6.3...v0.6.4](https://github.com/cosmol-studio/COSMolKit/compare/v0.6.3...v0.6.4)
+
 ## [0.6.3] - 2026-11-21
 
 ### Added
