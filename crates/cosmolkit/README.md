@@ -77,7 +77,7 @@ cosmolkit = { version = "0.6.4", default-features = false, features = ["core", "
 |---|---|
 | `core` | Molecular text/file IO, native binary archives, batch processing, SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms |
 | `bio` | Structural biology readers, values, selection and operations |
-| `descriptors` | Molecular properties, Gasteiger charges, EState and surface-area descriptors, BCUT2D, and graph information content (Ipc) |
+| `descriptors` | Molecular descriptors |
 | `tautomer` | Tautomer capability |
 | `conformer` | 3D conformers, ConfSeq, alignment, UFF/MMFF energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |

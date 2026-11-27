@@ -1054,3 +1054,9 @@ pub use tautomer::__configuration_TautomerParams;
 #[cfg(feature = "cap-fingerprints")]
 #[doc(hidden)]
 pub use topological_torsion::__configuration_TopologicalTorsionFingerprintParams;
+
+#[cfg(feature = "cap-descriptors")]
+#[doc(hidden)]
+pub use cosmolkit_core::{
+    __ck_configuration_GasteigerChargeParams, __configuration_GasteigerChargeParams,
+};

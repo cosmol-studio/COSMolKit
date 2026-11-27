@@ -1171,7 +1171,7 @@ fn native_python_projection_requires_an_explicit_scalar_value_contract() {
 }
 
 #[test]
-fn matrix_input_projection_accepts_numeric_rows_and_a_registered_matrix() {
+fn native_union_projection_composes_sequences_and_registered_types() {
     let declaration = quote! {
         static VALUES = [{
             semantic_id: "types.DenseMatrix", item: type, owner: type_, rust: crate::DenseMatrix,
@@ -1183,10 +1183,20 @@ fn matrix_input_projection_accepts_numeric_rows_and_a_registered_matrix() {
         }];
     };
     assert!(expand_binding_contract(declaration.clone()).is_ok());
-    let invalid = declaration
-        .to_string()
-        .replace("| DenseMatrix", "| MissingMatrix");
-    assert!(expand_binding_contract(invalid.parse().unwrap()).is_err());
+    for element in ["float", "int", "bool", "DenseMatrix"] {
+        let composed = declaration
+            .to_string()
+            .replace("[float]", &format!("[{element}]"));
+        assert!(expand_binding_contract(composed.parse().unwrap()).is_ok());
+    }
+    for invalid in [
+        declaration
+            .to_string()
+            .replace("| DenseMatrix", "| MissingMatrix"),
+        declaration.to_string().replace("[float]", "[Unknown]"),
+    ] {
+        assert!(expand_binding_contract(invalid.parse().unwrap()).is_err());
+    }
 }
 
 #[test]

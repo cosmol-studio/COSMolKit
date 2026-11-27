@@ -3,6 +3,10 @@ use crate::{Molecule, errors::enum_error};
 use cosmolkit as ck;
 use wasm_bindgen::prelude::*;
 
+#[derive(serde::Deserialize, tsify::Tsify)]
+#[serde(transparent)]
+struct IpcRows(Vec<Vec<f64>>);
+
 #[wasm_bindgen]
 extern "C" {
     #[cfg(feature = "cap-matrices")]
@@ -27,21 +31,8 @@ impl IpcMatrixInput {
         apply: impl FnOnce(ck::IpcDistanceMatrix<'_>) -> Result<R, JsValue>,
     ) -> Result<R, JsValue> {
         let raw: &JsValue = self.as_ref();
-        if let Some(array) = raw.dyn_ref::<js_sys::Array>() {
-            let rows = array
-                .iter()
-                .map(|row| {
-                    row.dyn_ref::<js_sys::Array>()
-                        .ok_or_else(|| js_sys::TypeError::new("expected a row of numbers"))?
-                        .iter()
-                        .map(|value| {
-                            value.as_f64().ok_or_else(|| {
-                                js_sys::TypeError::new("expected a numeric matrix entry")
-                            })
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+        if raw.is_instance_of::<js_sys::Array>() {
+            let rows = crate::input::decode(tsify::Ts::<IpcRows>::new_unchecked(raw.clone()))?.0;
             return apply(rows.as_slice().into());
         }
 

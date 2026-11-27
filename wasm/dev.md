@@ -86,8 +86,8 @@ Run the checks separately; none recompiles Rust:
 # Check exports and declarations against the compiled Rust registry.
 python3 wasm/registry_check.py
 
-# Run the full package's runtime and chemistry tests in Node.
-node --test wasm/tests/*.mjs
+# Run the fixed binding protocol samples in Node.
+node wasm/tests/runtime.mjs
 
 # Check TypeScript declarations and the typed samples.
 npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json

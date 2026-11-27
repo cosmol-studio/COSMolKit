@@ -83,6 +83,14 @@ layers, generic frameworks, duplicate registries or temporary adapters merely
 to make a local step easier. Changes to ownership or authority require an
 explicit design decision.
 
+Ordinary features grow through domain implementations, public APIs, canonical
+registration and existing test entrypoints. CI remains a generic scheduler,
+not a second inventory of chemical features. Changes to workflow structure,
+generic parity or binding machinery, reference policy or acceptance standards
+require an explicit maintainer decision explaining the shared capability that
+is missing. Adding a task or projection through an existing mechanism is
+normal feature work, not a framework change.
+
 The [crate architecture](./crate_architecture.md) assigns ownership and
 dependency direction; the [operation standard](./operation_system_standard.md)
 defines operation contracts. The

@@ -9,6 +9,14 @@ const ck = await import(packageUrl.href);
 assert.equal((await import(packageUrl.href)).Molecule, ck.Molecule);
 assert.equal('default' in ck, false); // The public entry needs no init call.
 
+// One sample of the borrowed native matrix / numeric rows input union.
+const matrixMolecule = ck.Molecule.fromSmiles('CC');
+const matrixInput = matrixMolecule.distanceMatrix();
+assert.equal(matrixMolecule.ipc(matrixInput), matrixMolecule.ipc([[0, 1], [1, 0]]));
+assert.equal(matrixInput.dimension, 2);
+matrixInput.free();
+matrixMolecule.free();
+
 const p = new ck.RingSearchParams();
 const m = new ck.Molecule('C1CC1');
 assert.throws(() => { p.includeDativeBonds = 'false'; }, TypeError);

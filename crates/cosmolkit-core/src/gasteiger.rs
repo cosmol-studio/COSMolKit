@@ -15,9 +15,12 @@ const DAMP: f64 = 0.5;
 const DAMP_SCALE: f64 = 0.5;
 
 /// Parameters for the pinned RDKit Gasteiger charge iteration.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, cosmolkit_macros::Configuration)]
+#[configuration(accessors)]
 pub struct GasteigerChargeParams {
+    /// Number of charge-equalization iterations, from 0 through 2147483647.
     iterations: u32,
+    /// Raise an error when an atom has no Gasteiger parameters.
     throw_on_param_failure: bool,
 }
 

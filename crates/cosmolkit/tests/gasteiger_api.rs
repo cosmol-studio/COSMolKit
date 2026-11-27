@@ -35,6 +35,14 @@ fn charge_rows_follow_hydrogen_representation_and_supplied_formal_charge() {
         parse("C[NH2]").gasteiger_charges().unwrap()
     );
 
+    let bracket = parse("C[NH2]").gasteiger_charges().unwrap();
+    assert!((bracket[1].atom_charge() - -0.33326905).abs() < 1e-7);
+    assert!((bracket[1].attached_hydrogen_charge() - 0.23619516).abs() < 1e-7);
+    let total: f64 = rows
+        .iter()
+        .map(|r| r.atom_charge() + r.attached_hydrogen_charge())
+        .sum();
+    assert!(total.abs() < 2e-12);
     let acetate = parse("CC(=O)[O-]");
     let zero = GasteigerChargeParams::new(0, false).unwrap();
     let initial = acetate.gasteiger_charges_with_params(&zero).unwrap();
@@ -74,18 +82,26 @@ fn reads_do_not_fill_valence_or_hybridization_and_strict_lookup_stays_strict() {
         },
     )
     .unwrap();
+    let strict_zero = GasteigerChargeParams::new(0, true).unwrap();
+    assert!(matches!(raw.gasteiger_charges_with_params(&strict_zero),
+        Err(DescriptorReadError::Algorithm { source: DescriptorError::GasteigerCharge {
+            source: GasteigerChargeError::MissingParameters { element, mode }
+        } }) if element == "C" && mode.is_empty()));
     let zero = GasteigerChargeParams::new(0, false).unwrap();
     let initial = raw.gasteiger_charges_with_params(&zero).unwrap();
     assert!(
         initial
             .iter()
-            .all(|row| row.atom_charge() == 0.0 && row.attached_hydrogen_charge() == 0.0)
+            .all(|row| row.atom_charge().to_bits() == 0.0_f64.to_bits()
+                && row.attached_hydrogen_charge().to_bits() == 0.0_f64.to_bits())
     );
     assert!(matches!(
         raw.gasteiger_charges(),
         Err(DescriptorReadError::Algorithm {
             source: DescriptorError::GasteigerCharge {
-                source: GasteigerChargeError::Valence { .. }
+                source: GasteigerChargeError::Valence {
+                    source: cosmolkit::ValenceError::ImplicitValenceCacheNotInitialized { .. }
+                }
             }
         })
     ));
@@ -142,8 +158,14 @@ fn extrema_and_vsa_preserve_finite_components_next_to_nan() {
         acid.min_abs_partial_charge().unwrap(),
         acid.max_partial_charge().unwrap().abs()
     );
-    assert!(acid.min_partial_charge().unwrap() < -0.48);
+    assert!((acid.min_partial_charge().unwrap() - -0.481434).abs() < 1e-6);
+    assert!((acid.max_partial_charge().unwrap() - 0.299685).abs() < 1e-6);
+    assert!((acid.max_abs_partial_charge().unwrap() - 0.481434).abs() < 1e-6);
     let empty = Molecule::new();
+    assert_eq!(empty.max_partial_charge().unwrap(), -500.0);
+    assert_eq!(empty.min_partial_charge().unwrap(), 500.0);
+    assert_eq!(empty.min_abs_partial_charge().unwrap(), 500.0);
+    assert_eq!(empty.max_abs_partial_charge().unwrap(), 500.0);
     let max_iterations = GasteigerChargeParams::new(i32::MAX.into(), true).unwrap();
     assert!(
         empty
@@ -173,9 +195,12 @@ fn charge_bins_read_existing_labute_atom_rows() {
     assert_eq!(unringed.estate_vsa().unwrap(), mol.estate_vsa().unwrap());
     assert_eq!(unringed.vsa_estate().unwrap(), mol.vsa_estate().unwrap());
     let cold = mol.peoe_vsa().unwrap();
+    assert_eq!(cold.len(), 14);
+    assert!((cold.iter().sum::<f64>() - 18.63714656).abs() < 1e-7);
     assert_eq!(unringed.peoe_vsa().unwrap(), cold);
     mol.labute_asa_with_params(false, true).unwrap();
     let warm = mol.peoe_vsa().unwrap();
+    assert!((warm.iter().sum::<f64>() - 18.68276248).abs() < 1e-7);
     assert_eq!(
         cold.iter()
             .zip(&warm)

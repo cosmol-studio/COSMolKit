@@ -380,3 +380,6 @@ pub use coordinate_input::__configuration_Coordinate2DInputParams;
 pub use sanitize::__configuration_SanitizeParams;
 #[doc(hidden)]
 pub use valence::__configuration_ValenceParams;
+
+#[doc(hidden)]
+pub use gasteiger::__configuration_GasteigerChargeParams;

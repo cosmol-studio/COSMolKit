@@ -7504,7 +7504,7 @@ pub mod native {
             }
         }
         #[doc = r#"{"role":"overload","target":"Molecule.gasteiger_charges"}"#]
-        #[pyo3(signature = (*, iterations=12, throw_on_param_failure=false))]
+        #[pyo3(signature = (*, iterations=i64::from(ck::GasteigerChargeParams::default().iterations()), throw_on_param_failure=ck::GasteigerChargeParams::default().throw_on_param_failure()))]
         fn _gasteiger_charges_keywords(
             &self,
             iterations: i64,

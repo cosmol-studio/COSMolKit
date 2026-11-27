@@ -10,45 +10,40 @@ pub struct GasteigerChargeParams {
     pub(crate) inner: ck::GasteigerChargeParams,
 }
 
-#[pymethods]
-impl GasteigerChargeParams {
-    fn __repr__(slf: &Bound<'_, Self>) -> PyResult<String> {
-        crate::representation::configuration(slf.as_any(), "GasteigerChargeParams", &[])
-    }
-
-    #[new]
-    #[pyo3(signature = (iterations=12, throw_on_param_failure=false))]
-    pub(crate) fn new(iterations: i64, throw_on_param_failure: bool) -> PyResult<Self> {
-        Ok(Self {
-            inner: ck::GasteigerChargeParams::new(iterations, throw_on_param_failure)
-                .map_err(|error| PyValueError::new_err(error.to_string()))?,
-        })
-    }
-
-    #[getter]
-    /// Number of charge-equalization iterations, from 0 through 2147483647.
-    fn iterations(&self) -> u32 {
-        self.inner.iterations()
-    }
-
-    #[setter]
-    fn set_iterations(&mut self, value: i64) -> PyResult<()> {
-        self.inner
-            .set_iterations(value)
-            .map_err(|error| PyValueError::new_err(error.to_string()))
-    }
-
-    #[getter]
-    /// Whether to raise an error when an atom has no Gasteiger parameters.
-    fn throw_on_param_failure(&self) -> bool {
-        self.inner.throw_on_param_failure()
-    }
-
-    #[setter]
-    fn set_throw_on_param_failure(&mut self, value: bool) {
-        self.inner.set_throw_on_param_failure(value);
-    }
+// Checked native accessors use the existing explicit configuration adapter hook.
+// The native declaration supplies the complete field list and storage types.
+macro_rules! checked_fields {
+    ($(#[$count_doc:meta])* $count:ident: $count_ty:ty,
+     $(#[$strict_doc:meta])* $strict:ident: $strict_ty:ty) => {
+        paste::paste! {
+            #[pymethods]
+            impl GasteigerChargeParams {
+                #[new]
+                #[pyo3(signature = ($count=i64::from(ck::GasteigerChargeParams::default().$count()), $strict=ck::GasteigerChargeParams::default().$strict()))]
+                pub(crate) fn new($count: i64, $strict: $strict_ty) -> PyResult<Self> {
+                    Ok(Self { inner: ck::GasteigerChargeParams::new($count, $strict)
+                        .map_err(|error| PyValueError::new_err(error.to_string()))? })
+                }
+                $(#[$count_doc])*
+                #[getter]
+                fn $count(&self) -> $count_ty { self.inner.$count() }
+                #[setter]
+                fn [<set_ $count>](&mut self, value: i64) -> PyResult<()> {
+                    self.inner.[<set_ $count>](value)
+                        .map_err(|error| PyValueError::new_err(error.to_string()))
+                }
+                $(#[$strict_doc])*
+                #[getter]
+                fn $strict(&self) -> $strict_ty { self.inner.$strict() }
+                #[setter]
+                fn [<set_ $strict>](&mut self, value: $strict_ty) {
+                    self.inner.[<set_ $strict>](value);
+                }
+            }
+        }
+    };
 }
+ck::project_configuration!(ck::GasteigerChargeParams, using checked_fields);
 
 crate::configuration::type_projection! {
     #[pyclass(module = "cosmolkit", frozen, from_py_object)]

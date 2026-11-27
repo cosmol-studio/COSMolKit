@@ -204,11 +204,6 @@ jobs:
                   "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" prepare \
                       --corpus smiles_small --threads "$(nproc)" --suite "$suites" \
                       2>&1 | tee "$RUNNER_TEMP/parity-prepare.log"
-                  "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" prepare \
-                      --suite descriptor-foundations,descriptor-foundations-ipc \
-                      --corpus parity-tests/testdata/corpora/descriptor_foundations.jsonl \
-                      --profiles parity-tests/testdata/profiles/ipc_lower_only.json --threads "$(nproc)" \
-                      2>&1 | tee -a "$RUNNER_TEMP/parity-prepare.log"
                   if grep -Eq '^[a-z0-9_]+: prepare \(' "$RUNNER_TEMP/parity-prepare.log"; then
                       echo "regenerated=true" >> "$GITHUB_OUTPUT"
                   fi
@@ -230,11 +225,6 @@ jobs:
                       -- --corpus smiles_small --threads "$(nproc)" \
                       --suite "${{ steps.prepare.outputs.suites }}" \
                       2>&1 | tee "$RUNNER_TEMP/parity-small.log"
-                  "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" compare \
-                      --suite descriptor-foundations,descriptor-foundations-ipc \
-                      --corpus parity-tests/testdata/corpora/descriptor_foundations.jsonl \
-                      --profiles parity-tests/testdata/profiles/ipc_lower_only.json --threads "$(nproc)" \
-                      2>&1 | tee -a "$RUNNER_TEMP/parity-small.log"
 
             - name: Save validated reference generations
               if: ${{ !cancelled() && steps.prepare.outputs.regenerated == 'true' }}

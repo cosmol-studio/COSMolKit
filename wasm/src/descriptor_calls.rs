@@ -73,135 +73,145 @@ impl LabuteAsaContributions {
         self.0.hydrogen_contribution
     }
 }
-#[derive(serde::Deserialize, tsify::Tsify)]
-#[serde(default, rename_all = "camelCase")]
-pub struct GasteigerChargeOptions {
-    #[tsify(optional)]
-    iterations: f64,
-    #[tsify(optional)]
-    throw_on_param_failure: bool,
-}
-
-impl Default for GasteigerChargeOptions {
-    fn default() -> Self {
-        let params = cosmolkit::GasteigerChargeParams::default();
-        Self {
-            iterations: f64::from(params.iterations()),
-            throw_on_param_failure: params.throw_on_param_failure(),
-        }
-    }
-}
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(typescript_type = "GasteigerChargeParams | GasteigerChargeOptions")]
-    pub type GasteigerConfigInput;
-
-    #[wasm_bindgen(catch, js_namespace = Reflect, js_name = apply)]
-    fn borrow_charge_params(
-        visit: &mut dyn FnMut(&GasteigerChargeParams),
-        receiver: &JsValue,
-        args: &js_sys::Array,
-    ) -> Result<JsValue, JsValue>;
-}
-
-fn checked_gasteiger_iterations(value: f64) -> Result<i64, JsValue> {
-    if !value.is_finite() || value.fract() != 0.0 || !(0.0..=i32::MAX as f64).contains(&value) {
-        return Err(js_sys::RangeError::new(
-            "Gasteiger iterations must be a finite integer in 0..=2147483647",
-        )
-        .into());
-    }
-
-    Ok(value as i64)
-}
-
-impl GasteigerChargeOptions {
-    fn into_params(self) -> Result<cosmolkit::GasteigerChargeParams, JsValue> {
-        let iterations = checked_gasteiger_iterations(self.iterations)?;
-        cosmolkit::GasteigerChargeParams::new(iterations, self.throw_on_param_failure)
-            .map_err(|error| js_sys::RangeError::new(&error.to_string()).into())
-    }
-}
-
-impl GasteigerConfigInput {
-    fn params(&self) -> Result<cosmolkit::GasteigerChargeParams, JsValue> {
-        let raw = self.as_ref();
-        if input::is_plain_options(raw) {
-            input::check_options(raw, &["iterations", "throwOnParamFailure"])?;
-            let mut fields = GasteigerChargeOptions::default();
-            let iterations = js_sys::Reflect::get(raw, &"iterations".into())?;
-            if !iterations.is_undefined() {
-                fields.iterations = f64::decode(&iterations)?;
+// Use the existing explicit adapter hook for native checked accessors.
+macro_rules! project_charge_params {
+    (@resume {} @adapter $(#[$doc:meta])* $native:path {
+        $(#[$count_doc:meta])* $count:ident: $count_ty:ty,
+        $(#[$strict_doc:meta])* $strict:ident: $strict_ty:ty
+    } methods {}) => {
+        paste::paste! {
+            #[derive(serde::Deserialize, tsify::Tsify)]
+            #[serde(default, rename_all = "camelCase")]
+            pub struct GasteigerChargeOptions {
+                #[tsify(optional)]
+                $count: i32,
+                #[tsify(optional, type = "boolean")]
+                $strict: $strict_ty,
             }
-            let strict = js_sys::Reflect::get(raw, &"throwOnParamFailure".into())?;
-            if !strict.is_undefined() {
-                fields.throw_on_param_failure = bool::decode(&strict)?;
+
+            impl Default for GasteigerChargeOptions {
+                fn default() -> Self {
+                    let params = cosmolkit::GasteigerChargeParams::default();
+                    Self {
+                        // Native checked storage guarantees the signed-int range.
+                        $count: params.$count() as i32,
+                        $strict: params.$strict(),
+                    }
+                }
             }
-            return fields.into_params();
+
+            #[wasm_bindgen]
+            extern "C" {
+                #[wasm_bindgen(typescript_type = "GasteigerChargeParams | GasteigerChargeOptions")]
+                pub type GasteigerConfigInput;
+
+                #[wasm_bindgen(catch, js_namespace = Reflect, js_name = apply)]
+                fn borrow_charge_params(
+                    visit: &mut dyn FnMut(&GasteigerChargeParams),
+                    receiver: &JsValue,
+                    args: &js_sys::Array,
+                ) -> Result<JsValue, JsValue>;
+            }
+
+
+            impl GasteigerChargeOptions {
+                fn into_params(self) -> Result<cosmolkit::GasteigerChargeParams, JsValue> {
+                    let iterations = i64::from(self.$count);
+                    cosmolkit::GasteigerChargeParams::new(iterations, self.$strict)
+                        .map_err(|error| js_sys::RangeError::new(&error.to_string()).into())
+                }
+            }
+
+            impl GasteigerConfigInput {
+                fn params(&self) -> Result<cosmolkit::GasteigerChargeParams, JsValue> {
+                    let raw = self.as_ref();
+                    if input::is_plain_options(raw) {
+                        input::check_options(raw, &["iterations", "throwOnParamFailure"])?;
+                        let mut fields = GasteigerChargeOptions::default();
+                        let iterations = js_sys::Reflect::get(raw, &"iterations".into())?;
+                        if !iterations.is_undefined() {
+                            fields.$count = i32::decode(&iterations)?;
+                        }
+                        let strict = js_sys::Reflect::get(raw, &"throwOnParamFailure".into())?;
+                        if !strict.is_undefined() {
+                            fields.$strict = bool::decode(&strict)?;
+                        }
+                        return fields.into_params();
+                    }
+                    input::with_instance(
+                        raw,
+                        "GasteigerChargeParams",
+                        |visit, receiver, args| borrow_charge_params(&mut |p| visit(p), receiver, args),
+                        |p| Ok(p.0),
+                    )
+                }
+            }
+
+            #[wasm_bindgen]
+            pub struct GasteigerChargeParams(cosmolkit::GasteigerChargeParams);
+
+            #[wasm_bindgen]
+            impl GasteigerChargeParams {
+                #[wasm_bindgen(constructor)]
+                pub fn new(
+                     $count: Option<tsify::Ts<input::I32Input>>,
+                     $strict: Option<tsify::Ts<input::BoolInput>>,
+                ) -> Result<Self, JsValue> {
+                    let defaults = GasteigerChargeOptions::default();
+                    GasteigerChargeOptions {
+                        $count: $count
+                            .map(input::read::<i32>)
+                            .transpose()?
+                            .unwrap_or(defaults.$count),
+                        $strict: $strict
+                            .map(input::read::<bool>)
+                            .transpose()?
+                            .unwrap_or(defaults.$strict),
+                    }
+                    .into_params()
+                    .map(Self)
+                }
+
+                #[wasm_bindgen(getter)]
+                $(#[$count_doc])*
+                pub fn $count(&self) -> $count_ty {
+                    self.0.$count()
+                }
+
+                #[wasm_bindgen(setter)]
+                pub fn [<set_ $count>](&mut self, value: tsify::Ts<input::I32Input>) -> Result<(), JsValue> {
+                    let value = i64::from(input::read::<i32>(value)?);
+                    self.0
+                        .[<set_ $count>](value)
+                        .map_err(|error| js_sys::RangeError::new(&error.to_string()).into())
+                }
+
+                #[wasm_bindgen(getter, js_name = throwOnParamFailure)]
+                $(#[$strict_doc])*
+                pub fn $strict(&self) -> $strict_ty {
+                    self.0.$strict()
+                }
+
+                #[wasm_bindgen(setter, js_name = throwOnParamFailure)]
+                pub fn [<set_ $strict>](
+                    &mut self,
+                    value: tsify::Ts<input::BoolInput>,
+                ) -> Result<(), JsValue> {
+                    self.0
+                        .[<set_ $strict>](input::read::<bool>(value)?);
+                    Ok(())
+                }
+            }
+
         }
-        input::with_instance(
-            raw,
-            "GasteigerChargeParams",
-            |visit, receiver, args| borrow_charge_params(&mut |p| visit(p), receiver, args),
-            |p| Ok(p.0),
-        )
-    }
+    };
 }
-
-#[wasm_bindgen]
-pub struct GasteigerChargeParams(cosmolkit::GasteigerChargeParams);
-
-#[wasm_bindgen]
-impl GasteigerChargeParams {
-    #[wasm_bindgen(constructor)]
-    pub fn new(
-        iterations: Option<tsify::Ts<input::F64Input>>,
-        throw_on_param_failure: Option<tsify::Ts<input::BoolInput>>,
-    ) -> Result<Self, JsValue> {
-        let defaults = GasteigerChargeOptions::default();
-        GasteigerChargeOptions {
-            iterations: iterations
-                .map(input::read::<f64>)
-                .transpose()?
-                .unwrap_or(defaults.iterations),
-            throw_on_param_failure: throw_on_param_failure
-                .map(input::read::<bool>)
-                .transpose()?
-                .unwrap_or(defaults.throw_on_param_failure),
-        }
-        .into_params()
-        .map(Self)
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn iterations(&self) -> u32 {
-        self.0.iterations()
-    }
-
-    #[wasm_bindgen(setter)]
-    pub fn set_iterations(&mut self, value: tsify::Ts<input::F64Input>) -> Result<(), JsValue> {
-        let value = checked_gasteiger_iterations(input::read::<f64>(value)?)?;
-        self.0
-            .set_iterations(value)
-            .map_err(|error| js_sys::RangeError::new(&error.to_string()).into())
-    }
-
-    #[wasm_bindgen(getter, js_name = throwOnParamFailure)]
-    pub fn throw_on_param_failure(&self) -> bool {
-        self.0.throw_on_param_failure()
-    }
-
-    #[wasm_bindgen(setter, js_name = throwOnParamFailure)]
-    pub fn set_throw_on_param_failure(
-        &mut self,
-        value: tsify::Ts<input::BoolInput>,
-    ) -> Result<(), JsValue> {
-        self.0
-            .set_throw_on_param_failure(input::read::<bool>(value)?);
-        Ok(())
-    }
-}
+cosmolkit::__ck_configuration_GasteigerChargeParams!(
+    project_charge_params,
+    cosmolkit::GasteigerChargeParams,
+    {},
+    {}
+);
 
 #[wasm_bindgen]
 pub struct GasteigerCharge(cosmolkit::GasteigerCharge);

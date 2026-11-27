@@ -44,6 +44,12 @@ def native_enum_protocol():
 
 
 def forwarding_and_configuration():
+    molecule = ck.Molecule.from_smiles("CC")
+    matrix = molecule.distance_matrix()
+    rows = [[0.0, 1.0], [1.0, 0.0]]
+    assert molecule.ipc(matrix) == molecule.ipc(rows)
+    assert matrix.dimension == 2
+
     assert ck.Molecule is _native.Molecule
     assert ck.mol_from_smiles is _native.mol_from_smiles
     molecule = ck.mol_from_smiles("CCO")

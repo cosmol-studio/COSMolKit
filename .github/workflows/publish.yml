@@ -109,7 +109,7 @@ jobs:
                           'sideEffects=["./index.js","./snippets/*"]'
                       python -B wasm/registry_check.py
                       if [ "$preset" = full ]; then
-                          node --test wasm/tests/*.mjs
+                          node wasm/tests/runtime.mjs
                           npx --yes --package typescript@5.8.3 tsc -p wasm/tests/tsconfig.json
                       else
                           npx --yes --package typescript@5.8.3 tsc --noEmit --strict \

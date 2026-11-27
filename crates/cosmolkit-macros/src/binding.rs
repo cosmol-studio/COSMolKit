@@ -873,10 +873,7 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
             let union = projection.contains('|')
                 && projection.split('|').all(|name| {
                     let name = name.trim();
-                    name == "typing.Sequence[typing.Sequence[float]]"
-                        || entries.iter().any(|candidate| {
-                            candidate.item == ItemClass::Type && candidate.python.value() == name
-                        })
+                    native_projection_component(name, &entries)
                 });
             if entry.item != ItemClass::Type
                 || entry.type_role != Some(TypeRole::Value)
@@ -2317,4 +2314,19 @@ fn projection_owner_key(entry: &BindingEntry) -> String {
 }
 fn tokens(value: &impl ToTokens) -> String {
     value.to_token_stream().to_string()
+}
+
+// Compose sequence elements from primitive types and registered classes.
+fn native_projection_component(name: &str, entries: &[BindingEntry]) -> bool {
+    let name = name.trim();
+    if let Some(element) = name
+        .strip_prefix("typing.Sequence[")
+        .and_then(|s| s.strip_suffix(']'))
+    {
+        return native_projection_component(element, entries);
+    }
+    matches!(name, "int" | "str" | "float" | "bool" | "bytes")
+        || entries
+            .iter()
+            .any(|candidate| candidate.item == ItemClass::Type && candidate.python.value() == name)
 }

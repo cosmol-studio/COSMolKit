@@ -29,6 +29,16 @@ coordinate bits where required, typed errors, ordering, mappings, COW sharing
 and failure atomicity. Successful parsing alone does not establish a roundtrip.
 Keep discovered counterexamples at the smallest owning behavior boundary.
 
+Chemical correctness belongs in Rust owner tests and parity. Python/JavaScript
+bindings forward the canonical API and test language adaptation with a few
+representative framework samples. Do not repeat Rust chemistry, runtime COW or
+cache tests in each binding, or add per-API tests for conversions, configuration
+dispatch and error projection already guaranteed by shared mechanisms. Add a
+small sample only when a genuinely new language mechanism needs coverage;
+ordinary API growth must not expand consumer test inventories or mandatory
+commands. Cross-target numerical validation belongs to algorithm/parity
+validation, not a separate binding chemistry suite.
+
 Compiler-level private-module isolation retains its real-layout compile-pass
 and compile-fail checks as required by the operation standard; runtime
 rejection or textual matching cannot replace that boundary. Other ordinary
@@ -70,6 +80,15 @@ Matching source-defined errors is checked under each task's explicit error
 contract, not silently counted as a successful numerical calculation.
 
 ## Special regressions
+
+Classify inputs by what they verify, not by the feature family that introduced
+them: local fixed expectations are ordinary regressions; repeated registered
+operations over a corpus are corpus tests; explicitly selected fixed reference
+matrices are special regressions. Register new cases through these existing
+mechanisms. CI discovers registered tasks rather than adding feature-specific
+prepare/compare commands, caches or reference builds. A missing shared reference
+backend requires a separate approved framework design, not a private workflow
+inside a feature PR.
 
 Special regressions use fixed, explicitly selected reference matrices rather
 than expansion over a SMILES corpus. They have the same two-stage shape:
