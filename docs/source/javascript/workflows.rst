@@ -118,6 +118,32 @@ fingerprints together.
      mol.free();
    }
 
+``gasteigerCharges()`` and ``estateIndices()`` return results in atom order.
+For ethanol, index 2 is the oxygen. The charge row separates the oxygen's own
+charge from the charge on its attached hydrogen:
+
+.. code-block:: javascript
+
+   const ethanol = ck.Molecule.fromSmiles("CCO");
+   let charges = [];
+   try {
+     charges = ethanol.gasteigerCharges({throwOnParamFailure: true});
+     const oxygen = charges[2];
+     console.log(oxygen.atomCharge.toFixed(3));             // -0.397
+     console.log(oxygen.attachedHydrogenCharge.toFixed(3)); // 0.210
+     console.log(ethanol.estateIndices()[2].toFixed(3)); // 7.569
+   } finally {
+     for (const row of charges) row.free();
+     ethanol.free();
+   }
+
+``bcut2d()`` returns eight numbers: the high and low eigenvalues for atomic
+mass, Gasteiger charge, Crippen logP and molar refractivity, in that order.
+``avgIpc()`` reports the entropy of the graph's characteristic-polynomial
+coefficient magnitudes; ``ipc()`` scales it by their sum. See the
+:doc:`descriptor guide </python/descriptors>` for the surface bins, matrix input
+convention and numerical differences from RDKit.
+
 Draw SVG and retain 2D coordinates
 ----------------------------------
 

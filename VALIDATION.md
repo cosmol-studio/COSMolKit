@@ -3,8 +3,24 @@
 This document is the single record of measured validation coverage. Each
 section names the tested COSMolKit and reference versions; counts apply to
 that section, independently of the version shown by the current API docs.
-The current release is **0.6.0**; measurement headings retain the versions
-actually tested.
+
+## Gasteiger, EState, BCUT2D and Ipc
+
+The [descriptor parity suites](parity-tests/README.md#build-the-descriptor-references)
+at COSMolKit `3202bcf3` compare Gasteiger, EState and BCUT2D with RDKit
+`4ce8a063`. Ipc and AvgIpc use a separate RDKit reference, `b9518c8a`, which
+computes exact characteristic-polynomial coefficients. Finite BCUT2D eigenvalues
+use a [per-eigenvalue tolerance](dev/test_boundaries.md#corpus-tests). The other
+tasks compare numerical results bit for bit.
+
+| Corpus | Inputs | Matching values | Matching errors | Mismatches |
+|---|---:|---:|---:|---:|
+| [Small SMILES corpus](parity-tests/testdata/corpora/smiles_small.smi) | 152 | 1,656 | 168 | 0 |
+| [Descriptor edge cases](parity-tests/testdata/corpora/descriptor_foundations.jsonl) | 19 | 220 | 8 | 0 |
+
+Each comparison covers one descriptor call with one input and set of options.
+A returned vector counts as one value, with every entry checked. Neither run
+had a timeout.
 
 ## COSMolKit 0.5.1-rc.2 / RDKit 2026.09.1
 

@@ -33,6 +33,12 @@ fails when that tag's changelog section is missing or empty.
 
 ## [Unreleased]
 
+### Added
+
+- Rust, Python and JavaScript can calculate per-atom Gasteiger charges, PEOE-VSA,
+  EState indices and surface-area bins, BCUT2D eigenvalues, and Ipc/AvgIpc from
+  exact characteristic-polynomial coefficients.
+
 ## [0.6.4] - 2026-11-27
 
 ### Added

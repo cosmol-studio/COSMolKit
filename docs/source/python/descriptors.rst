@@ -2,14 +2,13 @@ Molecular Descriptors
 =====================
 
 .. meta::
-   :description: Calculate source-backed molecular properties, connectivity and shape indices, Lipinski counts, MQN, Labute ASA, and SlogP/SMR VSA descriptors with COSMolKit.
+   :description: Calculate molecular properties, Gasteiger charges, surface-area and EState descriptors, BCUT2D eigenvalues, and graph information content with COSMolKit.
 
-COSMolKit exposes the source-backed molecular descriptor methods on
-:class:`cosmolkit.Molecule`. Descriptor calls are read-only and do not mutate
-the input :class:`cosmolkit.Molecule`.
-
-The implementations follow the pinned RDKit source. See ``VALIDATION.md`` in
-the source repository for validation coverage.
+Call descriptor methods on :class:`cosmolkit.Molecule`. They leave atoms,
+bonds and coordinates unchanged. Some surface-area methods reuse previously
+calculated atom areas, as described below. The repository's
+`validation results <https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md>`_
+list the RDKit references and test corpora.
 
 Basic Descriptors
 -----------------
@@ -40,6 +39,36 @@ The basic property functions are:
 * :meth:`cosmolkit.Molecule.num_aromatic_rings`
 * :meth:`cosmolkit.Molecule.num_rotatable_bonds`
 * :meth:`cosmolkit.Molecule.qed`
+
+Gasteiger Partial Charges
+-------------------------
+
+``gasteiger_charges()`` returns one row per atom in input order. Each row
+separates the charge on the atom from the total charge on its attached
+hydrogens that are not graph vertices. Hydrogens already present as vertices
+have their own rows. The default is 12 iterations with permissive parameter
+lookup; strict lookup raises an error for an unsupported element and mode.
+
+.. code-block:: python
+
+   import cosmolkit as ck
+
+   ethanol = ck.mol_from_smiles("CCO")
+   strict = ck.GasteigerChargeParams(throw_on_param_failure=True)
+   oxygen = ethanol.gasteiger_charges(strict)[2]
+   assert round(oxygen.atom_charge, 3) == -0.397
+   assert round(oxygen.attached_hydrogen_charge, 3) == 0.210
+   assert len(ethanol.peoe_vsa()) == 14
+
+Reuse ``strict`` across molecules, or pass settings as keywords for one call:
+``ethanol.gasteiger_charges(throw_on_param_failure=True)``. Passing both a
+parameter object and keywords raises ``TypeError``.
+
+``peoe_vsa()`` groups Labute atom surface areas by atom charge. An earlier
+call that explicitly recalculated the Labute areas without hydrogen
+contributions changes those areas. The four charge extrema use only the
+graph atoms' own charges; ``min_abs_partial_charge()`` is the smaller absolute
+value of the signed minimum and maximum.
 
 Connectivity And Shape
 ----------------------
@@ -101,6 +130,82 @@ has ``len(bins) + 1`` entries. Scalar projections ``slogp_vsa_1()`` through
    assert len(mqns) == 42
    assert len(atom_asa) == molecule.num_atoms
    assert len(slogp_vsa) == 12
+
+BCUT2D
+------
+
+``bcut2d()`` returns four high/low eigenvalue pairs, in order: atomic mass,
+Gasteiger charge, Crippen logP and Crippen molar refractivity. It removes
+hydrogens and sanitizes a copy of the molecule. An unsupported bond order or
+missing Gasteiger parameter raises ``DescriptorReadError`` for the whole query.
+The unsupported-bond error reports the bond index in the input molecule.
+With one atom left after hydrogen removal, both charge extrema equal that
+atom's charge, even if it is infinite. With two or more atoms, a NaN or
+infinite charge makes the two charge extrema NaN. The other pairs keep their values.
+The sign bit of a NaN can differ from RDKit's for the same molecule.
+The Rust eigensolver is shared with WASM; its final eigenvalues can differ
+from RDKit's Eigen results in the last digits.
+
+.. code-block:: python
+
+   from math import isclose
+   from cosmolkit import Molecule
+
+   values = Molecule.from_smiles("C.C").bcut2d()
+   mass_high, mass_low = values[:2]
+   assert isclose(mass_high, 12.012) and isclose(mass_low, 12.010)
+
+Electrotopological state
+------------------------
+
+``estate_indices()`` returns one EState index per graph atom, in atom order.
+``estate_vsa()`` groups Labute atom areas by EState (11 bins);
+``vsa_estate()`` groups the EState indices by Labute atom area (10 bins).
+The separate Labute hydrogen contribution is excluded in both directions.
+
+.. code-block:: python
+
+   from cosmolkit import Molecule
+
+   ethanol = Molecule.from_smiles("CCO")
+   indices = ethanol.estate_indices()
+   assert indices[1] == 0.25
+   assert ethanol.vsa_estate_3() == indices[2]
+   assert ethanol.estate_vsa_6() == ethanol.estate_vsa()[5]
+
+The default vectors refresh hydrogen-inclusive Labute rows. Numbered methods
+reuse that direction's last vector; a molecule copy starts with no saved
+EState vectors. The extrema (``min_estate_index()``, ``max_estate_index()``,
+``min_abs_estate_index()``, ``max_abs_estate_index()``) are zero on an empty graph.
+
+Graph information content
+-------------------------
+
+``avg_ipc()`` returns the Shannon entropy in bits of the unweighted graph's
+characteristic-polynomial coefficients, using their normalized magnitudes as
+probabilities. ``ipc()`` multiplies that entropy by the sum of the coefficient
+magnitudes. Bond order is ignored; a hydrogen represented as a graph atom
+counts as a vertex. Neither query needs coordinates or sanitization.
+
+.. code-block:: python
+
+   from cosmolkit import Molecule
+
+   molecule = Molecule.from_smiles("CC")
+   assert molecule.ipc() == 2 and molecule.avg_ipc() == 1
+   assert molecule.ipc([[0, 1], [0, 0]]) == 0
+   other = Molecule.from_smiles("C.C").distance_matrix()
+   assert molecule.avg_ipc(other) == 0
+
+To replace the bonds for one call, supply a square matrix with one row and
+column per atom, in graph order. Only entries exactly equal to one in its lower
+triangle count; a diagonal one adds a self-loop.
+COSMolKit reconstructs the coefficients as integers before computing entropy,
+as in `RDKit PR #9884 <https://github.com/rdkit/rdkit/pull/9884>`_. Results
+can differ from RDKit implementations that compute the coefficients in floating point.
+On long chains it can return a finite average when the total is positive infinity.
+Both results are NaN if the graph exceeds the algorithm's reconstruction bound,
+and both are zero for empty or edgeless graphs.
 
 Formula Options
 ---------------
