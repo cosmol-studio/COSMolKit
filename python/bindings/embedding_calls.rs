@@ -27,6 +27,7 @@ pub(crate) fn keywords(
     use_macrocycle_torsions: Option<bool>,
     use_macrocycle14config: Option<bool>,
     timeout: Option<u32>,
+    pruning_timeout: Option<u32>,
     cpci: Option<BTreeMap<(u32, u32), f64>>,
     force_trans_amides: Option<bool>,
     use_symmetry_for_pruning: Option<bool>,
@@ -110,6 +111,9 @@ pub(crate) fn keywords(
     }
     if let Some(value) = timeout {
         inner.timeout = value;
+    }
+    if let Some(value) = pruning_timeout {
+        inner.pruning_timeout = value;
     }
     if let Some(value) = cpci {
         inner.cpci = Some(value);

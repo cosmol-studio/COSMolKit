@@ -4574,6 +4574,7 @@ fn embedder_is_conf_far_from_rest<'a>(
     conf: &cosmolkit_model::Conformer3D,
     threshold: f64,
     self_matches: &[Vec<usize>],
+    deadline: Option<Instant>,
 ) -> Result<bool, GenerationError> {
     // BEGIN RDKIT CPP FUNCTION _isConfFarFromRest (Embedder.cpp:1317-1343)
     // RDKit❗❌: bool _isConfFarFromRest(
@@ -4617,15 +4618,35 @@ fn embedder_is_conf_far_from_rest<'a>(
     let ssr_threshold = first.len() as f64 * threshold * threshold;
     for matched in self_matches {
         for previous in existing.clone() {
+            if deadline.is_some_and(|end| Instant::now() >= end) {
+                return Err(crate::PruningError::TimedOut.into());
+            }
             embedder_fill_atom_positions(&mut probe, previous, matched)?;
             let ssr = cosmolkit_core::alignment_sum_squared_residual(&reference, &probe)
                 .map_err(GenerationError::Input)?;
+            if deadline.is_some_and(|end| Instant::now() >= end) {
+                return Err(crate::PruningError::TimedOut.into());
+            }
             if ssr < ssr_threshold {
                 return Ok(false);
             }
         }
     }
     Ok(true)
+}
+
+fn record_pruning_timeout(
+    result: &mut GeneratedConformers,
+    params: &mut EmbedParams,
+) -> Result<(), GenerationError> {
+    result.termination = EmbedTermination::TimedOut;
+    with_embedding_progress(params, |settings, progress| {
+        embedder_increment_failure(
+            settings,
+            progress,
+            crate::EmbedFailureCause::ExceededTimeout,
+        )
+    })
 }
 #[cfg(test)]
 mod original_numeric_pruning_conditions {
@@ -4663,12 +4684,16 @@ mod original_numeric_pruning_conditions {
         let close = Conformer3D::new(1, vec![[0.01, 0.0, 0.0], [1.01, 0.0, 0.0]], true);
         let far = Conformer3D::new(2, vec![[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]], true);
         let matches = vec![vec![0, 1]];
+        assert!(matches!(
+            embedder_is_conf_far_from_rest(&existing, &far, 0.5, &matches, Some(Instant::now())),
+            Err(GenerationError::Pruning(crate::PruningError::TimedOut))
+        ));
         assert!(
-            !embedder_is_conf_far_from_rest(&existing, &close, 0.5, &matches)
+            !embedder_is_conf_far_from_rest(&existing, &close, 0.5, &matches, None)
                 .expect("original checked source pruning")
         );
         assert!(
-            embedder_is_conf_far_from_rest(&existing, &far, 0.5, &matches)
+            embedder_is_conf_far_from_rest(&existing, &far, 0.5, &matches, None)
                 .expect("original checked source pruning")
         );
     }
@@ -4681,7 +4706,8 @@ mod original_numeric_pruning_conditions {
                 std::slice::from_ref(&previous),
                 &conf,
                 0.0,
-                &[vec![0, 1]]
+                &[vec![0, 1]],
+                None,
             )
             .unwrap()
         );
@@ -4690,30 +4716,44 @@ mod original_numeric_pruning_conditions {
                 std::slice::from_ref(&previous),
                 &conf,
                 0.5,
-                &[vec![0, 1]]
+                &[vec![0, 1]],
+                None,
             )
             .unwrap()
         );
         assert!(
-            embedder_is_conf_far_from_rest(std::slice::from_ref(&previous), &conf, 0.5, &[vec![]])
-                .unwrap()
+            embedder_is_conf_far_from_rest(
+                std::slice::from_ref(&previous),
+                &conf,
+                0.5,
+                &[vec![]],
+                None
+            )
+            .unwrap()
         );
-        assert!(embedder_is_conf_far_from_rest(&[], &conf, 0.5, &[vec![]]).unwrap());
+        assert!(embedder_is_conf_far_from_rest(&[], &conf, 0.5, &[vec![]], None).unwrap());
         let three = Conformer3D::new(
             2,
             vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
             true,
         );
         assert!(
-            embedder_is_conf_far_from_rest(std::slice::from_ref(&three), &conf, 0.1, &[vec![0, 1]])
-                .unwrap()
+            embedder_is_conf_far_from_rest(
+                std::slice::from_ref(&three),
+                &conf,
+                0.1,
+                &[vec![0, 1]],
+                None
+            )
+            .unwrap()
         );
         assert!(
             !embedder_is_conf_far_from_rest(
                 std::slice::from_ref(&three),
                 &conf,
                 0.1,
-                &[vec![0, 1], vec![0, 2]]
+                &[vec![0, 1], vec![0, 2]],
+                None,
             )
             .unwrap()
         );
@@ -5915,9 +5955,37 @@ pub fn generate_conformers(
             return Ok(result);
         }
     }
+    // CK's optional pruning budget starts after embedding and covers both
+    // symmetry matching and RMS comparisons. Disabled calls read no clock.
+    let pruning_deadline = if params.prune_rms_thresh > 0. && params.pruning_timeout > 0 {
+        Some(
+            Instant::now()
+                .checked_add(std::time::Duration::from_secs(u64::from(
+                    params.pruning_timeout,
+                )))
+                .ok_or(GenerationError::Input(
+                    "pruning deadline exceeds monotonic clock range",
+                ))?,
+        )
+    } else {
+        None
+    };
     let matches = if params.prune_rms_thresh > 0. {
-        let pruned =
-            crate::pruning_self_matches(topology, coordinates, properties, params, project_query)?;
+        let pruned = match crate::pruning_self_matches_with_deadline(
+            topology,
+            coordinates,
+            properties,
+            params,
+            project_query,
+            pruning_deadline,
+        ) {
+            Ok(pruned) => pruned,
+            Err(crate::PruningError::TimedOut) => {
+                record_pruning_timeout(&mut result, params)?;
+                return Ok(result);
+            }
+            Err(error) => return Err(error.into()),
+        };
         result.diagnostics.extend(
             pruned
                 .hydrogen_warnings
@@ -5958,15 +6026,29 @@ pub fn generate_conformers(
     // reduces repeated O(C+K) scans to one O(C) scan plus O(K) increments.
     let mut next_id = None;
     for (ci, conf) in candidates.into_iter().enumerate() {
-        if ok[ci]
-            && (params.prune_rms_thresh <= 0.
-                || embedder_is_conf_far_from_rest(
-                    retained.iter().chain(result.conformers.iter()),
-                    &conf,
-                    params.prune_rms_thresh,
-                    &matches,
-                )?)
-        {
+        if pruning_deadline.is_some_and(|end| Instant::now() >= end) {
+            record_pruning_timeout(&mut result, params)?;
+            break;
+        }
+        let far = if !ok[ci] || params.prune_rms_thresh <= 0. {
+            true
+        } else {
+            match embedder_is_conf_far_from_rest(
+                retained.iter().chain(result.conformers.iter()),
+                &conf,
+                params.prune_rms_thresh,
+                &matches,
+                pruning_deadline,
+            ) {
+                Ok(far) => far,
+                Err(GenerationError::Pruning(crate::PruningError::TimedOut)) => {
+                    record_pruning_timeout(&mut result, params)?;
+                    break;
+                }
+                Err(error) => return Err(error),
+            }
+        };
+        if ok[ci] && far {
             let id = match next_id {
                 Some(id) => id,
                 None => retained.iter().map(|c| c.id()).max().map_or(Ok(0), |id| {
@@ -6005,6 +6087,7 @@ mod original_complete_generation_conditions {
             EmbedParams::sr_etkdg_v3(),
         ] {
             assert!(p.use_legacy_implementation);
+            assert_eq!(p.pruning_timeout, 0);
             p.track_failures = true;
             p.failures = vec![7; 19];
             let out = generate_conformers(

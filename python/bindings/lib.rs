@@ -10180,7 +10180,7 @@ pub mod native {
             self._canonical_tautomer_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,pruning_timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         /// Embed a 3D conformer in a new molecular value using the selected distance-geometry parameters.
         fn with_3d_conformer(
             &self,
@@ -10214,6 +10214,7 @@ pub mod native {
             use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
             use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
             timeout: crate::arguments::Argument<Option<u32>>,
+            pruning_timeout: crate::arguments::Argument<Option<u32>>,
             cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
             force_trans_amides: crate::arguments::Argument<Option<bool>>,
             use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
@@ -10248,6 +10249,7 @@ pub mod native {
                 || use_macrocycle_torsions.is_supplied()
                 || use_macrocycle14config.is_supplied()
                 || timeout.is_supplied()
+                || pruning_timeout.is_supplied()
                 || cpci.is_supplied()
                 || force_trans_amides.is_supplied()
                 || use_symmetry_for_pruning.is_supplied()
@@ -10255,7 +10257,7 @@ pub mod native {
                 || track_failures.is_supplied()
                 || enable_sequential_random_seeds.is_supplied()
                 || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
-            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, pruning_timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
             let params = params.as_deref();
             if keyword_form {
                 self._with_3d_conformer_keywords(
@@ -10284,6 +10286,7 @@ pub mod native {
                     use_macrocycle_torsions,
                     use_macrocycle14config,
                     timeout,
+                    pruning_timeout,
                     cpci,
                     force_trans_amides,
                     use_symmetry_for_pruning,
@@ -10307,7 +10310,7 @@ pub mod native {
             self._with_3d_conformer_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformer"}"#]
-        #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,pruning_timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
         fn _with_3d_conformer_keywords(
             &self,
             py: Python<'_>,
@@ -10335,6 +10338,7 @@ pub mod native {
             use_macrocycle_torsions: Option<bool>,
             use_macrocycle14config: Option<bool>,
             timeout: Option<u32>,
+            pruning_timeout: Option<u32>,
             cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
             force_trans_amides: Option<bool>,
             use_symmetry_for_pruning: Option<bool>,
@@ -10367,6 +10371,7 @@ pub mod native {
                 && use_macrocycle_torsions.is_none()
                 && use_macrocycle14config.is_none()
                 && timeout.is_none()
+                && pruning_timeout.is_none()
                 && cpci.is_none()
                 && force_trans_amides.is_none()
                 && use_symmetry_for_pruning.is_none()
@@ -10402,6 +10407,7 @@ pub mod native {
                 use_macrocycle_torsions,
                 use_macrocycle14config,
                 timeout,
+                pruning_timeout,
                 cpci,
                 force_trans_amides,
                 use_symmetry_for_pruning,
@@ -10421,7 +10427,7 @@ pub mod native {
             self._with_3d_conformer_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,pruning_timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         /// Embed a 3D conformer in place using the selected distance-geometry parameters.
         fn embed_3d_conformer_(
             &mut self,
@@ -10455,6 +10461,7 @@ pub mod native {
             use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
             use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
             timeout: crate::arguments::Argument<Option<u32>>,
+            pruning_timeout: crate::arguments::Argument<Option<u32>>,
             cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
             force_trans_amides: crate::arguments::Argument<Option<bool>>,
             use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
@@ -10489,6 +10496,7 @@ pub mod native {
                 || use_macrocycle_torsions.is_supplied()
                 || use_macrocycle14config.is_supplied()
                 || timeout.is_supplied()
+                || pruning_timeout.is_supplied()
                 || cpci.is_supplied()
                 || force_trans_amides.is_supplied()
                 || use_symmetry_for_pruning.is_supplied()
@@ -10496,7 +10504,7 @@ pub mod native {
                 || track_failures.is_supplied()
                 || enable_sequential_random_seeds.is_supplied()
                 || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
-            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, pruning_timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
             let params = params.as_deref();
             if keyword_form {
                 self._embed_3d_conformer_keywords(
@@ -10525,6 +10533,7 @@ pub mod native {
                     use_macrocycle_torsions,
                     use_macrocycle14config,
                     timeout,
+                    pruning_timeout,
                     cpci,
                     force_trans_amides,
                     use_symmetry_for_pruning,
@@ -10548,7 +10557,7 @@ pub mod native {
             self._embed_3d_conformer_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformer_"}"#]
-        #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,pruning_timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
         fn _embed_3d_conformer_keywords(
             &mut self,
             py: Python<'_>,
@@ -10576,6 +10585,7 @@ pub mod native {
             use_macrocycle_torsions: Option<bool>,
             use_macrocycle14config: Option<bool>,
             timeout: Option<u32>,
+            pruning_timeout: Option<u32>,
             cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
             force_trans_amides: Option<bool>,
             use_symmetry_for_pruning: Option<bool>,
@@ -10608,6 +10618,7 @@ pub mod native {
                 && use_macrocycle_torsions.is_none()
                 && use_macrocycle14config.is_none()
                 && timeout.is_none()
+                && pruning_timeout.is_none()
                 && cpci.is_none()
                 && force_trans_amides.is_none()
                 && use_symmetry_for_pruning.is_none()
@@ -10643,6 +10654,7 @@ pub mod native {
                 use_macrocycle_torsions,
                 use_macrocycle14config,
                 timeout,
+                pruning_timeout,
                 cpci,
                 force_trans_amides,
                 use_symmetry_for_pruning,
@@ -10662,7 +10674,7 @@ pub mod native {
             self._embed_3d_conformer_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,pruning_timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         /// Embed a 3D conformer and return a new molecule with its generation outcome and diagnostics. A failed attempt is not a valid conformer identifier.
         fn with_3d_conformer_result(
             &self,
@@ -10696,6 +10708,7 @@ pub mod native {
             use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
             use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
             timeout: crate::arguments::Argument<Option<u32>>,
+            pruning_timeout: crate::arguments::Argument<Option<u32>>,
             cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
             force_trans_amides: crate::arguments::Argument<Option<bool>>,
             use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
@@ -10730,6 +10743,7 @@ pub mod native {
                 || use_macrocycle_torsions.is_supplied()
                 || use_macrocycle14config.is_supplied()
                 || timeout.is_supplied()
+                || pruning_timeout.is_supplied()
                 || cpci.is_supplied()
                 || force_trans_amides.is_supplied()
                 || use_symmetry_for_pruning.is_supplied()
@@ -10737,7 +10751,7 @@ pub mod native {
                 || track_failures.is_supplied()
                 || enable_sequential_random_seeds.is_supplied()
                 || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
-            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, pruning_timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
             let params = params.as_deref();
             if keyword_form {
                 self._with_3d_conformer_result_keywords(
@@ -10766,6 +10780,7 @@ pub mod native {
                     use_macrocycle_torsions,
                     use_macrocycle14config,
                     timeout,
+                    pruning_timeout,
                     cpci,
                     force_trans_amides,
                     use_symmetry_for_pruning,
@@ -10789,7 +10804,7 @@ pub mod native {
             self._with_3d_conformer_result_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformer_result"}"#]
-        #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,pruning_timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
         fn _with_3d_conformer_result_keywords(
             &self,
             py: Python<'_>,
@@ -10817,6 +10832,7 @@ pub mod native {
             use_macrocycle_torsions: Option<bool>,
             use_macrocycle14config: Option<bool>,
             timeout: Option<u32>,
+            pruning_timeout: Option<u32>,
             cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
             force_trans_amides: Option<bool>,
             use_symmetry_for_pruning: Option<bool>,
@@ -10849,6 +10865,7 @@ pub mod native {
                 && use_macrocycle_torsions.is_none()
                 && use_macrocycle14config.is_none()
                 && timeout.is_none()
+                && pruning_timeout.is_none()
                 && cpci.is_none()
                 && force_trans_amides.is_none()
                 && use_symmetry_for_pruning.is_none()
@@ -10884,6 +10901,7 @@ pub mod native {
                 use_macrocycle_torsions,
                 use_macrocycle14config,
                 timeout,
+                pruning_timeout,
                 cpci,
                 force_trans_amides,
                 use_symmetry_for_pruning,
@@ -10903,7 +10921,7 @@ pub mod native {
             self._with_3d_conformer_result_params(py, Some(params))
         }
 
-        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,pruning_timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         /// Embed a 3D conformer in place and return the native generation outcome and diagnostics.
         fn embed_3d_conformer_result_(
             &mut self,
@@ -10937,6 +10955,7 @@ pub mod native {
             use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
             use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
             timeout: crate::arguments::Argument<Option<u32>>,
+            pruning_timeout: crate::arguments::Argument<Option<u32>>,
             cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
             force_trans_amides: crate::arguments::Argument<Option<bool>>,
             use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
@@ -10971,6 +10990,7 @@ pub mod native {
                 || use_macrocycle_torsions.is_supplied()
                 || use_macrocycle14config.is_supplied()
                 || timeout.is_supplied()
+                || pruning_timeout.is_supplied()
                 || cpci.is_supplied()
                 || force_trans_amides.is_supplied()
                 || use_symmetry_for_pruning.is_supplied()
@@ -10978,7 +10998,7 @@ pub mod native {
                 || track_failures.is_supplied()
                 || enable_sequential_random_seeds.is_supplied()
                 || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
-            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, pruning_timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
             let params = params.as_deref();
             if keyword_form {
                 self._embed_3d_conformer_result_keywords(
@@ -11007,6 +11027,7 @@ pub mod native {
                     use_macrocycle_torsions,
                     use_macrocycle14config,
                     timeout,
+                    pruning_timeout,
                     cpci,
                     force_trans_amides,
                     use_symmetry_for_pruning,
@@ -11030,7 +11051,7 @@ pub mod native {
             self._embed_3d_conformer_result_params_native(py, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformer_result_"}"#]
-        #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,pruning_timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
         fn _embed_3d_conformer_result_keywords(
             &mut self,
             py: Python<'_>,
@@ -11058,6 +11079,7 @@ pub mod native {
             use_macrocycle_torsions: Option<bool>,
             use_macrocycle14config: Option<bool>,
             timeout: Option<u32>,
+            pruning_timeout: Option<u32>,
             cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
             force_trans_amides: Option<bool>,
             use_symmetry_for_pruning: Option<bool>,
@@ -11090,6 +11112,7 @@ pub mod native {
                 && use_macrocycle_torsions.is_none()
                 && use_macrocycle14config.is_none()
                 && timeout.is_none()
+                && pruning_timeout.is_none()
                 && cpci.is_none()
                 && force_trans_amides.is_none()
                 && use_symmetry_for_pruning.is_none()
@@ -11125,6 +11148,7 @@ pub mod native {
                 use_macrocycle_torsions,
                 use_macrocycle14config,
                 timeout,
+                pruning_timeout,
                 cpci,
                 force_trans_amides,
                 use_symmetry_for_pruning,
@@ -11144,7 +11168,7 @@ pub mod native {
             self._embed_3d_conformer_result_params(py, Some(params))
         }
 
-        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,pruning_timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         /// Embed the requested number of 3D conformers in a new molecular value under the selected sampling and pruning policy.
         fn with_3d_conformers(
             &self,
@@ -11179,6 +11203,7 @@ pub mod native {
             use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
             use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
             timeout: crate::arguments::Argument<Option<u32>>,
+            pruning_timeout: crate::arguments::Argument<Option<u32>>,
             cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
             force_trans_amides: crate::arguments::Argument<Option<bool>>,
             use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
@@ -11213,6 +11238,7 @@ pub mod native {
                 || use_macrocycle_torsions.is_supplied()
                 || use_macrocycle14config.is_supplied()
                 || timeout.is_supplied()
+                || pruning_timeout.is_supplied()
                 || cpci.is_supplied()
                 || force_trans_amides.is_supplied()
                 || use_symmetry_for_pruning.is_supplied()
@@ -11220,7 +11246,7 @@ pub mod native {
                 || track_failures.is_supplied()
                 || enable_sequential_random_seeds.is_supplied()
                 || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
-            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, pruning_timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
             let params = params.as_deref();
             if keyword_form {
                 self._with_3d_conformers_keywords(
@@ -11250,6 +11276,7 @@ pub mod native {
                     use_macrocycle_torsions,
                     use_macrocycle14config,
                     timeout,
+                    pruning_timeout,
                     cpci,
                     force_trans_amides,
                     use_symmetry_for_pruning,
@@ -11274,7 +11301,7 @@ pub mod native {
             self._with_3d_conformers_params_native(py, num_confs, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformers"}"#]
-        #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,pruning_timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
         fn _with_3d_conformers_keywords(
             &self,
             py: Python<'_>,
@@ -11303,6 +11330,7 @@ pub mod native {
             use_macrocycle_torsions: Option<bool>,
             use_macrocycle14config: Option<bool>,
             timeout: Option<u32>,
+            pruning_timeout: Option<u32>,
             cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
             force_trans_amides: Option<bool>,
             use_symmetry_for_pruning: Option<bool>,
@@ -11335,6 +11363,7 @@ pub mod native {
                 && use_macrocycle_torsions.is_none()
                 && use_macrocycle14config.is_none()
                 && timeout.is_none()
+                && pruning_timeout.is_none()
                 && cpci.is_none()
                 && force_trans_amides.is_none()
                 && use_symmetry_for_pruning.is_none()
@@ -11370,6 +11399,7 @@ pub mod native {
                 use_macrocycle_torsions,
                 use_macrocycle14config,
                 timeout,
+                pruning_timeout,
                 cpci,
                 force_trans_amides,
                 use_symmetry_for_pruning,
@@ -11390,7 +11420,7 @@ pub mod native {
             self._with_3d_conformers_params(py, num_confs, Some(params))
         }
 
-        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,pruning_timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         /// Embed the requested number of 3D conformers in place under the selected sampling and pruning policy.
         fn embed_3d_conformers_(
             &mut self,
@@ -11425,6 +11455,7 @@ pub mod native {
             use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
             use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
             timeout: crate::arguments::Argument<Option<u32>>,
+            pruning_timeout: crate::arguments::Argument<Option<u32>>,
             cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
             force_trans_amides: crate::arguments::Argument<Option<bool>>,
             use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
@@ -11459,6 +11490,7 @@ pub mod native {
                 || use_macrocycle_torsions.is_supplied()
                 || use_macrocycle14config.is_supplied()
                 || timeout.is_supplied()
+                || pruning_timeout.is_supplied()
                 || cpci.is_supplied()
                 || force_trans_amides.is_supplied()
                 || use_symmetry_for_pruning.is_supplied()
@@ -11466,7 +11498,7 @@ pub mod native {
                 || track_failures.is_supplied()
                 || enable_sequential_random_seeds.is_supplied()
                 || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
-            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, pruning_timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
             let params = params.as_deref();
             if keyword_form {
                 self._embed_3d_conformers_keywords(
@@ -11496,6 +11528,7 @@ pub mod native {
                     use_macrocycle_torsions,
                     use_macrocycle14config,
                     timeout,
+                    pruning_timeout,
                     cpci,
                     force_trans_amides,
                     use_symmetry_for_pruning,
@@ -11520,7 +11553,7 @@ pub mod native {
             self._embed_3d_conformers_params_native(py, num_confs, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformers_"}"#]
-        #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,pruning_timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
         fn _embed_3d_conformers_keywords(
             &mut self,
             py: Python<'_>,
@@ -11549,6 +11582,7 @@ pub mod native {
             use_macrocycle_torsions: Option<bool>,
             use_macrocycle14config: Option<bool>,
             timeout: Option<u32>,
+            pruning_timeout: Option<u32>,
             cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
             force_trans_amides: Option<bool>,
             use_symmetry_for_pruning: Option<bool>,
@@ -11581,6 +11615,7 @@ pub mod native {
                 && use_macrocycle_torsions.is_none()
                 && use_macrocycle14config.is_none()
                 && timeout.is_none()
+                && pruning_timeout.is_none()
                 && cpci.is_none()
                 && force_trans_amides.is_none()
                 && use_symmetry_for_pruning.is_none()
@@ -11616,6 +11651,7 @@ pub mod native {
                 use_macrocycle_torsions,
                 use_macrocycle14config,
                 timeout,
+                pruning_timeout,
                 cpci,
                 force_trans_amides,
                 use_symmetry_for_pruning,
@@ -11636,7 +11672,7 @@ pub mod native {
             self._embed_3d_conformers_params(py, num_confs, Some(params))
         }
 
-        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,pruning_timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         /// Return a new molecule with multiple-conformer generation results and diagnostics. Requested attempts and successful conformers are distinct counts.
         fn with_3d_conformers_result(
             &self,
@@ -11671,6 +11707,7 @@ pub mod native {
             use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
             use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
             timeout: crate::arguments::Argument<Option<u32>>,
+            pruning_timeout: crate::arguments::Argument<Option<u32>>,
             cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
             force_trans_amides: crate::arguments::Argument<Option<bool>>,
             use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
@@ -11705,6 +11742,7 @@ pub mod native {
                 || use_macrocycle_torsions.is_supplied()
                 || use_macrocycle14config.is_supplied()
                 || timeout.is_supplied()
+                || pruning_timeout.is_supplied()
                 || cpci.is_supplied()
                 || force_trans_amides.is_supplied()
                 || use_symmetry_for_pruning.is_supplied()
@@ -11712,7 +11750,7 @@ pub mod native {
                 || track_failures.is_supplied()
                 || enable_sequential_random_seeds.is_supplied()
                 || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
-            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, pruning_timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
             let params = params.as_deref();
             if keyword_form {
                 self._with_3d_conformers_result_keywords(
@@ -11742,6 +11780,7 @@ pub mod native {
                     use_macrocycle_torsions,
                     use_macrocycle14config,
                     timeout,
+                    pruning_timeout,
                     cpci,
                     force_trans_amides,
                     use_symmetry_for_pruning,
@@ -11766,7 +11805,7 @@ pub mod native {
             self._with_3d_conformers_result_params_native(py, num_confs, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.with_3d_conformers_result"}"#]
-        #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,pruning_timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
         fn _with_3d_conformers_result_keywords(
             &self,
             py: Python<'_>,
@@ -11795,6 +11834,7 @@ pub mod native {
             use_macrocycle_torsions: Option<bool>,
             use_macrocycle14config: Option<bool>,
             timeout: Option<u32>,
+            pruning_timeout: Option<u32>,
             cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
             force_trans_amides: Option<bool>,
             use_symmetry_for_pruning: Option<bool>,
@@ -11827,6 +11867,7 @@ pub mod native {
                 && use_macrocycle_torsions.is_none()
                 && use_macrocycle14config.is_none()
                 && timeout.is_none()
+                && pruning_timeout.is_none()
                 && cpci.is_none()
                 && force_trans_amides.is_none()
                 && use_symmetry_for_pruning.is_none()
@@ -11862,6 +11903,7 @@ pub mod native {
                 use_macrocycle_torsions,
                 use_macrocycle14config,
                 timeout,
+                pruning_timeout,
                 cpci,
                 force_trans_amides,
                 use_symmetry_for_pruning,
@@ -11882,7 +11924,7 @@ pub mod native {
             self._with_3d_conformers_result_params(py, num_confs, Some(params))
         }
 
-        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
+        #[pyo3(signature=(num_confs,params=crate::arguments::Argument::Missing,*,max_iterations=crate::arguments::Argument::Missing,num_threads=crate::arguments::Argument::Missing,random_seed=crate::arguments::Argument::Missing,clear_conformers=crate::arguments::Argument::Missing,use_random_coords=crate::arguments::Argument::Missing,box_size_mult=crate::arguments::Argument::Missing,rand_neg_eig=crate::arguments::Argument::Missing,num_zero_fail=crate::arguments::Argument::Missing,coord_map=crate::arguments::Argument::Missing,optimizer_force_tol=crate::arguments::Argument::Missing,ignore_smoothing_failures=crate::arguments::Argument::Missing,enforce_chirality=crate::arguments::Argument::Missing,use_exp_torsion_angle_prefs=crate::arguments::Argument::Missing,use_basic_knowledge=crate::arguments::Argument::Missing,verbose=crate::arguments::Argument::Missing,basin_thresh=crate::arguments::Argument::Missing,prune_rms_thresh=crate::arguments::Argument::Missing,only_heavy_atoms_for_rms=crate::arguments::Argument::Missing,et_version=crate::arguments::Argument::Missing,embed_fragments_separately=crate::arguments::Argument::Missing,use_small_ring_torsions=crate::arguments::Argument::Missing,use_macrocycle_torsions=crate::arguments::Argument::Missing,use_macrocycle14config=crate::arguments::Argument::Missing,timeout=crate::arguments::Argument::Missing,pruning_timeout=crate::arguments::Argument::Missing,cpci=crate::arguments::Argument::Missing,force_trans_amides=crate::arguments::Argument::Missing,use_symmetry_for_pruning=crate::arguments::Argument::Missing,bounds_mat_force_scaling=crate::arguments::Argument::Missing,track_failures=crate::arguments::Argument::Missing,enable_sequential_random_seeds=crate::arguments::Argument::Missing,symmetrize_conjugated_terminal_groups_for_pruning=crate::arguments::Argument::Missing))]
         /// Embed multiple conformers in place and return native generation results and diagnostics.
         fn embed_3d_conformers_result_(
             &mut self,
@@ -11917,6 +11959,7 @@ pub mod native {
             use_macrocycle_torsions: crate::arguments::Argument<Option<bool>>,
             use_macrocycle14config: crate::arguments::Argument<Option<bool>>,
             timeout: crate::arguments::Argument<Option<u32>>,
+            pruning_timeout: crate::arguments::Argument<Option<u32>>,
             cpci: crate::arguments::Argument<Option<std::collections::BTreeMap<(u32, u32), f64>>>,
             force_trans_amides: crate::arguments::Argument<Option<bool>>,
             use_symmetry_for_pruning: crate::arguments::Argument<Option<bool>>,
@@ -11951,6 +11994,7 @@ pub mod native {
                 || use_macrocycle_torsions.is_supplied()
                 || use_macrocycle14config.is_supplied()
                 || timeout.is_supplied()
+                || pruning_timeout.is_supplied()
                 || cpci.is_supplied()
                 || force_trans_amides.is_supplied()
                 || use_symmetry_for_pruning.is_supplied()
@@ -11958,7 +12002,7 @@ pub mod native {
                 || track_failures.is_supplied()
                 || enable_sequential_random_seeds.is_supplied()
                 || symmetrize_conjugated_terminal_groups_for_pruning.is_supplied();
-            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
+            crate::arguments::configuration_arguments!(params; max_iterations, num_threads, random_seed, clear_conformers, use_random_coords, box_size_mult, rand_neg_eig, num_zero_fail, coord_map, optimizer_force_tol, ignore_smoothing_failures, enforce_chirality, use_exp_torsion_angle_prefs, use_basic_knowledge, verbose, basin_thresh, prune_rms_thresh, only_heavy_atoms_for_rms, et_version, embed_fragments_separately, use_small_ring_torsions, use_macrocycle_torsions, use_macrocycle14config, timeout, pruning_timeout, cpci, force_trans_amides, use_symmetry_for_pruning, bounds_mat_force_scaling, track_failures, enable_sequential_random_seeds, symmetrize_conjugated_terminal_groups_for_pruning);
             let params = params.as_deref();
             if keyword_form {
                 self._embed_3d_conformers_result_keywords(
@@ -11988,6 +12032,7 @@ pub mod native {
                     use_macrocycle_torsions,
                     use_macrocycle14config,
                     timeout,
+                    pruning_timeout,
                     cpci,
                     force_trans_amides,
                     use_symmetry_for_pruning,
@@ -12012,7 +12057,7 @@ pub mod native {
             self._embed_3d_conformers_result_params_native(py, num_confs, params.as_ref())
         }
         #[doc = r#"{"role":"overload","target":"Molecule.embed_3d_conformers_result_"}"#]
-        #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
+        #[pyo3(signature=(num_confs,*,max_iterations=None,num_threads=None,random_seed=None,clear_conformers=None,use_random_coords=None,box_size_mult=None,rand_neg_eig=None,num_zero_fail=None,coord_map=None,optimizer_force_tol=None,ignore_smoothing_failures=None,enforce_chirality=None,use_exp_torsion_angle_prefs=None,use_basic_knowledge=None,verbose=None,basin_thresh=None,prune_rms_thresh=None,only_heavy_atoms_for_rms=None,et_version=None,embed_fragments_separately=None,use_small_ring_torsions=None,use_macrocycle_torsions=None,use_macrocycle14config=None,timeout=None,pruning_timeout=None,cpci=None,force_trans_amides=None,use_symmetry_for_pruning=None,bounds_mat_force_scaling=None,track_failures=None,enable_sequential_random_seeds=None,symmetrize_conjugated_terminal_groups_for_pruning=None))]
         fn _embed_3d_conformers_result_keywords(
             &mut self,
             py: Python<'_>,
@@ -12041,6 +12086,7 @@ pub mod native {
             use_macrocycle_torsions: Option<bool>,
             use_macrocycle14config: Option<bool>,
             timeout: Option<u32>,
+            pruning_timeout: Option<u32>,
             cpci: Option<std::collections::BTreeMap<(u32, u32), f64>>,
             force_trans_amides: Option<bool>,
             use_symmetry_for_pruning: Option<bool>,
@@ -12073,6 +12119,7 @@ pub mod native {
                 && use_macrocycle_torsions.is_none()
                 && use_macrocycle14config.is_none()
                 && timeout.is_none()
+                && pruning_timeout.is_none()
                 && cpci.is_none()
                 && force_trans_amides.is_none()
                 && use_symmetry_for_pruning.is_none()
@@ -12108,6 +12155,7 @@ pub mod native {
                 use_macrocycle_torsions,
                 use_macrocycle14config,
                 timeout,
+                pruning_timeout,
                 cpci,
                 force_trans_amides,
                 use_symmetry_for_pruning,

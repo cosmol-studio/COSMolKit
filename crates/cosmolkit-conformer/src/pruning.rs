@@ -15,6 +15,8 @@ pub type PruningQueryProjection = fn(
 ) -> Result<QueryGraph, QueryGraphError>;
 #[derive(Debug, thiserror::Error)]
 pub enum PruningError {
+    #[error("conformer pruning exceeded its time limit")]
+    TimedOut,
     #[error(transparent)]
     Hydrogens(#[from] cosmolkit_core::HydrogenError),
     #[error(transparent)]
@@ -40,6 +42,18 @@ pub fn pruning_self_matches(
     properties: &MoleculeProperties,
     params: &EmbedParams,
     project: PruningQueryProjection,
+) -> Result<PruningMatches, PruningError> {
+    pruning_self_matches_with_deadline(topology, coordinates, properties, params, project, None)
+}
+
+#[doc(hidden)]
+pub fn pruning_self_matches_with_deadline(
+    topology: &TopologyBlock,
+    coordinates: &CoordinateBlock,
+    properties: &MoleculeProperties,
+    params: &EmbedParams,
+    project: PruningQueryProjection,
+    deadline: Option<web_time::Instant>,
 ) -> Result<PruningMatches, PruningError> {
     // BEGIN RDKIT CPP FUNCTION getMolSelfMatches (Embedder.cpp:1449-1497)
     // RDKit❗❌: std::vector<std::vector<unsigned int>> getMolSelfMatches(
@@ -93,6 +107,28 @@ pub fn pruning_self_matches(
     // RDKit❗❌: }
     // END RDKIT CPP FUNCTION getMolSelfMatches (Embedder.cpp:1449-1497)
 
+    if deadline.is_some_and(|end| web_time::Instant::now() >= end) {
+        return Err(PruningError::TimedOut);
+    }
+    let search = |target: &SearchTarget<'_>,
+                  query: &QueryGraph,
+                  matching: &SubstructMatchParams,
+                  context: &cosmolkit_search::QueryMatchContext| {
+        match deadline {
+            Some(end) => {
+                cosmolkit_search::try_get_substruct_matches_with_params_and_context_and_deadline(
+                    target, query, matching, context, end,
+                )
+            }
+            None => cosmolkit_search::try_get_substruct_matches_with_params_and_context(
+                target, query, matching, context,
+            ),
+        }
+        .map_err(|error| match error {
+            SubstructMatchError::TimedOut => PruningError::TimedOut,
+            error => PruningError::Match(error),
+        })
+    };
     let mut result = Vec::new();
     let mut warnings = Vec::new();
     if params.prune_rms_thresh != 0.0 && params.use_symmetry_for_pruning {
@@ -138,12 +174,7 @@ pub fn pruning_self_matches(
             max_matches: 1,
             ..Default::default()
         };
-        let stripped_match = cosmolkit_search::try_get_substruct_matches_with_params_and_context(
-            &original_target,
-            &query,
-            &matching,
-            &original_context,
-        )?;
+        let stripped_match = search(&original_target, &query, &matching, &original_context)?;
         if stripped_match.len() != 1 {
             return Err(PruningError::Input("expected match not found"));
         }
@@ -151,12 +182,7 @@ pub fn pruning_self_matches(
         matching.uniquify = false;
         let stripped_context =
             cosmolkit_search::build_topology_query_match_context(&stripped.topology)?;
-        let heavy_matches = cosmolkit_search::try_get_substruct_matches_with_params_and_context(
-            &stripped_target,
-            &query,
-            &matching,
-            &stripped_context,
-        )?;
+        let heavy_matches = search(&stripped_target, &query, &matching, &stripped_context)?;
         for matched in heavy_matches {
             let mut mapped = Vec::with_capacity(matched.atom_mapping.len());
             for index in matched.atom_mapping {
@@ -181,6 +207,9 @@ pub fn pruning_self_matches(
         );
     } else {
         result.push((0..topology.atoms.len()).collect());
+    }
+    if deadline.is_some_and(|end| web_time::Instant::now() >= end) {
+        return Err(PruningError::TimedOut);
     }
     Ok(PruningMatches {
         self_matches: result,

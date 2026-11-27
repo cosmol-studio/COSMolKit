@@ -11311,6 +11311,7 @@ binding_contract! {
                 { name: use_macrocycle_torsions, python_type: "builtins.bool", default: "False" },
                 { name: use_macrocycle14config, python_type: "builtins.bool", default: "False" },
                 { name: timeout, python_type: "builtins.int", default: "0" },
+                { name: pruning_timeout, python_type: "builtins.int", default: "0" },
                 { name: cpci, python_type: "typing.Optional[typing.Mapping[tuple[builtins.int, builtins.int], builtins.float]]", default: "None" },
                 { name: force_trans_amides, python_type: "builtins.bool", default: "True" },
                 { name: use_symmetry_for_pruning, python_type: "builtins.bool", default: "True" },
@@ -11367,6 +11368,8 @@ binding_contract! {
 {semantic_id:"EmbedParams.use_macrocycle14config", javascript_property: getter,item:callable,owner:type_,rust:crate::EmbedParams::use_macrocycle14config,python:"use_macrocycle14config", python_property:getter,javascript:"useMacrocycle14config",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedParams)->bool,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"EmbedParams.timeout", javascript_property: getter,item:callable,owner:type_,rust:crate::EmbedParams::timeout,python:"timeout", python_property:getter,javascript:"timeout",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:u32,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedParams)->u32,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedParams.pruning_timeout", javascript_property: getter,item:callable,owner:type_,rust:crate::EmbedParams::pruning_timeout,python:"pruning_timeout", python_property:getter,javascript:"pruningTimeout",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:u32,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedParams)->u32,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"EmbedParams.cpci", javascript_property: getter,item:callable,owner:type_,rust:crate::EmbedParams::cpci,python:"cpci", python_property:getter,javascript:"cpci",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:&'a Option<std::collections::BTreeMap<(u32, u32), f64>>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::EmbedParams)->&'a Option<std::collections::BTreeMap<(u32, u32), f64>>,},
 #[cfg(feature="cap-conformer")]

@@ -28,6 +28,8 @@ mod generation;
 
 mod pruning;
 #[doc(hidden)]
+pub use pruning::pruning_self_matches_with_deadline;
+#[doc(hidden)]
 pub use pruning::{PruningError, PruningMatches, PruningQueryProjection, pruning_self_matches};
 
 #[doc(hidden)]

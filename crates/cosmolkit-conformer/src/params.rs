@@ -256,6 +256,9 @@ pub struct EmbedParams {
     pub use_macrocycle14config: bool,
     /// Embedding timeout in seconds; zero disables the timeout.
     pub timeout: u32,
+    /// CK pruning budget in seconds, shared by symmetry search and RMS pruning.
+    /// Zero disables timing entirely; this does not change the embedding timeout.
+    pub pruning_timeout: u32,
     /// Optional pair-indexed custom Coulomb-like interaction strengths.
     #[configuration(adapter)]
     pub cpci: Option<BTreeMap<(u32, u32), f64>>,
@@ -311,6 +314,7 @@ impl Default for EmbedParams {
             use_macrocycle_torsions: false,
             use_macrocycle14config: false,
             timeout: 0,
+            pruning_timeout: 0,
             cpci: None,
             callback: None,
             force_trans_amides: true,
@@ -441,6 +445,7 @@ impl EmbedParams {
             use_macrocycle_torsions,
             use_macrocycle14config,
             timeout,
+            pruning_timeout: 0,
             cpci,
             callback,
             ..Self::default()
@@ -790,6 +795,7 @@ impl EmbedParams {
             &mut self.symmetrize_conjugated_terminal_groups_for_pruning,
         )?;
         update_u32_field(&value, "timeout", &mut self.timeout)?;
+        update_u32_field(&value, "pruningTimeout", &mut self.pruning_timeout)?;
         update_bool_field(&value, "trackFailures", &mut self.track_failures)?;
         update_bool_field(&value, "useBasicKnowledge", &mut self.use_basic_knowledge)?;
         update_bool_field(
@@ -976,6 +982,10 @@ impl EmbedParams {
         );
         push_json_field(&mut fields, "optimizerForceTol", self.optimizer_force_tol);
         push_json_field(&mut fields, "pruneRmsThresh", self.prune_rms_thresh);
+        // Preserve upstream JSON bytes when CK's optional timer is disabled.
+        if self.pruning_timeout > 0 {
+            push_json_field(&mut fields, "pruningTimeout", self.pruning_timeout);
+        }
         push_json_field(&mut fields, "randNegEig", self.rand_neg_eig);
         push_json_field(&mut fields, "randomSeed", self.random_seed);
         push_json_field(
@@ -2322,6 +2332,7 @@ mod tests {
               "randomSeed": 99,
               "symmetrizeConjugatedTerminalGroupsForPruning": false,
               "timeout": 44,
+              "pruningTimeout": 2,
               "trackFailures": true,
               "useBasicKnowledge": true,
               "useExpTorsionAnglePrefs": true,
@@ -2355,6 +2366,14 @@ mod tests {
         assert_eq!(params.random_seed, 99);
         assert!(!params.symmetrize_conjugated_terminal_groups_for_pruning);
         assert_eq!(params.timeout, 44);
+        assert_eq!(params.pruning_timeout, 2);
+        assert_eq!(
+            EmbedParams::new()
+                .with_json(&params.to_json())
+                .unwrap()
+                .pruning_timeout,
+            2
+        );
         assert!(params.track_failures);
         assert!(params.use_basic_knowledge);
         assert!(params.use_exp_torsion_angle_prefs);
@@ -2529,6 +2548,10 @@ impl EmbedParams {
     }
     pub fn timeout(&self) -> u32 {
         self.timeout
+    }
+    /// Optional symmetry-search and RMS-pruning timeout in seconds; zero disables timing.
+    pub fn pruning_timeout(&self) -> u32 {
+        self.pruning_timeout
     }
     pub fn cpci(&self) -> &Option<BTreeMap<(u32, u32), f64>> {
         &self.cpci

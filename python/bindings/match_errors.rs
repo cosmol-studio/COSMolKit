@@ -106,6 +106,7 @@ error_projection!(MatchError, MatchErrorKind, ck::MatchError, "search", {
 });
 
 error_projection!(SubstructMatchError, SubstructMatchErrorKind, ck::SubstructMatchError, "search", {
+    TimedOut,
     Unsupported { branch: &'static str, rdkit_function: &'static str },
     FinalCheckMappingLength { query_mapping: usize, target_mapping: usize, query_atoms: usize },
     FinalCheckMappingIndex { side, position: usize, index, atom_count },
@@ -123,7 +124,7 @@ error_projection!(SubstructMatchError, SubstructMatchErrorKind, ck::SubstructMat
     ck::SubstructMatchError::Unsupported { .. } | ck::SubstructMatchError::FinalCheckMappingLength { .. }
     | ck::SubstructMatchError::FinalCheckMappingIndex { .. } | ck::SubstructMatchError::FinalCheckInvariant { .. }
     | ck::SubstructMatchError::FinalCheckBondEndpoint { .. } | ck::SubstructMatchError::FinalCheckMissingBond { .. }
-    | ck::SubstructMatchError::UninitializedRecursiveQuery => None,
+    | ck::SubstructMatchError::UninitializedRecursiveQuery | ck::SubstructMatchError::TimedOut => None,
 }), source = Option<MatchSource>, methods = {
     #[getter]
     #[doc = "Probe/reference or source/target side identified by the native check. Applies to SubstructMatchError.FinalCheckMappingIndex, SubstructMatchError.FinalCheckBondEndpoint. None when this payload is absent."] fn side(&self) -> Option<&'static str> { match self.inner {

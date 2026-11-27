@@ -511,6 +511,13 @@ Conformer generation APIs create native 3D conformers through the source-ported
 distance-geometry path. The default value-style operation uses ETKDGv3 and
 returns a new molecule value.
 
+``EmbedParams.timeout`` limits embedding. ``pruning_timeout`` separately limits
+symmetry matching and RMS pruning after embedding, in seconds. Both default to
+zero (disabled); disabled pruning timing does not read a clock. Result-returning
+methods report expiration as ``EmbedTermination.TimedOut`` and retain only
+conformers whose pruning decisions completed. No alternate pruning or retry is
+selected automatically. The same monotonic timing works on native and WASM.
+
 .. code-block:: python
 
    import cosmolkit as ck

@@ -23,6 +23,8 @@ pub use cx_lowering::{CxQueryLoweringError, apply_cx_to_query_graph};
 pub use cx_offsets::apply_cx_to_query_graph_with_offsets;
 #[doc(hidden)]
 pub use matcher::try_get_substruct_atom_matches_with_params_and_context;
+#[doc(hidden)]
+pub use matcher::try_get_substruct_matches_with_params_and_context_and_deadline;
 pub use matcher::{
     AtomCoordsMatchFunctor, ExtraAtomCheck, ExtraBondCheck, ExtraFinalCheck, QueryInput,
     SubstructMatchError, SubstructMatchOverload, SubstructMatchParams,

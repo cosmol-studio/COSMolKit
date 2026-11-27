@@ -48,6 +48,8 @@ pub type SubstructMatchResult = crate::MatchResult;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SubstructMatchError {
+    #[error("substructure matching exceeded the caller's deadline")]
+    TimedOut,
     #[error(
         "RDKit substructure matching branch {branch} is unsupported until {rdkit_function} is source-ported"
     )]
@@ -2024,6 +2026,8 @@ struct Vf2SubState<'a> {
     // Native callback exceptions unwind VF2 immediately. This borrowed
     // invocation flag transports a typed Rust error without another match.
     source_error: Option<&'a std::cell::Cell<bool>>,
+    // CK's opt-in cancellation; None never reads the native/WASM clock.
+    deadline: Option<web_time::Instant>,
 }
 
 impl<'a> Vf2SubState<'a> {
@@ -2098,6 +2102,7 @@ impl<'a> Vf2SubState<'a> {
             term_2: vec![0usize; n2],
             order,
             source_error: None,
+            deadline: None,
         }
     }
 
@@ -2151,6 +2156,7 @@ impl<'a> Vf2SubState<'a> {
             term_2: self.term_2.clone(),
             order: self.order.clone(),
             source_error: self.source_error,
+            deadline: self.deadline,
         }
     }
 
@@ -3033,6 +3039,12 @@ impl<'a> Vf2SubState<'a> {
         // Returning true here unwinds the existing traversal; the owning
         // matcher returns the captured Result::Err and drops partial rows.
         // A normal false predicate/check is not an exception and continues.
+        if self
+            .deadline
+            .is_some_and(|end| web_time::Instant::now() >= end)
+        {
+            return true;
+        }
         if self.source_error.is_some_and(std::cell::Cell::get) {
             return true;
         }
@@ -3063,6 +3075,12 @@ impl<'a> Vf2SubState<'a> {
         }
         let mut pair = Vf2Pair::new();
         while self.next_pair(&mut pair) && !vf2_got_signal() {
+            if self
+                .deadline
+                .is_some_and(|end| web_time::Instant::now() >= end)
+            {
+                return true;
+            }
             if self.is_feasible_pair(pair.n1, pair.n2, atom_fn, bond_fn) {
                 self.add_pair(pair.n1, pair.n2);
                 if self.match_all(
@@ -3353,6 +3371,7 @@ fn vf2_entry_all(
         max_results,
         None,
         None,
+        None,
     )
 }
 
@@ -3366,6 +3385,7 @@ fn vf2_entry_all_ordered(
     max_results: usize,
     order: Option<&[usize]>,
     source_error: Option<&std::cell::Cell<bool>>,
+    deadline: Option<web_time::Instant>,
 ) -> bool {
     // BEGIN RDKIT CPP FUNCTION boost::vf2_all
     // RDKit❗✔️: template <class Graph, class VertexLabeling  // binary predicate
@@ -3409,6 +3429,7 @@ fn vf2_entry_all_ordered(
         None => Vf2SubState::new(g1, g2, false),
     };
     state.source_error = source_error;
+    state.deadline = deadline;
     let mut c1 = vec![NULL_NODE; g1.num_atoms()];
     let mut c2 = vec![NULL_NODE; g1.num_atoms()];
     results.clear();
@@ -4729,6 +4750,7 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
         query_order,
         compiled_graph,
         &mut raw_matches,
+        None,
     )?;
     Ok(project_match_results::<P>(
         query,
@@ -4746,6 +4768,7 @@ fn substruct_match_into_sink<S: Vf2MatchSink>(
     query_order: Option<&[usize]>,
     compiled_graph: Option<&CompiledQueryGraph>,
     sink: &mut S,
+    deadline: Option<web_time::Instant>,
 ) -> Result<(), SubstructMatchError> {
     // BEGIN RDKIT CPP FUNCTION RDKit::SubstructMatch
     // RDKit❗❌: std::vector<MatchVectType> SubstructMatch(
@@ -4887,9 +4910,13 @@ fn substruct_match_into_sink<S: Vf2MatchSink>(
         params.max_matches,
         query_order,
         Some(&source_error),
+        deadline,
     );
     if let Some(error) = match_error.into_inner() {
         return Err(error);
+    }
+    if deadline.is_some_and(|end| web_time::Instant::now() >= end) {
+        return Err(SubstructMatchError::TimedOut);
     }
 
     Ok(())
@@ -6524,6 +6551,26 @@ pub fn try_get_substruct_matches_with_params_and_context(
         query,
         params,
         query_context,
+        None,
+    )
+}
+
+/// Concrete pruning-query matching with one caller-owned native/WASM deadline.
+/// Expiration discards partial mappings; default matching never creates a timer.
+#[doc(hidden)]
+pub fn try_get_substruct_matches_with_params_and_context_and_deadline(
+    mol: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    query_context: &QueryMatchContext,
+    deadline: web_time::Instant,
+) -> SubstructMatchResultList {
+    query_matches_with_params_and_context::<FullMatchResultProjection>(
+        mol,
+        query,
+        params,
+        query_context,
+        Some(deadline),
     )
 }
 
@@ -6540,6 +6587,7 @@ pub fn try_get_substruct_atom_matches_with_params_and_context(
         query,
         params,
         query_context,
+        None,
     )
 }
 
@@ -6548,11 +6596,15 @@ fn query_matches_with_params_and_context<P: MatchResultProjection>(
     query: &QueryGraph,
     params: &SubstructMatchParams,
     query_context: &QueryMatchContext,
+    deadline: Option<web_time::Instant>,
 ) -> Result<Vec<P::Output>, SubstructMatchError> {
     // This narrow entry retains the canonical preflight, recursive-query
     // preparation, VF2 implementation, final checks, and result ordering. It
     // only lets callers that run several immutable queries against one target
     // reuse the target-derived match context, as RDKit reuses ROMol state.
+    if deadline.is_some_and(|end| web_time::Instant::now() >= end) {
+        return Err(SubstructMatchError::TimedOut);
+    }
     preflight_query_molecule(query)?;
     if mol.num_atoms() == 0 || query.num_atoms() == 0 || query.num_atoms() > mol.num_atoms() {
         return Ok(Vec::new());
@@ -6566,6 +6618,25 @@ fn query_matches_with_params_and_context<P: MatchResultProjection>(
             &mut recursive_locker.cache,
             Some(query_context),
         )?;
+    }
+    if let Some(deadline) = deadline {
+        let mut rows = Vec::new();
+        substruct_match_into_sink(
+            mol,
+            query,
+            params,
+            Some(&recursive_locker.cache),
+            query_context,
+            None,
+            None,
+            &mut rows,
+            Some(deadline),
+        )?;
+        return Ok(project_match_results::<P>(
+            query,
+            Vf2GraphRef::target(mol.topology_block()),
+            &rows,
+        ));
     }
     substruct_match_impl_with_recursive_cache_and_context::<P>(
         mol,
@@ -10574,6 +10645,7 @@ mod source_substruct_match_complete_tests {
             1000,
             None,
             Some(&failed),
+            None,
         );
         assert!(!found);
         assert!(failed.get());
@@ -10730,9 +10802,62 @@ pub(crate) fn try_get_substruct_match_count_with_compiled_query_and_context(
         None,
         Some(compiled_graph),
         &mut counter,
+        None,
     )?;
     // Source converts size_t to unsigned int; this intentional narrowing wraps.
     Ok(counter.len() as u32)
+}
+
+#[cfg(test)]
+mod pruning_deadline_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec, CoordinateBlock};
+    use cosmolkit_types::Element;
+
+    #[test]
+    fn optional_deadline_keeps_matches_and_rejects_expiration_without_partial_rows() {
+        let atom = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C));
+        let query = QueryGraph::from_parts(
+            vec![QueryAtom::from_carrier_parts(
+                atom.clone(),
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+            )],
+            vec![],
+            Vec::<(cosmolkit_model::PropertyText, PropertyValue)>::new(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let topology = TopologyBlock::try_from_parts(vec![atom], vec![], vec![], vec![]).unwrap();
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(&topology, &coordinates, &[], None, None);
+        let context = crate::build_topology_query_match_context(&topology).unwrap();
+        let params = SubstructMatchParams::default();
+        let plain =
+            try_get_substruct_matches_with_params_and_context(&target, &query, &params, &context)
+                .unwrap();
+        let timed = try_get_substruct_matches_with_params_and_context_and_deadline(
+            &target,
+            &query,
+            &params,
+            &context,
+            web_time::Instant::now() + std::time::Duration::from_secs(60),
+        )
+        .unwrap();
+        assert_eq!(plain.len(), 1);
+        assert_eq!(timed[0].atom_mapping, plain[0].atom_mapping);
+        assert!(matches!(
+            try_get_substruct_matches_with_params_and_context_and_deadline(
+                &target,
+                &query,
+                &params,
+                &context,
+                web_time::Instant::now(),
+            ),
+            Err(SubstructMatchError::TimedOut)
+        ));
+    }
 }
 
 #[cfg(test)]
@@ -11413,6 +11538,7 @@ mod search08_interrupt_tests {
                     0,
                     None,
                     Some(&error),
+                    None,
                 );
                 assert!(error.get());
                 assert!(rows.is_empty());

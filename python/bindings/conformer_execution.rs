@@ -627,7 +627,7 @@ type PruningSource = Source<
     >,
 >;
 error_projection!(retained PruningError,PruningErrorKind,ck::PruningError,"conformer",{
-    Hydrogens(_),Projection(_),Terminal(_),Match(_),Context(_),Input(_),
+    TimedOut,Hydrogens(_),Projection(_),Terminal(_),Match(_),Context(_),Input(_),
 },cause=|inner:&RetainedError<ck::PruningError>|inner.node().source().map(project),source=Option<PruningSource>,methods={
     #[getter]
     #[doc = "Detailed native diagnostic message. Applies to PruningError.Input. None when this payload is absent."] fn message(&self)->Option<&'static str>{match self.inner.as_ref(){ck::PruningError::Input(value)=>Some(*value),_=>None}}

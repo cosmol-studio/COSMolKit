@@ -151,6 +151,8 @@ do not silently substitute UFF when MMFF parameters are unavailable.
    const mol = ck.Molecule.fromSmiles("CCO");
    const hydrogenated = mol.withHydrogens();
    const params = ck.EmbedParams.etkdgV3();
+   // Optional separate budget for symmetry search and RMS pruning, in seconds.
+   params.pruningTimeout = 2; // Default 0 disables this timer.
    params.randomSeed = 42;
    const conformer = hydrogenated.with3dConformerWithParams(params);
    try {
