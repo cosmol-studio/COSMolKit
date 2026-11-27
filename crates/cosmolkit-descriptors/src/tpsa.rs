@@ -30,20 +30,34 @@ pub struct DescriptorComputedState {
     crippen: CrippenCacheSlot,
     pub(crate) chi_v_weights: Option<Vec<f64>>,
     pub(crate) chi_n_weights: Option<Vec<f64>>,
+    pub(crate) area_by_estate: Option<Vec<f64>>,
+    pub(crate) estate_by_area: Option<Vec<f64>>,
 }
 
 impl DescriptorComputedState {
-    /// Explicit invalidation: empties BOTH TPSA slots (each slot's scalar
-    /// and contribution presence) AND all THREE Labute presences (rows,
-    /// hydrogens, asa) AND all FOUR Crippen presences (LogP rows, MR
-    /// rows, LogP scalar, MR scalar). No hidden invalidation exists.
+    /// Discard all native computed properties and numbered descriptor results.
     pub fn clear(&mut self) {
-        self.tpsa_conventional = TpsaCacheSlot::default();
-        self.tpsa_include_sand_p = TpsaCacheSlot::default();
-        self.labute = LabuteCacheSlot::default();
-        self.crippen = CrippenCacheSlot::default();
-        self.chi_v_weights = None;
-        self.chi_n_weights = None;
+        *self = Self::default();
+    }
+
+    /// Invalidate numbered EState projections without discarding native molecule properties.
+    pub fn clear_estate_projections(&mut self) {
+        self.area_by_estate = None;
+        self.estate_by_area = None;
+    }
+
+    /// Copy native molecule properties; wrapper-local EState vectors start cold.
+    pub fn for_molecule_copy(&self) -> Self {
+        Self {
+            tpsa_conventional: self.tpsa_conventional.clone(),
+            tpsa_include_sand_p: self.tpsa_include_sand_p.clone(),
+            labute: self.labute.clone(),
+            crippen: self.crippen.clone(),
+            chi_v_weights: self.chi_v_weights.clone(),
+            chi_n_weights: self.chi_n_weights.clone(),
+            area_by_estate: None,
+            estate_by_area: None,
+        }
     }
 
     fn slot(&self, include_sulfur_phosphorus: bool) -> &TpsaCacheSlot {

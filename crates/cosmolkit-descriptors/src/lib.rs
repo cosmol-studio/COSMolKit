@@ -8,6 +8,7 @@ mod chi;
 mod connectivity;
 pub mod counts;
 mod crippen;
+mod estate;
 mod labute;
 pub mod lipinski;
 mod mqn;
@@ -36,10 +37,11 @@ pub use connectivity::{
 pub use crippen::{CrippenContributions, crippen_contributions};
 pub use crippen::{CrippenParamRow, default_crippen_params};
 pub use crippen::{CrippenTotals, crippen_totals};
+pub use estate::{EStateExtrema, EStateVsaFamily, estate_indices};
 pub use crippen::{crippen_clogp, crippen_mr};
 pub use labute::{
     LabuteAsaContributions, LabuteContributions, labute_asa, labute_asa_contributions,
-    labute_contributions,
+    labute_atom_rows, labute_contributions,
 };
 pub use mqn::{MQN_VERSION, mqns};
 pub use tpsa::{DescriptorComputedState, tpsa_contributions};

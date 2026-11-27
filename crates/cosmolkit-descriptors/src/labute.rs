@@ -1,5 +1,7 @@
 //! Labute ASA descriptor owner (RDKit `MolSurf.cpp` Labute family).
 
+use cosmolkit_model::TopologyBlock;
+
 use crate::{DescriptorComputedState, DescriptorError, DescriptorInput, DescriptorResult};
 
 /// Per-atom Labute ASA contributions plus the implicit-hydrogen term.
@@ -63,6 +65,22 @@ pub fn labute_contributions(
     force: bool,
     state: &mut DescriptorComputedState,
 ) -> DescriptorResult<LabuteContributions> {
+    labute_contributions_from_topology(
+        input.topology(),
+        include_hydrogens,
+        force,
+        state,
+        "labute_contributions",
+    )
+}
+
+fn labute_contributions_from_topology(
+    topology: &TopologyBlock,
+    include_hydrogens: bool,
+    force: bool,
+    state: &mut DescriptorComputedState,
+    function: &'static str,
+) -> DescriptorResult<LabuteContributions> {
     // RDKit source (MolSurf.cpp:26-35):
     //   TEST_ASSERT(Vi.size() == mol.getNumAtoms());
     //   if (!force && mol.hasProp(common_properties::_labuteAtomContribs)) {
@@ -83,22 +101,17 @@ pub fn labute_contributions(
     if !force {
         if let Some(rows) = state.labute_slot().rows.clone() {
             // Read order per source getProps 30-33: hydrogens BEFORE asa.
-            let hydrogens =
-                state
-                    .labute_slot()
-                    .hydrogens
-                    .ok_or(DescriptorError::MissingLabuteHydrogens {
-                        function: "labute_contributions",
-                    })?;
+            let hydrogens = state
+                .labute_slot()
+                .hydrogens
+                .ok_or(DescriptorError::MissingLabuteHydrogens { function })?;
             // The source reads and returns res here; the typed owner
             // requires its presence (same failure point) without
             // re-exposing the scalar through this row API.
             let _asa = state
                 .labute_slot()
                 .asa
-                .ok_or(DescriptorError::MissingLabuteAsa {
-                    function: "labute_contributions",
-                })?;
+                .ok_or(DescriptorError::MissingLabuteAsa { function })?;
             return Ok(LabuteContributions {
                 atoms: rows,
                 hydrogens,
@@ -106,7 +119,6 @@ pub fn labute_contributions(
         }
     }
 
-    let topology = input.topology();
     let n_atoms = topology.atoms.len();
     // RDKit source (MolSurf.cpp:36-42):
     //   unsigned int nAtoms = mol.getNumAtoms();
@@ -368,6 +380,37 @@ pub fn labute_asa_contributions(
         .asa
         .ok_or(DescriptorError::MissingLabuteAsa {
             function: "labute_asa_contributions",
+        })?;
+    Ok(LabuteAsaContributions {
+        asa,
+        atom_contributions: rows.atoms,
+        hydrogen_contribution: rows.hydrogens,
+    })
+}
+
+/// Calculate or read the existing Labute cache slot from topology alone.
+///
+/// This adapter deliberately does not construct a prepared `DescriptorInput`;
+/// topology-only consumers can preserve the source's cache-before-later-failure
+/// order without acquiring a broader valence or ring requirement.
+pub fn labute_atom_rows(
+    topology: &TopologyBlock,
+    state: &mut DescriptorComputedState,
+    include_hydrogens: bool,
+    force: bool,
+) -> DescriptorResult<LabuteAsaContributions> {
+    let rows = labute_contributions_from_topology(
+        topology,
+        include_hydrogens,
+        force,
+        state,
+        "labute_atom_rows",
+    )?;
+    let asa = state
+        .labute_slot()
+        .asa
+        .ok_or(DescriptorError::MissingLabuteAsa {
+            function: "labute_atom_rows",
         })?;
     Ok(LabuteAsaContributions {
         asa,
