@@ -9,6 +9,7 @@ mod connectivity;
 pub mod counts;
 mod crippen;
 mod estate;
+mod gasteiger;
 mod labute;
 pub mod lipinski;
 mod mqn;
@@ -39,6 +40,10 @@ pub use crippen::{CrippenParamRow, default_crippen_params};
 pub use crippen::{CrippenTotals, crippen_totals};
 pub use estate::{EStateExtrema, EStateVsaFamily, estate_indices};
 pub use crippen::{crippen_clogp, crippen_mr};
+pub use gasteiger::{
+    max_abs_partial_charge, max_partial_charge, min_abs_partial_charge, min_partial_charge,
+    peoe_vsa,
+};
 pub use labute::{
     LabuteAsaContributions, LabuteContributions, labute_asa, labute_asa_contributions,
     labute_atom_rows, labute_contributions,
@@ -3254,6 +3259,11 @@ pub enum DescriptorError {
     Valence {
         function: &'static str,
         source: cosmolkit_core::ValenceError,
+    },
+    #[error("descriptor Gasteiger charge calculation failed: {source}")]
+    GasteigerCharge {
+        #[source]
+        source: cosmolkit_core::GasteigerChargeError,
     },
     #[error("descriptor `{function}`: {field} has {actual} rows; expected {expected}")]
     InvalidValenceRows {

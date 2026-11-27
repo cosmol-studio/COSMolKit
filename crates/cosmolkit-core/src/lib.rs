@@ -17,6 +17,7 @@ mod conjugation;
 mod coordinate_input;
 mod double_stereo;
 mod fragments;
+mod gasteiger;
 mod hcount;
 mod hybridization;
 mod hydrogens;
@@ -74,6 +75,10 @@ pub use fragments::{
     SelectedSubstanceGroupCopyError, SubgraphExtractionParams, SubgraphSelection,
     SubstanceGroupAtomList, extract_indexed_subgraph, get_largest_molecule_fragment,
     get_molecule_fragments,
+};
+pub use gasteiger::{
+    GasteigerCharge, GasteigerChargeError, GasteigerChargeParamError, GasteigerChargeParams,
+    gasteiger_charges,
 };
 pub use scaffolds::{
     ScaffoldError, ScaffoldResult, murcko_decompose, murcko_scaffold, net_scaffold,
