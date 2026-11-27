@@ -27,6 +27,7 @@ from search_tautomer import search,tautomer
 from geometry import TASKS as GEOMETRY_TASKS, geometry
 import bio
 import special
+import native_descriptors
 
 RDLogger.DisableLog("rdApp.*")
 MAX_FRAME = 128 * 1024 * 1024
@@ -189,11 +190,14 @@ def compress_frame(raw, count):
             + hashlib.sha256(compressed).digest() + compressed)
 
 
-def calculate(job):
+def calculate(job: tuple[str, list[dict], list[str], str], executable: Path | None = None) -> tuple[int, str]:
     task, profiles, smiles, folder = job
-    outcomes = (isolated(evaluate_rows, task, profiles, smiles)
-                if task in ("fingerprint_layered", "inchi_write", "inchi_key", "inchi_roundtrip")
-                else iter_outcomes(task, profiles, smiles))
+    if executable is not None:
+        outcomes = native_descriptors.iter_outcomes(executable, task, profiles, smiles, encode, MAX_FRAME * 3)
+    elif task in ("fingerprint_layered", "inchi_write", "inchi_key", "inchi_roundtrip"):
+        outcomes = isolated(evaluate_rows, task, profiles, smiles)
+    else:
+        outcomes = iter_outcomes(task, profiles, smiles)
     raw = bytearray()
     frames, count = 0, 0
     # Keep pending results on disk, not in IPC queues or parent RAM. Each
@@ -220,10 +224,9 @@ def calculate(job):
     return frames, output.name
 
 
-def inputs(request):
+def inputs(request, structured):
     with Path(request["corpus"]).open(encoding="utf-8") as stream:
         rows = (line.strip() for line in stream)
-        structured = Path(request["corpus"]).suffix == ".jsonl"
         rows = ((line if structured else line.split()[0]) for line in rows if line and not line.startswith("#"))
         end = None if request["limit"] is None else request["offset"] + request["limit"]
         yield from itertools.islice(rows, request["offset"], end)
@@ -233,8 +236,20 @@ def generate(pool, request, task):
     request = dict(request, **{key:task[key] for key in ("corpus", "offset", "limit")})
     identity, folder = task["identity"], Path(task["folder"])
     name, profiles = identity["task"], identity["profiles"]
+    executable = None
+    if "native_build" in identity or "executable" in task:
+        executable = Path(task["executable"])
+        native_descriptors.verify_build(executable, identity)
+        input_format = identity["input_format"]
+    else:
+        if identity["rdkit"] != request["rdkit"]:
+            raise ValueError("the installed wheel cannot generate a source-revision reference")
+        input_format = task["input_format"]
+    if input_format not in ("smiles_token", "jsonl"):
+        raise ValueError(f"unknown corpus format: {input_format}")
+    structured = input_format == "jsonl"
     folder.mkdir(parents=True, exist_ok=True)
-    rows = iter(inputs(request))
+    rows = iter(inputs(request, structured))
     pending = deque()
     # Small selections still feed every worker; large selections amortize IPC.
     chunk = min(64, max(1, (identity["records"] + request["threads"] * 4 - 1)
@@ -248,7 +263,9 @@ def generate(pool, request, task):
                 encoded = text.encode("utf-8")
                 input_digest.update(struct.pack("<Q", len(encoded)))
                 input_digest.update(encoded)
-            pending.append((len(batch), pool.submit(calculate, (name, profiles, batch, str(folder)))))
+            if executable is not None and structured:
+                batch = [native_descriptors.smiles_input(line) for line in batch]
+            pending.append((len(batch), pool.submit(calculate, (name, profiles, batch, str(folder)), executable)))
     for _ in range(request["threads"] * 2):
         submit()
     started, updated = time.monotonic(), 0.0

@@ -18,6 +18,10 @@ pub const MAX_RECORD_BYTES: usize = MAX_FRAME_BYTES - 4;
 pub struct Identity {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_contract: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_build: Option<crate::descriptor_reference::NativeBuild>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_format: Option<crate::corpus::InputFormat>,
     pub rdkit: String,
     pub task: String,
     pub profiles: serde_json::Value,
@@ -178,6 +182,8 @@ mod tests {
     fn identity() -> Identity {
         Identity {
             reference_contract: None,
+            native_build: None,
+            input_format: None,
             rdkit: "2026.03.6".into(),
             task: "example".into(),
             profiles: serde_json::json!([{}]),
@@ -222,10 +228,10 @@ mod tests {
         let mut revised = original.clone();
         revised.reference_contract = Some("inchi-generation-status-v1".into());
         assert_ne!(original.key().unwrap(), revised.key().unwrap());
-        assert!(
-            !serde_json::to_string(&original)
-                .unwrap()
-                .contains("reference_contract")
+        // The original wheel-only manifest must still locate its persisted generation.
+        assert_eq!(
+            original.key().unwrap(),
+            "ee0a123a5406a0c32c13c9026987559bc2c308e67034a9406373fbf8fe55f17e"
         );
         let mut changed = original.clone();
         changed.rdkit.push('x');
@@ -236,6 +242,13 @@ mod tests {
         changed = original.clone();
         changed.input_sha256.push('x');
         assert_ne!(original.key().unwrap(), changed.key().unwrap());
+        let mut tokens = original.clone();
+        tokens.input_format = Some(crate::corpus::InputFormat::SmilesToken);
+        let mut jsonl = tokens.clone();
+        jsonl.input_format = Some(crate::corpus::InputFormat::Jsonl);
+        assert_ne!(tokens.key().unwrap(), jsonl.key().unwrap());
+        assert_ne!(original.key().unwrap(), tokens.key().unwrap());
+        assert_ne!(original.key().unwrap(), jsonl.key().unwrap());
         assert_eq!(original.key().unwrap(), original.clone().key().unwrap());
     }
 

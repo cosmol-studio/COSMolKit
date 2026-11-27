@@ -29,6 +29,7 @@ pub fn available() -> Vec<(&'static str, &'static str)> {
     TASKS
         .iter()
         .chain(crate::descriptors::TASKS)
+        .chain(crate::descriptor_reference::TASKS)
         .chain(crate::chemistry::TASKS)
         .chain(crate::inchi::TASKS)
         .chain(crate::search_tautomer::TASKS)
@@ -225,6 +226,39 @@ pub(crate) fn failed_error(error: &(dyn std::error::Error + 'static)) -> Vec<u8>
     let mut cause = Some(error);
     let mut optimizer_domain = false;
     while let Some(inner) = cause {
+        if let Some(cosmolkit::GasteigerChargeError::MissingParameters { element, mode }) =
+            inner.downcast_ref()
+        {
+            return outcome(
+                1,
+                Value::List(vec![
+                    Value::Text("GasteigerMissingParameters".into()),
+                    Value::Text(element.clone()),
+                    Value::Text(mode.clone()),
+                ]),
+            );
+        }
+        if let Some(cosmolkit::DescriptorError::UnsupportedBcutBond { .. }) = inner.downcast_ref() {
+            return outcome(
+                1,
+                Value::List(vec![Value::Text("UnsupportedBcutBond".into())]),
+            );
+        }
+        if let Some(cosmolkit::IpcError::InvalidDistanceMatrixShape {
+            row: None,
+            actual,
+            expected,
+        }) = inner.downcast_ref()
+        {
+            return outcome(
+                1,
+                Value::List(vec![
+                    Value::Text("IpcMatrixDimension".into()),
+                    Value::UInt(*actual as u64),
+                    Value::UInt(*expected as u64),
+                ]),
+            );
+        }
         if matches!(
             inner.downcast_ref::<cosmolkit::BricsDecompositionError>(),
             Some(cosmolkit::BricsDecompositionError::UnkeyedProduct(_))
@@ -387,6 +421,24 @@ pub fn matching_error(task: &str, expected: &[u8], actual: &[u8]) -> bool {
         return false;
     };
     match task {
+        "bcut2d" | "gasteiger_charges" => match ck.as_slice() {
+            [Value::Text(kind), Value::Text(element), Value::Text(mode)]
+                if kind == "GasteigerMissingParameters" =>
+            {
+                native
+                    == format!(
+                        "ERROR: No Gasteiger Partial Charge parameters for Element: {element} Mode: {mode}"
+                    )
+            }
+            [Value::Text(kind)] if task == "bcut2d" && kind == "UnsupportedBcutBond" => {
+                native == "Bond order must be Single, Double, Triple or Aromatic"
+            }
+            _ => false,
+        },
+        "ipc" | "avg_ipc" => {
+            matches!(ck.as_slice(), [Value::Text(kind), Value::UInt(actual), Value::UInt(expected)]
+            if kind == "IpcMatrixDimension" && native == format!("distance matrix has {actual} rows; expected {expected}"))
+        }
         "decompose_brics" => {
             // BRICS.py::BRICSDecompose reads prod.pSmi from each accepted product,
             // including one whose failed sanitation skipped assignment of that attribute.

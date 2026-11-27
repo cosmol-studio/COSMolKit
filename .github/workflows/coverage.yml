@@ -146,6 +146,32 @@ jobs:
             - name: Install pinned reference environment
               run: uv sync --locked --group dev
 
+            - name: Restore source-built descriptor oracles
+              id: descriptor_oracles
+              uses: actions/cache@v4
+              with:
+                  path: parity-tests/expected/descriptor-oracles
+                  key: descriptor-oracles-ubuntu24-${{ runner.arch }}-${{ hashFiles('testdata/reference/descriptor_foundations.json', 'parity-tests/tools/descriptor_reference/**') }}
+
+            - name: Install descriptor reference dependencies
+              run: |
+                  sudo apt-get update -qq
+                  sudo apt-get install -y --no-install-recommends libboost-dev libboost-serialization-dev libboost-iostreams-dev libboost-json-dev libeigen3-dev ninja-build
+
+            - name: Build both pinned RDKit descriptor references
+              if: steps.descriptor_oracles.outputs.cache-hit != 'true'
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  for kind in master exact-ipc; do
+                      rev=$(jq -er --arg k "$kind" '.[$k]' testdata/reference/descriptor_foundations.json)
+                      src="$RUNNER_TEMP/rdkit-$kind"
+                      git -C third_party/rdkit fetch --no-tags --depth=1 origin "$rev"
+                      git -C third_party/rdkit worktree add --detach "$src" "$rev"
+                      bash parity-tests/tools/descriptor_reference/build.sh "$kind" "$src" \
+                        "$RUNNER_TEMP/build-$kind" parity-tests/expected/descriptor-oracles
+                  done
+
             # Exact identity prefix only: never restore another corpus/environment.
             # A unique suffix lets a repaired generation replace a corrupt cache.
             - name: Restore reference generations
@@ -170,8 +196,7 @@ jobs:
                   cargo build -p cosmolkit-parity-tests --profile dev-test \
                       --bin cosmolkit-parity-tests \
                       --features cosmolkit/op-contracts-strict
-                  # Coverage uses only the small SMILES corpus, not independent
-                  # BIO or fixed-special inputs. Read current families from the runner.
+                  # BIO and special regressions have their own inputs.
                   suites="$("$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" list |
                       awk '$2 != "bio" && $2 != "special" {print $2}' | sort -u | paste -sd, -)"
                   test -n "$suites"
@@ -179,6 +204,11 @@ jobs:
                   "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" prepare \
                       --corpus smiles_small --threads "$(nproc)" --suite "$suites" \
                       2>&1 | tee "$RUNNER_TEMP/parity-prepare.log"
+                  "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" prepare \
+                      --suite descriptor-foundations,descriptor-foundations-ipc \
+                      --corpus parity-tests/testdata/corpora/descriptor_foundations.jsonl \
+                      --profiles parity-tests/testdata/profiles/ipc_lower_only.json --threads "$(nproc)" \
+                      2>&1 | tee -a "$RUNNER_TEMP/parity-prepare.log"
                   if grep -Eq '^[a-z0-9_]+: prepare \(' "$RUNNER_TEMP/parity-prepare.log"; then
                       echo "regenerated=true" >> "$GITHUB_OUTPUT"
                   fi
@@ -200,6 +230,11 @@ jobs:
                       -- --corpus smiles_small --threads "$(nproc)" \
                       --suite "${{ steps.prepare.outputs.suites }}" \
                       2>&1 | tee "$RUNNER_TEMP/parity-small.log"
+                  "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" compare \
+                      --suite descriptor-foundations,descriptor-foundations-ipc \
+                      --corpus parity-tests/testdata/corpora/descriptor_foundations.jsonl \
+                      --profiles parity-tests/testdata/profiles/ipc_lower_only.json --threads "$(nproc)" \
+                      2>&1 | tee -a "$RUNNER_TEMP/parity-small.log"
 
             - name: Save validated reference generations
               if: ${{ !cancelled() && steps.prepare.outputs.regenerated == 'true' }}

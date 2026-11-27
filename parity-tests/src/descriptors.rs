@@ -69,6 +69,13 @@ pub const TASKS: &[(&str, &str)] = &[
 
 pub fn profiles(task: &str) -> Result<Vec<Json>> {
     let profiles: Vec<Json> = match task {
+        "gasteiger_charges" => vec![
+            json!({"iterations":12,"strict":false}),
+            json!({"iterations":12,"strict":true}),
+            json!({"iterations":0,"strict":false}),
+        ],
+        "ipc" | "avg_ipc" => vec![json!({"distance_matrix":null})],
+        task if crate::descriptor_reference::kind(task).is_some() => vec![json!({})],
         "chi_0" | "chi_1" => vec![json!({"result_type":"f64"})],
         "molecular_weight" | "exact_molecular_weight" => {
             [false, true].map(|v| json!({"only_heavy":v})).into()
@@ -169,6 +176,18 @@ pub fn normalize(task: &str, p: Json) -> Result<Json> {
     }
     for (key, value) in fields {
         let valid = match key.as_str() {
+            "iterations" => value.as_u64().is_some_and(|n| n <= i32::MAX as u64),
+            "distance_matrix" => {
+                value.is_null()
+                    || value.as_array().is_some_and(|rows| {
+                        rows.iter().all(|r| {
+                            r.as_array().is_some_and(|cols| {
+                                cols.len() == rows.len()
+                                    && cols.iter().all(|v| v.as_f64().is_some_and(f64::is_finite))
+                            })
+                        })
+                    })
+            }
             "bins" => {
                 value.is_null()
                     || value.as_array().is_some_and(|rows| {
@@ -205,6 +224,57 @@ fn floats(values: impl IntoIterator<Item = f64>) -> Value {
 }
 
 pub fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
+    match task {
+        "gasteiger_charges" => {
+            let params = cosmolkit::GasteigerChargeParams::new(
+                p["iterations"].as_i64().ok_or("invalid iterations")?,
+                flag(p, "strict")?,
+            )?;
+            return Ok(Value::List(
+                m.gasteiger_charges_with_params(&params)?
+                    .iter()
+                    .map(|r| floats([r.atom_charge(), r.attached_hydrogen_charge()]))
+                    .collect(),
+            ));
+        }
+        "partial_charge_extrema" => {
+            return Ok(floats([
+                m.min_partial_charge()?,
+                m.max_partial_charge()?,
+                m.min_abs_partial_charge()?,
+                m.max_abs_partial_charge()?,
+            ]));
+        }
+        "estate_extrema" => {
+            return Ok(floats([
+                m.min_estate_index()?,
+                m.max_estate_index()?,
+                m.min_abs_estate_index()?,
+                m.max_abs_estate_index()?,
+            ]));
+        }
+        "estate_indices" => return Ok(floats(m.estate_indices()?)),
+        "estate_vsa" => return Ok(floats(m.estate_vsa()?)),
+        "vsa_estate" => return Ok(floats(m.vsa_estate()?)),
+        "peoe_vsa" => return Ok(floats(m.peoe_vsa()?)),
+        "bcut2d" => return Ok(floats(m.bcut2d()?)),
+        "ipc" | "avg_ipc" => {
+            let average = task == "avg_ipc";
+            let value = if p["distance_matrix"].is_null() {
+                if average { m.avg_ipc()? } else { m.ipc()? }
+            } else {
+                let rows: Vec<Vec<f64>> = serde_json::from_value(p["distance_matrix"].clone())?;
+                let matrix = cosmolkit::IpcDistanceMatrix::Rows(&rows);
+                if average {
+                    m.avg_ipc_with_distance_matrix(matrix)?
+                } else {
+                    m.ipc_with_distance_matrix(matrix)?
+                }
+            };
+            return Ok(Value::float(value));
+        }
+        _ => (),
+    }
     if task == "labute_asa_sequence" {
         return Ok(floats(
             p["calls"]

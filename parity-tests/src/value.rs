@@ -1,5 +1,5 @@
 //! Canonical comparison bytes, shared with the tiny Python encoder.
-//! Expected results need no decoding on the successful comparison path.
+//! Tasks requiring exact bytes need no decoding on the successful comparison path.
 use crate::Result;
 use std::io::{Cursor, Read};
 
@@ -71,7 +71,7 @@ fn length(value: usize, output: &mut Vec<u8>) {
     );
 }
 
-/// Only diagnostics/tests decode values; bound recursion and allocation by input size.
+/// Decode a typed value, bounding recursion and allocation by input size.
 pub fn decode(data: &[u8]) -> Result<Value> {
     fn read(cursor: &mut Cursor<&[u8]>, depth: usize) -> Result<Value> {
         if depth > 128 {

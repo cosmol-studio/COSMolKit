@@ -1,8 +1,9 @@
-//! Bounded, runtime-selected reference preparation and exact Cargo comparisons.
+//! Bounded, runtime-selected reference preparation and corpus comparisons.
 pub mod bio;
 pub mod chemistry;
 pub mod cli;
 pub mod corpus;
+mod descriptor_reference;
 pub mod descriptors;
 pub mod fingerprints;
 pub mod fuzzy_fingerprints;

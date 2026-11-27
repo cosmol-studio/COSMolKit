@@ -1,0 +1,4 @@
+{
+  "ipc": [{"distance_matrix": [[0, 0], [1, 0]]}],
+  "avg_ipc": [{"distance_matrix": [[0, 0], [1, 0]]}]
+}

@@ -8,9 +8,17 @@ use std::{
 
 pub const MAX_INPUT_BYTES: usize = 1024 * 1024;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputFormat {
+    SmilesToken,
+    Jsonl,
+}
+
 #[derive(Clone)]
 pub struct Corpus {
     pub path: PathBuf,
+    pub format: InputFormat,
     pub sha256: String,
     pub records: u64,
     pub offset: usize,
@@ -36,10 +44,15 @@ impl Corpus {
                 };
                 std::fs::canonicalize(path)?
             };
+        let format = if path.extension().is_some_and(|ext| ext == "jsonl") {
+            InputFormat::Jsonl
+        } else {
+            InputFormat::SmilesToken
+        };
         let mut digest = Sha256::new();
         let mut records = 0u64;
         digest.update((options.offset as u64).to_le_bytes());
-        for row in Self::rows_at(&path, options.offset, options.limit)? {
+        for row in Self::rows_at(&path, format, options.offset, options.limit)? {
             let row = row?;
             digest.update((row.len() as u64).to_le_bytes());
             digest.update(row.as_bytes());
@@ -50,6 +63,7 @@ impl Corpus {
         }
         Ok(Self {
             path,
+            format,
             sha256: hex(&digest.finalize()),
             records,
             offset: options.offset,
@@ -58,20 +72,17 @@ impl Corpus {
     }
 
     pub fn rows(&self) -> Result<impl Iterator<Item = Result<String>>> {
-        Self::rows_at(&self.path, self.offset, self.limit)
-    }
-
-    pub fn structured(&self) -> bool {
-        self.path.extension().is_some_and(|ext| ext == "jsonl")
+        Self::rows_at(&self.path, self.format, self.offset, self.limit)
     }
 
     fn rows_at(
         path: &Path,
+        format: InputFormat,
         offset: usize,
         limit: Option<usize>,
     ) -> Result<impl Iterator<Item = Result<String>>> {
         let mut reader = BufReader::new(File::open(path)?);
-        let structured = path.extension().is_some_and(|ext| ext == "jsonl");
+        let structured = format == InputFormat::Jsonl;
         let max_bytes = if structured {
             64 * MAX_INPUT_BYTES
         } else {
@@ -128,7 +139,7 @@ mod tests {
         let options =
             Options::parse(["--corpus".to_owned(), file.path().display().to_string()]).unwrap();
         let first = Corpus::open(&options).unwrap();
-        assert!(first.structured());
+        assert_eq!(first.format, InputFormat::Jsonl);
         assert_eq!(
             first.rows().unwrap().next().unwrap().unwrap(),
             "{\"text\": \"ATOM has spaces\"}"

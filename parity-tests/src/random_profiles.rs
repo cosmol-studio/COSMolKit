@@ -18,6 +18,11 @@ pub fn sample(task: &str, count: usize, seed: u64) -> Result<Vec<Value>> {
     for _ in 0..count {
         let mut p = base[(next() as usize) % base.len()].clone();
         match task {
+            "gasteiger_charges" => {
+                p["iterations"] = json!(next() % 17);
+                p["strict"] = json!(next() % 2 != 0);
+            }
+            task if crate::descriptor_reference::kind(task).is_some() => {}
             task if crate::special::input(task).is_some() => {}
             "bio_pdb_output" => {}
             "fingerprint_morgan" => {
