@@ -11,10 +11,13 @@ extern "C" {
     #[derive(Clone)]
     pub type DescriptorSearchSource;
     #[wasm_bindgen(
-        typescript_type = "TopologyEditError | TopologyValidationError | PathError | HydrogenError | ValenceError | RingFindingError | DescriptorSearchCause | LegacyStereoError"
+        typescript_type = "TopologyEditError | TopologyValidationError | PathError | HydrogenError | ValenceError | RingFindingError | DescriptorSearchCause | LegacyStereoError | GasteigerChargeError"
     )]
     #[derive(Clone)]
     pub type DescriptorSource;
+    #[wasm_bindgen(typescript_type = "ValenceError")]
+    #[derive(Clone)]
+    pub type GasteigerChargeSource;
     #[wasm_bindgen(typescript_type = "DescriptorError")]
     #[derive(Clone)]
     pub type DescriptorReadSource;
@@ -50,6 +53,33 @@ macro_rules! source_field {
         .unchecked_into()
     }};
 }
+fn gasteiger_source(
+    owner: &ReadonlyValue<ck::GasteigerChargeError>,
+) -> Option<GasteigerChargeSource> {
+    use ck::GasteigerChargeError as E;
+    Some(match owner.as_ref() {
+        E::Valence { .. } => source_field!(owner, E::Valence, crate::valence_errors::ValenceError),
+        E::ElementSymbol { .. } => exception(<crate::valence_errors::ValenceError>::from_owner(
+            owner.child(|error| match error {
+                E::ElementSymbol { source, .. } => source,
+                _ => unreachable!("checked immutable native variant"),
+            }),
+        ))
+        .unchecked_into(),
+        E::MissingParameters { .. } => return None,
+    })
+}
+enum_error!(GasteigerChargeError,GasteigerChargeErrorKind,ck::GasteigerChargeError,{
+    MissingParameters=>ck::GasteigerChargeError::MissingParameters{..},
+    Valence=>ck::GasteigerChargeError::Valence{..},
+    ElementSymbol=>ck::GasteigerChargeError::ElementSymbol{..}
+},{
+    #[wasm_bindgen(getter)] pub fn element(&self)->Option<String>{match self.inner.as_ref(){ck::GasteigerChargeError::MissingParameters{element,..}=>Some(element.clone()),_=>None}}
+    #[wasm_bindgen(getter)] pub fn mode(&self)->Option<String>{match self.inner.as_ref(){ck::GasteigerChargeError::MissingParameters{mode,..}=>Some(mode.clone()),_=>None}}
+    #[wasm_bindgen(getter,js_name=atomicNumber)] pub fn atomic_number(&self)->Option<u8>{match self.inner.as_ref(){ck::GasteigerChargeError::ElementSymbol{atomic_number,..}=>Some(*atomic_number),_=>None}}
+    #[wasm_bindgen(getter)] pub fn source(&self)->Option<GasteigerChargeSource>{gasteiger_source(&self.inner)}
+},source=GasteigerChargeSource,cause=gasteiger_source);
+
 fn source(owner: &ReadonlyValue<ck::DescriptorError>) -> Option<DescriptorSource> {
     use ck::DescriptorError as E;
     Some(match owner.as_ref() {
@@ -75,17 +105,25 @@ fn source(owner: &ReadonlyValue<ck::DescriptorError>) -> Option<DescriptorSource
             E::Stereo,
             crate::legacy_stereo_errors::LegacyStereoError
         ),
+        E::GasteigerCharge { .. } => {
+            source_field!(owner, E::GasteigerCharge, GasteigerChargeError)
+        }
         _ => return None,
     })
 }
 enum_error!(DescriptorError,DescriptorErrorKind,ck::DescriptorError,{
-    TopologyEdit=>ck::DescriptorError::TopologyEdit{..},MissingFinalHydrogenState=>ck::DescriptorError::MissingFinalHydrogenState{..},InvalidConnectivityPath=>ck::DescriptorError::InvalidConnectivityPath{..},InvalidTopology=>ck::DescriptorError::InvalidTopology{..},Path=>ck::DescriptorError::Path{..},InvalidHallKierContributionRows=>ck::DescriptorError::InvalidHallKierContributionRows{..},MissingComputedScalar=>ck::DescriptorError::MissingComputedScalar{..},MissingLabuteHydrogens=>ck::DescriptorError::MissingLabuteHydrogens{..},MissingLabuteAsa=>ck::DescriptorError::MissingLabuteAsa{..},MismatchedBinArrays=>ck::DescriptorError::MismatchedBinArrays{..},CrippenParamNumeric=>ck::DescriptorError::CrippenParamNumeric{..},MissingCrippenMrContributions=>ck::DescriptorError::MissingCrippenMrContributions{..},MissingCrippenMr=>ck::DescriptorError::MissingCrippenMr{..},InvalidCrippenOptionalRows=>ck::DescriptorError::InvalidCrippenOptionalRows{..},MissingCrippenDefaultPattern=>ck::DescriptorError::MissingCrippenDefaultPattern{..},Hydrogens=>ck::DescriptorError::Hydrogens{..},CountOverflow=>ck::DescriptorError::CountOverflow{..},Valence=>ck::DescriptorError::Valence{..},InvalidValenceRows=>ck::DescriptorError::InvalidValenceRows{..},Unsupported=>ck::DescriptorError::Unsupported{..},Ring=>ck::DescriptorError::Ring{..},Search=>ck::DescriptorError::Search{..},Stereo=>ck::DescriptorError::Stereo{..}
+    TopologyEdit=>ck::DescriptorError::TopologyEdit{..},MissingFinalHydrogenState=>ck::DescriptorError::MissingFinalHydrogenState{..},InvalidConnectivityPath=>ck::DescriptorError::InvalidConnectivityPath{..},InvalidTopology=>ck::DescriptorError::InvalidTopology{..},Path=>ck::DescriptorError::Path{..},InvalidHallKierContributionRows=>ck::DescriptorError::InvalidHallKierContributionRows{..},MissingComputedScalar=>ck::DescriptorError::MissingComputedScalar{..},MissingLabuteHydrogens=>ck::DescriptorError::MissingLabuteHydrogens{..},MissingLabuteAsa=>ck::DescriptorError::MissingLabuteAsa{..},MismatchedBinArrays=>ck::DescriptorError::MismatchedBinArrays{..},CrippenParamNumeric=>ck::DescriptorError::CrippenParamNumeric{..},MissingCrippenMrContributions=>ck::DescriptorError::MissingCrippenMrContributions{..},MissingCrippenMr=>ck::DescriptorError::MissingCrippenMr{..},InvalidCrippenOptionalRows=>ck::DescriptorError::InvalidCrippenOptionalRows{..},MissingCrippenDefaultPattern=>ck::DescriptorError::MissingCrippenDefaultPattern{..},Hydrogens=>ck::DescriptorError::Hydrogens{..},CountOverflow=>ck::DescriptorError::CountOverflow{..},Valence=>ck::DescriptorError::Valence{..},InvalidValenceRows=>ck::DescriptorError::InvalidValenceRows{..},Unsupported=>ck::DescriptorError::Unsupported{..},Ring=>ck::DescriptorError::Ring{..},Search=>ck::DescriptorError::Search{..},Stereo=>ck::DescriptorError::Stereo{..},GasteigerCharge=>ck::DescriptorError::GasteigerCharge{..},
+    BcutDiagonalRows=>ck::DescriptorError::BcutDiagonalRows{..}, UnsupportedBcutBond=>ck::DescriptorError::UnsupportedBcutBond{..},
+    BcutMatrixAllocation=>ck::DescriptorError::BcutMatrixAllocation{..}, BcutNonConvergence=>ck::DescriptorError::BcutNonConvergence{..}
 },{
+    #[wasm_bindgen(getter)] pub fn bond(&self) -> Option<usize> { match *self.inner { ck::DescriptorError::UnsupportedBcutBond { bond, .. } => Some(bond.index()), _ => None } }
+    #[wasm_bindgen(getter)] pub fn order(&self) -> Option<crate::enums::BondOrder> { match *self.inner { ck::DescriptorError::UnsupportedBcutBond { order, .. } => Some(order.into()), _ => None } }
+    #[wasm_bindgen(getter)] pub fn dimension(&self) -> Option<usize> { match *self.inner { ck::DescriptorError::BcutMatrixAllocation { dimension } | ck::DescriptorError::BcutNonConvergence { dimension } => Some(dimension), _ => None } }
     #[wasm_bindgen(getter)]pub fn source(&self)->Option<DescriptorSource>{source(&self.inner)}
     #[wasm_bindgen(getter)]pub fn function(&self)->Option<String>{use ck::DescriptorError as E;match self.inner.as_ref(){E::TopologyEdit{function,..}|E::InvalidConnectivityPath{function,..}|E::InvalidTopology{function,..}|E::Path{function,..}|E::MissingComputedScalar{function,..}|E::MissingLabuteHydrogens{function}|E::MissingLabuteAsa{function}|E::MissingCrippenMrContributions{function}|E::MissingCrippenMr{function}|E::Hydrogens{function,..}|E::CountOverflow{function,..}|E::Valence{function,..}|E::InvalidValenceRows{function,..}|E::Unsupported{function,..}|E::Ring{function,..}|E::Search{function,..}|E::Stereo{function,..}=>Some((*function).into()),_=>None}}
-    #[wasm_bindgen(getter)]pub fn field(&self)->Option<String>{use ck::DescriptorError as E;match self.inner.as_ref(){E::MissingFinalHydrogenState{field}|E::CrippenParamNumeric{field,..}|E::InvalidCrippenOptionalRows{field,..}|E::CountOverflow{field,..}|E::InvalidValenceRows{field,..}=>Some((*field).into()),_=>None}}
-    #[wasm_bindgen(getter)]pub fn actual(&self)->Option<usize>{use ck::DescriptorError as E;match self.inner.as_ref(){E::InvalidHallKierContributionRows{actual,..}|E::InvalidCrippenOptionalRows{actual,..}|E::InvalidValenceRows{actual,..}=>Some(*actual),_=>None}}
-    #[wasm_bindgen(getter)]pub fn expected(&self)->Option<usize>{use ck::DescriptorError as E;match self.inner.as_ref(){E::InvalidCrippenOptionalRows{expected,..}|E::InvalidValenceRows{expected,..}=>Some(*expected),_=>None}}
+    #[wasm_bindgen(getter)]pub fn field(&self)->Option<String>{use ck::DescriptorError as E;match self.inner.as_ref(){E::BcutDiagonalRows{field,..}|E::MissingFinalHydrogenState{field}|E::CrippenParamNumeric{field,..}|E::InvalidCrippenOptionalRows{field,..}|E::CountOverflow{field,..}|E::InvalidValenceRows{field,..}=>Some((*field).into()),_=>None}}
+    #[wasm_bindgen(getter)]pub fn actual(&self)->Option<usize>{use ck::DescriptorError as E;match self.inner.as_ref(){E::BcutDiagonalRows{actual,..}|E::InvalidHallKierContributionRows{actual,..}|E::InvalidCrippenOptionalRows{actual,..}|E::InvalidValenceRows{actual,..}=>Some(*actual),_=>None}}
+    #[wasm_bindgen(getter)]pub fn expected(&self)->Option<usize>{use ck::DescriptorError as E;match self.inner.as_ref(){E::BcutDiagonalRows{expected,..}|E::InvalidCrippenOptionalRows{expected,..}|E::InvalidValenceRows{expected,..}=>Some(*expected),_=>None}}
     #[wasm_bindgen(getter)]pub fn minimum(&self)->Option<usize>{match self.inner.as_ref(){ck::DescriptorError::InvalidHallKierContributionRows{minimum,..}=>Some(*minimum),_=>None}}
     #[wasm_bindgen(getter,js_name=expectedRows)]pub fn expected_rows(&self)->Option<usize>{match self.inner.as_ref(){ck::DescriptorError::InvalidConnectivityPath{expected_rows,..}=>Some(*expected_rows),_=>None}}
     #[wasm_bindgen(getter,js_name=actualRows)]pub fn actual_rows(&self)->Option<usize>{match self.inner.as_ref(){ck::DescriptorError::InvalidConnectivityPath{actual_rows,..}=>*actual_rows,_=>None}}

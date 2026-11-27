@@ -90,6 +90,8 @@ mod depict_errors;
 mod descriptor_calls;
 #[cfg(feature = "cap-descriptors")]
 mod descriptor_errors;
+#[cfg(feature = "cap-descriptors")]
+mod ipc;
 mod detached_coordinates;
 mod double_stereo_errors;
 #[cfg(feature = "cap-depict")]

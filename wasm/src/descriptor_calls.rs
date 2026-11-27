@@ -73,8 +73,182 @@ impl LabuteAsaContributions {
         self.0.hydrogen_contribution
     }
 }
+#[derive(serde::Deserialize, tsify::Tsify)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GasteigerChargeOptions {
+    #[tsify(optional)]
+    iterations: f64,
+    #[tsify(optional)]
+    throw_on_param_failure: bool,
+}
+
+impl Default for GasteigerChargeOptions {
+    fn default() -> Self {
+        let params = cosmolkit::GasteigerChargeParams::default();
+        Self {
+            iterations: f64::from(params.iterations()),
+            throw_on_param_failure: params.throw_on_param_failure(),
+        }
+    }
+}
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GasteigerChargeParams | GasteigerChargeOptions")]
+    pub type GasteigerConfigInput;
+
+    #[wasm_bindgen(catch, js_namespace = Reflect, js_name = apply)]
+    fn borrow_charge_params(
+        visit: &mut dyn FnMut(&GasteigerChargeParams),
+        receiver: &JsValue,
+        args: &js_sys::Array,
+    ) -> Result<JsValue, JsValue>;
+}
+
+fn checked_gasteiger_iterations(value: f64) -> Result<i64, JsValue> {
+    if !value.is_finite() || value.fract() != 0.0 || !(0.0..=i32::MAX as f64).contains(&value) {
+        return Err(js_sys::RangeError::new(
+            "Gasteiger iterations must be a finite integer in 0..=2147483647",
+        )
+        .into());
+    }
+
+    Ok(value as i64)
+}
+
+impl GasteigerChargeOptions {
+    fn into_params(self) -> Result<cosmolkit::GasteigerChargeParams, JsValue> {
+        let iterations = checked_gasteiger_iterations(self.iterations)?;
+        cosmolkit::GasteigerChargeParams::new(iterations, self.throw_on_param_failure)
+            .map_err(|error| js_sys::RangeError::new(&error.to_string()).into())
+    }
+}
+
+impl GasteigerConfigInput {
+    fn params(&self) -> Result<cosmolkit::GasteigerChargeParams, JsValue> {
+        let raw = self.as_ref();
+        if input::is_plain_options(raw) {
+            input::check_options(raw, &["iterations", "throwOnParamFailure"])?;
+            let mut fields = GasteigerChargeOptions::default();
+            let iterations = js_sys::Reflect::get(raw, &"iterations".into())?;
+            if !iterations.is_undefined() {
+                fields.iterations = f64::decode(&iterations)?;
+            }
+            let strict = js_sys::Reflect::get(raw, &"throwOnParamFailure".into())?;
+            if !strict.is_undefined() {
+                fields.throw_on_param_failure = bool::decode(&strict)?;
+            }
+            return fields.into_params();
+        }
+        input::with_instance(
+            raw,
+            "GasteigerChargeParams",
+            |visit, receiver, args| borrow_charge_params(&mut |p| visit(p), receiver, args),
+            |p| Ok(p.0),
+        )
+    }
+}
+
+#[wasm_bindgen]
+pub struct GasteigerChargeParams(cosmolkit::GasteigerChargeParams);
+
+#[wasm_bindgen]
+impl GasteigerChargeParams {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        iterations: Option<tsify::Ts<input::F64Input>>,
+        throw_on_param_failure: Option<tsify::Ts<input::BoolInput>>,
+    ) -> Result<Self, JsValue> {
+        let defaults = GasteigerChargeOptions::default();
+        GasteigerChargeOptions {
+            iterations: iterations
+                .map(input::read::<f64>)
+                .transpose()?
+                .unwrap_or(defaults.iterations),
+            throw_on_param_failure: throw_on_param_failure
+                .map(input::read::<bool>)
+                .transpose()?
+                .unwrap_or(defaults.throw_on_param_failure),
+        }
+        .into_params()
+        .map(Self)
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn iterations(&self) -> u32 {
+        self.0.iterations()
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_iterations(&mut self, value: tsify::Ts<input::F64Input>) -> Result<(), JsValue> {
+        let value = checked_gasteiger_iterations(input::read::<f64>(value)?)?;
+        self.0
+            .set_iterations(value)
+            .map_err(|error| js_sys::RangeError::new(&error.to_string()).into())
+    }
+
+    #[wasm_bindgen(getter, js_name = throwOnParamFailure)]
+    pub fn throw_on_param_failure(&self) -> bool {
+        self.0.throw_on_param_failure()
+    }
+
+    #[wasm_bindgen(setter, js_name = throwOnParamFailure)]
+    pub fn set_throw_on_param_failure(
+        &mut self,
+        value: tsify::Ts<input::BoolInput>,
+    ) -> Result<(), JsValue> {
+        self.0
+            .set_throw_on_param_failure(input::read::<bool>(value)?);
+        Ok(())
+    }
+}
+
+#[wasm_bindgen]
+pub struct GasteigerCharge(cosmolkit::GasteigerCharge);
+
+#[wasm_bindgen]
+impl GasteigerCharge {
+    #[wasm_bindgen(getter, js_name = atomCharge)]
+    pub fn atom_charge(&self) -> f64 {
+        self.0.atom_charge()
+    }
+
+    #[wasm_bindgen(getter, js_name = attachedHydrogenCharge)]
+    pub fn attached_hydrogen_charge(&self) -> f64 {
+        self.0.attached_hydrogen_charge()
+    }
+}
 #[wasm_bindgen]
 impl Molecule {
+    #[wasm_bindgen(js_name=gasteigerCharges)]
+    pub fn gasteiger_charges(
+        &self,
+        options: Option<GasteigerConfigInput>,
+    ) -> Result<Vec<GasteigerCharge>, JsValue> {
+        let params = options
+            .as_ref()
+            .map(GasteigerConfigInput::params)
+            .transpose()?
+            .unwrap_or_default();
+        self.gasteiger_charges_with_params(&GasteigerChargeParams(params))
+    }
+
+    #[wasm_bindgen(js_name=gasteigerChargesWithParams)]
+    pub fn gasteiger_charges_with_params(
+        &self,
+        params: &GasteigerChargeParams,
+    ) -> Result<Vec<GasteigerCharge>, JsValue> {
+        self.0
+            .gasteiger_charges_with_params(&params.0)
+            .map(|rows| rows.into_iter().map(GasteigerCharge).collect())
+            .map_err(DescriptorReadError::from_rust)
+    }
+
+    #[wasm_bindgen(js_name=peoeVsa)]
+    pub fn peoe_vsa(&self) -> Result<Vec<f64>, JsValue> {
+        self.0.peoe_vsa().map_err(DescriptorReadError::from_rust)
+    }
+
     #[wasm_bindgen(js_name=numRotatableBonds)]
     pub fn num_rotatable_bonds(
         &self,
@@ -127,6 +301,35 @@ macro_rules! queries{($($name:ident,$js:ident,$out:ty);+$(;)?)=>{#[wasm_bindgen]
     #[wasm_bindgen(js_name=$js)]pub fn $name(&self)->Result<$out,JsValue>{self.0.$name().map_err(DescriptorReadError::from_rust)}
 )+}};}
 queries! {
+ bcut2d,bcut2d,Vec<f64>;
+ estate_indices,estateIndices,Vec<f64>;
+ max_estate_index,maxEstateIndex,f64;
+ min_estate_index,minEstateIndex,f64;
+ max_abs_estate_index,maxAbsEstateIndex,f64;
+ min_abs_estate_index,minAbsEstateIndex,f64;
+ estate_vsa,estateVsa,Vec<f64>;
+ vsa_estate,vsaEstate,Vec<f64>;
+ estate_vsa_1,estateVsa1,f64;
+ estate_vsa_2,estateVsa2,f64;
+ estate_vsa_3,estateVsa3,f64;
+ estate_vsa_4,estateVsa4,f64;
+ estate_vsa_5,estateVsa5,f64;
+ estate_vsa_6,estateVsa6,f64;
+ estate_vsa_7,estateVsa7,f64;
+ estate_vsa_8,estateVsa8,f64;
+ estate_vsa_9,estateVsa9,f64;
+ estate_vsa_10,estateVsa10,f64;
+ estate_vsa_11,estateVsa11,f64;
+ vsa_estate_1,vsaEstate1,f64;
+ vsa_estate_2,vsaEstate2,f64;
+ vsa_estate_3,vsaEstate3,f64;
+ vsa_estate_4,vsaEstate4,f64;
+ vsa_estate_5,vsaEstate5,f64;
+ vsa_estate_6,vsaEstate6,f64;
+ vsa_estate_7,vsaEstate7,f64;
+ vsa_estate_8,vsaEstate8,f64;
+ vsa_estate_9,vsaEstate9,f64;
+ vsa_estate_10,vsaEstate10,f64;
  chi_0,chi0,f64;chi_1,chi1,f64;hall_kier_alpha,hallKierAlpha,f64;
  kappa_1,kappa1,f64;kappa_2,kappa2,f64;kappa_3,kappa3,f64;phi,phi,f64;
  num_heavy_atoms,numHeavyAtoms,u32;total_atom_count,totalAtomCount,u32;
@@ -140,6 +343,8 @@ queries! {
  num_amide_bonds,numAmideBonds,u32;num_atom_stereo_centers,numAtomStereoCenters,u32;
  num_unspecified_atom_stereo_centers,numUnspecifiedAtomStereoCenters,u32;
  num_spiro_atoms,numSpiroAtoms,u32;num_bridgehead_atoms,numBridgeheadAtoms,u32;qed,qed,f64;
+ max_partial_charge,maxPartialCharge,f64;min_partial_charge,minPartialCharge,f64;
+ max_abs_partial_charge,maxAbsPartialCharge,f64;min_abs_partial_charge,minAbsPartialCharge,f64;
  slogp_vsa_1,slogpVsa1,f64;slogp_vsa_2,slogpVsa2,f64;slogp_vsa_3,slogpVsa3,f64;
  slogp_vsa_4,slogpVsa4,f64;slogp_vsa_5,slogpVsa5,f64;slogp_vsa_6,slogpVsa6,f64;
  slogp_vsa_7,slogpVsa7,f64;slogp_vsa_8,slogpVsa8,f64;slogp_vsa_9,slogpVsa9,f64;
@@ -147,6 +352,11 @@ queries! {
  smr_vsa_1,smrVsa1,f64;smr_vsa_2,smrVsa2,f64;smr_vsa_3,smrVsa3,f64;
  smr_vsa_4,smrVsa4,f64;smr_vsa_5,smrVsa5,f64;smr_vsa_6,smrVsa6,f64;
  smr_vsa_7,smrVsa7,f64;smr_vsa_8,smrVsa8,f64;smr_vsa_9,smrVsa9,f64;smr_vsa_10,smrVsa10,f64;
+ peoe_vsa_1,peoeVsa1,f64;peoe_vsa_2,peoeVsa2,f64;peoe_vsa_3,peoeVsa3,f64;
+ peoe_vsa_4,peoeVsa4,f64;peoe_vsa_5,peoeVsa5,f64;peoe_vsa_6,peoeVsa6,f64;
+ peoe_vsa_7,peoeVsa7,f64;peoe_vsa_8,peoeVsa8,f64;peoe_vsa_9,peoeVsa9,f64;
+ peoe_vsa_10,peoeVsa10,f64;peoe_vsa_11,peoeVsa11,f64;peoe_vsa_12,peoeVsa12,f64;
+ peoe_vsa_13,peoeVsa13,f64;peoe_vsa_14,peoeVsa14,f64;
 }
 macro_rules! force_queries{($($name:ident,$native:ident,$js:ident);+$(;)?)=>{paste::paste!{#[wasm_bindgen]impl Molecule{$(
     #[wasm_bindgen(js_name=$js)]pub fn $name(&self,force:Option<tsify::Ts<input::BoolInput>>)->Result<f64,JsValue>{self.0.$native(force.map(input::read::<bool>).transpose()?.unwrap_or(false)).map_err(DescriptorReadError::from_rust)}
