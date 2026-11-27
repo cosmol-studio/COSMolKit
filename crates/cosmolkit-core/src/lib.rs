@@ -190,8 +190,8 @@ pub use paths::{
 };
 
 pub use periodic_table::{
-    PeriodicTableError, atomic_mass, element_info, is_rdkit_organic_subset, isotope_abundance,
-    isotope_mass, most_common_isotope, most_common_isotope_mass,
+    PeriodicTableError, atom_mass, atomic_mass, element_info, is_rdkit_organic_subset,
+    isotope_abundance, isotope_mass, most_common_isotope, most_common_isotope_mass,
 };
 
 pub use potential_stereo::{

@@ -5,6 +5,29 @@ use cosmolkit_core::{
 use cosmolkit_types::Element;
 
 #[test]
+fn atom_mass_uses_the_mass_number_without_relaxing_the_isotope_table() {
+    use cosmolkit_model::{Atom, AtomId, AtomSpec};
+
+    for (element, isotope, expected) in [
+        (Element::C, None, 12.011),
+        (Element::C, Some(13), 13.00335484),
+        (Element::C, Some(99), 99.0),
+        (Element::DUMMY, Some(99), 0.0),
+    ] {
+        let mut spec = AtomSpec::new(element);
+        if let Some(isotope) = isotope {
+            spec = spec.with_isotope(isotope);
+        }
+        let atom = Atom::from_spec(AtomId::new(0), spec);
+        assert_eq!(cosmolkit_core::atom_mass(&atom), expected);
+    }
+    assert!(matches!(
+        isotope_mass(Element::C, 99),
+        Err(PeriodicTableError::UnknownIsotope { .. })
+    ));
+}
+
+#[test]
 fn element_info_covers_dummy_and_every_canonical_source_row_in_order() {
     for element in Element::iter_with_dummy() {
         let info = element_info(element);

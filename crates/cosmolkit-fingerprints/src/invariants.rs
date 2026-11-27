@@ -5,8 +5,7 @@ use std::sync::OnceLock;
 
 use crate::{FingerprintError, MorganError, hash::hash_range};
 use cosmolkit_core::{
-    PeriodicTableError, RingInfo, ValenceAssignment, atomic_mass,
-    total_hydrogen_count_from_validated,
+    RingInfo, ValenceAssignment, atom_mass, atomic_mass, total_hydrogen_count_from_validated,
 };
 use cosmolkit_model::{BondOrder, BondStereo, TopologyBlock};
 use cosmolkit_search::{
@@ -208,21 +207,11 @@ pub(crate) fn get_connectivity_invariants(
         let total_hydrogens =
             total_hydrogen_count_from_validated(topology, valence, atom.id(), true)?;
 
-        let atomic_weight = atomic_mass(atom.element(), None)?;
-        let mass = match atom.isotope() {
-            None => atomic_weight,
-            Some(isotope) => match atomic_mass(atom.element(), Some(isotope)) {
-                Ok(mass) => mass,
-                // Atom::getMass() substitutes the mass number only for a
-                // non-dummy atom when the source isotope table returned zero.
-                Err(PeriodicTableError::UnknownIsotope { .. }) if atom.atomic_number() != 0 => {
-                    f64::from(isotope)
-                }
-                Err(PeriodicTableError::UnknownIsotope { .. }) => 0.0,
-                Err(source) => return Err(MorganError::PeriodicTable(source)),
-            },
+        let delta_mass = if atom.isotope().is_some() {
+            (atom_mass(atom) - atomic_mass(atom.element(), None)?) as i32
+        } else {
+            0
         };
-        let delta_mass = (mass - atomic_weight) as i32;
 
         // A fixed stack array carries the same ordered five/six components
         // while avoiding RDKit's per-atom dynamic-vector allocation.

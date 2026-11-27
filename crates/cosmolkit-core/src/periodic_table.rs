@@ -467,6 +467,33 @@ pub fn atomic_mass(element: Element, isotope: Option<u16>) -> Result<f64, Period
     }
 }
 
+/// RDKit atom mass: an unlisted isotope uses its mass number, or zero for a dummy atom.
+#[must_use]
+pub fn atom_mass(atom: &cosmolkit_model::Atom) -> f64 {
+    // RDKit✔️✔️: double Atom::getMass() const {
+    // RDKit✔️✔️:   if (d_isotope) {
+    // RDKit✔️✔️:     double res =
+    // RDKit✔️✔️:         PeriodicTable::getTable()->getMassForIsotope(d_atomicNum, d_isotope);
+    // RDKit✔️✔️:     if (d_atomicNum != 0 && res == 0.0) {
+    // RDKit✔️✔️:       res = d_isotope;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return res;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return PeriodicTable::getTable()->getAtomicWeight(d_atomicNum);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let element = atom.element();
+    let Some(isotope) = atom.isotope() else {
+        return rows()[usize::from(element.atomic_number())].atomic_weight;
+    };
+    let mass = isotope_row(element, isotope).map_or(0.0, |row| row.mass);
+    if element.atomic_number() != 0 && mass == 0.0 {
+        f64::from(isotope)
+    } else {
+        mass
+    }
+}
+
 /// Return the mass number of the source-defined most common isotope.
 #[must_use]
 pub fn most_common_isotope(element: Element) -> u16 {
