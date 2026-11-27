@@ -50,6 +50,48 @@
 
 use crate::Molecule;
 
+/// Borrowed graph override accepted by the Ipc and AvgIpc queries.
+///
+/// Numeric rows remain available with `cap-descriptors`; the existing dense
+/// matrix form is available when `cap-matrices` is also enabled.
+#[derive(Debug, Clone, Copy)]
+pub enum IpcDistanceMatrix<'a> {
+    /// Checked square numeric rows.
+    Rows(&'a [Vec<f64>]),
+    /// Existing row-major dense matrix, borrowed without copying its entries.
+    #[cfg(feature = "cap-matrices")]
+    Dense(&'a cosmolkit_core::DenseMatrix),
+}
+
+impl<'a> IpcDistanceMatrix<'a> {
+    fn into_input(self) -> cosmolkit_descriptors::IpcMatrixInput<'a> {
+        match self {
+            Self::Rows(rows) => cosmolkit_descriptors::IpcMatrixInput::Rows(rows),
+            #[cfg(feature = "cap-matrices")]
+            Self::Dense(matrix) => cosmolkit_descriptors::IpcMatrixInput::Dense(matrix),
+        }
+    }
+}
+
+impl<'a> From<&'a [Vec<f64>]> for IpcDistanceMatrix<'a> {
+    fn from(rows: &'a [Vec<f64>]) -> Self {
+        Self::Rows(rows)
+    }
+}
+
+impl<'a> From<&'a Vec<Vec<f64>>> for IpcDistanceMatrix<'a> {
+    fn from(rows: &'a Vec<Vec<f64>>) -> Self {
+        Self::Rows(rows)
+    }
+}
+
+#[cfg(feature = "cap-matrices")]
+impl<'a> From<&'a cosmolkit_core::DenseMatrix> for IpcDistanceMatrix<'a> {
+    fn from(matrix: &'a cosmolkit_core::DenseMatrix) -> Self {
+        Self::Dense(matrix)
+    }
+}
+
 /// Read-boundary error for public descriptor count queries.
 ///
 /// [`Self::MissingPreparedValence`] means the existing validity-checked
@@ -152,6 +194,46 @@ fn required_chi_input(
 }
 
 impl Molecule {
+    /// Total information content of the current binary molecular graph.
+    ///
+    /// Reads topology only. A certified reconstruction whose total overflows
+    /// binary64 returns positive infinity; a graph beyond the pinned
+    /// reconstruction bound returns NaN.
+    #[cfg(feature = "cap-descriptors")]
+    pub fn ipc(&self) -> Result<f64, cosmolkit_descriptors::IpcError> {
+        cosmolkit_descriptors::ipc(self.topology())
+    }
+
+    /// Total information content using a borrowed distance-matrix override.
+    ///
+    /// Only entries equal to one in the lower triangle, including the
+    /// diagonal, supply edges or loops. The matrix dimension must equal the
+    /// current atom count.
+    #[cfg(feature = "cap-descriptors")]
+    pub fn ipc_with_distance_matrix(
+        &self,
+        matrix: IpcDistanceMatrix<'_>,
+    ) -> Result<f64, cosmolkit_descriptors::IpcError> {
+        cosmolkit_descriptors::ipc_with_distance_matrix(self.topology(), matrix.into_input())
+    }
+
+    /// Average information content of the current binary molecular graph.
+    ///
+    /// Within the reconstruction bound it stays finite even if total Ipc overflows.
+    #[cfg(feature = "cap-descriptors")]
+    pub fn avg_ipc(&self) -> Result<f64, cosmolkit_descriptors::IpcError> {
+        cosmolkit_descriptors::avg_ipc(self.topology())
+    }
+
+    /// Average information content using a borrowed distance-matrix override.
+    #[cfg(feature = "cap-descriptors")]
+    pub fn avg_ipc_with_distance_matrix(
+        &self,
+        matrix: IpcDistanceMatrix<'_>,
+    ) -> Result<f64, cosmolkit_descriptors::IpcError> {
+        cosmolkit_descriptors::avg_ipc_with_distance_matrix(self.topology(), matrix.into_input())
+    }
+
     /// Degree-based Chi0 over explicit graph rows, including explicit hydrogen.
     /// Reads topology only; never prepares valence, rings or caches.
     #[cfg(feature = "cap-descriptors")]
@@ -3098,6 +3180,151 @@ impl Molecule {
             .map_err(|source| DescriptorReadError::Algorithm { source })
     }
 
+    /// Calculate detached per-atom Gasteiger charge rows with source defaults.
+    /// Reads a valid cached valence assignment only when the iteration count is
+    /// positive; it does not prepare or install valence.
+    pub fn gasteiger_charges(
+        &self,
+    ) -> Result<Vec<cosmolkit_core::GasteigerCharge>, DescriptorReadError> {
+        self.gasteiger_charges_with_params(&cosmolkit_core::GasteigerChargeParams::default())
+    }
+
+    /// Calculate detached per-atom Gasteiger charge rows with explicit source
+    /// parameters. Zero iterations do not need a valence assignment.
+    pub fn gasteiger_charges_with_params(
+        &self,
+        params: &cosmolkit_core::GasteigerChargeParams,
+    ) -> Result<Vec<cosmolkit_core::GasteigerCharge>, DescriptorReadError> {
+        cosmolkit_core::gasteiger_charges(
+            self.topology(),
+            self.derived_cache_runtime().valence_assignment(),
+            params,
+        )
+        .map_err(|source| DescriptorReadError::Algorithm {
+            source: cosmolkit_descriptors::DescriptorError::GasteigerCharge { source },
+        })
+    }
+
+    /// Maximum graph-atom partial charge using source default parameters.
+    pub fn max_partial_charge(&self) -> Result<f64, DescriptorReadError> {
+        cosmolkit_descriptors::max_partial_charge(
+            self.topology(),
+            self.derived_cache_runtime().valence_assignment(),
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Minimum graph-atom partial charge using source default parameters.
+    pub fn min_partial_charge(&self) -> Result<f64, DescriptorReadError> {
+        cosmolkit_descriptors::min_partial_charge(
+            self.topology(),
+            self.derived_cache_runtime().valence_assignment(),
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Maximum absolute signed-extremum partial charge.
+    pub fn max_abs_partial_charge(&self) -> Result<f64, DescriptorReadError> {
+        cosmolkit_descriptors::max_abs_partial_charge(
+            self.topology(),
+            self.derived_cache_runtime().valence_assignment(),
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Minimum absolute signed-extremum partial charge.
+    pub fn min_abs_partial_charge(&self) -> Result<f64, DescriptorReadError> {
+        cosmolkit_descriptors::min_abs_partial_charge(
+            self.topology(),
+            self.derived_cache_runtime().valence_assignment(),
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Calculate the 14 default PEOE-VSA bins in source order.
+    ///
+    /// The shared Labute cache is consulted first, with hydrogen area enabled
+    /// on a miss. Gasteiger computation never prepares molecule state.
+    pub fn peoe_vsa(&self) -> Result<Vec<f64>, DescriptorReadError> {
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::peoe_vsa(
+            self.topology(),
+            self.derived_cache_runtime().valence_assignment(),
+            &mut memo,
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Return output 1 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_1(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[0])
+    }
+
+    /// Return output 2 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_2(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[1])
+    }
+
+    /// Return output 3 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_3(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[2])
+    }
+
+    /// Return output 4 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_4(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[3])
+    }
+
+    /// Return output 5 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_5(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[4])
+    }
+
+    /// Return output 6 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_6(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[5])
+    }
+
+    /// Return output 7 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_7(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[6])
+    }
+
+    /// Return output 8 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_8(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[7])
+    }
+
+    /// Return output 9 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_9(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[8])
+    }
+
+    /// Return output 10 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_10(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[9])
+    }
+
+    /// Return output 11 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_11(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[10])
+    }
+
+    /// Return output 12 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_12(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[11])
+    }
+
+    /// Return output 13 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_13(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[12])
+    }
+
+    /// Return output 14 from the default 14-bin PEOE-VSA result.
+    pub fn peoe_vsa_14(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.peoe_vsa()?[13])
+    }
+
     /// Source default query; computed values follow the domain owner's cache guards.
     pub fn tpsa(&self) -> Result<f64, DescriptorReadError> {
         self.tpsa_with_params(false, false)
@@ -3261,6 +3488,18 @@ impl Molecule {
 }
 
 impl Molecule {
+    /// Return the high and low BCUT2D eigenvalues for mass, Gasteiger charge,
+    /// Crippen logP and molar refractivity, in that order.
+    pub fn bcut2d(&self) -> Result<Vec<f64>, DescriptorReadError> {
+        cosmolkit_descriptors::bcut2d(
+            self.topology(),
+            self.coordinate_block_runtime(),
+            self.properties(),
+        )
+        .map(Vec::from)
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
     /// Source-default QED, through the existing detached owner implementation.
     pub fn qed(&self) -> Result<f64, DescriptorReadError> {
         cosmolkit_descriptors::qed(&required_descriptor_input(self)?)
@@ -3869,5 +4108,217 @@ mod original_runtime_descriptor_conditions {
             Err(DescriptorReadError::MissingInitializedRings)
         ));
         assert!(removed.derived_cache_runtime().valid_ring_info().is_none());
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "cap-descriptors",
+    feature = "cap-smiles",
+    feature = "cap-sanitize",
+    feature = "cap-hydrogens",
+    feature = "cap-valence"
+))]
+mod gasteiger_runtime_tests {
+    use super::*;
+    use crate::{GasteigerChargeError, GasteigerChargeParams, SmilesParseParams};
+
+    fn close(actual: f64, expected: f64, tolerance: f64) {
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "actual {actual:?}, expected {expected:?}, tolerance {tolerance:?}"
+        );
+    }
+
+    fn row_bits(rows: &[cosmolkit_core::GasteigerCharge]) -> Vec<(u64, u64)> {
+        rows.iter()
+            .map(|row| {
+                (
+                    row.atom_charge().to_bits(),
+                    row.attached_hydrogen_charge().to_bits(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn raw_zero_iterations_strict_lookup_and_valence_only_do_not_prepare_hybridization() {
+        let raw = Molecule::from_smiles_with_params(
+            "CCO",
+            &SmilesParseParams {
+                sanitize: false,
+                remove_hs: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let before = raw.clone();
+
+        let zero = GasteigerChargeParams::new(0, false).unwrap();
+        let rows = raw.gasteiger_charges_with_params(&zero).unwrap();
+        assert_eq!(
+            row_bits(&rows),
+            vec![(0.0_f64.to_bits(), 0.0_f64.to_bits()); 3]
+        );
+        assert_eq!(raw, before);
+
+        let strict_zero = GasteigerChargeParams::new(0, true).unwrap();
+        assert!(matches!(
+            raw.gasteiger_charges_with_params(&strict_zero),
+            Err(DescriptorReadError::Algorithm {
+                source: cosmolkit_descriptors::DescriptorError::GasteigerCharge {
+                    source: GasteigerChargeError::MissingParameters { element, mode }
+                }
+            }) if element == "C" && mode.is_empty()
+        ));
+
+        assert!(matches!(
+            raw.gasteiger_charges(),
+            Err(DescriptorReadError::Algorithm {
+                source: cosmolkit_descriptors::DescriptorError::GasteigerCharge {
+                    source: GasteigerChargeError::Valence {
+                        source: cosmolkit_core::ValenceError::ImplicitValenceCacheNotInitialized { .. }
+                    }
+                }
+            })
+        ));
+        assert_eq!(raw, before);
+
+        let valence_only = raw.with_assigned_valence().unwrap();
+        assert!(
+            valence_only
+                .topology()
+                .atoms
+                .iter()
+                .all(|atom| { atom.hybridization() == crate::Hybridization::Unspecified })
+        );
+        let rows = valence_only.gasteiger_charges().unwrap();
+        assert!(
+            rows.iter().all(|row| {
+                row.atom_charge().is_nan() && row.attached_hydrogen_charge().is_nan()
+            })
+        );
+        let strict = GasteigerChargeParams::new(12, true).unwrap();
+        assert!(matches!(
+            valence_only.gasteiger_charges_with_params(&strict),
+            Err(DescriptorReadError::Algorithm {
+                source: cosmolkit_descriptors::DescriptorError::GasteigerCharge {
+                    source: GasteigerChargeError::MissingParameters { element, mode }
+                }
+            }) if element == "C" && mode.is_empty()
+        ));
+        assert_eq!(raw, before);
+    }
+
+    #[test]
+    fn charge_rows_conserve_protonation_and_split_graph_hydrogens_from_bracket_hydrogens() {
+        let ethanol = Molecule::from_smiles("CCO").unwrap();
+        let before = ethanol.to_binary().unwrap();
+        let rows = ethanol.gasteiger_charges().unwrap();
+        assert_eq!(rows.len(), 3);
+        close(rows[2].atom_charge(), -0.396664, 1e-6);
+        close(rows[2].attached_hydrogen_charge(), 0.210022, 1e-6);
+        close(
+            rows.iter()
+                .map(|row| row.atom_charge() + row.attached_hydrogen_charge())
+                .sum(),
+            0.0,
+            2e-12,
+        );
+        assert_eq!(ethanol.to_binary().unwrap(), before);
+
+        let explicit = ethanol.with_hydrogens().unwrap();
+        let explicit_rows = explicit.gasteiger_charges().unwrap();
+        assert_eq!(explicit_rows.len(), explicit.num_atoms());
+        close(explicit_rows[2].atom_charge(), rows[2].atom_charge(), 1e-6);
+        assert_eq!(
+            explicit_rows[2].attached_hydrogen_charge().to_bits(),
+            0.0_f64.to_bits()
+        );
+        let oxygen_hydrogen = explicit
+            .topology()
+            .adjacency
+            .neighbors_of(2)
+            .iter()
+            .map(|neighbor| neighbor.atom_index)
+            .find(|&index| explicit.topology().atoms[index].atomic_number() == 1)
+            .expect("graph-explicit hydroxyl hydrogen");
+        close(
+            explicit_rows[oxygen_hydrogen].atom_charge(),
+            rows[2].attached_hydrogen_charge(),
+            1e-6,
+        );
+
+        let bracket = Molecule::from_smiles("C[NH2]").unwrap();
+        let bracket_rows = bracket.gasteiger_charges().unwrap();
+        assert_eq!(bracket_rows.len(), 2);
+        close(bracket_rows[1].atom_charge(), -0.33326905, 1e-7);
+        close(bracket_rows[1].attached_hydrogen_charge(), 0.23619516, 1e-7);
+    }
+
+    #[test]
+    fn conjugated_initialization_sulfur_special_mode_and_extrema_match_pinned_examples() {
+        let acetate = Molecule::from_smiles("CC(=O)[O-]").unwrap();
+        let zero = GasteigerChargeParams::new(0, false).unwrap();
+        let rows = acetate.gasteiger_charges_with_params(&zero).unwrap();
+        assert_eq!(
+            rows.iter()
+                .map(cosmolkit_core::GasteigerCharge::atom_charge)
+                .collect::<Vec<_>>(),
+            [0.0, 0.0, -0.5, -0.5]
+        );
+        assert!(rows.iter().all(|row| row.attached_hydrogen_charge() == 0.0));
+
+        let sulfur = Molecule::from_smiles("O=S(O)(F)(F)F").unwrap();
+        let sulfur_index = sulfur
+            .topology()
+            .atoms
+            .iter()
+            .position(|atom| atom.atomic_number() == 16)
+            .unwrap();
+        close(
+            sulfur.gasteiger_charges().unwrap()[sulfur_index].atom_charge(),
+            0.212415125,
+            1e-8,
+        );
+
+        let acid = Molecule::from_smiles("CC(=O)O").unwrap();
+        close(acid.min_partial_charge().unwrap(), -0.481434, 1e-6);
+        close(acid.max_partial_charge().unwrap(), 0.299685, 1e-6);
+        close(acid.min_abs_partial_charge().unwrap(), 0.299685, 1e-6);
+        close(acid.max_abs_partial_charge().unwrap(), 0.481434, 1e-6);
+
+        let empty = Molecule::new();
+        assert_eq!(empty.max_partial_charge().unwrap(), -500.0);
+        assert_eq!(empty.min_partial_charge().unwrap(), 500.0);
+        assert_eq!(empty.min_abs_partial_charge().unwrap(), 500.0);
+        assert_eq!(empty.max_abs_partial_charge().unwrap(), 500.0);
+    }
+
+    #[test]
+    fn peoe_vsa_has_fourteen_bins_and_reads_the_shared_labute_slot_unforced() {
+        let molecule = Molecule::from_smiles("CCO").unwrap();
+        let cold = molecule.peoe_vsa().unwrap();
+        assert_eq!(cold.len(), 14);
+        close(cold.iter().sum(), 18.63714656, 1e-7);
+
+        molecule.labute_asa_with_params(false, true).unwrap();
+        let no_hydrogen_slot = molecule.peoe_vsa().unwrap();
+        assert_eq!(no_hydrogen_slot.len(), 14);
+        close(no_hydrogen_slot.iter().sum(), 18.68276248, 1e-7);
+        for index in 0..14 {
+            if [0, 6, 7].contains(&index) {
+                assert_ne!(cold[index].to_bits(), no_hydrogen_slot[index].to_bits());
+            } else {
+                assert_eq!(cold[index].to_bits(), no_hydrogen_slot[index].to_bits());
+            }
+        }
+        assert_eq!(
+            molecule.peoe_vsa_1().unwrap().to_bits(),
+            no_hydrogen_slot[0].to_bits()
+        );
+
+        let empty = Molecule::new();
+        assert_eq!(empty.peoe_vsa().unwrap(), vec![0.0; 14]);
     }
 }

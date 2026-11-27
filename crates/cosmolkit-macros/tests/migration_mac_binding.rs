@@ -1171,6 +1171,25 @@ fn native_python_projection_requires_an_explicit_scalar_value_contract() {
 }
 
 #[test]
+fn matrix_input_projection_accepts_numeric_rows_and_a_registered_matrix() {
+    let declaration = quote! {
+        static VALUES = [{
+            semantic_id: "types.DenseMatrix", item: type, owner: type_, rust: crate::DenseMatrix,
+            python: "DenseMatrix", javascript: "DenseMatrix", feature: "runtime", role: value,
+        }, {
+            semantic_id: "types.MatrixInput", item: type, owner: type_, rust: crate::MatrixInput,
+            python: "MatrixInput", python_native: "typing.Sequence[typing.Sequence[float]] | DenseMatrix",
+            javascript: "MatrixInput", feature: "runtime", role: value,
+        }];
+    };
+    assert!(expand_binding_contract(declaration.clone()).is_ok());
+    let invalid = declaration
+        .to_string()
+        .replace("| DenseMatrix", "| MissingMatrix");
+    assert!(expand_binding_contract(invalid.parse().unwrap()).is_err());
+}
+
+#[test]
 fn configuration_schema_is_owned_by_a_parameter_type_without_requiring_rust_new() {
     let declaration = quote! {
         static CONFIG = [{

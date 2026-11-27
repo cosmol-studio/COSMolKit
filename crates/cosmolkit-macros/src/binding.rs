@@ -873,9 +873,10 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
             let union = projection.contains('|')
                 && projection.split('|').all(|name| {
                     let name = name.trim();
-                    entries.iter().any(|candidate| {
-                        candidate.item == ItemClass::Type && candidate.python.value() == name
-                    })
+                    name == "typing.Sequence[typing.Sequence[float]]"
+                        || entries.iter().any(|candidate| {
+                            candidate.item == ItemClass::Type && candidate.python.value() == name
+                        })
                 });
             if entry.item != ItemClass::Type
                 || entry.type_role != Some(TypeRole::Value)

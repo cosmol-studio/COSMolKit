@@ -958,8 +958,8 @@ impl Clone for Molecule {
         // It never presents damaged state as a successful query or defaults it.
         #[cfg(feature = "cap-descriptors")]
         let (memo, poisoned) = match self.descriptor_queries.lock() {
-            Ok(rows) => (rows.clone(), self.descriptor_queries_poisoned),
-            Err(rows) => (rows.into_inner().clone(), true),
+            Ok(rows) => (rows.for_molecule_copy(), self.descriptor_queries_poisoned),
+            Err(rows) => (rows.into_inner().for_molecule_copy(), true),
         };
         Self {
             state: Arc::clone(&self.state),
@@ -1236,7 +1236,7 @@ impl Molecule {
             // The declared clearComputedProps policy discards these properties;
             // do not copy vectors just to clear them in the same transaction.
             if preserve_queries {
-                rows.clone()
+                rows.for_molecule_copy()
             } else {
                 Default::default()
             }

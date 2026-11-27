@@ -75,12 +75,18 @@ pub use ops::{
 mod descriptors;
 #[cfg(feature = "cap-depict")]
 mod drawing;
+#[cfg(feature = "cap-descriptors")]
+mod estate;
 #[cfg(feature = "cap-io")]
 pub use cosmolkit_core::{AttachmentExpansionError, BondDirectionStereoError};
 #[cfg(feature = "cap-depict")]
 pub use cosmolkit_core::{
     DoubleLexicalReadError, DoubleLexicalReadErrorKind, SourceNumericStreamState,
     UnsignedStreamArrayError,
+};
+#[cfg(feature = "cap-descriptors")]
+pub use cosmolkit_core::{
+    GasteigerCharge, GasteigerChargeError, GasteigerChargeParamError, GasteigerChargeParams,
 };
 #[cfg(feature = "cap-depict")]
 pub use cosmolkit_depict::{
@@ -92,6 +98,8 @@ pub use cosmolkit_depict::{
     Coordinate2DLayoutError, Coordinate2DTemplateError, DepictError as Coordinate2DError,
 };
 #[cfg(feature = "cap-descriptors")]
+pub use cosmolkit_descriptors::IpcError;
+#[cfg(feature = "cap-descriptors")]
 pub use cosmolkit_descriptors::{
     CrippenTotals, DescriptorError, DescriptorSearchCause, LabuteAsaContributions,
     RotatableBondsOptions,
@@ -101,7 +109,7 @@ pub use cosmolkit_io::{MolPostError, MolProcessingError};
 #[cfg(feature = "cap-smiles")]
 pub use cosmolkit_smiles::FragmentWriteInputError;
 #[cfg(feature = "cap-descriptors")]
-pub use descriptors::DescriptorReadError;
+pub use descriptors::{DescriptorReadError, IpcDistanceMatrix};
 #[cfg(feature = "cap-depict")]
 pub use drawing::DrawingWriteError;
 #[cfg(feature = "cap-alignment")]
