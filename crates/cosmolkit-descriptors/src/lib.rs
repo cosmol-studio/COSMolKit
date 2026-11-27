@@ -4,6 +4,8 @@
 //! assignments. They cannot observe or mutate a live runtime molecule or its
 //! derived-cache state.
 
+mod bcut2d;
+pub use bcut2d::bcut2d;
 mod chi;
 mod connectivity;
 pub mod counts;
@@ -39,8 +41,8 @@ pub use connectivity::{
 pub use crippen::{CrippenContributions, crippen_contributions};
 pub use crippen::{CrippenParamRow, default_crippen_params};
 pub use crippen::{CrippenTotals, crippen_totals};
-pub use estate::{EStateExtrema, EStateVsaFamily, estate_indices};
 pub use crippen::{crippen_clogp, crippen_mr};
+pub use estate::{EStateExtrema, EStateVsaFamily, estate_indices};
 pub use gasteiger::{
     max_abs_partial_charge, max_partial_charge, min_abs_partial_charge, min_partial_charge,
     peoe_vsa,
@@ -3154,6 +3156,21 @@ pub enum DescriptorSearchCause {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum DescriptorError {
+    #[error("descriptor `bcut2d`: {field} has {actual} rows; expected {expected}")]
+    BcutDiagonalRows {
+        field: &'static str,
+        actual: usize,
+        expected: usize,
+    },
+    #[error("descriptor `bcut2d`: unsupported bond order {order:?} on bond {bond}")]
+    UnsupportedBcutBond {
+        bond: cosmolkit_model::BondId,
+        order: cosmolkit_model::BondOrder,
+    },
+    #[error("descriptor `bcut2d`: cannot allocate eigensolver storage for {dimension} atoms")]
+    BcutMatrixAllocation { dimension: usize },
+    #[error("descriptor `bcut2d`: eigensolver did not converge for {dimension} atoms")]
+    BcutNonConvergence { dimension: usize },
     #[error("descriptor `{function}`: topology edit failed: {source}")]
     TopologyEdit {
         function: &'static str,
