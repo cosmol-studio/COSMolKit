@@ -276,6 +276,7 @@ dependencies = [
  "cosmolkit-model",
  "cosmolkit-search",
  "cosmolkit-smiles",
+ "num-bigint",
  "serde_json",
  "thiserror",
 ]

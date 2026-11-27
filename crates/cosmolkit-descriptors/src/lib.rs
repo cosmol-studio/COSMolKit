@@ -10,6 +10,7 @@ pub mod counts;
 mod crippen;
 mod estate;
 mod gasteiger;
+mod ipc;
 mod labute;
 pub mod lipinski;
 mod mqn;
@@ -43,6 +44,9 @@ pub use crippen::{crippen_clogp, crippen_mr};
 pub use gasteiger::{
     max_abs_partial_charge, max_partial_charge, min_abs_partial_charge, min_partial_charge,
     peoe_vsa,
+};
+pub use ipc::{
+    IpcError, IpcMatrixInput, avg_ipc, avg_ipc_with_distance_matrix, ipc, ipc_with_distance_matrix,
 };
 pub use labute::{
     LabuteAsaContributions, LabuteContributions, labute_asa, labute_asa_contributions,
