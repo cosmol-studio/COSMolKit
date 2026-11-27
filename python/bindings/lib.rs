@@ -47,9 +47,11 @@ mod cip_atom_code_errors;
 mod collection_params;
 #[path = "../framework/configuration.rs"]
 mod configuration;
+mod gasteiger_values;
 mod graph_queries;
 mod indexed_edits;
 mod indexed_graph_errors;
+mod ipc;
 mod mapped_fragments;
 mod molecule_transfer;
 mod protein_transfer;
@@ -296,7 +298,8 @@ pub mod native {
     #[pymodule_export]
     use super::descriptor_errors::{
         DescriptorError, DescriptorErrorKind, DescriptorReadError, DescriptorReadErrorKind,
-        DescriptorSearchCause, DescriptorSearchCauseKind,
+        DescriptorSearchCause, DescriptorSearchCauseKind, GasteigerChargeError,
+        GasteigerChargeErrorKind,
     };
     #[pymodule_export]
     use super::detached_values::{CoordinateBlock, SdfRecordMetadata};
@@ -330,12 +333,16 @@ pub mod native {
         SelectedSubstanceGroupCopyErrorKind, SubstanceGroupAtomList,
     };
     #[pymodule_export]
+    use super::gasteiger_values::{GasteigerCharge, GasteigerChargeParams};
+    #[pymodule_export]
     use super::hydrogen_errors::{HydrogenError, HydrogenErrorKind};
     #[pymodule_export]
     use super::inchi_values::{
         _mol_from_inchi_keywords, _mol_from_inchi_params, InchiDiagnostic, InchiDiagnosticLevel,
         InchiError, InchiErrorKind, InchiResult, inchi_to_key, mol_from_inchi,
     };
+    #[pymodule_export]
+    use super::ipc::{IpcError, IpcErrorKind};
     #[pymodule_export]
     use super::kekulize_errors::{KekulizeError, KekulizeErrorKind};
     #[pymodule_export]
@@ -7012,6 +7019,188 @@ pub mod native {
         fn qed(&self) -> PyResult<f64> {
             self.inner.qed().map_err(DescriptorReadError::from_rust)
         }
+        /// Calculate BCUT2D on a hydrogen-removed, sanitized copy.
+        ///
+        /// Returns
+        /// -------
+        /// list of float
+        ///     High/low pairs for mass, Gasteiger charge, Crippen logP and molar refractivity.
+        ///
+        /// Raises
+        /// ------
+        /// DescriptorReadError
+        ///     If the working graph cannot be prepared, weighted or diagonalized.
+        fn bcut2d(&self) -> PyResult<Vec<f64>> {
+            self.inner.bcut2d().map_err(DescriptorReadError::from_rust)
+        }
+        /// Return atom-ordered electrotopological state indices.
+        fn estate_indices(&self) -> PyResult<Vec<f64>> {
+            self.inner
+                .estate_indices()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return the largest signed atom EState index.
+        fn max_estate_index(&self) -> PyResult<f64> {
+            self.inner
+                .max_estate_index()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return the smallest signed atom EState index.
+        fn min_estate_index(&self) -> PyResult<f64> {
+            self.inner
+                .min_estate_index()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return the largest absolute atom EState index.
+        fn max_abs_estate_index(&self) -> PyResult<f64> {
+            self.inner
+                .max_abs_estate_index()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return the smallest absolute atom EState index.
+        fn min_abs_estate_index(&self) -> PyResult<f64> {
+            self.inner
+                .min_abs_estate_index()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return Labute atom areas summed in eleven bins of EState.
+        fn estate_vsa(&self) -> PyResult<Vec<f64>> {
+            self.inner
+                .estate_vsa()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return atom EState indices summed in ten bins of Labute area.
+        fn vsa_estate(&self) -> PyResult<Vec<f64>> {
+            self.inner
+                .vsa_estate()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 1 of atom area by EState.
+        fn estate_vsa_1(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_1()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 2 of atom area by EState.
+        fn estate_vsa_2(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_2()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 3 of atom area by EState.
+        fn estate_vsa_3(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_3()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 4 of atom area by EState.
+        fn estate_vsa_4(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_4()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 5 of atom area by EState.
+        fn estate_vsa_5(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_5()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 6 of atom area by EState.
+        fn estate_vsa_6(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_6()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 7 of atom area by EState.
+        fn estate_vsa_7(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_7()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 8 of atom area by EState.
+        fn estate_vsa_8(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_8()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 9 of atom area by EState.
+        fn estate_vsa_9(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_9()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 10 of atom area by EState.
+        fn estate_vsa_10(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_10()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 11 of atom area by EState.
+        fn estate_vsa_11(&self) -> PyResult<f64> {
+            self.inner
+                .estate_vsa_11()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 1 of EState by atom area.
+        fn vsa_estate_1(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_1()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 2 of EState by atom area.
+        fn vsa_estate_2(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_2()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 3 of EState by atom area.
+        fn vsa_estate_3(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_3()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 4 of EState by atom area.
+        fn vsa_estate_4(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_4()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 5 of EState by atom area.
+        fn vsa_estate_5(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_5()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 6 of EState by atom area.
+        fn vsa_estate_6(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_6()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 7 of EState by atom area.
+        fn vsa_estate_7(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_7()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 8 of EState by atom area.
+        fn vsa_estate_8(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_8()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 9 of EState by atom area.
+        fn vsa_estate_9(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_9()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return bin 10 of EState by atom area.
+        fn vsa_estate_10(&self) -> PyResult<f64> {
+            self.inner
+                .vsa_estate_10()
+                .map_err(DescriptorReadError::from_rust)
+        }
         /// Return bin 1 of the default surface-area descriptor classified by atomic Crippen logP.
         fn slogp_vsa_1(&self) -> PyResult<f64> {
             self.inner
@@ -7290,6 +7479,175 @@ pub mod native {
             self.inner
                 .labute_asa_contributions_with_params(include_hydrogens, force)
                 .map(|inner| LabuteAsaContributions { inner })
+                .map_err(DescriptorReadError::from_rust)
+        }
+        #[pyo3(signature = (params=crate::arguments::Argument::Missing, *, iterations=crate::arguments::Argument::Missing, throw_on_param_failure=crate::arguments::Argument::Missing))]
+        /// Return detached per-atom charges and attached-hydrogen sums. Supply a settings object or keywords; defaults are 12 iterations and permissive parameter lookup.
+        fn gasteiger_charges(
+            &self,
+            params: crate::arguments::Argument<Option<PyRef<'_, GasteigerChargeParams>>>,
+            iterations: crate::arguments::Argument<i64>,
+            throw_on_param_failure: crate::arguments::Argument<bool>,
+        ) -> PyResult<Vec<GasteigerCharge>> {
+            let has_iterations = iterations.is_supplied();
+            let keyword_form = has_iterations || throw_on_param_failure.is_supplied();
+            crate::arguments::configuration_arguments!(params; iterations, throw_on_param_failure);
+            if keyword_form {
+                let iterations = if has_iterations {
+                    iterations
+                } else {
+                    i64::from(ck::GasteigerChargeParams::default().iterations())
+                };
+                self._gasteiger_charges_keywords(iterations, throw_on_param_failure)
+            } else {
+                self._gasteiger_charges_params(params.as_deref())
+            }
+        }
+        #[doc = r#"{"role":"overload","target":"Molecule.gasteiger_charges"}"#]
+        #[pyo3(signature = (*, iterations=12, throw_on_param_failure=false))]
+        fn _gasteiger_charges_keywords(
+            &self,
+            iterations: i64,
+            throw_on_param_failure: bool,
+        ) -> PyResult<Vec<GasteigerCharge>> {
+            let params = GasteigerChargeParams::new(iterations, throw_on_param_failure)?;
+            self._gasteiger_charges_params(Some(&params))
+        }
+        #[doc = r#"{"role":"overload","target":"Molecule.gasteiger_charges"}"#]
+        #[pyo3(signature = (params=None))]
+        fn _gasteiger_charges_params(
+            &self,
+            params: Option<&GasteigerChargeParams>,
+        ) -> PyResult<Vec<GasteigerCharge>> {
+            let params = params.map(|p| p.inner).unwrap_or_default();
+            self.inner
+                .gasteiger_charges_with_params(&params)
+                .map(|rows| {
+                    rows.into_iter()
+                        .map(|inner| GasteigerCharge { inner })
+                        .collect()
+                })
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return detached per-atom Gasteiger charges using a checked settings object.
+        fn gasteiger_charges_with_params(
+            &self,
+            params: &GasteigerChargeParams,
+        ) -> PyResult<Vec<GasteigerCharge>> {
+            self._gasteiger_charges_params(Some(params))
+        }
+        /// Return the maximum graph-atom Gasteiger charge.
+        fn max_partial_charge(&self) -> PyResult<f64> {
+            self.inner
+                .max_partial_charge()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return the minimum graph-atom Gasteiger charge.
+        fn min_partial_charge(&self) -> PyResult<f64> {
+            self.inner
+                .min_partial_charge()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return the larger absolute value of the two signed Gasteiger extrema.
+        fn max_abs_partial_charge(&self) -> PyResult<f64> {
+            self.inner
+                .max_abs_partial_charge()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return the smaller absolute value of the two signed Gasteiger extrema.
+        fn min_abs_partial_charge(&self) -> PyResult<f64> {
+            self.inner
+                .min_abs_partial_charge()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return the 14 default PEOE-VSA surface-area bins.
+        fn peoe_vsa(&self) -> PyResult<Vec<f64>> {
+            self.inner
+                .peoe_vsa()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 1 from the default PEOE-VSA vector.
+        fn peoe_vsa_1(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_1()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 2 from the default PEOE-VSA vector.
+        fn peoe_vsa_2(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_2()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 3 from the default PEOE-VSA vector.
+        fn peoe_vsa_3(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_3()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 4 from the default PEOE-VSA vector.
+        fn peoe_vsa_4(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_4()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 5 from the default PEOE-VSA vector.
+        fn peoe_vsa_5(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_5()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 6 from the default PEOE-VSA vector.
+        fn peoe_vsa_6(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_6()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 7 from the default PEOE-VSA vector.
+        fn peoe_vsa_7(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_7()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 8 from the default PEOE-VSA vector.
+        fn peoe_vsa_8(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_8()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 9 from the default PEOE-VSA vector.
+        fn peoe_vsa_9(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_9()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 10 from the default PEOE-VSA vector.
+        fn peoe_vsa_10(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_10()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 11 from the default PEOE-VSA vector.
+        fn peoe_vsa_11(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_11()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 12 from the default PEOE-VSA vector.
+        fn peoe_vsa_12(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_12()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 13 from the default PEOE-VSA vector.
+        fn peoe_vsa_13(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_13()
+                .map_err(DescriptorReadError::from_rust)
+        }
+        /// Return output 14 from the default PEOE-VSA vector.
+        fn peoe_vsa_14(&self) -> PyResult<f64> {
+            self.inner
+                .peoe_vsa_14()
                 .map_err(DescriptorReadError::from_rust)
         }
         #[pyo3(signature = (*, include_sulfur_phosphorus=None, force=None))]

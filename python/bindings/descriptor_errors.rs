@@ -1,4 +1,5 @@
 //! Native descriptor read boundaries and algorithm/search error values.
+use crate::chemical_values::BondOrder;
 use crate::error_framework::{Source, error_projection};
 use crate::hydrogen_errors::HydrogenError;
 use crate::match_errors::{QueryMatchContextError, SubstructMatchError};
@@ -35,7 +36,10 @@ pub(crate) type DescriptorSource = Source<
                         crate::error_framework::ErrorObject<RingFindingError>,
                         Source<
                             crate::error_framework::ErrorObject<DescriptorSearchCause>,
-                            crate::error_framework::ErrorObject<LegacyStereoError>,
+                            Source<
+                                crate::error_framework::ErrorObject<LegacyStereoError>,
+                                crate::error_framework::ErrorObject<GasteigerChargeError>,
+                            >,
                         >,
                     >,
                 >,
@@ -43,6 +47,15 @@ pub(crate) type DescriptorSource = Source<
         >,
     >,
 >;
+
+error_projection!(GasteigerChargeError, GasteigerChargeErrorKind, ck::GasteigerChargeError, "descriptors", {
+    MissingParameters { element: String, mode: String },
+    Valence { source },
+    ElementSymbol { atomic_number: u8, source },
+}, cause = |inner: &ck::GasteigerChargeError| match inner {
+    ck::GasteigerChargeError::Valence { source } | ck::GasteigerChargeError::ElementSymbol { source, .. } => Some(ValenceError::from_rust(source.clone())),
+    ck::GasteigerChargeError::MissingParameters { .. } => None,
+}, source = Option<crate::error_framework::ErrorObject<ValenceError>>);
 
 error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "descriptors", {
     TopologyEdit { function, source },
@@ -68,6 +81,11 @@ error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "de
     Ring { function, source },
     Search { function, source },
     Stereo { function, source },
+    GasteigerCharge { source },
+    BcutDiagonalRows { field, actual, expected },
+    UnsupportedBcutBond { bond, order: BondOrder => |value: &ck::BondOrder| (*value).into() },
+    BcutMatrixAllocation { dimension },
+    BcutNonConvergence { dimension },
 }, cause = |inner: &ck::DescriptorError| match inner {
     ck::DescriptorError::TopologyEdit { source, .. } => Some(TopologyEditError::from_rust(source.clone())),
     ck::DescriptorError::InvalidTopology { source, .. } => Some(TopologyValidationError::from_rust(source.clone())),
@@ -77,6 +95,7 @@ error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "de
     ck::DescriptorError::Ring { source, .. } => Some(RingFindingError::from_rust(source.clone())),
     ck::DescriptorError::Search { source, .. } => Some(DescriptorSearchCause::from_rust(source.clone())),
     ck::DescriptorError::Stereo { source, .. } => Some(LegacyStereoError::from_rust(source.clone())),
+    ck::DescriptorError::GasteigerCharge { source } => Some(GasteigerChargeError::from_rust(source.clone())),
     ck::DescriptorError::MissingFinalHydrogenState { .. }
     | ck::DescriptorError::InvalidConnectivityPath { .. }
     | ck::DescriptorError::InvalidHallKierContributionRows { .. }
@@ -90,9 +109,19 @@ error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "de
     | ck::DescriptorError::InvalidCrippenOptionalRows { .. }
     | ck::DescriptorError::MissingCrippenDefaultPattern { .. }
     | ck::DescriptorError::CountOverflow { .. }
+    | ck::DescriptorError::BcutDiagonalRows { .. }
+    | ck::DescriptorError::UnsupportedBcutBond { .. }
+    | ck::DescriptorError::BcutMatrixAllocation { .. }
+    | ck::DescriptorError::BcutNonConvergence { .. }
     | ck::DescriptorError::InvalidValenceRows { .. }
     | ck::DescriptorError::Unsupported { .. } => None,
 }, source = Option<DescriptorSource>, methods = {
+    #[getter]
+    /// Bond index for an unsupported BCUT bond order.
+    fn bond(&self) -> Option<usize> { match self.inner { ck::DescriptorError::UnsupportedBcutBond { bond, .. } => Some(bond.index()), _ => None } }
+    #[getter]
+    /// Working atom count for a BCUT allocation or convergence failure.
+    fn dimension(&self) -> Option<usize> { match self.inner { ck::DescriptorError::BcutMatrixAllocation { dimension } | ck::DescriptorError::BcutNonConvergence { dimension } => Some(dimension), _ => None } }
     #[getter]
     #[doc = "Descriptor function reporting the failure. Present for `DescriptorError.TopologyEdit`, `DescriptorError.InvalidConnectivityPath`, `DescriptorError.InvalidTopology`, `DescriptorError.Path`, `DescriptorError.MissingComputedScalar`, `DescriptorError.MissingLabuteHydrogens`, `DescriptorError.MissingLabuteAsa`, `DescriptorError.MissingCrippenMrContributions`, `DescriptorError.MissingCrippenMr`, `DescriptorError.Hydrogens`, `DescriptorError.CountOverflow`, `DescriptorError.Valence`, `DescriptorError.InvalidValenceRows`, `DescriptorError.Unsupported`, `DescriptorError.Ring`, `DescriptorError.Search`, `DescriptorError.Stereo`; None when unavailable."] fn function(&self) -> Option<&'static str> { match self.inner {
         ck::DescriptorError::TopologyEdit { function, .. }
@@ -114,22 +143,25 @@ error_projection!(DescriptorError, DescriptorErrorKind, ck::DescriptorError, "de
         | ck::DescriptorError::Stereo { function, .. } => Some(function), _ => None,
     } }
     #[getter]
-    #[doc = "Input field associated with the failure. Present for `DescriptorError.MissingFinalHydrogenState`, `DescriptorError.CrippenParamNumeric`, `DescriptorError.InvalidCrippenOptionalRows`, `DescriptorError.CountOverflow`, `DescriptorError.InvalidValenceRows`; None when unavailable."] fn field(&self) -> Option<&'static str> { match self.inner {
+    #[doc = "Input field associated with the failure. Present for `DescriptorError.MissingFinalHydrogenState`, `DescriptorError.CrippenParamNumeric`, `DescriptorError.InvalidCrippenOptionalRows`, `DescriptorError.CountOverflow`, `DescriptorError.InvalidValenceRows`, `DescriptorError.BcutDiagonalRows`; None when unavailable."] fn field(&self) -> Option<&'static str> { match self.inner {
         ck::DescriptorError::MissingFinalHydrogenState { field, .. }
+        | ck::DescriptorError::BcutDiagonalRows { field, .. }
         | ck::DescriptorError::CrippenParamNumeric { field, .. }
         | ck::DescriptorError::InvalidCrippenOptionalRows { field, .. }
         | ck::DescriptorError::CountOverflow { field, .. }
         | ck::DescriptorError::InvalidValenceRows { field, .. } => Some(field), _ => None,
     } }
     #[getter]
-    #[doc = "Observed count or value. Present for `DescriptorError.InvalidHallKierContributionRows`, `DescriptorError.InvalidCrippenOptionalRows`, `DescriptorError.InvalidValenceRows`; None when unavailable."] fn actual(&self) -> Option<usize> { match self.inner {
+    #[doc = "Observed count or value. Present for `DescriptorError.InvalidHallKierContributionRows`, `DescriptorError.InvalidCrippenOptionalRows`, `DescriptorError.InvalidValenceRows`, `DescriptorError.BcutDiagonalRows`; None when unavailable."] fn actual(&self) -> Option<usize> { match self.inner {
         ck::DescriptorError::InvalidHallKierContributionRows { actual, .. }
+        | ck::DescriptorError::BcutDiagonalRows { actual, .. }
         | ck::DescriptorError::InvalidCrippenOptionalRows { actual, .. }
         | ck::DescriptorError::InvalidValenceRows { actual, .. } => Some(actual), _ => None,
     } }
     #[getter]
-    #[doc = "Expected count or value. Present for `DescriptorError.InvalidCrippenOptionalRows`, `DescriptorError.InvalidValenceRows`; None when unavailable."] fn expected(&self) -> Option<usize> { match self.inner {
+    #[doc = "Expected count or value. Present for `DescriptorError.InvalidCrippenOptionalRows`, `DescriptorError.InvalidValenceRows`, `DescriptorError.BcutDiagonalRows`; None when unavailable."] fn expected(&self) -> Option<usize> { match self.inner {
         ck::DescriptorError::InvalidCrippenOptionalRows { expected, .. }
+        | ck::DescriptorError::BcutDiagonalRows { expected, .. }
         | ck::DescriptorError::InvalidValenceRows { expected, .. } => Some(expected), _ => None,
     } }
 });
