@@ -48,7 +48,8 @@ pub use gasteiger::{
     peoe_vsa,
 };
 pub use ipc::{
-    IpcError, IpcMatrixInput, avg_ipc, avg_ipc_with_distance_matrix, ipc, ipc_with_distance_matrix,
+    IpcError, IpcMatrixInput, IpcMethod, avg_ipc, avg_ipc_with_distance_matrix,
+    avg_ipc_with_method, ipc, ipc_with_distance_matrix, ipc_with_method,
 };
 pub use labute::{
     LabuteAsaContributions, LabuteContributions, labute_asa, labute_asa_contributions,

@@ -16,6 +16,7 @@ cosmolkit-core = { version = "0.6.4", path = "../cosmolkit-core" }
 cosmolkit-model = { version = "0.6.4", path = "../cosmolkit-model" }
 cosmolkit-search = { version = "0.6.4", path = "../cosmolkit-search", default-features = false }
 num-bigint.workspace = true
+libm = "0.2.16"
 thiserror = "2.0.18"
 
 [dev-dependencies]

@@ -3,6 +3,10 @@ use crate::{Molecule, errors::enum_error};
 use cosmolkit as ck;
 use wasm_bindgen::prelude::*;
 
+crate::enums::enum_value!(IpcMethod, "IpcMethod" {
+    RdkitCompatible = "rdkit_compatible", ExactPolynomial = "exact_polynomial"
+});
+
 #[derive(serde::Deserialize, tsify::Tsify)]
 #[serde(transparent)]
 struct IpcRows(Vec<Vec<f64>>);
@@ -54,6 +58,26 @@ impl IpcMatrixInput {
 
 #[wasm_bindgen]
 impl Molecule {
+    /// Total information content using an explicit polynomial algorithm.
+    /// ExactPolynomial uses exact integer coefficients and floating-point entropy.
+    #[wasm_bindgen(js_name = ipcWithMethod)]
+    pub fn ipc_with_method(&self, method: IpcMethodInput) -> Result<f64, JsValue> {
+        use crate::fields::Field;
+        let method = ck::IpcMethod::input(method)?;
+        self.0.ipc_with_method(method).map_err(IpcError::from_rust)
+    }
+
+    /// Average information content using an explicit polynomial algorithm.
+    /// ExactPolynomial uses exact integer coefficients and floating-point entropy.
+    #[wasm_bindgen(js_name = avgIpcWithMethod)]
+    pub fn avg_ipc_with_method(&self, method: IpcMethodInput) -> Result<f64, JsValue> {
+        use crate::fields::Field;
+        let method = ck::IpcMethod::input(method)?;
+        self.0
+            .avg_ipc_with_method(method)
+            .map_err(IpcError::from_rust)
+    }
+
     pub fn ipc(&self, matrix: Option<IpcMatrixInput>) -> Result<f64, JsValue> {
         match matrix {
             Some(matrix) => self.ipc_with_distance_matrix(matrix),

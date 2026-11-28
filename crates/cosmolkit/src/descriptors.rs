@@ -213,6 +213,33 @@ impl Molecule {
         cosmolkit_descriptors::ipc(self.topology())
     }
 
+    /// Total information content using an explicit polynomial algorithm.
+    ///
+    /// `RdkitCompatible` is identical to [`Self::ipc`]. `ExactPolynomial`
+    /// follows RDKit PR #9884 at b9518c8a: integer coefficients are exact,
+    /// but the final entropy and result are binary64. Ipc can overflow to
+    /// infinity; exceeding the upstream fixed prime table returns NaN.
+    #[cfg(feature = "cap-descriptors")]
+    pub fn ipc_with_method(
+        &self,
+        method: crate::IpcMethod,
+    ) -> Result<f64, cosmolkit_descriptors::IpcError> {
+        cosmolkit_descriptors::ipc_with_method(self.topology(), method)
+    }
+
+    /// Average information content using an explicit polynomial algorithm.
+    ///
+    /// Exact coefficients are scaled before conversion to binary64, keeping
+    /// the entropy finite when the unscaled total exceeds binary64 range.
+    /// Exceeding the upstream fixed prime table returns NaN.
+    #[cfg(feature = "cap-descriptors")]
+    pub fn avg_ipc_with_method(
+        &self,
+        method: crate::IpcMethod,
+    ) -> Result<f64, cosmolkit_descriptors::IpcError> {
+        cosmolkit_descriptors::avg_ipc_with_method(self.topology(), method)
+    }
+
     /// Total information content using a borrowed distance-matrix override.
     ///
     /// Every entry equal to one supplies a directed adjacency entry;

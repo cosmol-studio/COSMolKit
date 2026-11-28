@@ -98,12 +98,12 @@ pub use cosmolkit_depict::{
     Coordinate2DLayoutError, Coordinate2DTemplateError, DepictError as Coordinate2DError,
 };
 #[cfg(feature = "cap-descriptors")]
-pub use cosmolkit_descriptors::IpcError;
-#[cfg(feature = "cap-descriptors")]
 pub use cosmolkit_descriptors::{
     CrippenTotals, DescriptorError, DescriptorSearchCause, LabuteAsaContributions,
     RotatableBondsOptions,
 };
+#[cfg(feature = "cap-descriptors")]
+pub use cosmolkit_descriptors::{IpcError, IpcMethod};
 #[cfg(feature = "cap-io")]
 pub use cosmolkit_io::{MolPostError, MolProcessingError};
 #[cfg(feature = "cap-smiles")]

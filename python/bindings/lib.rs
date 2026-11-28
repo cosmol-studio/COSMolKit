@@ -342,7 +342,7 @@ pub mod native {
         InchiError, InchiErrorKind, InchiResult, inchi_to_key, mol_from_inchi,
     };
     #[pymodule_export]
-    use super::ipc::{IpcError, IpcErrorKind};
+    use super::ipc::{IpcError, IpcErrorKind, IpcMethod};
     #[pymodule_export]
     use super::kekulize_errors::{KekulizeError, KekulizeErrorKind};
     #[pymodule_export]

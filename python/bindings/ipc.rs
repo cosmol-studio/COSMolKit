@@ -1,4 +1,5 @@
 //! Graph information content with a borrowed matrix or numeric rows.
+use crate::chemical_values::enum_value;
 use crate::error_framework::error_projection;
 use crate::native::Molecule;
 use crate::native_numerical_values::DenseMatrix;
@@ -19,6 +20,8 @@ error_projection!(IpcError, IpcErrorKind, ck::IpcError, "descriptors", {
         }
     }
 });
+
+enum_value!(IpcMethod, { RdkitCompatible, ExactPolynomial });
 
 #[derive(FromPyObject)]
 pub enum IpcMatrixInput {
@@ -41,6 +44,22 @@ impl IpcMatrixInput {
 
 #[pymethods]
 impl Molecule {
+    /// Total information content using the selected polynomial algorithm.
+    /// ExactPolynomial uses exact integer coefficients and floating-point entropy.
+    fn ipc_with_method(&self, py: Python<'_>, method: IpcMethod) -> PyResult<f64> {
+        let method = method.into();
+        py.detach(|| self.inner.ipc_with_method(method))
+            .map_err(IpcError::from_rust)
+    }
+
+    /// Average information content using the selected polynomial algorithm.
+    /// ExactPolynomial uses exact integer coefficients and floating-point entropy.
+    fn avg_ipc_with_method(&self, py: Python<'_>, method: IpcMethod) -> PyResult<f64> {
+        let method = method.into();
+        py.detach(|| self.inner.avg_ipc_with_method(method))
+            .map_err(IpcError::from_rust)
+    }
+
     /// Total information content from floating-point characteristic-polynomial coefficients.
     #[pyo3(signature = (distance_matrix=None))]
     fn ipc(&self, py: Python<'_>, distance_matrix: Option<IpcMatrixInput>) -> PyResult<f64> {

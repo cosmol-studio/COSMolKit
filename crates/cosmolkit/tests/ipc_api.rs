@@ -129,3 +129,37 @@ fn borrowed_matrices_replace_the_current_graph_without_changing_it() {
         }
     );
 }
+
+#[cfg(feature = "descriptors")]
+#[test]
+fn explicit_polynomial_method_preserves_the_default_and_offers_exact_coefficients() {
+    use cosmolkit::IpcMethod;
+    let mol = Molecule::from_smiles(&"C".repeat(120)).unwrap();
+    assert_eq!(IpcMethod::default(), IpcMethod::RdkitCompatible);
+    assert_eq!(
+        mol.ipc_with_method(IpcMethod::RdkitCompatible)
+            .unwrap()
+            .to_bits(),
+        mol.ipc().unwrap().to_bits()
+    );
+    assert_eq!(
+        mol.avg_ipc_with_method(IpcMethod::RdkitCompatible)
+            .unwrap()
+            .to_bits(),
+        mol.avg_ipc().unwrap().to_bits()
+    );
+    // RDKit #9884 b9518c8a and independently exact path coefficients.
+    assert_eq!(
+        mol.avg_ipc_with_method(IpcMethod::ExactPolynomial).unwrap(),
+        3.7592685780108055
+    );
+    assert_eq!(
+        mol.ipc_with_method(IpcMethod::ExactPolynomial).unwrap(),
+        3.259288638433214e25
+    );
+    let empty = Molecule::from_smiles("").unwrap();
+    assert_eq!(
+        empty.ipc_with_method(IpcMethod::ExactPolynomial).unwrap(),
+        0.0
+    );
+}

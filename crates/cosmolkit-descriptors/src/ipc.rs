@@ -4,6 +4,33 @@
 use cosmolkit_model::TopologyBlock;
 use std::fmt;
 mod entropy_log;
+mod exact;
+
+/// Characteristic-polynomial algorithm used for molecular information content.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum IpcMethod {
+    /// Preserve the pinned RDKit 2026.09.1 floating-point recurrence.
+    #[default]
+    RdkitCompatible,
+    /// RDKit PR #9884 exact integer coefficients followed by binary64 entropy.
+    ExactPolynomial,
+}
+
+/// Total information content using an explicitly selected polynomial algorithm.
+pub fn ipc_with_method(topology: &TopologyBlock, method: IpcMethod) -> Result<f64, IpcError> {
+    match method {
+        IpcMethod::RdkitCompatible => ipc(topology),
+        IpcMethod::ExactPolynomial => exact::calculate(topology, false),
+    }
+}
+
+/// Average information content using an explicitly selected polynomial algorithm.
+pub fn avg_ipc_with_method(topology: &TopologyBlock, method: IpcMethod) -> Result<f64, IpcError> {
+    match method {
+        IpcMethod::RdkitCompatible => avg_ipc(topology),
+        IpcMethod::ExactPolynomial => exact::calculate(topology, true),
+    }
+}
 
 /// A supplied square matrix is borrowed; every entry equal to one is an adjacency entry.
 #[derive(Debug, Clone, Copy)]

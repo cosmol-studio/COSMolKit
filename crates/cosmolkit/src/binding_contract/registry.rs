@@ -6869,6 +6869,36 @@ binding_contract! {
         },
         #[cfg(feature = "cap-descriptors")]
         {
+            semantic_id: "types.IpcMethod", item: type, owner: type_,
+            rust: crate::IpcMethod, python: "IpcMethod", javascript: "IpcMethod",
+            feature: "cap-descriptors", status: experimental, role: parameter_selector,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.ipc_with_method", item: callable, owner: molecule,
+            rust: crate::Molecule::ipc_with_method,
+            python: "ipc_with_method", javascript: "ipcWithMethod",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [{ name: method, type: crate::IpcMethod, default: required }],
+            output: f64, error: crate::IpcError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, crate::IpcMethod) -> Result<f64, crate::IpcError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.avg_ipc_with_method", item: callable, owner: molecule,
+            rust: crate::Molecule::avg_ipc_with_method,
+            python: "avg_ipc_with_method", javascript: "avgIpcWithMethod",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance,
+            parameters: [{ name: method, type: crate::IpcMethod, default: required }],
+            output: f64, error: crate::IpcError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, crate::IpcMethod) -> Result<f64, crate::IpcError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
             semantic_id: "types.IpcError",
             item: type,
             owner: type_,

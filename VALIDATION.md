@@ -33,8 +33,9 @@ results are recorded separately in the next subsection.
 
 Repairs restore Python charge-extrema NaN fold order, empty-EState errors,
 the wheel's Eigen 3.3.4 QR criteria and the released Python floating-point
-characteristic polynomial with full matrix inputs. IPC no longer uses the
-unmerged exact-integer reconstruction or its approximate lgamma budget.
+characteristic polynomial with full matrix inputs. These corpus results cover
+the default IPC algorithm. The separately selectable exact-polynomial method
+is documented below; the former local Lanczos lgamma approximation is not used.
 The measured reference environment uses NumPy 2.5.3 and OpenBLAS
 0.3.34.106.0 (SkylakeX); ordered reductions reproduce that environment.
 
@@ -110,6 +111,34 @@ Post-repair validation also passed: descriptor owner tests (206 unit, 57
 integration and 10 doctests), strict facade Ipc tests (4), WASM descriptor
 compilation, formatting, and the full ordinary workspace (10,570 passed,
 0 failed, 84 ignored). Logs are `/tmp/ck-ipc-large-*.log`.
+
+### Optional exact-polynomial IPC
+
+COSMolKit 0.6.4, measured 2026-11-28: `IpcMethod::ExactPolynomial` follows
+RDKit PR #9884 at `b9518c8a8eb7ffc042e38e31d20d93bce33db10c`, independently
+of the default RDKit Python 2026.09.1 path. It reconstructs integer coefficients
+with modular interpolation and CRT, then computes binary64 entropy. The former
+local Lanczos approximation is replaced by `libm 0.2.16`'s `lgamma`.
+
+Six owner regressions pass, covering modular arithmetic and zero-pivot retries,
+independent integer path coefficients, disconnected graphs, loops, binary
+scaling, the 1,473/1,476/1,500-atom overflow boundaries and prime-table exhaustion.
+Five strict facade tests pass, including unchanged default and asymmetric-matrix
+behavior and explicit method selection. The complete ordinary workspace passes
+10,577 tests with 0 failures and 84 ignored. Python's existing runtime/type
+samples pass with zero type diagnostics; registration matches 2,561 runtime and
+stub paths. WASM compilation, registration, all seven existing protocol groups
+and TypeScript checks pass. Sphinx documentation builds without warnings.
+Both generated language packages return AvgIpc
+`3.7592685780108055` for the 120-carbon chain with the exact method; the default
+remains `1.400676974335929`.
+
+These are owner and integration checks, not a new corpus-parity claim for the
+optional algorithm. The 5k/million reference comparisons above cover the default
+method only. No additional RDKit build, reference backend, binding chemistry
+suite or CI workflow was introduced. Logs: `/tmp/ck-ipc-exact-*.log`; the initial
+Python macro-import compilation failure is retained separately from the passing
+final builds and workspace run.
 
 ## COSMolKit 0.5.1-rc.2 / RDKit 2026.09.1
 

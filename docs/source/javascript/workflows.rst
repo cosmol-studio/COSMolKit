@@ -142,7 +142,19 @@ mass, Gasteiger charge, Crippen logP and molar refractivity, in that order.
 ``avgIpc()`` reports the entropy of the graph's characteristic-polynomial
 coefficient magnitudes; ``ipc()`` scales it by their sum. See the
 :doc:`descriptor guide </python/descriptors>` for the surface bins, matrix input
-convention and numerical behavior.
+convention and numerical behavior. Explicit exact-polynomial selection uses
+the same Rust algorithm:
+
+.. code-block:: javascript
+
+   const chain = ck.Molecule.fromSmiles("C".repeat(120));
+   try {
+     console.log(chain.avgIpcWithMethod(ck.IpcMethod.ExactPolynomial));
+     // 3.7592685780108055; chain.avgIpc() retains RDKit 2026.09.1 behavior.
+   } finally {
+     chain.free();
+   }
+
 
 Draw SVG and retain 2D coordinates
 ----------------------------------

@@ -205,6 +205,27 @@ remains asymmetric. The floating-point polynomial recurrence follows RDKit
 2026.09.1 Python, including rounding and nonfinite results on large inputs.
 Both results are zero for empty or edgeless graphs.
 
+Choose ``IpcMethod.ExactPolynomial`` explicitly to use the integer-coefficient
+algorithm from RDKit PR #9884 (commit ``b9518c8a``):
+
+.. code-block:: python
+
+   import cosmolkit as ck
+
+   molecule = ck.Molecule.from_smiles("C" * 120)
+   value = molecule.avg_ipc_with_method(ck.IpcMethod.ExactPolynomial)
+   print(value)  # 3.7592685780108055
+   total = molecule.ipc_with_method(ck.IpcMethod.ExactPolynomial)
+
+``IpcMethod.RdkitCompatible`` selects the same behavior as the default methods.
+The exact method uses the molecule's unweighted graph, including explicit
+hydrogen vertices. Its integer coefficients are exact; entropy is still
+computed in floating point. Scaling keeps AvgIpc finite when the unscaled
+coefficient sum overflows; total Ipc may be infinite. Exceeding the upstream
+64-prime reconstruction table returns NaN. Existing matrix methods keep their
+full-matrix contract and default algorithm.
+
+
 Formula Options
 ---------------
 
