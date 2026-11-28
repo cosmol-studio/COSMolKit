@@ -679,9 +679,12 @@ fn match_atom_range_query(
         AtomRangeDataFunction::NonHydrogenDegree => {
             query_atom_non_hydrogen_degree(atom, &context.adj, mol) as i32
         }
-        AtomRangeDataFunction::TotalDegree => {
-            query_atom_total_degree(&context.adj, context.valence.as_deref(), atom)? as i32
-        }
+        AtomRangeDataFunction::TotalDegree => query_atom_total_degree(
+            &context.adj,
+            context.valence.as_deref(),
+            atom,
+            mol.atom_has_query(atom.id()),
+        )? as i32,
         AtomRangeDataFunction::TotalValence => {
             query_atom_total_valence(context.valence.as_deref(), atom)?
         }
@@ -700,9 +703,11 @@ fn match_atom_range_query(
         AtomRangeDataFunction::RingBondCount => {
             query_atom_ring_bond_count(atom, &context.adj, mol, context.ring_info.as_deref())?
         }
-        AtomRangeDataFunction::ImplicitHydrogenCount => {
-            query_atom_implicit_h_count(context.valence.as_deref(), atom)? as i32
-        }
+        AtomRangeDataFunction::ImplicitHydrogenCount => query_atom_implicit_h_count(
+            context.valence.as_deref(),
+            atom,
+            mol.atom_has_query(atom.id()),
+        )? as i32,
         AtomRangeDataFunction::FormalCharge => query_atom_formal_charge(atom),
         AtomRangeDataFunction::NegativeFormalCharge => query_atom_negative_formal_charge(atom),
         AtomRangeDataFunction::AtomRingSize {
@@ -3459,6 +3464,12 @@ fn finalize_bond_query_from_description(
         "HasProp",
         "HasPropWithValue",
     ];
+    // RDKit✔️✔️: detail::parseRangeQueryType(descr);
+    let description = description
+        .strip_prefix("range_")
+        .or_else(|| description.strip_prefix("less_"))
+        .or_else(|| description.strip_prefix("greater_"))
+        .unwrap_or(description);
     KNOWN
         .contains(&description)
         .then_some(query)
@@ -4017,6 +4028,7 @@ fn query_atom_implicit_valence(
     }
     valence
         .and_then(|v| v.implicit_hydrogens.get(at.id().index()).copied())
+        .map(|value| i32::from(value as i8))
         .filter(|value| *value >= 0)
         .ok_or_else(|| {
             QueryMatchContextError::ValencePrecondition {
@@ -4100,14 +4112,34 @@ fn implicit_hydrogen_count(
 fn total_hydrogen_count(
     valence: Option<&ValenceAssignment>,
     atom: &Atom,
+    has_query: bool,
 ) -> Result<u32, SubstructMatchError> {
-    Ok(u32::from(atom.explicit_hydrogens()).wrapping_add(implicit_hydrogen_count(valence, atom)?))
+    // RDKit✔️✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
+    // RDKit✔️✔️:   int res = getNumExplicitHs();
+    // RDKit✔️✔️:   if (!df_noImplicit && (!hasQuery() || d_implicitValence > -1)) {
+    // RDKit✔️✔️:     res += getNumImplicitHs();
+    // RDKit✔️✔️:   }
+    // No neighbors here; their optional scan belongs to query_atom_h_count.
+    // This gate is O(1), uses the target's actual query identity and never
+    // initializes a cache or suppresses an ordinary atom's getter error.
+    let implicit = if !atom.no_implicit()
+        && (!has_query
+            || valence
+                .and_then(|cache| cache.implicit_hydrogens.get(atom.id().index()))
+                .is_some_and(|value| (*value as i8) >= 0))
+    {
+        implicit_hydrogen_count(valence, atom)?
+    } else {
+        0
+    };
+    Ok(u32::from(atom.explicit_hydrogens()).wrapping_add(implicit))
 }
 
 #[inline]
 fn query_atom_implicit_h_count(
     valence: Option<&ValenceAssignment>,
     at: &Atom,
+    has_query: bool,
 ) -> Result<u32, SubstructMatchError> {
     // RDKit❗✔️: static inline int queryAtomImplicitHCount(Atom const *at) {
     // RDKit❗✔️:   return at->getTotalNumHs(false);
@@ -4117,7 +4149,10 @@ fn query_atom_implicit_h_count(
     // RDKit❗✔️: //   and include any of them that are Hs in the count here
     // RDKit❗✔️: //
     // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit❗✔️:   int res = getNumExplicitHs();
+    // RDKit❗✔️:   if (!df_noImplicit && (!hasQuery() || d_implicitValence > -1)) {
+    // RDKit❗✔️:     res += getNumImplicitHs();
+    // RDKit❗✔️:   }
     // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
     // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
     // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
@@ -4142,13 +4177,14 @@ fn query_atom_implicit_h_count(
     // addition. Neither traverses adjacency, allocates, clones, branches over
     // neighbors, or creates a temporary collection. Reusing the shared total-
     // hydrogen base keeps this as the sole no-neighbor count implementation.
-    total_hydrogen_count(valence, at)
+    total_hydrogen_count(valence, at, has_query)
 }
 
 #[inline]
 fn query_atom_has_implicit_h(
     valence: Option<&ValenceAssignment>,
     at: &Atom,
+    has_query: bool,
 ) -> Result<bool, SubstructMatchError> {
     // RDKit❗✔️: static inline int queryAtomHasImplicitH(Atom const *at) {
     // RDKit❗✔️:   return int(at->getTotalNumHs(false) > 0);
@@ -4158,7 +4194,10 @@ fn query_atom_has_implicit_h(
     // RDKit❗✔️: //   and include any of them that are Hs in the count here
     // RDKit❗✔️: //
     // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit❗✔️:   int res = getNumExplicitHs();
+    // RDKit❗✔️:   if (!df_noImplicit && (!hasQuery() || d_implicitValence > -1)) {
+    // RDKit❗✔️:     res += getNumImplicitHs();
+    // RDKit❗✔️:   }
     // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
     // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
     // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
@@ -4182,7 +4221,7 @@ fn query_atom_has_implicit_h(
     // total-hydrogen count and perform one comparison with zero. Neither scans
     // adjacency, allocates, clones, or creates a temporary collection. The
     // shared helper preserves the source's inclusion of explicit atom H state.
-    Ok(query_atom_implicit_h_count(valence, at)? > 0)
+    Ok(query_atom_implicit_h_count(valence, at, has_query)? > 0)
 }
 
 #[inline]
@@ -4200,7 +4239,10 @@ fn query_atom_h_count(
     // RDKit❗✔️: //   and include any of them that are Hs in the count here
     // RDKit❗✔️: //
     // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit❗✔️:   int res = getNumExplicitHs();
+    // RDKit❗✔️:   if (!df_noImplicit && (!hasQuery() || d_implicitValence > -1)) {
+    // RDKit❗✔️:     res += getNumImplicitHs();
+    // RDKit❗✔️:   }
     // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
     // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
     // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
@@ -4225,7 +4267,7 @@ fn query_atom_h_count(
     // adjacency range. Neither allocates, clones, repeats the scan, or creates
     // a temporary collection. Rust uses `usize` for the accumulator so the
     // target atom's count retains the source unsigned width.
-    let mut res = total_hydrogen_count(valence, at)?;
+    let mut res = total_hydrogen_count(valence, at, mol.atom_has_query(at.id()))?;
     for nbr in adj.neighbors_of(at.id().index()) {
         if mol.query_atomic_number(&mol.atoms()[nbr.atom_index]) == 1 {
             res += 1;
@@ -4241,7 +4283,7 @@ pub fn atom_total_degree_with_context(
     atom: &Atom,
     context: &QueryMatchContext,
 ) -> Result<u32, SubstructMatchError> {
-    query_atom_total_degree(&context.adj, context.valence.as_deref(), atom)
+    query_atom_total_degree(&context.adj, context.valence.as_deref(), atom, false)
 }
 
 #[inline]
@@ -4249,6 +4291,7 @@ fn query_atom_total_degree(
     adj: &AdjacencyList,
     valence: Option<&ValenceAssignment>,
     atom: &Atom,
+    has_query: bool,
 ) -> Result<u32, SubstructMatchError> {
     // RDKit❗✔️: static inline int queryAtomTotalDegree(Atom const *at) {
     // RDKit❗✔️:   return at->getTotalDegree();
@@ -4258,7 +4301,10 @@ fn query_atom_total_degree(
     // RDKit❗✔️:   return res;
     // RDKit❗✔️: }
     // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit❗✔️:   int res = getNumExplicitHs();
+    // RDKit❗✔️:   if (!df_noImplicit && (!hasQuery() || d_implicitValence > -1)) {
+    // RDKit❗✔️:     res += getNumImplicitHs();
+    // RDKit❗✔️:   }
     // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
     // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
     // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
@@ -4273,7 +4319,7 @@ fn query_atom_total_degree(
     // allocates, clones, or creates a temporary collection. Rust returns
     // `None` only outside the modeled valid query context when valence state
     // could not be assigned; supported matching builds that state up front.
-    Ok(total_hydrogen_count(valence, atom)?
+    Ok(total_hydrogen_count(valence, atom, has_query)?
         .wrapping_add(query_atom_explicit_degree(atom, adj) as u32))
 }
 
@@ -4302,6 +4348,7 @@ fn query_atom_unsaturated(
     adj: &AdjacencyList,
     valence: Option<&ValenceAssignment>,
     at: &Atom,
+    has_query: bool,
 ) -> Result<bool, SubstructMatchError> {
     // RDKit❗✔️: static inline int queryAtomUnsaturated(Atom const *at) {
     // RDKit❗✔️:   return at->getTotalDegree() < at->getTotalValence();
@@ -4312,7 +4359,7 @@ fn query_atom_unsaturated(
     // temporary collection. Reusing the canonical total-degree and
     // total-valence functions removes the historical hybridization-based
     // SMARTS branch without introducing another chemistry implementation.
-    let degree = query_atom_total_degree(adj, valence, at)?;
+    let degree = query_atom_total_degree(adj, valence, at, has_query)?;
     let valence = query_atom_total_valence(valence, at)? as u32;
     Ok(degree < valence)
 }
@@ -5244,7 +5291,7 @@ fn query_atom_all_bond_product(
     // temporary collection; wrapping multiplication preserves unsigned C++
     // overflow. Reuse prevents a second explicit-bond product implementation.
     let mut prod = query_atom_bond_product(at, adj, mol);
-    let total_hydrogens = total_hydrogen_count(valence, at)?;
+    let total_hydrogens = total_hydrogen_count(valence, at, mol.atom_has_query(at.id()))?;
     for _ in 0..total_hydrogens {
         prod = prod.wrapping_mul(rdkit_bond_type_prime(BondOrder::Single));
     }
@@ -5384,14 +5431,17 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         AtomQueryPredicate::HydrogenCount(n) => {
             query_atom_h_count(adj, valence, atom, mol)? as i32 == *n
         }
-        AtomQueryPredicate::HasImplicitHydrogen => query_atom_has_implicit_h(valence, atom)?,
+        AtomQueryPredicate::HasImplicitHydrogen => {
+            query_atom_has_implicit_h(valence, atom, mol.atom_has_query(atom.id()))?
+        }
         AtomQueryPredicate::ImplicitValence(n) => query_atom_implicit_valence(valence, atom)? == *n,
         AtomQueryPredicate::ExplicitValence(n) => query_atom_explicit_valence(valence, atom)? == *n,
         AtomQueryPredicate::ImplicitHydrogenCount(n) => {
-            query_atom_implicit_h_count(valence, atom)? as i32 == *n
+            query_atom_implicit_h_count(valence, atom, mol.atom_has_query(atom.id()))? as i32 == *n
         }
         AtomQueryPredicate::ImplicitHydrogenCountLessEqual(n) => {
-            query_atom_implicit_h_count(valence, atom)? as i32 <= i32::from(*n)
+            query_atom_implicit_h_count(valence, atom, mol.atom_has_query(atom.id()))? as i32
+                <= i32::from(*n)
         }
         AtomQueryPredicate::ExplicitDegree(n) => usize::try_from(*n)
             .ok()
@@ -5487,17 +5537,21 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         }
 
         // RDKit✔️✔️: hybridization match — queryAtomHybridization.
-        AtomQueryPredicate::IsUnsaturated => query_atom_unsaturated(adj, valence, atom)?,
+        AtomQueryPredicate::IsUnsaturated => {
+            query_atom_unsaturated(adj, valence, atom, mol.atom_has_query(atom.id()))?
+        }
         AtomQueryPredicate::HybridizationMatch(h) => query_atom_hybridization(atom) == *h as i32,
 
         AtomQueryPredicate::TotalDegree(n) => {
-            query_atom_total_degree(adj, valence, atom)? as i32 == *n
+            query_atom_total_degree(adj, valence, atom, mol.atom_has_query(atom.id()))? as i32 == *n
         }
         AtomQueryPredicate::TotalDegreeLessEqual(n) => {
-            query_atom_total_degree(adj, valence, atom)? as i32 <= i32::from(*n)
+            query_atom_total_degree(adj, valence, atom, mol.atom_has_query(atom.id()))? as i32
+                <= i32::from(*n)
         }
         AtomQueryPredicate::TotalDegreeGreaterEqual(n) => {
-            query_atom_total_degree(adj, valence, atom)? as i32 >= i32::from(*n)
+            query_atom_total_degree(adj, valence, atom, mol.atom_has_query(atom.id()))? as i32
+                >= i32::from(*n)
         }
         AtomQueryPredicate::TotalValence(n) => query_atom_total_valence(valence, atom)? == *n,
         AtomQueryPredicate::TotalValenceLessEqual(n) => {
@@ -5845,6 +5899,34 @@ pub(crate) fn bond_predicate_matches_with_target_context(
                 )?,
             ) as i32
                 == *n
+        }
+        BondQueryPredicate::NumRingBondsRange(bounds) => {
+            // RDKit✔️✔️: return at->getOwningMol().getRingInfo()->numBondRings(at->getIdx());
+            let value = query_is_bond_in_n_rings(
+                bond,
+                reached_ring_info(
+                    ring_info.as_deref(),
+                    "numBondRings",
+                    None,
+                    Some(bond.id().index()),
+                )?,
+            ) as i32;
+            match *bounds {
+                AtomRangeBounds::LessEqual(threshold) => {
+                    less_equal_query_match(threshold, value, 0, false, |v| v)
+                }
+                AtomRangeBounds::GreaterEqual(threshold) => {
+                    greater_equal_query_match(threshold, value, 0, false, |v| v)
+                }
+                AtomRangeBounds::Inclusive {
+                    lower,
+                    upper,
+                    lower_open,
+                    upper_open,
+                } => {
+                    range_query_match(lower, upper, value, 0, lower_open, upper_open, false, |v| v)
+                }
+            }
         }
         BondQueryPredicate::InRingOfSize(target) => {
             query_bond_is_in_ring_of_size(
@@ -6263,27 +6345,6 @@ fn atom_query_local_match<T: PartialEq>(
     query_local_match(first_value, first_negated, second_value, second_negated)
 }
 
-fn bond_query_local_match<T: PartialEq>(
-    first_value: &T,
-    first_negated: bool,
-    second_value: &T,
-    second_negated: bool,
-) -> bool {
-    // RDKit✔️✔️: bool localMatch(BOND_EQUALS_QUERY const *q1, BOND_EQUALS_QUERY const *q2) {
-    // RDKit✔️✔️:   if (q1->getNegation() == q2->getNegation()) {
-    // RDKit✔️✔️:     return q1->getVal() == q2->getVal();
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     return q1->getVal() != q2->getVal();
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // Local complexity review: the shared monomorphized implementation reads
-    // two negation flags and performs exactly one equality or inequality
-    // comparison in O(1) auxiliary space. It introduces no allocation, clone,
-    // lookup, traversal, temporary collection, virtual dispatch, or extra
-    // branch, and prevents duplicate atom/bond comparison cores.
-    query_local_match(first_value, first_negated, second_value, second_negated)
-}
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AtomEqualityQueryKind {
     AtomType,
@@ -6345,56 +6406,128 @@ fn atom_query_base(
     (query, negated)
 }
 
+#[derive(Clone, Copy)]
+enum NumericQueryValue {
+    Equality(i32),
+    Range(i32, i32),
+}
+
+fn range_comparison_value(bounds: AtomRangeBounds) -> NumericQueryValue {
+    match bounds {
+        AtomRangeBounds::LessEqual(value) | AtomRangeBounds::GreaterEqual(value) => {
+            NumericQueryValue::Equality(value)
+        }
+        AtomRangeBounds::Inclusive { lower, upper, .. } => NumericQueryValue::Range(lower, upper),
+    }
+}
+
+fn numeric_query_values_match(
+    first: NumericQueryValue,
+    first_negated: bool,
+    second: NumericQueryValue,
+    second_negated: bool,
+) -> bool {
+    // RDKit✔️✔️: if (e1 && e2) {
+    // RDKit✔️✔️:   res = localMatch<typename Traits::EqQuery>(e1, e2);
+    // RDKit✔️✔️: } else {
+    // RDKit✔️✔️:   auto *r1 = dynamic_cast<const typename Traits::RangeQuery *>(q1);
+    // RDKit✔️✔️:   auto *r2 = dynamic_cast<const typename Traits::RangeQuery *>(q2);
+    // RDKit✔️✔️:   if (r1 && r2) {
+    // RDKit✔️✔️:     res = (r1->getLower() == r2->getLower() &&
+    // RDKit✔️✔️:            r1->getUpper() == r2->getUpper());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Source structural matching, not interval intersection. Range open flags
+    // and negation are deliberately not consulted for two RangeQuery objects.
+    // Fixed typed fields replace dynamic casts and description copies, O(1).
+    match (first, second) {
+        (NumericQueryValue::Equality(a), NumericQueryValue::Equality(b)) => {
+            query_local_match(&a, first_negated, &b, second_negated)
+        }
+        (NumericQueryValue::Range(a, b), NumericQueryValue::Range(c, d)) => a == c && b == d,
+        _ => false,
+    }
+}
+
+fn atom_numeric_comparison(
+    predicate: &AtomQueryPredicate,
+) -> Option<(AtomEqualityQueryKind, NumericQueryValue)> {
+    use AtomEqualityQueryKind as K;
+    use AtomQueryPredicate as P;
+    let (kind, value) = match predicate {
+        P::Range(range) => {
+            let kind = match range.data_function() {
+                AtomRangeDataFunction::ExplicitDegree => K::ExplicitDegree,
+                AtomRangeDataFunction::TotalDegree => K::TotalDegree,
+                AtomRangeDataFunction::TotalValence => K::TotalValence,
+                AtomRangeDataFunction::NumAtomRings => K::InNRings,
+                AtomRangeDataFunction::MinRingSize => K::MinRingSize,
+                AtomRangeDataFunction::RingBondCount => K::RingBondCount,
+                AtomRangeDataFunction::FormalCharge => K::FormalCharge,
+                AtomRangeDataFunction::NegativeFormalCharge => K::NegativeFormalCharge,
+                AtomRangeDataFunction::AtomRingSize { .. } => K::RingSize,
+                _ => return None,
+            };
+            return Some((kind, range_comparison_value(range.bounds())));
+        }
+        P::ExplicitDegree(v) => (K::ExplicitDegree, *v),
+        P::TotalDegree(v) => (K::TotalDegree, *v),
+        P::TotalValence(v) => (K::TotalValence, *v),
+        P::NumAtomRings(v) => (K::InNRings, *v),
+        P::SmallestRingSize(v) => (K::MinRingSize, *v),
+        P::RingBondCount(v) => (K::RingBondCount, *v),
+        P::FormalCharge(v) => (K::FormalCharge, *v),
+        P::NegativeFormalCharge(v) => (K::NegativeFormalCharge, *v),
+        P::InRingOfSize(v) => (K::RingSize, *v),
+        P::ExplicitDegreeLessEqual(v) | P::DegreeLessEqual(v) | P::DegreeGreaterEqual(v) => {
+            (K::ExplicitDegree, i32::from(*v))
+        }
+        P::TotalDegreeLessEqual(v) | P::TotalDegreeGreaterEqual(v) => {
+            (K::TotalDegree, i32::from(*v))
+        }
+        P::TotalValenceLessEqual(v) | P::TotalValenceGreaterEqual(v) => {
+            (K::TotalValence, i32::from(*v))
+        }
+        P::SmallestRingSizeLessEqual(v) | P::SmallestRingSizeGreaterEqual(v) => {
+            (K::MinRingSize, i32::from(*v))
+        }
+        P::RingBondCountLessEqual(v) => (K::RingBondCount, i32::from(*v)),
+        P::InRingOfSizeLessEqual(v) | P::InRingOfSizeGreaterEqual(v) => {
+            (K::RingSize, i32::from(*v))
+        }
+        _ => return None,
+    };
+    Some((kind, NumericQueryValue::Equality(value)))
+}
+
 pub(crate) fn atom_queries_match(
     first: &QueryNode<AtomQueryPredicate>,
     second: &QueryNode<AtomQueryPredicate>,
 ) -> bool {
-    // RDKit✔️✔️: bool queriesMatch(QueryAtom::QUERYATOM_QUERY const *q1,
-    // RDKit✔️✔️:                   QueryAtom::QUERYATOM_QUERY const *q2) {
+    // RDKit✔️✔️: template <typename Traits>
+    // RDKit✔️✔️: bool queriesMatch(typename Traits::BaseQuery const *q1,
+    // RDKit✔️✔️:                   typename Traits::BaseQuery const *q2) {
     // RDKit✔️✔️:   PRECONDITION(q1, "no q1");
     // RDKit✔️✔️:   PRECONDITION(q2, "no q2");
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   static const unsigned int nQueries = 20;
-    // RDKit✔️✔️:   static std::string equalityQueries[nQueries] = {"AtomType",
-    // RDKit✔️✔️:                                                   "AtomRingBondCount",
-    // RDKit✔️✔️:                                                   "AtomRingSize",
-    // RDKit✔️✔️:                                                   "AtomMinRingSize",
-    // RDKit✔️✔️:                                                   "AtomImplicitValence",
-    // RDKit✔️✔️:                                                   "AtomExplicitValence",
-    // RDKit✔️✔️:                                                   "AtomTotalValence",
-    // RDKit✔️✔️:                                                   "AtomAtomicNum",
-    // RDKit✔️✔️:                                                   "AtomExplicitDegree",
-    // RDKit✔️✔️:                                                   "AtomTotalDegree",
-    // RDKit✔️✔️:                                                   "AtomHCount",
-    // RDKit✔️✔️:                                                   "AtomIsAromatic",
-    // RDKit✔️✔️:                                                   "AtomIsAliphatic",
-    // RDKit✔️✔️:                                                   "AtomUnsaturated",
-    // RDKit✔️✔️:                                                   "AtomMass",
-    // RDKit✔️✔️:                                                   "AtomFormalCharge",
-    // RDKit✔️✔️:                                                   "AtomNegativeFormalCharge",
-    // RDKit✔️✔️:                                                   "AtomHybridization",
-    // RDKit✔️✔️:                                                   "AtomInRing",
-    // RDKit✔️✔️:                                                   "AtomInNRings"};
     // RDKit✔️✔️:
     // RDKit✔️✔️:   bool res = false;
     // RDKit✔️✔️:   std::string d1 = q1->getDescription();
     // RDKit✔️✔️:   std::string d2 = q2->getDescription();
-    // RDKit✔️✔️:   if (d1 == "AtomNull" || d2 == "AtomNull") {
+    // RDKit✔️✔️:   if (d1 == Traits::NullDesc || d2 == Traits::NullDesc) {
     // RDKit✔️✔️:     res = true;
-    // RDKit✔️✔️:   } else if (d1 == "AtomOr") {
-    // RDKit✔️✔️:     // FIX: handle negation on AtomOr and AtomAnd
+    // RDKit✔️✔️:   } else if (d1 == Traits::OrDesc) {
     // RDKit✔️✔️:     for (auto iter1 = q1->beginChildren(); iter1 != q1->endChildren();
     // RDKit✔️✔️:          ++iter1) {
-    // RDKit✔️✔️:       if (d2 == "AtomOr") {
+    // RDKit✔️✔️:       if (d2 == Traits::OrDesc) {
     // RDKit✔️✔️:         for (auto iter2 = q2->beginChildren(); iter2 != q2->endChildren();
     // RDKit✔️✔️:              ++iter2) {
-    // RDKit✔️✔️:           if (queriesMatch(iter1->get(), iter2->get())) {
+    // RDKit✔️✔️:           if (queriesMatch<Traits>(iter1->get(), iter2->get())) {
     // RDKit✔️✔️:             res = true;
     // RDKit✔️✔️:             break;
     // RDKit✔️✔️:           }
     // RDKit✔️✔️:         }
     // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         if (queriesMatch(iter1->get(), q2)) {
+    // RDKit✔️✔️:         if (queriesMatch<Traits>(iter1->get(), q2)) {
     // RDKit✔️✔️:           res = true;
     // RDKit✔️✔️:         }
     // RDKit✔️✔️:       }
@@ -6402,62 +6535,72 @@ pub(crate) fn atom_queries_match(
     // RDKit✔️✔️:         break;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (d1 == "AtomAnd") {
+    // RDKit✔️✔️:   } else if (d1 == Traits::AndDesc) {
     // RDKit✔️✔️:     res = true;
     // RDKit✔️✔️:     for (auto iter1 = q1->beginChildren(); iter1 != q1->endChildren();
     // RDKit✔️✔️:          ++iter1) {
     // RDKit✔️✔️:       bool matched = false;
-    // RDKit✔️✔️:       if (d2 == "AtomAnd") {
+    // RDKit✔️✔️:       if (d2 == Traits::AndDesc) {
     // RDKit✔️✔️:         for (auto iter2 = q2->beginChildren(); iter2 != q2->endChildren();
     // RDKit✔️✔️:              ++iter2) {
-    // RDKit✔️✔️:           if (queriesMatch(iter1->get(), iter2->get())) {
+    // RDKit✔️✔️:           if (queriesMatch<Traits>(iter1->get(), iter2->get())) {
     // RDKit✔️✔️:             matched = true;
     // RDKit✔️✔️:             break;
     // RDKit✔️✔️:           }
     // RDKit✔️✔️:         }
     // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         matched = queriesMatch(iter1->get(), q2);
+    // RDKit✔️✔️:         matched = queriesMatch<Traits>(iter1->get(), q2);
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:       if (!matched) {
     // RDKit✔️✔️:         res = false;
     // RDKit✔️✔️:         break;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     // FIX : handle AtomXOr
-    // RDKit✔️✔️:   } else if (d2 == "AtomOr") {
-    // RDKit✔️✔️:     // FIX: handle negation on AtomOr and AtomAnd
+    // RDKit✔️✔️:   } else if (d2 == Traits::OrDesc) {
     // RDKit✔️✔️:     for (auto iter2 = q2->beginChildren(); iter2 != q2->endChildren();
     // RDKit✔️✔️:          ++iter2) {
-    // RDKit✔️✔️:       if (queriesMatch(q1, iter2->get())) {
+    // RDKit✔️✔️:       if (queriesMatch<Traits>(q1, iter2->get())) {
     // RDKit✔️✔️:         res = true;
     // RDKit✔️✔️:         break;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (d2 == "AtomAnd") {
+    // RDKit✔️✔️:   } else if (d2 == Traits::AndDesc) {
     // RDKit✔️✔️:     res = true;
     // RDKit✔️✔️:     for (auto iter2 = q2->beginChildren(); iter2 != q2->endChildren();
     // RDKit✔️✔️:          ++iter2) {
-    // RDKit✔️✔️:       if (!queriesMatch(q1, iter2->get())) {
+    // RDKit✔️✔️:       if (!queriesMatch<Traits>(q1, iter2->get())) {
     // RDKit✔️✔️:         res = false;
     // RDKit✔️✔️:         break;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (d1 == d2) {
-    // RDKit✔️✔️:     if (std::find(&equalityQueries[0], &equalityQueries[nQueries], d1) !=
-    // RDKit✔️✔️:         &equalityQueries[nQueries]) {
-    // RDKit✔️✔️:       res = localMatch(static_cast<ATOM_EQUALS_QUERY const *>(q1),
-    // RDKit✔️✔️:                        static_cast<ATOM_EQUALS_QUERY const *>(q2));
-    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else if (d1 == d2 && Traits::isEqualityQuery(d1)) {
+    // RDKit✔️✔️:     res = localMatch<typename Traits::EqQuery>(
+    // RDKit✔️✔️:         dynamic_cast<typename Traits::EqQuery const *>(q1),
+    // RDKit✔️✔️:         dynamic_cast<typename Traits::EqQuery const *>(q2));
     // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     std::string bd1 = d1;
+    // RDKit✔️✔️:     std::string bd2 = d2;
+    // RDKit✔️✔️:     detail::parseRangeQueryType(bd1);
+    // RDKit✔️✔️:     detail::parseRangeQueryType(bd2);
+    // RDKit✔️✔️:     if (bd1 == bd2 && Traits::isEqualityQuery(bd1)) {
+    // RDKit✔️✔️:       auto *e1 = dynamic_cast<const typename Traits::EqQuery *>(q1);
+    // RDKit✔️✔️:       auto *e2 = dynamic_cast<const typename Traits::EqQuery *>(q2);
+    // RDKit✔️✔️:       if (e1 && e2) {
+    // RDKit✔️✔️:         res = localMatch<typename Traits::EqQuery>(e1, e2);
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         auto *r1 = dynamic_cast<const typename Traits::RangeQuery *>(q1);
+    // RDKit✔️✔️:         auto *r2 = dynamic_cast<const typename Traits::RangeQuery *>(q2);
+    // RDKit✔️✔️:         if (r1 && r2) {
+    // RDKit✔️✔️:           res = (r1->getLower() == r2->getLower() &&
+    // RDKit✔️✔️:                  r1->getUpper() == r2->getUpper());
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
-    // Local complexity review: recursion, short-circuit order, and the Or/And
-    // nested-loop bounds match RDKit exactly, including its documented lack
-    // of XOr and composite-negation handling. Typed variants replace repeated
-    // description strings and the fixed 20-element linear lookup with O(1)
-    // enum classification, eliminating string copies without changing query
-    // traversal, allocation, ownership, or matching semantics.
+    // Typed Rust properties replace descriptions/casts; recursive branches
+    // and scalar/range discrimination follow the same source order.
     let (first, first_negated) = atom_query_base(first);
     let (second, second_negated) = atom_query_base(second);
 
@@ -6495,6 +6638,13 @@ pub(crate) fn atom_queries_match(
     else {
         return false;
     };
+    if let (Some((kind1, value1)), Some((kind2, value2))) = (
+        atom_numeric_comparison(first_predicate),
+        atom_numeric_comparison(second_predicate),
+    ) {
+        return kind1 == kind2
+            && numeric_query_values_match(value1, first_negated, value2, second_negated);
+    }
     let Some(first_kind) = atom_equality_query_kind(first_predicate) else {
         return false;
     };
@@ -6548,16 +6698,35 @@ fn rdkit_bond_direction_value(direction: crate::BondDirection) -> i32 {
     }
 }
 
-fn bond_equality_query_value(predicate: &BondQueryPredicate) -> Option<i32> {
-    match predicate {
-        BondQueryPredicate::InRingOfSize(value)
-        | BondQueryPredicate::MinRingSize(value)
-        | BondQueryPredicate::NumRingBonds(value) => Some(*value),
-        BondQueryPredicate::Order(order) => Some(rdkit_bond_order_value(*order)),
-        BondQueryPredicate::Direction(direction) => Some(rdkit_bond_direction_value(*direction)),
-        BondQueryPredicate::IsInRing(value) => Some(i32::from(*value)),
-        _ => None,
-    }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BondEqualityQueryKind {
+    RingSize,
+    MinRingSize,
+    Order,
+    Direction,
+    InRing,
+    InNRings,
+}
+
+fn bond_numeric_comparison(
+    predicate: &BondQueryPredicate,
+) -> Option<(BondEqualityQueryKind, NumericQueryValue)> {
+    use BondEqualityQueryKind as K;
+    let (kind, value) = match predicate {
+        BondQueryPredicate::InRingOfSize(v) => (K::RingSize, *v),
+        BondQueryPredicate::MinRingSize(v) => (K::MinRingSize, *v),
+        BondQueryPredicate::Order(v) => (K::Order, rdkit_bond_order_value(*v)),
+        BondQueryPredicate::Direction(v) => (K::Direction, rdkit_bond_direction_value(*v)),
+        BondQueryPredicate::IsInRing(v) => (K::InRing, i32::from(*v)),
+        BondQueryPredicate::NumRingBonds(v) => (K::InNRings, *v),
+        BondQueryPredicate::NumRingBondsGreaterEqual(v)
+        | BondQueryPredicate::NumRingBondsLessEqual(v) => (K::InNRings, i32::from(*v)),
+        BondQueryPredicate::NumRingBondsRange(bounds) => {
+            return Some((K::InNRings, range_comparison_value(*bounds)));
+        }
+        _ => return None,
+    };
+    Some((kind, NumericQueryValue::Equality(value)))
 }
 
 fn bond_query_base(
@@ -6575,35 +6744,30 @@ pub(crate) fn bond_queries_match(
     first: &QueryNode<BondQueryPredicate>,
     second: &QueryNode<BondQueryPredicate>,
 ) -> bool {
-    // RDKit✔️✔️: bool queriesMatch(QueryBond::QUERYBOND_QUERY const *q1,
-    // RDKit✔️✔️:                   QueryBond::QUERYBOND_QUERY const *q2) {
+    // RDKit✔️✔️: template <typename Traits>
+    // RDKit✔️✔️: bool queriesMatch(typename Traits::BaseQuery const *q1,
+    // RDKit✔️✔️:                   typename Traits::BaseQuery const *q2) {
     // RDKit✔️✔️:   PRECONDITION(q1, "no q1");
     // RDKit✔️✔️:   PRECONDITION(q2, "no q2");
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   static const unsigned int nQueries = 6;
-    // RDKit✔️✔️:   static std::string equalityQueries[nQueries] = {
-    // RDKit✔️✔️:       "BondRingSize", "BondMinRingSize", "BondOrder",
-    // RDKit✔️✔️:       "BondDir",      "BondInRing",      "BondInNRings"};
     // RDKit✔️✔️:
     // RDKit✔️✔️:   bool res = false;
     // RDKit✔️✔️:   std::string d1 = q1->getDescription();
     // RDKit✔️✔️:   std::string d2 = q2->getDescription();
-    // RDKit✔️✔️:   if (d1 == "BondNull" || d2 == "BondNull") {
+    // RDKit✔️✔️:   if (d1 == Traits::NullDesc || d2 == Traits::NullDesc) {
     // RDKit✔️✔️:     res = true;
-    // RDKit✔️✔️:   } else if (d1 == "BondOr") {
-    // RDKit✔️✔️:     // FIX: handle negation on BondOr and BondAnd
+    // RDKit✔️✔️:   } else if (d1 == Traits::OrDesc) {
     // RDKit✔️✔️:     for (auto iter1 = q1->beginChildren(); iter1 != q1->endChildren();
     // RDKit✔️✔️:          ++iter1) {
-    // RDKit✔️✔️:       if (d2 == "BondOr") {
+    // RDKit✔️✔️:       if (d2 == Traits::OrDesc) {
     // RDKit✔️✔️:         for (auto iter2 = q2->beginChildren(); iter2 != q2->endChildren();
     // RDKit✔️✔️:              ++iter2) {
-    // RDKit✔️✔️:           if (queriesMatch(iter1->get(), iter2->get())) {
+    // RDKit✔️✔️:           if (queriesMatch<Traits>(iter1->get(), iter2->get())) {
     // RDKit✔️✔️:             res = true;
     // RDKit✔️✔️:             break;
     // RDKit✔️✔️:           }
     // RDKit✔️✔️:         }
     // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         if (queriesMatch(iter1->get(), q2)) {
+    // RDKit✔️✔️:         if (queriesMatch<Traits>(iter1->get(), q2)) {
     // RDKit✔️✔️:           res = true;
     // RDKit✔️✔️:         }
     // RDKit✔️✔️:       }
@@ -6611,59 +6775,72 @@ pub(crate) fn bond_queries_match(
     // RDKit✔️✔️:         break;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (d1 == "BondAnd") {
+    // RDKit✔️✔️:   } else if (d1 == Traits::AndDesc) {
     // RDKit✔️✔️:     res = true;
     // RDKit✔️✔️:     for (auto iter1 = q1->beginChildren(); iter1 != q1->endChildren();
     // RDKit✔️✔️:          ++iter1) {
     // RDKit✔️✔️:       bool matched = false;
-    // RDKit✔️✔️:       if (d2 == "BondAnd") {
+    // RDKit✔️✔️:       if (d2 == Traits::AndDesc) {
     // RDKit✔️✔️:         for (auto iter2 = q2->beginChildren(); iter2 != q2->endChildren();
     // RDKit✔️✔️:              ++iter2) {
-    // RDKit✔️✔️:           if (queriesMatch(iter1->get(), iter2->get())) {
+    // RDKit✔️✔️:           if (queriesMatch<Traits>(iter1->get(), iter2->get())) {
     // RDKit✔️✔️:             matched = true;
     // RDKit✔️✔️:             break;
     // RDKit✔️✔️:           }
     // RDKit✔️✔️:         }
     // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         matched = queriesMatch(iter1->get(), q2);
+    // RDKit✔️✔️:         matched = queriesMatch<Traits>(iter1->get(), q2);
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:       if (!matched) {
     // RDKit✔️✔️:         res = false;
     // RDKit✔️✔️:         break;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     // FIX : handle BondXOr
-    // RDKit✔️✔️:   } else if (d2 == "BondOr") {
-    // RDKit✔️✔️:     // FIX: handle negation on BondOr and BondAnd
+    // RDKit✔️✔️:   } else if (d2 == Traits::OrDesc) {
     // RDKit✔️✔️:     for (auto iter2 = q2->beginChildren(); iter2 != q2->endChildren();
     // RDKit✔️✔️:          ++iter2) {
-    // RDKit✔️✔️:       if (queriesMatch(q1, iter2->get())) {
+    // RDKit✔️✔️:       if (queriesMatch<Traits>(q1, iter2->get())) {
     // RDKit✔️✔️:         res = true;
     // RDKit✔️✔️:         break;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (d2 == "BondAnd") {
+    // RDKit✔️✔️:   } else if (d2 == Traits::AndDesc) {
     // RDKit✔️✔️:     res = true;
     // RDKit✔️✔️:     for (auto iter2 = q2->beginChildren(); iter2 != q2->endChildren();
     // RDKit✔️✔️:          ++iter2) {
-    // RDKit✔️✔️:       if (queriesMatch(q1, iter2->get())) {
+    // RDKit✔️✔️:       if (!queriesMatch<Traits>(q1, iter2->get())) {
     // RDKit✔️✔️:         res = false;
     // RDKit✔️✔️:         break;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (std::find(&equalityQueries[0], &equalityQueries[nQueries], d1) !=
-    // RDKit✔️✔️:              &equalityQueries[nQueries]) {
-    // RDKit✔️✔️:     res = localMatch(static_cast<BOND_EQUALS_QUERY const *>(q1),
-    // RDKit✔️✔️:                      static_cast<BOND_EQUALS_QUERY const *>(q2));
+    // RDKit✔️✔️:   } else if (d1 == d2 && Traits::isEqualityQuery(d1)) {
+    // RDKit✔️✔️:     res = localMatch<typename Traits::EqQuery>(
+    // RDKit✔️✔️:         dynamic_cast<typename Traits::EqQuery const *>(q1),
+    // RDKit✔️✔️:         dynamic_cast<typename Traits::EqQuery const *>(q2));
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     std::string bd1 = d1;
+    // RDKit✔️✔️:     std::string bd2 = d2;
+    // RDKit✔️✔️:     detail::parseRangeQueryType(bd1);
+    // RDKit✔️✔️:     detail::parseRangeQueryType(bd2);
+    // RDKit✔️✔️:     if (bd1 == bd2 && Traits::isEqualityQuery(bd1)) {
+    // RDKit✔️✔️:       auto *e1 = dynamic_cast<const typename Traits::EqQuery *>(q1);
+    // RDKit✔️✔️:       auto *e2 = dynamic_cast<const typename Traits::EqQuery *>(q2);
+    // RDKit✔️✔️:       if (e1 && e2) {
+    // RDKit✔️✔️:         res = localMatch<typename Traits::EqQuery>(e1, e2);
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         auto *r1 = dynamic_cast<const typename Traits::RangeQuery *>(q1);
+    // RDKit✔️✔️:         auto *r2 = dynamic_cast<const typename Traits::RangeQuery *>(q2);
+    // RDKit✔️✔️:         if (r1 && r2) {
+    // RDKit✔️✔️:           res = (r1->getLower() == r2->getLower() &&
+    // RDKit✔️✔️:                  r1->getUpper() == r2->getUpper());
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
-    // Local complexity review: tree traversal, child ordering, short-circuit
-    // behavior, and worst-case O(n*m) composite comparison match RDKit. Typed
-    // classification and exact integer conversion are O(1) and avoid RDKit's
-    // description-string copies and linear six-string lookup without adding
-    // allocation, cloning, temporary collections, or extra tree scans. The
-    // source's asymmetric second-And condition is preserved exactly.
+    // Typed Rust properties replace descriptions/casts; recursive branches
+    // and scalar/range discrimination follow the same source order.
     let (first, first_negated) = bond_query_base(first);
     let (second, second_negated) = bond_query_base(second);
 
@@ -6692,22 +6869,23 @@ pub(crate) fn bond_queries_match(
             .any(|second_child| bond_queries_match(first, second_child));
     }
     if let QueryNode::And(second_children) = second {
-        return !second_children
+        return second_children
             .iter()
-            .any(|second_child| bond_queries_match(first, second_child));
+            .all(|second_child| bond_queries_match(first, second_child));
     }
     let (QueryNode::Predicate(first_predicate), QueryNode::Predicate(second_predicate)) =
         (first, second)
     else {
         return false;
     };
-    let (Some(first_value), Some(second_value)) = (
-        bond_equality_query_value(first_predicate),
-        bond_equality_query_value(second_predicate),
+    let (Some((kind1, first_value)), Some((kind2, second_value))) = (
+        bond_numeric_comparison(first_predicate),
+        bond_numeric_comparison(second_predicate),
     ) else {
         return false;
     };
-    bond_query_local_match(&first_value, first_negated, &second_value, second_negated)
+    kind1 == kind2
+        && numeric_query_values_match(first_value, first_negated, second_value, second_negated)
 }
 
 pub(crate) fn query_atom_query_match(
@@ -7246,6 +7424,83 @@ mod atom_mass_tests {
 #[cfg(test)]
 mod q40_query_query_tests {
     use super::*;
+
+    #[test]
+    fn rdkit092_bond_ring_ranges_parse_write_and_match() {
+        use crate::target::SearchTarget;
+        use cosmolkit_model::{AtomSpec, BondId, CoordinateBlock, TopologyBlock};
+        use cosmolkit_types::Element;
+        let atoms = (0..10)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let edges = (0..10).map(|i| (i, (i + 1) % 10)).chain([(3, 8)]);
+        let bonds = edges
+            .enumerate()
+            .map(|(i, (a, b))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                )
+            })
+            .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let rings = cosmolkit_core::symmetrized_sssr(&topology, &Default::default()).unwrap();
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(&topology, &coordinates, &[], Some(&rings), None);
+        let context = build_query_match_context(&target);
+        for (token, expected) in [
+            ("@{1}", 10),
+            ("@{2}", 1),
+            ("@{2-}", 1),
+            ("@{-1}", 10),
+            ("@{-2}", 11),
+            ("@{1-2}", 11),
+            ("!@{2}", 10),
+            ("@{256-}", 0),
+        ] {
+            let query =
+                crate::smarts_parse::parse_smarts(format!("*{token}*"), &Default::default())
+                    .unwrap();
+            let query_bond = &query.bonds()[0];
+            assert_eq!(
+                crate::smarts_write::query_bond_to_smarts(query_bond, &Default::default(), None)
+                    .unwrap(),
+                cosmolkit_model::PropertyText::from(token)
+            );
+            let count = topology
+                .bonds
+                .iter()
+                .filter(|bond| {
+                    bond_matches_query_with_context(bond, query_bond.predicate(), &target, &context)
+                        .unwrap()
+                })
+                .count();
+            assert_eq!(count, expected, "{token}");
+        }
+        // Existing typed one-sided factories have the same BondInNRings
+        // identity as the grammar-produced range, and inherit its writer.
+        for (predicate, expected) in [
+            (BondQueryPredicate::NumRingBondsGreaterEqual(2), "@{2-}"),
+            (BondQueryPredicate::NumRingBondsLessEqual(2), "@{-2}"),
+            (BondQueryPredicate::NumRingBonds(-1), "@"),
+        ] {
+            let bond =
+                QueryBond::from_parts(topology.bonds[0].clone(), QueryNode::Predicate(predicate));
+            assert_eq!(
+                crate::smarts_write::query_bond_to_smarts(&bond, &Default::default(), None)
+                    .unwrap(),
+                cosmolkit_model::PropertyText::from(expected)
+            );
+        }
+        assert!(crate::smarts_parse::parse_smarts("*@{01}*", &Default::default()).is_err());
+        let query = crate::smarts_parse::parse_smarts("*@{1-2}&-*", &Default::default()).unwrap();
+        assert_eq!(
+            crate::smarts_write::query_bond_to_smarts(&query.bonds()[0], &Default::default(), None)
+                .unwrap(),
+            cosmolkit_model::PropertyText::from("@{1-2}&-")
+        );
+    }
+
     use crate::target::SearchTarget;
     use cosmolkit_model::{AtomSpec, CoordinateBlock, TopologyBlock};
     use cosmolkit_types::Element;
@@ -7759,7 +8014,52 @@ mod q41_query_query_tests {
     }
 
     #[test]
-    fn q41_query_query_preserves_source_integer_relation_across_leaf_descriptions() {
+    fn rdkit092_query_query_ranges_use_structural_bounds_and_property_kind() {
+        let atom = |text: &str| {
+            crate::smarts_parse::parse_smarts(text, &Default::default())
+                .unwrap()
+                .atoms()[0]
+                .predicate()
+                .clone()
+        };
+        for (a, b, expected) in [
+            ("[D{1-2}]", "[D{1-2}]", true),
+            ("[D{1-2}]", "[D{2-3}]", false),
+            ("[D{1-2}]", "[D2]", false),
+            ("[D{2-}]", "[D{-2}]", true),
+            ("[D{2-}]", "[X{2-}]", false),
+        ] {
+            assert_eq!(
+                atom_queries_match(&atom(a), &atom(b)),
+                expected,
+                "{a} / {b}"
+            );
+        }
+        let bond = |text: &str| {
+            crate::smarts_parse::parse_smarts(text, &Default::default())
+                .unwrap()
+                .bonds()[0]
+                .predicate()
+                .clone()
+        };
+        for (a, b, expected) in [
+            ("*@{1-2}*", "*@{1-2}*", true),
+            ("*@{1-2}*", "*@{3-4}*", false),
+            ("*@{1-3}*", "*@{2}*", false),
+            ("*@{2}*", "*@{1-3}*", false),
+            ("*@{2-}*", "*@{-2}*", true),
+            ("*!@{2}*", "*@{2}*", false),
+        ] {
+            assert_eq!(
+                bond_queries_match(&bond(a), &bond(b)),
+                expected,
+                "{a} / {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn rdkit092_query_query_rejects_distinct_bond_properties() {
         let single = predicate(BondQueryPredicate::Order(BondOrder::Single));
         let wedge = predicate(BondQueryPredicate::Direction(
             crate::BondDirection::BeginWedge,
@@ -7770,15 +8070,13 @@ mod q41_query_query_tests {
         ));
         let one_ring = predicate(BondQueryPredicate::NumRingBonds(1));
 
-        // QueryBond.cpp checks the first description against the six-name list,
-        // then compares BOND_EQUALS_QUERY integer values without checking the
-        // second description. Keep this source behavior; it is not SAT.
-        assert!(relation(&single, &wedge));
-        assert!(relation(&wedge, &single));
+        // QueryOps::queriesMatch now requires equal normalized descriptions.
+        assert!(!relation(&single, &wedge));
+        assert!(!relation(&wedge, &single));
         assert!(!relation(&double, &wedge));
-        assert!(relation(&single, &one_ring));
+        assert!(!relation(&single, &one_ring));
         assert!(!relation(&negated(single.clone()), &wedge));
-        assert!(relation(&negated(single), &dash));
+        assert!(!relation(&negated(single), &dash));
     }
 
     #[test]
@@ -7818,8 +8116,8 @@ mod q41_query_query_tests {
 
         let matching_second_and = QueryNode::and(vec![single.clone(), single.clone()]);
         let nonmatching_second_and = QueryNode::and(vec![double.clone(), triple.clone()]);
-        assert!(!relation(&single, &matching_second_and));
-        assert!(relation(&single, &nonmatching_second_and));
+        assert!(relation(&single, &matching_second_and));
+        assert!(!relation(&single, &nonmatching_second_and));
         let atom_single = QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6));
         let atom_and = QueryNode::and(vec![atom_single.clone(), atom_single.clone()]);
         assert!(atom_queries_match(&atom_single, &atom_and));

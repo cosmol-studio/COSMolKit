@@ -201,8 +201,8 @@ counts as a vertex. Neither query needs coordinates or sanitization.
 To replace the bonds for one call, supply a square matrix with one row and
 column per atom, in graph order. Every entry exactly equal to one contributes
 to the adjacency matrix; a diagonal one adds a self-loop. An asymmetric input
-remains asymmetric. The floating-point polynomial recurrence follows RDKit
-2026.09.1 Python, including rounding and nonfinite results on large inputs.
+remains asymmetric. The default polynomial expands eigenvalues in increasing
+magnitude order, following RDKit 2026.09.2 Python rounding and nonfinite behavior.
 Both results are zero for empty or edgeless graphs.
 
 Choose ``IpcMethod.ExactPolynomial`` explicitly to use the integer-coefficient

@@ -16,13 +16,14 @@ pub trait StereoAtomAccess: sealed::AtomCarrier {
     fn atomic_number(&self) -> u8;
     fn explicit_hydrogens(&self) -> u8;
     fn no_implicit(&self) -> bool;
+    fn has_query(&self) -> bool;
     fn source_valence_facts(&self) -> cosmolkit_model::SourceAtomValenceFacts;
     fn prop(&self, key: &str) -> Option<&PropertyValue>;
     fn props(&self) -> &BTreeMap<PropertyText, PropertyValue>;
 }
 
 macro_rules! stereo_atom_access {
-    ($carrier:ty) => {
+    ($carrier:ty, $has_query:expr) => {
         impl StereoAtomAccess for $carrier {
             fn id(&self) -> AtomId {
                 <$carrier>::id(self)
@@ -39,6 +40,9 @@ macro_rules! stereo_atom_access {
             fn no_implicit(&self) -> bool {
                 <$carrier>::no_implicit(self)
             }
+            fn has_query(&self) -> bool {
+                ($has_query)(self)
+            }
             fn source_valence_facts(&self) -> cosmolkit_model::SourceAtomValenceFacts {
                 <$carrier>::source_valence_facts(self)
             }
@@ -51,8 +55,9 @@ macro_rules! stereo_atom_access {
         }
     };
 }
-stereo_atom_access!(Atom);
-stereo_atom_access!(QueryAtom);
+stereo_atom_access!(Atom, |_: &Atom| false);
+stereo_atom_access!(QueryAtom, |atom: &QueryAtom| !atom
+    .predicate_is_carrier_derived());
 
 #[derive(Clone, Copy)]
 pub enum BondRows<'a> {

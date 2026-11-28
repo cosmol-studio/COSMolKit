@@ -676,8 +676,10 @@ fn read_unity_atom_attributes(
     input: &str,
     start: usize,
     builder: &mut DetachedBuilder,
-) -> Result<(), Mol2ReadError> {
-    // RDKit source: Mol2FileParser.cpp lines 77-137
+) -> Result<bool, Mol2ReadError> {
+    // RDKit source: Release_2026_09_2 Mol2FileParser.cpp lines 77-139.
+    // RDKit✔️✔️: bool readFormalChargesFromAttr(std::istream *inStream, RWMol *res) {
+    // RDKit✔️✔️:   bool foundFormalCharges = false;
     // RDKit✔️✔️:   std::string tempStr = getLine(inStream);
     // RDKit✔️✔️:   // there needs to be at least one entry
     // RDKit✔️✔️:   if (inStream->eof()) {
@@ -693,6 +695,7 @@ fn read_unity_atom_attributes(
     // RDKit✔️✔️:     } catch (boost::bad_lexical_cast &) {
     // RDKit✔️✔️:       throw FileParseException("Cannot process mol2 UnityAtomAttr.");
     // RDKit✔️✔️:     }
+    let mut found_formal_charges = false;
     let mut offset = start;
     let mut line = get_checked_line_at(input, &mut offset)
         .map_err(|_| Mol2ReadError::Parse("premature EOF in readFormalCharges".to_owned()))?;
@@ -732,6 +735,8 @@ fn read_unity_atom_attributes(
                         .atom_mut(AtomId::new(index))
                         .ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_owned()))?
                         .set_formal_charge(charge);
+                    // RDKit✔️✔️:           foundFormalCharges = true;
+                    found_formal_charges = true;
                 }
             }
         }
@@ -746,7 +751,8 @@ fn read_unity_atom_attributes(
             break;
         }
     }
-    Ok(())
+    // RDKit✔️✔️:   return foundFormalCharges;
+    Ok(found_formal_charges)
 }
 
 fn fix_nitro_substructure(
@@ -1442,9 +1448,20 @@ pub fn read_mol2_detached_with_params(
     builder.properties = MoleculeProperties::default()
         .with_name(header.name)
         .with_prop("_TriposChargeType", header.charge_type)?;
-    if let Some(start) = offsets.charge_start {
-        read_unity_atom_attributes(input, start, &mut builder)?;
+    // RDKit✔️✔️:   bool readFormalCharges = false;
+    // RDKit✔️✔️:   if (chargeStart) {
+    // RDKit✔️✔️:     inStream.seekg(chargeStart, std::ios::beg);
+    // RDKit✔️✔️:     readFormalCharges = readFormalChargesFromAttr(&inStream, res.get());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!readFormalCharges) {
+    // A section containing only partial charges is not an authoritative formal
+    // charge assignment. Accumulate this flag during the existing scan.
+    let read_formal_charges = if let Some(start) = offsets.charge_start {
+        read_unity_atom_attributes(input, start, &mut builder)?
     } else {
+        false
+    };
+    if !read_formal_charges {
         if params.cleanup_substructures && !cleanup_substructures(&mut builder)? {
             return Ok(None);
         }
@@ -1555,6 +1572,35 @@ mod tests {
         let input = "@<TRIPOS>MOLECULE\ncharged\n1 0\nSMALL\nUSER_CHARGES\n@<TRIPOS>ATOM\n1 N1 0 0 0 N.4\n@<TRIPOS>UNITY_ATOM_ATTR\n1 1\nAtomExpr -1\n";
         let record = read_mol2_detached(&input).expect("MOL2").expect("record");
         assert_eq!(record.topology.atoms[0].formal_charge(), -1);
+    }
+
+    #[test]
+    fn unity_attributes_without_formal_charges_do_not_suppress_guessing() {
+        // RDKit Release_2026_09_2 testMol2ToMol.cpp::testGithub9634.
+        const TMA: &str = "@<TRIPOS>MOLECULE\nTMA\n5 4\nSMALL\nUSER_CHARGES\n@<TRIPOS>ATOM\n1 N 0 0 0 N.4\n2 C1 1.5 0 0 C.3\n3 C2 -0.5 1.4 0 C.3\n4 C3 -0.5 -0.7 1.2 C.3\n5 C4 -0.5 -0.7 -1.2 C.3\n@<TRIPOS>BOND\n1 1 2 1\n2 1 3 1\n3 1 4 1\n4 1 5 1\n";
+        for (attributes, expected_charge) in [
+            ("", 1),
+            ("@<TRIPOS>UNITY_ATOM_ATTR\n1 1\nmmff94_charge -0.25\n", 1),
+            ("@<TRIPOS>UNITY_ATOM_ATTR\n1 1\nAtomExpr x=1\n", 1),
+            (
+                "@<TRIPOS>UNITY_ATOM_ATTR\n1 1\nAtomExpr 0\n2 1\nmmff94_charge 0.1\n",
+                0,
+            ),
+        ] {
+            let record = read_mol2_detached(&format!("{TMA}{attributes}"))
+                .expect("MOL2")
+                .expect("record");
+            assert_eq!(record.topology.atoms[0].formal_charge(), expected_charge);
+        }
+        for attributes in [
+            "@<TRIPOS>UNITY_ATOM_ATTR\n1 1\nAtomExpr invalid\n",
+            "@<TRIPOS>UNITY_ATOM_ATTR\n1 2\nmmff94_charge 0.1\n",
+        ] {
+            assert!(matches!(
+                read_mol2_detached(&format!("{TMA}{attributes}")),
+                Err(Mol2ReadError::Parse(_))
+            ));
+        }
     }
 
     #[test]

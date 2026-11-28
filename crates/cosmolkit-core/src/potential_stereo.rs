@@ -764,16 +764,74 @@ pub(crate) fn is_potential_bond_source(
 
 fn bond_info(
     topology: &TopologyBlock,
+    valence: &ValenceAssignment,
     bond: BondId,
-) -> Result<PotentialStereoInfo, PotentialStereoError> {
+) -> Result<Option<PotentialStereoInfo>, PotentialStereoError> {
     let state = &topology.bonds[bond.index()];
     if state.order() == BondOrder::Single
         && matches!(state.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw)
     {
-        return represented_atropisomer_info(topology, state);
+        return represented_atropisomer_info(topology, state).map(Some);
+    }
+    // RDKit✔️✔️: StereoInfo sinfo{.type = StereoType::Unspecified, .controllingAtoms = {}};
+    // RDKit✔️✔️:     if (beginAtom->getDegree() < 1 || endAtom->getDegree() < 1 ||
+    // RDKit✔️✔️:         beginAtom->getDegree() > 3 || endAtom->getDegree() > 3) {
+    // RDKit✔️✔️:       throw ValueErrorException("invalid atom degree in getStereoInfo(bond)");
+    // RDKit✔️✔️:     }
+    // The double-bond branch permits degree-one endpoints, unlike atropisomers.
+    // Preserve the existing typed degree error before consulting total valence.
+    let endpoints = [state.begin(), state.end()];
+    for (endpoint, atom) in [("begin", state.begin()), ("end", state.end())] {
+        let degree = graph_degree(topology, atom);
+        if !(1..=3).contains(&degree) {
+            return Err(DoubleBondStereoError::InvalidEndpointDegree {
+                bond,
+                endpoint,
+                degree,
+            }
+            .into());
+        }
+    }
+    for atom in endpoints {
+        // RDKit✔️✔️: bool otherDoubleBond = false;
+        // RDKit✔️✔️: for (const auto nbr : mol.atomBonds(atom)) {
+        // RDKit✔️✔️:   if (nbr->getIdx() == bond->getIdx()) {
+        // RDKit✔️✔️:     continue;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if (nbr->getBondType() == Bond::BondType::DOUBLE) {
+        // RDKit✔️✔️:     otherDoubleBond = true;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        let other_double = topology
+            .adjacency
+            .neighbors_of(atom.index())
+            .iter()
+            .any(|neighbor| {
+                neighbor.bond != bond
+                    && topology.bonds[neighbor.bond.index()].order() == BondOrder::Double
+            });
+        // RDKit✔️✔️: if (otherDoubleBond && atom->getDegree() == 2 &&
+        // RDKit✔️✔️:     atom->getTotalValence() == 4) {
+        // RDKit✔️✔️:   return false;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: if (!explore_bond_end(beginAtom) || !explore_bond_end(endAtom)) {
+        // RDKit✔️✔️:   sinfo.type = StereoType::Unspecified;
+        // RDKit✔️✔️:   sinfo.controllingAtoms.clear();
+        // RDKit✔️✔️:   return sinfo;
+        // RDKit✔️✔️: }
+        // O(degree) endpoint reads, constant scratch; no new graph or cache.
+        if other_double
+            && graph_degree(topology, atom) == 2
+            && crate::cached_total_valence_from_assignment(
+                &topology.atoms[atom.index()],
+                Some(valence),
+            )? == 4
+        {
+            return Ok(None);
+        }
     }
     let source = double_bond_stereo_info(topology, bond)?;
-    Ok(PotentialStereoInfo {
+    Ok(Some(PotentialStereoInfo {
         stereo_type: PotentialStereoType::BondDouble,
         specified: match source.specified {
             DoubleBondStereoSpecified::Unspecified => PotentialStereoSpecified::Unspecified,
@@ -795,7 +853,7 @@ fn bond_info(
                 DoubleBondControl::Implicit => None,
             })
             .collect(),
-    })
+    }))
 }
 
 fn atom_compare_code(
@@ -1137,7 +1195,9 @@ fn initialize_bonds(
             )?
         };
         if candidate {
-            let info = bond_info(topology, BondId::new(index))?;
+            let Some(info) = bond_info(topology, valence, BondId::new(index))? else {
+                continue;
+            };
             match info.specified {
                 PotentialStereoSpecified::Unknown => {
                     known[index] = true;
@@ -1526,6 +1586,7 @@ fn swap_bond_descriptor(info: &mut PotentialStereoInfo) {
 #[allow(clippy::too_many_arguments)]
 fn update_bonds(
     topology: &TopologyBlock,
+    valence: &ValenceAssignment,
     ranks: &[u32],
     symbols: &mut [String],
     possible_atoms: &[bool],
@@ -1563,7 +1624,9 @@ fn update_bonds(
         {
             continue;
         }
-        let mut info = bond_info(topology, bond_id)?;
+        let Some(mut info) = bond_info(topology, valence, bond_id)? else {
+            continue;
+        };
         if info.controlling_atoms.len() != 4 {
             return Err(PotentialStereoError::InvalidStereoReferences {
                 bond: bond_id,
@@ -1809,6 +1872,7 @@ pub(crate) struct RingSpecialCases {
     pub relations: Vec<RingStereoRelation>,
     pub flags: Vec<bool>,
     pub updates: Vec<RingPropertyUpdate>,
+    pub cleared_stereo: Vec<AtomId>,
 }
 
 fn signed_ring_reference(atom: AtomId, same: bool) -> Result<i32, PotentialStereoError> {
@@ -1865,7 +1929,19 @@ pub(crate) fn special_ring_cases(
     input_rings: &RingInfo,
     ranks: &[u32],
     collect_relations: bool,
+    allow_partial_groups: bool,
 ) -> Result<RingSpecialCases, PotentialStereoError> {
+    // RDKit❗❌: void findChiralAtomSpecialCases(ROMol &mol,
+    // RDKit❗❌:                                 boost::dynamic_bitset<> &possibleSpecialCases,
+    // RDKit❗❌:                                 const std::vector<unsigned int> &atomRanks,
+    // RDKit❗❌:                                 bool allowPartialGroups = true) {
+    // RDKit❗❌:   PRECONDITION(possibleSpecialCases.size() >= mol.getNumAtoms(),
+    // RDKit❗❌:                "bit vector too small");
+    // RDKit❗❌:   possibleSpecialCases.reset();
+    // RDKit❗❌:   if (!mol.getRingInfo()->isSymmSssr()) {
+    // RDKit❗❌:     VECT_INT_VECT sssrs;
+    // RDKit❗❌:     MolOps::symmetrizeSSSR(mol, sssrs);
+    // RDKit❗❌:   }
     // RDKit❗❌:   boost::dynamic_bitset<> atomsSeen(mol.getNumAtoms());
     // RDKit❗❌:   boost::dynamic_bitset<> atomsUsed(mol.getNumAtoms());
     // RDKit❗❌:   boost::dynamic_bitset<> bondsSeen(mol.getNumBonds());
@@ -1898,6 +1974,8 @@ pub(crate) fn special_ring_cases(
     // RDKit❗❌:       }
     // RDKit❗❌:     }
     // RDKit❗❌:     INT_VECT ringStereoAtoms(0);
+    // RDKit❗❌:     std::vector<const Atom *> taggedAtoms{atom};
+    // RDKit❗❌:     bool completeGroup = true;
     // RDKit❗❌:     if (!nextAtoms.empty()) {
     // RDKit❗❌:       atom->getPropIfPresent(common_properties::_ringStereoAtoms,
     // RDKit❗❌:                              ringStereoAtoms);
@@ -1907,6 +1985,9 @@ pub(crate) fn special_ring_cases(
     // RDKit❗❌:       const Atom *ratom = nextAtoms.front();
     // RDKit❗❌:       nextAtoms.pop_front();
     // RDKit❗❌:       atomsSeen.set(ratom->getIdx());
+    // RDKit❗❌:       if (ratom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
+    // RDKit❗❌:         taggedAtoms.push_back(ratom);
+    // RDKit❗❌:       }
     // RDKit❗❌:       if (ratom->getChiralTag() != Atom::CHI_UNSPECIFIED &&
     // RDKit❗❌:           !ratom->hasProp(common_properties::_CIPCode) &&
     // RDKit❗❌:           atomIsCandidateForRingStereochem(mol, ratom, atomRanks)) {
@@ -1919,6 +2000,8 @@ pub(crate) fn special_ring_cases(
     // RDKit❗❌:         ratom->setProp(common_properties::_ringStereoAtoms, oringatoms, true);
     // RDKit❗❌:         possibleSpecialCases.set(ratom->getIdx());
     // RDKit❗❌:         possibleSpecialCases.set(atom->getIdx());
+    // RDKit❗❌:       } else if (ratom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
+    // RDKit❗❌:         completeGroup = false;
     // RDKit❗❌:       }
     // RDKit❗❌:       // now push this atom's neighbors
     // RDKit❗❌:       for (const auto bond : mol.atomBonds(ratom)) {
@@ -1935,7 +2018,14 @@ pub(crate) fn special_ring_cases(
     // RDKit❗❌:         }
     // RDKit❗❌:       }
     // RDKit❗❌:     }  // end of BFS
-    // RDKit❗❌:     if (ringStereoAtoms.size() != 0) {
+    // RDKit❗❌:     if (!allowPartialGroups && !completeGroup) {
+    // RDKit❗❌:       // Inverting only part of a coupled ring system can change its stereoisomer.
+    // RDKit❗❌:       // Discard provisional partner lists as well as any previously cached lists.
+    // RDKit❗❌:       for (const auto taggedAtom : taggedAtoms) {
+    // RDKit❗❌:         taggedAtom->clearProp(common_properties::_ringStereoAtoms);
+    // RDKit❗❌:         possibleSpecialCases.reset(taggedAtom->getIdx());
+    // RDKit❗❌:       }
+    // RDKit❗❌:     } else if (ringStereoAtoms.size() != 0) {
     // RDKit❗❌:       atom->setProp(common_properties::_ringStereoAtoms, ringStereoAtoms, true);
     // RDKit❗❌:       // because we're only going to hit each ring atom once, the first atom we
     // RDKit❗❌:       // encounter in a ring is going to end up with all the other atoms set as
@@ -1949,8 +2039,8 @@ pub(crate) fn special_ring_cases(
     // RDKit❗❌:             ringAtomEntry < 0 ? -ringAtomEntry - 1 : ringAtomEntry - 1;
     // RDKit❗❌:         same[ringAtomIdx] = ringAtomEntry;
     // RDKit❗❌:       }
-    // RDKit❗❌:       for (INT_VECT_CI rae = ringStereoAtoms.begin();
-    // RDKit❗❌:            rae != ringStereoAtoms.end(); ++rae) {
+    // RDKit❗❌:       for (auto rae = ringStereoAtoms.begin(); rae != ringStereoAtoms.end();
+    // RDKit❗❌:            ++rae) {
     // RDKit❗❌:         int ringAtomEntry = *rae;
     // RDKit❗❌:         int ringAtomIdx =
     // RDKit❗❌:             ringAtomEntry < 0 ? -ringAtomEntry - 1 : ringAtomEntry - 1;
@@ -1985,16 +2075,11 @@ pub(crate) fn special_ring_cases(
     // RDKit❗❌:     atomsSeen.set(atom->getIdx());
     // RDKit❗❌:   }
     // RDKit❗❌: }
-    // RDKit❗❌:
-    // RDKit❗❌: std::pair<bool, bool> isAtomPotentialChiralCenter(
-    // RDKit❗❌:     const Atom *atom, const ROMol &mol, const UINT_VECT &ranks,
-    // RDKit❗❌:     Chirality::INT_PAIR_VECT &nbrs) {
-    // Behavior: preserve source BFS, visited-edge guards, lazy property reads,
-    // duplicate signed references and computed membership. Detached changes are
-    // applied only by the legacy adapter, never by relation-only perception.
-    // Complexity: indexed bit vectors and ordered queue match source traversal;
-    // copy only touched property vectors. Final relation presentation uses a
-    // tree set (existing public order), so performance marker remains worse.
+    // Retain source BFS and lazy property access. Detached changes preserve
+    // input ownership; the legacy adapter installs writes and modern cleanup
+    // rejects incomplete groups. Only touched partner lists are copied.
+    // Relation BTreeSet presentation is preexisting extra O(R log R) work;
+    // the new tagged-member tracking itself is linear scratch/traversal.
     let prepared_rings;
     let rings = if input_rings.is_symm_sssr() {
         input_rings
@@ -2011,6 +2096,7 @@ pub(crate) fn special_ring_cases(
     let mut caches = vec![None; count];
     let mut computed = vec![false; count];
     let mut order = Vec::<(usize, bool)>::new();
+    let mut cleared_stereo = Vec::new();
     for start in 0..count {
         if seen[start] {
             continue;
@@ -2043,6 +2129,10 @@ pub(crate) fn special_ring_cases(
                 }
             }
         }
+        // RDKit✔️✔️: std::vector<const Atom *> taggedAtoms{atom};
+        // RDKit✔️✔️: bool completeGroup = true;
+        let mut tagged_atoms = vec![start];
+        let mut complete_group = true;
         let mut start_vector = if queue.is_empty() {
             Vec::new()
         } else {
@@ -2052,6 +2142,12 @@ pub(crate) fn special_ring_cases(
             seen[other] = true;
             let other_atom = AtomId::new(other);
             let other_value = &topology.atoms[other];
+            // RDKit✔️✔️: if (ratom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
+            // RDKit✔️✔️:   taggedAtoms.push_back(ratom);
+            // RDKit✔️✔️: }
+            if other_value.chiral_tag() != ChiralTag::Unspecified {
+                tagged_atoms.push(other);
+            }
             if other_value.chiral_tag() != ChiralTag::Unspecified
                 && other_value.prop("_CIPCode").is_none()
                 && ring_candidate_cached(
@@ -2075,6 +2171,10 @@ pub(crate) fn special_ring_cases(
                 computed[other] = true;
                 flags[other] = true;
                 flags[start] = true;
+            } else if other_value.chiral_tag() != ChiralTag::Unspecified {
+                // RDKit✔️✔️: } else if (ratom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
+                // RDKit✔️✔️:   completeGroup = false;
+                complete_group = false;
             }
             for neighbor in topology.adjacency.neighbors_of(other) {
                 let b = neighbor.bond.index();
@@ -2090,7 +2190,32 @@ pub(crate) fn special_ring_cases(
                 }
             }
         }
-        if !start_vector.is_empty() {
+        // RDKit✔️✔️: if (!allowPartialGroups && !completeGroup) {
+        // RDKit✔️✔️:   for (const auto taggedAtom : taggedAtoms) {
+        // RDKit✔️✔️:     taggedAtom->clearProp(common_properties::_ringStereoAtoms);
+        // RDKit✔️✔️:     possibleSpecialCases.reset(taggedAtom->getIdx());
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: } else if (ringStereoAtoms.size() != 0) {
+        // Only touched ring-member rows are discarded; the borrowed input
+        // remains unchanged, and the caller applies actual property deletions.
+        if !allow_partial_groups && !complete_group {
+            for index in tagged_atoms {
+                // clearProp first reads the genuine computed-name vector;
+                // retain its source wrong-kind failure on this exact branch.
+                if let Some(names) = topology.atoms[index].prop("__computedProps") {
+                    names.as_string_vector().map_err(|source| {
+                        PotentialStereoError::InvalidPropertyKind {
+                            atom: AtomId::new(index),
+                            property: "__computedProps",
+                            kind: source.actual(),
+                        }
+                    })?;
+                }
+                vectors[index] = None;
+                flags[index] = false;
+                cleared_stereo.push(AtomId::new(index));
+            }
+        } else if !start_vector.is_empty() {
             if vectors[start].is_none() {
                 order.push((start, false));
             }
@@ -2157,6 +2282,9 @@ pub(crate) fn special_ring_cases(
     }
     let mut updates = Vec::with_capacity(order.len());
     for (index, cache) in order {
+        if !cache && vectors[index].is_none() {
+            continue;
+        }
         updates.push(if cache {
             RingPropertyUpdate {
                 atom: AtomId::new(index),
@@ -2181,6 +2309,7 @@ pub(crate) fn special_ring_cases(
             .unwrap_or_default(),
         flags,
         updates,
+        cleared_stereo,
     })
 }
 
@@ -2225,15 +2354,6 @@ fn ring_candidate_cached(
     caches[atom.index()] = Some(value);
     order.push((atom.index(), true));
     Ok(value)
-}
-
-pub(crate) fn special_ring_relations(
-    topology: &TopologyBlock,
-    valence: &ValenceAssignment,
-    rings: &RingInfo,
-    ranks: &[u32],
-) -> Result<Vec<RingStereoRelation>, PotentialStereoError> {
-    Ok(special_ring_cases(topology, valence, rings, ranks, true)?.relations)
 }
 
 #[cfg(test)]
@@ -2282,11 +2402,131 @@ mod port_cost_round2_tests {
     }
 
     #[test]
+    fn rdkit092_cumulene_double_bonds_are_not_ordinary_stereo_bonds() {
+        for double_count in [1, 2, 3] {
+            let atom_count = double_count + 3;
+            let atoms = (0..atom_count)
+                .map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C)))
+                .collect();
+            let bonds = (0..atom_count - 1)
+                .map(|index| {
+                    Bond::from_spec(
+                        BondId::new(index),
+                        BondSpec::new(
+                            AtomId::new(index),
+                            AtomId::new(index + 1),
+                            if (1..=double_count).contains(&index) {
+                                BondOrder::Double
+                            } else {
+                                BondOrder::Single
+                            },
+                        ),
+                    )
+                })
+                .collect();
+            let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+            let valence =
+                crate::assign_valence_for_topology(&topology, crate::ValenceModel::RdkitLike)
+                    .unwrap();
+            let rings = crate::symmetrized_sssr(&topology, &Default::default()).unwrap();
+            let result = potential_stereo(
+                &topology,
+                &valence,
+                &rings,
+                &PotentialStereoParams::default(),
+            )
+            .unwrap();
+            assert_eq!(result.stereo.len(), usize::from(double_count == 1));
+        }
+        // FindStereo.cpp's double branch permits terminal imine N (degree1)
+        // and fills both absent controlling slots; only allene-like ends skip.
+        let atoms = [Element::N, Element::C, Element::C, Element::O]
+            .into_iter()
+            .enumerate()
+            .map(|(index, element)| Atom::from_spec(AtomId::new(index), AtomSpec::new(element)))
+            .collect();
+        let bonds = [
+            (0, 1, BondOrder::Double),
+            (1, 2, BondOrder::Single),
+            (1, 3, BondOrder::Single),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (begin, end, order))| {
+            Bond::from_spec(
+                BondId::new(index),
+                BondSpec::new(AtomId::new(begin), AtomId::new(end), order),
+            )
+        })
+        .collect();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let valence =
+            crate::assign_valence_for_topology(&topology, crate::ValenceModel::RdkitLike).unwrap();
+        let info = bond_info(&topology, &valence, BondId::new(0))
+            .unwrap()
+            .unwrap();
+        assert_eq!(info.stereo_type, PotentialStereoType::BondDouble);
+        assert_eq!(
+            info.controlling_atoms,
+            vec![None, None, Some(AtomId::new(2)), Some(AtomId::new(3))]
+        );
+    }
+
+    #[test]
+    fn rdkit092_partial_ring_groups_clear_tagged_cached_partners() {
+        let (mut topology, valence, rings) = ring_pair();
+        let ranks = vec![1; topology.atoms.len()];
+        let complete =
+            special_ring_cases(&topology, &valence, &rings, &ranks, true, false).unwrap();
+        assert!(!complete.relations.is_empty());
+        topology.atoms[2].set_chiral_tag(ChiralTag::TetrahedralCw);
+        topology.atoms[2]
+            .set_prop("_CIPCode", PropertyValue::String("R".into()))
+            .unwrap();
+        for index in [0, 2, 5] {
+            topology.atoms[index]
+                .set_computed_prop("_ringStereoAtoms", PropertyValue::IntVector(vec![6]))
+                .unwrap();
+        }
+        let modern = special_ring_cases(&topology, &valence, &rings, &ranks, true, false).unwrap();
+        assert!(modern.relations.is_empty());
+        assert!(modern.flags.iter().all(|flag| !flag));
+        let mut cleared = modern
+            .cleared_stereo
+            .iter()
+            .map(|atom| atom.index())
+            .collect::<Vec<_>>();
+        cleared.sort_unstable();
+        assert_eq!(cleared, [0, 2, 5]);
+        assert!(
+            modern
+                .updates
+                .iter()
+                .all(|update| update.key != "_ringStereoAtoms")
+        );
+        let legacy = special_ring_cases(&topology, &valence, &rings, &ranks, true, true).unwrap();
+        assert!(!legacy.relations.is_empty());
+        assert!(legacy.cleared_stereo.is_empty());
+        topology.atoms[0]
+            .set_prop("__computedProps", PropertyValue::Int(1))
+            .unwrap();
+        assert!(matches!(
+            special_ring_cases(&topology, &valence, &rings, &ranks, true, false),
+            Err(PotentialStereoError::InvalidPropertyKind {
+                property: "__computedProps",
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn ring_property_updates_keep_order_without_relation_projection() {
         let (topology, valence, rings) = ring_pair();
         let ranks = vec![1; topology.atoms.len()];
-        let projected = special_ring_cases(&topology, &valence, &rings, &ranks, true).unwrap();
-        let installation = special_ring_cases(&topology, &valence, &rings, &ranks, false).unwrap();
+        let projected =
+            special_ring_cases(&topology, &valence, &rings, &ranks, true, true).unwrap();
+        let installation =
+            special_ring_cases(&topology, &valence, &rings, &ranks, false, true).unwrap();
         // Chirality.cpp:1558-1568 and1596-1633 install mutual signed refs.
         assert_eq!(
             projected.relations,
@@ -2331,7 +2571,7 @@ mod port_cost_round2_tests {
             .unwrap();
         let ranks = vec![1; topology.atoms.len()];
         for projection in [false, true] {
-            let error = special_ring_cases(&topology, &valence, &rings, &ranks, projection)
+            let error = special_ring_cases(&topology, &valence, &rings, &ranks, projection, true)
                 .err()
                 .unwrap();
             assert!(
@@ -2381,6 +2621,7 @@ fn refinement_loop(
         )?;
         another |= update_bonds(
             topology,
+            valence,
             &ranks,
             bond_symbols,
             possible_atoms,
@@ -2559,7 +2800,26 @@ pub fn potential_stereo(
             &mut possible_ring_bonds,
         )?;
     }
-    let ring_relations = special_ring_relations(&working, valence, rings, &ranks)?;
+    // RDKit✔️✔️: findChiralAtomSpecialCases(mol, possibleSpecialCases, aranks,
+    // RDKit✔️✔️:                              false /* allowPartialGroups */);
+    let ring_cases = special_ring_cases(&working, valence, rings, &ranks, true, false)?;
+    for atom in ring_cases.cleared_stereo {
+        working.atoms[atom.index()]
+            .clear_prop("_ringStereoAtoms")
+            .map_err(|source| match source {
+                cosmolkit_model::AtomPropertyError::ComputedListKind(source) => {
+                    PotentialStereoError::InvalidPropertyKind {
+                        atom,
+                        property: "__computedProps",
+                        kind: source.actual(),
+                    }
+                }
+                cosmolkit_model::AtomPropertyError::EmptyKey => {
+                    unreachable!("fixed nonempty source property key")
+                }
+            })?;
+    }
+    let ring_relations = ring_cases.relations;
     Ok(PotentialStereoAssignment {
         stereo,
         atom_ranks: ranks,
@@ -3226,10 +3486,10 @@ fn is_potential_bond_impl(
     let Some(preserved_prefix) = preserved_prefix else {
         // Native bondRings() is the stored ring vector, including an empty
         // vector before initialization. Membership tables are not consulted.
-        return Ok(!rings
-            .bond_rings()
-            .iter()
-            .any(|ring| ring.len() < 8 && ring.contains(&bond.id())));
+        return Ok(!rings.bond_rings().iter().any(|ring| {
+            ring.len() < crate::double_stereo::MIN_RING_SIZE_FOR_DOUBLE_BOND_STEREO
+                && ring.contains(&bond.id())
+        }));
     };
     if !rings.is_initialized() {
         return Err(PotentialStereoError::InvalidRingInfo {
@@ -3254,7 +3514,7 @@ fn is_potential_bond_impl(
     Ok(!rings
         .bond_ring_sizes(bond.id())
         .into_iter()
-        .any(|size| size < 8))
+        .any(|size| size < crate::double_stereo::MIN_RING_SIZE_FOR_DOUBLE_BOND_STEREO))
 }
 
 fn represented_atropisomer_info(

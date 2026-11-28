@@ -56,15 +56,17 @@ fn default_graph_uses_all_vertices_and_needs_no_preparation() {
 
 #[cfg(feature = "descriptors")]
 #[test]
-fn path_information_uses_the_released_float_polynomial() {
+fn path_information_uses_the_released_eigenvalue_polynomial() {
     let mol = Molecule::from_smiles("CCCC").unwrap();
+    // RDKit 2026.09.2 Graphs.py eigenvalue expansion, fixed NumPy 2.5.3
+    // single-thread OpenBLAS build: retain the actual rounding residue.
     assert_eq!(
         mol.ipc().unwrap().to_bits(),
-        6.854752972273345_f64.to_bits()
+        6.854752972273358_f64.to_bits()
     );
     assert_eq!(
         mol.avg_ipc().unwrap().to_bits(),
-        1.370950594454669_f64.to_bits()
+        1.3709505944546712_f64.to_bits()
     );
 }
 

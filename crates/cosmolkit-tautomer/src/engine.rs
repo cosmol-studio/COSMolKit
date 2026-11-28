@@ -508,6 +508,45 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
     // RDKit❗❌:     static const bool force = true;
     // RDKit❗❌:     MolOps::assignStereochemistry(taut, cleanIt, force);
     // RDKit❗❌:
+    // RDKit✔️✔️:     // assignStereochemistry(cleanIt=true) may clear CHI tags on sp3 atoms
+    // RDKit✔️✔️:     // that are NOT involved in the tautomeric transformation (not in
+    // RDKit✔️✔️:     // d_modifiedAtoms) when the atom's CIP environment changes in a
+    // RDKit✔️✔️:     // particular tautomer (e.g., an exo-methylene intermediate makes both
+    // RDKit✔️✔️:     // ring paths look symmetric).  This causes those tautomers to be stored
+    // RDKit✔️✔️:     // without stereo; since the state key is stereo-blind, the stereo-
+    // RDKit✔️✔️:     // bearing version of the same tautomer is later deduplicated away —
+    // RDKit✔️✔️:     // making Canonicalize return a SMILES absent from the Enumerate set.
+    // RDKit✔️✔️:     //
+    // RDKit✔️✔️:     // Fix: tentatively restore the input-mol CHI for any sp3 atom not in
+    // RDKit✔️✔️:     // d_modifiedAtoms whose CHI was cleared, then re-run
+    // RDKit✔️✔️:     // assignStereochemistry.  Only keep restored CHI if the center gets a
+    // RDKit✔️✔️:     // _CIPCode or _ringStereoAtoms property (truly chiral in this
+    // RDKit✔️✔️:     // tautomer); otherwise leave it cleared.
+    // RDKit✔️✔️:     if (!d_removeSp3Stereo) {
+    // RDKit✔️✔️:       bool anyRestored = false;
+    // RDKit✔️✔️:       for (unsigned int idx = 0; idx < mol.getNumAtoms(); ++idx) {
+    // RDKit✔️✔️:         if (res.d_modifiedAtoms.test(idx)) {
+    // RDKit✔️✔️:           continue;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         const auto *molAtom = mol.getAtomWithIdx(idx);
+    // RDKit✔️✔️:         auto *tautAtom = taut.getAtomWithIdx(idx);
+    // RDKit✔️✔️:         if (molAtom->getChiralTag() == Atom::CHI_UNSPECIFIED) {
+    // RDKit✔️✔️:           continue;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (tautAtom->getChiralTag() != Atom::CHI_UNSPECIFIED) {
+    // RDKit✔️✔️:           continue;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (tautAtom->getHybridization() != Atom::SP3) {
+    // RDKit✔️✔️:           continue;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         tautAtom->setChiralTag(molAtom->getChiralTag());
+    // RDKit✔️✔️:         anyRestored = true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (anyRestored) {
+    // RDKit✔️✔️:         MolOps::assignStereochemistry(taut, cleanIt, force);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
     // RDKit❗❌:     // assignStereochemistry() can overwrite the explicit "undefined" bond
     // RDKit❗❌:     // stereo (STEREOANY) that we set above in order to prevent downstream
     // RDKit❗❌:     // coordinate-based E/Z inference. If bond stereo removal is enabled,
@@ -645,6 +684,37 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
 
     if options.reassign_stereo() {
         assign_stereo(tautomer)?;
+
+        if !options.remove_sp3_stereo() {
+            let mut any_restored = false;
+            // Both source indices and the modified set are ordered. Merge them
+            // in O(V + M), preserving bitset-like linear cost without allocating
+            // another membership table or doing V tree searches.
+            let mut modified_ids = modified_atoms.iter().copied().peekable();
+            for index in 0..source.topology.atoms.len() {
+                let atom_id = AtomId::new(index);
+                if modified_ids.peek() == Some(&atom_id) {
+                    modified_ids.next();
+                    continue;
+                }
+                let source_atom = &source.topology.atoms[index];
+                let tautomer_atom = &mut tautomer.topology.atoms[index];
+                if source_atom.chiral_tag() == ChiralTag::Unspecified {
+                    continue;
+                }
+                if tautomer_atom.chiral_tag() != ChiralTag::Unspecified {
+                    continue;
+                }
+                if tautomer_atom.hybridization() != Hybridization::Sp3 {
+                    continue;
+                }
+                tautomer_atom.set_chiral_tag(source_atom.chiral_tag());
+                any_restored = true;
+            }
+            if any_restored {
+                assign_stereo(tautomer)?;
+            }
+        }
 
         if options.remove_bond_stereo() {
             if !tautomer.rings.is_find_fast_or_better() {

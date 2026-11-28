@@ -273,3 +273,30 @@ fn all_generation_value_inplace_forms_and_bounds_query_are_real() {
     assert_eq!(source, before);
     assert_eq!(source.num_3d_conformers(), 2);
 }
+
+#[test]
+fn refinement_preserves_selected_id_and_updates_only_its_coordinates() {
+    let source = Molecule::from_smiles("[He]")
+        .unwrap()
+        .with_only_3d_conformer(vec![[3., 4., 5.]])
+        .unwrap()
+        .with_added_3d_conformer(vec![[8., 9., 10.]])
+        .unwrap();
+    let mut params = EmbedParams::etkdg_v3();
+    params.optimize_conf_with_id = Some(1);
+    params.random_seed = 42;
+    params.coord_map = Some(std::collections::BTreeMap::from([(0, [4., 5., 6.])]));
+    let result = source
+        .with_3d_conformers_result_with_params(10, &params)
+        .unwrap();
+    assert_eq!(result.conf_ids, vec![1]);
+    assert_eq!(result.molecule.num_3d_conformers(), 2);
+    assert_eq!(
+        result.molecule.conformers_3d()[0].coordinates(),
+        &[[3., 4., 5.]]
+    );
+    assert_eq!(
+        result.molecule.conformers_3d()[1].coordinates(),
+        &[[4., 5., 6.]]
+    );
+}

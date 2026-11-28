@@ -251,13 +251,18 @@ pub enum BondQueryPredicate {
     HasStereo,
     IsConjugated,
     NumRingBonds(i32),
+    /// Source BondInNRings range; bounds share the generic RDKit query encoding.
+    NumRingBondsRange(AtomRangeBounds),
     InRingOfSize(i32),
     MinRingSize(i32),
     NumRingBondsGreaterEqual(u8),
     NumRingBondsLessEqual(u8),
     MolFileQueryCode(u32),
     HasProperty(String),
-    PropertyValue { name: String, value: String },
+    PropertyValue {
+        name: String,
+        value: String,
+    },
     UnsupportedFeature(&'static str),
 }
 

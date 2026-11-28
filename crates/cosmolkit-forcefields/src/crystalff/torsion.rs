@@ -399,9 +399,10 @@ fn gradient_terms(
     // RDKit❗❌:              (8.0 * cosPhi3 * sinPhi - 4.0 * cosPhi * sinPhi) -
     // RDKit❗❌:          5.0 * contrib.forceConstants[4] * contrib.signs[4] *
     // RDKit❗❌:              (16.0 * cosPhi4 * sinPhi - 12.0 * cosPhi2 * sinPhi + sinPhi) -
-    // RDKit❗❌:          6.0 * contrib.forceConstants[4] * contrib.signs[4] *
+    // RDKit❗❌:          // sin(6x) = sin(x) * (32 cos^5(x) - 32 cos^3(x) + 6 cos(x))
+    // RDKit❗❌:          6.0 * contrib.forceConstants[5] * contrib.signs[5] *
     // RDKit❗❌:              (32.0 * cosPhi5 * sinPhi - 32.0 * cosPhi3 * sinPhi +
-    // RDKit❗❌:               6.0 * sinPhi));
+    // RDKit❗❌:               6.0 * cosPhi * sinPhi));
     // RDKit❗❌:
     // RDKit❗❌:     // FIX: use a tolerance here
     // RDKit❗❌:     // this is hacky, but it's per the
@@ -528,16 +529,16 @@ fn gradient_terms(
                 // RDKit✔️✔️:            (8.0 * cosPhi3 * sinPhi - 4.0 * cosPhi * sinPhi) -
                 // RDKit✔️✔️:        5.0 * contrib.forceConstants[4] * contrib.signs[4] *
                 // RDKit✔️✔️:            (16.0 * cosPhi4 * sinPhi - 12.0 * cosPhi2 * sinPhi + sinPhi) -
-                // RDKit✔️✔️:        6.0 * contrib.forceConstants[4] * contrib.signs[4] *
+                // RDKit✔️✔️:        6.0 * contrib.forceConstants[5] * contrib.signs[5] *
                 // RDKit✔️✔️:            (32.0 * cosPhi5 * sinPhi - 32.0 * cosPhi3 * sinPhi +
-                // RDKit✔️✔️:             6.0 * sinPhi));
+                // RDKit✔️✔️:             6.0 * cosPhi * sinPhi));
                 //
-                // RDKit source uses index 4 again in the sixth term. Exact parity requires
-                // reproducing that source behavior, not the mathematically simplified variant.
+                // RDKit 2026.09.2 corrects both the sixth-harmonic coefficient
+                // and sin(6 phi) polynomial; both contribution classes share this owner.
                 - 6.0
-                    * contrib.force_constants[4]
-                    * f64::from(contrib.signs[4])
-                    * (32.0 * cos_phi5 * sin_phi - 32.0 * cos_phi3 * sin_phi + 6.0 * sin_phi);
+                    * contrib.force_constants[5]
+                    * f64::from(contrib.signs[5])
+                    * (32.0 * cos_phi5 * sin_phi - 32.0 * cos_phi3 * sin_phi + 6.0 * cos_phi * sin_phi);
 
         // RDKit✔️✔️:   double sinTerm = -dE_dPhi * (MMFF::isDoubleZero(sinPhi) ? (1.0 / cosPhi)
         // RDKit✔️✔️:                                                           : (1.0 / sinPhi));
@@ -673,7 +674,7 @@ impl ForceFieldContribution for TorsionAngleContribM6 {
         context: &mut EvaluationContext<'_>,
         gradient: &mut [f64],
     ) -> Result<(), ForceFieldKernelError> {
-        // BEGIN COMPLETE PINNED CPP TorsionAngleContribM6::getGrad (TorsionAngleM6.cpp:84-136)
+        // BEGIN COMPLETE PINNED CPP TorsionAngleContribM6::getGrad (TorsionAngleM6.cpp, RDKit 2026.09.2)
         // RDKit❗✔️: void TorsionAngleContribM6::getGrad(double *pos, double *grad) const {
         // RDKit❗✔️:   PRECONDITION(dp_forceField, "no owner");
         // RDKit❗✔️:   PRECONDITION(pos, "bad vector");
@@ -716,8 +717,10 @@ impl ForceFieldContribution for TorsionAngleContribM6 {
         // RDKit❗✔️:            (8.0 * cosPhi3 * sinPhi - 4.0 * cosPhi * sinPhi) -
         // RDKit❗✔️:        5.0 * d_V[4] * d_sign[4] *
         // RDKit❗✔️:            (16.0 * cosPhi4 * sinPhi - 12.0 * cosPhi2 * sinPhi + sinPhi) -
-        // RDKit❗✔️:        6.0 * d_V[4] * d_sign[4] *
-        // RDKit❗✔️:            (32.0 * cosPhi5 * sinPhi - 32.0 * cosPhi3 * sinPhi + 6.0 * sinPhi));
+        // RDKit❗✔️:        // sin(6x) = sin(x) * (32 cos^5(x) - 32 cos^3(x) + 6 cos(x))
+        // RDKit❗✔️:        6.0 * d_V[5] * d_sign[5] *
+        // RDKit❗✔️:            (32.0 * cosPhi5 * sinPhi - 32.0 * cosPhi3 * sinPhi +
+        // RDKit❗✔️:             6.0 * cosPhi * sinPhi));
         // RDKit❗✔️:
         // RDKit❗✔️:   // FIX: use a tolerance here
         // RDKit❗✔️:   // this is hacky, but it's per the
@@ -1614,6 +1617,45 @@ mod tests {
         evaluate_grad(&contrib, &pos, &mut grad);
 
         assert_eq!(grad, before);
+    }
+
+    #[test]
+    fn rdkit_2026_09_2_sixth_harmonic_gradient_matches_energy_derivative() {
+        let phi = 50.0_f64.to_radians();
+        let mut rows = vec![
+            vec![0., 1.5, 0.],
+            vec![0., 0., 0.],
+            vec![1.5, 0., 0.],
+            vec![1.5, 1.5 * phi.cos(), 1.5 * phi.sin()],
+        ];
+        let ff = fixture_field(&mut rows);
+        let pos = flattened_positions(&ff);
+        let constants = vec![0., 0., 0., 0., 0., 1.];
+        let single = TorsionAngleContribM6::new(&ff, 0, 1, 2, 3, constants.clone(), vec![1; 6]);
+        let mut collection = TorsionAngleContribs::new(&ff);
+        collection.add_contrib(0, 1, 2, 3, constants, vec![1; 6]);
+        for contribution in [&single as &dyn ForceFieldContribution, &collection] {
+            let mut gradient = vec![0.; pos.len()];
+            evaluate_grad(contribution, &pos, &mut gradient);
+            for i in 0..pos.len() {
+                let mut hi = pos.clone();
+                hi[i] += 1e-6;
+                let mut lo = pos.clone();
+                lo[i] -= 1e-6;
+                let mut hi_cache = [-1.; 10];
+                let mut lo_cache = [-1.; 10];
+                let hi_energy = contribution
+                    .get_energy(&mut EvaluationContext::for_test(&hi, &mut hi_cache, 4))
+                    .unwrap();
+                let lo_energy = contribution
+                    .get_energy(&mut EvaluationContext::for_test(&lo, &mut lo_cache, 4))
+                    .unwrap();
+                assert!(
+                    (gradient[i] - (hi_energy - lo_energy) / 2e-6).abs() < 1e-6,
+                    "coordinate {i}"
+                );
+            }
+        }
     }
 
     #[test]

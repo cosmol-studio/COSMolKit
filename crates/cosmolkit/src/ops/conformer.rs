@@ -21,9 +21,12 @@ pub(crate) fn with_3d_conformer_impl(params: &crate::EmbedParams) -> Result<(), 
     let metadata = generated
         .map_err(OperationError::from)
         .and_then(|generated| {
-            coordinates
-                .install_generated_3d(generated.clear_existing, generated.conformers)
-                .map_err(OperationError::InvalidCoordinates)?;
+            install_embedding_coordinates(
+                &mut coordinates,
+                generated.clear_existing,
+                generated.conformers,
+                params.optimize_conf_with_id,
+            )?;
             Ok((generated.conf_ids, generated.termination))
         });
     parts.install_coordinates(coordinates)?;
@@ -63,9 +66,12 @@ pub(crate) fn with_3d_conformer_result_impl(
     let metadata = generated
         .map_err(OperationError::from)
         .and_then(|generated| {
-            coordinates
-                .install_generated_3d(generated.clear_existing, generated.conformers)
-                .map_err(OperationError::InvalidCoordinates)?;
+            install_embedding_coordinates(
+                &mut coordinates,
+                generated.clear_existing,
+                generated.conformers,
+                params.optimize_conf_with_id,
+            )?;
             Ok((generated.conf_ids, generated.termination))
         });
     parts.install_coordinates(coordinates)?;
@@ -110,9 +116,12 @@ pub(crate) fn with_3d_conformers_impl(
     let metadata = generated
         .map_err(OperationError::from)
         .and_then(|generated| {
-            coordinates
-                .install_generated_3d(generated.clear_existing, generated.conformers)
-                .map_err(OperationError::InvalidCoordinates)?;
+            install_embedding_coordinates(
+                &mut coordinates,
+                generated.clear_existing,
+                generated.conformers,
+                params.optimize_conf_with_id,
+            )?;
             Ok((generated.conf_ids, generated.termination))
         });
     parts.install_coordinates(coordinates)?;
@@ -153,9 +162,12 @@ pub(crate) fn with_3d_conformers_result_impl(
     let metadata = generated
         .map_err(OperationError::from)
         .and_then(|generated| {
-            coordinates
-                .install_generated_3d(generated.clear_existing, generated.conformers)
-                .map_err(OperationError::InvalidCoordinates)?;
+            install_embedding_coordinates(
+                &mut coordinates,
+                generated.clear_existing,
+                generated.conformers,
+                params.optimize_conf_with_id,
+            )?;
             Ok((generated.conf_ids, generated.termination))
         });
     parts.install_coordinates(coordinates)?;
@@ -178,6 +190,39 @@ pub(crate) fn with_3d_conformers_result_impl(
     })
 }
 
+fn install_embedding_coordinates(
+    coordinates: &mut cosmolkit_model::CoordinateBlock,
+    clear_existing: bool,
+    conformers: Vec<cosmolkit_model::Conformer3D>,
+    refined_id: Option<u32>,
+) -> Result<(), OperationError> {
+    if let Some(id) = refined_id {
+        // Source copies refined coordinates only after successful completion;
+        // retain the selected row's identity/metadata and every other row.
+        for refined in conformers {
+            let destination = coordinates
+                .conformers_3d
+                .iter_mut()
+                .find(|row| row.id() == id as usize)
+                .ok_or_else(|| {
+                    OperationError::InvalidCoordinates(
+                        cosmolkit_model::CoordinateValidationError::Missing3DConformer {
+                            id: id as usize,
+                        },
+                    )
+                })?;
+            destination
+                .coordinates_mut()
+                .copy_from_slice(refined.coordinates());
+        }
+        Ok(())
+    } else {
+        coordinates
+            .install_generated_3d(clear_existing, conformers)
+            .map_err(OperationError::InvalidCoordinates)
+    }
+}
+
 fn emit_diagnostics(diagnostics: &[cosmolkit_conformer::EmbeddingDiagnostic]) {
     use cosmolkit_conformer::EmbeddingDiagnostic as D;
     for diagnostic in diagnostics {
@@ -193,6 +238,15 @@ fn emit_diagnostics(diagnostics: &[cosmolkit_conformer::EmbeddingDiagnostic]) {
             ),
             D::Preparation(diagnostic) => eprintln!("{diagnostic}"),
             D::HydrogenRemoval(diagnostic) => eprintln!("{diagnostic:?}"),
+            D::RefinementMultipleFragments => eprintln!(
+                "Seeded conformer generation does not work with molecules that have multiple fragments. Aborting."
+            ),
+            D::RefinementCoordinateMap => eprintln!(
+                "optimizeConfWithId and coordMap are provided; initial coordinates use the random-coordinate constraint mode"
+            ),
+            D::RefinementFailed => {
+                eprintln!("Failed to refine the conformer with the provided id, cancelling")
+            }
             D::Interrupted => eprintln!("Interrupted, cancelling conformer generation"),
         }
     }

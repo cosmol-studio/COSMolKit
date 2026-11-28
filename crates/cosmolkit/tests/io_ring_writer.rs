@@ -1,5 +1,5 @@
 #![cfg(feature = "cap-io")]
-//! Source-extracted writer regressions; proposals pending independent review.
+//! Source-extracted MolBlock writer regressions.
 use cosmolkit::{MolBlockWriteParams, Molecule, SdfReadParams};
 fn bond_rows(mol: &Molecule, text: &str) -> Vec<(usize, usize, usize)> {
     text.lines()
@@ -38,7 +38,13 @@ fn io44_sdf_row196_wedges_use_final_symmetrized_ring_carrier() {
         .enumerate()
         .filter_map(|(i, l)| (l[9..12].trim() != "0").then_some(i))
         .collect();
-    assert_eq!(rows, vec![19, 30, 34, 55]);
+    // RDKit 2026.09.2 WedgeBonds.cpp::pickBondToWedgeImpl prefers inner
+    // bonds in a common bridged 2D ring system before the former score/id tie.
+    assert_eq!(rows, vec![18, 56, 69, 76]);
+    assert_eq!(
+        bond_rows(&mol, &before),
+        vec![(19, 18, 6), (56, 57, 1), (30, 57, 1), (34, 43, 1)]
+    );
     assert_eq!(mol.topology().atoms, peer.topology().atoms);
     assert_eq!(mol.bonds(), peer.bonds());
     assert_eq!(

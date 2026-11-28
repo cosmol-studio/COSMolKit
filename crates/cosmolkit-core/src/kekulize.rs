@@ -8287,11 +8287,13 @@ mod tests {
     #[test]
     fn kekulize_source_cached_postcondition_() {
         let cases = [
+            // RDKit 2026.09.2: raw line130 atom 9 has minAccum=5>4;
+            // retain rounded explicit cache 6 rather than the old clamp to 4.
             (
                 "line130",
                 line130_cached_source_graph(),
                 false,
-                vec![3, 4, 3, 3, 4, 2, 4, 2, 3, 4, 4, 1, 1, 2, 1],
+                vec![3, 4, 3, 3, 4, 2, 4, 2, 3, 6, 4, 1, 1, 2, 1],
                 vec![1, 0, 1, 1, 0, 1, 0, 2, 0, 0, 0, 3, 3, 0, 1],
             ),
             (

@@ -115,6 +115,11 @@ impl Molecule {
 enum_error!(IpcError, IpcErrorKind, ck::IpcError, {
     InvalidDistanceMatrixShape => ck::IpcError::InvalidDistanceMatrixShape { .. },
     InvalidBondEndpoint => ck::IpcError::InvalidBondEndpoint { .. },
+    EigenvaluesDidNotConverge => ck::IpcError::EigenvaluesDidNotConverge { .. },
+    InvalidNumericalArgument => ck::IpcError::InvalidNumericalArgument { .. },
+    InsufficientNumericalStorage => ck::IpcError::InsufficientNumericalStorage { .. },
+    NumericalDimensionOverflow => ck::IpcError::NumericalDimensionOverflow,
+    NumericalSortingStackExhausted => ck::IpcError::NumericalSortingStackExhausted,
 }, {
     #[wasm_bindgen(getter)]
     pub fn row(&self) -> Option<usize> { match *self.inner {
@@ -122,7 +127,8 @@ enum_error!(IpcError, IpcErrorKind, ck::IpcError, {
     } }
     #[wasm_bindgen(getter)]
     pub fn actual(&self) -> Option<usize> { match *self.inner {
-        ck::IpcError::InvalidDistanceMatrixShape { actual, .. } => Some(actual), _ => None,
+        ck::IpcError::InvalidDistanceMatrixShape { actual, .. }
+        | ck::IpcError::InsufficientNumericalStorage { actual, .. } => Some(actual), _ => None,
     } }
     #[wasm_bindgen(getter)]
     pub fn expected(&self) -> Option<usize> { match *self.inner {
@@ -139,6 +145,34 @@ enum_error!(IpcError, IpcErrorKind, ck::IpcError, {
     #[wasm_bindgen(getter)]
     pub fn atom(&self) -> Option<usize> { match *self.inner {
         ck::IpcError::InvalidBondEndpoint { atom, .. } => Some(atom), _ => None,
+    } }
+    #[wasm_bindgen(getter)]
+    /// Source numerical routine; absent outside a named numerical routine.
+    pub fn routine(&self) -> Option<String> { match *self.inner {
+        ck::IpcError::EigenvaluesDidNotConverge { routine, .. }
+        | ck::IpcError::InvalidNumericalArgument { routine, .. }
+        | ck::IpcError::InsufficientNumericalStorage { routine, .. } => Some(routine.to_owned()),
+        _ => None,
+    } }
+    #[wasm_bindgen(getter)]
+    /// Original positive LAPACK INFO when eigenvalues did not converge.
+    pub fn info(&self) -> Option<usize> { match *self.inner {
+        ck::IpcError::EigenvaluesDidNotConverge { info, .. } => Some(info), _ => None,
+    } }
+    #[wasm_bindgen(getter)]
+    /// Rejected one-based source argument position.
+    pub fn argument(&self) -> Option<u8> { match *self.inner {
+        ck::IpcError::InvalidNumericalArgument { argument, .. } => Some(argument), _ => None,
+    } }
+    #[wasm_bindgen(getter)]
+    /// Source matrix or vector whose backing storage is too short.
+    pub fn matrix(&self) -> Option<String> { match *self.inner {
+        ck::IpcError::InsufficientNumericalStorage { matrix, .. } => Some(matrix.to_owned()), _ => None,
+    } }
+    #[wasm_bindgen(getter)]
+    /// Minimum required number of numerical backing elements.
+    pub fn required(&self) -> Option<usize> { match *self.inner {
+        ck::IpcError::InsufficientNumericalStorage { required, .. } => Some(required), _ => None,
     } }
     #[wasm_bindgen(getter, js_name = atomCount)]
     pub fn atom_count(&self) -> Option<usize> { match *self.inner {

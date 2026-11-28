@@ -2953,8 +2953,11 @@ mod tests {
             },
         )
         .expect("pinned line130 pre-aromaticity Kekulize fixture");
+        // RDKit 2026.09.2 calculateExplicitValence: atom 9 has minimum
+        // valence 5 (double + aromatic-minimum + two singles), so its 5.5
+        // contribution no longer clamps to carbon valence 4; it rounds to 6.
         let expected_valence = valence(
-            &[3, 4, 3, 3, 4, 2, 4, 2, 3, 4, 4, 1, 1, 2, 1],
+            &[3, 4, 3, 3, 4, 2, 4, 2, 3, 6, 4, 1, 1, 2, 1],
             &[1, 0, 1, 1, 0, 1, 0, 2, 0, 0, 0, 3, 3, 0, 1],
         );
         assert_eq!(kekulized.final_valence, Some(expected_valence.clone()));

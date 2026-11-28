@@ -633,10 +633,13 @@ pub enum BondQueryPredicateKind {
     Stereo,
     HasProperty,
     UnsupportedFeature,
+    NumRingBondsRange,
 }
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "number | boolean | string | ReadonlyArray<number>")]
+    #[wasm_bindgen(
+        typescript_type = "number | boolean | string | ReadonlyArray<number> | AtomRangeBounds"
+    )]
     pub type BondQueryPredicateValue;
 }
 #[wasm_bindgen]
@@ -645,6 +648,9 @@ impl BondQueryPredicate {
     pub fn variant(&self) -> BondQueryPredicateKind {
         match self.0.as_ref() {
             ck::BondQueryPredicate::NumRingBonds(_) => BondQueryPredicateKind::NumRingBonds,
+            ck::BondQueryPredicate::NumRingBondsRange(_) => {
+                BondQueryPredicateKind::NumRingBondsRange
+            }
             ck::BondQueryPredicate::InRingOfSize(_) => BondQueryPredicateKind::InRingOfSize,
             ck::BondQueryPredicate::MinRingSize(_) => BondQueryPredicateKind::MinRingSize,
             ck::BondQueryPredicate::NumRingBondsGreaterEqual(_) => {
@@ -681,6 +687,9 @@ impl BondQueryPredicate {
     pub fn value(&self) -> Option<BondQueryPredicateValue> {
         match self.0.as_ref() {
             ck::BondQueryPredicate::NumRingBonds(v) => Some(JsValue::from(*v).unchecked_into()),
+            ck::BondQueryPredicate::NumRingBondsRange(bounds) => {
+                Some(JsValue::from(AtomRangeBounds(*bounds)).unchecked_into())
+            }
             ck::BondQueryPredicate::InRingOfSize(v) => Some(JsValue::from(*v).unchecked_into()),
             ck::BondQueryPredicate::MinRingSize(v) => Some(JsValue::from(*v).unchecked_into()),
             ck::BondQueryPredicate::NumRingBondsGreaterEqual(v) => {

@@ -85,7 +85,7 @@ pub(crate) struct EmbedConformerReport {
 #[derive(Clone)]
 pub struct EmbedMoleculeResult {
     pub molecule: Molecule,
-    /// The newly generated ID, or None when no conformer was generated.
+    /// The generated or refined ID, or None when no conformer completed.
     pub conf_id: Option<u32>,
     pub termination: EmbedTermination,
     pub params: EmbedParams,
@@ -93,7 +93,7 @@ pub struct EmbedMoleculeResult {
 #[derive(Clone)]
 pub struct EmbedMultipleConfsResult {
     pub molecule: Molecule,
-    /// IDs generated and retained by this call, excluding pre-existing IDs.
+    /// IDs generated and retained, or the existing selected ID after refinement.
     pub conf_ids: Vec<u32>,
     pub termination: EmbedTermination,
     pub requested_num_confs: u32,

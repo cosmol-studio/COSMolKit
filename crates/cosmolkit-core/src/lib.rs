@@ -46,6 +46,7 @@ pub mod source_control_c;
 mod source_sort;
 #[doc(hidden)]
 pub use rings::sort_bond_rings_by_descending_size;
+pub use source_sort::sort_by as source_sort_by;
 #[doc(hidden)]
 pub mod stereo_graph;
 mod stereo_order;

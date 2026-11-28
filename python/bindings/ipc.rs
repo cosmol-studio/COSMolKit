@@ -8,15 +8,44 @@ use pyo3::prelude::*;
 use std::error::Error;
 
 error_projection!(IpcError, IpcErrorKind, ck::IpcError, "descriptors", {
-    InvalidDistanceMatrixShape { row, actual: usize, expected: usize },
+    InvalidDistanceMatrixShape { row, actual, expected: usize },
     InvalidBondEndpoint { bond: usize, endpoint: &'static str, atom: usize, atom_count: usize },
+    EigenvaluesDidNotConverge { routine, info: usize },
+    InvalidNumericalArgument { routine, argument: u8 },
+    InsufficientNumericalStorage { routine, matrix: &'static str, required: usize, actual },
+    NumericalDimensionOverflow,
+    NumericalSortingStackExhausted,
 }, cause = |_: &ck::IpcError| None::<PyErr>, methods = {
     #[getter]
     /// Index of a row with the wrong width; None for an overall dimension mismatch.
     fn row(&self) -> Option<usize> {
         match self.inner {
             ck::IpcError::InvalidDistanceMatrixShape { row, .. } => row,
-            ck::IpcError::InvalidBondEndpoint { .. } => None,
+            ck::IpcError::InvalidBondEndpoint { .. }
+            | ck::IpcError::EigenvaluesDidNotConverge { .. }
+            | ck::IpcError::InvalidNumericalArgument { .. }
+            | ck::IpcError::InsufficientNumericalStorage { .. }
+            | ck::IpcError::NumericalDimensionOverflow
+            | ck::IpcError::NumericalSortingStackExhausted => None,
+        }
+    }
+    #[getter]
+    /// Actual matrix dimension or supplied numerical backing length; None when absent.
+    fn actual(&self) -> Option<usize> {
+        match self.inner {
+            ck::IpcError::InvalidDistanceMatrixShape { actual, .. }
+            | ck::IpcError::InsufficientNumericalStorage { actual, .. } => Some(actual),
+            _ => None,
+        }
+    }
+    #[getter]
+    /// Source numerical routine; None for errors outside a named numerical routine.
+    fn routine(&self) -> Option<&'static str> {
+        match self.inner {
+            ck::IpcError::EigenvaluesDidNotConverge { routine, .. }
+            | ck::IpcError::InvalidNumericalArgument { routine, .. }
+            | ck::IpcError::InsufficientNumericalStorage { routine, .. } => Some(routine),
+            _ => None,
         }
     }
 });

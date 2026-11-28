@@ -2,8 +2,8 @@
 
 `cosmolkit` is the public Rust API and runtime owner for COSMolKit, a Rust-native cheminformatics and structural biology toolkit. It is the sole supported Rust entrypoint for `Molecule`, operation contracts, and domain APIs. Dedicated workspace crates own detached model values and source-backed algorithms behind this facade.
 
-The current chemistry reference is RDKit **2026.09.1** (Python distribution
-`2026.9.1`), revision `fece8caa860bdf6c9c82bdb9253f22a0cf87150c`.
+The current chemistry reference is RDKit **2026.09.2** (Python distribution
+`2026.9.2`), revision `f86b7dc9b31e2531200bbd1f54589bcbd968bb05`.
 
 ## Feature dependency tree
 
@@ -382,7 +382,7 @@ assert_eq!(torsion.n_bits(), 2048);
 
 Use `*_with_params` for explicit settings and the family's supported output
 collector for atom/bit/path provenance. Batch APIs preserve input order and
-record positions for failures. Current corpus comparisons use RDKit 2026.09.1;
+record positions for failures. Recorded large-corpus results used RDKit 2026.09.1;
 completed coverage is recorded in [VALIDATION.md](../../VALIDATION.md).
 
 Layered retains the upstream algorithm's `0.7.0` metadata; this is not the

@@ -688,15 +688,15 @@ fn q97_bond_boolean_serialization_preserves_precedence_negation_and_binary_state
         "-&@,="
     );
 
-    // The pinned source assigns a nested second child to csmarts1 and leaves
-    // csmarts2 empty. Keep that observable output instead of correcting it.
+    // RDKit 2026.09.2 assigns the nested second child to csmarts2, preserving
+    // the first child's single-bond predicate and AND/OR precedence.
     assert_eq!(
         write(QueryNode::and(vec![
             order(BondOrder::Single),
             QueryNode::or(vec![order(BondOrder::Double), order(BondOrder::Triple)]),
         ]))
         .unwrap(),
-        "=,#"
+        "-;=,#"
     );
 
     let non_smartable = QueryNode::or(vec![

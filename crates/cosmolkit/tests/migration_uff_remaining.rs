@@ -26,7 +26,7 @@ fn uff_remaining_parse_rejections_() {
             "line:130",
             "c1c(ccc2NC(CN=c(c21)(C)C)=O)O",
             "hydrogen",
-            "SMILES hydrogen removal failed: hydrogen-removal sanitize failed: sanitization failed at Properties: property-cache valence assignment failed: Explicit valence for atom # 9 C, 5, is greater than permitted",
+            "SMILES hydrogen removal failed: hydrogen-removal sanitize failed: sanitization failed at Properties: property-cache valence assignment failed: Explicit valence for atom # 9 C, 6, is greater than permitted",
         ),
         (
             "line:135",
@@ -296,7 +296,7 @@ fn uff_remaining_source_error_matrix_() {
                             stage: SanitizeStage::Properties,
                             atom: 9,
                             atomic_number: 6,
-                            calculated: Some(5),
+                            calculated: Some(6),
                         },
                         "line:136" => Outcome::Properties {
                             hydrogen_wrapper,

@@ -1,7 +1,7 @@
 # Parity tests
 
 Prepare references once, then compare COSMolKit through Cargo. Run from the
-repository root with the development `.venv` installed (RDKit **2026.09.1**
+repository root with the development `.venv` installed (RDKit **2026.09.2**
 and Gemmi **0.7.5** for BIO). All descriptor references come from this same
 RDKit Python environment.
 

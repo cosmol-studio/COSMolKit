@@ -36,6 +36,10 @@ class NativeTasks(unittest.TestCase):
                 random_coords=False,max_iterations=100,prune_rms=-1.0,timeout=10))
             self.assertEqual(value[0],[0])
             self.assertEqual(len(value[1][0][2]),9)
+        refined = geometry(mol,"embedding",dict(method="etkdg_v3",count=1,seed=20260306,add_hs=True,
+            random_coords=False,max_iterations=100,prune_rms=-1.0,timeout=10,optimize_existing=True))
+        self.assertEqual(refined[0],[1])
+        self.assertEqual(len(refined[1]),2)
         for task in ("uff_force_field","mmff_force_field","uff_optimize","mmff_optimize",
                      "uff_optimize_conformers","mmff_optimize_conformers"):
             value=geometry(mol,task,dict(variant="MMFF94" if task.startswith("mmff") else "UFF",

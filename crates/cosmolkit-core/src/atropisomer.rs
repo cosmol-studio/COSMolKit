@@ -1,5 +1,6 @@
 //! Detached, source-backed atropisomer perception and wedge assignment.
 
+use crate::double_stereo::MIN_RING_SIZE_FOR_DOUBLE_BOND_STEREO;
 use crate::stereo_graph::StereoGraphAccess;
 use crate::stereo_graph::{StereoAtomAccess, StereoGraphMut};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1837,13 +1838,13 @@ pub(crate) fn detect_atropisomers_post_sanitization(
         // RDKit✔️✔️: if ((bond->getStereo() == Bond::BondStereo::STEREOATROPCW ||
         // RDKit✔️✔️:      bond->getStereo() == Bond::BondStereo::STEREOATROPCCW) &&
         // RDKit✔️✔️:     ri->numBondRings(bond->getIdx()) > 0 &&
-        // RDKit✔️✔️:     ri->minBondRingSize(bond->getIdx()) < 9) {
+        // RDKit✔️✔️:     ri->minBondRingSize(bond->getIdx()) < minRingSizeForDoubleBondStereo ) {
         // RDKit✔️✔️:   bond->setStereo(Bond::BondStereo::STEREONONE);
         // RDKit✔️✔️:   removedAny = true;
         // RDKit✔️✔️: }
         if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw)
             && rings.num_bond_rings(bond.id()) > 0
-            && rings.min_bond_ring_size(bond.id()) < 9
+            && rings.min_bond_ring_size(bond.id()) < MIN_RING_SIZE_FOR_DOUBLE_BOND_STEREO
         {
             bond.set_stereo(BondStereo::None)
                 .map_err(|source| AtropisomerError::BondUpdate {
@@ -3974,7 +3975,8 @@ fn check_invalid_atrop_bond(
     // RDKit✔️✔️:       // do not clear bonds that part of a macrocycle
     // RDKit✔️✔️:       // because they can be linking actual atropisomeric portions
     // RDKit✔️✔️:       (ri->numBondRings(bond->getIdx()) > 0 &&
-    // RDKit✔️✔️:        ri->minBondRingSize(bond->getIdx()) < 8)) {
+    // RDKit✔️✔️:        ri->minBondRingSize(bond->getIdx()) <
+    // RDKit✔️✔️:            Chirality::minRingSizeForDoubleBondStereo )) {
     // RDKit✔️✔️:     bond->setStereo(Bond::BondStereo::STEREONONE);
     // RDKit✔️✔️:     return true;
     // RDKit✔️✔️:   }
@@ -3985,7 +3987,8 @@ fn check_invalid_atrop_bond(
     // SSSR-or-better postcondition before any bond can be changed.
     let invalid = hybridization.values[bond.begin().index()] != Hybridization::Sp2
         || hybridization.values[bond.end().index()] != Hybridization::Sp2
-        || (rings.num_bond_rings(bond.id()) > 0 && rings.min_bond_ring_size(bond.id()) < 8);
+        || (rings.num_bond_rings(bond.id()) > 0
+            && rings.min_bond_ring_size(bond.id()) < MIN_RING_SIZE_FOR_DOUBLE_BOND_STEREO);
     if invalid {
         let bond_id = bond.id();
         bond.set_stereo(BondStereo::None)
@@ -4994,8 +4997,8 @@ mod source_atrop_pointer_order_cases {
     }
 
     #[test]
-    fn post_assignment_ring_cleanup_discards_eight_but_keeps_nine_member_atrop_tags() {
-        for size in [8, 9] {
+    fn rdkit092_post_assignment_ring_cleanup_keeps_eight_member_atrop_tags() {
+        for size in [7, 8, 9] {
             let mut graph = TopologyBlock::try_from_parts(
                 (0..size)
                     .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
@@ -5027,7 +5030,7 @@ mod source_atrop_pointer_order_cases {
                 .unwrap();
             assert_eq!(
                 graph.bonds[0].stereo(),
-                if size < 9 {
+                if size < 8 {
                     BondStereo::None
                 } else {
                     BondStereo::AtropCw
@@ -5046,7 +5049,7 @@ mod source_atrop_pointer_order_cases {
             .unwrap();
             assert_eq!(
                 output.bonds[0].stereo(),
-                if size < 9 {
+                if size < 8 {
                     BondStereo::None
                 } else {
                     BondStereo::AtropCw

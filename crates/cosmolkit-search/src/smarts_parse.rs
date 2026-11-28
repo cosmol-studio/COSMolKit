@@ -37,9 +37,10 @@ use crate::query_behavior::{
 };
 use crate::{QueryAtom, QueryBond, QueryGraph};
 use cosmolkit_model::{
-    AtomId, AtomMapping, AtomQueryPredicate, Bond, BondId, BondMapping, BondQueryPredicate,
-    BondSpec, PropertyText, QueryAtomIdentity, QueryNode, StereoGroup, SubstanceGroup,
-    SubstanceGroupId, TopologyMapping, query_substance_groups, replace_query_substance_groups,
+    AtomId, AtomMapping, AtomQueryPredicate, AtomRangeBounds, Bond, BondId, BondMapping,
+    BondQueryPredicate, BondSpec, PropertyText, QueryAtomIdentity, QueryNode, StereoGroup,
+    SubstanceGroup, SubstanceGroupId, TopologyMapping, query_substance_groups,
+    replace_query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, ChiralTag, Element, Hybridization};
 
@@ -3802,6 +3803,8 @@ enum Token {
     BracketContent(BracketContent),
     /// Bond specifier: -, =, #, :, ~, /, \\
     BondSpec(BondLexeme),
+    RangeOpen,
+    RangeClose,
     /// Open parenthesis (branch)
     OpenParen,
     /// Close parenthesis
@@ -5176,6 +5179,8 @@ fn compact_scanned_tokens(
                 i = consumed;
                 continue;
             }
+            ScannerToken::RangeOpen => tokens.push((Token::RangeOpen, current.span)),
+            ScannerToken::RangeClose => tokens.push((Token::RangeClose, current.span)),
             ScannerToken::Not => tokens.push((Token::Not, current.span)),
             ScannerToken::Semi => tokens.push((Token::Semi, current.span)),
             ScannerToken::And => tokens.push((Token::And, current.span)),
@@ -8353,6 +8358,87 @@ impl<'a> SmartsParser<'a> {
         Ok(bond)
     }
 
+    fn parse_bond_range_number(&mut self) -> Result<i32, SmartsParseError> {
+        let (Token::RingClosureDigit(first), _) = self.peek() else {
+            return Err(self.unexpected_token_error(self.peek().1, "expected bond range number"));
+        };
+        let mut value = *first as i32;
+        self.advance();
+        if value == 0 {
+            return Ok(0);
+        }
+        while let (Token::RingClosureDigit(digit), span) = self.peek() {
+            let digit = *digit as i32;
+            // RDKit✔️✔️: if((yyvsp[-1].ival) >= std::numeric_limits<std::int32_t>::max()/10 ||
+            // RDKit✔️✔️:  (yyvsp[-1].ival)*10 >= std::numeric_limits<std::int32_t>::max()-(yyvsp[0].ival) ){
+            if value >= i32::MAX / 10 || value * 10 >= i32::MAX - digit {
+                return Err(self.unexpected_token_error(*span, "number too large"));
+            }
+            value = value * 10 + digit;
+            self.advance();
+        }
+        Ok(value)
+    }
+
+    fn parse_bond_ring_count_range(
+        &mut self,
+    ) -> Result<QueryNode<BondQueryPredicate>, SmartsParseError> {
+        // RDKit✔️✔️: | AT_TOKEN RANGE_OPEN_TOKEN number RANGE_CLOSE_TOKEN {
+        // RDKit✔️✔️:   QueryBond *newB = new QueryBond();
+        // RDKit✔️✔️:   newB->setQuery(makeBondInNRingsQuery($3));
+        // RDKit✔️✔️:   $$ = newB;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: | AT_TOKEN RANGE_OPEN_TOKEN MINUS_TOKEN number RANGE_CLOSE_TOKEN {
+        // RDKit✔️✔️:   QueryBond *newB = new QueryBond();
+        // RDKit✔️✔️:   newB->setQuery(makeBondSimpleQuery<BOND_GREATEREQUAL_QUERY>(
+        // RDKit✔️✔️:       $4, queryIsBondInNRings, "greater_BondInNRings"));
+        // RDKit✔️✔️:   $$ = newB;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: | AT_TOKEN RANGE_OPEN_TOKEN number MINUS_TOKEN RANGE_CLOSE_TOKEN {
+        // RDKit✔️✔️:   QueryBond *newB = new QueryBond();
+        // RDKit✔️✔️:   newB->setQuery(makeBondSimpleQuery<BOND_LESSEQUAL_QUERY>(
+        // RDKit✔️✔️:       $3, queryIsBondInNRings, "less_BondInNRings"));
+        // RDKit✔️✔️:   $$ = newB;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: | AT_TOKEN RANGE_OPEN_TOKEN number MINUS_TOKEN number RANGE_CLOSE_TOKEN {
+        // RDKit✔️✔️:   QueryBond *newB = new QueryBond();
+        // RDKit✔️✔️:   newB->setQuery(makeBondRangeQuery($3, $5, false, false,
+        // RDKit✔️✔️:       queryIsBondInNRings, "range_BondInNRings"));
+        // RDKit✔️✔️:   $$ = newB;
+        // RDKit✔️✔️: }
+        // Consume each token once, fixed scalar bounds, no query-graph copy.
+        let minus = |token: &Token| matches!(token, Token::BondSpec(BondLexeme::Symbol(b'-')));
+        let predicate = if minus(&self.peek().0) {
+            self.advance();
+            BondQueryPredicate::NumRingBondsRange(AtomRangeBounds::GreaterEqual(
+                self.parse_bond_range_number()?,
+            ))
+        } else {
+            let lower = self.parse_bond_range_number()?;
+            if minus(&self.peek().0) {
+                self.advance();
+                let bounds = if matches!(self.peek(), (Token::RangeClose, _)) {
+                    AtomRangeBounds::LessEqual(lower)
+                } else {
+                    AtomRangeBounds::Inclusive {
+                        lower,
+                        upper: self.parse_bond_range_number()?,
+                        lower_open: false,
+                        upper_open: false,
+                    }
+                };
+                BondQueryPredicate::NumRingBondsRange(bounds)
+            } else {
+                BondQueryPredicate::NumRingBonds(lower)
+            }
+        };
+        if !matches!(self.peek(), (Token::RangeClose, _)) {
+            return Err(self.unexpected_token_error(self.peek().1, "expected '}' after bond range"));
+        }
+        self.advance();
+        Ok(QueryNode::Predicate(predicate))
+    }
+
     fn parse_bondd(&mut self) -> Result<ParsedSmartsBond, SmartsParseError> {
         // RDKit✔️❌: bondd: BOND_TOKEN
         // RDKit✔️❌: | MINUS_TOKEN {
@@ -8402,8 +8488,13 @@ impl<'a> SmartsParser<'a> {
                 Ok(bond)
             }
             (Token::BondSpec(lexeme), _) => {
-                let bond = parsed_bond_spec(*lexeme);
+                let is_ring = matches!(lexeme, BondLexeme::Symbol(b'@'));
+                let mut bond = parsed_bond_spec(*lexeme);
                 self.advance();
+                if is_ring && matches!(self.peek(), (Token::RangeOpen, _)) {
+                    self.advance();
+                    bond.query = self.parse_bond_ring_count_range()?;
+                }
                 Ok(bond)
             }
             (_, span) => Err(self.unexpected_token_error(*span, "expected bond query primitive")),

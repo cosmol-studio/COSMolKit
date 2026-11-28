@@ -195,6 +195,9 @@ def geometry(mol, task, p):
         params.maxIterations, params.useRandomCoords = p["max_iterations"], p["random_coords"]
         params.pruneRmsThresh, params.timeout = p["prune_rms"], p["timeout"]
         params.trackFailures = True
+        if p.get("optimize_existing", False):
+            mol = with_coordinates(mol, p["seed"], 2)
+            params.optimizeConfWithId = 1
         ids = ([rdDistGeom.EmbedMolecule(mol, params)] if p["count"] == 1 else
                list(rdDistGeom.EmbedMultipleConfs(mol, p["count"], params)))
         return [ids, conformers(mol), list(params.GetFailureCounts())]

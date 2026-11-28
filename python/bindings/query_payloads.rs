@@ -41,7 +41,7 @@ value_kind!(BondQueryPredicateKind, BondQueryPredicate, {
     Any, Order(_), OrderIn(_), IsAromatic(_), IsInRing(_), Direction(_), Stereo(_), HasStereo,
     IsConjugated, NumRingBonds(_), InRingOfSize(_), MinRingSize(_), NumRingBondsGreaterEqual(_),
     NumRingBondsLessEqual(_), MolFileQueryCode(_), HasProperty(_), PropertyValue { name, value },
-    UnsupportedFeature(_),
+    UnsupportedFeature(_), NumRingBondsRange(_),
 });
 value_kind!(AtomRangeBoundsKind, AtomRangeBounds, {
     LessEqual(_), GreaterEqual(_), Inclusive { lower, upper, lower_open, upper_open },
@@ -213,7 +213,10 @@ type BondValue = Source<
     BondOrder,
     Source<
         Vec<BondOrder>,
-        Source<bool, Source<BondDirection, Source<BondStereo, Source<i64, String>>>>,
+        Source<
+            bool,
+            Source<BondDirection, Source<BondStereo, Source<i64, Source<String, AtomRangeBounds>>>>,
+        >,
     >,
 >;
 impl BondQueryPredicate {
@@ -275,11 +278,16 @@ impl BondQueryPredicate {
             )))),
             P::HasProperty(v) | P::PropertyValue { value: v, .. } => {
                 Some(Source::Second(Source::Second(Source::Second(
-                    Source::Second(Source::Second(Source::Second(v.clone()))),
+                    Source::Second(Source::Second(Source::Second(Source::First(v.clone())))),
                 ))))
             }
             P::UnsupportedFeature(v) => Some(Source::Second(Source::Second(Source::Second(
-                Source::Second(Source::Second(Source::Second((*v).into()))),
+                Source::Second(Source::Second(Source::Second(Source::First((*v).into())))),
+            )))),
+            P::NumRingBondsRange(bounds) => Some(Source::Second(Source::Second(Source::Second(
+                Source::Second(Source::Second(Source::Second(Source::Second(
+                    AtomRangeBounds { inner: *bounds },
+                )))),
             )))),
             P::Any | P::HasStereo | P::IsConjugated => None,
         }

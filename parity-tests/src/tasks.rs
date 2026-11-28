@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeMap;
 
-pub const RDKIT: &str = "2026.09.1";
+pub const RDKIT: &str = "2026.09.2";
 pub const TASKS: &[(&str, &str)] = &[
     ("smiles_write", "smiles"),
     ("cip", "cip"),
@@ -961,7 +961,7 @@ mod tests {
         .unwrap()
         .remove(0)
         .remove(0);
-        let message = "RuntimeError: Invariant Violation\n\tbad direction in linearSearch\n\tViolation occurred on line 234 in file Code/Numerics/Optimizer/BFGSOpt.h\n\tFailed Expression: status >= 0\n\tRDKIT: 2026.09.1\n";
+        let message = "RuntimeError: Invariant Violation\n\tbad direction in linearSearch\n\tViolation occurred on line 234 in file Code/Numerics/Optimizer/BFGSOpt.h\n\tFailed Expression: status >= 0\n\tRDKIT: 2026.09.2\n";
         let native = outcome(5, Value::Text(message.into()));
         assert_eq!(actual[0], 1);
         assert!(matching_error("uff_optimize_conformers", &native, &actual));
@@ -981,21 +981,29 @@ mod tests {
             &outcome(5, Value::Text(message.replace("BFGSOpt.h", "Other.h"))),
             &actual
         ));
-        let params = vec![
-            serde_json::json!({"method":"etdg","count":2,"seed":20260306,
-            "add_hs":true,"random_coords":false,"max_iterations":100,"prune_rms":-1.0,"timeout":10}),
-        ];
-        let actual = crate::geometry::evaluate(
-            "embedding",
-            &params,
-            &["Cc1ccc([C@]2(C)O[C@H]2C)oc1=O".into()],
-            0,
-            1,
-            &pool,
-        )
-        .unwrap()
-        .remove(0)
-        .remove(0);
+        // The former ETDG fixture now succeeds in RDKit 2026.09.2 and
+        // CK; it remains input 1139 (zero-based) in the full 5k corpus.
+        // A fully constrained, coincident CC conformer still triggers the
+        // native BFGSOpt.h invariant. Keep testing the real public embedding
+        // error chain rather than constructing an inaccessible private cause.
+        let mol = cosmolkit::Molecule::from_smiles("CC")
+            .unwrap()
+            .with_only_3d_conformer(vec![[0.0; 3]; 2])
+            .unwrap();
+        let mut params = cosmolkit::EmbedParams::etkdg_v3();
+        params.random_seed = 42;
+        params.num_threads = 1;
+        params.max_iterations = 1;
+        params.optimize_conf_with_id = Some(0);
+        params.coord_map = Some(std::collections::BTreeMap::from([
+            (0, [0.; 3]),
+            (1, [0.; 3]),
+        ]));
+        let error = mol
+            .with_3d_conformer_result_with_params(&params)
+            .err()
+            .expect("source BFGS rejection");
+        let actual = failed_error(&error);
         assert!(matching_error("embedding", &native, &actual));
     }
 

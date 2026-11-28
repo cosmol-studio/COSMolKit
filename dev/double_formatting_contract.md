@@ -101,7 +101,7 @@ zeros with explicit case IDs. Include signaling/quiet NaNs and payload/sign
 variants. Full preparation and input/reference identity checks precede CK
 comparison; no dropped failures or zero-case passes.
 
-Use the current RDKit pin from `testdata/reference/rdkit.json` (2026.09.1),
+Use the current RDKit pin from `testdata/reference/rdkit.json`,
 C locale and verified default rounding. Record the actual Boost and system
 formatter versions with each diagnostic run. The recorded RDKit 2026.03.6 /
 Boost 1.85 / glibc 2.43-2ubuntu2.4 environment describes the earlier diagnostic,

@@ -211,6 +211,9 @@ pub struct EmbedParams {
     pub random_seed: i32,
     /// Remove existing conformers from the output before adding generated conformers.
     pub clear_conformers: bool,
+    /// Refine this existing 3D conformer instead of generating new conformers.
+    /// The selected ID and all other conformers are preserved; one conformer is processed.
+    pub optimize_conf_with_id: Option<u32>,
     /// Start from random Cartesian coordinates instead of distance-matrix eigenvectors.
     pub use_random_coords: bool,
     /// Random-coordinate box scaling; negative values specify a fixed box side length by magnitude.
@@ -292,6 +295,7 @@ impl Default for EmbedParams {
             num_threads: 1,
             random_seed: -1,
             clear_conformers: true,
+            optimize_conf_with_id: None,
             use_random_coords: false,
             box_size_mult: 2.0,
             rand_neg_eig: true,
@@ -751,6 +755,7 @@ impl EmbedParams {
         let value: serde_json::Value = serde_json::from_str(json)
             .map_err(|err| ConformerError::InvalidEmbedParametersJson(err.to_string()))?;
 
+        let optional_raw = first_embed_raw_fields(json, value.is_object())?;
         update_f64_field(&value, "basinThresh", &mut self.basin_thresh)?;
         update_f64_field(
             &value,
@@ -813,9 +818,10 @@ impl EmbedParams {
         // Boost✔️❌:         return get_optional<Type>(path).get_value_or(default_value);
         // Boost✔️❌:     }
         // END GEO15 BoostDefaultGet
-        // Newfieldonly: second borrowed O(document) pass preserves firstduplicate/rawnumber.
+        // One borrowed O(document) pass preserves first-duplicate/raw-number
+        // semantics for both newly supported source option fields.
         // Existing Value/oldfield parsing remains baseline; this extra pass is a known cost.
-        if let Some(raw) = first_embed_legacy_raw_field(json, value.is_object())? {
+        if let Some(raw) = optional_raw.0 {
             self.use_legacy_implementation =
                 embed_legacy_bool_raw(raw).unwrap_or(self.use_legacy_implementation);
         }
@@ -846,6 +852,14 @@ impl EmbedParams {
             self.coord_map = Some(parse_embed_parameters_coord_map(coord_map)?);
         }
 
+        // RDKit✔️✔️: if (auto opt = pt.get_optional<unsigned int>("optimizeConfWithId")) {
+        // RDKit✔️✔️:   params.optimizeConfWithId = *opt;
+        // RDKit✔️✔️: }
+        if let Some(raw) = optional_raw.1
+            && let Some(id) = embed_optional_unsigned_raw(raw)
+        {
+            self.optimize_conf_with_id = Some(id);
+        }
         Ok(())
     }
 
@@ -1029,6 +1043,14 @@ impl EmbedParams {
         );
         push_json_field(&mut fields, "verbose", self.verbose);
 
+        // RDKit✔️✔️: if (params.optimizeConfWithId.has_value()) {
+        // RDKit✔️✔️:   pt.put("optimizeConfWithId",
+        // RDKit✔️✔️:          std::to_string(params.optimizeConfWithId.value()));
+        // RDKit✔️✔️: }
+        if let Some(id) = self.optimize_conf_with_id {
+            push_json_field(&mut fields, "optimizeConfWithId", id);
+        }
+
         if let Some(coord_map) = &self.coord_map {
             let entries = coord_map
                 .iter()
@@ -1068,16 +1090,25 @@ impl EmbedParams {
     }
 }
 
-fn first_embed_legacy_raw_field(
+fn first_embed_raw_fields(
     json: &str,
     object_root: bool,
-) -> Result<Option<&serde_json::value::RawValue>, ConformerError> {
+) -> Result<
+    (
+        Option<&serde_json::value::RawValue>,
+        Option<&serde_json::value::RawValue>,
+    ),
+    ConformerError,
+> {
     if !object_root {
-        return Ok(None);
+        return Ok((None, None));
     }
-    struct FirstLegacy;
-    impl<'de> serde::de::Visitor<'de> for FirstLegacy {
-        type Value = Option<&'de serde_json::value::RawValue>;
+    struct FirstFields;
+    impl<'de> serde::de::Visitor<'de> for FirstFields {
+        type Value = (
+            Option<&'de serde_json::value::RawValue>,
+            Option<&'de serde_json::value::RawValue>,
+        );
         fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             f.write_str("an embedding parameter object")
         }
@@ -1100,10 +1131,12 @@ fn first_embed_legacy_raw_field(
 
             // property_tree retains the first matching child; decode key escapes,
             // borrow only that value, and skip every later duplicate unchanged.
-            let mut first = None;
+            let mut first = (None, None);
             while let Some(key) = map.next_key::<String>()? {
-                if key == "useLegacyImplementation" && first.is_none() {
-                    first = Some(map.next_value::<&'de serde_json::value::RawValue>()?);
+                if key == "useLegacyImplementation" && first.0.is_none() {
+                    first.0 = Some(map.next_value::<&'de serde_json::value::RawValue>()?);
+                } else if key == "optimizeConfWithId" && first.1.is_none() {
+                    first.1 = Some(map.next_value::<&'de serde_json::value::RawValue>()?);
                 } else {
                     let _: serde::de::IgnoredAny = map.next_value()?;
                 }
@@ -1111,8 +1144,36 @@ fn first_embed_legacy_raw_field(
             Ok(first)
         }
     }
-    serde::Deserializer::deserialize_map(&mut serde_json::Deserializer::from_str(json), FirstLegacy)
+    serde::Deserializer::deserialize_map(&mut serde_json::Deserializer::from_str(json), FirstFields)
         .map_err(|err| ConformerError::InvalidEmbedParametersJson(err.to_string()))
+}
+
+fn embed_optional_unsigned_raw(raw: &serde_json::value::RawValue) -> Option<u32> {
+    // Boost property_tree unsigned stream extraction accepts a leading sign,
+    // consumes surrounding C whitespace and requires the entire scalar.
+    // get_optional leaves the prior option unchanged on extraction failure.
+    let decoded;
+    let text = if raw.get().starts_with('"') {
+        decoded = serde_json::from_str::<String>(raw.get()).ok()?;
+        decoded.as_str()
+    } else {
+        raw.get()
+    };
+    let text = text.trim_matches(|c: char| c.is_ascii_whitespace());
+    let (negative, digits) = if let Some(rest) = text.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, text.strip_prefix('+').unwrap_or(text))
+    };
+    if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let value = digits.parse::<u32>().ok()?;
+    Some(if negative {
+        value.wrapping_neg()
+    } else {
+        value
+    })
 }
 
 fn embed_legacy_bool_raw(raw: &serde_json::value::RawValue) -> Option<bool> {
@@ -1405,6 +1466,32 @@ fn parse_embed_parameters_coord_map(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rdkit_2026_09_2_refinement_option_json_preserves_optional_source_semantics() {
+        let params = EmbedParams::default();
+        assert_eq!(params.optimize_conf_with_id, None);
+        assert!(!params.to_json().contains("optimizeConfWithId"));
+        let params = params
+            .with_json(r#"{"optimizeConfWithId":7,"optimizeConfWithId":9}"#)
+            .unwrap();
+        assert_eq!(params.optimize_conf_with_id, Some(7));
+        assert!(params.to_json().contains(r#""optimizeConfWithId":"7""#));
+        assert_eq!(
+            params
+                .with_json(r#"{"optimizeConfWithId":null}"#)
+                .unwrap()
+                .optimize_conf_with_id,
+            Some(7)
+        );
+        assert_eq!(
+            params
+                .with_json(r#"{"optimizeConfWithId":"-1"}"#)
+                .unwrap()
+                .optimize_conf_with_id,
+            Some(u32::MAX)
+        );
+    }
+
     #[test]
     fn recovery_geo15_legacy_json_matches_all_boost_cursor_raw_duplicate_cases_and_continues() {
         // Source-derived Boost1.85 C-locale reference:62cases×2initial states.
@@ -2488,6 +2575,10 @@ impl EmbedParams {
     }
     pub fn clear_conformers(&self) -> bool {
         self.clear_conformers
+    }
+    /// Selected existing 3D conformer to refine, or None to generate conformers.
+    pub fn optimize_conf_with_id(&self) -> Option<u32> {
+        self.optimize_conf_with_id
     }
     pub fn use_random_coords(&self) -> bool {
         self.use_random_coords

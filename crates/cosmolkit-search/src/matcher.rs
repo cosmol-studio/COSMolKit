@@ -6108,13 +6108,13 @@ mod q86_bond_dispatch_tests {
                 QueryNode::and(vec![QueryNode::predicate(BondQueryPredicate::Order(
                     BondOrder::Double,
                 ))]),
-                true,
+                false,
             ),
             (
                 QueryNode::and(vec![QueryNode::predicate(BondQueryPredicate::Order(
                     BondOrder::Single,
                 ))]),
-                false,
+                true,
             ),
         ] {
             let target_bond = QueryBond::from_parts(current.clone(), target_predicate);

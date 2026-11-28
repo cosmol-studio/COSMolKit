@@ -1103,27 +1103,7 @@ fn determine_bond_wedge_state_graph<G: StereoGraphAccess>(
         });
     }
     // Native always zeros z, including NaN/Inf z, independent of is3D.
-    let coordinate = |id: AtomId| -> Result<[f64; 3], WedgeError> {
-        let (position, count) = match conformer {
-            AtropisomerConformer::TwoD(conf) => (
-                conf.coordinates()
-                    .get(id.index())
-                    .map(|p| [p[0], p[1], 0.0]),
-                conf.coordinates().len(),
-            ),
-            AtropisomerConformer::ThreeD(conf) => (
-                conf.coordinates()
-                    .get(id.index())
-                    .map(|p| [p[0], p[1], 0.0]),
-                conf.coordinates().len(),
-            ),
-        };
-        position.ok_or(WedgeError::SourceStateIndex {
-            state: "conformer position",
-            index: id.index(),
-            count,
-        })
-    };
+    let coordinate = |id| source_wedge_xy(conformer, id);
     let center_location = coordinate(center)?;
     let reference_point = coordinate(bond_atom.id())?;
     let reference_vector =
@@ -1445,7 +1425,252 @@ pub fn pick_bond_to_wedge_with_source_properties(
         assignments,
         no_neighbors,
         properties,
+        None,
     )
+}
+
+fn source_wedge_xy(
+    conformer: AtropisomerConformer<'_>,
+    id: AtomId,
+) -> Result<[f64; 3], WedgeError> {
+    // RDKit✔️✔️: auto pos = conf.getAtomPos(atomIdx);
+    // RDKit✔️✔️: pos.z = 0.0;
+    // Borrow the actual coordinate carrier; range-check the reached row only.
+    // No whole-conformer scan, materialized XY matrix or independent state.
+    let (position, count) = match conformer {
+        AtropisomerConformer::TwoD(conf) => (
+            conf.coordinates()
+                .get(id.index())
+                .map(|p| [p[0], p[1], 0.0]),
+            conf.coordinates().len(),
+        ),
+        AtropisomerConformer::ThreeD(conf) => (
+            conf.coordinates()
+                .get(id.index())
+                .map(|p| [p[0], p[1], 0.0]),
+            conf.coordinates().len(),
+        ),
+    };
+    position.ok_or(WedgeError::SourceStateIndex {
+        state: "conformer position",
+        index: id.index(),
+        count,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct WedgeCandidate {
+    is_ring_bond: bool,
+    bridged: bool,
+    distance: f64,
+    score: i32,
+    bond: i32,
+}
+
+fn rings_share_interior_bridge<G: StereoGraphAccess>(
+    topology: &G,
+    first: &[BondId],
+    second: &[BondId],
+) -> bool {
+    // RDKit✔️✔️: bool ringsSharePathWithInteriorAtom(
+    // RDKit✔️✔️:     const ROMol &mol, const INT_VECT &firstRing, const INT_VECT &secondRing) {
+    // RDKit✔️✔️:   // Count only bonds that belong to both rings. Two such bonds incident on the
+    // RDKit✔️✔️:   // same atom are consecutive and make that atom interior to the shared path.
+    // RDKit✔️✔️:   std::vector<unsigned int> numIncidentSharedBonds(mol.getNumAtoms());
+    // RDKit✔️✔️:   for (const auto bondIdx : firstRing) {
+    // RDKit✔️✔️:     if (std::find(secondRing.begin(), secondRing.end(), bondIdx) ==
+    // RDKit✔️✔️:         secondRing.end()) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     const auto bond = mol.getBondWithIdx(bondIdx);
+    // RDKit✔️✔️:     if (++numIncidentSharedBonds[bond->getBeginAtomIdx()] > 1 ||
+    // RDKit✔️✔️:         ++numIncidentSharedBonds[bond->getEndAtomIdx()] > 1) {
+    // RDKit✔️✔️:       return true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    let mut incident = vec![0u32; topology.atoms().len()];
+    for bond in first {
+        if !second.contains(bond) {
+            continue;
+        }
+        let bond = &topology.bonds()[bond.index()];
+        incident[bond.begin().index()] += 1;
+        if incident[bond.begin().index()] > 1 {
+            return true;
+        }
+        incident[bond.end().index()] += 1;
+        if incident[bond.end().index()] > 1 {
+            return true;
+        }
+    }
+    false
+}
+
+fn fused_ring_system(rings: &mut RingInfo, bond: BondId) -> Result<Vec<usize>, WedgeError> {
+    // RDKit✔️✔️: std::vector<unsigned int> getFusedRingSystem(RingInfo &ringInfo,
+    // RDKit✔️✔️:                                              unsigned int bondIdx) {
+    // RDKit✔️✔️:   const auto &bondRings = ringInfo.bondRings();
+    // RDKit✔️✔️:   boost::dynamic_bitset<> visitedRings(bondRings.size());
+    // RDKit✔️✔️:   std::vector<unsigned int> ringsToVisit;
+    // RDKit✔️✔️:   const auto addRingToVisit = [&](unsigned int ringIdx) {
+    // RDKit✔️✔️:     if (!visitedRings[ringIdx]) {
+    // RDKit✔️✔️:       visitedRings.set(ringIdx);
+    // RDKit✔️✔️:       ringsToVisit.push_back(ringIdx);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   };
+    // RDKit✔️✔️:   for (const auto ringIdx : ringInfo.bondMembers(bondIdx)) {
+    // RDKit✔️✔️:     addRingToVisit(ringIdx);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::vector<unsigned int> result;
+    // RDKit✔️✔️:   while (!ringsToVisit.empty()) {
+    // RDKit✔️✔️:     const auto ringIdx = ringsToVisit.back();
+    // RDKit✔️✔️:     ringsToVisit.pop_back();
+    // RDKit✔️✔️:     result.push_back(ringIdx);
+    // RDKit✔️✔️:     for (const auto neighborIdx : ringInfo.fusedRingNeighbors(ringIdx)) {
+    // RDKit✔️✔️:       addRingToVisit(neighborIdx);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return result;
+    // RDKit✔️✔️: }
+    let mut visited = vec![false; rings.bond_rings().len()];
+    let mut pending = Vec::new();
+    for &index in rings.bond_members(bond) {
+        if !visited[index] {
+            visited[index] = true;
+            pending.push(index);
+        }
+    }
+    let mut result = Vec::new();
+    while let Some(index) = pending.pop() {
+        result.push(index);
+        for neighbor in rings.fused_ring_neighbors(index)? {
+            if !visited[neighbor] {
+                visited[neighbor] = true;
+                pending.push(neighbor);
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn ring_system_has_interior_bridge<G: StereoGraphAccess>(
+    topology: &G,
+    rings: &mut RingInfo,
+    indices: &[usize],
+) -> Result<bool, WedgeError> {
+    // RDKit✔️✔️: bool ringSystemHasBridgeWithInteriorAtom(
+    // RDKit✔️✔️:     const ROMol &mol, RingInfo &ringInfo,
+    // RDKit✔️✔️:     const std::vector<unsigned int> &ringIndices) {
+    // RDKit✔️✔️:   const auto &bondRings = ringInfo.bondRings();
+    // RDKit✔️✔️:   for (const auto ringIdx : ringIndices) {
+    // RDKit✔️✔️:     // fusedRingNeighbors() is lazy and cached by RingInfo. Checking only those
+    // RDKit✔️✔️:     // pairs avoids repeating RingInfo's fused-ring discovery here.
+    // RDKit✔️✔️:     for (const auto neighborIdx : ringInfo.fusedRingNeighbors(ringIdx)) {
+    // RDKit✔️✔️:       if (neighborIdx <= ringIdx) {
+    // RDKit✔️✔️:         continue;  // inspect each pair once
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (ringsSharePathWithInteriorAtom(mol, bondRings[ringIdx],
+    // RDKit✔️✔️:                                          bondRings[neighborIdx])) {
+    // RDKit✔️✔️:         return true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    for &index in indices {
+        for neighbor in rings.fused_ring_neighbors(index)? {
+            if neighbor > index
+                && rings_share_interior_bridge(
+                    topology,
+                    &rings.bond_rings()[index],
+                    &rings.bond_rings()[neighbor],
+                )
+            {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+fn ring_system_center<G: StereoGraphAccess>(
+    topology: &G,
+    rings: &RingInfo,
+    indices: &[usize],
+    conformer: AtropisomerConformer<'_>,
+) -> Result<[f64; 2], WedgeError> {
+    // RDKit✔️✔️: RDGeom::Point3D getRingSystemCenter(
+    // RDKit✔️✔️:     const ROMol &mol, const RingInfo &ringInfo,
+    // RDKit✔️✔️:     const std::vector<unsigned int> &ringIndices, const Conformer &conf) {
+    // RDKit✔️✔️:   // An atom shared by multiple rings contributes only once to the center.
+    // RDKit✔️✔️:   boost::dynamic_bitset<> ringAtoms(mol.getNumAtoms());
+    // RDKit✔️✔️:   const auto &atomRings = ringInfo.atomRings();
+    // RDKit✔️✔️:   for (const auto ringIdx : ringIndices) {
+    // RDKit✔️✔️:     for (const auto atomIdx : atomRings[ringIdx]) {
+    // RDKit✔️✔️:       ringAtoms.set(atomIdx);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   CHECK_INVARIANT(ringAtoms.any(), "a ring system must contain atoms");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   RDGeom::Point3D center;
+    // RDKit✔️✔️:   for (auto atomIdx = ringAtoms.find_first();
+    // RDKit✔️✔️:        atomIdx != boost::dynamic_bitset<>::npos;
+    // RDKit✔️✔️:        atomIdx = ringAtoms.find_next(atomIdx)) {
+    // RDKit✔️✔️:     auto pos = conf.getAtomPos(atomIdx);
+    // RDKit✔️✔️:     pos.z = 0.0;
+    // RDKit✔️✔️:     center += pos;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return center / static_cast<double>(ringAtoms.count());
+    // RDKit✔️✔️: }
+    let mut members = vec![false; topology.atoms().len()];
+    for &index in indices {
+        for atom in &rings.atom_rings()[index] {
+            members[atom.index()] = true;
+        }
+    }
+    let mut center = [0.0; 2];
+    let mut count = 0;
+    for (index, &member) in members.iter().enumerate() {
+        if member {
+            let point = source_wedge_xy(conformer, AtomId::new(index))?;
+            center[0] += point[0];
+            center[1] += point[1];
+            count += 1;
+        }
+    }
+    if count == 0 {
+        return Err(WedgeError::SourcePrecondition {
+            message: "a ring system must contain atoms",
+        });
+    }
+    Ok([center[0] / count as f64, center[1] / count as f64])
+}
+
+fn bond_midpoint_distance<G: StereoGraphAccess>(
+    topology: &G,
+    bond: BondId,
+    conformer: AtropisomerConformer<'_>,
+    center: [f64; 2],
+) -> Result<f64, WedgeError> {
+    // RDKit✔️✔️: double bondMidpointDistanceToPoint(const ROMol &mol, unsigned int bondIdx,
+    // RDKit✔️✔️:                                    const Conformer *conf,
+    // RDKit✔️✔️:                                    const RDGeom::Point3D &point) {
+    // RDKit✔️✔️:   const auto bond = mol.getBondWithIdx(bondIdx);
+    // RDKit✔️✔️:   auto midpoint = (conf->getAtomPos(bond->getBeginAtomIdx()) +
+    // RDKit✔️✔️:                    conf->getAtomPos(bond->getEndAtomIdx())) /
+    // RDKit✔️✔️:                   2.0;
+    // RDKit✔️✔️:   midpoint.z = 0.0;
+    // RDKit✔️✔️:   return (midpoint - point).lengthSq();
+    // RDKit✔️✔️: }
+    let bond = &topology.bonds()[bond.index()];
+    let a = source_wedge_xy(conformer, bond.begin())?;
+    let b = source_wedge_xy(conformer, bond.end())?;
+    let x = (a[0] + b[0]) / 2.0 - center[0];
+    let y = (a[1] + b[1]) / 2.0 - center[1];
+    Ok((x * x + y * y) + 0.0)
 }
 
 fn pick_bond_to_wedge_graph_with_source_properties<G: StereoGraphAccess>(
@@ -1456,95 +1681,157 @@ fn pick_bond_to_wedge_graph_with_source_properties<G: StereoGraphAccess>(
     assignments: &WedgeAssignments,
     no_neighbors: i32,
     properties: Option<&mut cosmolkit_model::MoleculeProperties>,
+    conformer: Option<AtropisomerConformer<'_>>,
 ) -> Result<i32, WedgeError> {
-    // RDKit❗❌: int pickBondToWedge(
-    // RDKit❗❌:     const Atom *atom, const ROMol &mol, const INT_VECT &nChiralNbrs,
-    // RDKit❗❌:     const std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> &wedgeBonds,
-    // RDKit❗❌:     int noNbrs) {
-    // RDKit❗❌:   // here is what we are going to do
-    // RDKit❗❌:   // - at each chiral center look for a bond that is begins at the atom and
-    // RDKit❗❌:   //   is not yet picked to be wedged for a different chiral center, preferring
-    // RDKit❗❌:   //   bonds to Hs
-    // RDKit❗❌:   // - if we do not find a bond that begins at the chiral center - we will take
-    // RDKit❗❌:   //   the first bond that is not yet picked by any other chiral centers
-    // RDKit❗❌:   // we use the orders calculated above to determine which order to do the
-    // RDKit❗❌:   // wedging
-    // RDKit❗❌:
-    // RDKit❗❌:   // we need ring information; make sure findSSSR has been called before
-    // RDKit❗❌:   // if not call now
-    // RDKit❗❌:   if (!mol.getRingInfo()->isSssrOrBetter()) {
-    // RDKit❗❌:     MolOps::findSSSR(mol);
-    // RDKit❗❌:   }
-    // RDKit❗❌:
-    // RDKit❗❌:   std::vector<std::pair<int, int>> nbrScores;
-    // RDKit❗❌:   for (const auto bond : mol.atomBonds(atom)) {
-    // RDKit❗❌:     // can only wedge single bonds:
-    // RDKit❗❌:     if (bond->getBondType() != Bond::SINGLE) {
-    // RDKit❗❌:       continue;
-    // RDKit❗❌:     }
-    // RDKit❗❌:
-    // RDKit❗❌:     int bid = bond->getIdx();
-    // RDKit❗❌:     if (wedgeBonds.find(bid) == wedgeBonds.end()) {
-    // RDKit❗❌:       // very strong preference for Hs:
-    // RDKit❗❌:       auto *oatom = bond->getOtherAtom(atom);
-    // RDKit❗❌:       if (oatom->getAtomicNum() == 1) {
-    // RDKit❗❌:         nbrScores.emplace_back(-1000000,
-    // RDKit❗❌:                                bid);  // lower than anything else can be
-    // RDKit❗❌:         continue;
-    // RDKit❗❌:       }
-    // RDKit❗❌:       // prefer lower atomic numbers with lower degrees and no specified
-    // RDKit❗❌:       // chirality:
-    // RDKit❗❌:       int nbrScore = oatom->getAtomicNum() + 100 * oatom->getDegree() +
-    // RDKit❗❌:                      1000 * ((oatom->getChiralTag() != Atom::CHI_UNSPECIFIED));
-    // RDKit❗❌:       // prefer neighbors that are nonchiral or have as few chiral neighbors
-    // RDKit❗❌:       // as possible:
-    // RDKit❗❌:       int oIdx = oatom->getIdx();
-    // RDKit❗❌:       if (nChiralNbrs[oIdx] < noNbrs) {
-    // RDKit❗❌:         // the counts are negative, so we have to subtract them off
-    // RDKit❗❌:         nbrScore -= 100000 * nChiralNbrs[oIdx];
-    // RDKit❗❌:       }
-    // RDKit❗❌:       // prefer bonds to non-ring atoms:
-    // RDKit❗❌:       nbrScore += 10000 * mol.getRingInfo()->numAtomRings(oIdx);
-    // RDKit❗❌:       // prefer non-ring bonds;
-    // RDKit❗❌:       nbrScore += 20000 * mol.getRingInfo()->numBondRings(bid);
-    // RDKit❗❌:       // prefer bonds to atoms which don't have a double bond from them
-    // RDKit❗❌:       auto [hasDoubleBond, hasKnownDoubleBond, hasAnyDoubleBond] =
-    // RDKit❗❌:           getDoubleBondPresence(mol, *oatom);
-    // RDKit❗❌:       nbrScore += 11000 * hasDoubleBond;
-    // RDKit❗❌:       nbrScore += 12000 * hasKnownDoubleBond;
-    // RDKit❗❌:       nbrScore += 23000 * hasAnyDoubleBond;
-    // RDKit❗❌:
-    // RDKit❗❌:       // if at all possible, do not go to marked attachment points
-    // RDKit❗❌:       // since they may well be removed when we write a mol block
-    // RDKit❗❌:       if (oatom->hasProp(common_properties::_fromAttachPoint)) {
-    // RDKit❗❌:         nbrScore += 500000;
-    // RDKit❗❌:       }
-    // RDKit❗❌:       // std::cerr << "    nrbScore: " << idx << " - " << oIdx << " : "
-    // RDKit❗❌:       //           << nbrScore << " nChiralNbrs: " << nChiralNbrs[oIdx]
-    // RDKit❗❌:       //           << std::endl;
-    // RDKit❗❌:       nbrScores.emplace_back(nbrScore, bid);
-    // RDKit❗❌:     }
-    // RDKit❗❌:   }
-    // RDKit❗❌:   // There's still one situation where this whole thing can fail: an unlucky
-    // RDKit❗❌:   // situation where all neighbors of all neighbors of an atom are chiral
-    // RDKit❗❌:   // and that atom ends up being the last one picked for stereochem
-    // RDKit❗❌:   // assignment. This also happens in cases where the chiral atom doesn't
-    // RDKit❗❌:   // have all of its neighbors (like when working with partially sanitized
-    // RDKit❗❌:   // fragments)
-    // RDKit❗❌:   //
-    // RDKit❗❌:   // We'll bail here by returning -1
-    // RDKit❗❌:   if (nbrScores.empty()) {
-    // RDKit❗❌:     return -1;
-    // RDKit❗❌:   }
-    // RDKit❗❌:   auto minPr = std::min_element(nbrScores.begin(), nbrScores.end());
-    // RDKit❗❌:   return minPr->second;
-    // RDKit❗❌: }
-    // Same candidate vector, one actual incident scan, log map membership and
-    // signed pair minimum. Existing SSSR packed-state/output projection costs
-    // remain ❌; no graph/property clone or alternate ring/wedge algorithm.
-    // Mixed unsigned C++ operations below explicitly use uint32 arithmetic.
-    // Pure signed source overflow is undefined: report a structured width
-    // error when reached, rather than guessing a wrap/score/selected bond.
+    // RDKit✔️✔️: int pickBondToWedgeImpl(
+    // RDKit✔️✔️:     const Atom *atom, const ROMol &mol, const INT_VECT &nChiralNbrs,
+    // RDKit✔️✔️:     const std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> &wedgeBonds,
+    // RDKit✔️✔️:     int noNbrs, const Conformer *conf) {
+    // RDKit✔️✔️:   // here is what we are going to do
+    // RDKit✔️✔️:   // - at each chiral center look for a bond that is begins at the atom and
+    // RDKit✔️✔️:   //   is not yet picked to be wedged for a different chiral center, preferring
+    // RDKit✔️✔️:   //   bonds to Hs
+    // RDKit✔️✔️:   // - if we do not find a bond that begins at the chiral center - we will take
+    // RDKit✔️✔️:   //   the first bond that is not yet picked by any other chiral centers
+    // RDKit✔️✔️:   // we use the orders calculated above to determine which order to do the
+    // RDKit✔️✔️:   // wedging
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // we need ring information; make sure findSSSR has been called before
+    // RDKit✔️✔️:   // if not call now
+    // RDKit✔️✔️:   if (!mol.getRingInfo()->isSssrOrBetter()) {
+    // RDKit✔️✔️:     MolOps::findSSSR(mol);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::vector<WedgeCandidate> nbrScores;
+    // RDKit✔️✔️:   for (const auto bond : mol.atomBonds(atom)) {
+    // RDKit✔️✔️:     // can only wedge single bonds:
+    // RDKit✔️✔️:     if (bond->getBondType() != Bond::SINGLE) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     int bid = bond->getIdx();
+    // RDKit✔️✔️:     if (wedgeBonds.find(bid) == wedgeBonds.end()) {
+    // RDKit✔️✔️:       // very strong preference for Hs:
+    // RDKit✔️✔️:       auto *oatom = bond->getOtherAtom(atom);
+    // RDKit✔️✔️:       if (oatom->getAtomicNum() == 1) {
+    // RDKit✔️✔️:         // This score is lower than any value produced by the normal ranking.
+    // RDKit✔️✔️:         nbrScores.push_back({false, false, 0.0, -1000000, bid});
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       // prefer lower atomic numbers with lower degrees and no specified
+    // RDKit✔️✔️:       // chirality:
+    // RDKit✔️✔️:       int nbrScore = oatom->getAtomicNum() + 100 * oatom->getDegree() +
+    // RDKit✔️✔️:                      1000 * ((oatom->getChiralTag() != Atom::CHI_UNSPECIFIED));
+    // RDKit✔️✔️:       // prefer neighbors that are nonchiral or have as few chiral neighbors
+    // RDKit✔️✔️:       // as possible:
+    // RDKit✔️✔️:       int oIdx = oatom->getIdx();
+    // RDKit✔️✔️:       if (nChiralNbrs[oIdx] < noNbrs) {
+    // RDKit✔️✔️:         // the counts are negative, so we have to subtract them off
+    // RDKit✔️✔️:         nbrScore -= 100000 * nChiralNbrs[oIdx];
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       // prefer bonds to non-ring atoms:
+    // RDKit✔️✔️:       nbrScore += 10000 * mol.getRingInfo()->numAtomRings(oIdx);
+    // RDKit✔️✔️:       // prefer non-ring bonds;
+    // RDKit✔️✔️:       nbrScore += 20000 * mol.getRingInfo()->numBondRings(bid);
+    // RDKit✔️✔️:       // prefer bonds to atoms which don't have a double bond from them
+    // RDKit✔️✔️:       auto [hasDoubleBond, hasKnownDoubleBond, hasAnyDoubleBond] =
+    // RDKit✔️✔️:           getDoubleBondPresence(mol, *oatom);
+    // RDKit✔️✔️:       nbrScore += 11000 * hasDoubleBond;
+    // RDKit✔️✔️:       nbrScore += 12000 * hasKnownDoubleBond;
+    // RDKit✔️✔️:       nbrScore += 23000 * hasAnyDoubleBond;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       // if at all possible, do not go to marked attachment points
+    // RDKit✔️✔️:       // since they may well be removed when we write a mol block
+    // RDKit✔️✔️:       if (oatom->hasProp(common_properties::_fromAttachPoint)) {
+    // RDKit✔️✔️:         nbrScore += 500000;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       // std::cerr << "    nrbScore: " << idx << " - " << oIdx << " : "
+    // RDKit✔️✔️:       //           << nbrScore << " nChiralNbrs: " << nChiralNbrs[oIdx]
+    // RDKit✔️✔️:       //           << std::endl;
+    // RDKit✔️✔️:       const auto isRingBond = mol.getRingInfo()->numBondRings(bid) != 0;
+    // RDKit✔️✔️:       nbrScores.push_back({isRingBond, false, 0.0, nbrScore, bid});
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   // There's still one situation where this whole thing can fail: an unlucky
+    // RDKit✔️✔️:   // situation where all neighbors of all neighbors of an atom are chiral
+    // RDKit✔️✔️:   // and that atom ends up being the last one picked for stereochem
+    // RDKit✔️✔️:   // assignment. This also happens in cases where the chiral atom doesn't
+    // RDKit✔️✔️:   // have all of its neighbors (like when working with partially sanitized
+    // RDKit✔️✔️:   // fragments)
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   // We'll bail here by returning -1
+    // RDKit✔️✔️:   if (nbrScores.empty()) {
+    // RDKit✔️✔️:     return -1;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   const auto allCandidatesAreRingBonds =
+    // RDKit✔️✔️:       std::all_of(nbrScores.begin(), nbrScores.end(),
+    // RDKit✔️✔️:                   [](const auto &score) { return score.isRingBond; });
+    // RDKit✔️✔️:   if (allCandidatesAreRingBonds && conf && !conf->is3D()) {
+    // RDKit✔️✔️:     const auto ringInfo = mol.getRingInfo();
+    // RDKit✔️✔️:     const auto ringSystem =
+    // RDKit✔️✔️:         getRingSystemInfo(mol, nbrScores.front().bondIdx, conf);
+    // RDKit✔️✔️:     const auto allCandidatesAreInRingSystem = std::all_of(
+    // RDKit✔️✔️:         nbrScores.begin(), nbrScores.end(), [&](const auto &candidate) {
+    // RDKit✔️✔️:           const auto &candidateRings =
+    // RDKit✔️✔️:               ringInfo->bondMembers(candidate.bondIdx);
+    // RDKit✔️✔️:           CHECK_INVARIANT(!candidateRings.empty(),
+    // RDKit✔️✔️:                           "ring bond has no ring membership");
+    // RDKit✔️✔️:           return std::any_of(
+    // RDKit✔️✔️:               candidateRings.begin(), candidateRings.end(),
+    // RDKit✔️✔️:               [&](const auto ringIdx) {
+    // RDKit✔️✔️:                 return std::find(ringSystem.ringIndices.begin(),
+    // RDKit✔️✔️:                                  ringSystem.ringIndices.end(),
+    // RDKit✔️✔️:                                  ringIdx) != ringSystem.ringIndices.end();
+    // RDKit✔️✔️:               });
+    // RDKit✔️✔️:         });
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // Spiro atoms have candidates in more than one fused ring system. There is
+    // RDKit✔️✔️:     // no common center for those systems, so retain the established scoring.
+    // RDKit✔️✔️:     if (allCandidatesAreInRingSystem &&
+    // RDKit✔️✔️:         ringSystem.hasBridgeWithInteriorAtom) {
+    // RDKit✔️✔️:       for (auto &candidate : nbrScores) {
+    // RDKit✔️✔️:         candidate.isInBridgedRingSystem = true;
+    // RDKit✔️✔️:         candidate.distanceToRingCenter = bondMidpointDistanceToPoint(
+    // RDKit✔️✔️:             mol, candidate.bondIdx, conf, ringSystem.center);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   const auto minPr = std::min_element(
+    // RDKit✔️✔️:       nbrScores.begin(), nbrScores.end(),
+    // RDKit✔️✔️:       [](const auto &lhs, const auto &rhs) {
+    // RDKit✔️✔️:         // Preserve the established scoring unless all candidates belong to a
+    // RDKit✔️✔️:         // single bridged ring system, where inner bonds are preferred.
+    // RDKit✔️✔️:         if (lhs.isInBridgedRingSystem != rhs.isInBridgedRingSystem) {
+    // RDKit✔️✔️:           return lhs.isInBridgedRingSystem;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         if (lhs.isInBridgedRingSystem) {
+    // RDKit✔️✔️:           return std::tie(lhs.distanceToRingCenter, lhs.score, lhs.bondIdx) <
+    // RDKit✔️✔️:                  std::tie(rhs.distanceToRingCenter, rhs.score, rhs.bondIdx);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         return std::tie(lhs.score, lhs.bondIdx) <
+    // RDKit✔️✔️:                std::tie(rhs.score, rhs.bondIdx);
+    // RDKit✔️✔️:       });
+    // RDKit✔️✔️:   return minPr->bondIdx;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: RingSystemInfo getRingSystemInfo(const ROMol &mol, unsigned int bondIdx,
+    // RDKit✔️✔️:                                  const Conformer *conf) {
+    // RDKit✔️✔️:   PRECONDITION(conf && !conf->is3D(), "a 2D conformer is required");
+    // RDKit✔️✔️:   auto ringInfo = mol.getRingInfo();
+    // RDKit✔️✔️:   PRECONDITION(ringInfo->numBondRings(bondIdx), "bond is not in a ring");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   auto ringIndices = getFusedRingSystem(*ringInfo, bondIdx);
+    // RDKit✔️✔️:   const auto hasBridgeWithInteriorAtom =
+    // RDKit✔️✔️:       ringSystemHasBridgeWithInteriorAtom(mol, *ringInfo, ringIndices);
+    // RDKit✔️✔️:   if (!hasBridgeWithInteriorAtom) {
+    // RDKit✔️✔️:     // The center is only used to rank inner bonds in bridged systems.
+    // RDKit✔️✔️:     return {{}, false, std::move(ringIndices)};
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return {getRingSystemCenter(mol, *ringInfo, ringIndices, *conf), true,
+    // RDKit✔️✔️:           std::move(ringIndices)};
+    // RDKit✔️✔️: }
+    // Extra ring/coordinate work is guarded to all-ring 2D candidates. Reuse
+    // RingInfo's fused cache; visit each containing component once and retain
+    // source atom-index accumulation order, no topology/conformer clones.
     if !rings.is_sssr_or_better() {
         #[cfg(test)]
         drawing_ring_probe::acquire();
@@ -1561,7 +1848,7 @@ fn pick_bond_to_wedge_graph_with_source_properties<G: StereoGraphAccess>(
             count: topology.atoms().len(),
         });
     }
-    let mut scores = Vec::<(i32, i32)>::new();
+    let mut scores = Vec::<WedgeCandidate>::new();
     for nb in topology.adjacency().neighbors_of(center.index()).iter() {
         let bond = topology
             .bonds()
@@ -1589,7 +1876,13 @@ fn pick_bond_to_wedge_graph_with_source_properties<G: StereoGraphAccess>(
                 count: topology.atoms().len(),
             })?;
         if atom.atomic_number() == 1 {
-            scores.push((-1_000_000, bid));
+            scores.push(WedgeCandidate {
+                is_ring_bond: false,
+                bridged: false,
+                distance: 0.0,
+                score: -1_000_000,
+                bond: bid,
+            });
             continue;
         }
         let degree = topology.adjacency().neighbors_of(atom.id().index()).len() as u32;
@@ -1636,9 +1929,76 @@ fn pick_bond_to_wedge_graph_with_source_properties<G: StereoGraphAccess>(
                     operation: "nbrScore += attachment point penalty",
                 })?;
         }
-        scores.push((score, bid));
+        scores.push(WedgeCandidate {
+            is_ring_bond: rings.num_bond_rings(bond.id()) != 0,
+            bridged: false,
+            distance: 0.0,
+            score,
+            bond: bid,
+        });
     }
-    Ok(scores.into_iter().min().map_or(-1, |(_, bid)| bid))
+    if scores.is_empty() {
+        return Ok(-1);
+    }
+    if scores.iter().all(|candidate| candidate.is_ring_bond) {
+        if let Some(conformer) = conformer.filter(|conformer| match conformer {
+            AtropisomerConformer::TwoD(_) => true,
+            AtropisomerConformer::ThreeD(row) => !row.is_3d(),
+        }) {
+            let indices = fused_ring_system(rings, BondId::new(scores[0].bond as usize))?;
+            let has_bridge = ring_system_has_interior_bridge(topology, rings, &indices)?;
+            // Source computes the center only for a bridge, before the spiro
+            // membership guard. Preserve that ordering and lazy coordinate access.
+            let center = if has_bridge {
+                Some(ring_system_center(topology, rings, &indices, conformer)?)
+            } else {
+                None
+            };
+            let all_in_system = scores.iter().all(|candidate| {
+                rings
+                    .bond_members(BondId::new(candidate.bond as usize))
+                    .iter()
+                    .any(|index| indices.contains(index))
+            });
+            if all_in_system && has_bridge {
+                for candidate in &mut scores {
+                    candidate.bridged = true;
+                    candidate.distance = bond_midpoint_distance(
+                        topology,
+                        BondId::new(candidate.bond as usize),
+                        conformer,
+                        center.expect("bridge center calculated"),
+                    )?;
+                }
+            }
+        }
+    }
+    // Match tuple<double,int,int> comparison, including unordered distance:
+    // NaN never wins min_element and must not fall through to integer scores.
+    let less = |a: &WedgeCandidate, b: &WedgeCandidate| {
+        if a.bridged != b.bridged {
+            return a.bridged;
+        }
+        if a.bridged {
+            match a.distance.partial_cmp(&b.distance) {
+                Some(std::cmp::Ordering::Less) => return true,
+                Some(std::cmp::Ordering::Greater) | None => return false,
+                Some(std::cmp::Ordering::Equal) => {}
+            }
+        }
+        (a.score, a.bond) < (b.score, b.bond)
+    };
+    Ok(scores
+        .into_iter()
+        .reduce(|best, candidate| {
+            if less(&candidate, &best) {
+                candidate
+            } else {
+                best
+            }
+        })
+        .expect("nonempty candidates")
+        .bond)
 }
 
 /// Runs native default-conformer picking using actual source append order.
@@ -1844,6 +2204,7 @@ fn pick_bonds_to_wedge_kernel<G: StereoGraphMut>(
             &wedges,
             NO_NEIGHBORS,
             properties.as_deref_mut(),
+            conformer,
         )?;
         if id >= 0 {
             // RDKit❗✔️:   WedgeInfoBase(int idxInit) : idx(idxInit){};
@@ -2279,6 +2640,173 @@ mod tests {
 
     fn edge(begin: usize, end: usize, order: BondOrder) -> BondSpec {
         BondSpec::new(AtomId::new(begin), AtomId::new(end), order)
+    }
+
+    #[test]
+    fn rdkit092_bridge_wedges_prefer_inner_bonds_only_in_one_2d_system() {
+        use cosmolkit_model::{Conformer2D, Conformer3D};
+        let molecule = topology(
+            &[
+                (6, ChiralTag::Unspecified),
+                (7, ChiralTag::Unspecified),
+                (6, ChiralTag::TetrahedralCcw),
+                (6, ChiralTag::Unspecified),
+                (6, ChiralTag::Unspecified),
+                (6, ChiralTag::Unspecified),
+                (6, ChiralTag::TetrahedralCw),
+                (6, ChiralTag::Unspecified),
+            ],
+            [
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (6, 7),
+                // SmilesParse.cpp:18–22: closure bonds are appended last.
+                (6, 1),
+                (7, 2),
+            ]
+            .map(|(a, b)| edge(a, b, BondOrder::Single))
+            .to_vec(),
+        );
+        fn selected(
+            molecule: &TopologyBlock,
+            conf: Option<AtropisomerConformer<'_>>,
+        ) -> Vec<usize> {
+            pick_bonds_to_wedge(molecule, conf)
+                .unwrap()
+                .iter()
+                .map(|(bond, _)| bond.index())
+                .collect::<Vec<_>>()
+        }
+        for points in [
+            vec![
+                [0., 2.8400034005593087],
+                [0., 1.42],
+                [1.22976, 0.71],
+                [1.22976, -0.71],
+                [0., -1.42],
+                [-1.22976, -0.71],
+                [-1.22976, 0.71],
+                [0., 0.21],
+            ],
+            vec![
+                [0., 2.8400034005593087],
+                [0., 1.42],
+                [1.4, 0.6],
+                [1.2, -0.9],
+                [-0.1, -1.5],
+                [-1.3, -0.6],
+                [-1.1, 0.8],
+                [0., 0.2],
+            ],
+        ] {
+            let conf = Conformer2D::new(0, points.clone());
+            assert_eq!(
+                selected(&molecule, Some(AtropisomerConformer::TwoD(&conf))),
+                [6, 8]
+            );
+            let conf3 = Conformer3D::new(
+                0,
+                points.into_iter().map(|[x, y]| [x, y, 1.0]).collect(),
+                true,
+            );
+            assert_eq!(
+                selected(&molecule, Some(AtropisomerConformer::ThreeD(&conf3))),
+                selected(&molecule, None)
+            );
+        }
+        let spiro = topology(
+            &(0..9)
+                .map(|i| {
+                    (
+                        6,
+                        if i == 0 {
+                            ChiralTag::TetrahedralCw
+                        } else {
+                            ChiralTag::Unspecified
+                        },
+                    )
+                })
+                .collect::<Vec<_>>(),
+            [
+                (0, 6),
+                (6, 7),
+                (7, 8),
+                (8, 0),
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 0),
+                (1, 4),
+                (4, 5),
+                (5, 3),
+            ]
+            .map(|(a, b)| edge(a, b, BondOrder::Single))
+            .to_vec(),
+        );
+        let conf = Conformer2D::new(
+            0,
+            vec![
+                [0., 0.],
+                [1., 1.],
+                [2., 0.],
+                [1., -1.],
+                [2., 1.5],
+                [2., -1.5],
+                [-1., 1.],
+                [-2., 0.],
+                [-1., -1.],
+            ],
+        );
+        assert_eq!(
+            selected(&spiro, Some(AtropisomerConformer::TwoD(&conf))),
+            [0]
+        );
+        let fused = topology(
+            &[
+                (9, ChiralTag::Unspecified),
+                (6, ChiralTag::Unspecified),
+                (6, ChiralTag::Unspecified),
+                (6, ChiralTag::TetrahedralCcw),
+                (6, ChiralTag::Unspecified),
+                (6, ChiralTag::Unspecified),
+                (17, ChiralTag::Unspecified),
+                (6, ChiralTag::TetrahedralCw),
+            ],
+            [
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (5, 6),
+                (5, 7),
+                (7, 1),
+                (7, 3),
+            ]
+            .map(|(a, b)| edge(a, b, BondOrder::Single))
+            .to_vec(),
+        );
+        let conf = Conformer2D::new(
+            0,
+            vec![
+                [2.56066, 0.],
+                [1.06066, 0.],
+                [0., 1.06066],
+                [-1.06066, 0.],
+                [-2.12132, -1.06066],
+                [-1.06066, -2.12132],
+                [-1.06066, -3.62132],
+                [0., -1.06066],
+            ],
+        );
+        assert_eq!(
+            selected(&fused, Some(AtropisomerConformer::TwoD(&conf))),
+            [2, 6]
+        );
     }
 
     fn pick(
@@ -6140,7 +6668,7 @@ mod query_cx_producers_source_tests {
         assert_eq!(ar.into_source_snapshot(), br.into_source_snapshot());
     }
     #[test]
-    fn actual_implicit_cache_error_is_propagated_after_source_ring_acquisition() {
+    fn rdkit092_query_implicit_cache_absence_keeps_source_ring_acquisition() {
         let mut q = graph(6, &[(0, 1), (2, 0), (0, 3), (4, 1), (1, 5)]);
         q.bonds_mut()[0]
             .bond_mut()
@@ -6148,7 +6676,10 @@ mod query_cx_producers_source_tests {
             .unwrap();
         q.atoms_mut()[0].set_source_valence_facts(SourceAtomValenceFacts::UNINITIALIZED);
         let mut r = rings();
-        assert!(pick_query_bonds_to_wedge_source(&mut q, None, &mut r, None).is_err());
+        // Atom::getTotalNumHs now skips missing implicit cache on an actual
+        // query atom while retaining its explicit H contribution.
+        let wedges = pick_query_bonds_to_wedge_source(&mut q, None, &mut r, None).unwrap();
+        assert!(!wedges.by_bond.is_empty());
         assert!(r.is_sssr_or_better());
     }
     #[test]

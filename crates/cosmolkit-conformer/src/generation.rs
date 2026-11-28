@@ -532,6 +532,39 @@ fn embedder_generate_initial_coords<R: RdkitDoubleRng>(
         Ok(got_coords)
     }
 }
+fn embedder_set_initial_coords(
+    positions: &mut [Vec<f64>],
+    params: &EmbedParams,
+) -> Result<bool, GenerationError> {
+    // RDKit✔️✔️: bool setInitialCoords(RDGeom::PointPtrVect *positions,
+    // RDKit✔️✔️:                       const EmbedParameters &embedParams) {
+    // RDKit✔️✔️:   if (embedParams.useRandomCoords && embedParams.coordMap != nullptr) {
+    // RDKit✔️✔️:     for (const auto &v : *embedParams.coordMap) {
+    // RDKit✔️✔️:       auto p = positions->at(v.first);
+    // RDKit✔️✔️:       for (unsigned int ci = 0; ci < v.second.dimension(); ++ci) {
+    // RDKit✔️✔️:         (*p)[ci] = v.second[ci];
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       // zero out any higher dimensional components:
+    // RDKit✔️✔️:       for (unsigned int ci = v.second.dimension(); ci < p->dimension(); ++ci) {
+    // RDKit✔️✔️:         (*p)[ci] = 0.0;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    if params.use_random_coords
+        && let Some(map) = &params.coord_map
+    {
+        for (&idx, coords) in map {
+            let len = positions.len();
+            let point = &mut positions[coordinate_map_index(idx, len)?];
+            point[..3].copy_from_slice(coords);
+            point[3..].fill(0.);
+        }
+    }
+    Ok(true)
+}
+
 fn embedder_first_minimization(
     positions: &mut [Vec<f64>],
     eargs: &EmbedArgs<'_>,
@@ -1371,6 +1404,30 @@ mod original_numeric_generation_conditions {
     }
 
     #[test]
+    fn rdkit_2026_09_2_fourth_dimension_timeout_is_not_minimization_failure() {
+        use crate::EmbedFailureCause as Cause;
+        let mut params = EmbedParams {
+            track_failures: true,
+            failures: vec![0; Cause::EndOfEnum as usize],
+            ..Default::default()
+        };
+        with_embedding_progress(&mut params, |settings, progress| {
+            record_fourth_dimension_failure(
+                settings,
+                progress,
+                Some(Instant::now() - Duration::from_secs(1)),
+            )
+            .unwrap();
+        });
+        assert_eq!(params.failures[Cause::ExceededTimeout as usize], 1);
+        assert_eq!(params.failures[Cause::MinimizeFourthDimension as usize], 0);
+        with_embedding_progress(&mut params, |settings, progress| {
+            record_fourth_dimension_failure(settings, progress, None).unwrap();
+        });
+        assert_eq!(params.failures[Cause::MinimizeFourthDimension as usize], 1);
+    }
+
+    #[test]
     fn embedder_minimize_fourth_dimension_returns_false_after_timeout_deadline() {
         let mut mmat = BoundsMatrix::new(2).expect("original bounds dimension");
         mmat.set_lower(0, 1, 1.0).expect("set lower");
@@ -1640,6 +1697,25 @@ fn embedder_increment_failure(
     }
     Ok(())
 }
+fn record_fourth_dimension_failure(
+    params: &EmbedParams,
+    progress: &EmbeddingProgress,
+    end_time: Option<Instant>,
+) -> Result<(), GenerationError> {
+    // RDKit✔️✔️: if (pastDeadline(end_time)) {
+    // RDKit✔️✔️:   recordFailure(embedParams, EmbedFailureCauses::EXCEEDED_TIMEOUT);
+    // RDKit✔️✔️: } else {
+    // RDKit✔️✔️:   recordFailure(embedParams,
+    // RDKit✔️✔️:                 EmbedFailureCauses::MINIMIZE_FOURTH_DIMENSION);
+    // RDKit✔️✔️: }
+    let cause = if end_time.is_some_and(|deadline| Instant::now() > deadline) {
+        crate::EmbedFailureCause::ExceededTimeout
+    } else {
+        crate::EmbedFailureCause::MinimizeFourthDimension
+    };
+    embedder_increment_failure(params, progress, cause)
+}
+
 fn embedder_final_chiral_checks(
     positions: &mut [Vec<f64>],
     eargs: &EmbedArgs<'_>,
@@ -1927,7 +2003,15 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
         if source_got_signal() {
             return Ok(false);
         }
-        got_coords = embedder_generate_initial_coords(positions, eargs, params, dist_mat, rng)?;
+        // RDKit✔️✔️: gotCoords = embedParams.optimizeConfWithId.has_value()
+        // RDKit✔️✔️:                 ? EmbeddingOps::setInitialCoords(positions, embedParams)
+        // RDKit✔️✔️:                 : EmbeddingOps::generateInitialCoords(
+        // RDKit✔️✔️:                       positions, eargs, embedParams, distMat, rng);
+        got_coords = if params.optimize_conf_with_id.is_some() {
+            embedder_set_initial_coords(positions, params)?
+        } else {
+            embedder_generate_initial_coords(positions, eargs, params, dist_mat, rng)?
+        };
         if !got_coords {
             embedder_increment_failure(params, progress, EmbedFailureCause::InitialCoords)?;
         } else {
@@ -1970,20 +2054,7 @@ fn embedder_embed_points_with_rng<R: RdkitDoubleRng>(
                     basin_thresh,
                 )?;
                 if !got_coords {
-                    if let Some(deadline) = end_time
-                        && Instant::now() > deadline
-                    {
-                        embedder_increment_failure(
-                            params,
-                            progress,
-                            EmbedFailureCause::ExceededTimeout,
-                        )?;
-                    }
-                    embedder_increment_failure(
-                        params,
-                        progress,
-                        EmbedFailureCause::MinimizeFourthDimension,
-                    )?;
+                    record_fourth_dimension_failure(params, progress, end_time)?;
                 }
             }
             if got_coords && (params.use_exp_torsion_angle_prefs || params.use_basic_knowledge) {
@@ -4326,6 +4397,19 @@ fn embedder_worker<'a>(
                 "embedding fragment point count mismatch",
             ));
         }
+        // RDKit✔️✔️: if (onlyRefine) {
+        // RDKit✔️✔️:   auto &conf = *eargs->confs->at(0);
+        // RDKit✔️✔️:   for (std::size_t i = 0; i < nAtoms; ++i) {
+        // RDKit✔️✔️:     (*positions[i])[0] = conf.getAtomPos(i).x;
+        // RDKit✔️✔️:     (*positions[i])[1] = conf.getAtomPos(i).y;
+        // RDKit✔️✔️:     (*positions[i])[2] = conf.getAtomPos(i).z;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        if params.optimize_conf_with_id.is_some() {
+            for (point, coords) in positions.iter_mut().zip(conf.coordinates()) {
+                point[..3].copy_from_slice(coords);
+            }
+        }
         let got = embedder_embed_points_shared(
             &mut positions,
             geometry.embed_args(),
@@ -4872,7 +4956,13 @@ fn embedder_dispatch_workers(
     // RDKit❗❌: #endif
     // END RDKIT CPP BLOCK thread/reset/future dispatch (Embedder.cpp:1636-1661)
 
-    let source_count = cosmolkit_core::rdkit_thread_count(params.num_threads)?.get() as i32;
+    let source_count =
+        cosmolkit_core::rdkit_thread_count(if params.optimize_conf_with_id.is_some() {
+            1
+        } else {
+            params.num_threads
+        })?
+        .get() as i32;
     if args.confs_ok.len() != args.confs.len() {
         return Err(GenerationError::Input(
             "embedding conformer status count mismatch",
@@ -5213,6 +5303,9 @@ pub enum EmbeddingDiagnostic {
     MissingExplicitHydrogens,
     MultipleFragmentsCoordinateMap,
     MultipleFragmentsBoundsMatrix,
+    RefinementMultipleFragments,
+    RefinementCoordinateMap,
+    RefinementFailed,
     Preparation(PreparationDiagnostic),
     HydrogenRemoval(cosmolkit_core::HydrogenWarning),
     Interrupted,
@@ -5690,7 +5783,7 @@ pub fn generate_conformers(
     )?;
     let mut result = GeneratedConformers {
         termination: EmbedTermination::Completed,
-        clear_existing: params.clear_conformers,
+        clear_existing: params.clear_conformers && params.optimize_conf_with_id.is_none(),
         conformers: Vec::new(),
         conf_ids: Vec::new(),
         diagnostics: Vec::new(),
@@ -5703,21 +5796,51 @@ pub fn generate_conformers(
             .diagnostics
             .push(EmbeddingDiagnostic::MissingExplicitHydrogens);
     }
-    let mut candidates: Vec<_> = (0..num_confs)
-        .map(|id| {
-            cosmolkit_model::Conformer3D::new(
-                id as usize,
-                vec![[0.; 3]; topology.atoms.len()],
-                true,
-            )
-        })
-        .collect();
+    // RDKit✔️✔️: if (params.optimizeConfWithId.has_value()) {
+    // RDKit✔️✔️:   confs.emplace_back(
+    // RDKit✔️✔️:       new Conformer(mol.getConformer(*params.optimizeConfWithId)));
+    // RDKit✔️✔️: } else {
+    // RDKit✔️✔️:   if (params.clearConfs) {
+    // RDKit✔️✔️:     res.clear();
+    // RDKit✔️✔️:     mol.clearConformers();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   confs.reserve(numConfs);
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < numConfs; ++i) {
+    // RDKit✔️✔️:     confs.emplace_back(new Conformer(mol.getNumAtoms()));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    let num_confs = if params.optimize_conf_with_id.is_some() {
+        1
+    } else {
+        num_confs
+    };
+    let mut candidates: Vec<_> = if let Some(id) = params.optimize_conf_with_id {
+        let selected = coordinates
+            .conformers_3d
+            .iter()
+            .find(|c| c.id() == id as usize)
+            .ok_or(
+                cosmolkit_model::CoordinateValidationError::Missing3DConformer { id: id as usize },
+            )?;
+        vec![selected.clone()]
+    } else {
+        (0..num_confs)
+            .map(|id| {
+                cosmolkit_model::Conformer3D::new(
+                    id as usize,
+                    vec![[0.; 3]; topology.atoms.len()],
+                    true,
+                )
+            })
+            .collect()
+    };
     let mut ok = vec![true; num_confs as usize];
     // CK's approved coordinate contract changes only the declared 3D dimension;
     // retained 2D values are borrowed by the fragment owner without clearing.
     let fragment_coordinates =
         cosmolkit_core::FragmentCoordinateView::from_coordinate_block(coordinates);
-    let fragment_coordinates = if params.clear_conformers {
+    let fragment_coordinates = if params.clear_conformers && params.optimize_conf_with_id.is_none()
+    {
         fragment_coordinates.without_3d_conformers()
     } else {
         fragment_coordinates
@@ -5750,6 +5873,41 @@ pub fn generate_conformers(
             .diagnostics
             .push(EmbeddingDiagnostic::MultipleFragmentsCoordinateMap);
         coord_map = None;
+    }
+    // RDKit✔️✔️: if (params.optimizeConfWithId.has_value()) {
+    // RDKit✔️✔️:   if (molFrags.size() > 1) {
+    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:         << "Seeded conformer generation (via the optimizeConfWithId argument) "
+    // RDKit✔️✔️:            "does not work with molecules that have multiple fragments. Aborting."
+    // RDKit✔️✔️:         << std::endl;
+    // RDKit✔️✔️:     res.push_back(-1);
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   numConfs = 1;
+    // RDKit✔️✔️:   if (coordMap) {
+    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:         << "optimizeConfWithId and coordMap are provided, "
+    // RDKit✔️✔️:            "initialEmbeddingMode is overwritten to RANDOM_COORDINATE_EMBEDDING"
+    // RDKit✔️✔️:         << std::endl;
+    // RDKit✔️✔️:     params.useRandomCoords = true;
+    // RDKit✔️✔️:     params.initialEmbeddingMode =
+    // RDKit✔️✔️:         InitialEmbeddingMode::RANDOM_COORDINATE_EMBEDDING;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    if params.optimize_conf_with_id.is_some() {
+        if count > 1 {
+            result
+                .diagnostics
+                .push(EmbeddingDiagnostic::RefinementMultipleFragments);
+            result.conf_ids.push(-1);
+            return Ok(result);
+        }
+        if coord_map.is_some() {
+            params.use_random_coords = true;
+            result
+                .diagnostics
+                .push(EmbeddingDiagnostic::RefinementCoordinateMap);
+        }
     }
     let mut constrained_atoms = vec![false; topology.atoms.len()];
     if let Some(map) = coord_map {
@@ -5955,6 +6113,35 @@ pub fn generate_conformers(
             return Ok(result);
         }
     }
+    // RDKit✔️✔️: if (params.optimizeConfWithId.has_value()) {
+    // RDKit✔️✔️:   if (!confsOk[ci]) {
+    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:         << "Failed to refine the conformer with the provided id, cancelling"
+    // RDKit✔️✔️:         << std::endl;
+    // RDKit✔️✔️:     res.push_back(-1);
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   auto &dest = mol.getConformer(*params.optimizeConfWithId);
+    // RDKit✔️✔️:   for (std::size_t i = 0; i < mol.getNumAtoms(); ++i) {
+    // RDKit✔️✔️:     dest.setAtomPos(i, conf->getAtomPos(i));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   res.push_back(*params.optimizeConfWithId);
+    // RDKit✔️✔️:   return;
+    // RDKit✔️✔️: }
+    if let Some(id) = params.optimize_conf_with_id {
+        if !ok[0] {
+            result
+                .diagnostics
+                .push(EmbeddingDiagnostic::RefinementFailed);
+            result.conf_ids.push(-1);
+        } else {
+            let source_id = i32::try_from(id)
+                .map_err(|_| GenerationError::Input("conformer id exceeds source signed range"))?;
+            result.conf_ids.push(source_id);
+            result.conformers = candidates;
+        }
+        return Ok(result);
+    }
     // CK's optional pruning budget starts after embedding and covers both
     // symmetry matching and RMS comparisons. Disabled calls read no clock.
     let pruning_deadline = if params.prune_rms_thresh > 0. && params.pruning_timeout > 0 {
@@ -6071,6 +6258,93 @@ pub fn generate_conformers(
 
 #[cfg(test)]
 mod original_complete_generation_conditions {
+
+    #[test]
+    fn rdkit_2026_09_2_refinement_selects_existing_id_constraints_and_failures() {
+        let mut coordinates = CoordinateBlock::default();
+        coordinates.conformers_3d = vec![Conformer3D::new(7, vec![[3., 4., 5.]], false)];
+        let mut params = EmbedParams {
+            optimize_conf_with_id: Some(7),
+            num_threads: 8,
+            random_seed: 42,
+            prune_rms_thresh: 100.,
+            ..EmbedParams::etkdg_v3()
+        };
+        let result = generate_conformers(
+            &carbon(),
+            &coordinates,
+            &Default::default(),
+            10,
+            &mut params,
+            unused_projection,
+        )
+        .unwrap();
+        assert!(!result.clear_existing);
+        assert_eq!(result.conf_ids, vec![7]);
+        assert_eq!(result.conformers.len(), 1);
+        assert_eq!(result.conformers[0].coordinates(), &[[3., 4., 5.]]);
+        params.coord_map = Some(BTreeMap::from([(0, [8., 9., 10.])]));
+        let result = generate_conformers(
+            &carbon(),
+            &coordinates,
+            &Default::default(),
+            10,
+            &mut params,
+            unused_projection,
+        )
+        .unwrap();
+        assert_eq!(result.conformers[0].coordinates(), &[[8., 9., 10.]]);
+        assert!(params.use_random_coords);
+        params.optimize_conf_with_id = Some(99);
+        assert!(matches!(
+            generate_conformers(
+                &carbon(),
+                &coordinates,
+                &Default::default(),
+                1,
+                &mut params,
+                unused_projection
+            ),
+            Err(GenerationError::Coordinates(
+                cosmolkit_model::CoordinateValidationError::Missing3DConformer { id: 99 }
+            ))
+        ));
+        let mut coordinates = CoordinateBlock::default();
+        coordinates.conformers_3d = vec![Conformer3D::new(7, vec![[0.; 3]; 2], true)];
+        params.optimize_conf_with_id = Some(7);
+        let rejected = generate_conformers(
+            &smiles("C.C"),
+            &coordinates,
+            &Default::default(),
+            10,
+            &mut params,
+            unused_projection,
+        )
+        .unwrap();
+        assert_eq!(rejected.conf_ids, vec![-1]);
+        assert!(rejected.conformers.is_empty());
+        assert!(!rejected.clear_existing);
+        assert!(
+            rejected
+                .diagnostics
+                .contains(&EmbeddingDiagnostic::RefinementMultipleFragments)
+        );
+        // A degenerate fully constrained optimizer input retains its real
+        // native error instead of being converted into a successful result.
+        params.coord_map = Some(BTreeMap::from([(0, [0.; 3]), (1, [0.; 3])]));
+        params.max_iterations = 1;
+        assert!(matches!(
+            generate_conformers(
+                &smiles("CC"),
+                &coordinates,
+                &Default::default(),
+                10,
+                &mut params,
+                unused_projection
+            ),
+            Err(GenerationError::ForceField(_))
+        ));
+    }
 
     #[test]
     fn recovery_geo15_presets_legacy_default_and_failure_reset_use_fifteen_actual_slots() {

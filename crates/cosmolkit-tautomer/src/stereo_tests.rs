@@ -1,5 +1,33 @@
 use super::*;
 #[test]
+fn enumeration_preserves_unmodified_sp3_stereo_in_canonical_tautomer() {
+    // RDKit Release_2026_09_2 testTautomer.cpp::testEnumeratePreservesUnmodifiedSp3Stereo.
+    // An exo-methylene intermediate temporarily makes the untouched ring
+    // stereocenter look symmetric; its CHI tag must be restored before dedup.
+    let mut source = fixture_from_smiles("O=C1C(O)=C([C@H]2CC[C@H](C)CC2)C(=O)c2ccccc21").unwrap();
+    let coordinates = CoordinateBlock::default();
+    let catalog = crate::TautomerCatalog::current().unwrap();
+    let params = TautomerParams::default().with_remove_sp3_stereo(false);
+    let canonical = crate::canonicalize_with_catalog(
+        source.score_view(&coordinates),
+        &catalog,
+        params,
+        None,
+        None,
+    )
+    .unwrap();
+    let canonical_smiles = canonical_smiles(canonical.view(&coordinates)).unwrap();
+    assert!(canonical_smiles.as_bytes().contains(&b'@'));
+    let result =
+        crate::enumerate_with_catalog(source.score_view(&coordinates), &catalog, params, None)
+            .unwrap();
+    assert_eq!(result.status, crate::TautomerEnumerationStatus::Completed);
+    assert!(result.entries.iter().any(|(_, record)| {
+        super::canonical_smiles(record.view(&coordinates)).unwrap() == canonical_smiles
+    }));
+}
+
+#[test]
 fn prepared_tautomer_queries_preserve_sparse_nonring_suffix() {
     let mut record = fixture_from_smiles("C1CC1C").unwrap();
     let atoms: Vec<_> = record.rings.atom_rings()[0]

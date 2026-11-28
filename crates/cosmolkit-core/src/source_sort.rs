@@ -1,7 +1,9 @@
-//! Private source-defined libstdc++ ordering shared by ring and wedge owners.
+//! Source-defined libstdc++ ordering shared by foundational and domain algorithms.
 //! This generalizes the existing ring-size introsort; no chemistry is implemented here.
 
-pub(crate) fn sort_by<T, F: FnMut(&T, &T) -> bool>(v: &mut [T], mut less: F) {
+/// Reproduce libstdc++ ordering, including the permutation of equivalent keys.
+/// Used by source-backed algorithms whose observable results depend on that order.
+pub fn sort_by<T, F: FnMut(&T, &T) -> bool>(v: &mut [T], mut less: F) {
     // libstdc++❗✔️: __sort(_RandomAccessIterator __first, _RandomAccessIterator __last,
     // libstdc++❗✔️: 	   _Compare __comp)
     // libstdc++❗✔️:     {

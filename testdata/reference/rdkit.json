@@ -1,10 +1,10 @@
 {
   "name": "rdkit",
-  "python_distribution_version": "2026.9.1",
+  "python_distribution_version": "2026.9.2",
   "runtime": {
     "implementation": "cpython",
     "version": "3.13.12"
   },
-  "source_revision": "fece8caa860bdf6c9c82bdb9253f22a0cf87150c",
-  "version": "2026.09.1"
+  "source_revision": "f86b7dc9b31e2531200bbd1f54589bcbd968bb05",
+  "version": "2026.09.2"
 }

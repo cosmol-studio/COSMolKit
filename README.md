@@ -38,8 +38,8 @@ COSMolKit combines a native Rust API with Python interfaces for scientific and m
 
 ## Features
 
-The current chemistry reference is RDKit **2026.09.1** (Python distribution
-`2026.9.1`). See the [upstream-diff audit](dev/source_provenance/rdkit_2026_03_6_to_2026_09_1.md)
+The current chemistry reference is RDKit **2026.09.2** (Python distribution
+`2026.9.2`). See the [upstream-diff audit](dev/source_provenance/rdkit_2026_09_1_to_2026_09_2.md)
 for the exact revision and upstream-diff scope.
 
 - **Modular Rust architecture:** separate crates own model values and domain

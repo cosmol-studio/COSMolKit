@@ -94,13 +94,13 @@ impl TautomerScoreTerm {
         // RDKit❗✔️:       score(ascore),
         // RDKit❗✔️:       requiredElements(std::move(reqElements)),
         // RDKit❗✔️:       connectivitySmarts(std::move(connSmarts)) {
-        // RDKit❗✔️:   std::unique_ptr<ROMol> pattern(SmartsToMol(smarts));
+        // RDKit❗✔️:   std::unique_ptr<RWMol> pattern(SmartsToMol(smarts));
         // RDKit❗✔️:   if (pattern) {
         // RDKit❗✔️:     matcher = std::move(*pattern);
         // RDKit❗✔️:   }
         // RDKit❗✔️:   // Initialize connectivity matcher if provided
         // RDKit❗✔️:   if (!connectivitySmarts.empty()) {
-        // RDKit❗✔️:     std::unique_ptr<ROMol> connPattern(SmartsToMol(connectivitySmarts));
+        // RDKit❗✔️:     std::unique_ptr<RWMol> connPattern(SmartsToMol(connectivitySmarts));
         // RDKit❗✔️:     if (connPattern) {
         // RDKit❗✔️:       connectivityMatcher = std::move(*connPattern);
         // RDKit❗✔️:     }

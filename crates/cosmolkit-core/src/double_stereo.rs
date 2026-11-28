@@ -10,6 +10,10 @@ use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
 use crate::RingInfo;
 
+// RDKit✔️✔️: constexpr unsigned int minRingSizeForDoubleBondStereo = 8;
+// Chirality.h applies the same minimum to double bonds and atropisomers.
+pub(crate) const MIN_RING_SIZE_FOR_DOUBLE_BOND_STEREO: usize = 8;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DoubleBondControl {
     Atom(AtomId),
@@ -341,7 +345,8 @@ pub fn should_detect_double_bond_stereo(
     if !rings.is_initialized() {
         return Err(DoubleBondStereoError::RingInfoNotInitialized);
     }
-    Ok(rings.num_bond_rings(bond) == 0 || rings.min_bond_ring_size(bond) >= 8)
+    Ok(rings.num_bond_rings(bond) == 0
+        || rings.min_bond_ring_size(bond) >= MIN_RING_SIZE_FOR_DOUBLE_BOND_STEREO)
 }
 
 pub fn is_double_bond_stereo_candidate(
@@ -935,7 +940,9 @@ pub fn assign_directional_double_bond_stereo_source(
         if bond.order() != BondOrder::Double || bond.stereo() != BondStereo::None {
             continue;
         }
-        if rings.num_bond_rings(bond.id()) != 0 && rings.min_bond_ring_size(bond.id()) < 8 {
+        if rings.num_bond_rings(bond.id()) != 0
+            && rings.min_bond_ring_size(bond.id()) < MIN_RING_SIZE_FOR_DOUBLE_BOND_STEREO
+        {
             continue;
         }
         if !matches!(degree(&topology, bond.begin()), 2 | 3)
@@ -2111,7 +2118,8 @@ fn candidate_unchecked(topology: &TopologyBlock, rings: &RingInfo, bond: &Bond) 
         && bond.direction() != BondDirection::EitherDouble
         && degree(topology, bond.begin()) > 1
         && degree(topology, bond.end()) > 1
-        && (rings.num_bond_rings(bond.id()) == 0 || rings.min_bond_ring_size(bond.id()) >= 8)
+        && (rings.num_bond_rings(bond.id()) == 0
+            || rings.min_bond_ring_size(bond.id()) >= MIN_RING_SIZE_FOR_DOUBLE_BOND_STEREO)
 }
 
 #[derive(Clone, Copy)]

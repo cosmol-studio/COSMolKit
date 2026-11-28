@@ -351,7 +351,15 @@ pub fn total_hydrogen_count_from_cache<G: StereoGraphAccess>(
 
     // BEGIN RDKIT CPP FUNCTION Atom::getTotalNumHs
     // RDKit✔️✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit✔️✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit✔️✔️:   int res = getNumExplicitHs();
+    // RDKit✔️✔️:   // we add the implicit Hs if df_noImplicit isn't set and we either don't have
+    // RDKit✔️✔️:   // a query or the implicit valence on the query has been calculated.
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   // The idea is that getTotalNumHs() should fail on a normal atom that hasn't
+    // RDKit✔️✔️:   // had its implicit valence calculated yet, but pass for query atoms.
+    // RDKit✔️✔️:   if (!df_noImplicit && (!hasQuery() || d_implicitValence > -1)) {
+    // RDKit✔️✔️:     res += getNumImplicitHs();
+    // RDKit✔️✔️:   }
     // RDKit✔️✔️:   if (includeNeighbors && dp_mol) {
     // RDKit✔️✔️:     auto nbrs = dp_mol->atomNeighbors(this);
     // RDKit✔️✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
@@ -364,7 +372,16 @@ pub fn total_hydrogen_count_from_cache<G: StereoGraphAccess>(
     // Atom and cache access below enforce the source getter's local
     // preconditions; complete topology auditing belongs to the ops boundary.
     let explicit = explicit_hydrogen_count(atom);
-    let implicit = implicit_hydrogen_count_from_cache(atom, valence)?;
+    let implicit = if !atom.no_implicit()
+        && (!atom.has_query()
+            || valence
+                .and_then(|cache| cache.implicit_hydrogens.get(atom_id.index()))
+                .is_some_and(|value| (*value as i8) >= 0))
+    {
+        implicit_hydrogen_count_from_cache(atom, valence)?
+    } else {
+        0
+    };
     let neighbor_hydrogens = if include_neighbors {
         topology
             .adjacency()
@@ -393,6 +410,65 @@ mod source646_implicit_hydrogen_tests {
     use super::*;
     use cosmolkit_model::AtomSpec;
     use cosmolkit_types::Element;
+    #[test]
+    fn rdkit092_query_total_hydrogens_skip_only_uninitialized_query_cache() {
+        use cosmolkit_model::{AtomQueryPredicate, QueryAtom, QueryGraph, QueryNode};
+        let id = AtomId::new(0);
+        let atom = Atom::from_spec(id, AtomSpec::new(Element::C).with_explicit_hydrogens(1));
+        let concrete =
+            TopologyBlock::try_from_parts(vec![atom.clone()], vec![], vec![], vec![]).unwrap();
+        let query = QueryGraph::from_parts(
+            vec![QueryAtom::from_parts(
+                atom.clone(),
+                QueryNode::Predicate(AtomQueryPredicate::HydrogenCount(1)),
+            )],
+            vec![],
+            [],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(
+            total_hydrogen_count_from_cache(&query, None, id, false),
+            Ok(1)
+        );
+        assert!(matches!(
+            total_hydrogen_count_from_cache(&concrete, None, id, false),
+            Err(ValenceError::ImplicitValenceCacheNotInitialized { .. })
+        ));
+        let initialized = ValenceAssignment {
+            explicit_valence: vec![1],
+            implicit_hydrogens: vec![2],
+        };
+        assert_eq!(
+            total_hydrogen_count_from_cache(&query, Some(&initialized), id, false),
+            Ok(3)
+        );
+        for raw in [-1, 128, 255] {
+            let negative_byte = ValenceAssignment {
+                explicit_valence: vec![1],
+                implicit_hydrogens: vec![raw],
+            };
+            assert_eq!(
+                total_hydrogen_count_from_cache(&query, Some(&negative_byte), id, false),
+                Ok(1)
+            );
+        }
+        let lifted = QueryGraph::from_parts(
+            vec![QueryAtom::from_carrier_parts(
+                atom,
+                QueryNode::Predicate(AtomQueryPredicate::HydrogenCount(1)),
+            )],
+            vec![],
+            [],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        assert!(total_hydrogen_count_from_cache(&lifted, None, id, false).is_err());
+    }
     #[test]
     fn source646_no_implicit_short_circuits_missing_or_negative_actual_cache() {
         let atom = Atom::from_spec(

@@ -150,7 +150,7 @@ the same Rust algorithm:
    const chain = ck.Molecule.fromSmiles("C".repeat(120));
    try {
      console.log(chain.avgIpcWithMethod(ck.IpcMethod.ExactPolynomial));
-     // 3.7592685780108055; chain.avgIpc() retains RDKit 2026.09.1 behavior.
+     // 3.7592685780108055; chain.avgIpc() uses the pinned RDKit 2026.09.2 algorithm.
    } finally {
      chain.free();
    }

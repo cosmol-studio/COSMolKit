@@ -685,11 +685,13 @@ fn calculate_explicit_valence<A: SourceValenceAtom>(
     // RDKit✔️✔️: int calculateExplicitValence(const Atom &atom, bool strict, bool checkIt) {
     // RDKit✔️✔️:   // FIX: contributions of bonds to valence are being done at best
     // RDKit✔️✔️:   // approximately
-    // RDKit✔️✔️:   double accum = 0;
+    // RDKit✔️✔️:   double accum = atom.getNumExplicitHs();
+    // RDKit✔️✔️:   double minAccum = atom.getNumExplicitHs();
     // RDKit✔️❌:   for (const auto bnd : atom.getOwningMol().atomBonds(&atom)) {
-    // RDKit✔️✔️:     accum += bnd->getValenceContrib(&atom);
+    // RDKit✔️✔️:     auto contrib = bnd->getValenceContrib(&atom);
+    // RDKit✔️✔️:     accum += contrib;
+    // RDKit✔️✔️:     minAccum += (bnd->getIsAromatic() ? 1.0 : contrib);
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   accum += atom.getNumExplicitHs();
     // RDKit✔️✔️:
     // RDKit✔️✔️:   const auto &ovalens =
     // RDKit✔️✔️:       PeriodicTable::getTable()->getValenceList(atom.getAtomicNum());
@@ -731,7 +733,7 @@ fn calculate_explicit_valence<A: SourceValenceAtom>(
     // RDKit✔️✔️:     // the valence is 3 or the bridging N in c1ccn2cncc2c1, which starts
     // RDKit✔️✔️:     // with a valence of 4.5, but can be happily kekulized down to a valence
     // RDKit✔️✔️:     // of 3
-    // RDKit✔️✔️:     if (accum - pval <= 1.5) {
+    // RDKit✔️✔️:     if (minAccum - pval <= 0.1 && accum - pval <= 1.5) {
     // RDKit✔️✔️:       accum = pval;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
@@ -801,11 +803,19 @@ fn calculate_explicit_valence<A: SourceValenceAtom>(
     // compared with source-owned graph iteration; loop cost is marked worse.
 
     let atom = atom_from_parts(atoms, atom_id)?;
-    let mut accum = 0.0;
+    // Same incident-bond pass and constant scratch as upstream; aromatic
+    // minimum contribution cannot erase hypervalence from explicit Hs/bonds.
+    let mut accum = f64::from(atom.explicit_hydrogens());
+    let mut min_accum = accum;
     for bond in incident_bonds_from_parts(atoms.len(), bonds, adjacency, atom_id)? {
-        accum += bond_valence_contrib(bond, atom_id)?;
+        let contribution = bond_valence_contrib(bond, atom_id)?;
+        accum += contribution;
+        min_accum += if bond.is_aromatic() {
+            1.0
+        } else {
+            contribution
+        };
     }
-    accum += f64::from(atom.explicit_hydrogens());
 
     let ovalens = required_valence_list(atom.atomic_number())?;
     let mut effective_atomic_num = atom.atomic_number();
@@ -826,7 +836,7 @@ fn calculate_explicit_valence<A: SourceValenceAtom>(
             }
             pval = valence;
         }
-        if accum - f64::from(pval) <= 1.5 {
+        if min_accum - f64::from(pval) <= 0.1 && accum - f64::from(pval) <= 1.5 {
             accum = f64::from(pval);
         }
     }
@@ -1739,6 +1749,49 @@ mod tests {
     use super::*;
     use cosmolkit_model::{AdjacencyList, AtomSpec, BondId, BondSpec};
     use cosmolkit_types::Element;
+
+    #[test]
+    fn rdkit092_aromatic_minimum_valence_retains_non_aromatic_bond_order() {
+        for (orders, hydrogens, valid) in [
+            (
+                vec![BondOrder::Double, BondOrder::Double, BondOrder::Aromatic],
+                0,
+                false,
+            ),
+            (vec![BondOrder::Double, BondOrder::Aromatic], 1, true),
+            (vec![BondOrder::Aromatic, BondOrder::Aromatic], 3, false),
+        ] {
+            let atoms = (0..=orders.len())
+                .map(|index| {
+                    Atom::from_spec(
+                        AtomId::new(index),
+                        AtomSpec::new(Element::C)
+                            .with_aromatic(index == 0)
+                            .with_explicit_hydrogens(if index == 0 { hydrogens } else { 0 }),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let bonds = orders
+                .into_iter()
+                .enumerate()
+                .map(|(index, order)| {
+                    Bond::from_spec(
+                        BondId::new(index),
+                        BondSpec::new(AtomId::new(0), AtomId::new(index + 1), order)
+                            .with_aromatic(order == BondOrder::Aromatic),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let adjacency = AdjacencyList::from_topology(atoms.len(), &bonds);
+            let strict =
+                calculate_explicit_valence(&atoms, &bonds, &adjacency, AtomId::new(0), true, false);
+            assert_eq!(strict.is_ok(), valid);
+            let checked =
+                calculate_explicit_valence(&atoms, &bonds, &adjacency, AtomId::new(0), false, true)
+                    .unwrap();
+            assert_eq!(checked == -1, !valid);
+        }
+    }
 
     #[test]
     fn detached_assignment_matches_basic_ethanol_valence() {

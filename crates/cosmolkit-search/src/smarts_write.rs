@@ -4234,15 +4234,39 @@ fn get_bond_smarts_simple(
             let reverse_dative = source_reverse_dative(bond, atom_to_left_idx)?;
             Ok(get_basic_bond_repr(*order, bond.direction(), reverse_dative, params).into())
         }
+        BondQueryPredicate::NumRingBonds(value) => {
+            // RDKit✔️✔️: } else if (descrip == "BondInNRings") {
+            // RDKit✔️✔️:   res += "@";
+            // RDKit✔️✔️:   if (bmods == QueryOps::detail::RangeQueryType::EQUAL) {
+            // RDKit✔️✔️:     if (equery && equery->getVal() >= 0) {
+            // RDKit✔️✔️:       res += "{" + std::to_string(equery->getVal()) + "}";
+            // RDKit✔️✔️:     }
+            // RDKit✔️✔️:   }
+            Ok(if *value >= 0 {
+                format!("@{{{value}}}").into()
+            } else {
+                "@".into()
+            })
+        }
+        BondQueryPredicate::NumRingBondsGreaterEqual(value) => Ok(format!("@{{{value}-}}").into()),
+        BondQueryPredicate::NumRingBondsLessEqual(value) => Ok(format!("@{{-{value}}}").into()),
+        BondQueryPredicate::NumRingBondsRange(bounds) => {
+            // RDKit✔️✔️: res += std::to_string(rquery->getLower()) + "-" +
+            // RDKit✔️✔️:        std::to_string(rquery->getUpper());
+            let text = match *bounds {
+                AtomRangeBounds::LessEqual(value) => format!("@{{{value}-}}"),
+                AtomRangeBounds::GreaterEqual(value) => format!("@{{-{value}}}"),
+                AtomRangeBounds::Inclusive { lower, upper, .. } => format!("@{{{lower}-{upper}}}"),
+            };
+            Ok(text.into())
+        }
         BondQueryPredicate::HasStereo
-        | BondQueryPredicate::NumRingBonds(_)
         | BondQueryPredicate::InRingOfSize(_)
         | BondQueryPredicate::MinRingSize(_)
         | BondQueryPredicate::HasProperty(_)
         | BondQueryPredicate::PropertyValue { .. } => {
             let description = match query {
                 BondQueryPredicate::HasStereo => "BondStereo",
-                BondQueryPredicate::NumRingBonds(_) => "BondInNRings",
                 BondQueryPredicate::InRingOfSize(_) => "BondRingSize",
                 BondQueryPredicate::MinRingSize(_) => "BondMinRingSize",
                 BondQueryPredicate::HasProperty(_) => "HasProp",
@@ -4535,111 +4559,100 @@ fn recurse_bond_smarts(
     features: &mut QueryBoolFeatures,
     params: &SmartsWriteParams,
 ) -> Result<PropertyText, SmartsWriteError> {
-    // RDKit❗❌: std::string _recurseBondSmarts(const Bond *bond,
-    // RDKit❗❌:                                const QueryBond::QUERYBOND_QUERY *node,
-    // RDKit❗❌:                                bool negate, int atomToLeftIdx,
-    // RDKit❗❌:                                unsigned int &features,
-    // RDKit❗❌:                                const SmilesWriteParams &params) {
-    // RDKit❗❌:   // the algorithm goes something like this
-    // RDKit❗❌:   // - recursively get the smarts for the child query bonds
-    // RDKit❗❌:   // - combine the child smarts using the following rules:
-    // RDKit❗❌:   //      - if we are currently at an OR query, combine the subqueries with a
-    // RDKit❗❌:   //      ",",
-    // RDKit❗❌:   //        but only if neither of child smarts do not contain "," and ";"
-    // RDKit❗❌:   //        This situation leads to a no smartable situation and throw an
-    // RDKit❗❌:   //        error
-    // RDKit❗❌:   //      - if we are currently at an and query, combine the child smarts with
-    // RDKit❗❌:   //      "&"
-    // RDKit❗❌:   //        if neither of the child smarts contain a "," - otherwise combine
-    // RDKit❗❌:   //        them
-    // RDKit❗❌:   //        the child smarts with a ";"
-    // RDKit❗❌:   //
-    // RDKit❗❌:   // There is an additional complication with composite nodes that carry a
-    // RDKit❗❌:   // negation - in this
-    // RDKit❗❌:   // case we will propagate the negation to the child nodes using the
-    // RDKit❗❌:   // following rules
-    // RDKit❗❌:   //   NOT (a AND b) = ( NOT (a)) AND ( NOT (b))
-    // RDKit❗❌:   //   NOT (a OR b) = ( NOT (a)) OR ( NOT (b))
-    // RDKit❗❌:   PRECONDITION(bond, "bad bond");
-    // RDKit❗❌:   PRECONDITION(node, "bad node");
-    // RDKit❗❌:   std::string descrip = node->getDescription();
-    // RDKit❗❌:   std::string res = "";
-    // RDKit❗❌:
-    // RDKit❗❌:   const QueryBond::QUERYBOND_QUERY *child1;
-    // RDKit❗❌:   const QueryBond::QUERYBOND_QUERY *child2;
-    // RDKit❗❌:   unsigned int child1Features = 0;
-    // RDKit❗❌:   unsigned int child2Features = 0;
-    // RDKit❗❌:   QueryBond::QUERYBOND_QUERY::CHILD_VECT_CI chi;
-    // RDKit❗❌:
-    // RDKit❗❌:   chi = node->beginChildren();
-    // RDKit❗❌:   child1 = chi->get();
-    // RDKit❗❌:   chi++;
-    // RDKit❗❌:   child2 = chi->get();
-    // RDKit❗❌:   chi++;
-    // RDKit❗❌:   // OK we should be at the end of vector by now - since we can have only two
-    // RDKit❗❌:   // children,
-    // RDKit❗❌:   // well - at least in this case
-    // RDKit❗❌:   CHECK_INVARIANT(chi == node->endChildren(), "Too many children on the query");
-    // RDKit❗❌:
-    // RDKit❗❌:   std::string dsc1, dsc2;
-    // RDKit❗❌:   dsc1 = child1->getDescription();
-    // RDKit❗❌:   dsc2 = child2->getDescription();
-    // RDKit❗❌:   std::string csmarts1, csmarts2;
-    // RDKit❗❌:
-    // RDKit❗❌:   if ((dsc1 != "BondOr") && (dsc1 != "BondAnd")) {
-    // RDKit❗❌:     // child1 is  simple node get the smarts directly
-    // RDKit❗❌:     const auto *tchild = static_cast<const BOND_EQUALS_QUERY *>(child1);
-    // RDKit❗❌:     csmarts1 = getBondSmartsSimple(bond, tchild, atomToLeftIdx, params);
-    // RDKit❗❌:     bool nneg = (negate) ^ (tchild->getNegation());
-    // RDKit❗❌:     if (nneg) {
-    // RDKit❗❌:       csmarts1 = "!" + csmarts1;
-    // RDKit❗❌:     }
-    // RDKit❗❌:   } else {
-    // RDKit❗❌:     // child1 is a composite node recurse further
-    // RDKit❗❌:     bool nneg = (negate) ^ (child1->getNegation());
-    // RDKit❗❌:     csmarts1 = _recurseBondSmarts(bond, child1, nneg, atomToLeftIdx,
-    // RDKit❗❌:                                   child1Features, params);
-    // RDKit❗❌:   }
-    // RDKit❗❌:
-    // RDKit❗❌:   // now deal with the second child
-    // RDKit❗❌:   if ((dsc2 != "BondOr") && (dsc2 != "BondAnd")) {
-    // RDKit❗❌:     // child 2 is a simple node
-    // RDKit❗❌:     const auto *tchild = static_cast<const BOND_EQUALS_QUERY *>(child2);
-    // RDKit❗❌:     csmarts2 = getBondSmartsSimple(bond, tchild, atomToLeftIdx, params);
-    // RDKit❗❌:     bool nneg = (negate) ^ (tchild->getNegation());
-    // RDKit❗❌:     if (nneg) {
-    // RDKit❗❌:       csmarts2 = "!" + csmarts2;
-    // RDKit❗❌:     }
-    // RDKit❗❌:   } else {
-    // RDKit❗❌:     // child two is a composite node - recurse
-    // RDKit❗❌:     bool nneg = (negate) ^ (child2->getNegation());
-    // RDKit❗❌:     csmarts1 = _recurseBondSmarts(bond, child2, nneg, atomToLeftIdx,
-    // RDKit❗❌:                                   child2Features, params);
-    // RDKit❗❌:   }
-    // RDKit❗❌:
-    // RDKit❗❌:   // ok if we have a negation and we have to change the underlying logic,
-    // RDKit❗❌:   // since we propagated the negation i.e NOT (A OR B) = (NOT (A)) AND
-    // RDKit❗❌:   // (NOT(B))
-    // RDKit❗❌:   if (negate) {
-    // RDKit❗❌:     if (descrip == "BondOr") {
-    // RDKit❗❌:       descrip = "BondAnd";
-    // RDKit❗❌:     } else if (descrip == "BondAnd") {
-    // RDKit❗❌:       descrip = "BondOr";
-    // RDKit❗❌:     }
-    // RDKit❗❌:   }
-    // RDKit❗❌:   res += _combineChildSmarts(csmarts1, child1Features, csmarts2, child2Features,
-    // RDKit❗❌:                              descrip, features);
-    // RDKit❗❌:   return res;
-    // RDKit❗❌: }
-    // Reuse source-exact binary recursion and its observable asymmetric second
-    // composite assignment: overwrite child1 text, leave child2 text empty,
-    // retain both child feature words. Do not correct or simplify the source.
-    // Child writers/error effects run in physical order before connective
-    // negation swap and combination. Not wrappers project source node flags.
-    // Cost ❌: one visit per query/Not node, O(height) stack, with cumulative
-    // copied child text proportional to output at each depth (not just O(n)).
-    // Source does these prefix copies too, but Vec short strings/leaf writer
-    // formatting retain known allocation costs versus Native SSO.
+    // RDKit✔️✔️: std::string _recurseBondSmarts(const Bond *bond,
+    // RDKit✔️✔️:                                const QueryBond::QUERYBOND_QUERY *node,
+    // RDKit✔️✔️:                                bool negate, int atomToLeftIdx,
+    // RDKit✔️✔️:                                unsigned int &features,
+    // RDKit✔️✔️:                                const SmilesWriteParams &params) {
+    // RDKit✔️✔️:   // the algorithm goes something like this
+    // RDKit✔️✔️:   // - recursively get the smarts for the child query bonds
+    // RDKit✔️✔️:   // - combine the child smarts using the following rules:
+    // RDKit✔️✔️:   //      - if we are currently at an OR query, combine the subqueries with a
+    // RDKit✔️✔️:   //      ",",
+    // RDKit✔️✔️:   //        but only if neither of child smarts do not contain "," and ";"
+    // RDKit✔️✔️:   //        This situation leads to a no smartable situation and throw an
+    // RDKit✔️✔️:   //        error
+    // RDKit✔️✔️:   //      - if we are currently at an and query, combine the child smarts with
+    // RDKit✔️✔️:   //      "&"
+    // RDKit✔️✔️:   //        if neither of the child smarts contain a "," - otherwise combine
+    // RDKit✔️✔️:   //        them
+    // RDKit✔️✔️:   //        the child smarts with a ";"
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   // There is an additional complication with composite nodes that carry a
+    // RDKit✔️✔️:   // negation - in this
+    // RDKit✔️✔️:   // case we will propagate the negation to the child nodes using the
+    // RDKit✔️✔️:   // following rules
+    // RDKit✔️✔️:   //   NOT (a AND b) = ( NOT (a)) AND ( NOT (b))
+    // RDKit✔️✔️:   //   NOT (a OR b) = ( NOT (a)) OR ( NOT (b))
+    // RDKit✔️✔️:   PRECONDITION(bond, "bad bond");
+    // RDKit✔️✔️:   PRECONDITION(node, "bad node");
+    // RDKit✔️✔️:   std::string descrip = node->getDescription();
+    // RDKit✔️✔️:   std::string res = "";
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   const QueryBond::QUERYBOND_QUERY *child1;
+    // RDKit✔️✔️:   const QueryBond::QUERYBOND_QUERY *child2;
+    // RDKit✔️✔️:   unsigned int child1Features = 0;
+    // RDKit✔️✔️:   unsigned int child2Features = 0;
+    // RDKit✔️✔️:   QueryBond::QUERYBOND_QUERY::CHILD_VECT_CI chi;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   chi = node->beginChildren();
+    // RDKit✔️✔️:   child1 = chi->get();
+    // RDKit✔️✔️:   chi++;
+    // RDKit✔️✔️:   child2 = chi->get();
+    // RDKit✔️✔️:   chi++;
+    // RDKit✔️✔️:   // OK we should be at the end of vector by now - since we can have only two
+    // RDKit✔️✔️:   // children,
+    // RDKit✔️✔️:   // well - at least in this case
+    // RDKit✔️✔️:   CHECK_INVARIANT(chi == node->endChildren(), "Too many children on the query");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::string dsc1, dsc2;
+    // RDKit✔️✔️:   dsc1 = child1->getDescription();
+    // RDKit✔️✔️:   dsc2 = child2->getDescription();
+    // RDKit✔️✔️:   std::string csmarts1, csmarts2;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if ((dsc1 != "BondOr") && (dsc1 != "BondAnd")) {
+    // RDKit✔️✔️:     // child1 is a simple node, get the smarts directly
+    // RDKit✔️✔️:     csmarts1 = getBondSmartsSimple(bond, child1, atomToLeftIdx, params);
+    // RDKit✔️✔️:     bool nneg = (negate) ^ (child1->getNegation());
+    // RDKit✔️✔️:     if (nneg) {
+    // RDKit✔️✔️:       csmarts1 = "!" + csmarts1;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     // child1 is a composite node recurse further
+    // RDKit✔️✔️:     bool nneg = (negate) ^ (child1->getNegation());
+    // RDKit✔️✔️:     csmarts1 = _recurseBondSmarts(bond, child1, nneg, atomToLeftIdx,
+    // RDKit✔️✔️:                                   child1Features, params);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // now deal with the second child
+    // RDKit✔️✔️:   if ((dsc2 != "BondOr") && (dsc2 != "BondAnd")) {
+    // RDKit✔️✔️:     // child 2 is a simple node
+    // RDKit✔️✔️:     csmarts2 = getBondSmartsSimple(bond, child2, atomToLeftIdx, params);
+    // RDKit✔️✔️:     bool nneg = (negate) ^ (child2->getNegation());
+    // RDKit✔️✔️:     if (nneg) {
+    // RDKit✔️✔️:       csmarts2 = "!" + csmarts2;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     // child two is a composite node - recurse
+    // RDKit✔️✔️:     bool nneg = (negate) ^ (child2->getNegation());
+    // RDKit✔️✔️:     csmarts2 = _recurseBondSmarts(bond, child2, nneg, atomToLeftIdx,
+    // RDKit✔️✔️:                                    child2Features, params);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // ok if we have a negation and we have to change the underlying logic,
+    // RDKit✔️✔️:   // since we propagated the negation i.e NOT (A OR B) = (NOT (A)) AND
+    // RDKit✔️✔️:   // (NOT(B))
+    // RDKit✔️✔️:   if (negate) {
+    // RDKit✔️✔️:     if (descrip == "BondOr") {
+    // RDKit✔️✔️:       descrip = "BondAnd";
+    // RDKit✔️✔️:     } else if (descrip == "BondAnd") {
+    // RDKit✔️✔️:       descrip = "BondOr";
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   res += _combineChildSmarts(csmarts1, child1Features, csmarts2, child2Features,
+    // RDKit✔️✔️:                              descrip, features);
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
     let (node, negate) = bond_query_without_not(node, negate);
     let (children, mut description) = match node {
         QueryNode::And(children) => (children, "BondAnd"),
@@ -4680,15 +4693,8 @@ fn recurse_bond_smarts(
 
     let mut child1_features = QueryBoolFeatures::default();
     let mut child2_features = QueryBoolFeatures::default();
-    let mut child1_smarts = render_child(&children[0], &mut child1_features)?;
-    let child2_base = bond_query_without_not(&children[1], false).0;
-    let child2_smarts = if matches!(child2_base, QueryNode::And(_) | QueryNode::Or(_)) {
-        // Preserve the pinned source assignment to csmarts1 in this branch.
-        child1_smarts = render_child(&children[1], &mut child2_features)?;
-        PropertyText::new()
-    } else {
-        render_child(&children[1], &mut child2_features)?
-    };
+    let child1_smarts = render_child(&children[0], &mut child1_features)?;
+    let child2_smarts = render_child(&children[1], &mut child2_features)?;
     if negate {
         description = if description == "BondOr" {
             "BondAnd"
@@ -7192,7 +7198,6 @@ mod complete_bond_smarts_simple_source_tests {
     fn known_source_unwritable_queries_preserve_native_description_errors() {
         for (q, description) in [
             (BondQueryPredicate::HasStereo, "BondStereo"),
-            (BondQueryPredicate::NumRingBonds(-1), "BondInNRings"),
             (BondQueryPredicate::InRingOfSize(6), "BondRingSize"),
             (BondQueryPredicate::MinRingSize(3), "BondMinRingSize"),
             (BondQueryPredicate::HasProperty("x".into()), "HasProp"),
@@ -7349,7 +7354,7 @@ mod complete_recurse_bond_smarts_source_tests {
         );
     }
     #[test]
-    fn second_composite_overwrites_first_text_exactly_as_pinned_source() {
+    fn rdkit092_second_composite_preserves_first_text() {
         let q = QueryNode::And(vec![
             order(BondOrder::Single),
             QueryNode::Or(vec![order(BondOrder::Double), order(BondOrder::Triple)]),
@@ -7357,12 +7362,12 @@ mod complete_recurse_bond_smarts_source_tests {
         let mut f = QueryBoolFeatures(0);
         assert_eq!(
             render(&q, false, &mut f).unwrap(),
-            PropertyText::from("=,#")
+            PropertyText::from("-;=,#")
         );
         assert_eq!(f.0, 6);
         assert_eq!(
             render(&q, true, &mut QueryBoolFeatures(0)).unwrap(),
-            PropertyText::from("!=&!#")
+            PropertyText::from("!-,!=&!#")
         );
         let q = QueryNode::And(vec![
             QueryNode::Or(vec![order(BondOrder::Double), order(BondOrder::Triple)]),
@@ -7374,7 +7379,7 @@ mod complete_recurse_bond_smarts_source_tests {
         );
     }
     #[test]
-    fn both_composites_keep_feature_words_even_when_first_text_is_overwritten() {
+    fn rdkit092_both_composites_preserve_text_and_feature_words() {
         let q = QueryNode::And(vec![
             QueryNode::Or(vec![order(BondOrder::Single), order(BondOrder::Double)]),
             QueryNode::And(vec![order(BondOrder::Triple), order(BondOrder::Zero)]),
@@ -7382,7 +7387,7 @@ mod complete_recurse_bond_smarts_source_tests {
         let mut f = QueryBoolFeatures(0);
         assert_eq!(
             render(&q, false, &mut f).unwrap(),
-            PropertyText::from("#&~")
+            PropertyText::from("-,=;#&~")
         );
         assert_eq!(f.0, 7);
         let q = QueryNode::Or(vec![
@@ -7392,7 +7397,7 @@ mod complete_recurse_bond_smarts_source_tests {
         let mut f = QueryBoolFeatures(0);
         assert_eq!(
             render(&q, false, &mut f).unwrap(),
-            PropertyText::from("=,#")
+            PropertyText::from("-&=,=,#")
         );
         assert_eq!(f.0, 5);
     }
@@ -7755,18 +7760,18 @@ mod complete_query_bond_smarts_source_tests {
         );
     }
     #[test]
-    fn source_composite_flag_and_second_composite_overwrite_reach_public_dispatch() {
+    fn rdkit092_second_composite_preserves_public_dispatch_text() {
         let q = QueryNode::And(vec![
             leaf(BondOrder::Single),
             QueryNode::Or(vec![leaf(BondOrder::Double), leaf(BondOrder::Triple)]),
         ]);
         assert_eq!(
             write(&explicit(q.clone())).unwrap(),
-            PropertyText::from("=,#")
+            PropertyText::from("-;=,#")
         );
         assert_eq!(
             write(&explicit(not(q))).unwrap(),
-            PropertyText::from("!=&!#")
+            PropertyText::from("!-,!=&!#")
         );
     }
     #[test]
@@ -12025,17 +12030,21 @@ mod complete_cx_source_tests {
         );
     }
     #[test]
-    fn cache_getter_error_retains_ring_acquisition_and_skips_final_cleanup() {
+    fn rdkit092_query_missing_cache_completes_cx_cleanup() {
         let mut q = atrop();
         q.atoms_mut()[0].set_source_valence_facts(SourceAtomValenceFacts::UNINITIALIZED);
         q.set_prop("_cxsmilesOutputIndex", PropertyValue::UInt(7))
             .unwrap();
-        assert!(matches!(
-            output(&mut q, F::BOND_CFG),
-            Err(SmartsWriteError::CxWedge(_))
-        ));
+        // Target Atom::getTotalNumHs accepts an uninitialized query cache;
+        // ordinary CX emission and its final source cleanup now complete.
+        let text = output(&mut q, F::BOND_CFG).unwrap();
+        assert!(
+            text.as_bytes()
+                .windows(3)
+                .any(|bytes| bytes == b"wU:" || bytes == b"wD:")
+        );
         assert!(q.source_ring_info().initialized);
-        assert!(q.prop("_cxsmilesOutputIndex").is_some());
+        assert!(q.prop("_cxsmilesOutputIndex").is_none());
     }
     #[test]
     fn bond_cfg_takes_precedence_over_atrop_only_and_uses_selected_source_coords() {

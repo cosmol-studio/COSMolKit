@@ -11,7 +11,7 @@ Current corpus and designated special-regression inputs belong in
 [prepare / Cargo test workflow](../parity-tests/README.md).
 Do not duplicate preparation instructions in individual fixture directories.
 
-The current reference is RDKit `2026.09.1`, recorded in
+The current reference is RDKit `2026.09.2`, recorded in
 [`reference/rdkit.json`](reference/rdkit.json). Older versions in fixture
 READMEs and source manifests are the original provenance of those fixed
 inputs, not a competing current reference pin. Do not rewrite their source

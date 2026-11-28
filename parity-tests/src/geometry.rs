@@ -32,6 +32,18 @@ pub fn profiles(task: &str) -> Result<Vec<Json>> {
         "mmff_optimize"|"mmff_optimize_conformers"|"mmff_force_field" => ["MMFF94","MMFF94s"].map(|variant|json!({"variant":variant,"iterations":2,"threshold":100.0,"ignore_interfragment":true,"add_hs":true,"seed":17,"fixed_first":false,"force_tolerance":1e-4,"energy_tolerance":1e-6})).into(),
         _ => return Err(format!("unknown geometry task {task}").into()),
     };
+    if task == "embedding" {
+        for p in &mut rows {
+            p["optimize_existing"] = json!(false);
+        }
+        let mut refinement = rows
+            .iter()
+            .find(|p| p["method"] == "etkdg_v3" && p["count"] == 1)
+            .unwrap()
+            .clone();
+        refinement["optimize_existing"] = json!(true);
+        rows.push(refinement);
+    }
     if task.ends_with("force_field") {
         for p in &mut rows {
             p["coordinate_update"] = json!("initialize_distances");
@@ -536,6 +548,14 @@ fn scalar(m: &Molecule, task: &str, p: &Json) -> Result<Value> {
             params.timeout = integer(p, "timeout") as u32;
             params.track_failures = true;
             let count = integer(p, "count");
+            // Same existing dyadic-coordinate construction as the native
+            // adapter; refine row 1 while retaining row 0 and its identity.
+            let m = if boolean(p, "optimize_existing") {
+                params.optimize_conf_with_id = Some(1);
+                with_coordinates(&m, integer(p, "seed") as u64, 2)?
+            } else {
+                m
+            };
             if count == 1 {
                 let r = m.with_3d_conformer_result_with_params(&params)?;
                 Value::List(vec![

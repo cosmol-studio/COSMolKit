@@ -11804,6 +11804,7 @@ binding_contract! {
                 { name: num_threads, python_type: "builtins.int", default: "1" },
                 { name: random_seed, python_type: "builtins.int", default: "-1" },
                 { name: clear_conformers, python_type: "builtins.bool", default: "True" },
+                { name: optimize_conf_with_id, python_type: "typing.Optional[builtins.int]", default: "None" },
                 { name: use_random_coords, python_type: "builtins.bool", default: "False" },
                 { name: box_size_mult, python_type: "builtins.float", default: "2.0" },
                 { name: rand_neg_eig, python_type: "builtins.bool", default: "True" },
@@ -11841,6 +11842,8 @@ binding_contract! {
 {semantic_id:"EmbedParams.random_seed", javascript_property: getter,item:callable,owner:type_,rust:crate::EmbedParams::random_seed,python:"random_seed", python_property:getter,javascript:"randomSeed",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedParams)->i32,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"EmbedParams.clear_conformers", javascript_property: getter,item:callable,owner:type_,rust:crate::EmbedParams::clear_conformers,python:"clear_conformers", python_property:getter,javascript:"clearConformers",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedParams)->bool,},
+#[cfg(feature="cap-conformer")]
+{semantic_id:"EmbedParams.optimize_conf_with_id", javascript_property:getter,item:callable,owner:type_,rust:crate::EmbedParams::optimize_conf_with_id,python:"optimize_conf_with_id",python_property:getter,javascript:"optimizeConfWithId",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:Option<u32>,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedParams)->Option<u32>,},
 #[cfg(feature="cap-conformer")]
 {semantic_id:"EmbedParams.use_random_coords", javascript_property: getter,item:callable,owner:type_,rust:crate::EmbedParams::use_random_coords,python:"use_random_coords", python_property:getter,javascript:"useRandomCoords",feature:"cap-conformer",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::EmbedParams)->bool,},
 #[cfg(feature="cap-conformer")]

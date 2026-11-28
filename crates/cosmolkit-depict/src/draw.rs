@@ -9339,17 +9339,24 @@ fn draw_solid_wedge_path(
     points: &[DVec2],
     fill: DrawColour,
     stroke: DrawColour,
+    active_atom: usize,
 ) {
     let fill_col = draw_colour_to_svg(fill);
     let stroke_col = draw_colour_to_svg(stroke);
     out.extend_from_slice(("<path ").as_bytes());
-    out.extend_from_slice(
-        (&format!(
-            "class='bond-{} atom-{} atom-{}' ",
-            wedge.bond_idx, wedge.atom1_idx, wedge.atom2_idx
-        ))
+    if wedge.split_bonds {
+        out.extend_from_slice(
+            format!("class='bond-{} atom-{}' ", wedge.bond_idx, active_atom).as_bytes(),
+        );
+    } else {
+        out.extend_from_slice(
+            format!(
+                "class='bond-{} atom-{} atom-{}' ",
+                wedge.bond_idx, wedge.atom1_idx, wedge.atom2_idx
+            )
             .as_bytes(),
-    );
+        );
+    }
     out.extend_from_slice(
         (&format!(
             "d='M {},{}",
@@ -9379,15 +9386,58 @@ fn draw_solid_wedge_path(
 }
 
 fn draw_solid_wedge_polygon(out: &mut Vec<u8>, wedge: &DrawWedge) {
-    // BEGIN RDKIT CPP FUNCTION DrawShapeSolidWedge::myDraw (DrawShape.cpp)
-    // RDKit✔️✔️: if (points_.size() == 3 || points_.size() == 9) { drawer.drawTriangle(points_[0], points_[1], points_[2], true); }
-    // RDKit✔️✔️: if (points_.size() == 6) { std::vector<Point2D> quadPoints{points_[0], points_[1], points_[2], points_[5]}; drawer.drawPolygon(quadPoints, true); }
-    // RDKit✔️✔️: else if (points_.size() == 9) { drawer.setColour(col2_); std::vector<Point2D> quadPoints{points_[4], points_[5], points_[6], points_[7]}; drawer.drawPolygon(quadPoints, true); }
+    // RDKit✔️✔️: void DrawShapeSolidWedge::myDraw(MolDraw2D &drawer) const {
+    // RDKit✔️✔️:   drawer.setFillPolys(true);
+    // RDKit✔️✔️:   if (drawer.drawOptions().splitBonds) {
+    // RDKit✔️✔️:     drawer.setActiveAtmIdx(atom1_);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     drawer.setActiveAtmIdx(atom1_, atom2_);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   drawer.setActiveBndIdx(bond_);
+    // RDKit✔️✔️:   if (points_.size() == 3 || points_.size() == 9 || points_.size() == 12) {
+    // RDKit✔️✔️:     drawer.drawTriangle(points_[0], points_[1], points_[2], true);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (points_.size() == 6) {
+    // RDKit✔️✔️:     // This is a 2 triangle drawing where the wedge goes onto a Y shape, as in
+    // RDKit✔️✔️:     // Github 7739 tests in catch_tests.cpp.
+    // RDKit✔️✔️:     std::vector<Point2D> quadPoints{points_[0], points_[1], points_[2],
+    // RDKit✔️✔️:                                     points_[5]};
+    // RDKit✔️✔️:     drawer.drawPolygon(quadPoints, true);
+    // RDKit✔️✔️:   } else if (points_.size() == 9) {
+    // RDKit✔️✔️:     // This is a conventional 2-colour wedge originally drawn as 3 triangles.
+    // RDKit✔️✔️:     if (drawer.drawOptions().splitBonds) {
+    // RDKit✔️✔️:       drawer.setActiveAtmIdx(atom2_);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     drawer.setColour(col2_);
+    // RDKit✔️✔️:     std::vector<Point2D> quadPoints{points_[4], points_[5], points_[6],
+    // RDKit✔️✔️:                                     points_[7]};
+    // RDKit✔️✔️:     drawer.drawPolygon(quadPoints, true);
+    // RDKit✔️✔️:   } else if (points_.size() == 12) {
+    // RDKit✔️✔️:     // This is a conventional 2 colour wedge drawn as 3 triangles because
+    // RDKit✔️✔️:     // the wedge end is not a straight line.
+    // RDKit✔️✔️:     if (drawer.drawOptions().splitBonds) {
+    // RDKit✔️✔️:       drawer.setActiveAtmIdx(atom2_);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     drawer.setColour(col2_);
+    // RDKit✔️✔️:     std::vector<Point2D> pentPoints{points_[3],  points_[4], points_[5],
+    // RDKit✔️✔️:                                     points_[10], points_[7], points_[11]};
+    // RDKit✔️✔️:     drawer.drawPolygon(pentPoints, true);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️: // ****************************************************************************
     if wedge.points.len() < 3 {
         return;
     }
-    if wedge.points.len() == 3 || wedge.points.len() == 9 {
-        draw_solid_wedge_path(out, wedge, &wedge.points[0..3], wedge.col1, wedge.col1);
+    if matches!(wedge.points.len(), 3 | 9 | 12) {
+        draw_solid_wedge_path(
+            out,
+            wedge,
+            &wedge.points[0..3],
+            wedge.col1,
+            wedge.col1,
+            wedge.atom1_idx,
+        );
     }
     if wedge.points.len() == 6 {
         let quad = [
@@ -9396,7 +9446,7 @@ fn draw_solid_wedge_polygon(out: &mut Vec<u8>, wedge: &DrawWedge) {
             wedge.points[2],
             wedge.points[5],
         ];
-        draw_solid_wedge_path(out, wedge, &quad, wedge.col1, wedge.col1);
+        draw_solid_wedge_path(out, wedge, &quad, wedge.col1, wedge.col1, wedge.atom1_idx);
     } else if wedge.points.len() == 9 {
         let quad = [
             wedge.points[4],
@@ -9404,7 +9454,24 @@ fn draw_solid_wedge_polygon(out: &mut Vec<u8>, wedge: &DrawWedge) {
             wedge.points[6],
             wedge.points[7],
         ];
-        draw_solid_wedge_path(out, wedge, &quad, wedge.col2, wedge.col2);
+        draw_solid_wedge_path(out, wedge, &quad, wedge.col2, wedge.col2, wedge.atom2_idx);
+    } else if wedge.points.len() == 12 {
+        let polygon = [
+            wedge.points[3],
+            wedge.points[4],
+            wedge.points[5],
+            wedge.points[10],
+            wedge.points[7],
+            wedge.points[11],
+        ];
+        draw_solid_wedge_path(
+            out,
+            wedge,
+            &polygon,
+            wedge.col2,
+            wedge.col2,
+            wedge.atom2_idx,
+        );
     }
 }
 
@@ -10024,6 +10091,59 @@ fn draw_radical_spot_svg(out: &mut Vec<u8>, centre: DVec2, radius: f64, atom_idx
 #[cfg(test)]
 mod drawing_helpers_legacy_tests {
     use super::*;
+    #[test]
+    fn rdkit_2026_09_2_twelve_point_wedge_draws_both_colours() {
+        let points = vec![
+            DVec2::new(0., 0.),
+            DVec2::new(1., 0.),
+            DVec2::new(0., 1.),
+            DVec2::new(1., 1.),
+            DVec2::new(2., 1.),
+            DVec2::new(1., 2.),
+            DVec2::new(2., 2.),
+            DVec2::new(3., 2.),
+            DVec2::new(2., 3.),
+            DVec2::new(10., 10.),
+            DVec2::new(12., 10.),
+            DVec2::new(10., 12.),
+        ];
+        let mut wedge = DrawWedge {
+            points,
+            col1: DrawColour::new(0., 0., 0.),
+            col2: DrawColour::new(1., 0., 0.),
+            width: 1.,
+            kind: WedgeKind::Solid,
+            one_less_dash: false,
+            split_bonds: false,
+            atom1_idx: 4,
+            atom2_idx: 5,
+            bond_idx: 7,
+        };
+        let mut svg = Vec::new();
+        draw_solid_wedge_polygon(&mut svg, &wedge);
+        let svg = String::from_utf8(svg).unwrap();
+        assert_eq!(svg.matches("<path ").count(), 2);
+        assert!(svg.contains("fill:#000000"));
+        assert!(svg.contains("fill:#FF0000"));
+        assert!(svg.contains(&format!("L {},{}", format_double(12.), format_double(10.))));
+        wedge.split_bonds = true;
+        let mut svg = Vec::new();
+        draw_solid_wedge_polygon(&mut svg, &wedge);
+        let svg = String::from_utf8(svg).unwrap();
+        assert!(svg.contains("class='bond-7 atom-4'"));
+        assert!(svg.contains("class='bond-7 atom-5'"));
+        let label = AtomLabel::new(
+            "C",
+            0,
+            6,
+            OrientType::C,
+            DVec2::new(10.5, 10.5),
+            wedge.col1,
+            0.1,
+        );
+        assert!(label_rects_clash_with_wedge(&label, &wedge, 0.));
+    }
+
     #[test]
     fn test_element_symbol() {
         assert_eq!(super::element_symbol(1), "H");

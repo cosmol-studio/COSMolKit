@@ -509,7 +509,7 @@ fn install_ring_special_cases(
     // Apply the one engine's detached changes in source property insertion
     // order; ordinary writes retain computed membership in the model store.
     let result =
-        crate::potential_stereo::special_ring_cases(topology, valence, rings, ranks, false)?;
+        crate::potential_stereo::special_ring_cases(topology, valence, rings, ranks, false, true)?;
     for update in result.updates {
         let atom = &mut topology.atoms[update.atom.index()];
         if update.computed {
